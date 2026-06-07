@@ -166,6 +166,8 @@ STRICT_QUOTA_EVIDENCE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "usage limit",
         re.compile(
+            r"\b(?:you(?:'ve|\s+have)?\s+)?"
+            r"(?:hit|reached|exceeded|exhausted)\s+your\s+usage\s+limit\b|"
             r"\busage\s+limit\s+(?:reached|exceeded|hit|exhausted)\b",
             re.IGNORECASE,
         ),
@@ -207,6 +209,15 @@ ISO_TIMESTAMP_PATTERN = re.compile(
     r"\b\d{4}-\d{2}-\d{2}T"
     r"\d{2}:\d{2}:\d{2}(?:\.\d+)?"
     r"(?:Z|[+-]\d{2}:?\d{2})?\b"
+)
+MONTH_NAME_TIMESTAMP_PATTERN = re.compile(
+    r"(?i)\b"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Sept(?:ember)?|Oct(?:ober)?|"
+    r"Nov(?:ember)?|Dec(?:ember)?)\s+"
+    r"\d{1,2}(?:st|nd|rd|th)?(?:,)?\s+"
+    r"\d{4}\s+"
+    r"\d{1,2}(?::\d{2})?\s*[ap]\.?(?:m)\.?\b"
 )
 EPOCH_PATTERN = re.compile(r"\b(?P<epoch>\d{10}(?:\.\d+)?|\d{13})\b")
 PIPE_EPOCH_PATTERN = re.compile(r"\|\s*(?P<epoch>\d{10}(?:\.\d+)?|\d{13})\b")

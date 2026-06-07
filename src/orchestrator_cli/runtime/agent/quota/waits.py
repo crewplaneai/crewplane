@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .lexicons import (
@@ -11,6 +11,7 @@ from .lexicons import (
     EPOCH_PATTERN,
     ISO_TIMESTAMP_PATTERN,
     LOCAL_TIME_WITH_TZ_PATTERN,
+    MONTH_NAME_TIMESTAMP_PATTERN,
     PIPE_EPOCH_PATTERN,
     RELATIVE_RESET_PHRASES,
     RESET_KEY_HINTS,
@@ -70,6 +71,46 @@ def _parse_iso_wait_seconds(iso_text: str, now_utc: datetime) -> float | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     wait_seconds = (parsed.astimezone(UTC) - now_utc).total_seconds()
+    if wait_seconds < 0:
+        return None
+    return wait_seconds
+
+
+def _local_timezone(now_utc: datetime) -> tzinfo:
+    return now_utc.astimezone().tzinfo or UTC
+
+
+def _parse_month_name_wait_seconds(
+    timestamp_text: str,
+    now_utc: datetime,
+) -> float | None:
+    normalized = re.sub(
+        r"(?i)\b(\d{1,2})(?:st|nd|rd|th)\b",
+        r"\1",
+        timestamp_text,
+    )
+    normalized = re.sub(r"\s+", " ", normalized.replace(".", "").strip())
+    parsed_timestamp: datetime | None = None
+    for fmt in (
+        "%b %d, %Y %I:%M %p",
+        "%B %d, %Y %I:%M %p",
+        "%b %d %Y %I:%M %p",
+        "%B %d %Y %I:%M %p",
+        "%b %d, %Y %I %p",
+        "%B %d, %Y %I %p",
+        "%b %d %Y %I %p",
+        "%B %d %Y %I %p",
+    ):
+        try:
+            parsed_timestamp = datetime.strptime(normalized, fmt)
+            break
+        except ValueError:
+            continue
+    if parsed_timestamp is None:
+        return None
+
+    local_timestamp = parsed_timestamp.replace(tzinfo=_local_timezone(now_utc))
+    wait_seconds = (local_timestamp.astimezone(UTC) - now_utc).total_seconds()
     if wait_seconds < 0:
         return None
     return wait_seconds
@@ -159,5 +200,9 @@ def extract_wait_candidates_from_line(line: str, now_utc: datetime) -> list[floa
             iso_wait = _parse_iso_wait_seconds(match.group(0), now_utc)
             if iso_wait is not None:
                 candidates.append(iso_wait)
+        for match in MONTH_NAME_TIMESTAMP_PATTERN.finditer(line):
+            month_name_wait = _parse_month_name_wait_seconds(match.group(0), now_utc)
+            if month_name_wait is not None:
+                candidates.append(month_name_wait)
 
     return [candidate for candidate in candidates if candidate >= 0]

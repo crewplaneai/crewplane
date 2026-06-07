@@ -1,3 +1,10 @@
+import os
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from unittest.mock import patch
+
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.invocation.retry import (
     NoFailureRetry,
@@ -8,6 +15,32 @@ from orchestrator_cli.runtime.agent.invocation.retry import (
     evaluate_quota_retry,
 )
 from orchestrator_cli.runtime.agent.types import CommandResult
+
+
+class FixedQuotaRetryDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        fixed = datetime(2026, 6, 7, 6, 43, 13, tzinfo=UTC)
+        if tz is None:
+            return fixed.replace(tzinfo=None)
+        return fixed.astimezone(tz)
+
+
+@contextmanager
+def local_timezone(name: str) -> Iterator[None]:
+    previous = os.environ.get("TZ")
+    os.environ["TZ"] = name
+    if hasattr(time, "tzset"):
+        time.tzset()
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        if hasattr(time, "tzset"):
+            time.tzset()
 
 
 def test_evaluate_failure_retry_schedules_retry_notice() -> None:
@@ -98,3 +131,42 @@ def test_evaluate_quota_retry_returns_failure_when_reset_exceeds_guard() -> None
 
     assert isinstance(decision, QuotaRetryFailure)
     assert "exceeds 5 hours" in decision.message
+
+
+def test_codex_usage_limit_with_local_reset_schedules_quota_retry() -> None:
+    with (
+        patch(
+            "orchestrator_cli.runtime.agent.quota.classifier.datetime",
+            FixedQuotaRetryDateTime,
+        ),
+        local_timezone("America/Vancouver"),
+    ):
+        decision = evaluate_quota_retry(
+            config=AgentConfig(
+                cli_cmd=["codex", "exec"],
+                default_model="test",
+                quota_parser="codex",
+                quota_reached_on_contains=[
+                    "usage limit",
+                    "rate limit",
+                    "try again in",
+                ],
+                quota_reached_retry_delay_seconds=0,
+                quota_reset_sleep_floor_seconds=5,
+            ),
+            cmd=["codex", "exec"],
+            result=CommandResult(
+                returncode=1,
+                stdout_text=(
+                    '{"type":"error","message":"You\'ve hit your usage limit for '
+                    "GPT-5.3-Codex-Spark. Switch to another model now, or try "
+                    'again at Jun 7th, 2026 2:18 AM."}'
+                ),
+                stderr_text="",
+            ),
+            quota_retry_started_at=None,
+            quota_retry_count=0,
+        )
+
+    assert isinstance(decision, ScheduleQuotaRetry)
+    assert decision.wait_seconds == 9292
