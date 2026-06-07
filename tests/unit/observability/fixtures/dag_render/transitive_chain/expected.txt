@@ -1,0 +1,5 @@
+ ● design.init              ⏸  copilot
+ │
+▸● design.iteration         ⏸  codex -> copilot
+ │
+ ● design.decision          ⏸  copilot

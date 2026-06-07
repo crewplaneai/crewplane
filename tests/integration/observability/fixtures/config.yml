@@ -1,0 +1,33 @@
+version: "1.0"
+agents:
+  alpha:
+    cli_cmd: ["echo"]
+    default_model: "alpha-model"
+  claude:
+    cli_cmd: ["echo"]
+    default_model: "claude-model"
+  codex:
+    cli_cmd: ["echo"]
+    default_model: "codex-model"
+  gemini:
+    cli_cmd: ["echo"]
+    default_model: "gemini-model"
+settings:
+  integrations:
+    invoker:
+      implementation: "mock"
+      options:
+        delay_seconds: 0
+        observation_delay_seconds: 0 # keep tests fast; mock config default is 5 seconds
+        output_mode: "echo" # override to "file" in mock-invoker integration tests
+        # output_dir: "tests/integration/mock_invoker/fixtures/review-loop"
+        # strict_file_mode: true
+    ui:
+      implementation: "tmux"
+      options:
+        auto_close_session: true
+    artifacts:
+      implementation: "filesystem"
+      options:
+        log_cli_output: true
+        allowed_template_paths: []

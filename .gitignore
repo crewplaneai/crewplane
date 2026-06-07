@@ -1,0 +1,116 @@
+# Python cache and tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*$py.class
+
+# Build artifacts
+build/
+dist/
+site/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+.wheels/
+
+# Local virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---- Test / coverage / type-checking ----
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+dmypy.json
+
+# ---- Logs / runtime ----
+*.log
+logs/
+tmp/
+tmp/**
+.orchestrator/
+*.pid
+*.sqlite3
+*.db
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.asc
+*.kdbx
+secrets/
+secret/
+credentials/
+*.secret
+
+# ---- IDE / editor ----
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---- OS files ----
+.DS_Store
+Thumbs.db
+
+# ---- JS / docs site outputs (if you add a website later) ----
+node_modules/
+.next/
+out/
+.vercel/
+dist-ssr/
+
+# ---- Playwright / browser tooling ----
+playwright-report/
+test-results/
+
+# ---- Local AI tool state ----
+.claude/
+.codex/
+.cursor/
+.gemini/
+.gemini/
+.agent/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/create-workflows/
+!.agents/skills/create-workflows/**
+.claude/
+.kilocode/
+.kiro/
+
+# ---- Generated demos / recordings (commit only curated assets) ----
+*.cast
+*.webm
+*.mp4
+
+# ---- Mac / Linux shell history or misc local files ----
+.history/
+.cache/
+
+# Local runtime artifacts
+.serena/
+docs/deferred_designs/
+docs/internal_docs/
+scan_files.py
