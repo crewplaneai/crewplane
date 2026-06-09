@@ -15,7 +15,7 @@ imports:
 nodes:
   - id: handoff.standards
     mode: input
-    source: "{{file:.orchestrator/inputs/coding-standards.md}}"
+    source: "{{file:.orchestrator/workflows/example-templates/sample-inputs/coding-standards.md}}"
   - id: handoff.final
     mode: sequential
     needs: [fix.implement.summary]

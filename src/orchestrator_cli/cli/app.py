@@ -31,10 +31,8 @@ from .paths import (
 from .templates import (
     CONFIG_TEMPLATE,
     DEFAULT_WORKFLOW_TEMPLATE,
-    INPUT_TEMPLATE_DIR,
     WORKFLOW_LIBRARY_TEMPLATE_DIR,
     create_template_file,
-    discover_input_assets,
     discover_workflow_library_assets,
 )
 
@@ -200,8 +198,6 @@ def init() -> None:
     workflows_dir.mkdir(exist_ok=True)
     workflow_library_dir = workflows_dir / "example-templates"
     workflow_library_dir.mkdir(exist_ok=True)
-    input_dir = orchestrator_dir / "inputs"
-    input_dir.mkdir(exist_ok=True)
 
     _create_template_file(orchestrator_dir / "config.yml", CONFIG_TEMPLATE, console)
     _create_template_file(
@@ -213,12 +209,6 @@ def init() -> None:
         WORKFLOW_LIBRARY_TEMPLATE_DIR,
         workflow_library_dir,
         discover_workflow_library_assets(),
-        console,
-    )
-    _install_template_assets(
-        INPUT_TEMPLATE_DIR,
-        input_dir,
-        discover_input_assets(),
         console,
     )
     key_result = FingerprintKeyProvider(orchestrator_dir).load_key("persist_if_needed")

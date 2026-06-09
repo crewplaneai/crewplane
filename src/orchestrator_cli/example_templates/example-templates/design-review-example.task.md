@@ -30,7 +30,7 @@ nodes:
 Draft a design options brief for `{{var:project_name}}`.
 
 Use this feature brief as the concrete target:
-{{file:.orchestrator/inputs/feature-brief.md}}
+{{file:.orchestrator/workflows/example-templates/sample-inputs/feature-brief.md}}
 
 Return 2-3 design options with tradeoffs.
 

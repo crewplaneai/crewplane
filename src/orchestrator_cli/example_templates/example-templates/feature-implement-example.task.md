@@ -7,7 +7,7 @@ inputs:
 nodes:
   - id: feature.brief
     mode: input
-    source: "{{file:.orchestrator/inputs/feature-brief.md}}"
+    source: "{{file:.orchestrator/workflows/example-templates/sample-inputs/feature-brief.md}}"
   - id: implement.plan
     mode: sequential
     needs: [feature.brief]

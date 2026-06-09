@@ -12,7 +12,6 @@ TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "example_templates"
 CONFIG_TEMPLATE = TEMPLATE_DIR / "config.yml"
 DEFAULT_WORKFLOW_TEMPLATE = TEMPLATE_DIR / "code-review-example.task.md"
 WORKFLOW_LIBRARY_TEMPLATE_DIR = TEMPLATE_DIR / "example-templates"
-INPUT_TEMPLATE_DIR = TEMPLATE_DIR / "inputs"
 TEMPLATE_VERSION_TOKENS = {
     "__CONFIG_SCHEMA_VERSION__": CONFIG_SCHEMA_VERSION,
     "__WORKFLOW_SCHEMA_VERSION__": WORKFLOW_SCHEMA_VERSION,
@@ -21,12 +20,10 @@ TEMPLATE_VERSION_TOKENS = {
 __all__ = [
     "CONFIG_TEMPLATE",
     "DEFAULT_WORKFLOW_TEMPLATE",
-    "INPUT_TEMPLATE_DIR",
     "TEMPLATE_DIR",
     "TEMPLATE_VERSION_TOKENS",
     "WORKFLOW_LIBRARY_TEMPLATE_DIR",
     "create_template_file",
-    "discover_input_assets",
     "discover_workflow_library_assets",
     "discover_workflow_library_templates",
     "render_template_content",
@@ -78,15 +75,5 @@ def discover_workflow_library_assets() -> list[Path]:
     return sorted(
         path.relative_to(WORKFLOW_LIBRARY_TEMPLATE_DIR)
         for path in WORKFLOW_LIBRARY_TEMPLATE_DIR.rglob("*")
-        if path.is_file()
-    )
-
-
-def discover_input_assets() -> list[Path]:
-    if not INPUT_TEMPLATE_DIR.exists():
-        return []
-    return sorted(
-        path.relative_to(INPUT_TEMPLATE_DIR)
-        for path in INPUT_TEMPLATE_DIR.rglob("*")
         if path.is_file()
     )

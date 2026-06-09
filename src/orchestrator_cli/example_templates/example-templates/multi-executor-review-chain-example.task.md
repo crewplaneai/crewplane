@@ -30,7 +30,7 @@ nodes:
 Prepare a short change brief for `{{var:project_name}}`.
 
 Use this feature brief:
-{{file:.orchestrator/inputs/feature-brief.md}}
+{{file:.orchestrator/workflows/example-templates/sample-inputs/feature-brief.md}}
 
 Return:
 1. Goal

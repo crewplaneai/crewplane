@@ -51,8 +51,11 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertTrue(
                 (composition_dir / "review-fix-composed-example.task.md").exists()
             )
-            self.assertTrue((orch_dir / "inputs" / "review-findings.md").exists())
-            self.assertTrue((orch_dir / "inputs" / "coding-standards.md").exists())
+            self.assertFalse((orch_dir / "inputs").exists())
+            sample_input_dir = library_dir / "sample-inputs"
+            self.assertTrue((sample_input_dir / "feature-brief.md").exists())
+            self.assertTrue((sample_input_dir / "review-findings.md").exists())
+            self.assertTrue((sample_input_dir / "coding-standards.md").exists())
             self.assertFalse((orch_dir / "tasks.yaml").exists())
             config_text = (orch_dir / "config.yml").read_text(encoding="utf-8")
             workflow_text = (workflows_dir / "code-review-example.task.md").read_text(

@@ -118,7 +118,7 @@ This creates:
 - `.orchestrator/config.yml`
 - `.orchestrator/workflows/code-review-example.task.md` (default runnable workflow)
 - `.orchestrator/workflows/example-templates/*.task.md` (additional runnable templates)
-- `.orchestrator/inputs/*.md` (sample raw input files used by reusable workflow examples)
+- `.orchestrator/workflows/example-templates/sample-inputs/*.md` (copyable sample input files used by example workflows)
 
 Schema versions in generated files are rendered from `src/orchestrator_cli/versions.py`.
 
@@ -419,7 +419,7 @@ inputs:
 nodes:
   - id: review-input
     mode: input
-    source: "{{file:.orchestrator/inputs/review-findings.md}}"
+    source: "{{file:docs/review-findings.md}}"
   - id: implement.execute
     mode: sequential
     needs: [review-input]
@@ -445,6 +445,7 @@ imports:
 Behavior:
 - `mode: input` nodes are root nodes that materialize raw file content as node output.
 - Input nodes do not define a Markdown `## <node-id>` section; their content comes from `source`.
+- Input files can live anywhere project-local that `{{file:...}}` is allowed to read; the workflow examples include copyable sample files under `.orchestrator/workflows/example-templates/sample-inputs/`.
 - Only nodes that actually depend on an input need to list it in `needs`.
 - Parallel roots that do not depend on that input stay independent.
 - Partial binding is supported: bound inputs are pruned and rewired during composition, while unbound inputs remain file-backed roots so the imported workflow still runs standalone.

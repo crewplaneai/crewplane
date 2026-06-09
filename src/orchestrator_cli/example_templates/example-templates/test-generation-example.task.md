@@ -37,8 +37,8 @@ nodes:
 Define test scope for `{{var:project_name}}`.
 
 Use this feature brief and coding standard:
-{{file:.orchestrator/inputs/feature-brief.md}}
-{{file:.orchestrator/inputs/coding-standards.md}}
+{{file:.orchestrator/workflows/example-templates/sample-inputs/feature-brief.md}}
+{{file:.orchestrator/workflows/example-templates/sample-inputs/coding-standards.md}}
 
 Focus on high-risk paths, edge cases, and deterministic filesystem-local tests.
 

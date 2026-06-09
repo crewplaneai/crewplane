@@ -44,7 +44,7 @@ nodes:
 
 Audit current code for refactoring opportunities and risk areas.
 Use these standards as the refactoring guardrail:
-{{file:.orchestrator/inputs/coding-standards.md}}
+{{file:.orchestrator/workflows/example-templates/sample-inputs/coding-standards.md}}
 
 End with exactly one findings block:
 <!-- findings -->

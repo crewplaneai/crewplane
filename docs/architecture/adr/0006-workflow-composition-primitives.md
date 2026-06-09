@@ -20,6 +20,13 @@ are substituted during composition, and unbound params are rewritten to
 `{{var:key}}` before preflight reference policy runs. Runtime execution never
 sees persisted `param` tokens.
 
+Input file locations are not an orchestrator-owned storage convention. Workflows
+declare reusable raw-file boundaries through `inputs` plus `mode: input` nodes,
+and those nodes point at project-local files through the existing `{{file:...}}`
+template policy. Import binding remains compile-time graph rewriting; unbound
+input nodes are materialized only after composition when the compiled workflow
+actually runs.
+
 Shared workflow syntax constants and validation diagnostics are centralized so
 composition, validation, preflight, manifest signatures, and role-segment
 handling use the same node-id, artifact-reference, keyword, and template-token
@@ -57,3 +64,7 @@ Prior to this decision, the `.task.md` workflow structure had no mechanism for i
 - **2026-06-07**: Folded in composition boundary hardening. Shared syntax
   constants and structured diagnostics prevent drift between imported workflow
   composition, validation, preflight planning, and runtime execution.
+- **2026-06-09**: `orchestrator init` stopped creating
+  `.orchestrator/inputs/`; the sample raw input files moved under the generated
+  workflow library's `example-templates/sample-inputs/` directory as copyable
+  examples rather than a blessed project input location.

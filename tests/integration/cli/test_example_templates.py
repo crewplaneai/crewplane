@@ -64,10 +64,8 @@ def _render_initialized_template_tree(rendered_root: Path) -> Path:
     orchestrator_dir = rendered_root / ".orchestrator"
     workflows_dir = orchestrator_dir / "workflows"
     workflow_library_dir = workflows_dir / "example-templates"
-    input_dir = orchestrator_dir / "inputs"
     workflows_dir.mkdir(parents=True, exist_ok=True)
     workflow_library_dir.mkdir(parents=True, exist_ok=True)
-    input_dir.mkdir(parents=True, exist_ok=True)
 
     (orchestrator_dir / "config.yml").write_text(
         templates.render_template_content(
@@ -87,17 +85,6 @@ def _render_initialized_template_tree(rendered_root: Path) -> Path:
         target_path.write_text(
             templates.render_template_content(
                 (templates.WORKFLOW_LIBRARY_TEMPLATE_DIR / relative_path).read_text(
-                    encoding="utf-8"
-                )
-            ),
-            encoding="utf-8",
-        )
-    for relative_path in templates.discover_input_assets():
-        target_path = input_dir / relative_path
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(
-            templates.render_template_content(
-                (templates.INPUT_TEMPLATE_DIR / relative_path).read_text(
                     encoding="utf-8"
                 )
             ),
@@ -277,24 +264,6 @@ class ExampleTemplateTests(unittest.TestCase):
         self.assertEqual(
             discovered,
             [Path("composition/child.task.md"), Path("root.task.md")],
-        )
-
-    def test_input_asset_discovery_is_recursive_and_sorted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            input_dir = Path(tmp_dir)
-            (input_dir / "nested").mkdir(parents=True)
-            (input_dir / "review-findings.md").write_text("x", encoding="utf-8")
-            (input_dir / "nested" / "coding-standards.md").write_text(
-                "x",
-                encoding="utf-8",
-            )
-
-            with patch.object(templates, "INPUT_TEMPLATE_DIR", input_dir):
-                discovered = templates.discover_input_assets()
-
-        self.assertEqual(
-            discovered,
-            [Path("nested/coding-standards.md"), Path("review-findings.md")],
         )
 
     def test_composition_example_templates_compose_after_render(self) -> None:

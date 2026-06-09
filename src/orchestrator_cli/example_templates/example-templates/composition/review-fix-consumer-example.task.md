@@ -8,10 +8,10 @@ inputs:
 nodes:
   - id: review-input
     mode: input
-    source: "{{file:.orchestrator/inputs/review-findings.md}}"
+    source: "{{file:.orchestrator/workflows/example-templates/sample-inputs/review-findings.md}}"
   - id: standards-input
     mode: input
-    source: "{{file:.orchestrator/inputs/coding-standards.md}}"
+    source: "{{file:.orchestrator/workflows/example-templates/sample-inputs/coding-standards.md}}"
   - id: implement.execute
     mode: sequential
     needs: [review-input, standards-input]
