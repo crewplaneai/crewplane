@@ -154,7 +154,6 @@ def invoker_config_signature_from_plan(plan: PreflightExecutionPlan) -> str | No
     }
     return signature_for_payload(
         {
-            "api_version": invoker.get("api_version"),
             "capabilities": invoker.get("capabilities", {}),
             "implementation": invoker.get("implementation"),
             "options": scoped_options,

@@ -7,7 +7,7 @@ import orchestrator_cli.adapters.ui.tmux as tmux_adapter_module
 from orchestrator_cli.adapters.ui.tmux import TmuxUIAdapter
 from orchestrator_cli.core.config import Config
 from orchestrator_cli.observability.types import WorkflowTopology
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class TmuxUIAdapterTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         warnings: list[str] = []
         adapter = TmuxUIAdapter()
         runtime = adapter.create_runtime(
-            config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+            config=Config(version=SCHEMA_VERSION, agents={}),
             workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
             run_id="run",
             console=Console(file=io.StringIO()),
@@ -47,7 +47,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         try:
             runtime = adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -97,7 +97,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         try:
             runtime = adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -129,7 +129,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         try:
             runtime = adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -146,7 +146,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "quiet_after_seconds"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -159,7 +159,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "quiet_after_seconds"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -172,7 +172,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "quiet_after_seconds"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -185,7 +185,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "Unsupported tmux ui options"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -198,7 +198,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "log_tail_lines"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -211,7 +211,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "log_tail_lines"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -224,7 +224,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "auto_close_session"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -237,7 +237,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "tmux_executable"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -250,7 +250,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "tmux_executable"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -263,7 +263,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "Unsupported tmux ui options"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),
@@ -276,7 +276,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         with self.assertRaisesRegex(ValueError, "Unsupported tmux ui options"):
             adapter.create_runtime(
-                config=Config(version=CONFIG_SCHEMA_VERSION, agents={}),
+                config=Config(version=SCHEMA_VERSION, agents={}),
                 workflow_topology=WorkflowTopology(workflow_name="w", nodes=()),
                 run_id="run",
                 console=Console(file=io.StringIO()),

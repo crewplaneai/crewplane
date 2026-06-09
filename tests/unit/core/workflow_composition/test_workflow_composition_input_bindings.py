@@ -5,7 +5,7 @@ from pathlib import Path
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _write_workflow(path: Path, lines: list[str]) -> None:
@@ -30,7 +30,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 producer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Producer",
                     "nodes:",
                     "  - id: review.findings",
@@ -47,7 +47,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 consumer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Consumer",
                     "inputs:",
                     "  review_input: review-input",
@@ -76,7 +76,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: producer.task.md",
@@ -136,7 +136,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 producer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Producer",
                     "nodes:",
                     "  - id: review.findings",
@@ -153,7 +153,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 consumer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Consumer",
                     "inputs:",
                     "  review_input: review-input",
@@ -176,7 +176,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: producer.task.md",
@@ -223,7 +223,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 producer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Producer",
                     "nodes:",
                     "  - id: review.findings",
@@ -240,7 +240,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 consumer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Consumer",
                     "inputs:",
                     "  review_input: review-input",
@@ -262,7 +262,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: producer.task.md",
@@ -304,7 +304,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 consumer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Consumer",
                     "inputs:",
                     "  review_input: review-input",
@@ -327,7 +327,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: consumer.task.md",
@@ -359,7 +359,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Consumer",
                     "inputs:",
                     "  review_input: review-input",
@@ -393,7 +393,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: missing-consumer.task.md",
@@ -425,7 +425,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Consumer",
                     "inputs:",
                     "  review_input: review-input",
@@ -448,7 +448,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -480,7 +480,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Consumer",
                     "inputs:",
                     "  review_input: review-input",
@@ -503,7 +503,7 @@ class WorkflowCompositionInputBindingTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",

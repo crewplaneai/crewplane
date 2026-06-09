@@ -1,5 +1,5 @@
 ---
-schema_version: "__WORKFLOW_SCHEMA_VERSION__"
+schema_version: "__SCHEMA_VERSION__"
 name: Multi Executor Review Chain Example
 description: Show how multiple executors can hand off work before a reviewer cycle.
 nodes:

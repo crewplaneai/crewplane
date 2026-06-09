@@ -8,14 +8,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from orchestrator_cli.architecture.contracts import JsonObject
 from orchestrator_cli.core.prompt_segments import PromptSegmentRole
 from orchestrator_cli.core.workflow_keywords import NodeMode, ProviderRole
-from orchestrator_cli.versions import PREFLIGHT_PLAN_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 from .diagnostics import PreflightDiagnostic
+from .plan_contract import (
+    validate_current_execution_plan_shape,
+    validate_supported_plan_schema_version,
+)
 from .runtime_config import RuntimeConfigSnapshot
 from .secrets import SecretContext
 
 PREFLIGHT_STATUS_FAILED = "preflight_failed"
 PREFLIGHT_STATUS_SUCCEEDED = "preflight_succeeded"
+
 
 TokenKind = Literal["node", "file", "env", "var"]
 FragmentKind = Literal[
@@ -214,7 +219,7 @@ class PreflightExecutionNode(BaseModel):
 class PreflightCompilationPreview(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
-    plan_schema_version: str = PREFLIGHT_PLAN_SCHEMA_VERSION
+    plan_schema_version: str = SCHEMA_VERSION
     workflow_name: str | None = None
     workflow_signature: str | None = None
     execution_order: list[str] = Field(default_factory=list)
@@ -231,6 +236,11 @@ class PreflightCompilationPreview(BaseModel):
     secret_context: SecretContext = Field(default_factory=SecretContext, exclude=True)
     static_file_payloads: dict[str, bytes] = Field(default_factory=dict, exclude=True)
 
+    @field_validator("plan_schema_version")
+    @classmethod
+    def _validate_plan_schema_version(cls, value: str) -> str:
+        return validate_supported_plan_schema_version(value)
+
     def has_errors(self) -> bool:
         return any(diagnostic.severity == "error" for diagnostic in self.diagnostics)
 
@@ -238,7 +248,7 @@ class PreflightCompilationPreview(BaseModel):
 class PreflightExecutionPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    plan_schema_version: str = PREFLIGHT_PLAN_SCHEMA_VERSION
+    plan_schema_version: str = SCHEMA_VERSION
     run_id: str
     run_key_name: str
     context_root: str
@@ -256,7 +266,21 @@ class PreflightExecutionPlan(BaseModel):
     runtime_config_snapshot: JsonObject
     effective_runtime_config_signature: str
     value_fingerprints: list[dict[str, str]] = Field(default_factory=list)
-    fingerprint_metadata: JsonObject = Field(default_factory=dict)
+    fingerprint_metadata: JsonObject
+
+    @field_validator("plan_schema_version")
+    @classmethod
+    def _validate_plan_schema_version(cls, value: str) -> str:
+        return validate_supported_plan_schema_version(value)
+
+    @model_validator(mode="after")
+    def _validate_current_plan_shape(self) -> PreflightExecutionPlan:
+        validate_current_execution_plan_shape(
+            self.runtime_config_snapshot,
+            self.fingerprint_metadata,
+            self.value_fingerprints,
+        )
+        return self
 
     @classmethod
     def from_preview(

@@ -44,10 +44,10 @@ Stable contracts are under `orchestrator_cli.architecture.ports`:
 - `UIRuntimePlan`
 - `RuntimeComponents`
 
-`orchestrator_cli.versions.INTEGRATION_API_VERSION` is the extension API version boundary. Config, workflow, preflight, and integration API versions are authored in `orchestrator_cli.versions`.
+`orchestrator_cli.version.SCHEMA_VERSION` is the source of truth for current config, workflow, and preflight artifact shape validation.
 
 ## Configuration Model
-Config schema is `1.0` and uses `settings.integrations`:
+The current config schema version is authored in `orchestrator_cli.version`. Config uses `settings.integrations`:
 
 ```yaml
 agents:
@@ -158,7 +158,8 @@ Implement `UIAdapterPort.create_runtime(...)` and return observer-only runtime U
 Implement side-effect-free artifact option canonicalization plus the `ArtifactStorePort` surface via `ArtifactAdapter.create_store(...)` for concrete workflow runs.
 
 ## Compatibility and Migration
-- Current config schema remains `1.0`.
+- Schema version policy is documented in `DEVELOPMENT.md` and [ADR 0013](adr/0013-version-source-of-truth-and-documentation-drift-reduction.md).
+- The current schema version is authored in `orchestrator_cli.version`.
 - Users should regenerate config via `orchestrator init` when templates change.
 
 ## Operational Guidance

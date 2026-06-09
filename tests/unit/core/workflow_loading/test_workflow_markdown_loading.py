@@ -5,7 +5,7 @@ from pathlib import Path
 from orchestrator_cli.core.workflow_loader import load_tasks
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:
@@ -17,7 +17,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Full Feature Workflow",
                 "description: End-to-end",
                 "nodes:",
@@ -44,7 +44,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
             path.write_text(workflow_content, encoding="utf-8")
             workflow = validate_workflow_plan(load_tasks(path))
 
-        self.assertEqual(workflow.schema_version, WORKFLOW_SCHEMA_VERSION)
+        self.assertEqual(workflow.schema_version, SCHEMA_VERSION)
         self.assertEqual(workflow.name, "Full Feature Workflow")
         self.assertEqual(len(workflow.nodes), 2)
         self.assertEqual(
@@ -60,7 +60,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "inputs:",
                 "  review_input: review-input",
@@ -96,7 +96,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "inputs:",
                 "  review_input: review-input",
@@ -131,7 +131,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: implement",
@@ -155,7 +155,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: implement",
@@ -185,7 +185,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.iterate",
@@ -228,7 +228,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.iterate",
@@ -262,7 +262,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -305,7 +305,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
             workflow_content = "\n".join(
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Workflow",
                     "nodes:",
                     "  - id: review.node",
@@ -333,7 +333,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -359,7 +359,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
     def test_workflow_markdown_preserves_crlf_and_trailing_spaces(self) -> None:
         workflow_content = (
             "---\r\n"
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"\r\n'
+            f'schema_version: "{SCHEMA_VERSION}"\r\n'
             "name: Workflow\r\n"
             "nodes:\r\n"
             "  - id: review.node\r\n"
@@ -385,7 +385,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review",
@@ -421,7 +421,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.loop",
@@ -455,7 +455,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: backend.auth",

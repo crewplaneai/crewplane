@@ -15,7 +15,7 @@ from orchestrator_cli.core.workflow_validation import (
     validate_token_budget_settings,
     validate_workflow_plan,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
@@ -32,7 +32,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
             ],
         )
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={
                 "known": AgentConfig(cli_cmd=["echo"], default_model="x"),
             },
@@ -58,7 +58,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
             ],
         )
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={
                 "python-agent": AgentConfig(cli_cmd=["python3"], default_model="x"),
                 "ghost-agent": AgentConfig(
@@ -89,7 +89,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
             ],
         )
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={
                 "ghost-agent": AgentConfig(
                     cli_cmd=["definitely-not-real-executable-12345"],
@@ -114,7 +114,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 )
             ],
         )
-        config = Config(version=CONFIG_SCHEMA_VERSION, agents={})
+        config = Config(version=SCHEMA_VERSION, agents={})
 
         errors = collect_provider_validation_errors(workflow, config)
 
@@ -150,7 +150,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
             ],
         )
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={
                 "alpha": AgentConfig(cli_cmd=["echo"], default_model="x"),
             },

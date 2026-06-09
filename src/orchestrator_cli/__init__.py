@@ -1,6 +1,3 @@
-from orchestrator_cli.versions import (
-    CONFIG_SCHEMA_VERSION,
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 
-__all__ = ["CONFIG_SCHEMA_VERSION", "WORKFLOW_SCHEMA_VERSION"]
+__all__ = ["SCHEMA_VERSION"]

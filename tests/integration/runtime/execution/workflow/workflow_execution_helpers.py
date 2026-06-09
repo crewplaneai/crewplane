@@ -115,7 +115,6 @@ def _compile_test_plan(
 ) -> tuple[PreflightExecutionPlan, CompiledRuntimeContext]:
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )

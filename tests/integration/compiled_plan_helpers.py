@@ -29,7 +29,6 @@ def compile_plan_for_components(
     output = components.artifact_store
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )

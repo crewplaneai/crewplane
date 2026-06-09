@@ -14,7 +14,7 @@ from orchestrator_cli.observability.events import ExecutionEvent
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     audit_round_dir,
@@ -30,7 +30,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -72,7 +72,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -130,7 +130,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -181,7 +181,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -238,7 +238,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={"exec": AgentConfig(cli_cmd=["mock"], default_model="m1")},
             )
             node = WorkflowNode(
@@ -268,7 +268,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -351,7 +351,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -402,7 +402,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 settings=Settings(token_budget={"warn_threshold_chars": 10}),
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
@@ -464,7 +464,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 settings=Settings(
                     token_budget={
                         "warn_threshold_chars": None,

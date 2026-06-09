@@ -1,5 +1,5 @@
 ---
-schema_version: "__WORKFLOW_SCHEMA_VERSION__"
+schema_version: "__SCHEMA_VERSION__"
 name: Review Findings Producer Example
 description: Produce a concise findings artifact that other workflows can import and consume.
 nodes:

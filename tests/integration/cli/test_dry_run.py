@@ -8,9 +8,7 @@ import unittest
 from pathlib import Path
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.versions import (
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     project_pythonpath,
@@ -154,7 +152,7 @@ class CliDryRunTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "inputs:",
                         "  review_input: review-input",

@@ -1,5 +1,5 @@
 ---
-schema_version: "__WORKFLOW_SCHEMA_VERSION__"
+schema_version: "__SCHEMA_VERSION__"
 name: Feature Implementation Example
 description: Use an input brief to plan, implement, review, and hand off a feature.
 inputs:

@@ -17,15 +17,12 @@ from orchestrator_cli.core.config import (
     Settings,
 )
 from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
-from orchestrator_cli.versions import (
-    CONFIG_SCHEMA_VERSION,
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _config() -> Config:
     return Config(
-        version=CONFIG_SCHEMA_VERSION,
+        version=SCHEMA_VERSION,
         agents={"alpha": AgentConfig(cli_cmd=["mock"])},
         settings=Settings(
             integrations=IntegrationsConfig(
@@ -47,7 +44,7 @@ def _workflow_text() -> str:
     return "\n".join(
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Preflight Integration",
             "nodes:",
             "  - id: build",
@@ -76,7 +73,7 @@ def _imported_workflow_text() -> str:
     return "\n".join(
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Imported Child",
             "nodes:",
             "  - id: build",
@@ -97,7 +94,7 @@ def _root_import_workflow_text() -> str:
     return "\n".join(
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Imported Root",
             "imports:",
             "  - path: modules/child.task.md",
@@ -152,7 +149,8 @@ def test_mock_invoker_executes_preflight_plan_with_static_and_node_refs(
     result_dir = tmp_path / ".orchestrator" / "execution-results" / run_dir.name
     review_result = (result_dir / "review-result.md").read_text(encoding="utf-8")
 
-    assert plan["plan_schema_version"] == "1.0"
+    assert plan["plan_schema_version"] == SCHEMA_VERSION
+    assert "schema_version" not in plan
     assert "secret-from-env" not in json.dumps(plan)
     assert any(entry["token_kind"] == "file" for entry in token_catalog)
     assert any(entry["token_kind"] == "env" for entry in token_catalog)

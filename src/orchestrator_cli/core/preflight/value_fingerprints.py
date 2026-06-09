@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from .compile_state import CompileState, PreflightCompileOptions, extend_diagnostics
 from .secrets import (
-    FINGERPRINT_SCHEMA_VERSION,
+    FINGERPRINT_PAYLOAD_VERSION,
     FingerprintKeyProvider,
     fingerprint_payload,
 )
@@ -36,13 +36,13 @@ def backfill_value_fingerprints(state: CompileState) -> None:
     for record in state.value_fingerprints:
         raw_value = record.pop("value")
         payload = {
-            "fingerprint_schema_version": FINGERPRINT_SCHEMA_VERSION,
+            "fingerprint_payload_version": FINGERPRINT_PAYLOAD_VERSION,
             "key": record["key"],
             "kind": record["kind"],
             "sensitive": record["sensitive"],
             "value": raw_value,
         }
-        record["fingerprint_schema_version"] = FINGERPRINT_SCHEMA_VERSION
+        record["fingerprint_payload_version"] = FINGERPRINT_PAYLOAD_VERSION
         record["fingerprint"] = fingerprint_payload(key, payload)
     backfill_static_value_reference_fingerprints(state)
 
@@ -69,7 +69,7 @@ def persisted_value_fingerprints(state: CompileState) -> list[dict[str, str]]:
     return [
         {
             "fingerprint": record["fingerprint"],
-            "fingerprint_schema_version": record["fingerprint_schema_version"],
+            "fingerprint_payload_version": record["fingerprint_payload_version"],
             "key": record["key"],
             "kind": record["kind"],
             "sensitive": record["sensitive"],

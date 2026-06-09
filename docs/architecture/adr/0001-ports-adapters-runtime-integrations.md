@@ -40,8 +40,8 @@ for runtime integration boundaries. It adds these settled rules:
 - Port contracts remain structural `Protocol`s rather than abstract base
   classes. The supported enforcement path is loading through
   `architecture/loader.py` and the composition root, where aliases, dotted
-  paths, factory methods, API versions, and adapter capabilities are validated
-  before runtime use.
+  paths, factory methods, and adapter capabilities are validated before runtime
+  use.
 - Boundary tests guard architecture import direction, adapter/runtime
   separation, public API shape, typed boundaries, provider inference ownership,
   prompt transport defaults, source hygiene, and module size limits.

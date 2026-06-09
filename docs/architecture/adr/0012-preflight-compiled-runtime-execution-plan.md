@@ -202,13 +202,14 @@ Runtime must not create dependency edges outside `dependency_graph`, invent arti
 UI and observability receive a narrow plan-derived topology view. They do not receive the full `WorkflowPlan` or full `PreflightExecutionPlan` as execution authority, and UI adapters are observer-only for this decision.
 
 ## Schema Version Evolution
-Schema and integration version constants live in `orchestrator_cli.versions`.
-Config and workflow models exact-match the current supported versions.
+The schema version constant lives in `orchestrator_cli.version`.
+Config, workflow, and preflight plan models exact-match the current supported
+schema version.
 
-Future schema-breaking changes must be introduced as one coordinated change
-that:
+User-authored config and workflow schema-breaking changes must be introduced as
+one coordinated change that:
 
-- bumps the relevant version constant;
+- bumps `SCHEMA_VERSION`;
 - updates generated templates and README examples;
 - updates CLI validation and preflight diagnostics;
 - updates architecture, config, workflow, and template tests;
@@ -298,6 +299,7 @@ Negative consequences:
 
 ## Updates
 - **2026-06-07**: Folded in preflight boundary hardening. Ephemeral fingerprint
-  keys are scoped through compile state, version constants are centralized in
-  `orchestrator_cli.versions`, and future schema-breaking changes require
-  coordinated templates, docs, CLI diagnostics, tests, and migration notes.
+  keys are scoped through compile state, the schema version constant is
+  centralized in `orchestrator_cli.version`, and future schema-breaking changes
+  require coordinated templates, docs, CLI diagnostics, tests, and migration
+  notes.

@@ -26,7 +26,6 @@ class RuntimeConfigSnapshotBuildResult:
 
 def build_runtime_config_snapshot(
     config: Config,
-    workflow_schema_version: str,
     console: Console,
     no_live: bool,
 ) -> RuntimeConfigSnapshotBuildResult:
@@ -67,7 +66,6 @@ def build_runtime_config_snapshot(
     )
     snapshot = RuntimeConfigSnapshot.build(
         config=config,
-        workflow_schema_version=workflow_schema_version,
         invoker=invoker_config,
         artifacts=artifact_config,
         ui=ui_config,

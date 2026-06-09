@@ -14,7 +14,7 @@ from orchestrator_cli.core.config import (
     load_config,
 )
 from orchestrator_cli.core.token_budget import TokenBudgetOverride, resolve_token_budget
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class ConfigTests(unittest.TestCase):
@@ -163,7 +163,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  alpha:",
@@ -191,7 +191,7 @@ class ConfigTests(unittest.TestCase):
     def test_config_rejects_blank_agent_names(self) -> None:
         with self.assertRaisesRegex(ValidationError, "agent name"):
             Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={"   ": AgentConfig(cli_cmd=["echo"])},
             )
 
@@ -199,13 +199,13 @@ class ConfigTests(unittest.TestCase):
         self,
     ) -> None:
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={" alpha ": AgentConfig(cli_cmd=["echo"])},
         )
         self.assertIn("alpha", config.agents)
         with self.assertRaisesRegex(ValidationError, "Duplicate agent name"):
             Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     " alpha ": AgentConfig(cli_cmd=["echo"]),
                     "alpha": AgentConfig(cli_cmd=["echo"]),
@@ -218,7 +218,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  alpha:",
@@ -259,8 +259,8 @@ class ConfigTests(unittest.TestCase):
             path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
-                        'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
+                        'version: "{SCHEMA_VERSION}"',
                         "agents:",
                         "  alpha:",
                         '    cli_cmd: ["echo"]',
@@ -277,7 +277,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "agents:",
                         "  alpha:",
                         '    cli_cmd: ["echo"]',
@@ -295,7 +295,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "agents:",
                         "  alpha:",
                         '    cli_cmd: ["echo"]',
@@ -327,7 +327,7 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError) as exc_info:
                 load_config(path)
             message = str(exc_info.exception)
-            self.assertIn(f"Expected '{CONFIG_SCHEMA_VERSION}'", message)
+            self.assertIn(f"Expected '{SCHEMA_VERSION}'", message)
             self.assertIn("orchestrator init", message)
 
     def test_settings_default_integrations(self) -> None:
@@ -468,7 +468,7 @@ class ConfigTests(unittest.TestCase):
             path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  alpha:",

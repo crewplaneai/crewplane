@@ -11,15 +11,12 @@ from orchestrator_cli.core.config import (
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.versions import (
-    CONFIG_SCHEMA_VERSION,
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _config(artifact_options: dict[str, object] | None = None) -> Config:
     return Config(
-        version=CONFIG_SCHEMA_VERSION,
+        version=SCHEMA_VERSION,
         agents={"alpha": AgentConfig(cli_cmd=["mock"])},
         settings=Settings(
             integrations=IntegrationsConfig(
@@ -45,13 +42,11 @@ def test_observer_only_no_live_is_excluded_from_runtime_signature() -> None:
     console = Console(file=None)
     first = build_runtime_config_snapshot(
         config=_config(),
-        workflow_schema_version=WORKFLOW_SCHEMA_VERSION,
         console=console,
         no_live=False,
     ).snapshot
     second = build_runtime_config_snapshot(
         config=_config(),
-        workflow_schema_version=WORKFLOW_SCHEMA_VERSION,
         console=console,
         no_live=True,
     ).snapshot
@@ -75,7 +70,6 @@ def test_snapshot_invalid_options_fail_before_artifact_allocation(
     with pytest.raises(ValueError, match="allowed_template_paths"):
         build_runtime_config_snapshot(
             config=_config({"allowed_template_paths": "bad"}),
-            workflow_schema_version=WORKFLOW_SCHEMA_VERSION,
             console=Console(file=None),
             no_live=True,
         )

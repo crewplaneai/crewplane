@@ -74,6 +74,21 @@ orchestrator_cli/
 └── DEVELOPMENT.md
 ```
 
+## Version Sources
+
+`pyproject.toml` owns the package distribution version. That version identifies installable releases and should change for every published release.
+
+The authored Python schema version lives in `src/orchestrator_cli/version.py`. Generated templates render schema values from that constant. Bump it when supported user-authored config or workflow files change incompatibly. Backward-compatible additions, bug fixes, documentation updates, ordinary package releases, and public-alpha persisted run-artifact hard breaks do not require a schema version bump.
+
+See [ADR 0013](docs/architecture/adr/0013-version-source-of-truth-and-documentation-drift-reduction.md) for the version source-of-truth decision.
+
+| Version | Governs | Bump When |
+| --- | --- | --- |
+| `pyproject.toml` `project.version` | installable package release | every published release |
+| `SCHEMA_VERSION` | current config files, workflow files, and preflight execution-plan artifacts | supported user-authored schema changes incompatibly |
+
+During the public-alpha `0.x` period, support the current schema unless a migration path is deliberately added and covered by tests. Persisted run artifacts are disposable audit outputs, not migration targets; stale preflight plans may be rejected by explicit shape validation even when they carry the current `SCHEMA_VERSION`.
+
 ## Key Modules
 
 - `src/orchestrator_cli/cli/app.py`: Typer app and commands (`init`, `run`, `validate`)

@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 from ..token_budget import TokenBudgetOverride
 from ..workflow_keywords import (
@@ -133,7 +133,7 @@ class WorkflowImportConfig(BaseModel):
 class WorkflowFrontmatter(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = WORKFLOW_SCHEMA_VERSION
+    schema_version: str = SCHEMA_VERSION
     name: str
     description: str | None = None
     inputs: dict[str, str] = Field(default_factory=dict)
@@ -143,10 +143,10 @@ class WorkflowFrontmatter(BaseModel):
     @field_validator("schema_version")
     @classmethod
     def _validate_schema_version(cls, value: str) -> str:
-        if value != WORKFLOW_SCHEMA_VERSION:
+        if value != SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported workflow schema version '{value}'. "
-                f"Expected '{WORKFLOW_SCHEMA_VERSION}'."
+                f"Expected '{SCHEMA_VERSION}'."
             )
         return value
 

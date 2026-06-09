@@ -22,7 +22,7 @@ from orchestrator_cli.core.workflow_validation import validate_workflow_plan
 from orchestrator_cli.observability.runtime import ObservabilityHub
 from orchestrator_cli.observability.types import RunContext, RunResult
 from orchestrator_cli.runtime.execution.workflow import execute_workflow
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
 from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
@@ -68,7 +68,7 @@ def build_compact_namespaced_workflow(tmp_path: Path) -> WorkflowPlan:
         module_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Auth Module",
             "nodes:",
             "  - id: plan",
@@ -85,7 +85,7 @@ def build_compact_namespaced_workflow(tmp_path: Path) -> WorkflowPlan:
         workflow_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Root",
             "imports:",
             "  - path: module.task.md",

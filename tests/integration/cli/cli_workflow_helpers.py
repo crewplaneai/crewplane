@@ -4,10 +4,7 @@ from typing import Any
 
 from rich.console import Console
 
-from orchestrator_cli.versions import (
-    CONFIG_SCHEMA_VERSION,
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class ConsoleFactory:
@@ -30,7 +27,7 @@ def write_basic_config(path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                f'version: "{CONFIG_SCHEMA_VERSION}"',
+                f'version: "{SCHEMA_VERSION}"',
                 "",
                 "agents:",
                 "  alpha:",
@@ -49,7 +46,7 @@ def write_basic_config_without_default_model(path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                f'version: "{CONFIG_SCHEMA_VERSION}"',
+                f'version: "{SCHEMA_VERSION}"',
                 "",
                 "agents:",
                 "  alpha:",
@@ -64,7 +61,7 @@ def write_basic_config_with_settings(path: Path, log_cli_output: bool) -> None:
     path.write_text(
         "\n".join(
             [
-                f'version: "{CONFIG_SCHEMA_VERSION}"',
+                f'version: "{SCHEMA_VERSION}"',
                 "",
                 "agents:",
                 "  alpha:",
@@ -102,7 +99,7 @@ def write_basic_workflow(path: Path) -> None:
         "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Task",
                 "description: markdown workflow",
                 "nodes:",
@@ -127,7 +124,7 @@ def write_basic_workflow_with_provider_model(path: Path, model: str) -> None:
         "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Task",
                 "description: markdown workflow",
                 "nodes:",
@@ -153,7 +150,7 @@ def write_review_workflow(path: Path) -> None:
         "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Task",
                 "nodes:",
                 "  - id: review.node",
@@ -180,7 +177,7 @@ def write_workflow_with_name(path: Path, workflow_name: str) -> None:
         "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 f"name: {workflow_name}",
                 "description: markdown workflow",
                 "nodes:",

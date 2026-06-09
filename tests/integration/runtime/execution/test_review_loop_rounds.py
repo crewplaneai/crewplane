@@ -34,6 +34,7 @@ from orchestrator_cli.runtime.execution.review_loop.types import (
     ReviewerRoundRequest,
     ReviewerRoundRunResult,
 )
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _runtime_context() -> CompiledRuntimeContext:
@@ -52,8 +53,9 @@ def _runtime_context() -> CompiledRuntimeContext:
             static_resources=[],
             token_catalog=[],
             dependency_graph=[],
-            runtime_config_snapshot={},
+            runtime_config_snapshot={"schema_version": SCHEMA_VERSION},
             effective_runtime_config_signature="runtime-signature",
+            fingerprint_metadata={"payload_version": "1"},
         ),
         secret_context=SecretContext(),
     )

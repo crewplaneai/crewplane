@@ -11,7 +11,7 @@ from orchestrator_cli.core.workflow_validation import (
     validate_audit_rounds_settings,
     validate_workflow_plan,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class WorkflowValidationNodeModeTests(unittest.TestCase):
@@ -83,7 +83,7 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
             ],
         )
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             settings=Settings(max_audit_rounds=3),
             agents={
                 "gpt4": AgentConfig(cli_cmd=["echo"], default_model="x"),

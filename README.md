@@ -120,13 +120,13 @@ This creates:
 - `.orchestrator/workflows/example-templates/*.task.md` (additional runnable templates)
 - `.orchestrator/workflows/example-templates/sample-inputs/*.md` (copyable sample input files used by example workflows)
 
-Schema versions in generated files are rendered from `src/orchestrator_cli/versions.py`.
+Schema version values in generated files are rendered from `src/orchestrator_cli/version.py`.
 
 ### 2. Configure Providers
 
 Edit `.orchestrator/config.yml`:
 ```yaml
-version: "<config-schema-version>"
+version: "<schema-version>"
 
 agents:
   # Optional: omit default_model to let the provider CLI choose its configured default.
@@ -330,7 +330,7 @@ For fixture-driven review-loop tests in `output_mode: "file"`, the mock invoker 
 Edit `.orchestrator/workflows/code-review-example.task.md`:
 ```yaml
 ---
-schema_version: "<workflow-schema-version>"
+schema_version: "<schema-version>"
 name: Example Workflow
 nodes:
   - id: backend.auth
@@ -376,7 +376,7 @@ Workflows can import other `.task.md` files through frontmatter composition:
 
 ```yaml
 ---
-schema_version: "<workflow-schema-version>"
+schema_version: "<schema-version>"
 name: Import Example
 imports:
   - path: .orchestrator/workflows/modules/auth.task.md
@@ -412,7 +412,7 @@ Use `mode: input` for raw reusable workflow boundaries:
 
 ```yaml
 ---
-schema_version: "<workflow-schema-version>"
+schema_version: "<schema-version>"
 name: Review Fix Consumer
 inputs:
   review_input: review-input
@@ -456,7 +456,7 @@ Use `findings: true` when a node should publish a concise downstream artifact in
 
 ```yaml
 ---
-schema_version: "<workflow-schema-version>"
+schema_version: "<schema-version>"
 name: Findings Example
 nodes:
   - id: review.context
@@ -508,7 +508,7 @@ orchestrator run --tasks .orchestrator/workflows/example-templates/composition/r
 
 ```yaml
 ---
-schema_version: "<workflow-schema-version>"
+schema_version: "<schema-version>"
 name: Full Parallel Work
 nodes:
   - id: backend.auth
@@ -536,7 +536,7 @@ Settings changes.
 
 ```yaml
 ---
-schema_version: "<workflow-schema-version>"
+schema_version: "<schema-version>"
 name: Parallel Then Summary
 nodes:
   - id: backend.auth

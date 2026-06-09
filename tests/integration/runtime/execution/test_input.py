@@ -13,6 +13,7 @@ from orchestrator_cli.core.preflight.models import (
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.runtime.execution.common import CompiledRuntimeContext
 from orchestrator_cli.runtime.execution.input import execute_input_stage
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _plan(context_root: Path, node: PreflightExecutionNode) -> PreflightExecutionPlan:
@@ -30,8 +31,12 @@ def _plan(context_root: Path, node: PreflightExecutionNode) -> PreflightExecutio
         static_resources=[],
         token_catalog=[],
         dependency_graph=[],
-        runtime_config_snapshot={"execution": {}},
+        runtime_config_snapshot={
+            "execution": {},
+            "schema_version": SCHEMA_VERSION,
+        },
         effective_runtime_config_signature="1" * 64,
+        fingerprint_metadata={"payload_version": "1"},
     )
 
 

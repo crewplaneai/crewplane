@@ -28,7 +28,7 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowPlan,
 )
 from orchestrator_cli.runtime.execution import execute_workflow
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 
 
@@ -40,7 +40,6 @@ def _compiled_test_plan(
     output = components.artifact_store
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )
@@ -86,7 +85,7 @@ def _compiled_test_plan(
 class ContainerTests(unittest.TestCase):
     def _build_config(self, settings: Settings | None = None) -> Config:
         return Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={
                 "alpha": AgentConfig(cli_cmd=["echo"], default_model="model-a"),
             },
@@ -522,7 +521,7 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={"alpha": AgentConfig(cli_cmd=["echo"], default_model="model-a")},
             settings=Settings(
                 integrations={
@@ -594,7 +593,7 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={"alpha": AgentConfig(cli_cmd=["echo"], default_model="model-a")},
             settings=Settings(
                 integrations={

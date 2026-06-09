@@ -3,18 +3,14 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from orchestrator_cli.versions import (
-    CONFIG_SCHEMA_VERSION,
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "example_templates"
 CONFIG_TEMPLATE = TEMPLATE_DIR / "config.yml"
 DEFAULT_WORKFLOW_TEMPLATE = TEMPLATE_DIR / "code-review-example.task.md"
 WORKFLOW_LIBRARY_TEMPLATE_DIR = TEMPLATE_DIR / "example-templates"
 TEMPLATE_VERSION_TOKENS = {
-    "__CONFIG_SCHEMA_VERSION__": CONFIG_SCHEMA_VERSION,
-    "__WORKFLOW_SCHEMA_VERSION__": WORKFLOW_SCHEMA_VERSION,
+    "__SCHEMA_VERSION__": SCHEMA_VERSION,
 }
 
 __all__ = [

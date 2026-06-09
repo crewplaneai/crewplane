@@ -18,7 +18,12 @@ from .serialization import canonical_json_bytes
 
 FingerprintKeyPolicy = Literal["persist_if_needed", "read_only", "ephemeral"]
 FINGERPRINT_KEY_SIZE = 32
-FINGERPRINT_SCHEMA_VERSION = "1"
+
+# This version belongs to the HMAC fingerprint payload shape, not the public
+# config/workflow/preflight schema. Bump it only when fields feeding
+# fingerprint_payload() change incompatibly, so persisted fingerprints are
+# never compared across formats.
+FINGERPRINT_PAYLOAD_VERSION = "1"
 
 
 @dataclass

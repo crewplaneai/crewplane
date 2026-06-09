@@ -19,6 +19,7 @@ from orchestrator_cli.runtime.execution.common import (
     ProviderCallRequest,
     run_provider_call,
 )
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _provider_record(
@@ -69,8 +70,10 @@ def _runtime_context(
                 },
                 "execution": {},
                 "invoker": {**_invoker_payload(), "option_scopes": {}},
+                "schema_version": SCHEMA_VERSION,
             },
             effective_runtime_config_signature="1" * 64,
+            fingerprint_metadata={"payload_version": "1"},
         ),
         secret_context=SecretContext(),
     )
@@ -87,7 +90,6 @@ def _agent_signature(agent_config_key: str, agent_config: AgentConfig) -> str:
 
 def _invoker_payload() -> dict[str, object]:
     return {
-        "api_version": "test",
         "capabilities": {},
         "implementation": "mock",
         "options": {},

@@ -8,7 +8,6 @@ from orchestrator_cli.architecture.contracts import (
     JsonObject,
 )
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 from .mock_invoker import MockAgentInvoker, parse_options
 
@@ -35,7 +34,6 @@ class MockInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options=canonical_options,
             option_scopes={key: "execution" for key in canonical_options},
         )

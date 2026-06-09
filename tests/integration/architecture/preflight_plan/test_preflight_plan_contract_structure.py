@@ -26,12 +26,12 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _mock_config() -> Config:
     return Config(
-        version="1.0",
+        version=SCHEMA_VERSION,
         agents={"mock": AgentConfig(cli_cmd=["mock"])},
         settings=Settings(
             integrations=IntegrationsConfig(
@@ -105,7 +105,6 @@ class SensitiveOptionInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options={"api_token": api_token},
             sensitive_options=["api_token"],
             option_scopes={"api_token": "execution"},
@@ -124,7 +123,6 @@ def _compile_signature(root: Path, no_live: bool) -> str:
     workflow = _literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=no_live,
     )
@@ -210,7 +208,6 @@ def test_cli_uses_preflight_runner_for_workflow_source_loading() -> None:
 
 
 def test_mock_execution_options_change_runtime_signature() -> None:
-    workflow = _literal_workflow()
     first_config = _mock_config()
     second_config = _mock_config()
     assert first_config.settings is not None
@@ -220,13 +217,11 @@ def test_mock_execution_options_change_runtime_signature() -> None:
 
     first_snapshot = build_runtime_config_snapshot(
         config=first_config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     ).snapshot
     second_snapshot = build_runtime_config_snapshot(
         config=second_config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     ).snapshot
@@ -264,7 +259,6 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
     )
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )

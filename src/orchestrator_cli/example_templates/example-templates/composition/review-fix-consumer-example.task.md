@@ -1,5 +1,5 @@
 ---
-schema_version: "__WORKFLOW_SCHEMA_VERSION__"
+schema_version: "__SCHEMA_VERSION__"
 name: Review Fix Consumer Example
 description: Consume raw review findings and standards through input nodes, then implement and summarize fixes.
 inputs:

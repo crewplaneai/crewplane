@@ -14,7 +14,7 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowPlan,
 )
 from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     execute_workflow,
 )
@@ -27,7 +27,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
                 },
@@ -88,7 +88,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
                 },
@@ -149,7 +149,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
                 },

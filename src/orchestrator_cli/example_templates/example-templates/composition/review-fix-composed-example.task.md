@@ -1,5 +1,5 @@
 ---
-schema_version: "__WORKFLOW_SCHEMA_VERSION__"
+schema_version: "__SCHEMA_VERSION__"
 name: Review Fix Composed Example
 description: Compose reusable workflows, bind imported inputs, and summarize the handoff.
 imports:

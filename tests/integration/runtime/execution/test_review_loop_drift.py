@@ -33,6 +33,7 @@ from orchestrator_cli.runtime.execution.review_loop.types import (
     DriftGuardCallRequest,
     DriftMonitoringWindow,
 )
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path]:
@@ -42,7 +43,6 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
         exclude_none=True,
     )
     invoker_payload = {
-        "api_version": "test",
         "capabilities": {},
         "implementation": "mock",
         "options": {},
@@ -74,8 +74,10 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
                     "agents": {"exec": agent_payload},
                     "execution": {},
                     "invoker": {**invoker_payload, "option_scopes": {}},
+                    "schema_version": SCHEMA_VERSION,
                 },
                 effective_runtime_config_signature="runtime-signature",
+                fingerprint_metadata={"payload_version": "1"},
             ),
             secret_context=SecretContext(),
         ),

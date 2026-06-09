@@ -13,7 +13,7 @@ from orchestrator_cli.architecture.contracts import (
 from orchestrator_cli.core.config import Config, Settings, TokenPricing
 from orchestrator_cli.core.token_budget import TokenBudgetSettings
 from orchestrator_cli.core.workflow_keywords import SequentialConsensusPolicy
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 from .runtime_config_redaction import (
     integration_with_sensitive_option_fingerprints,
@@ -94,8 +94,7 @@ class RuntimeConfigSnapshot(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    config_schema_version: str = CONFIG_SCHEMA_VERSION
-    workflow_schema_version: str
+    schema_version: str = SCHEMA_VERSION
     execution: RuntimeExecutionSnapshot
     agents: dict[str, RuntimeAgentConfigSnapshot] = Field(default_factory=dict)
     invoker: CanonicalIntegrationConfig
@@ -123,7 +122,6 @@ class RuntimeConfigSnapshot(BaseModel):
     def build(
         cls,
         config: Config,
-        workflow_schema_version: str,
         invoker: CanonicalIntegrationConfig,
         artifacts: CanonicalIntegrationConfig,
         ui: CanonicalIntegrationConfig,
@@ -174,14 +172,12 @@ class RuntimeConfigSnapshot(BaseModel):
         payload = {
             "agents": agent_snapshots,
             "artifacts": redacted_artifacts.scoped_payload({"artifact", "execution"}),
-            "config_schema_version": config.version,
             "execution": execution,
             "invoker": redacted_invoker.scoped_payload({"execution", "artifact"}),
-            "workflow_schema_version": workflow_schema_version,
+            "schema_version": config.version,
         }
         return cls(
-            config_schema_version=config.version,
-            workflow_schema_version=workflow_schema_version,
+            schema_version=config.version,
             execution=execution,
             agents=agent_snapshots,
             invoker=redacted_invoker,
@@ -272,9 +268,8 @@ class RuntimeConfigSnapshot(BaseModel):
         payload = {
             "agents": agents,
             "artifacts": signature_artifacts.scoped_payload({"artifact", "execution"}),
-            "config_schema_version": self.config_schema_version,
             "execution": self.execution,
             "invoker": signature_invoker.scoped_payload({"execution", "artifact"}),
-            "workflow_schema_version": self.workflow_schema_version,
+            "schema_version": self.schema_version,
         }
         return signature_for_payload(payload)

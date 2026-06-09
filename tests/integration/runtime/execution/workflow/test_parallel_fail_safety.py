@@ -15,7 +15,7 @@ from orchestrator_cli.observability.events import ExecutionEvent
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     DelayByModelInvoker,
     FailingLogOutputManager,
@@ -34,7 +34,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={"alpha": AgentConfig(cli_cmd=["mock"], default_model="ok")},
             )
             node = WorkflowNode(
@@ -65,7 +65,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="ok"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="fail"),
@@ -99,7 +99,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="ok"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="fail"),
@@ -137,7 +137,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="ok"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="fail"),
@@ -185,7 +185,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="fail-a"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="fail-b"),
@@ -237,7 +237,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="ok"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="fail"),
@@ -302,7 +302,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="fail"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="ok"),
@@ -357,7 +357,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="ok"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="ok-2"),
@@ -403,7 +403,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="ok"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="ok-2"),
@@ -470,7 +470,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 settings=Settings(max_parallel_invocations=1),
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="slow"),

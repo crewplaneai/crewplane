@@ -16,7 +16,6 @@ from orchestrator_cli.architecture.ports.runtime import UIRuntimePlan
 from orchestrator_cli.core.config import Config
 from orchestrator_cli.observability.tmux.compact import TmuxCompactRuntime
 from orchestrator_cli.observability.types import WorkflowTopology
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 
 def _resolve_tmux_options(options: JsonObject) -> TmuxUiOptions:
@@ -91,7 +90,6 @@ class TmuxUIAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options=canonical_options,
             option_scopes={key: "observer" for key in canonical_options},
             capabilities={

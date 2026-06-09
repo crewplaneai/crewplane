@@ -4,7 +4,7 @@ from pathlib import Path
 
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _write_workflow(path: Path, lines: list[str]) -> None:
@@ -27,7 +27,7 @@ class WorkflowCompositionRejectionTests(unittest.TestCase):
                 module_a,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module A",
                     "nodes:",
                     "  - id: plan",
@@ -44,7 +44,7 @@ class WorkflowCompositionRejectionTests(unittest.TestCase):
                 module_b,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module B",
                     "nodes:",
                     "  - id: plan",
@@ -61,7 +61,7 @@ class WorkflowCompositionRejectionTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module-a.task.md",
@@ -94,7 +94,7 @@ class WorkflowCompositionRejectionTests(unittest.TestCase):
                 external,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: External",
                     "nodes:",
                     "  - id: plan",
@@ -111,7 +111,7 @@ class WorkflowCompositionRejectionTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     f"  - path: {external}",
@@ -141,7 +141,7 @@ class WorkflowCompositionRejectionTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module",
                     "nodes:",
                     "  - id: plan",
@@ -158,7 +158,7 @@ class WorkflowCompositionRejectionTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",

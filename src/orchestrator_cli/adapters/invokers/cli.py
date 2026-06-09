@@ -12,7 +12,6 @@ from orchestrator_cli.architecture.contracts import (
 from orchestrator_cli.core.config import Config
 from orchestrator_cli.core.workflow_models import WorkflowPlan
 from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 from .cli_invoker import build_cli_invocation_plan
 
@@ -74,7 +73,6 @@ class CliInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options={},
             option_scopes={},
         )

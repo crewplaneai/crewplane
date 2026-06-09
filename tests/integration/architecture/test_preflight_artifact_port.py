@@ -11,6 +11,7 @@ from orchestrator_cli.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _plan(context_root: Path) -> PreflightExecutionPlan:
@@ -34,8 +35,12 @@ def _plan(context_root: Path) -> PreflightExecutionPlan:
         static_resources=[],
         token_catalog=[],
         dependency_graph=[],
-        runtime_config_snapshot={"execution": {}},
+        runtime_config_snapshot={
+            "execution": {},
+            "schema_version": SCHEMA_VERSION,
+        },
         effective_runtime_config_signature="1" * 64,
+        fingerprint_metadata={"payload_version": "1"},
     )
 
 
@@ -64,7 +69,7 @@ def test_filesystem_artifact_store_writes_preflight_success_contract(
         json.loads((preflight_dir / "execution-plan.json").read_text(encoding="utf-8"))[
             "plan_schema_version"
         ]
-        == "1.0"
+        == SCHEMA_VERSION
     )
     assert (preflight_dir / "static-files" / "context.txt").read_text(
         encoding="utf-8"

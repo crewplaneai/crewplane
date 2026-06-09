@@ -2,13 +2,13 @@ import unittest
 
 from orchestrator_cli.architecture.contracts import InvocationContext
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class MockInvokerAdapterTestCase(unittest.IsolatedAsyncioTestCase):
     def _build_config(self) -> Config:
         return Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={"alpha": AgentConfig(cli_cmd=["echo"], default_model="model-a")},
         )
 

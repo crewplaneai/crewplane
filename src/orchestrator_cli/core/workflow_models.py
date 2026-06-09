@@ -6,7 +6,7 @@ from typing import NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 from .prompt_segments import (
     PromptSegment,
@@ -217,7 +217,7 @@ def validate_input_node_contract(node: WorkflowNode, node_label: str) -> None:
 class WorkflowPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = WORKFLOW_SCHEMA_VERSION
+    schema_version: str = SCHEMA_VERSION
     name: str
     description: str = ""
     inputs: dict[str, str] = Field(default_factory=dict)
@@ -226,10 +226,10 @@ class WorkflowPlan(BaseModel):
     @field_validator("schema_version")
     @classmethod
     def _validate_schema_version(cls, value: str) -> str:
-        if value != WORKFLOW_SCHEMA_VERSION:
+        if value != SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported workflow schema version '{value}'. "
-                f"Expected '{WORKFLOW_SCHEMA_VERSION}'."
+                f"Expected '{SCHEMA_VERSION}'."
             )
         return value
 

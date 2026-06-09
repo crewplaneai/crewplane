@@ -7,10 +7,7 @@ from pathlib import Path
 import typer
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.versions import (
-    CONFIG_SCHEMA_VERSION,
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     repo_task_workflow_stage_names,
@@ -30,7 +27,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: review.node",
@@ -60,7 +57,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             config_path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  alpha:",
@@ -116,7 +113,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: review.node",
@@ -164,7 +161,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: review.node",
@@ -225,7 +222,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             config_path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  alpha:",
@@ -239,7 +236,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: plan.node",
@@ -282,7 +279,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: plan.node",
@@ -330,7 +327,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: plan.node",
@@ -383,7 +380,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             config_path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  alpha:",
@@ -404,7 +401,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: plan.node",
@@ -460,7 +457,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             config_path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  exec:",
@@ -479,7 +476,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Task",
                         "nodes:",
                         "  - id: review.iterate",

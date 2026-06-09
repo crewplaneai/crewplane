@@ -7,7 +7,7 @@ import pytest
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import WorkflowPlan
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def write_workflow(path: Path, lines: list[str]) -> None:
@@ -28,7 +28,7 @@ def build_namespaced_import_workflow(tmp_path: Path) -> WorkflowPlan:
         module_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Auth Module",
             "nodes:",
             "  - id: plan",
@@ -45,7 +45,7 @@ def build_namespaced_import_workflow(tmp_path: Path) -> WorkflowPlan:
         workflow_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Root",
             "imports:",
             "  - path: module.task.md",
@@ -77,7 +77,7 @@ def build_imported_input_workflow(tmp_path: Path) -> WorkflowPlan:
         consumer_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Consumer",
             "inputs:",
             "  review_input: review-input",
@@ -100,7 +100,7 @@ def build_imported_input_workflow(tmp_path: Path) -> WorkflowPlan:
         workflow_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Root",
             "imports:",
             "  - path: consumer.task.md",
@@ -135,7 +135,7 @@ def build_bound_input_rewrite_workflow(tmp_path: Path) -> WorkflowPlan:
         producer_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Producer",
             "nodes:",
             "  - id: review.findings",
@@ -152,7 +152,7 @@ def build_bound_input_rewrite_workflow(tmp_path: Path) -> WorkflowPlan:
         consumer_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Consumer",
             "inputs:",
             "  review_input: review-input",
@@ -181,7 +181,7 @@ def build_bound_input_rewrite_workflow(tmp_path: Path) -> WorkflowPlan:
         workflow_path,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Root",
             "imports:",
             "  - path: producer.task.md",

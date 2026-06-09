@@ -31,7 +31,7 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION, INTEGRATION_API_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class DuplicateReportingArtifactsAdapter:
@@ -54,7 +54,6 @@ class DuplicateReportingArtifactsAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options=dict(options or {}),
             option_scopes={key: "artifact" for key in dict(options or {})},
         )
@@ -123,7 +122,6 @@ class PreflightOrderingInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options={},
             option_scopes={},
         )
@@ -163,7 +161,7 @@ def _mock_config(
             **invoker_options,
         }
     return Config(
-        version=CONFIG_SCHEMA_VERSION,
+        version=SCHEMA_VERSION,
         agents={"alpha": AgentConfig(cli_cmd=["mock"], default_model="model-a")},
         settings=Settings(
             integrations={

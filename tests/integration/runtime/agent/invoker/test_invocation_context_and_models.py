@@ -22,7 +22,7 @@ from orchestrator_cli.runtime.execution.common import (
     CompiledRuntimeContext,
     resolve_provider_model,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
@@ -173,7 +173,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         config = Config(
-            version=CONFIG_SCHEMA_VERSION,
+            version=SCHEMA_VERSION,
             agents={
                 "alpha": AgentConfig(
                     cli_cmd=["echo"],
@@ -186,7 +186,6 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             exclude_none=True,
         )
         invoker_payload = {
-            "api_version": "test",
             "capabilities": {},
             "implementation": "mock",
             "options": {},
@@ -212,8 +211,10 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                     "agents": {"alpha": agent_payload},
                     "execution": {},
                     "invoker": {**invoker_payload, "option_scopes": {}},
+                    "schema_version": SCHEMA_VERSION,
                 },
                 effective_runtime_config_signature="1" * 64,
+                fingerprint_metadata={"payload_version": "1"},
             ),
             secret_context=SecretContext(),
         )

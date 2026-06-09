@@ -26,7 +26,6 @@ class CanonicalIntegrationConfig(BaseModel):
 
     implementation: str
     resolved_identity: str
-    api_version: str
     options: JsonObject = Field(default_factory=dict)
     sensitive_options: list[str] = Field(default_factory=list)
     option_fingerprints: list[dict[str, str]] = Field(default_factory=list)
@@ -40,7 +39,6 @@ class CanonicalIntegrationConfig(BaseModel):
             if self.option_scopes.get(key) in scopes
         }
         return {
-            "api_version": self.api_version,
             "capabilities": self.capabilities,
             "implementation": self.implementation,
             "options": scoped_options,
@@ -50,7 +48,6 @@ class CanonicalIntegrationConfig(BaseModel):
     def redacted_payload(self) -> JsonObject:
         sensitive_keys = sensitive_integration_option_keys(self)
         return {
-            "api_version": self.api_version,
             "capabilities": self.capabilities,
             "implementation": self.implementation,
             "option_fingerprints": self.option_fingerprints,

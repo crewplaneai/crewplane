@@ -29,7 +29,7 @@ from .render_plans import (
 )
 from .runtime_config import RuntimeConfigSnapshot
 from .runtime_config_redaction import config_value_handle
-from .secrets import FINGERPRINT_SCHEMA_VERSION
+from .secrets import FINGERPRINT_PAYLOAD_VERSION
 from .source import PreflightWorkflowSource
 from .validation import (
     collect_preflight_policy_diagnostics,
@@ -293,7 +293,7 @@ def _build_preview(
         effective_runtime_config_signature=runtime_snapshot.effective_runtime_config_signature,
         value_fingerprints=value_fingerprints,
         fingerprint_metadata={
-            "schema_version": FINGERPRINT_SCHEMA_VERSION,
+            "payload_version": FINGERPRINT_PAYLOAD_VERSION,
             "sensitive_values_required": state.sensitive_values_required,
             "fingerprint_key_persisted": state.fingerprint_key_persisted,
             "persisted_key_path": (

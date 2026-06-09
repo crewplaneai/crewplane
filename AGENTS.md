@@ -25,7 +25,7 @@ When changing behavior, preserve these properties:
 ## Repo Map
 
 - `src/orchestrator_cli/cli/`: Typer command surface, task/config path resolution, manifest preflight, scaffold templates
-- `src/orchestrator_cli/core/`: config models, workflow schemas, Markdown parsing, workflow composition/imports, DAG validation, schema versions
+- `src/orchestrator_cli/core/`: config models, workflow schemas, Markdown parsing, workflow composition/imports, DAG validation, schema version validation
 - `src/orchestrator_cli/architecture/`: port contracts, integration loader, alias registry, adapter errors
 - `src/orchestrator_cli/bootstrap/`: composition root that wires configured adapters into runtime components
 - `src/orchestrator_cli/runtime/`: provider invocation, retry/quota handling, parallel/sequential workflow execution
@@ -72,7 +72,7 @@ If command output, validation rules, scaffold files, or default behavior changes
 
 Important invariants:
 
-- Workflow schema version must match `src/orchestrator_cli/core/versions.py`
+- Workflow schema version must match `src/orchestrator_cli/version.py`
 - Markdown workflows require one `## <node-id>` section per frontmatter node
 - Imports are Markdown-only, alias-namespaced, and must stay within `Path.cwd()`
 - `{{param:key}}` is composition-time only; unbound params are rewritten to `{{var:key}}`

@@ -1,5 +1,5 @@
 ---
-schema_version: "__WORKFLOW_SCHEMA_VERSION__"
+schema_version: "__SCHEMA_VERSION__"
 name: Test Generation Example
 description: Scope, generate, review, remediate, and summarize tests for a change.
 nodes:

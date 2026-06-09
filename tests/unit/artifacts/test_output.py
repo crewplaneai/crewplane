@@ -13,6 +13,7 @@ from orchestrator_cli.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _workflow_signature(label: str) -> str:
@@ -43,8 +44,9 @@ def _minimal_plan(output: OutputManager) -> PreflightExecutionPlan:
         static_resources=[],
         token_catalog=[],
         dependency_graph=[],
-        runtime_config_snapshot={},
+        runtime_config_snapshot={"schema_version": SCHEMA_VERSION},
         effective_runtime_config_signature=_workflow_signature("runtime"),
+        fingerprint_metadata={"payload_version": "1"},
     )
 
 
@@ -164,7 +166,7 @@ class OutputManagerTests(unittest.TestCase):
             self.assertEqual(
                 plan_payload["workflow_signature"], plan.workflow_signature
             )
-            self.assertEqual(plan_payload["plan_schema_version"], "1.0")
+            self.assertEqual(plan_payload["plan_schema_version"], SCHEMA_VERSION)
             self.assertNotIn("schema_version", plan_payload)
             self.assertEqual(plan_payload["run_key_name"], output.stages_dir.name)
             self.assertEqual(manifest_path.name, "manifest.json")

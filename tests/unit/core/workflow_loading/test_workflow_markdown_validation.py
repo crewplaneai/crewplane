@@ -6,7 +6,7 @@ from orchestrator_cli.core.workflow_loader import load_tasks, load_tasks_with_so
 from orchestrator_cli.core.workflow_markdown import validate_workflow_markdown
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:
@@ -18,7 +18,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "inputs:",
                 "  review_input: review-input",
@@ -53,7 +53,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: backend.auth",
@@ -84,7 +84,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: backend.auth",
@@ -111,7 +111,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -136,7 +136,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -162,7 +162,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         root_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Root Workflow",
                 "imports:",
                 "  - path: imported.task.md",
@@ -182,7 +182,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         imported_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Imported Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -211,7 +211,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
     def test_load_tasks_rejects_duplicate_keys_in_legacy_yaml(self) -> None:
         workflow_content = "\n".join(
             [
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: backend.auth",
@@ -233,7 +233,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "inputs:",
                 "  review_input: review-input",
@@ -260,7 +260,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "imports:",
                 "  - path: child.task.md",
@@ -292,7 +292,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -315,7 +315,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -340,7 +340,7 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: backend.auth",

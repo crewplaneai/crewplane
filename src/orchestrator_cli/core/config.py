@@ -16,7 +16,7 @@ from orchestrator_cli.architecture.contracts import (
     PromptTransport,
     ProviderKind,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 from .provider_names import normalize_provider_name
 from .token_budget import TokenBudgetSettings
@@ -304,10 +304,10 @@ class Config(BaseModel):
     @field_validator("version")
     @classmethod
     def _validate_config_version(cls, value: str) -> str:
-        if value != CONFIG_SCHEMA_VERSION:
+        if value != SCHEMA_VERSION:
             raise ValueError(
                 f"Unsupported config version '{value}'. "
-                f"Expected '{CONFIG_SCHEMA_VERSION}'. "
+                f"Expected '{SCHEMA_VERSION}'. "
                 "Run 'orchestrator init' to regenerate config files."
             )
         return value

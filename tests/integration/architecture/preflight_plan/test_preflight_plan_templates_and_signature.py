@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
 from rich.console import Console
 
 from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
@@ -19,6 +21,7 @@ from orchestrator_cli.core.config import (
     Settings,
 )
 from orchestrator_cli.core.preflight import (
+    PreflightCompilationPreview,
     PreflightCompileOptions,
     PreflightExecutionPlan,
     PreflightWorkflowSource,
@@ -31,12 +34,12 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _mock_config() -> Config:
     return Config(
-        version="1.0",
+        version=SCHEMA_VERSION,
         agents={"mock": AgentConfig(cli_cmd=["mock"])},
         settings=Settings(
             integrations=IntegrationsConfig(
@@ -110,7 +113,6 @@ class SensitiveOptionInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options={"api_token": api_token},
             sensitive_options=["api_token"],
             option_scopes={"api_token": "execution"},
@@ -129,7 +131,6 @@ def _compile_signature(root: Path, no_live: bool) -> str:
     workflow = _literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=no_live,
     )
@@ -167,7 +168,6 @@ def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> Non
     )
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )
@@ -195,7 +195,7 @@ def test_imported_file_token_resolves_from_imported_module_root(tmp_path: Path) 
         "\n".join(
             [
                 "---",
-                'schema_version: "1.0"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Child",
                 "nodes:",
                 "  - id: build",
@@ -215,7 +215,7 @@ def test_imported_file_token_resolves_from_imported_module_root(tmp_path: Path) 
         "\n".join(
             [
                 "---",
-                'schema_version: "1.0"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Root",
                 "imports:",
                 "  - path: child/workflow.task.md",
@@ -233,11 +233,9 @@ def test_imported_file_token_resolves_from_imported_module_root(tmp_path: Path) 
         source = load_workflow_source_for_preflight(root_workflow, project_root=root)
     finally:
         os.chdir(original_cwd)
-    workflow = source.workflow
     config = _mock_config()
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )
@@ -265,7 +263,6 @@ def test_persisted_plan_keeps_preview_workflow_signature(tmp_path: Path) -> None
     workflow = _literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )
@@ -292,6 +289,190 @@ def test_persisted_plan_keeps_preview_workflow_signature(tmp_path: Path) -> None
     serialized = json.loads(plan.model_dump_json())
 
     assert plan.workflow_signature == preview.workflow_signature
-    assert serialized["plan_schema_version"] == "1.0"
+    assert serialized["plan_schema_version"] == SCHEMA_VERSION
     assert "schema_version" not in serialized
+    assert serialized["runtime_config_snapshot"]["schema_version"] == SCHEMA_VERSION
+    assert serialized["fingerprint_metadata"]["payload_version"] == "1"
     assert "{{param:" not in json.dumps(serialized)
+
+
+def _persisted_plan_payload(root: Path) -> dict[str, Any]:
+    config = _mock_config()
+    workflow = _literal_workflow()
+    snapshot = build_runtime_config_snapshot(
+        config=config,
+        console=Console(file=None),
+        no_live=True,
+    )
+    preview = compile_preflight_preview(
+        source=_source(workflow),
+        config=config,
+        runtime_snapshot=snapshot.snapshot,
+        options=PreflightCompileOptions(
+            project_root=root,
+            orchestrator_dir=root / ".orchestrator",
+            fingerprint_key_policy="read_only",
+        ),
+    )
+    plan = PreflightExecutionPlan.from_preview(
+        preview=preview,
+        run_id="run-a",
+        run_key_name="demo-run-a",
+        context_root="/tmp/demo-run-a",
+        manifest_root="/tmp/demo-run-a/manifests",
+        created_at=datetime(2026, 6, 3),
+    )
+    return plan.model_dump(mode="python")
+
+
+def test_preflight_preview_rejects_unsupported_plan_schema_version() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="Unsupported preflight plan schema version '99.0'",
+    ):
+        PreflightCompilationPreview(plan_schema_version="99.0")
+
+
+def test_preflight_execution_plan_rejects_unsupported_plan_schema_version(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["plan_schema_version"] = "99.0"
+
+    with pytest.raises(
+        ValidationError,
+        match="Unsupported preflight plan schema version '99.0'",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_legacy_runtime_snapshot_fields(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    runtime_snapshot = dict(payload["runtime_config_snapshot"])
+    runtime_snapshot.pop("schema_version")
+    runtime_snapshot["config_schema_version"] = SCHEMA_VERSION
+    runtime_snapshot["workflow_schema_version"] = SCHEMA_VERSION
+    payload["runtime_config_snapshot"] = runtime_snapshot
+
+    with pytest.raises(
+        ValidationError,
+        match="Unsupported legacy preflight plan runtime config snapshot field",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_requires_current_runtime_snapshot_marker(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    runtime_snapshot = dict(payload["runtime_config_snapshot"])
+    runtime_snapshot.pop("schema_version")
+    payload["runtime_config_snapshot"] = runtime_snapshot
+
+    with pytest.raises(
+        ValidationError,
+        match="must include 'schema_version'",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_runtime_snapshot_schema_mismatch(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    runtime_snapshot = dict(payload["runtime_config_snapshot"])
+    runtime_snapshot["schema_version"] = "0.9"
+    payload["runtime_config_snapshot"] = runtime_snapshot
+
+    with pytest.raises(
+        ValidationError,
+        match="runtime config snapshot schema_version must be",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_legacy_integration_api_version(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    runtime_snapshot = dict(payload["runtime_config_snapshot"])
+    invoker = dict(runtime_snapshot["invoker"])
+    invoker["api_version"] = "1"
+    runtime_snapshot["invoker"] = invoker
+    payload["runtime_config_snapshot"] = runtime_snapshot
+
+    with pytest.raises(
+        ValidationError,
+        match="runtime config 'invoker' integration field",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_legacy_fingerprint_metadata_field(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["fingerprint_metadata"] = {"schema_version": "1"}
+
+    with pytest.raises(
+        ValidationError,
+        match="Unsupported legacy preflight plan fingerprint metadata field",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_fingerprint_metadata_version_mismatch(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["fingerprint_metadata"] = {"payload_version": "0"}
+
+    with pytest.raises(
+        ValidationError,
+        match="fingerprint metadata payload_version must be",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_legacy_value_fingerprint_field(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["value_fingerprints"] = [
+        {
+            "fingerprint": "abc",
+            "fingerprint_schema_version": "1",
+            "key": "API_TOKEN",
+            "kind": "env",
+            "sensitive": "true",
+        }
+    ]
+
+    with pytest.raises(
+        ValidationError,
+        match="Unsupported legacy preflight plan value fingerprint",
+    ):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_value_fingerprint_version_mismatch(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["value_fingerprints"] = [
+        {
+            "fingerprint": "abc",
+            "fingerprint_payload_version": "0",
+            "key": "API_TOKEN",
+            "kind": "env",
+            "sensitive": "true",
+        }
+    ]
+
+    with pytest.raises(
+        ValidationError,
+        match="value fingerprint at index 0 payload version must be",
+    ):
+        PreflightExecutionPlan(**payload)

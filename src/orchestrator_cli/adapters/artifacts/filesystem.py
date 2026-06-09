@@ -12,7 +12,6 @@ from orchestrator_cli.architecture.ports.artifacts import (
 )
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.artifacts.manager import filesystem_manifest_exists
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 
 def _parse_options(options: JsonObject | None) -> FilesystemArtifactOptions:
@@ -62,7 +61,6 @@ class FilesystemArtifactsAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options=canonical_options,
             option_scopes={
                 "allowed_template_paths": "artifact",

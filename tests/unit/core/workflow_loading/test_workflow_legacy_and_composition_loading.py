@@ -6,7 +6,7 @@ from orchestrator_cli.core.workflow_loader import load_tasks, load_tasks_with_so
 from orchestrator_cli.core.workflow_markdown import validate_workflow_markdown
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:
@@ -43,14 +43,14 @@ class WorkflowLegacyAndCompositionLoadingTests(unittest.TestCase):
             path.write_text(workflow_content, encoding="utf-8")
             with self.assertRaisesRegex(
                 ValueError,
-                f"Expected '{WORKFLOW_SCHEMA_VERSION}'",
+                f"Expected '{SCHEMA_VERSION}'",
             ):
                 load_tasks(path)
 
     def test_load_tasks_rejects_yaml_imports(self) -> None:
         workflow_content = "\n".join(
             [
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "imports:",
                 "  - path: child.task.md",
@@ -72,7 +72,7 @@ class WorkflowLegacyAndCompositionLoadingTests(unittest.TestCase):
     def test_yaml_workflow_param_template_is_rejected_before_runtime(self) -> None:
         workflow_content = "\n".join(
             [
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: backend.auth",
@@ -95,7 +95,7 @@ class WorkflowLegacyAndCompositionLoadingTests(unittest.TestCase):
         workflow_content = "\n".join(
             [
                 "---",
-                f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                f'schema_version: "{SCHEMA_VERSION}"',
                 "name: Workflow",
                 "nodes:",
                 "  - id: review.node",
@@ -126,7 +126,7 @@ class WorkflowLegacyAndCompositionLoadingTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Auth Module",
                         "nodes:",
                         "  - id: plan",
@@ -145,7 +145,7 @@ class WorkflowLegacyAndCompositionLoadingTests(unittest.TestCase):
                 "\n".join(
                     [
                         "---",
-                        f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                        f'schema_version: "{SCHEMA_VERSION}"',
                         "name: Root Workflow",
                         "imports:",
                         "  - path: module.task.md",

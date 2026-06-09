@@ -5,7 +5,7 @@ from orchestrator_cli.core.workflow_markdown import (
     parse_workflow_markdown_text,
     validate_workflow_markdown_text,
 )
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def test_crlf_markdown_preserves_role_segment_boundaries(tmp_path: Path) -> None:
@@ -13,7 +13,7 @@ def test_crlf_markdown_preserves_role_segment_boundaries(tmp_path: Path) -> None
     markdown_text = "\r\n".join(
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: CRLF Workflow",
             "nodes:",
             "  - id: build",
@@ -53,7 +53,7 @@ def test_markdown_parser_preserves_node_and_prompt_source_spans(
     markdown_text = "\n".join(
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Span Workflow",
             "nodes:",
             "  - id: build",

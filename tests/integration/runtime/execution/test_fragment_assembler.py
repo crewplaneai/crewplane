@@ -17,6 +17,7 @@ from orchestrator_cli.core.preflight.models import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.runtime.execution.fragment_assembler import assemble_prompt
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 class _ArtifactStore:
@@ -122,8 +123,9 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
         static_resources=[],
         token_catalog=[],
         dependency_graph=[],
-        runtime_config_snapshot={},
+        runtime_config_snapshot={"schema_version": SCHEMA_VERSION},
         effective_runtime_config_signature="1" * 64,
+        fingerprint_metadata={"payload_version": "1"},
     )
 
 

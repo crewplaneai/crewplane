@@ -12,7 +12,6 @@ from orchestrator_cli.architecture.ports import UIAdapterCapabilities
 from orchestrator_cli.architecture.ports.runtime import UIRuntimePlan
 from orchestrator_cli.core.config import Config
 from orchestrator_cli.observability.types import WorkflowTopology
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 
 class NullUIAdapter:
@@ -34,7 +33,6 @@ class NullUIAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options={},
             option_scopes={},
         )

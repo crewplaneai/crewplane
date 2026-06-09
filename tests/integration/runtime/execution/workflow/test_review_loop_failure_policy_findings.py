@@ -19,7 +19,7 @@ from orchestrator_cli.runtime.execution.common import (
 from orchestrator_cli.runtime.execution.consensus import (
     extract_verdict,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_sequential_stage,
@@ -35,7 +35,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec-1": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "exec-2": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -81,7 +81,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 settings=Settings(sequential_consensus_on_exhaustion="fatal"),
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
@@ -116,7 +116,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 settings=Settings(sequential_consensus_on_exhaustion="fatal"),
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
@@ -186,7 +186,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -220,7 +220,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "beta": AgentConfig(cli_cmd=["mock"], default_model="m2"),
@@ -294,7 +294,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
                     "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),

@@ -5,7 +5,7 @@ from pathlib import Path
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _write_workflow(path: Path, lines: list[str]) -> None:
@@ -27,7 +27,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Auth Module",
                     "nodes:",
                     "  - id: plan",
@@ -44,7 +44,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -88,7 +88,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Review Module",
                     "nodes:",
                     "  - id: review",
@@ -106,7 +106,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -146,7 +146,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module",
                     "nodes:",
                     "  - id: plan",
@@ -163,7 +163,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -198,7 +198,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module",
                     "nodes:",
                     "  - id: plan",
@@ -215,7 +215,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -249,7 +249,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 leaf,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Leaf",
                     "nodes:",
                     "  - id: plan",
@@ -266,7 +266,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module",
                     "imports:",
                     "  - path: leaf.task.md",
@@ -289,7 +289,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -322,7 +322,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow_a,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Workflow A",
                     "imports:",
                     "  - path: b.task.md",
@@ -342,7 +342,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow_b,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Workflow B",
                     "imports:",
                     "  - path: a.task.md",
@@ -372,7 +372,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module",
                     "nodes:",
                     "  - id: plan",
@@ -389,7 +389,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -436,7 +436,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -469,7 +469,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 shared,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Shared",
                     "nodes:",
                     "  - id: normalize",
@@ -486,7 +486,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module",
                     "imports:",
                     "  - path: shared.task.md",
@@ -507,7 +507,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -550,7 +550,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 module,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Module",
                     "nodes:",
                     "  - id: plan",
@@ -567,7 +567,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: module.task.md",
@@ -602,7 +602,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 review,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Review",
                     "nodes:",
                     "  - id: findings",
@@ -619,7 +619,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 fixer,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Fix",
                     "nodes:",
                     "  - id: implement",
@@ -637,7 +637,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                 workflow,
                 [
                     "---",
-                    f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+                    f'schema_version: "{SCHEMA_VERSION}"',
                     "name: Root",
                     "imports:",
                     "  - path: review.task.md",

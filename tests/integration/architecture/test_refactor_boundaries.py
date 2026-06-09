@@ -673,19 +673,25 @@ def test_docs_and_templates_do_not_reference_legacy_prompt_config_fields() -> No
 
 def test_version_catalog_has_single_public_python_source() -> None:
     stale_paths = [
+        SRC_ROOT / "orchestrator_cli" / "versions.py",
         SRC_ROOT / "orchestrator_cli" / "core" / "versions.py",
         SRC_ROOT / "orchestrator_cli" / "architecture" / "api_version.py",
     ]
     assert [
         path.relative_to(REPO_ROOT).as_posix() for path in stale_paths if path.exists()
     ] == []
+
     offenders: list[str] = []
+    stale_imports = {
+        "orchestrator_cli.architecture.api_version",
+        "orchestrator_cli.core.versions",
+        "orchestrator_cli.versions",
+    }
     for path in python_files(SRC_ROOT / "orchestrator_cli"):
         source = path.read_text(encoding="utf-8")
-        if "orchestrator_cli.core.versions" in source:
-            offenders.append(f"{path.relative_to(REPO_ROOT)}: core.versions")
-        if "orchestrator_cli.architecture.api_version" in source:
-            offenders.append(f"{path.relative_to(REPO_ROOT)}: architecture.api_version")
+        for stale_import in stale_imports:
+            if stale_import in source:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {stale_import}")
     assert offenders == []
 
 
@@ -693,10 +699,7 @@ def test_public_package_exports_are_narrow() -> None:
     import orchestrator_cli.core as core_package
     import orchestrator_cli.runtime as runtime_package
 
-    assert core_package.__all__ == [
-        "CONFIG_SCHEMA_VERSION",
-        "WORKFLOW_SCHEMA_VERSION",
-    ]
+    assert core_package.__all__ == ["SCHEMA_VERSION"]
     assert runtime_package.__all__ == []
     assert "__getattr__" not in vars(runtime_package)
 

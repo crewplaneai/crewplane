@@ -16,7 +16,7 @@ from orchestrator_cli.observability.persistent import PersistentRunLogger
 from orchestrator_cli.observability.runtime import ObservabilityHub
 from orchestrator_cli.observability.types import RunContext
 from orchestrator_cli.runtime.agent.usage import estimate_token_count
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     BlockingSnapshotObserver,
@@ -32,7 +32,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "slow": AgentConfig(cli_cmd=["mock"], default_model="slow-model"),
                     "fast": AgentConfig(cli_cmd=["mock"], default_model="fast-model"),
@@ -92,7 +92,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
                 },
@@ -145,7 +145,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="exec-model"),
                     "review": AgentConfig(
@@ -211,7 +211,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = Config(
-                version=CONFIG_SCHEMA_VERSION,
+                version=SCHEMA_VERSION,
                 agents={
                     "exec": AgentConfig(cli_cmd=["mock"], default_model="exec-model"),
                     "review": AgentConfig(

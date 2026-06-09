@@ -3,7 +3,7 @@ from pathlib import Path
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _write_workflow(path: Path, lines: list[str]) -> None:
@@ -24,7 +24,7 @@ def test_import_input_binding_rewrites_dependency_to_canonical_caller_locator(
         producer,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Producer",
             "nodes:",
             "  - id: review.findings",
@@ -41,7 +41,7 @@ def test_import_input_binding_rewrites_dependency_to_canonical_caller_locator(
         consumer,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Consumer",
             "inputs:",
             "  review_input: review-input",
@@ -64,7 +64,7 @@ def test_import_input_binding_rewrites_dependency_to_canonical_caller_locator(
         workflow,
         [
             "---",
-            f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"',
+            f'schema_version: "{SCHEMA_VERSION}"',
             "name: Root",
             "imports:",
             "  - path: producer.task.md",

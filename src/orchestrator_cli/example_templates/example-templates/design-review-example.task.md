@@ -1,5 +1,5 @@
 ---
-schema_version: "__WORKFLOW_SCHEMA_VERSION__"
+schema_version: "__SCHEMA_VERSION__"
 name: Design Review Example
 description: Compare design options, iterate with reviewer feedback, and record a decision.
 nodes:

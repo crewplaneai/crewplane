@@ -1,4 +1,4 @@
-version: "__CONFIG_SCHEMA_VERSION__"
+version: "__SCHEMA_VERSION__"
 
 # Spend observability notes:
 # - CLI capture, provider token reports, visible lower-bound estimates, and configured

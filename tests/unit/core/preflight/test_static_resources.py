@@ -22,12 +22,12 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _config() -> Config:
     return Config(
-        version=CONFIG_SCHEMA_VERSION,
+        version=SCHEMA_VERSION,
         agents={"alpha": AgentConfig(cli_cmd=["mock"])},
         settings=Settings(
             integrations=IntegrationsConfig(
@@ -60,7 +60,6 @@ def _compile_file_prompt(root: Path, prompt: str):
     config = _config()
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )

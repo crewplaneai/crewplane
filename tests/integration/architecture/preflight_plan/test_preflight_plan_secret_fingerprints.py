@@ -34,12 +34,12 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.versions import INTEGRATION_API_VERSION
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _mock_config() -> Config:
     return Config(
-        version="1.0",
+        version=SCHEMA_VERSION,
         agents={"mock": AgentConfig(cli_cmd=["mock"])},
         settings=Settings(
             integrations=IntegrationsConfig(
@@ -113,7 +113,6 @@ class SensitiveOptionInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=INTEGRATION_API_VERSION,
             options={"api_token": api_token},
             sensitive_options=["api_token"],
             option_scopes={"api_token": "execution"},
@@ -132,7 +131,6 @@ def _compile_signature(root: Path, no_live: bool) -> str:
     workflow = _literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=no_live,
     )
@@ -169,7 +167,6 @@ def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
         )
         snapshot = build_runtime_config_snapshot(
             config=config,
-            workflow_schema_version=workflow.schema_version,
             console=Console(file=None),
             no_live=True,
         )
@@ -250,7 +247,6 @@ def test_sensitive_adapter_options_are_hmac_fingerprinted_and_redacted(
         )
         snapshot = build_runtime_config_snapshot(
             config=config,
-            workflow_schema_version=workflow.schema_version,
             console=Console(file=None),
             no_live=True,
         )
@@ -319,7 +315,6 @@ def test_param_tokens_cannot_survive_to_preflight_plan(tmp_path: Path) -> None:
     )
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )
@@ -365,7 +360,6 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
     )
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )
@@ -393,14 +387,14 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
         assert preview.value_fingerprints == [
             {
                 "fingerprint": preview.value_fingerprints[0]["fingerprint"],
-                "fingerprint_schema_version": "1",
+                "fingerprint_payload_version": "1",
                 "key": "API_TOKEN",
                 "kind": "env",
                 "sensitive": "true",
             },
             {
                 "fingerprint": preview.value_fingerprints[1]["fingerprint"],
-                "fingerprint_schema_version": "1",
+                "fingerprint_payload_version": "1",
                 "key": "private_key",
                 "kind": "var",
                 "sensitive": "true",
@@ -480,7 +474,6 @@ def test_absent_read_only_fingerprint_key_is_run_scoped_and_artifact_free(
     )
     snapshot = build_runtime_config_snapshot(
         config=config,
-        workflow_schema_version=workflow.schema_version,
         console=Console(file=None),
         no_live=True,
     )

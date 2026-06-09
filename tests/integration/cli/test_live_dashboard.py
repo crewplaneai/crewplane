@@ -7,10 +7,7 @@ from pathlib import Path
 import typer
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.versions import (
-    CONFIG_SCHEMA_VERSION,
-    WORKFLOW_SCHEMA_VERSION,
-)
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -66,10 +63,10 @@ class CliLiveDashboardTests(unittest.TestCase):
                 [path.name for path in top_level_workflow_files],
                 ["code-review-example.task.md"],
             )
-            self.assertIn(f'version: "{CONFIG_SCHEMA_VERSION}"', config_text)
-            self.assertIn(f'schema_version: "{WORKFLOW_SCHEMA_VERSION}"', workflow_text)
-            self.assertNotIn("__CONFIG_SCHEMA_VERSION__", config_text)
-            self.assertNotIn("__WORKFLOW_SCHEMA_VERSION__", workflow_text)
+            self.assertIn(f'version: "{SCHEMA_VERSION}"', config_text)
+            self.assertIn(f'schema_version: "{SCHEMA_VERSION}"', workflow_text)
+            self.assertNotIn("__SCHEMA_VERSION__", config_text)
+            self.assertNotIn("__SCHEMA_VERSION__", workflow_text)
             self.assertIn("--dangerously-skip-permissions", config_text)
             self.assertIn(
                 "--dangerously-bypass-approvals-and-sandbox",
@@ -254,7 +251,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             config_path.write_text(
                 "\n".join(
                     [
-                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        f'version: "{SCHEMA_VERSION}"',
                         "",
                         "agents:",
                         "  alpha:",

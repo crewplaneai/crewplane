@@ -17,7 +17,7 @@ from orchestrator_cli.architecture.contracts import (
     sensitive_integration_option_keys,
 )
 
-from .secrets import FINGERPRINT_SCHEMA_VERSION, fingerprint_payload
+from .secrets import FINGERPRINT_PAYLOAD_VERSION, fingerprint_payload
 
 _SENSITIVE_CONFIG_PATH_PATTERN = re.compile(
     r"(secret|token|password|passwd|api[_-]?key|credential|private)",
@@ -117,7 +117,7 @@ def config_fingerprint(
     return fingerprint_payload(
         fingerprint_key,
         {
-            "fingerprint_schema_version": FINGERPRINT_SCHEMA_VERSION,
+            "fingerprint_payload_version": FINGERPRINT_PAYLOAD_VERSION,
             "kind": "config",
             "path": path,
             "sensitive": "true",

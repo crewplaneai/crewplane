@@ -126,7 +126,6 @@ async def execute_workflow_run(
     try:
         snapshot_result = build_runtime_config_snapshot(
             config=config,
-            workflow_schema_version=workflow.schema_version,
             console=console,
             no_live=no_live,
         )
