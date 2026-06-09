@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 
+from orchestrator_cli.architecture.contracts import CommandResult, QuotaParserProfile
 from orchestrator_cli.core.config import AgentConfig
 
-from ..command_builder import matches_any
 from ..quota import classify_quota, compute_quota_wait_seconds
 from ..retry_units import format_wait_duration
-from ..types import CommandResult
 from .state import InvocationDiagnosticNotice
 
 QUOTA_RETRY_GUARD_HOURS = 5
@@ -103,15 +103,12 @@ def evaluate_failure_retry(
 def evaluate_quota_retry(
     config: AgentConfig,
     cmd: list[str],
+    quota_parser: QuotaParserProfile,
     result: CommandResult,
     quota_retry_started_at: float | None,
     quota_retry_count: int,
 ) -> QuotaRetryDecision:
-    quota = classify_quota(
-        config,
-        _quota_classification_result(result),
-        cmd[0],
-    )
+    quota = classify_quota(config, result, quota_parser)
     if not quota.is_quota:
         return NoQuotaRetry(
             quota_retry_started_at=quota_retry_started_at,
@@ -195,9 +192,22 @@ def evaluate_quota_retry(
 def should_retry_failure(config: AgentConfig, result: CommandResult) -> bool:
     return (
         result.returncode in config.retry_on_exit_codes
-        or matches_any(result.stderr_text, config.retry_on_stderr_contains)
-        or matches_any(result.combined_output, config.retry_on_output_contains)
+        or matches_any(result.iter_stderr_lines(), config.retry_on_stderr_contains)
+        or matches_any(result.iter_combined_lines(), config.retry_on_output_contains)
     )
+
+
+def matches_any(lines: Iterable[str], needles: list[str]) -> bool:
+    if not needles:
+        return False
+    normalized_needles = [needle.lower() for needle in needles if needle]
+    if not normalized_needles:
+        return False
+    for line in lines:
+        line_lower = line.lower()
+        if any(needle in line_lower for needle in normalized_needles):
+            return True
+    return False
 
 
 def quota_retry_guard_exhausted(started_at: float | None) -> bool:
@@ -216,13 +226,3 @@ def quota_retry_guard_will_exhaust(
 ) -> bool:
     elapsed = quota_retry_elapsed_seconds(started_at)
     return elapsed + wait_seconds >= QUOTA_RETRY_GUARD_SECONDS
-
-
-def _quota_classification_result(result: CommandResult) -> CommandResult:
-    if result.returncode == 0 and result.stdout_text.strip():
-        return CommandResult(
-            returncode=result.returncode,
-            stdout_text=result.stdout_text,
-            stderr_text="",
-        )
-    return result

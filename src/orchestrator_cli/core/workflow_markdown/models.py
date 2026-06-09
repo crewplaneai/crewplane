@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
+
 from ..token_budget import TokenBudgetOverride
-from ..versions import WORKFLOW_SCHEMA_VERSION
 from ..workflow_keywords import (
     ALLOWED_NODE_MODE_SET,
     ALLOWED_NODE_MODES,
@@ -15,8 +15,7 @@ from ..workflow_keywords import (
     validate_exact_keyword,
 )
 from ..workflow_models import ProviderSpec, WorkflowPayload
-
-NODE_ID_PATTERN = re.compile(r"^[a-z0-9._-]+$")
+from ..workflow_syntax import NODE_ID_PATTERN
 
 PromptMarkerKind = Literal["open", "close"]
 PromptMarkerRole = Literal["executor", "reviewer"]

@@ -13,7 +13,7 @@ from typing import Any
 import typer
 from rich.console import Console
 
-from orchestrator_cli.architecture.api_version import EXT_API_VERSION
+from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.artifacts.manager import OutputManager
 from orchestrator_cli.cli.workflow_runner import (
@@ -25,14 +25,13 @@ from orchestrator_cli.core.preflight import (
     PreflightWorkflowSource,
     signature_for_payload,
 )
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION, INTEGRATION_API_VERSION
 
 
 class DuplicateReportingArtifactsAdapter:
@@ -55,7 +54,7 @@ class DuplicateReportingArtifactsAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=EXT_API_VERSION,
+            api_version=INTEGRATION_API_VERSION,
             options=dict(options or {}),
             option_scopes={key: "artifact" for key in dict(options or {})},
         )
@@ -124,7 +123,7 @@ class PreflightOrderingInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=EXT_API_VERSION,
+            api_version=INTEGRATION_API_VERSION,
             options={},
             option_scopes={},
         )

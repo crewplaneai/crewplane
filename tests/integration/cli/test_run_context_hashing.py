@@ -4,13 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rich.console import Console
-
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     WORKFLOW_SCHEMA_VERSION,
 )
 from tests.integration.cli.cli_workflow_helpers import (
+    ConsoleFactory,
     write_basic_config,
     write_basic_workflow,
 )
@@ -26,7 +25,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_cwd = Path.cwd()
             calls = {"count": 0}
@@ -36,7 +35,7 @@ class CliRunContextHashingTests(unittest.TestCase):
                 if calls["count"] == 1:
                     raise RuntimeError("simulated failure")
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -81,7 +80,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertEqual(calls["count"], 2)
             self.assertNotIn("Identical context detected", stream.getvalue())
@@ -95,7 +94,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_cwd = Path.cwd()
             calls = {"count": 0}
@@ -103,7 +102,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 calls["count"] += 1
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -133,7 +132,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertEqual(calls["count"], 2)
             self.assertIn("Identical context detected", stream.getvalue())
@@ -169,7 +168,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_cwd = Path.cwd()
             original_branch = os.environ.get("BRANCH_NAME")
@@ -178,7 +177,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 calls["count"] += 1
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -209,7 +208,7 @@ class CliRunContextHashingTests(unittest.TestCase):
                     os.environ["BRANCH_NAME"] = original_branch
                 os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertEqual(calls["count"], 2)
             self.assertNotIn("Identical context detected", stream.getvalue())

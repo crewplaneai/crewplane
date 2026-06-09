@@ -15,13 +15,10 @@ from orchestrator_cli.observability.tmux.control_state import (
 )
 from orchestrator_cli.observability.tmux.labels import counts_line, status_line
 from orchestrator_cli.observability.tmux.rendering import (
-    DashboardSelection,
     SelectedOutputRenderContext,
     render_left_dashboard,
     render_selected_output,
-    resolve_dashboard_selection,
     right_pane_title,
-    selected_invocation_log_path,
 )
 from orchestrator_cli.observability.tmux.runtime_files import (
     MODE_INSPECT,
@@ -33,6 +30,11 @@ from orchestrator_cli.observability.tmux.runtime_files import (
 )
 from orchestrator_cli.observability.tmux.selected_invocation import (
     prepare_selected_invocation,
+)
+from orchestrator_cli.observability.tmux.selection import (
+    DashboardSelection,
+    resolve_dashboard_selection,
+    selected_invocation_log_path,
 )
 from orchestrator_cli.observability.tmux.session_lifecycle import StartedCompactSession
 from orchestrator_cli.observability.tmux.window import TmuxCompactWindowOptions
@@ -77,10 +79,10 @@ class TmuxCompactRefreshController:
             self._latest_snapshot = None
 
     def on_snapshot(
-        self,
-        event: ExecutionEvent | None,  # noqa: ARG002 - Protocol callback signature.
-        snapshot: DashboardSnapshot,
+        self, event: ExecutionEvent | None, snapshot: DashboardSnapshot
     ) -> None:
+        if event is not None and not isinstance(event, ExecutionEvent):
+            raise TypeError("event must be an ExecutionEvent instance or None")
         with self._snapshot_lock:
             self._latest_snapshot = copy.deepcopy(snapshot)
 

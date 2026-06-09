@@ -8,28 +8,14 @@ from orchestrator_cli.observability.events import (
     InvocationRuntimeState,
     NodeRuntimeState,
 )
-from orchestrator_cli.observability.node_order import topological_node_order
 from orchestrator_cli.observability.text_layout import fit_text, wrap_text
 from orchestrator_cli.observability.timing import format_elapsed_seconds
 from orchestrator_cli.observability.tmux.log_tail import LogSnapshot
+from orchestrator_cli.observability.tmux.selected_invocation import (
+    PreparedSelectedInvocation,
+)
+from orchestrator_cli.observability.tmux.viewport import viewport_dag_lines
 from orchestrator_cli.observability.types import DashboardSnapshot
-
-_ABOVE_OMISSION = "... above ..."
-_BELOW_OMISSION = "... below ..."
-
-
-@dataclass(frozen=True)
-class DashboardSelection:
-    ordered_node_ids: list[str]
-    selected_index: int
-    selected_node_id: str | None
-
-
-@dataclass(frozen=True)
-class PreparedSelectedInvocation:
-    invocation: InvocationRuntimeState
-    log_snapshot: LogSnapshot | None = None
-    log_unavailable_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,34 +28,6 @@ class SelectedOutputRenderContext:
     quiet_after_seconds: float
     monotonic_now: float
     prepared_invocation: PreparedSelectedInvocation | None = None
-
-
-def resolve_dashboard_selection(
-    snapshot: DashboardSnapshot,
-    selected_index: int,
-) -> DashboardSelection:
-    ordered_node_ids = topological_node_order(snapshot.state, snapshot.layout)
-    if not ordered_node_ids:
-        return DashboardSelection(
-            ordered_node_ids=ordered_node_ids,
-            selected_index=-1,
-            selected_node_id=None,
-        )
-    if selected_index < 0 or selected_index >= len(ordered_node_ids):
-        selected_node_id = _default_selected_node_id(
-            ordered_node_ids,
-            snapshot.state.nodes,
-        )
-        return DashboardSelection(
-            ordered_node_ids=ordered_node_ids,
-            selected_index=ordered_node_ids.index(selected_node_id),
-            selected_node_id=selected_node_id,
-        )
-    return DashboardSelection(
-        ordered_node_ids=ordered_node_ids,
-        selected_index=selected_index,
-        selected_node_id=ordered_node_ids[selected_index],
-    )
 
 
 def render_left_dashboard(
@@ -256,51 +214,6 @@ def _append_quiet_running_message(
     )
 
 
-def selected_invocation_log_path(
-    nodes: Mapping[str, NodeRuntimeState],
-    selected_node_id: str | None,
-) -> str | None:
-    if selected_node_id is None:
-        return None
-    invocation = select_invocation(nodes[selected_node_id])
-    if invocation is None:
-        return None
-    return invocation.log_file
-
-
-def _default_selected_node_id(
-    ordered_node_ids: list[str],
-    nodes: Mapping[str, NodeRuntimeState],
-) -> str:
-    for node_id in ordered_node_ids:
-        if nodes[node_id].status == "running":
-            return node_id
-    return ordered_node_ids[0]
-
-
-def select_invocation(node: NodeRuntimeState) -> InvocationRuntimeState | None:
-    if not node.invocations:
-        return None
-
-    running = [
-        invocation
-        for invocation in node.invocations.values()
-        if invocation.status == "running"
-    ]
-    if running:
-        return max(running, key=_running_invocation_sort_key)
-
-    non_pending = [
-        invocation
-        for invocation in node.invocations.values()
-        if invocation.status != "pending"
-    ]
-    if non_pending:
-        return max(non_pending, key=_completed_invocation_sort_key)
-
-    return max(node.invocations.values(), key=_completed_invocation_sort_key)
-
-
 def _blocked_reason(node: NodeRuntimeState) -> str:
     if not node.recent_events:
         return "Blocked by unsatisfied dependencies."
@@ -308,41 +221,6 @@ def _blocked_reason(node: NodeRuntimeState) -> str:
     if latest.startswith("BLOCKED "):
         return latest[len("BLOCKED ") :]
     return latest
-
-
-def _running_invocation_sort_key(
-    invocation: InvocationRuntimeState,
-) -> tuple[float, int, int, str]:
-    return (
-        _timestamp_sort_value(invocation.started_at),
-        _round_num_sort_value(invocation.audit_round_num),
-        _round_num_sort_value(invocation.round_num),
-        invocation.task_id,
-    )
-
-
-def _completed_invocation_sort_key(
-    invocation: InvocationRuntimeState,
-) -> tuple[float, float, int, int, str]:
-    return (
-        _timestamp_sort_value(invocation.finished_at),
-        _timestamp_sort_value(invocation.started_at),
-        _round_num_sort_value(invocation.audit_round_num),
-        _round_num_sort_value(invocation.round_num),
-        invocation.task_id,
-    )
-
-
-def _timestamp_sort_value(timestamp: float | None) -> float:
-    if timestamp is None:
-        return float("-inf")
-    return timestamp
-
-
-def _round_num_sort_value(round_num: int | None) -> int:
-    if round_num is None:
-        return -1
-    return round_num
 
 
 def _invocation_header_lines(invocation: InvocationRuntimeState) -> list[str]:
@@ -437,76 +315,3 @@ def _selected_dag_row(lines: list[str]) -> int | None:
         if line.startswith("▸"):
             return index
     return None
-
-
-def viewport_dag_lines(
-    lines: list[str],
-    height: int,
-    selected_row: int | None,
-) -> list[str]:
-    if height <= 0 or not lines:
-        return []
-    if len(lines) <= height:
-        return list(lines)
-
-    preferred_row = _preferred_row_index(lines, selected_row)
-    if height == 1:
-        return [lines[preferred_row]]
-    if height == 2:
-        return _tiny_viewport(lines, preferred_row)
-    return _standard_viewport(lines, height, preferred_row)
-
-
-def _preferred_row_index(lines: list[str], selected_row: int | None) -> int:
-    if selected_row is None or selected_row < 0 or selected_row >= len(lines):
-        return 0
-    return selected_row
-
-
-def _tiny_viewport(lines: list[str], preferred_row: int) -> list[str]:
-    hidden_above = preferred_row
-    hidden_below = len(lines) - preferred_row - 1
-    if hidden_above <= 0 and hidden_below <= 0:
-        return [lines[preferred_row]]
-    if hidden_above > 0 and hidden_below > 0:
-        if hidden_below >= hidden_above:
-            return [lines[preferred_row], _BELOW_OMISSION]
-        return [_ABOVE_OMISSION, lines[preferred_row]]
-    if hidden_above > 0:
-        return [_ABOVE_OMISSION, lines[preferred_row]]
-    return [lines[preferred_row], _BELOW_OMISSION]
-
-
-def _standard_viewport(
-    lines: list[str],
-    height: int,
-    preferred_row: int,
-) -> list[str]:
-    content_slots = max(1, height - 2)
-    max_start = max(0, len(lines) - content_slots)
-    start = min(max(0, preferred_row - content_slots // 2), max_start)
-    end = min(len(lines), start + content_slots)
-
-    while True:
-        hidden_above = start > 0
-        hidden_below = end < len(lines)
-        used_rows = (end - start) + int(hidden_above) + int(hidden_below)
-        extra_rows = height - used_rows
-        if extra_rows <= 0:
-            break
-        if not hidden_above and end < len(lines):
-            end += 1
-            continue
-        if not hidden_below and start > 0:
-            start -= 1
-            continue
-        break
-
-    hidden_above = start > 0
-    hidden_below = end < len(lines)
-    visible_lines = list(lines[start:end])
-    if hidden_above:
-        visible_lines.insert(0, _ABOVE_OMISSION)
-    if hidden_below:
-        visible_lines.append(_BELOW_OMISSION)
-    return visible_lines

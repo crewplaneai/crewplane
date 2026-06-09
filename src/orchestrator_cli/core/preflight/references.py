@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Literal
 
+from orchestrator_cli.core.workflow_syntax import (
+    KEY_VALUE_TEMPLATE_PATTERN,
+    NODE_ARTIFACT_REFERENCE_PATTERN,
+    TEMPLATE_TOKEN_PATTERN,
+)
+
 TemplateReferenceKind = Literal["node", "file", "env", "var", "param", "unknown"]
-TEMPLATE_TOKEN_PATTERN = re.compile(r"\{\{[^{}]*\}\}")
-NODE_REFERENCE_PATTERN = re.compile(r"\{\{\s*([a-z0-9._-]+)\.([A-Za-z0-9_-]+)\s*\}\}")
-KEY_VALUE_REFERENCE_PATTERN = re.compile(r"\{\{\s*([A-Za-z_]+):([^}]+)\s*\}\}")
 
 
 @dataclass(frozen=True)
@@ -25,7 +27,7 @@ def iter_template_references(text: str) -> tuple[TemplateReference, ...]:
     references: list[TemplateReference] = []
     for match in TEMPLATE_TOKEN_PATTERN.finditer(text):
         raw_token = match.group(0)
-        node_match = NODE_REFERENCE_PATTERN.fullmatch(raw_token)
+        node_match = NODE_ARTIFACT_REFERENCE_PATTERN.fullmatch(raw_token)
         if node_match is not None:
             references.append(
                 TemplateReference(
@@ -38,7 +40,7 @@ def iter_template_references(text: str) -> tuple[TemplateReference, ...]:
                 )
             )
             continue
-        key_value_match = KEY_VALUE_REFERENCE_PATTERN.fullmatch(raw_token)
+        key_value_match = KEY_VALUE_TEMPLATE_PATTERN.fullmatch(raw_token)
         if key_value_match is None:
             references.append(
                 TemplateReference(

@@ -5,8 +5,8 @@ from rich.console import Console
 
 from orchestrator_cli.adapters.ui.null import NullUIAdapter
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.observability.types import WorkflowTopology
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class NullUIAdapterTests(unittest.TestCase):

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from ..types import InvocationDiagnostic, InvocationDiagnosticSink
+from orchestrator_cli.architecture.contracts import (
+    InvocationDiagnostic,
+    InvocationDiagnosticSink,
+)
 
 PROCESS_EXIT_WARNING_MESSAGE = "Provider process already exited before signal delivery."
 PROCESS_PIPE_DRAIN_GRACE_SECONDS = 0.25

@@ -13,6 +13,16 @@ from orchestrator_cli.observability.tmux.runtime_files import (
     RuntimeFiles,
 )
 from orchestrator_cli.observability.tmux.session import TmuxSessionTargets
+from orchestrator_cli.observability.tmux.shell_commands import (
+    pane_render_args,
+    pane_render_command,
+    shell_bind_key_lines,
+    shell_read_value_function,
+    shell_write_value_function,
+    tmux_bash_array,
+    tmux_command_string,
+    write_runtime_shell_script,
+)
 
 DASHBOARD_KEY_TABLE = "orchestrator-dashboard"
 INSPECT_KEY_TABLE = "orchestrator-inspect"
@@ -31,6 +41,28 @@ LIVE_MOUSE_KEYS = (
     "WheelDownPane",
 )
 PANE_TITLE_OPTION = "@orchestrator_title"
+
+__all__ = [
+    "COPY_MODE_KEY_TABLES",
+    "DASHBOARD_KEY_TABLE",
+    "INSPECT_KEY_TABLE",
+    "InspectCommandContext",
+    "LIVE_MOUSE_KEYS",
+    "PANE_TITLE_OPTION",
+    "ROOT_KEY_TABLE",
+    "build_attach_command",
+    "copy_mode_binding_commands",
+    "dashboard_key_bindings",
+    "focus_commands",
+    "inspect_copy_mode_key_bindings",
+    "inspect_enter_command",
+    "inspect_exit_command",
+    "inspect_key_bindings",
+    "pane_render_command",
+    "quit_dashboard_commands",
+    "selection_move_command",
+    "tmux_command_string",
+]
 
 
 @dataclass(frozen=True)
@@ -62,10 +94,6 @@ def build_attach_command(
         return command
     command.extend(["attach", "-t", session_name])
     return command
-
-
-def tmux_command_string(*commands: list[str]) -> str:
-    return " ; ".join(shlex.join(command) for command in commands)
 
 
 def focus_commands(target_pane: str) -> list[list[str]]:
@@ -209,24 +237,6 @@ def inspect_copy_mode_key_bindings(
     }
 
 
-def pane_render_command(content_path: Path, refresh_interval_seconds: float) -> str:
-    return shlex.join(_pane_render_args(content_path, refresh_interval_seconds))
-
-
-def _pane_render_args(
-    content_path: Path,
-    refresh_interval_seconds: float,
-) -> list[str]:
-    script = (
-        "while true; do "
-        "clear; "
-        f"cat {shlex.quote(str(content_path))} 2>/dev/null || true; "
-        f"sleep {refresh_interval_seconds}; "
-        "done"
-    )
-    return ["bash", "-lc", script]
-
-
 def dashboard_key_bindings(
     session_name: str,
     left_pane_id: str,
@@ -251,7 +261,7 @@ def inspect_enter_command(
 ) -> str:
     runtime_files = context.runtime_files
     session = context.session
-    tmux_command = _tmux_bash_array(
+    tmux_command = tmux_bash_array(
         context.tmux_executable,
         session.socket_name,
     )
@@ -265,7 +275,7 @@ def inspect_enter_command(
     inspect_copy_mode_binding_lines = [
         line
         for table in COPY_MODE_KEY_TABLES
-        for line in _shell_bind_key_lines(table, inspect_copy_mode_bindings)
+        for line in shell_bind_key_lines(table, inspect_copy_mode_bindings)
     ]
     script_lines = [
         f"mode_file={shlex.quote(str(runtime_files.mode))}",
@@ -277,8 +287,8 @@ def inspect_enter_command(
         f"right_pane={shlex.quote(session.right_pane_id)}",
         f"title_option={shlex.quote(PANE_TITLE_OPTION)}",
         f"tmux_cmd=({tmux_command})",
-        _shell_read_value_function(),
-        _shell_write_value_function(),
+        shell_read_value_function(),
+        shell_write_value_function(),
         'log_path=$(read_value "$selected_log_file")',
         'node_id=$(read_value "$selected_node_file")',
         '[[ -n "$log_path" ]] || exit 0',
@@ -292,7 +302,7 @@ def inspect_enter_command(
         '"${tmux_cmd[@]}" set-option -p -t "$right_pane" "$title_option" "$title"',
         '"${tmux_cmd[@]}" select-pane -t "$right_pane"',
     ]
-    return _write_runtime_shell_script(
+    return write_runtime_shell_script(
         runtime_files.root / "inspect-enter.sh",
         script_lines,
     )
@@ -304,13 +314,13 @@ def inspect_exit_command(
 ) -> str:
     runtime_files = context.runtime_files
     session = context.session
-    tmux_command = _tmux_bash_array(
+    tmux_command = tmux_bash_array(
         context.tmux_executable,
         session.socket_name,
     )
     render_args = " ".join(
         shlex.quote(arg)
-        for arg in _pane_render_args(
+        for arg in pane_render_args(
             runtime_files.right_content,
             refresh_interval_seconds,
         )
@@ -324,8 +334,8 @@ def inspect_exit_command(
         f"right_pane={shlex.quote(session.right_pane_id)}",
         f"title_option={shlex.quote(PANE_TITLE_OPTION)}",
         f"tmux_cmd=({tmux_command})",
-        _shell_read_value_function(),
-        _shell_write_value_function(),
+        shell_read_value_function(),
+        shell_write_value_function(),
         f'[[ "$(read_value "$mode_file")" == "{MODE_INSPECT}" ]] || exit 0',
         f'"${{tmux_cmd[@]}}" respawn-pane -k -t "$right_pane" {render_args} || exit 0',
         f'write_value "$mode_file" "{MODE_DASHBOARD}"',
@@ -335,59 +345,10 @@ def inspect_exit_command(
         '"${tmux_cmd[@]}" set-option -p -t "$right_pane" "$title_option" "Node Output"',
         '"${tmux_cmd[@]}" select-pane -t "$left_pane"',
     ]
-    return _write_runtime_shell_script(
+    return write_runtime_shell_script(
         runtime_files.root / "inspect-exit.sh",
         script_lines,
     )
-
-
-def _tmux_bash_array(tmux_executable: str, socket_name: str | None) -> str:
-    command = [tmux_executable]
-    if socket_name:
-        command.extend(["-L", socket_name])
-    return shlex.join(command)
-
-
-def _shell_read_value_function() -> str:
-    return 'read_value() { local path="$1"; cat "$path" 2>/dev/null || true; }'
-
-
-def _shell_write_value_function() -> str:
-    return (
-        "write_value() { "
-        'local path="$1"; '
-        'local value="$2"; '
-        'printf "%s" "$value" > "${path}.tmp" && mv "${path}.tmp" "$path"; '
-        "}"
-    )
-
-
-def _write_runtime_shell_script(script_path: Path, script_lines: list[str]) -> str:
-    script_body = "\n".join(
-        [
-            "#!/usr/bin/env bash",
-            "set -euo pipefail",
-            *script_lines,
-            "",
-        ]
-    )
-    temp_path = script_path.with_suffix(f"{script_path.suffix}.tmp")
-    temp_path.write_text(script_body, encoding="utf-8")
-    temp_path.replace(script_path)
-    script_path.chmod(0o755)
-    return str(script_path)
-
-
-def _shell_bind_key_lines(
-    table: str,
-    bindings: Mapping[str, list[list[str]]],
-) -> list[str]:
-    return [
-        '"${tmux_cmd[@]}" bind-key -T '
-        f"{shlex.quote(table)} {shlex.quote(key)} if-shell -F 1 "
-        f"{shlex.quote(tmux_command_string(*commands))}"
-        for key, commands in bindings.items()
-    ]
 
 
 def selection_move_command(

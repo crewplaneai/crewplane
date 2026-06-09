@@ -3,9 +3,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -13,8 +14,8 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowPlan,
 )
 from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.agent.invoker import DefaultAgentInvoker
-from orchestrator_cli.runtime.agent.types import CommandResult
+from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     CleanupOnCancelInvoker,
     execute_workflow,
@@ -30,10 +31,10 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                 agents={
                     "codex": AgentConfig(
                         cli_cmd=["codex", "exec"],
+                        provider_kind="codex",
                         default_model="gpt-test",
-                        prompt_arg=None,
-                        use_stdin=True,
-                        stdin_prompt_arg="-",
+                        prompt_transport="stdin",
+                        prompt_transport_arg="-",
                     ),
                 },
             )
@@ -96,7 +97,7 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                     config,
                     workflow,
                     output,
-                    invoker=DefaultAgentInvoker(),
+                    invoker=PlannedAgentInvoker(build_cli_invocation_plan),
                     event_sink=events.append,
                 )
 
@@ -106,12 +107,14 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(failed_events), 1)
             failed_event = failed_events[0]
             self.assertEqual(
-                failed_event.failure_kind,
+                failed_event.payload.failure_kind,
                 "provider_session_context_exhausted",
             )
-            self.assertEqual(failed_event.failure_phase, "provider_session")
-            self.assertEqual(failed_event.failure_source, "stdout_json")
-            self.assertIn("Split the workflow", failed_event.failure_advice or "")
+            self.assertEqual(failed_event.payload.failure_phase, "provider_session")
+            self.assertEqual(failed_event.payload.failure_source, "stdout_json")
+            self.assertIn(
+                "Split the workflow", failed_event.payload.failure_advice or ""
+            )
 
     async def test_provider_quota_guard_failure_emits_classification_fields(
         self,
@@ -123,10 +126,10 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                 agents={
                     "codex": AgentConfig(
                         cli_cmd=["codex", "exec"],
+                        provider_kind="codex",
                         default_model="gpt-test",
-                        prompt_arg=None,
-                        use_stdin=True,
-                        stdin_prompt_arg="-",
+                        prompt_transport="stdin",
+                        prompt_transport_arg="-",
                         quota_reached_on_contains=["usage limit reached"],
                         quota_reached_retry_delay_seconds=0,
                     ),
@@ -181,7 +184,7 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                     config,
                     workflow,
                     output,
-                    invoker=DefaultAgentInvoker(),
+                    invoker=PlannedAgentInvoker(build_cli_invocation_plan),
                     event_sink=events.append,
                 )
 
@@ -190,9 +193,9 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
             ]
             self.assertEqual(len(failed_events), 1)
             failed_event = failed_events[0]
-            self.assertEqual(failed_event.failure_kind, "quota_or_rate_limit")
-            self.assertEqual(failed_event.failure_phase, "provider_transport")
-            self.assertIn("quota", failed_event.failure_advice or "")
+            self.assertEqual(failed_event.payload.failure_kind, "quota_or_rate_limit")
+            self.assertEqual(failed_event.payload.failure_phase, "provider_transport")
+            self.assertIn("quota", failed_event.payload.failure_advice or "")
 
     async def test_execute_workflow_awaits_cancelled_node_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -4,14 +4,17 @@ import asyncio
 import hashlib
 from pathlib import Path
 
+from orchestrator_cli.architecture.contracts import (
+    InvocationContext,
+    MockInvokerFailSelector,
+)
 from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.types import InvocationContext
 
 from .context import ContextDisplay, context_display, is_reviewer_context
 from .fixtures import fixture_candidates
 from .logging import write_invocation_log
 from .mutations import apply_fixture_mutations, build_fixture_mutation_plan
-from .options import MockOptions
+from .options import MockInvokerOptionsContract
 from .outputs import (
     OutputResolution,
     build_findings_lines,
@@ -20,18 +23,19 @@ from .outputs import (
 
 
 class MockAgentInvoker:
-    def __init__(self, options: MockOptions) -> None:
+    def __init__(self, options: MockInvokerOptionsContract) -> None:
         self._options = options
 
     async def invoke(
         self,
-        config: AgentConfig,  # noqa: ARG002 - Required by callback or protocol signature.
-        model: str | None,  # noqa: ARG002 - Required by callback or protocol signature.
+        config: AgentConfig,
+        model: str | None,
         prompt: str,
         output_file: Path,
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
+        self._validate_invocation_request(config, model)
         await asyncio.sleep(self._options.delay_seconds)
         self._raise_if_forced_failure(invocation_context)
         resolution = await self._resolve_output(prompt, invocation_context)
@@ -43,11 +47,19 @@ class MockAgentInvoker:
             invocation_context,
         )
 
+    def _validate_invocation_request(
+        self, config: AgentConfig, model: str | None
+    ) -> None:
+        if not isinstance(config, AgentConfig):
+            raise TypeError("config must be an AgentConfig instance")
+        if model is not None and not isinstance(model, str):
+            raise TypeError("model must be a string or None")
+
     def _raise_if_forced_failure(self, context: InvocationContext | None) -> None:
         for selector in self._options.fail_when:
-            if selector.matches(context):
+            if _selector_matches(selector, context):
                 raise RuntimeError(
-                    f"mock invoker forced failure by selector: {selector.summary()}"
+                    f"mock invoker forced failure by selector: {_selector_summary(selector)}"
                 )
 
     async def _resolve_output(
@@ -83,7 +95,8 @@ class MockAgentInvoker:
             raise RuntimeError(
                 "mock invoker internal error: output_dir missing for file mode"
             )
-        for candidate in fixture_candidates(output_dir, context):
+        output_dir_path = Path(output_dir)
+        for candidate in fixture_candidates(output_dir_path, context):
             if candidate.is_file():
                 return OutputResolution(
                     content=candidate.read_text(encoding="utf-8"),
@@ -93,7 +106,7 @@ class MockAgentInvoker:
         if self._options.strict_file_mode:
             raise RuntimeError(
                 "mock invoker file mode could not resolve fixture; looked in "
-                f"{output_dir.resolve()}"
+                f"{output_dir_path.resolve()}"
             )
         if is_reviewer_context(context):
             return review_contract_resolution("fallback_review_contract")
@@ -160,3 +173,34 @@ class MockAgentInvoker:
             ).encode()
         ).hexdigest()
         return digest[:12]
+
+
+def _selector_matches(
+    selector: MockInvokerFailSelector,
+    context: InvocationContext | None,
+) -> bool:
+    if context is None:
+        return False
+    for key in (
+        "node_id",
+        "task_id",
+        "provider",
+        "role",
+        "audit_round_num",
+        "round_num",
+    ):
+        expected = getattr(selector, key)
+        if expected is None:
+            continue
+        if getattr(context, key) != expected:
+            return False
+    return True
+
+
+def _selector_summary(selector: MockInvokerFailSelector) -> str:
+    values = [
+        f"{key}={value}"
+        for key, value in sorted(selector.__dict__.items())
+        if value is not None
+    ]
+    return ", ".join(values)

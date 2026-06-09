@@ -2,10 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.core.versions import WORKFLOW_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_loader import load_tasks
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
+from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:

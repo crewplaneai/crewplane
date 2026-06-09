@@ -8,6 +8,7 @@ from typing import Protocol
 
 from rich.console import Console
 
+from orchestrator_cli.architecture.contracts import AgentInvoker
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.architecture.ports.runtime import RuntimeComponents
 from orchestrator_cli.core.preflight import PreflightExecutionPlan
@@ -26,7 +27,6 @@ from orchestrator_cli.observability.events import (
 from orchestrator_cli.observability.observer import Observer
 from orchestrator_cli.observability.persistent import render_run_summary_terminal
 from orchestrator_cli.observability.types import WorkflowTopology
-from orchestrator_cli.runtime.agent.types import AgentInvoker
 
 UI_STOP_POLL_INTERVAL_SECONDS = 0.1
 WORKFLOW_CANCELLED_MESSAGE = "Workflow cancelled by live dashboard quit request."

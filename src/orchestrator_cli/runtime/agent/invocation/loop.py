@@ -4,6 +4,12 @@ import asyncio
 from pathlib import Path
 from typing import assert_never
 
+from orchestrator_cli.architecture.contracts import (
+    CommandResult,
+    CommandRunner,
+    InvocationContext,
+    InvocationPlan,
+)
 from orchestrator_cli.core.config import AgentConfig
 
 from ..failures import (
@@ -11,7 +17,6 @@ from ..failures import (
     build_output_extraction_failure_error,
     build_quota_failure_error,
 )
-from ..types import CommandResult, CommandRunner, InvocationContext
 from ..usage import InvocationUsageAccumulator
 from .command import (
     build_invocation_runtime,
@@ -21,7 +26,9 @@ from .command import (
 )
 from .output import (
     build_invocation_attempt_result,
+    cleanup_extracted_invocation_output,
     extract_invocation_output,
+    write_extracted_invocation_output,
 )
 from .retry import (
     FailureRetryDecision,
@@ -32,6 +39,7 @@ from .retry import (
 )
 from .state import (
     ContinueAttemptTransition,
+    ExtractedInvocationOutput,
     FinalizeSuccessAttemptTransition,
     InvocationAttemptResult,
     InvocationAttemptTransition,
@@ -60,14 +68,14 @@ from .transitions import (
 
 async def run_invocation_loop(
     config: AgentConfig,
-    model: str | None,
     prompt: str,
     output_file: Path,
     log_file: Path | None,
     invocation_context: InvocationContext | None,
     command_runner: CommandRunner,
+    plan: InvocationPlan,
 ) -> None:
-    runtime = build_invocation_runtime(config, model, prompt, output_file)
+    runtime = build_invocation_runtime(plan)
     attempt = 0
     cursor = InvocationRetryCursor(
         retry_count=0,
@@ -75,7 +83,7 @@ async def run_invocation_loop(
         quota_retry_started_at=None,
     )
     usage_state = InvocationUsageState(
-        accumulator=InvocationUsageAccumulator(runtime.cmd[0], prompt)
+        accumulator=InvocationUsageAccumulator(plan.log_provider_kind, prompt)
     )
 
     try:
@@ -95,23 +103,26 @@ async def run_invocation_loop(
                 runtime=runtime,
                 result=result,
             )
-            transition = _select_attempt_transition(
-                config=config,
-                runtime=runtime,
-                attempt_result=attempt_result,
-                cursor=cursor,
-            )
-            continuation = await _execute_transition_action(
-                transition=transition,
-                runtime=runtime,
-                attempt_result=attempt_result,
-                output_file=output_file,
-                log_file=log_file,
-                invocation_context=invocation_context,
-                config=config,
-                usage_state=usage_state,
-                attempt=attempt,
-            )
+            try:
+                transition = _select_attempt_transition(
+                    config=config,
+                    runtime=runtime,
+                    attempt_result=attempt_result,
+                    cursor=cursor,
+                )
+                continuation = await _execute_transition_action(
+                    transition=transition,
+                    runtime=runtime,
+                    attempt_result=attempt_result,
+                    output_file=output_file,
+                    log_file=log_file,
+                    invocation_context=invocation_context,
+                    config=config,
+                    usage_state=usage_state,
+                    attempt=attempt,
+                )
+            finally:
+                result.cleanup_stream_files()
             if continuation is None:
                 return
             attempt, cursor = continuation
@@ -148,6 +159,7 @@ def _select_attempt_transition(
     quota_retry_decision = evaluate_quota_retry(
         config=config,
         cmd=runtime.cmd,
+        quota_parser=runtime.quota_parser,
         result=attempt_result.result,
         quota_retry_started_at=cursor.quota_retry_started_at,
         quota_retry_count=cursor.quota_retry_count,
@@ -186,7 +198,8 @@ def _select_attempt_transition(
     cursor = transition.cursor()
 
     extracted_output = extract_invocation_output(
-        provider_kind=runtime.provider_kind,
+        output_extraction_mode=runtime.output_extraction_mode,
+        usage_parser=runtime.usage_parser,
         cmd=runtime.cmd,
         result=attempt_result.result,
         structured_output_file=runtime.structured_output_file,
@@ -225,59 +238,66 @@ async def _execute_transition_action(
     usage_state: InvocationUsageState,
     attempt: int,
 ) -> tuple[int, InvocationRetryCursor] | None:
-    match transition:
-        case SleepAndRetryAttemptTransition(retry_delay_seconds=retry_delay_seconds):
-            record_transition_outputs(transition, usage_state, invocation_context)
-            emit_notice(invocation_context, transition.notice)
-            next_attempt = await _sleep_before_next_attempt(
-                retry_delay_seconds,
-                attempt,
-            )
-            return next_attempt, transition.cursor()
-        case FinalizeSuccessAttemptTransition(extracted_output=extracted_output):
-            record_transition_outputs(transition, usage_state, invocation_context)
-            _finalize_successful_invocation(
-                output_file=output_file,
-                output_text=extracted_output.output_text,
-                invocation_context=invocation_context,
-                config=config,
-                usage_state=usage_state,
-            )
-            return None
-        case RaiseRetryExhaustedAttemptTransition():
-            record_transition_outputs(transition, usage_state, invocation_context)
-            _raise_retry_exhausted(
-                runtime=runtime,
-                result=attempt_result.result,
-                retry_count=transition.retry_count,
-                log_file=log_file,
-            )
-        case RaiseFailedExitAttemptTransition():
-            record_transition_outputs(transition, usage_state, invocation_context)
-            _raise_failed_exit(
-                runtime=runtime,
-                result=attempt_result.result,
-                log_file=log_file,
-            )
-        case RaiseQuotaFailureAttemptTransition(message=message):
-            record_transition_outputs(transition, usage_state, invocation_context)
-            _raise_quota_failure(
-                runtime=runtime,
-                result=attempt_result.result,
-                message=message,
-            )
-        case RaiseOutputExtractionFailureAttemptTransition(
-            extracted_output=extracted_output
-        ):
-            record_transition_outputs(transition, usage_state, invocation_context)
-            raise build_output_extraction_failure_error(
-                runtime.cmd[0],
-                extracted_output.output_extraction_status,
-            )
-        case ContinueAttemptTransition():
-            raise RuntimeError("Invocation loop cannot execute a continue transition.")
-        case _:
-            assert_never(transition)
+    try:
+        match transition:
+            case SleepAndRetryAttemptTransition(
+                retry_delay_seconds=retry_delay_seconds
+            ):
+                record_transition_outputs(transition, usage_state, invocation_context)
+                emit_notice(invocation_context, transition.notice)
+                next_attempt = await _sleep_before_next_attempt(
+                    retry_delay_seconds,
+                    attempt,
+                )
+                return next_attempt, transition.cursor()
+            case FinalizeSuccessAttemptTransition(extracted_output=extracted_output):
+                record_transition_outputs(transition, usage_state, invocation_context)
+                _finalize_successful_invocation(
+                    output_file=output_file,
+                    extracted_output=extracted_output,
+                    invocation_context=invocation_context,
+                    config=config,
+                    usage_state=usage_state,
+                )
+                return None
+            case RaiseRetryExhaustedAttemptTransition():
+                record_transition_outputs(transition, usage_state, invocation_context)
+                _raise_retry_exhausted(
+                    runtime=runtime,
+                    result=attempt_result.result,
+                    retry_count=transition.retry_count,
+                    log_file=log_file,
+                )
+            case RaiseFailedExitAttemptTransition():
+                record_transition_outputs(transition, usage_state, invocation_context)
+                _raise_failed_exit(
+                    runtime=runtime,
+                    result=attempt_result.result,
+                    log_file=log_file,
+                )
+            case RaiseQuotaFailureAttemptTransition(message=message):
+                record_transition_outputs(transition, usage_state, invocation_context)
+                _raise_quota_failure(
+                    runtime=runtime,
+                    result=attempt_result.result,
+                    message=message,
+                )
+            case RaiseOutputExtractionFailureAttemptTransition(
+                extracted_output=extracted_output
+            ):
+                record_transition_outputs(transition, usage_state, invocation_context)
+                raise build_output_extraction_failure_error(
+                    runtime.cmd[0],
+                    extracted_output.output_extraction_status,
+                )
+            case ContinueAttemptTransition():
+                raise RuntimeError(
+                    "Invocation loop cannot execute a continue transition."
+                )
+            case _:
+                assert_never(transition)
+    finally:
+        _cleanup_transition_extracted_output(transition)
 
 
 async def _sleep_before_next_attempt(wait_seconds: float, attempt: int) -> int:
@@ -293,14 +313,37 @@ def _retry_decision_matched(retry_decision: FailureRetryDecision) -> bool:
     assert_never(retry_decision)
 
 
+def _cleanup_transition_extracted_output(
+    transition: InvocationAttemptTransition,
+) -> None:
+    match transition:
+        case (
+            FinalizeSuccessAttemptTransition(extracted_output=extracted_output)
+            | SleepAndRetryAttemptTransition(extracted_output=extracted_output)
+            | RaiseRetryExhaustedAttemptTransition(extracted_output=extracted_output)
+            | RaiseOutputExtractionFailureAttemptTransition(
+                extracted_output=extracted_output
+            )
+        ):
+            cleanup_extracted_invocation_output(extracted_output)
+        case (
+            ContinueAttemptTransition()
+            | RaiseFailedExitAttemptTransition()
+            | RaiseQuotaFailureAttemptTransition()
+        ):
+            return
+        case _:
+            assert_never(transition)
+
+
 def _finalize_successful_invocation(
     output_file: Path,
-    output_text: str,
+    extracted_output: ExtractedInvocationOutput,
     invocation_context: InvocationContext | None,
     config: AgentConfig,
     usage_state: InvocationUsageState,
 ) -> None:
-    output_file.write_text(output_text, encoding="utf-8")
+    write_extracted_invocation_output(extracted_output, output_file)
     record_usage_from_state_once(invocation_context, config, usage_state)
 
 
@@ -313,7 +356,7 @@ def _raise_retry_exhausted(
     raise build_invocation_failure_error(
         "Command output matched configured retry conditions after "
         f"{retry_count} retries",
-        runtime.provider_kind,
+        runtime.failure_profile,
         result,
         log_file,
     )
@@ -326,7 +369,7 @@ def _raise_failed_exit(
 ) -> None:
     raise build_invocation_failure_error(
         f"Exit code {result.returncode}",
-        runtime.provider_kind,
+        runtime.failure_profile,
         result,
         log_file,
     )
@@ -339,7 +382,7 @@ def _raise_quota_failure(
 ) -> None:
     raise build_quota_failure_error(
         message,
-        runtime.provider_kind,
+        runtime.failure_profile,
         result,
         None,
     )

@@ -286,6 +286,11 @@ Architecture and CLI tests cover:
     `src/orchestrator_cli/adapters/invokers/mock.py` and its
     `src/orchestrator_cli/adapters/invokers/mock_invoker/` implementation
     package.
+- Risk: review-contract helpers pull the mock adapter toward runtime consensus
+  internals.
+  - Mitigation: review verdict constants, sentinels, parsed result data, and
+    render helpers live in `core/review_contract.py`, a core-neutral contract
+    consumed by both runtime consensus and the mock invoker.
 
 ## Rejected or Deferred Alternatives
 
@@ -331,3 +336,7 @@ Architecture and CLI tests cover:
   `src/orchestrator_cli/adapters/invokers/mock_invoker/` package while keeping
   `orchestrator_cli.adapters.invokers.mock:MockInvokerAdapter` as the stable
   registry alias target.
+- **2026-06-07**: Folded in the boundary hardening update. The mock adapter
+  remains an adapter-owned deterministic transport, uses the core-neutral
+  review contract, and does not add review-specific behavior to runtime provider
+  invocation contracts.

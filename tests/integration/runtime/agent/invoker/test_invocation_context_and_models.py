@@ -3,6 +3,8 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig, Config
 from orchestrator_cli.core.preflight.models import (
     PreflightExecutionPlan,
@@ -10,18 +12,17 @@ from orchestrator_cli.core.preflight.models import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.core.preflight.signatures import signature_for_payload
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent_with_runner,
 )
 from orchestrator_cli.runtime.agent.quota import (
     classify_quota,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 from orchestrator_cli.runtime.execution.common import (
     CompiledRuntimeContext,
     resolve_provider_model,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
@@ -64,6 +65,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
             self.assertEqual(captured["node_id"], "node.a")
             self.assertEqual(captured["task_id"], "alpha_executor_0")
@@ -74,11 +76,11 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             output_file = tmp_path / "output.txt"
-            captured: dict[str, list[str]] = {}
+            captured: dict[str, bytes | list[str] | None] = {}
 
             async def runner(
                 cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                stdin_data: bytes | None,
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
@@ -86,14 +88,15 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
+                captured["stdin_data"] = stdin_data
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             config = AgentConfig(
                 cli_cmd=["gemini"],
+                provider_kind="gemini",
                 default_model="auto",
                 model_arg=None,
-                prompt_arg=None,
-                use_stdin=False,
+                prompt_transport="stdin",
                 extra_args=["--approval-mode=yolo"],
             )
             await invoke_agent_with_runner(
@@ -104,6 +107,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(
@@ -113,21 +117,20 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                     "--model",
                     "auto",
                     "--approval-mode=yolo",
-                    "--prompt",
-                    "review the repository",
                 ],
             )
+            self.assertEqual(captured["stdin_data"], b"review the repository")
             self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
 
     async def test_gemini_omits_model_flag_without_resolved_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             output_file = tmp_path / "output.txt"
-            captured: dict[str, list[str]] = {}
+            captured: dict[str, bytes | list[str] | None] = {}
 
             async def runner(
                 cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                stdin_data: bytes | None,
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
@@ -135,13 +138,14 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
+                captured["stdin_data"] = stdin_data
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             config = AgentConfig(
                 cli_cmd=["gemini"],
+                provider_kind="gemini",
                 model_arg=None,
-                prompt_arg=None,
-                use_stdin=False,
+                prompt_transport="stdin",
                 extra_args=["--approval-mode=yolo"],
             )
             await invoke_agent_with_runner(
@@ -152,6 +156,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(
@@ -159,10 +164,9 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 [
                     "gemini",
                     "--approval-mode=yolo",
-                    "--prompt",
-                    "review the repository",
                 ],
             )
+            self.assertEqual(captured["stdin_data"], b"review the repository")
             self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
 
     def test_resolve_provider_model_prefers_workflow_override_over_default_model(
@@ -239,11 +243,11 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             output_file = tmp_path / "output.txt"
-            captured: dict[str, list[str]] = {}
+            captured: dict[str, bytes | list[str] | None] = {}
 
             async def runner(
                 cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                stdin_data: bytes | None,
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
@@ -251,10 +255,12 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
+                captured["stdin_data"] = stdin_data
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             config = AgentConfig(
                 cli_cmd=["copilot"],
+                provider_kind="copilot",
                 default_model="claude-sonnet-4.5",
                 extra_args=[
                     "--silent",
@@ -270,6 +276,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(
@@ -281,15 +288,15 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                     "--silent",
                     "--no-ask-user",
                     "--allow-tool=write,shell(git:*)",
-                    "--prompt",
-                    "review the repository",
                 ],
             )
+            self.assertEqual(captured["stdin_data"], b"review the repository")
             self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
 
     def test_copilot_auto_quota_parser_supports_standalone_cli(self) -> None:
         config = AgentConfig(
             cli_cmd=["copilot"],
+            provider_kind="copilot",
             default_model="claude-sonnet-4.5",
         )
 
@@ -300,18 +307,46 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 stdout_text="rate limit reached, retry after 3s",
                 stderr_text="",
             ),
-            cli_executable="copilot",
+            parser="copilot",
         )
 
         self.assertTrue(quota.is_quota)
         self.assertEqual(quota.evidence, "rate limit")
         self.assertAlmostEqual(quota.reset_after_seconds or 0.0, 3.0, delta=0.2)
 
+    def test_copilot_quota_classifier_reads_marker_from_persisted_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "copilot.log"
+            path.write_text(
+                "\n".join(["noise"] * 500 + ["rate limit reached, retry after 3s"]),
+                encoding="utf-8",
+            )
+            quota = classify_quota(
+                config=AgentConfig(
+                    cli_cmd=["copilot"],
+                    provider_kind="copilot",
+                    default_model="claude-sonnet-4.5",
+                ),
+                result=CommandResult(
+                    returncode=0,
+                    stdout_text="",
+                    stderr_text="",
+                    stdout_path=path,
+                ),
+                parser="copilot",
+            )
+
+            self.assertTrue(quota.is_quota)
+            self.assertEqual(quota.evidence, "rate limit")
+            self.assertIsNotNone(quota.reset_after_seconds)
+            self.assertGreater(quota.reset_after_seconds, 0)
+
     def test_copilot_quota_classifier_ignores_bare_quota_in_success_report(
         self,
     ) -> None:
         config = AgentConfig(
             cli_cmd=["copilot"],
+            provider_kind="copilot",
             default_model="claude-sonnet-4.5",
             quota_reached_on_contains=["rate limit", "quota", "too many requests"],
         )
@@ -328,7 +363,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 stderr_text="",
             ),
-            cli_executable="copilot",
+            parser="copilot",
         )
 
         self.assertFalse(quota.is_quota)
@@ -339,6 +374,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         config = AgentConfig(
             cli_cmd=["copilot"],
+            provider_kind="copilot",
             default_model="claude-sonnet-4.5",
             quota_reached_on_contains=["rate limit", "quota", "too many requests"],
         )
@@ -359,7 +395,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                         stdout_text=output_text,
                         stderr_text="",
                     ),
-                    cli_executable="copilot",
+                    parser="copilot",
                 )
 
                 self.assertTrue(quota.is_quota)

@@ -1,10 +1,21 @@
 import os
 from pathlib import Path
+from typing import Any
 
-from orchestrator_cli.core.versions import (
+from rich.console import Console
+
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )
+
+
+class ConsoleFactory:
+    def __init__(self, **kwargs: Any) -> None:
+        self._kwargs = kwargs
+
+    def __call__(self) -> Console:
+        return Console(**self._kwargs)
 
 
 def project_pythonpath() -> str:

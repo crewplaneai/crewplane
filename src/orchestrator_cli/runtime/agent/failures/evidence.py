@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import io
 import json
 from collections import deque
+from collections.abc import Iterable
+from itertools import chain
 
-from ..command_builder import ProviderKind
-from ..types import CommandResult
+from orchestrator_cli.architecture.contracts import CommandResult, ProviderKind
+
 from .formatting import clip_failure_summary, is_failure_hint
 from .patterns import (
     ADVICE_BY_KIND,
@@ -32,37 +33,22 @@ from .types import (
 )
 
 
-def failure_lines(result: CommandResult) -> list[tuple[str, FailureSource]]:
-    lines: list[tuple[str, FailureSource]] = []
-    lines.extend(_stream_lines(result.stderr_text, "stderr_json", "stderr_text"))
-    lines.extend(_stream_lines(result.stdout_text, "stdout_json", "stdout_text"))
-    return lines
-
-
-def _stream_lines(
-    text: str,
-    json_source: FailureSource,
-    text_source: FailureSource,
-) -> list[tuple[str, FailureSource]]:
-    if not text.strip():
-        return []
-    lines: deque[tuple[str, FailureSource]] = deque(maxlen=MAX_FAILURE_LINES)
-    for raw_line in io.StringIO(text):
-        line = raw_line.strip()
-        if not line:
-            continue
-        source = json_source if line.startswith("{") else text_source
-        lines.append((line, source))
-    return list(lines)
+def failure_lines(result: CommandResult) -> Iterable[tuple[str, FailureSource]]:
+    return chain(
+        _stream_lines(result.iter_stderr_lines(), "stderr_json", "stderr_text"),
+        _stream_lines(result.iter_stdout_lines(), "stdout_json", "stdout_text"),
+    )
 
 
 def collect_failure_evidence(
     provider_kind: ProviderKind,
-    lines: list[tuple[str, FailureSource]],
-) -> list[FailureEvidence]:
+    lines: Iterable[tuple[str, FailureSource]],
+) -> tuple[list[FailureEvidence], list[tuple[str, FailureSource]], int]:
     evidence: list[FailureEvidence] = []
-    for sequence, line_item in enumerate(lines):
-        line, source = line_item
+    candidate_lines: deque[tuple[str, FailureSource]] = deque()
+    line_count = 0
+    for sequence, (line, source) in enumerate(lines):
+        line_count += 1
         item = _json_failure_evidence(provider_kind, line, source, sequence)
         if item is not None:
             evidence.append(item)
@@ -70,7 +56,21 @@ def collect_failure_evidence(
         item = _text_failure_evidence(provider_kind, line, source, sequence)
         if item is not None:
             evidence.append(item)
-    return evidence
+        candidate_lines.append((line, source))
+        if len(candidate_lines) > MAX_FAILURE_LINES:
+            candidate_lines.popleft()
+    return evidence, list(candidate_lines), line_count
+
+
+def _stream_lines(
+    lines: Iterable[str], json_source: FailureSource, text_source: FailureSource
+) -> Iterable[tuple[str, FailureSource]]:
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        source = json_source if line.startswith("{") else text_source
+        yield line, source
 
 
 def _json_failure_evidence(

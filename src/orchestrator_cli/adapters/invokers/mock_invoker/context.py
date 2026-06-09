@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from orchestrator_cli.runtime.agent.types import InvocationContext
+from orchestrator_cli.architecture.contracts import InvocationContext
 
 
 @dataclass(frozen=True)

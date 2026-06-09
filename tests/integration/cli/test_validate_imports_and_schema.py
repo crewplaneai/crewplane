@@ -5,13 +5,13 @@ import unittest
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     WORKFLOW_SCHEMA_VERSION,
 )
 from tests.integration.cli.cli_workflow_helpers import (
+    ConsoleFactory,
     write_basic_config,
     write_basic_workflow,
 )
@@ -27,8 +27,8 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -40,7 +40,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                 cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Frontmatter: valid YAML", output_text)
@@ -109,8 +109,8 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -122,7 +122,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                 cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Imports: 1 imported workflow file(s) resolved", output_text)
@@ -186,8 +186,8 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -200,7 +200,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Invalid:", output_text)
@@ -233,8 +233,8 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -247,7 +247,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Provider validation failed", output_text)
@@ -283,8 +283,8 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -297,7 +297,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Invalid:", output_text)

@@ -3,13 +3,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from orchestrator_cli.core.workflow_syntax import (
+    NODE_ARTIFACT_REFERENCE_PATTERN,
+    PARAM_TEMPLATE_PATTERN,
+)
+
 from ..prompt_segments import PromptSegment
 from .models import ParamBinding
-
-ARTIFACT_REFERENCE_PATTERN = re.compile(
-    r"\{\{\s*([a-z0-9._-]+)\.([A-Za-z0-9_-]+)\s*\}\}"
-)
-PARAM_TEMPLATE_PATTERN = re.compile(r"\{\{\s*param:([^}]+)\}\}")
 
 
 def qualify_id(prefix: str, node_id: str) -> str:
@@ -33,7 +33,7 @@ def rewrite_artifact_references(
         )
         return "{{" + resolved_id + "." + artifact_name + "}}"
 
-    return ARTIFACT_REFERENCE_PATTERN.sub(_replace, prompt)
+    return NODE_ARTIFACT_REFERENCE_PATTERN.sub(_replace, prompt)
 
 
 def resolve_dependency_id(

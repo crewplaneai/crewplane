@@ -5,7 +5,6 @@ from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -15,6 +14,7 @@ from orchestrator_cli.observability.events import ExecutionEvent
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_sequential_stage,
@@ -159,10 +159,10 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_stall_detection"
+                and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
-            self.assertIn("executor output changed", stall_events[0].message)
+            self.assertIn("executor output changed", stall_events[0].payload.message)
 
     async def test_multi_provider_sequential_warns_on_unchanged_output_no_progress(
         self,
@@ -214,7 +214,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_no_progress"
+                and event.payload.operation == "review_loop_no_progress"
             ]
             self.assertEqual(len(no_progress_events), 1)
 
@@ -279,17 +279,17 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_stall_detection"
+                and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
             self.assertEqual(
-                stall_events[0].attributes["current_unresolved_issue_count"],
+                stall_events[0].payload.attributes["current_unresolved_issue_count"],
                 1,
             )
             self.assertEqual(
-                stall_events[0].attributes["repeated_fingerprint_count"], 1
+                stall_events[0].payload.attributes["repeated_fingerprint_count"], 1
             )
-            self.assertNotIn("repeated_issue_count", stall_events[0].attributes)
+            self.assertNotIn("repeated_issue_count", stall_events[0].payload.attributes)
 
     async def test_stall_warning_reports_issue_count_not_fingerprint_count(
         self,
@@ -349,15 +349,15 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_stall_detection"
+                and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
             self.assertEqual(
-                stall_events[0].attributes["current_unresolved_issue_count"],
+                stall_events[0].payload.attributes["current_unresolved_issue_count"],
                 1,
             )
             self.assertGreater(
-                stall_events[0].attributes["repeated_fingerprint_count"],
+                stall_events[0].payload.attributes["repeated_fingerprint_count"],
                 1,
             )
 
@@ -415,7 +415,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_stall_detection"
+                and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(stall_events, [])
 

@@ -46,6 +46,8 @@ def spend_markdown_lines(summary: RunSummary) -> list[str]:
         f"- {row.label}: {row.markdown_value()}\n"
         for row in spend_overview_rows(summary.spend)
     ]
+    if summary.omitted_invocation_usage_count > 0:
+        lines.append(invocation_usage_retention_line(summary))
 
     for invocation_usage in summary.invocation_usages:
         details = [
@@ -73,6 +75,16 @@ def spend_markdown_lines(summary: RunSummary) -> list[str]:
         )
         lines.append(f"- {label}: {'; '.join(details)}\n")
     return lines
+
+
+def invocation_usage_retention_line(summary: RunSummary) -> str:
+    return (
+        "- Invocation detail: retained latest "
+        f"{len(summary.invocation_usages)} invocation(s); "
+        f"{summary.omitted_invocation_usage_count} earlier invocation detail(s) "
+        "were omitted from summary detail. Full invocation events remain in "
+        f"{summary.event_log_path}.\n"
+    )
 
 
 def node_outcome_markdown_lines(summary: RunSummary) -> list[str]:

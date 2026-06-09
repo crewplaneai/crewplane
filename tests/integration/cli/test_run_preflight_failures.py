@@ -5,16 +5,17 @@ import unittest
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )
 from tests.integration.cli.cli_workflow_helpers import (
+    ConsoleFactory,
     repo_task_workflow_stage_names,
     write_basic_config,
+    write_basic_workflow,
 )
 
 
@@ -50,6 +51,61 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                     tasks_file=workflow_path, config_file=config_path, dry_run=False
                 )
 
+    def test_run_preflight_shows_warning_for_argv_prompt_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yml"
+            workflow_path = tmp_path / "workflow.task.md"
+            write_basic_config(config_path)
+            config_path.write_text(
+                "\n".join(
+                    [
+                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        "",
+                        "agents:",
+                        "  alpha:",
+                        '    cli_cmd: ["echo"]',
+                        '    default_model: "model-a"',
+                        '    prompt_transport: "argv"',
+                        '    prompt_transport_arg: "--prompt"',
+                        "settings:",
+                        "  integrations:",
+                        "    invoker:",
+                        '      implementation: "mock"',
+                        "      options:",
+                        "        delay_seconds: 0",
+                        "        observation_delay_seconds: 0",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            write_basic_workflow(workflow_path)
+
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            original_cwd = Path.cwd()
+            cli.Console = ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            )
+            try:
+                os.chdir(tmp_path)
+                cli.run(
+                    tasks_file=workflow_path,
+                    config_file=config_path,
+                    dry_run=False,
+                )
+            finally:
+                os.chdir(original_cwd)
+                cli.Console = original_console_cls
+
+            output_text = stream.getvalue()
+            self.assertIn("Preflight warnings:", output_text)
+            self.assertIn("PROVIDER-CONFIG", output_text)
+            self.assertIn("argv prompt transport", output_text)
+
     def test_run_reports_invalid_workflow_without_raw_exception(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -76,8 +132,8 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -91,7 +147,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                         dry_run=False,
                     )
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight PREFLIGHT-VALIDATION", output_text)
@@ -125,10 +181,10 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_env = os.environ.get("ORCH_REQUIRED_ENV")
             original_repo_stage_names = repo_task_workflow_stage_names()
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -147,7 +203,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                     os.environ.pop("ORCH_REQUIRED_ENV", None)
                 else:
                     os.environ["ORCH_REQUIRED_ENV"] = original_env
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight TEMPLATE-VALUE", output_text)
@@ -200,8 +256,8 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -210,7 +266,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             try:
                 cli.run(tasks_file=workflow_path, config_file=config_path, dry_run=True)
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Dry run mode", output_text)
@@ -243,8 +299,8 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -258,7 +314,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                         dry_run=True,
                     )
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Provider validation failed", output_text)
@@ -291,9 +347,9 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_env = os.environ.get("ORCH_REQUIRED_ENV")
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -312,7 +368,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                     os.environ.pop("ORCH_REQUIRED_ENV", None)
                 else:
                     os.environ["ORCH_REQUIRED_ENV"] = original_env
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight compilation failed", output_text)
@@ -365,7 +421,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_cwd = Path.cwd()
             calls = {"count": 0}
@@ -373,7 +429,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 calls["count"] += 1
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -390,7 +446,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertEqual(calls["count"], 1)
             self.assertNotIn("Provider validation failed", stream.getvalue())
@@ -445,8 +501,8 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -460,7 +516,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                         dry_run=True,
                     )
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Audit rounds validation failed", output_text)

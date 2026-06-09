@@ -1,29 +1,35 @@
 import asyncio
+import os
+import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.invocation.command import (
     build_invocation_runtime,
     cleanup_structured_output_file,
     prepare_runtime_for_attempt,
+    run_command_once,
     run_invocation_attempt,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 
 
 def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:
-    runtime = build_invocation_runtime(
-        config=AgentConfig(
+    plan = build_cli_invocation_plan(
+        AgentConfig(
             cli_cmd=["codex", "exec"],
+            provider_kind="codex",
             default_model="gpt-5.4",
-            use_stdin=True,
-            stdin_prompt_arg="-",
+            prompt_transport_arg="-",
         ),
-        model="gpt-5.4",
-        prompt="prompt",
-        output_file=Path("output.txt"),
+        "gpt-5.4",
+        "prompt",
+        Path("output.txt"),
     )
+    runtime = build_invocation_runtime(plan)
     assert runtime.structured_output_file is not None
     try:
         runtime.structured_output_file.write_text("stale", encoding="utf-8")
@@ -36,14 +42,44 @@ def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:
 
 
 class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
+    async def test_run_command_once_uses_spawned_process_group_id(self) -> None:
+        if os.name != "posix":
+            self.skipTest("process group lookup is POSIX-only")
+
+        observed_pids: list[int] = []
+
+        def fake_getpgid(pid: int) -> int:
+            observed_pids.append(pid)
+            return pid
+
+        with patch(
+            "orchestrator_cli.runtime.agent.invocation.command.os.getpgid",
+            side_effect=fake_getpgid,
+        ):
+            result = await run_command_once(
+                cmd=[sys.executable, "-c", "print('ok')"],
+                stdin_data=None,
+                log_file=None,
+                append_log=False,
+                log_header=None,
+                invocation_context=None,
+                idle_timeout_seconds=None,
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout_text.strip(), "ok")
+        self.assertEqual(len(observed_pids), 1)
+        self.assertGreater(observed_pids[0], 0)
+
     async def test_run_invocation_attempt_passes_idle_timeout_to_runner(self) -> None:
         observed_idle_timeouts: list[float | None] = []
-        runtime = build_invocation_runtime(
-            config=AgentConfig(cli_cmd=["tool"], default_model="test"),
-            model="test",
-            prompt="prompt",
-            output_file=Path("output.txt"),
+        plan = build_cli_invocation_plan(
+            AgentConfig(cli_cmd=["tool"], default_model="test"),
+            "test",
+            "prompt",
+            Path("output.txt"),
         )
+        runtime = build_invocation_runtime(plan)
 
         async def runner(
             cmd: list[str],  # noqa: ARG001
@@ -72,12 +108,13 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_run_invocation_attempt_emits_timeout_diagnostic(self) -> None:
         diagnostics = []
-        runtime = build_invocation_runtime(
-            config=AgentConfig(cli_cmd=["tool"], default_model="test"),
-            model="test",
-            prompt="prompt",
-            output_file=Path("output.txt"),
+        plan = build_cli_invocation_plan(
+            AgentConfig(cli_cmd=["tool"], default_model="test"),
+            "test",
+            "prompt",
+            Path("output.txt"),
         )
+        runtime = build_invocation_runtime(plan)
 
         async def runner(
             cmd: list[str],  # noqa: ARG001
@@ -99,7 +136,10 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             diagnostics=diagnostics.append,
         )
 
-        with self.assertRaisesRegex(RuntimeError, "timed out after 0.01s"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "wall-clock timeout reached after 0.01s",
+        ):
             await run_invocation_attempt(
                 runtime=runtime,
                 command_runner=runner,
@@ -113,3 +153,4 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [diagnostic.operation for diagnostic in diagnostics], ["invocation_timeout"]
         )
+        self.assertEqual(diagnostics[0].attributes["timeout_scope"], "wall_clock")

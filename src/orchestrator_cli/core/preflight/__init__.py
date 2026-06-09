@@ -19,11 +19,10 @@ from .models import (
 )
 from .runner import load_workflow_source_for_preflight
 from .runtime_config import (
-    CanonicalIntegrationConfig,
     RuntimeConfigSnapshot,
     RuntimeConfigSnapshotOptions,
 )
-from .secrets import FingerprintKeyProvider, SecretContext
+from .secrets import FingerprintKeyCache, FingerprintKeyProvider, SecretContext
 from .serialization import canonical_json, canonical_json_bytes
 from .signatures import signature_for_payload
 from .source import PreflightWorkflowSource
@@ -31,8 +30,8 @@ from .variables import build_builtin_template_variables
 
 __all__ = [
     "ArtifactContract",
-    "CanonicalIntegrationConfig",
     "DependencyEdge",
+    "FingerprintKeyCache",
     "FingerprintKeyProvider",
     "Fragment",
     "PREFLIGHT_STATUS_FAILED",

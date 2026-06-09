@@ -5,14 +5,14 @@ import unittest
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )
 from tests.integration.cli.cli_workflow_helpers import (
+    ConsoleFactory,
     write_basic_config,
     write_basic_workflow,
 )
@@ -85,7 +85,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
@@ -93,7 +93,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -111,7 +111,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertIn("invoker", captured_kwargs)
             self.assertIn("event_sink", captured_kwargs)
@@ -126,7 +126,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_hub = cli.ObservabilityHub
             original_which = cli.shutil.which
@@ -166,7 +166,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 def emit(self, event):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
                     return None
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=True,
                 color_system=None,
@@ -195,7 +195,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
                 cli.shutil.which = original_which  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertIn("event_sink", captured_kwargs)
             self.assertIn("invoker", captured_kwargs)
@@ -212,7 +212,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow_run = cli.workflow_runner.execute_workflow_run
             original_cwd = Path.cwd()
 
@@ -221,7 +221,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                     "Workflow cancelled by live dashboard quit request."
                 )
 
-            cli.console = Console(file=stream, force_terminal=False)
+            cli.Console = ConsoleFactory(file=stream, force_terminal=False)
             cli.workflow_runner.execute_workflow_run = fake_execute_workflow_run  # type: ignore[assignment]
             os.chdir(tmp_path)
             try:
@@ -235,7 +235,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
                 cli.workflow_runner.execute_workflow_run = original_execute_workflow_run  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertEqual(raised.exception.exit_code, 130)
             self.assertIn(
@@ -272,7 +272,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_hub = cli.ObservabilityHub
             original_which = cli.shutil.which
             original_execute_workflow = cli.execute_workflow
@@ -321,7 +321,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 return None
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=True,
                 color_system=None,
@@ -350,7 +350,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 cli.shutil.which = original_which  # type: ignore[assignment]
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertEqual(captured_live_config["observer_count"], 2)
             self.assertEqual(captured_live_config["refresh_per_second"], 0)
@@ -367,7 +367,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
@@ -375,7 +375,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=True,
                 color_system=None,
@@ -395,7 +395,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertIn("invoker", captured_kwargs)
             self.assertIn("event_sink", captured_kwargs)
@@ -410,7 +410,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_which = cli.shutil.which
             original_cwd = Path.cwd()
@@ -419,7 +419,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=True,
                 color_system=None,
@@ -442,7 +442,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 os.chdir(original_cwd)
                 cli.shutil.which = original_which  # type: ignore[assignment]
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertIn("invoker", captured_kwargs)
             self.assertIn("event_sink", captured_kwargs)
@@ -457,7 +457,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_hub = cli.ObservabilityHub
             original_which = cli.shutil.which
@@ -495,7 +495,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 def emit(self, event):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
                     return None
 
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=True,
                 color_system=None,
@@ -524,7 +524,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             self.assertIn("invoker", captured_kwargs)
             self.assertIn("event_sink", captured_kwargs)

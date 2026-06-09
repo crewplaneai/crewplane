@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
@@ -9,7 +11,6 @@ from orchestrator_cli.runtime.agent.failures import (
 from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 
 
 class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
@@ -20,11 +21,11 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
             tmp_path = Path(tmp_dir)
             output_file = tmp_path / "output.txt"
             usages = []
-            captured: dict[str, list[str]] = {}
+            captured: dict[str, bytes | list[str] | None] = {}
 
             async def runner(
                 cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                stdin_data: bytes | None,
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
@@ -32,6 +33,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
+                captured["stdin_data"] = stdin_data
                 return CommandResult(
                     returncode=0,
                     stdout_text='{"result":"done","usage":{"input_tokens":120,"output_tokens":30}}',
@@ -48,6 +50,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
             )
             config = AgentConfig(
                 cli_cmd=["claude"],
+                provider_kind="claude",
                 default_model="sonnet",
                 pricing={"input": 3.0, "output": 15.0},
             )
@@ -59,6 +62,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(
@@ -69,10 +73,9 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                     "sonnet",
                     "--output-format",
                     "json",
-                    "-p",
-                    "review the repository",
                 ],
             )
+            self.assertEqual(captured["stdin_data"], b"review the repository")
             self.assertEqual(output_file.read_text(encoding="utf-8"), "done")
             self.assertEqual(usages[0].provider_usage_status, "full")
 
@@ -107,7 +110,11 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 round_num=1,
                 usage_recorder=usages.append,
             )
-            config = AgentConfig(cli_cmd=["claude"], default_model="sonnet")
+            config = AgentConfig(
+                cli_cmd=["claude"],
+                provider_kind="claude",
+                default_model="sonnet",
+            )
             await invoke_agent_with_runner(
                 config=config,
                 model="sonnet",
@@ -116,6 +123,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(output_file.read_text(encoding="utf-8"), "done")
@@ -153,7 +161,11 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 round_num=1,
                 usage_recorder=usages.append,
             )
-            config = AgentConfig(cli_cmd=["claude"], default_model="sonnet")
+            config = AgentConfig(
+                cli_cmd=["claude"],
+                provider_kind="claude",
+                default_model="sonnet",
+            )
             with self.assertRaisesRegex(
                 RuntimeError, "claude output extraction failed: missing"
             ) as caught:
@@ -165,6 +177,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
             self.assertIsInstance(caught.exception, InvocationFailureError)
             failure = caught.exception
@@ -213,6 +226,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(
@@ -258,6 +272,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(len(usages), 1)
@@ -306,6 +321,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(len(usages), 1)

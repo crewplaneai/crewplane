@@ -7,13 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rich.console import Console
-
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     WORKFLOW_SCHEMA_VERSION,
 )
 from tests.integration.cli.cli_workflow_helpers import (
+    ConsoleFactory,
     project_pythonpath,
     write_basic_config,
     write_basic_config_without_default_model,
@@ -66,8 +65,8 @@ class CliDryRunTests(unittest.TestCase):
             write_review_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -79,7 +78,7 @@ class CliDryRunTests(unittest.TestCase):
                 cli.run(tasks_file=workflow_path, config_file=config_path, dry_run=True)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Wave 1", output_text)
@@ -96,8 +95,8 @@ class CliDryRunTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -109,7 +108,7 @@ class CliDryRunTests(unittest.TestCase):
                 cli.run(tasks_file=workflow_path, config_file=config_path, dry_run=True)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("provider default", output_text)
@@ -126,8 +125,8 @@ class CliDryRunTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -139,7 +138,7 @@ class CliDryRunTests(unittest.TestCase):
                 cli.run(tasks_file=workflow_path, config_file=config_path, dry_run=True)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("(workflow-model)", output_text)
@@ -183,8 +182,8 @@ class CliDryRunTests(unittest.TestCase):
             input_file.write_text("review findings", encoding="utf-8")
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -196,7 +195,7 @@ class CliDryRunTests(unittest.TestCase):
                 cli.run(tasks_file=workflow_path, config_file=config_path, dry_run=True)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Node: review-input (input)", output_text)

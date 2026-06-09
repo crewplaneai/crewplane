@@ -21,7 +21,6 @@ from orchestrator_cli.core.preflight import (
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -29,6 +28,7 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowPlan,
 )
 from orchestrator_cli.runtime.execution import execute_workflow
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 
 

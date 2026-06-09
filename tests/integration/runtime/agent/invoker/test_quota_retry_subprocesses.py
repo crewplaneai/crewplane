@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
@@ -13,7 +15,6 @@ from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 
 
 class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
@@ -50,12 +51,17 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
                     quota_reached_on_contains=["usage limit reached"],
                     quota_reached_retry_delay_seconds=0,
                 )
                 output_file = tmp_path / "output.txt"
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
             finally:
                 if original_state is None:
                     os.environ.pop("STATE_FILE", None)
@@ -97,8 +103,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
-                    quota_parser="gemini",
+                    provider_kind="gemini",
                     quota_reached_retry_delay_seconds=0,
                     quota_reset_sleep_floor_seconds=5,
                 )
@@ -108,7 +113,13 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
-                    await invoke_agent(config, "test-model", "prompt", output_file)
+                    await invoke_agent(
+                        config,
+                        "test-model",
+                        "prompt",
+                        output_file,
+                        plan_builder=build_cli_invocation_plan,
+                    )
             finally:
                 if original_state is None:
                     os.environ.pop("STATE_FILE", None)
@@ -153,8 +164,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
-                    quota_parser="gemini",
+                    provider_kind="gemini",
                     quota_reached_retry_delay_seconds=30,
                     quota_reset_sleep_floor_seconds=5,
                 )
@@ -164,7 +174,13 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
-                    await invoke_agent(config, "test-model", "prompt", output_file)
+                    await invoke_agent(
+                        config,
+                        "test-model",
+                        "prompt",
+                        output_file,
+                        plan_builder=build_cli_invocation_plan,
+                    )
             finally:
                 if original_state is None:
                     os.environ.pop("STATE_FILE", None)
@@ -192,8 +208,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path)],
                 default_model="test",
                 model_arg=None,
-                prompt_arg=None,
-                quota_parser="gemini",
+                provider_kind="gemini",
                 quota_reached_retry_delay_seconds=0,
                 quota_reset_sleep_floor_seconds=5,
             )
@@ -206,7 +221,13 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 self.assertRaisesRegex(RuntimeError, "exceeds 5 hours") as caught,
             ):
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
             self.assertIsInstance(caught.exception, InvocationFailureError)
             failure = caught.exception
             assert isinstance(failure, InvocationFailureError)
@@ -247,8 +268,8 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["gemini"],
+                provider_kind="gemini",
                 default_model="test-model",
-                quota_parser="gemini",
                 quota_reached_retry_delay_seconds=300,
             )
             sleep_mock = AsyncMock()
@@ -264,6 +285,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)
@@ -304,8 +326,8 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["gemini"],
+                provider_kind="gemini",
                 default_model="test-model",
-                quota_parser="gemini",
                 quota_reached_retry_delay_seconds=0,
                 quota_reset_sleep_floor_seconds=0,
             )
@@ -322,6 +344,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)
@@ -360,8 +383,8 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["gemini"],
+                provider_kind="gemini",
                 default_model="test-model",
-                quota_parser="gemini",
                 quota_reached_retry_delay_seconds=0,
                 quota_reset_sleep_floor_seconds=0,
             )
@@ -378,6 +401,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)
@@ -420,8 +444,8 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["gemini"],
+                provider_kind="gemini",
                 default_model="test-model",
-                quota_parser="gemini",
                 quota_reached_retry_delay_seconds=300,
             )
             sleep_mock = AsyncMock()
@@ -437,6 +461,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)
@@ -476,7 +501,6 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
                     quota_reached_on_contains=["usage limit reached"],
                     quota_reached_retry_delay_seconds=13,
                 )
@@ -486,7 +510,13 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
-                    await invoke_agent(config, "test-model", "prompt", output_file)
+                    await invoke_agent(
+                        config,
+                        "test-model",
+                        "prompt",
+                        output_file,
+                        plan_builder=build_cli_invocation_plan,
+                    )
             finally:
                 if original_state is None:
                     os.environ.pop("STATE_FILE", None)
@@ -510,8 +540,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path)],
                 default_model="test",
                 model_arg=None,
-                prompt_arg=None,
-                quota_parser="gemini",
+                provider_kind="gemini",
                 quota_reached_retry_delay_seconds=0,
                 quota_reset_sleep_floor_seconds=5,
             )
@@ -532,6 +561,12 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 self.assertRaisesRegex(RuntimeError, "would exceed 5 hours"),
             ):
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
             self.assertFalse(output_file.exists())
             self.assertEqual(sleep_mock.await_count, 0)

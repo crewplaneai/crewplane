@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from orchestrator_cli.architecture.contracts import AgentInvoker
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.core.preflight.models import (
     DependencyEdge,
@@ -10,7 +11,6 @@ from orchestrator_cli.core.preflight.models import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.observability.events import EventSink
-from orchestrator_cli.runtime.agent.types import AgentInvoker
 
 from .common import (
     CompiledRuntimeContext,
@@ -19,78 +19,17 @@ from .common import (
     RuntimeActivityTracker,
     RuntimeEventContext,
     WorkflowExecutionState,
-    build_stage_task_specs,
     emit_runtime_log,
-    emit_stage_finalize_logs,
     emit_workflow_event,
     execution_console,
     safe_error_message,
     should_print_console,
 )
-from .input import execute_input_stage
-from .parallel import execute_parallel_stage
-from .sequential import execute_sequential_stage
-
-
-def _mark_node_running_activity(
-    telemetry: ExecutionTelemetry | None,
-    node_id: str,
-) -> None:
-    if telemetry is None or telemetry.activity_tracker is None:
-        return
-    telemetry.activity_tracker.mark_node_running(node_id)
-
-
-def _mark_node_finished_activity(
-    telemetry: ExecutionTelemetry | None,
-    node_id: str,
-) -> None:
-    if telemetry is None or telemetry.activity_tracker is None:
-        return
-    telemetry.activity_tracker.mark_node_finished(node_id)
-
-
-async def _execute_node(
-    node: PreflightExecutionNode,
-    output: ArtifactStorePort,
-    invoker: AgentInvoker,
-    runtime_context: CompiledRuntimeContext,
-    telemetry: ExecutionTelemetry | None,
-) -> None:
-    emit_workflow_event(telemetry, "node_started", node_id=node.id)
-    if should_print_console(telemetry):
-        execution_console(telemetry).rule(f"Node: {node.id} ({node.mode})")
-    if node.mode == "input":
-        execute_input_stage(
-            node,
-            output,
-            runtime_context=runtime_context,
-            telemetry=telemetry,
-        )
-    elif node.mode == "parallel":
-        await execute_parallel_stage(
-            node,
-            output,
-            runtime_context=runtime_context,
-            invoker=invoker,
-            telemetry=telemetry,
-        )
-    else:
-        await execute_sequential_stage(
-            node,
-            output,
-            runtime_context=runtime_context,
-            invoker=invoker,
-            telemetry=telemetry,
-        )
-    stage_finalize_result = output.finalize_stage(
-        node.id,
-        findings_enabled=node.findings,
-        task_specs=build_stage_task_specs(node),
-    )
-    emit_stage_finalize_logs(telemetry, stage_finalize_result)
-    if should_print_console(telemetry):
-        execution_console(telemetry).print(f"[green]✓[/] Node '{node.id}' complete\n")
+from .workflow_node import (
+    execute_node,
+    mark_node_finished_activity,
+    mark_node_running_activity,
+)
 
 
 def _validate_dependency_edge(edge: DependencyEdge, node_ids: set[str]) -> None:
@@ -106,9 +45,7 @@ def _validate_dependency_edge(edge: DependencyEdge, node_ids: set[str]) -> None:
         )
 
 
-def _dependencies_by_node(
-    plan: PreflightExecutionPlan,
-) -> dict[str, set[str]]:
+def _dependencies_by_node(plan: PreflightExecutionPlan) -> dict[str, set[str]]:
     node_ids = {node.id for node in plan.nodes}
     dependencies = {node.id: set() for node in plan.nodes}
     for edge in plan.dependency_graph:
@@ -117,12 +54,10 @@ def _dependencies_by_node(
     return dependencies
 
 
-def _build_dependents_map(
-    dependencies_by_node: dict[str, set[str]],
-) -> dict[str, list[str]]:
-    dependents: dict[str, list[str]] = {node_id: [] for node_id in dependencies_by_node}
-    for node_id, dependencies in dependencies_by_node.items():
-        for needed in dependencies:
+def _build_dependents_map(dependencies: dict[str, set[str]]) -> dict[str, list[str]]:
+    dependents: dict[str, list[str]] = {node_id: [] for node_id in dependencies}
+    for node_id, node_dependencies in dependencies.items():
+        for needed in node_dependencies:
             dependents[needed].append(node_id)
     return dependents
 
@@ -169,7 +104,7 @@ def _wrap_node_task(
 ) -> asyncio.Task[None]:
     async def _run() -> None:
         if node_semaphore is None:
-            await _execute_node(
+            await execute_node(
                 node,
                 output,
                 invoker,
@@ -178,7 +113,7 @@ def _wrap_node_task(
             )
             return
         async with node_semaphore:
-            await _execute_node(
+            await execute_node(
                 node,
                 output,
                 invoker,
@@ -206,7 +141,7 @@ def _schedule_ready_nodes(
         if state.statuses[node_id] != "pending":
             continue
         state.statuses[node_id] = "running"
-        _mark_node_running_activity(telemetry, node_id)
+        mark_node_running_activity(telemetry, node_id)
         state.running[node_id] = _wrap_node_task(
             nodes_by_id[node_id],
             output,
@@ -251,7 +186,7 @@ def _mark_node_failed(
     state: WorkflowExecutionState,
     telemetry: ExecutionTelemetry | None,
 ) -> None:
-    _mark_node_finished_activity(telemetry, node_id)
+    mark_node_finished_activity(telemetry, node_id)
     state.statuses[node_id] = "failed"
     state.node_errors[node_id] = exc
     if should_print_console(telemetry):
@@ -281,7 +216,7 @@ def _mark_node_succeeded(
     state: WorkflowExecutionState,
     telemetry: ExecutionTelemetry | None,
 ) -> None:
-    _mark_node_finished_activity(telemetry, node_id)
+    mark_node_finished_activity(telemetry, node_id)
     state.statuses[node_id] = "succeeded"
     emit_workflow_event(telemetry, "node_finished", node_id=node_id)
     _queue_satisfied_dependents(node_id, state)
@@ -412,9 +347,8 @@ async def execute_workflow(
     )
     runtime_context.validate_execution_contract()
     node_semaphore: asyncio.Semaphore | None = None
-    max_concurrent_nodes = None
-    if runtime_context.max_concurrent_nodes() is not None:
-        max_concurrent_nodes = runtime_context.max_concurrent_nodes()
+    max_concurrent_nodes = runtime_context.max_concurrent_nodes()
+    if max_concurrent_nodes is not None:
         node_semaphore = asyncio.Semaphore(max_concurrent_nodes)
     if should_print_console(telemetry):
         execution_console(telemetry).print(

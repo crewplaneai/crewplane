@@ -8,7 +8,7 @@ from .compile_state import (
     CompileState,
     PreflightCompileOptions,
     append_diagnostic,
-    append_multiline_diagnostics,
+    extend_diagnostics,
     has_errors,
 )
 from .dependency_edges import append_dependency_edge
@@ -20,6 +20,7 @@ from .models import (
     RenderPlan,
 )
 from .plan_signatures import workflow_signature
+from .prompt_transport_warnings import collect_prompt_transport_warnings
 from .render_plans import (
     apply_env_policy,
     apply_file_policy,
@@ -31,10 +32,9 @@ from .runtime_config_redaction import config_value_handle
 from .secrets import FINGERPRINT_SCHEMA_VERSION
 from .source import PreflightWorkflowSource
 from .validation import (
-    validate_preflight_audit_rounds,
-    validate_preflight_provider_references,
-    validate_preflight_token_budget,
-    validate_preflight_workflow_references,
+    collect_preflight_policy_diagnostics,
+    collect_preflight_provider_reference_diagnostics,
+    collect_preflight_workflow_reference_diagnostics,
 )
 from .value_fingerprints import (
     backfill_value_fingerprints,
@@ -56,6 +56,7 @@ def compile_preflight_preview(
     effective_options = options.with_source_metadata(source)
     state = CompileState()
     _collect_validation_diagnostics(workflow, config, effective_options, state)
+    collect_prompt_transport_warnings(config, state)
     execution_order = _execution_order(workflow, state)
     if has_errors(state):
         return _build_preview(
@@ -326,35 +327,28 @@ def _collect_validation_diagnostics(
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> None:
-    validators = (
-        ("reference", validate_preflight_workflow_references),
-        (
-            "provider",
-            lambda candidate: validate_preflight_provider_references(
-                candidate,
-                config,
-            ),
-        ),
-        (
-            "node_policy",
-            lambda candidate: validate_preflight_audit_rounds(candidate, config),
-        ),
-        (
-            "node_policy",
-            lambda candidate: validate_preflight_token_budget(candidate, config),
-        ),
+    extend_diagnostics(
+        state, collect_preflight_workflow_reference_diagnostics(workflow)
     )
-    for phase, validator in validators:
-        try:
-            validator(workflow)
-        except ValueError as exc:
-            append_multiline_diagnostics(state, phase, str(exc))
+    extend_diagnostics(
+        state,
+        collect_preflight_provider_reference_diagnostics(workflow, config),
+    )
+    extend_diagnostics(state, collect_preflight_policy_diagnostics(workflow, config))
     for message in options.additional_validation_errors:
         append_diagnostic(
             state,
             code="PROVIDER-CLI",
             phase="validation",
             message=message,
+        )
+    for message in options.additional_validation_warnings:
+        append_diagnostic(
+            state,
+            code="PROVIDER-CLI",
+            phase="validation",
+            message=message,
+            severity="warning",
         )
 
 

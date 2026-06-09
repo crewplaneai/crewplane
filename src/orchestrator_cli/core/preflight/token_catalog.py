@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
+from orchestrator_cli.architecture.contracts import JsonObject
 from orchestrator_cli.core.prompt_segments import PromptSegmentRole
 from orchestrator_cli.core.workflow_models import WorkflowNode
 
@@ -25,7 +24,7 @@ def append_token_catalog(
     canonical_locator: str | None = None,
     dependency_signature: str | None = None,
     source_span: dict[str, int] | None = None,
-    resolved: dict[str, Any] | None = None,
+    resolved: JsonObject | None = None,
 ) -> None:
     state.token_catalog.append(
         TokenCatalogEntry(

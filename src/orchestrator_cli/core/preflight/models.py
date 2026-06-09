@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from orchestrator_cli.architecture.contracts import JsonObject
 from orchestrator_cli.core.prompt_segments import PromptSegmentRole
-from orchestrator_cli.core.versions import PREFLIGHT_PLAN_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_keywords import NodeMode, ProviderRole
+from orchestrator_cli.versions import PREFLIGHT_PLAN_SCHEMA_VERSION
 
 from .diagnostics import PreflightDiagnostic
 from .runtime_config import RuntimeConfigSnapshot
@@ -110,7 +111,7 @@ class TokenCatalogEntry(BaseModel):
     token_raw_span: dict[str, int] | None = None
     canonical_locator: str | None = None
     dependency_signature: str | None = None
-    resolved: dict[str, Any] = Field(default_factory=dict)
+    resolved: JsonObject = Field(default_factory=dict)
     metadata: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("token_kind")
@@ -148,6 +149,26 @@ class ProviderRecord(BaseModel):
     invoker_config_signature: str
 
 
+class TokenBudgetPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fail_threshold_chars: int | None = None
+    warn_threshold_chars: int | None = None
+
+
+class RetryPolicy(BaseModel):
+    """Reserved for future compiled retry policy fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConcurrencyPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_concurrent_nodes: int | None = None
+    max_parallel_invocations: int | None = None
+
+
 class ExecutionPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -155,10 +176,10 @@ class ExecutionPolicy(BaseModel):
     audit_rounds: int | None = None
     continue_on_failure: bool = False
     failure_threshold: int | None = None
-    token_budget: dict[str, Any] | None = None
+    token_budget: TokenBudgetPolicy | None = None
     consensus_on_exhaustion: str | None = None
-    retry_policy: dict[str, Any] = Field(default_factory=dict)
-    concurrency_policy: dict[str, Any] = Field(default_factory=dict)
+    retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
+    concurrency_policy: ConcurrencyPolicy = Field(default_factory=ConcurrencyPolicy)
 
 
 class ArtifactContract(BaseModel):
@@ -206,7 +227,7 @@ class PreflightCompilationPreview(BaseModel):
     runtime_config_snapshot: RuntimeConfigSnapshot | None = None
     effective_runtime_config_signature: str | None = None
     value_fingerprints: list[dict[str, str]] = Field(default_factory=list)
-    fingerprint_metadata: dict[str, Any] = Field(default_factory=dict)
+    fingerprint_metadata: JsonObject = Field(default_factory=dict)
     secret_context: SecretContext = Field(default_factory=SecretContext, exclude=True)
     static_file_payloads: dict[str, bytes] = Field(default_factory=dict, exclude=True)
 
@@ -232,10 +253,10 @@ class PreflightExecutionPlan(BaseModel):
     static_resources: list[StaticResource]
     token_catalog: list[TokenCatalogEntry]
     dependency_graph: list[DependencyEdge]
-    runtime_config_snapshot: dict[str, Any]
+    runtime_config_snapshot: JsonObject
     effective_runtime_config_signature: str
     value_fingerprints: list[dict[str, str]] = Field(default_factory=list)
-    fingerprint_metadata: dict[str, Any] = Field(default_factory=dict)
+    fingerprint_metadata: JsonObject = Field(default_factory=dict)
 
     @classmethod
     def from_preview(

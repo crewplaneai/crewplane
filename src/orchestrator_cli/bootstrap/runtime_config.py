@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from rich.console import Console
 
+from orchestrator_cli.architecture.contracts import JsonObject
 from orchestrator_cli.architecture.loader import (
     instantiate_adapter,
     resolve_implementation_path,
@@ -18,9 +19,9 @@ from orchestrator_cli.core.preflight.runtime_config import (
 @dataclass(frozen=True)
 class RuntimeConfigSnapshotBuildResult:
     snapshot: RuntimeConfigSnapshot
-    invoker_options: dict[str, object]
-    artifact_options: dict[str, object]
-    ui_options: dict[str, object]
+    invoker_options: JsonObject
+    artifact_options: JsonObject
+    ui_options: JsonObject
 
 
 def build_runtime_config_snapshot(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from orchestrator_cli.architecture.ports import ArtifactStorePort
@@ -178,7 +179,12 @@ def detect_event_log_drift(
     if before is None:
         if not strict_expected_append:
             return DriftCheckResult()
-        if expected_append and after == expected_append:
+        if expected_append and event_log_append_matches_expected(
+            after,
+            expected_append,
+        ):
+            return DriftCheckResult()
+        if after and event_log_append_matches_expected(after, expected_append):
             return DriftCheckResult()
         return DriftCheckResult(fatal_paths=(event_log_path,))
     if after is None:
@@ -187,9 +193,49 @@ def detect_event_log_drift(
         return DriftCheckResult(fatal_paths=(event_log_path,))
     if not strict_expected_append:
         return DriftCheckResult()
-    if after[len(before) :] != expected_append:
+    if not event_log_append_matches_expected(
+        after[len(before) :],
+        expected_append,
+    ):
         return DriftCheckResult(fatal_paths=(event_log_path,))
     return DriftCheckResult()
+
+
+def event_log_append_matches_expected(
+    actual_append: bytes,
+    expected_append: bytes,
+) -> bool:
+    if actual_append == expected_append:
+        return True
+
+    expected_lines = expected_append.splitlines(keepends=True)
+    expected_index = 0
+    for line in actual_append.splitlines(keepends=True):
+        if (
+            expected_index < len(expected_lines)
+            and line == expected_lines[expected_index]
+        ):
+            expected_index += 1
+            continue
+        if not is_ambient_runtime_warning_event(line):
+            return False
+    return expected_index == len(expected_lines)
+
+
+def is_ambient_runtime_warning_event(line: bytes) -> bool:
+    try:
+        record = json.loads(line.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return (
+        isinstance(record, dict)
+        and record.get("event_type") == "runtime_log"
+        and record.get("operation") == "runtime_warning"
+        and "node_id" not in record
+        and "provider" not in record
+        and "role" not in record
+        and "task_id" not in record
+    )
 
 
 def merge_drift_results(*results: DriftCheckResult) -> DriftCheckResult:

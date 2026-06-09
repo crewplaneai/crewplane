@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.core.versions import WORKFLOW_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import WorkflowPlan
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
+from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
 
 
 def write_workflow(path: Path, lines: list[str]) -> None:

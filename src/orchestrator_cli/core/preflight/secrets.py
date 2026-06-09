@@ -5,10 +5,13 @@ import os
 import secrets
 import stat
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 from typing import Literal
+
+from orchestrator_cli.architecture.contracts import JsonObject
 
 from .diagnostics import PreflightDiagnostic
 from .serialization import canonical_json_bytes
@@ -16,8 +19,6 @@ from .serialization import canonical_json_bytes
 FingerprintKeyPolicy = Literal["persist_if_needed", "read_only", "ephemeral"]
 FINGERPRINT_KEY_SIZE = 32
 FINGERPRINT_SCHEMA_VERSION = "1"
-_EPHEMERAL_KEYS: dict[Path, bytes] = {}
-_EPHEMERAL_KEYS_LOCK = Lock()
 
 
 @dataclass
@@ -39,6 +40,23 @@ class SecretContext:
         return bool(self._values)
 
 
+@dataclass
+class FingerprintKeyCache:
+    """Same-run cache for ephemeral fingerprint keys."""
+
+    _keys: dict[Path, bytes] = field(default_factory=dict)
+    _lock: Lock = field(default_factory=Lock)
+
+    def ephemeral_key_for(self, key_path: Path) -> bytes:
+        cache_key = key_path.resolve(strict=False)
+        with self._lock:
+            key = self._keys.get(cache_key)
+            if key is None:
+                key = secrets.token_bytes(FINGERPRINT_KEY_SIZE)
+                self._keys[cache_key] = key
+            return key
+
+
 @dataclass(frozen=True)
 class FingerprintKeyResult:
     key: bytes
@@ -49,8 +67,13 @@ class FingerprintKeyResult:
 class FingerprintKeyProvider:
     """Load or publish the project-local HMAC fingerprint key."""
 
-    def __init__(self, orchestrator_dir: Path) -> None:
+    def __init__(
+        self,
+        orchestrator_dir: Path,
+        cache: FingerprintKeyCache | None = None,
+    ) -> None:
         self.key_path = orchestrator_dir / "preflight" / "fingerprint.key"
+        self.cache = cache if cache is not None else FingerprintKeyCache()
 
     def load_key(self, policy: FingerprintKeyPolicy) -> FingerprintKeyResult:
         if self.key_path.exists() or self.key_path.is_symlink():
@@ -63,13 +86,7 @@ class FingerprintKeyProvider:
         return self._publish_new_key()
 
     def _ephemeral_key(self) -> bytes:
-        cache_key = self.key_path.resolve(strict=False)
-        with _EPHEMERAL_KEYS_LOCK:
-            key = _EPHEMERAL_KEYS.get(cache_key)
-            if key is None:
-                key = secrets.token_bytes(FINGERPRINT_KEY_SIZE)
-                _EPHEMERAL_KEYS[cache_key] = key
-            return key
+        return self.cache.ephemeral_key_for(self.key_path)
 
     def _read_existing_key(self) -> FingerprintKeyResult:
         diagnostics = self._validate_key_file()
@@ -154,11 +171,11 @@ class FingerprintKeyProvider:
             except FileExistsError:
                 return self._read_existing_key()
             finally:
-                with contextlib_suppress_os_error():
+                with suppress(OSError):
                     temp_path.unlink()
                 self._fsync_parent()
         except Exception:
-            with contextlib_suppress_os_error():
+            with suppress(OSError):
                 temp_path.unlink()
             raise
         return self._read_existing_key()
@@ -176,18 +193,5 @@ class FingerprintKeyProvider:
             os.close(descriptor)
 
 
-class contextlib_suppress_os_error:
-    def __enter__(self) -> None:
-        return None
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object,
-    ) -> bool:
-        return exc_type is not None and issubclass(exc_type, OSError)
-
-
-def fingerprint_payload(key: bytes, payload: dict[str, object]) -> str:
+def fingerprint_payload(key: bytes, payload: JsonObject) -> str:
     return hmac.new(key, canonical_json_bytes(payload), "sha256").hexdigest()

@@ -45,11 +45,9 @@ def compile_execution_node(
             else None
         ),
         concurrency_policy={
-            "max_concurrent_nodes": runtime_snapshot.execution.get(
-                "max_concurrent_nodes"
-            ),
-            "max_parallel_invocations": runtime_snapshot.execution.get(
-                "max_parallel_invocations"
+            "max_concurrent_nodes": runtime_snapshot.execution.max_concurrent_nodes,
+            "max_parallel_invocations": (
+                runtime_snapshot.execution.max_parallel_invocations
             ),
         },
     )

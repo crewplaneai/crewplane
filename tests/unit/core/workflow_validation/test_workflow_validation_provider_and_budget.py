@@ -2,7 +2,6 @@ import unittest
 
 from orchestrator_cli.adapters.invokers.cli import collect_cli_availability_errors
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_graph import topological_waves
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
@@ -16,6 +15,7 @@ from orchestrator_cli.core.workflow_validation import (
     validate_token_budget_settings,
     validate_workflow_plan,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):

@@ -4,7 +4,6 @@ from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -16,6 +15,8 @@ from orchestrator_cli.observability.layout import compute_topology_layout
 from orchestrator_cli.observability.persistent import PersistentRunLogger
 from orchestrator_cli.observability.runtime import ObservabilityHub
 from orchestrator_cli.observability.types import RunContext
+from orchestrator_cli.runtime.agent.usage import estimate_token_count
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     BlockingSnapshotObserver,
@@ -71,11 +72,21 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 event for event in events if event.event_type == "invocation_finished"
             ]
             self.assertEqual(len(finished), 2)
-            self.assertTrue((finished[0].task_id or "").startswith("fast_executor_"))
-            self.assertTrue((finished[1].task_id or "").startswith("slow_executor_"))
-            self.assertEqual(finished[0].attempt_count, 1)
-            self.assertEqual(finished[0].output_extraction_status, "success")
-            self.assertIsNotNone(finished[1].visible_estimate_tokens)
+            self.assertTrue(
+                (finished[0].context.task_id or "").startswith("fast_executor_")
+            )
+            self.assertTrue(
+                (finished[1].context.task_id or "").startswith("slow_executor_")
+            )
+            self.assertEqual(finished[0].payload.attempt_count, 1)
+            self.assertEqual(finished[0].payload.output_extraction_status, "success")
+            self.assertEqual(finished[0].payload.provider_usage_status, "none")
+            self.assertEqual(
+                finished[0].payload.visible_estimate_tokens,
+                estimate_token_count(len("run"))
+                + estimate_token_count(len("done: fast-model")),
+            )
+            self.assertIsNotNone(finished[1].payload.visible_estimate_tokens)
 
     async def test_scheduler_and_layout_follow_frontmatter_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -118,7 +129,9 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
 
             started_nodes = [
-                event.node_id for event in events if event.event_type == "node_started"
+                event.context.node_id
+                for event in events
+                if event.event_type == "node_started"
             ]
             self.assertGreaterEqual(len(started_nodes), 2)
             self.assertEqual(started_nodes[:2], ["node.z", "node.a"])
@@ -272,7 +285,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_artifact_drift"
-                and event.level == "error"
+                and event.payload.operation == "review_loop_artifact_drift"
+                and event.payload.level == "error"
             ]
             self.assertEqual(drift_errors, [])

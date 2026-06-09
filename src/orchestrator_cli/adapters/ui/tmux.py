@@ -2,45 +2,35 @@ from __future__ import annotations
 
 import math
 import shutil
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Any
+from collections.abc import Callable
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.api_version import EXT_API_VERSION
+from orchestrator_cli.architecture.contracts import (
+    CanonicalIntegrationConfig,
+    JsonObject,
+    TmuxUiOptions,
+)
 from orchestrator_cli.architecture.ports import UIAdapterCapabilities
 from orchestrator_cli.architecture.ports.runtime import UIRuntimePlan
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
-from orchestrator_cli.observability.tmux.compact import (
-    DEFAULT_QUIET_AFTER_SECONDS,
-    TmuxCompactRuntime,
-)
+from orchestrator_cli.observability.tmux.compact import TmuxCompactRuntime
 from orchestrator_cli.observability.types import WorkflowTopology
+from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 
-@dataclass(frozen=True)
-class _ResolvedTmuxOptions:
-    auto_close_session: bool
-    tmux_executable: str
-    quiet_after_seconds: float
-    log_tail_lines: int | None
+def _resolve_tmux_options(options: JsonObject) -> TmuxUiOptions:
+    resolved = dict(options)
 
-
-def _resolve_tmux_options(options: dict[str, Any]) -> _ResolvedTmuxOptions:
-    auto_close_session_raw = options.pop("auto_close_session", True)
+    auto_close_session_raw = resolved.pop("auto_close_session", True)
     if not isinstance(auto_close_session_raw, bool):
         raise ValueError("tmux ui option 'auto_close_session' must be a boolean")
 
-    tmux_executable_raw = options.pop("tmux_executable", "tmux")
+    tmux_executable_raw = resolved.pop("tmux_executable", "tmux")
     if not isinstance(tmux_executable_raw, str) or not tmux_executable_raw.strip():
         raise ValueError("tmux ui option 'tmux_executable' must be a non-empty string")
 
-    quiet_after_seconds_raw = options.pop(
-        "quiet_after_seconds",
-        DEFAULT_QUIET_AFTER_SECONDS,
-    )
+    quiet_after_seconds_raw = resolved.pop("quiet_after_seconds", 120.0)
     if isinstance(quiet_after_seconds_raw, bool) or not isinstance(
         quiet_after_seconds_raw,
         (int, float),
@@ -50,7 +40,7 @@ def _resolve_tmux_options(options: dict[str, Any]) -> _ResolvedTmuxOptions:
     if not math.isfinite(quiet_after_seconds) or quiet_after_seconds < 1.0:
         raise ValueError("tmux ui option 'quiet_after_seconds' must be a number >= 1.0")
 
-    log_tail_lines_raw = options.pop("log_tail_lines", None)
+    log_tail_lines_raw = resolved.pop("log_tail_lines", None)
     if log_tail_lines_raw is not None:
         if isinstance(log_tail_lines_raw, bool) or not isinstance(
             log_tail_lines_raw,
@@ -66,10 +56,10 @@ def _resolve_tmux_options(options: dict[str, Any]) -> _ResolvedTmuxOptions:
                 "between 1 and 200"
             )
 
-    if options:
-        raise ValueError(f"Unsupported tmux ui options: {', '.join(sorted(options))}")
+    if resolved:
+        raise ValueError(f"Unsupported tmux ui options: {', '.join(sorted(resolved))}")
 
-    return _ResolvedTmuxOptions(
+    return TmuxUiOptions(
         auto_close_session=auto_close_session_raw,
         tmux_executable=tmux_executable_raw,
         quiet_after_seconds=quiet_after_seconds,
@@ -89,7 +79,7 @@ class TmuxUIAdapter:
         self,
         implementation: str,
         resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         runtime_options = _resolve_tmux_options(dict(options or {}))
         canonical_options = {
@@ -101,7 +91,7 @@ class TmuxUIAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=EXT_API_VERSION,
+            api_version=INTEGRATION_API_VERSION,
             options=canonical_options,
             option_scopes={key: "observer" for key in canonical_options},
             capabilities={
@@ -112,18 +102,18 @@ class TmuxUIAdapter:
 
     def create_runtime(
         self,
-        config: Config,  # noqa: ARG002 - Required by callback or protocol signature.
-        workflow_topology: WorkflowTopology,  # noqa: ARG002 - Required by callback or protocol signature.
-        run_id: str,  # noqa: ARG002 - Required by callback or protocol signature.
+        config: Config,
+        workflow_topology: WorkflowTopology,
+        run_id: str,
         console: Console,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
         warning_sink: Callable[[str], None] | None = None,
         which_fn: Callable[[str], str | None] | None = None,
     ) -> UIRuntimePlan:
         """Return a tmux observer plan or degrade cleanly when tmux is unavailable."""
 
-        resolved_options = dict(options or {})
-        runtime_options = _resolve_tmux_options(resolved_options)
+        _validate_runtime_request(config, workflow_topology, run_id, console)
+        runtime_options = _resolve_tmux_options(dict(options or {}))
         which_lookup = shutil.which if which_fn is None else which_fn
 
         if which_lookup(runtime_options.tmux_executable) is None:
@@ -152,3 +142,19 @@ class TmuxUIAdapter:
             observers=(runtime,),
             suppress_progress_output=True,
         )
+
+
+def _validate_runtime_request(
+    config: Config,
+    workflow_topology: WorkflowTopology,
+    run_id: str,
+    console: Console,
+) -> None:
+    if not isinstance(config, Config):
+        raise TypeError("config must be a Config instance")
+    if not isinstance(workflow_topology, WorkflowTopology):
+        raise TypeError("workflow_topology must be a WorkflowTopology instance")
+    if not isinstance(run_id, str) or not run_id:
+        raise ValueError("run_id must be a non-empty string")
+    if not isinstance(console, Console):
+        raise TypeError("console must be a Console instance")

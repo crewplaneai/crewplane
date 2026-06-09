@@ -9,14 +9,9 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from orchestrator_cli.core import (
-    Config,
-    load_config,
-)
+from orchestrator_cli.core.config import Config, load_config
 from orchestrator_cli.core.preflight import (
     PreflightCompilationPreview,
-    PreflightExecutionNode,
-    ProviderRecord,
     load_workflow_source_for_preflight,
 )
 from orchestrator_cli.core.preflight.secrets import FingerprintKeyProvider
@@ -25,6 +20,7 @@ from orchestrator_cli.observability import ObservabilityHub
 from orchestrator_cli.runtime.execution import execute_workflow
 
 from . import workflow_runner
+from .dry_run import preview_topological_waves, print_dry_run_plan
 from .paths import (
     ORCHESTRATOR_DIR,
     WORKFLOWS_DIRNAME,
@@ -43,7 +39,6 @@ from .templates import (
 )
 
 app = typer.Typer(name="orchestrator", help="Multi-agent CLI orchestrator")
-console = Console()
 
 
 @dataclass(frozen=True)
@@ -61,11 +56,15 @@ class CliWorkflowContext:
     source: PreflightWorkflowSource
 
 
-def _create_template_file(file_path: Path, template_path: Path) -> None:
+def _create_template_file(
+    file_path: Path, template_path: Path, console: Console
+) -> None:
     create_template_file(file_path, template_path, console)
 
 
-def _resolve_tasks_file(override_path: Path | None, init_hint: str) -> Path:
+def _resolve_tasks_file(
+    override_path: Path | None, init_hint: str, console: Console
+) -> Path:
     return resolve_tasks_file(override_path, init_hint, console)
 
 
@@ -73,6 +72,7 @@ def _resolve_orchestrator_file(
     override_path: Path | None,
     filename: str,
     init_hint: str,
+    console: Console,
 ) -> Path:
     return resolve_orchestrator_file(override_path, filename, init_hint, console)
 
@@ -80,12 +80,14 @@ def _resolve_orchestrator_file(
 def _resolve_cli_workflow_paths(
     tasks_file: Path | None,
     config_file: Path | None,
+    console: Console,
 ) -> CliWorkflowPaths:
-    tasks = _resolve_tasks_file(tasks_file, "Run 'orchestrator init' first.")
+    tasks = _resolve_tasks_file(tasks_file, "Run 'orchestrator init' first.", console)
     config = _resolve_orchestrator_file(
         config_file,
         "config.yml",
         "Run 'orchestrator init' first.",
+        console,
     )
     project_root = _project_root_from_config_path(config)
     return CliWorkflowPaths(
@@ -116,68 +118,6 @@ def _load_cli_workflow_context(paths: CliWorkflowPaths) -> CliWorkflowContext:
     )
 
 
-def _format_provider_dry_run_line(provider: ProviderRecord) -> str:
-    model = provider.model or "provider default"
-    role_suffix = f" [{provider.role}]" if provider.role else ""
-    return f"      - {provider.provider}{role_suffix} ({model})"
-
-
-def _print_dry_run_plan(preview: PreflightCompilationPreview) -> None:
-    console.print("[yellow]Dry run mode[/] — showing DAG execution plan:")
-    waves = _preview_topological_waves(preview)
-    node_index = {node.id: node for node in preview.nodes}
-
-    for wave_number, wave in enumerate(waves, start=1):
-        console.rule(f"Wave {wave_number}")
-        for node_id in wave:
-            node = node_index[node_id]
-            needs = ", ".join(node.dependencies) if node.dependencies else "(root)"
-            console.print(f"  Node: {node.id} ({node.mode})")
-            console.print(f"    needs: {needs}")
-            if node.mode == "input":
-                console.print(f"      - source: {_input_source_label(preview, node)}")
-                continue
-            for provider in node.provider_records:
-                console.print(_format_provider_dry_run_line(provider), markup=False)
-
-
-def _preview_topological_waves(
-    preview: PreflightCompilationPreview,
-) -> list[list[str]]:
-    node_order = {
-        node_id: index for index, node_id in enumerate(preview.execution_order)
-    }
-    remaining = {node.id: set(node.dependencies) for node in preview.nodes}
-    waves: list[list[str]] = []
-    while remaining:
-        ready = sorted(
-            (
-                node_id
-                for node_id, dependencies in remaining.items()
-                if not dependencies
-            ),
-            key=lambda node_id: node_order.get(node_id, len(node_order)),
-        )
-        if not ready:
-            raise ValueError("Compiled preview dependency graph contains a cycle.")
-        waves.append(ready)
-        for node_id in ready:
-            del remaining[node_id]
-        for dependencies in remaining.values():
-            dependencies.difference_update(ready)
-    return waves
-
-
-def _input_source_label(
-    preview: PreflightCompilationPreview,
-    node: PreflightExecutionNode,
-) -> str:
-    for token in preview.token_catalog:
-        if token.node_id == node.id and token.token_kind == "file":
-            return token.raw_token
-    return node.input_content_ref or "(unresolved)"
-
-
 async def _execute_workflow(
     config: Config,
     source: PreflightWorkflowSource,
@@ -185,6 +125,7 @@ async def _execute_workflow(
     orchestrator_dir: Path,
     force: bool,
     no_live: bool,
+    console: Console,
 ) -> None:
     await workflow_runner.execute_workflow_run(
         config=config,
@@ -203,6 +144,7 @@ async def _execute_workflow(
 def _compile_preview_for_context(
     context: CliWorkflowContext,
     no_live: bool,
+    console: Console,
 ) -> PreflightCompilationPreview:
     preview = workflow_runner.compile_workflow_preview(
         config=context.config,
@@ -219,6 +161,7 @@ def _compile_preview_for_context(
 
 def _compile_validate_preview_for_context(
     context: CliWorkflowContext,
+    console: Console,
 ) -> PreflightCompilationPreview:
     preview = workflow_runner.compile_workflow_preview(
         config=context.config,
@@ -239,17 +182,19 @@ def _install_template_assets(
     source_root: Path,
     destination_root: Path,
     assets: list[Path],
+    console: Console,
 ) -> None:
     for relative_path in assets:
         source_template = source_root / relative_path
         output_path = destination_root / relative_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        _create_template_file(output_path, source_template)
+        _create_template_file(output_path, source_template, console)
 
 
 @app.command()
 def init() -> None:
     """Initialize a new .orchestrator directory with default config files."""
+    console = Console()
     orchestrator_dir = ensure_orchestrator_dir()
     workflows_dir = orchestrator_dir / WORKFLOWS_DIRNAME
     workflows_dir.mkdir(exist_ok=True)
@@ -258,20 +203,23 @@ def init() -> None:
     input_dir = orchestrator_dir / "inputs"
     input_dir.mkdir(exist_ok=True)
 
-    _create_template_file(orchestrator_dir / "config.yml", CONFIG_TEMPLATE)
+    _create_template_file(orchestrator_dir / "config.yml", CONFIG_TEMPLATE, console)
     _create_template_file(
         workflows_dir / "code-review-example.task.md",
         DEFAULT_WORKFLOW_TEMPLATE,
+        console,
     )
     _install_template_assets(
         WORKFLOW_LIBRARY_TEMPLATE_DIR,
         workflow_library_dir,
         discover_workflow_library_assets(),
+        console,
     )
     _install_template_assets(
         INPUT_TEMPLATE_DIR,
         input_dir,
         discover_input_assets(),
+        console,
     )
     key_result = FingerprintKeyProvider(orchestrator_dir).load_key("persist_if_needed")
     for diagnostic in key_result.diagnostics:
@@ -334,16 +282,19 @@ def run(
     ] = False,
 ) -> None:
     """Execute the workflow DAG."""
+    console = Console()
     resolved_tasks_file: Path | None = tasks_file
     paths: CliWorkflowPaths | None = None
     try:
-        paths = _resolve_cli_workflow_paths(tasks_file, config_file)
+        paths = _resolve_cli_workflow_paths(tasks_file, config_file, console)
         resolved_tasks_file = paths.tasks
         context = _load_cli_workflow_context(paths)
 
         if dry_run:
-            preview = _compile_preview_for_context(context, no_live=True)
-            _print_dry_run_plan(preview)
+            preview = _compile_preview_for_context(
+                context, no_live=True, console=console
+            )
+            print_dry_run_plan(preview, console)
             return
     except typer.Exit:
         raise
@@ -369,6 +320,7 @@ def run(
                 orchestrator_dir=context.paths.orchestrator_dir,
                 force=force,
                 no_live=no_live,
+                console=console,
             )
         )
     except workflow_runner.WorkflowCancelledByUser as exc:
@@ -405,12 +357,13 @@ def validate(
     ] = None,
 ) -> None:
     """Validate a workflow definition file."""
-    paths = _resolve_cli_workflow_paths(tasks_file, config_file)
+    console = Console()
+    paths = _resolve_cli_workflow_paths(tasks_file, config_file, console)
     console.print(f"Validating {paths.tasks}...")
     try:
         context = _load_cli_workflow_context(paths)
-        preview = _compile_validate_preview_for_context(context)
-        waves = _preview_topological_waves(preview)
+        preview = _compile_validate_preview_for_context(context, console)
+        waves = preview_topological_waves(preview)
         if paths.tasks.suffix.lower() == ".md":
             console.print("[green]✓[/] Frontmatter: valid YAML")
             console.print("[green]✓[/] Schema: WorkflowFrontmatter")

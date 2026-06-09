@@ -10,6 +10,8 @@ agents:
   # Optional: omit default_model to use the provider CLI's configured default.
   claude:
     cli_cmd: ["claude"]
+    provider_kind: "claude"
+    prompt_transport: "stdin"
     default_model: "sonnet"
     # Optional configured pricing per million tokens:
     # pricing:
@@ -17,12 +19,12 @@ agents:
     #   output: 15.0
     #   cached_input: 0.3
     #   cache_write: 3.75
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
     extra_args:
       - "--bare"
       - "--dangerously-skip-permissions"
-    quota_parser: "claude"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "usage limit reached"
@@ -33,20 +35,20 @@ agents:
 
   codex:
     cli_cmd: ["codex", "exec"]
+    provider_kind: "codex"
+    prompt_transport: "stdin"
+    prompt_transport_arg: "-"
     default_model: "gpt-5.4"
     # pricing:
     #   input: 1.5
     #   cached_input: 0.375
     #   output: 6.0
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
-    prompt_arg: null
-    use_stdin: true
-    stdin_prompt_arg: "-"
     extra_args:
       - "--skip-git-repo-check"
       - "--dangerously-bypass-approvals-and-sandbox"
-    quota_parser: "codex"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "usage limit exceeded"
@@ -56,18 +58,17 @@ agents:
 
   gemini:
     cli_cmd: ["gemini"]
+    provider_kind: "gemini"
+    prompt_transport: "stdin"
     default_model: "auto"
     # pricing:
     #   input: 0.35
     #   output: 1.05
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
-    use_stdin: false
-    model_arg: "--model"
-    prompt_arg: null
     extra_args:
       - "--approval-mode=yolo"
-    quota_parser: "gemini"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "exhausted your capacity"
@@ -77,11 +78,14 @@ agents:
 
   copilot:
     cli_cmd: ["copilot"]
+    provider_kind: "copilot"
+    prompt_transport: "stdin"
     # Pick a model listed by `copilot /model`; availability varies by plan.
     default_model: "claude-sonnet-4.5"
     # Visible-estimate-only in spend observability v2.
     # pricing:
     #   total: 2.0
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
     extra_args:
@@ -91,7 +95,6 @@ agents:
       # Prefer precise allow/deny rules for unattended runs:
       # - "--allow-tool=write,shell(git:*)"
       # - "--deny-tool=shell(git push)"
-    quota_parser: "copilot"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "rate limit reached"
@@ -101,13 +104,15 @@ agents:
 
   kilo:
     cli_cmd: ["kilo"]
+    provider_kind: "kilo"
+    prompt_transport: "stdin"
     default_model: "auto"
     # Visible-estimate-only in spend observability v2.
     # pricing:
     #   total: 2.0
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
-    quota_parser: "kilo"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "rate limit reached"

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from orchestrator_cli.runtime.agent.types import InvocationContext
+from orchestrator_cli.architecture.contracts import InvocationContext
 
 _SELECTOR_STRING_KEYS = {"node_id", "task_id", "provider", "role"}
 _SELECTOR_INT_KEYS = {"audit_round_num", "round_num"}

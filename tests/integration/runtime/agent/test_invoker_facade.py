@@ -3,14 +3,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.invocation.command import run_command_once
 from orchestrator_cli.runtime.agent.invoker import (
-    DefaultAgentInvoker,
+    PlannedAgentInvoker,
     invoke_agent,
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.types import InvocationContext
 
 
 class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
@@ -28,6 +29,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                     model="test",
                     prompt="prompt",
                     output_file=output_file,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             delegated.assert_awaited_once()
@@ -51,12 +53,13 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             delegated.assert_awaited_once()
             assert delegated.await_args.kwargs["command_runner"] is runner
 
-    async def test_default_agent_invoker_delegates_to_invoke_agent(self) -> None:
+    async def test_planned_agent_invoker_delegates_to_invoke_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_file = Path(tmp_dir) / "output.txt"
             delegated = AsyncMock()
@@ -71,7 +74,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                 "orchestrator_cli.runtime.agent.invoker.invoke_agent",
                 delegated,
             ):
-                await DefaultAgentInvoker().invoke(
+                await PlannedAgentInvoker(build_cli_invocation_plan).invoke(
                     config=AgentConfig(cli_cmd=["echo"], default_model="test"),
                     model="test",
                     prompt="prompt",

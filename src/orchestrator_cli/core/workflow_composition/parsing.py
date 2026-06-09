@@ -14,7 +14,7 @@ def parsed_workflow_from_markdown(
 ) -> ParsedWorkflow:
     nodes = tuple(
         NodeSpec(
-            payload=WorkflowNode(**node_payload),
+            payload=WorkflowNode.model_validate(node_payload),
             source_path=source_path,
             source_span=document.node_source_spans.get(node_payload["id"]),
             prompt_segment_spans=tuple(

@@ -5,16 +5,19 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from orchestrator_cli.architecture.ports import ArtifactStorePort
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.core.preflight.models import ProviderRecord
-from orchestrator_cli.observability.timing import ElapsedTimer
-from orchestrator_cli.runtime.agent.types import (
+from orchestrator_cli.architecture.contracts import (
     AgentInvoker,
     InvocationContext,
     InvocationDiagnostic,
 )
-from orchestrator_cli.runtime.agent.usage import InvocationUsage, build_fallback_usage
+from orchestrator_cli.architecture.ports import ArtifactStorePort
+from orchestrator_cli.core.config import AgentConfig
+from orchestrator_cli.core.preflight.models import ProviderRecord
+from orchestrator_cli.observability.timing import ElapsedTimer
+from orchestrator_cli.runtime.agent.usage import (
+    InvocationUsage,
+    build_fallback_usage_from_output_file,
+)
 
 from .execution_activity import ExecutionTelemetry
 from .execution_events import (
@@ -319,7 +322,4 @@ def _resolve_invocation_usage(
 ) -> InvocationUsage:
     if capture.usage is not None:
         return capture.usage
-    output_text = ""
-    if output_file.exists():
-        output_text = output_file.read_text(encoding="utf-8")
-    return build_fallback_usage(prompt, output_text, agent_config)
+    return build_fallback_usage_from_output_file(prompt, output_file, agent_config)

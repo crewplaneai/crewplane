@@ -2,23 +2,25 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from collections.abc import Awaitable
 from pathlib import Path
 from typing import BinaryIO
 
-from orchestrator_cli.core.config import AgentConfig
+from orchestrator_cli.architecture.contracts import (
+    CommandResult,
+    CommandRunner,
+    InvocationContext,
+    InvocationPlan,
+)
 
-from ..command_builder import ProviderKind, build_command, provider_kind
 from ..process.runner import (
-    build_log_header,
     build_retry_log_header,
     close_log_handle,
     collect_process_output,
     reap_failed_process,
     write_stdin,
 )
-from ..types import CommandResult, CommandRunner, InvocationContext
+from ..process.stream_capture import ProcessOutputCapture
 from .state import InvocationCommandRuntime
 from .telemetry import emit_invocation_diagnostic
 
@@ -51,6 +53,7 @@ async def run_command_once(
     log_handle: BinaryIO | None = None
     process: asyncio.subprocess.Process | None = None
     process_group_id: int | None = None
+    output_capture: ProcessOutputCapture | None = None
     diagnostic_sink = (
         invocation_context.diagnostics if invocation_context is not None else None
     )
@@ -63,14 +66,16 @@ async def run_command_once(
             stderr=asyncio.subprocess.PIPE,
             **process_kwargs,
         )
-        process_group_id = process.pid if os.name == "posix" else None
+        # start_new_session=True makes the child a session leader on POSIX; read
+        # the actual process group after spawn so cleanup does not assume pid==pgid.
+        process_group_id = os.getpgid(process.pid) if os.name == "posix" else None
         log_handle = open_log_handle(
             log_file,
             append=append_log,
             header_bytes=log_header,
         )
         await write_stdin(process, stdin_data)
-        stdout_bytes, stderr_bytes = await collect_process_output(
+        output_capture = await collect_process_output(
             process,
             log_handle,
             diagnostic_sink,
@@ -82,12 +87,18 @@ async def run_command_once(
     except asyncio.CancelledError:
         if process is not None:
             await reap_failed_process(process, process_group_id, diagnostic_sink)
+        if output_capture is not None:
+            output_capture.cleanup()
         raise
     except Exception as exc:
         if process is not None:
             await reap_failed_process(process, process_group_id, diagnostic_sink)
         if isinstance(exc, RuntimeError):
+            if output_capture is not None:
+                output_capture.cleanup()
             raise
+        if output_capture is not None:
+            output_capture.cleanup()
         raise RuntimeError(f"Execution error: {exc}") from exc
     finally:
         close_log_handle(log_handle)
@@ -96,35 +107,24 @@ async def run_command_once(
         raise RuntimeError("Provider process finished without a return code.")
     return CommandResult(
         returncode=process.returncode,
-        stdout_text=stdout_bytes.decode(errors="replace"),
-        stderr_text=stderr_bytes.decode(errors="replace"),
+        stdout_text=output_capture.stdout_tail.decode(errors="replace"),
+        stderr_text=output_capture.stderr_tail.decode(errors="replace"),
+        stdout_path=output_capture.stdout.path,
+        stderr_path=output_capture.stderr.path,
     )
 
 
-def build_invocation_runtime(
-    config: AgentConfig,
-    model: str | None,
-    prompt: str,
-    output_file: Path,
-) -> InvocationCommandRuntime:
-    resolved_provider_kind = provider_kind(config.cli_cmd[0])
-    structured_output_file = _structured_output_file(resolved_provider_kind)
-    cmd = build_command(
-        config,
-        model,
-        prompt,
-        structured_output_file=structured_output_file,
-    )
+def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:
     return InvocationCommandRuntime(
-        provider_kind=resolved_provider_kind,
-        structured_output_file=structured_output_file,
-        cmd=cmd,
-        stdin_data=prompt.encode() if config.use_stdin else None,
-        log_header=build_log_header(
-            cli_executable=cmd[0],
-            model=model,
-            output_file=output_file,
-        ),
+        failure_profile=plan.failure_profile,
+        structured_output_mode=plan.structured_output_mode,
+        output_extraction_mode=plan.output_extraction_mode,
+        quota_parser=plan.quota_parser,
+        usage_parser=plan.usage_parser,
+        structured_output_file=plan.structured_output_file,
+        cmd=plan.cmd,
+        stdin_data=plan.stdin_data,
+        log_header=plan.log_header,
     )
 
 
@@ -173,20 +173,6 @@ async def run_invocation_attempt(
     )
 
 
-def _structured_output_file(
-    provider_kind: ProviderKind,
-) -> Path | None:
-    if provider_kind != "codex":
-        return None
-    file_descriptor, temp_path = tempfile.mkstemp(
-        prefix="orchestrator-codex-",
-        suffix=".last-message.txt",
-    )
-    os.close(file_descriptor)
-    Path(temp_path).unlink(missing_ok=True)
-    return Path(temp_path)
-
-
 def _retry_log_header(runtime: InvocationCommandRuntime, attempt: int) -> bytes:
     if attempt == 0:
         return runtime.log_header
@@ -209,16 +195,19 @@ async def _await_invocation_attempt(
         return await asyncio.wait_for(attempt_result, timeout=timeout_seconds)
     except TimeoutError as exc:
         formatted_timeout = _format_timeout_seconds(timeout_seconds)
+        message = (
+            "Configured invocation wall-clock timeout reached after "
+            f"{formatted_timeout}."
+        )
         emit_invocation_diagnostic(
             invocation_context,
             level="error",
-            message=f"Provider invocation timed out after {formatted_timeout}.",
+            message=message,
             operation="invocation_timeout",
             attributes={
                 "attempt": attempt + 1,
                 "timeout_seconds": timeout_seconds,
+                "timeout_scope": "wall_clock",
             },
         )
-        raise RuntimeError(
-            f"Provider invocation timed out after {formatted_timeout}."
-        ) from exc
+        raise RuntimeError(message) from exc

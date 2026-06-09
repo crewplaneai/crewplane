@@ -15,6 +15,21 @@ Introduce workflow composition primitives to declarative `.task.md` files. This 
 - **Namespace Isolation:** Automatically prefixing imported nodes using the import alias (e.g., `alias.node_id`) to prevent task ID collisions across the composed workflow graph.
 - **Cycle Detection:** Strictly checking and rejecting cyclical import chains.
 
+Composition remains the only phase that resolves `{{param:key}}`. Bound params
+are substituted during composition, and unbound params are rewritten to
+`{{var:key}}` before preflight reference policy runs. Runtime execution never
+sees persisted `param` tokens.
+
+Shared workflow syntax constants and validation diagnostics are centralized so
+composition, validation, preflight, manifest signatures, and role-segment
+handling use the same node-id, artifact-reference, keyword, and template-token
+rules.
+
+Composed workflows continue to preserve DAG semantics: imports are
+alias-namespaced, cycles are rejected, dependencies are topologically ordered,
+node and invocation concurrency stay bounded by runtime policy, and downstream
+artifact references are valid only for upstream dependencies.
+
 ## Context
 Prior to this decision, the `.task.md` workflow structure had no mechanism for includes, modules, or parameterized templates. Complex orchestrations had to be defined in single files, and integrating standard organizational workflows forced copy-pasting nodes across different repositories. This blocked the registry strategy and forced copy-paste across enterprise projects.
 
@@ -39,3 +54,6 @@ Prior to this decision, the `.task.md` workflow structure had no mechanism for i
 - **2026-04-11**: Full composition capability implemented via `workflow_composition/__init__.py`, enabling parameterized document rewriting and namespace tracking prior to DAG scheduling.
 - **2026-04-11**: Added `mode: input`, top-level workflow `inputs`, and `imports[].inputs`. Bound imported inputs are pruned during composition and rewritten to explicit upstream node dependencies. `imports[].with` remains prompt-only.
 - **2026-05-06**: Input-boundary semantics were refined, which separates explicit workflow input declaration from post-composition file materialization and removes the `.orchestrator/inputs` convention.
+- **2026-06-07**: Folded in composition boundary hardening. Shared syntax
+  constants and structured diagnostics prevent drift between imported workflow
+  composition, validation, preflight planning, and runtime execution.

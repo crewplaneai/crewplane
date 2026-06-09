@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 from orchestrator_cli.artifacts import OutputManager, safe_artifact_name
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -20,6 +19,7 @@ from orchestrator_cli.observability.types import RunContext
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     FailingLogOutputManager,
@@ -491,7 +491,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_artifact_drift"
+                and event.payload.operation == "review_loop_artifact_drift"
             ]
             self.assertEqual(drift_events, [])
             node_dir = output.get_stage_dir(node.id)
@@ -566,8 +566,8 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "invocation_failed"
-                and event.provider == "review-b"
+                and event.context.provider == "review-b"
             ]
             self.assertEqual(len(failed_events), 1)
-            self.assertEqual(failed_events[0].task_id, "review-b_reviewer_1")
-            self.assertIn("log setup failed", failed_events[0].error or "")
+            self.assertEqual(failed_events[0].context.task_id, "review-b_reviewer_1")
+            self.assertIn("log setup failed", failed_events[0].payload.error or "")

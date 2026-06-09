@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from orchestrator_cli.core.config import AgentConfig
 
@@ -60,9 +61,9 @@ def _find_specific_quota_hint(
 
 
 def find_quota_evidence(
-    output_text: str, parser: str, config: AgentConfig
+    output_lines: Iterable[str], parser: str, config: AgentConfig
 ) -> str | None:
-    for line in output_text.splitlines():
+    for line in output_lines:
         stripped = line.strip()
         if not stripped:
             continue
@@ -95,22 +96,29 @@ def _is_reset_context_line(line_lower: str, parser: str, config: AgentConfig) ->
 
 
 def collect_quota_context_lines(
-    output_text: str, parser: str, config: AgentConfig
+    output_lines: Iterable[str], parser: str, config: AgentConfig
 ) -> list[str]:
-    lines = output_text.splitlines()
-    if not lines:
-        return []
+    context_lines: dict[int, str] = {}
+    buffered_next_indices: set[int] = set()
+    previous_line: str | None = None
+    previous_index: int | None = None
 
-    context_indices: set[int] = set()
-    for index, line in enumerate(lines):
-        stripped = line.strip()
+    for index, raw_line in enumerate(output_lines):
+        stripped = raw_line.strip()
+        if index in buffered_next_indices:
+            context_lines[index] = raw_line
+
         if not stripped:
             continue
         if not _is_reset_context_line(stripped.lower(), parser, config):
             continue
-        context_indices.add(index)
-        if index > 0:
-            context_indices.add(index - 1)
-        if index + 1 < len(lines):
-            context_indices.add(index + 1)
-    return [lines[index] for index in sorted(context_indices)]
+
+        if previous_index is not None and previous_line is not None:
+            context_lines[previous_index] = previous_line
+        context_lines[index] = raw_line
+        buffered_next_indices.add(index + 1)
+
+        previous_line = raw_line
+        previous_index = index
+
+    return [context_lines[index] for index in sorted(context_lines.keys())]

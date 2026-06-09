@@ -1,7 +1,6 @@
 import unittest
 
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -12,6 +11,7 @@ from orchestrator_cli.core.workflow_validation import (
     validate_audit_rounds_settings,
     validate_workflow_plan,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class WorkflowValidationNodeModeTests(unittest.TestCase):

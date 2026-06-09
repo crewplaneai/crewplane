@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from orchestrator_cli.architecture.contracts import AgentInvoker
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.core.preflight.models import PreflightExecutionNode
-from orchestrator_cli.runtime.agent.types import AgentInvoker
 
 from ..common import (
     CompiledRuntimeContext,

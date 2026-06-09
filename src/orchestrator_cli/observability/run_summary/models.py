@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 
-from orchestrator_cli.runtime.agent.usage import (
+from orchestrator_cli.architecture.contracts import (
     AggregateCostConfidence,
     InvocationCostConfidence,
     OutputExtractionStatus,
@@ -150,11 +150,23 @@ class RunSummary:
     spend: SpendTotals | None
     provider_rollups: tuple[ProviderUsageRollup, ...]
     invocation_usages: tuple[InvocationUsageSummary, ...]
+    omitted_invocation_usage_count: int
     node_outcomes: tuple[NodeOutcomeSummary, ...]
     issues: tuple[IssueSummary, ...]
     artifact_references: tuple[ArtifactReferenceSummary, ...]
     event_log_path: Path
     summary_path: Path
+
+
+@dataclass(frozen=True)
+class RunSummaryFacts:
+    invocation_usages: tuple[InvocationUsageSummary, ...]
+    spend: SpendTotals | None
+    provider_rollups: tuple[ProviderUsageRollup, ...]
+    omitted_invocation_usage_count: int
+    review_consensus_unresolved: bool
+    started_at: str
+    completed_at: str
 
 
 class PersistentLoggerLifecycle(StrEnum):

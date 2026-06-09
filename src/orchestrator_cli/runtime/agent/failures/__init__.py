@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..command_builder import ProviderKind
-from ..types import CommandResult
+from orchestrator_cli.architecture.contracts import CommandResult, ProviderKind
+
 from .classifier import classify_invocation_failure
 from .patterns import ADVICE_BY_KIND
 from .types import (

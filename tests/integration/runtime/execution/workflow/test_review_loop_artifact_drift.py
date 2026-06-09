@@ -4,7 +4,6 @@ from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -16,6 +15,7 @@ from orchestrator_cli.observability.types import RunContext
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     ArtifactDriftInvoker,

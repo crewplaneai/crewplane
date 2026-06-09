@@ -15,6 +15,12 @@ from orchestrator_cli.observability.events import (
     build_initial_state,
 )
 from orchestrator_cli.observability.persistent import render_run_summary_terminal
+from orchestrator_cli.observability.run_summary.accumulator import (
+    MAX_RETAINED_INVOCATION_USAGE_DETAILS,
+)
+from orchestrator_cli.observability.run_summary.logger import (
+    MAX_RETAINED_SUMMARY_EVENTS,
+)
 from orchestrator_cli.observability.runtime import ObservabilityHub
 from orchestrator_cli.observability.types import (
     RunContext,
@@ -208,6 +214,225 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             self.assertIn("alpha: 1 invocation(s)", terminal_summary)
             self.assertIn(
                 "Configured cost estimate: $0.000207 (full)", terminal_summary
+            )
+
+    def test_persistent_run_logger_bounds_retained_event_details(self) -> None:
+        workflow = single_node_workflow()
+        overflow_count = 5
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+
+            with ObservabilityHub(
+                workflow_topology=topology_from_workflow(workflow),
+                run_id=output.run_id,
+                observers=[persistent_logger],
+                refresh_per_second=0,
+            ) as hub:
+                for index in range(MAX_RETAINED_SUMMARY_EVENTS + overflow_count):
+                    hub.emit(
+                        make_execution_event(
+                            event_type="runtime_log",
+                            workflow_name=workflow.name,
+                            run_id=output.run_id,
+                            level="warning",
+                            message=f"summary warning {index}",
+                            operation="summary_retention_test",
+                        )
+                    )
+
+            self.assertEqual(
+                persistent_logger.retained_event_count,
+                MAX_RETAINED_SUMMARY_EVENTS,
+            )
+            self.assertEqual(persistent_logger.dropped_event_count, overflow_count)
+
+            event_log_lines = (
+                output.get_orchestrator_event_log_path()
+                .read_text(encoding="utf-8")
+                .splitlines()
+            )
+            self.assertEqual(
+                len(event_log_lines),
+                MAX_RETAINED_SUMMARY_EVENTS + overflow_count,
+            )
+            summary_text = output.get_orchestrator_summary_path().read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("were omitted from in-memory summary detail", summary_text)
+            self.assertIn(
+                f"summary warning {MAX_RETAINED_SUMMARY_EVENTS + overflow_count - 1}",
+                summary_text,
+            )
+
+    def test_summary_rollups_survive_retained_event_detail_cap(self) -> None:
+        workflow = single_node_workflow()
+        overflow_count = 5
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            persistent_logger.record_event(
+                make_execution_event(
+                    event_type="invocation_finished",
+                    workflow_name=workflow.name,
+                    run_id=output.run_id,
+                    node_id="node.a",
+                    provider="alpha",
+                    role="executor",
+                    task_id="alpha_executor_0",
+                    attempt_count=1,
+                    cli_captured=True,
+                    output_extraction_status="success",
+                    provider_usage_status="full",
+                    provider_tokens={
+                        "input": 100,
+                        "cached_input": None,
+                        "cache_write": None,
+                        "output": 20,
+                        "reasoning": None,
+                        "total": None,
+                    },
+                    visible_estimate_tokens=50,
+                    visible_estimate_method="char-count-lower-bound",
+                    visible_estimate_is_lower_bound=True,
+                    configured_cost_usd=0.0004,
+                    invocation_cost_confidence="full",
+                )
+            )
+            for index in range(MAX_RETAINED_SUMMARY_EVENTS + overflow_count):
+                persistent_logger.record_event(
+                    make_execution_event(
+                        event_type="runtime_log",
+                        workflow_name=workflow.name,
+                        run_id=output.run_id,
+                        level="warning",
+                        message=f"summary warning {index}",
+                        operation="summary_retention_test",
+                    )
+                )
+
+            persistent_logger.stop(RunResult(failed=False))
+
+            self.assertEqual(
+                persistent_logger.dropped_event_count,
+                overflow_count + 1,
+            )
+            summary = persistent_logger.last_summary
+            self.assertIsNotNone(summary)
+            assert summary is not None
+            self.assertIsNotNone(summary.spend)
+            assert summary.spend is not None
+            self.assertEqual(summary.spend.terminal_invocations, 1)
+            self.assertEqual(summary.spend.provider_usage_full_invocations, 1)
+            self.assertEqual(summary.spend.configured_cost_usd, 0.0004)
+            self.assertEqual(len(summary.provider_rollups), 1)
+            self.assertEqual(summary.provider_rollups[0].provider, "alpha")
+
+    def test_invocation_usage_details_are_bounded_without_losing_rollups(
+        self,
+    ) -> None:
+        workflow = single_node_workflow()
+        overflow_count = 7
+        invocation_count = MAX_RETAINED_INVOCATION_USAGE_DETAILS + overflow_count
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            for index in range(invocation_count):
+                persistent_logger.record_event(
+                    make_execution_event(
+                        event_type="invocation_finished",
+                        workflow_name=workflow.name,
+                        run_id=output.run_id,
+                        node_id="node.a",
+                        provider="alpha",
+                        role="executor",
+                        task_id=f"alpha_task_{index:04d}",
+                        attempt_count=1,
+                        cli_captured=True,
+                        output_extraction_status="success",
+                        provider_usage_status="full",
+                        provider_tokens={
+                            "input": 10,
+                            "cached_input": None,
+                            "cache_write": None,
+                            "output": 2,
+                            "reasoning": None,
+                            "total": None,
+                        },
+                        visible_estimate_tokens=12,
+                        visible_estimate_method="char-count-lower-bound",
+                        visible_estimate_is_lower_bound=True,
+                        configured_cost_usd=0.0001,
+                        invocation_cost_confidence="full",
+                    )
+                )
+
+            persistent_logger.stop(RunResult(failed=False))
+
+            summary = persistent_logger.last_summary
+            self.assertIsNotNone(summary)
+            assert summary is not None
+            self.assertEqual(
+                len(summary.invocation_usages),
+                MAX_RETAINED_INVOCATION_USAGE_DETAILS,
+            )
+            self.assertEqual(summary.omitted_invocation_usage_count, overflow_count)
+            self.assertIsNotNone(summary.spend)
+            assert summary.spend is not None
+            self.assertEqual(summary.spend.terminal_invocations, invocation_count)
+            self.assertEqual(summary.spend.total_attempts, invocation_count)
+            self.assertEqual(
+                summary.spend.provider_usage_full_invocations, invocation_count
+            )
+            self.assertEqual(len(summary.provider_rollups), 1)
+            self.assertEqual(
+                summary.provider_rollups[0].terminal_invocations,
+                invocation_count,
+            )
+            self.assertEqual(
+                summary.invocation_usages[0].task_id,
+                f"alpha_task_{overflow_count:04d}",
+            )
+
+            summary_text = output.get_orchestrator_summary_path().read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(f"- Terminal invocations: {invocation_count}", summary_text)
+            self.assertIn(
+                "Invocation detail: retained latest "
+                f"{MAX_RETAINED_INVOCATION_USAGE_DETAILS} invocation(s); "
+                f"{overflow_count} earlier invocation detail(s)",
+                summary_text,
+            )
+            self.assertNotIn("alpha_task_0000", summary_text)
+            self.assertIn(f"alpha_task_{invocation_count - 1:04d}", summary_text)
+            event_log_lines = (
+                output.get_orchestrator_event_log_path()
+                .read_text(encoding="utf-8")
+                .splitlines()
+            )
+            self.assertEqual(len(event_log_lines), invocation_count)
+
+            terminal_summary = render_run_summary_terminal(summary)
+            self.assertIn(
+                "Invocation detail: retained latest "
+                f"{MAX_RETAINED_INVOCATION_USAGE_DETAILS} invocation(s); "
+                f"{overflow_count} earlier omitted",
+                terminal_summary,
             )
 
     def test_persistent_run_logger_is_one_shot(self) -> None:

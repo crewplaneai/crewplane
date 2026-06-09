@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from orchestrator_cli.core.config import Config
+from orchestrator_cli.core.preflight.compile_state import (
+    CompileState,
+    append_diagnostic,
+)
+
+
+def collect_prompt_transport_warnings(
+    config: Config,
+    state: CompileState,
+) -> None:
+    for agent_key, agent in config.agents.items():
+        if agent.prompt_transport != "argv":
+            continue
+        append_prompt_transport_warning(agent_key, state)
+
+
+def append_prompt_transport_warning(
+    agent_key: str,
+    state: CompileState,
+) -> None:
+    message = (
+        f"Agent '{agent_key}' uses argv prompt transport for rendered prompts. "
+        "This may expose prompt contents in process arguments."
+    )
+    append_diagnostic(
+        state,
+        code="PROVIDER-CONFIG",
+        phase="provider",
+        message=message,
+        severity="warning",
+    )

@@ -5,7 +5,8 @@ import os
 import signal
 from asyncio import sleep as asyncio_sleep
 
-from ..types import InvocationDiagnosticSink
+from orchestrator_cli.architecture.contracts import InvocationDiagnosticSink
+
 from .diagnostics import emit_process_already_exited_diagnostic
 
 PROCESS_EXIT_POLL_INTERVAL_SECONDS = 0.01

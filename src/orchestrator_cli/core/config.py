@@ -1,12 +1,25 @@
 from pathlib import Path
-from typing import Any, Final, Literal, get_args
+from typing import Final, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from yaml.constructor import ConstructorError
+
+from orchestrator_cli.architecture.contracts import (
+    JsonObject,
+    PromptTransport,
+    ProviderKind,
+)
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 from .provider_names import normalize_provider_name
 from .token_budget import TokenBudgetSettings
-from .versions import CONFIG_SCHEMA_VERSION
 from .workflow_keywords import (
     ALLOWED_SEQUENTIAL_CONSENSUS_POLICIES,
     ALLOWED_SEQUENTIAL_CONSENSUS_POLICY_SET,
@@ -15,11 +28,19 @@ from .workflow_keywords import (
 )
 from .yaml_loader import load_yaml_unique
 
-QuotaParser = Literal["auto", "codex", "copilot", "claude", "kilo", "gemini", "generic"]
-ALLOWED_QUOTA_PARSERS = get_args(QuotaParser)
-ALLOWED_QUOTA_PARSER_SET = set(ALLOWED_QUOTA_PARSERS)
+ALLOWED_PROVIDER_KINDS: Final = (
+    "claude",
+    "codex",
+    "copilot",
+    "gemini",
+    "kilo",
+    "generic",
+)
+ALLOWED_PROVIDER_KIND_SET: Final = set(ALLOWED_PROVIDER_KINDS)
+ALLOWED_PROMPT_TRANSPORTS: Final = ("stdin", "argv")
+ALLOWED_PROMPT_TRANSPORT_SET: Final = set(ALLOWED_PROMPT_TRANSPORTS)
 DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS: Final = 5.0
-DEFAULT_INVOCATION_TIMEOUT_SECONDS: Final = 1800.0
+DEFAULT_INVOCATION_TIMEOUT_SECONDS: Final[float] = 1800.0
 DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS: Final = 1800.0
 
 
@@ -89,13 +110,13 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cli_cmd: list[str]
+    provider_kind: ProviderKind = "generic"
     default_model: str | None = None
 
     model_arg: str | None = "--model"
-    prompt_arg: str | None = "--prompt"
+    prompt_transport: PromptTransport = "stdin"
+    prompt_transport_arg: str | None = None
     extra_args: list[str] = Field(default_factory=list)
-    use_stdin: bool = False
-    stdin_prompt_arg: str | None = None
     max_retries: int = Field(default=0, ge=0)
     retry_delay_seconds: float = Field(default=300.0, ge=0)
     retry_on_exit_codes: list[int] = Field(default_factory=list)
@@ -103,7 +124,6 @@ class AgentConfig(BaseModel):
     retry_on_output_contains: list[str] = Field(default_factory=list)
     quota_reached_on_contains: list[str] = Field(default_factory=list)
     quota_reached_retry_delay_seconds: float = Field(default=300.0, ge=0)
-    quota_parser: QuotaParser = "auto"
     quota_reset_sleep_floor_seconds: float = Field(default=5.0, ge=0)
     invocation_timeout_seconds: float | None = DEFAULT_INVOCATION_TIMEOUT_SECONDS
     invocation_idle_timeout_seconds: float | None = (
@@ -120,10 +140,45 @@ class AgentConfig(BaseModel):
             raise ValueError("cli_cmd cannot contain blank tokens")
         return value
 
-    @field_validator("model_arg", "prompt_arg", "stdin_prompt_arg")
+    @field_validator("provider_kind", mode="before")
+    @classmethod
+    def _validate_provider_kind(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_PROVIDER_KIND_SET:
+            raise ValueError(
+                f"provider_kind must be one of: {', '.join(ALLOWED_PROVIDER_KINDS)}"
+            )
+        return normalized
+
+    @field_validator("prompt_transport", mode="before")
+    @classmethod
+    def _validate_prompt_transport(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_PROMPT_TRANSPORT_SET:
+            raise ValueError(
+                "prompt_transport must be one of: "
+                f"{', '.join(ALLOWED_PROMPT_TRANSPORTS)}"
+            )
+        return normalized
+
+    @field_validator("model_arg", "prompt_transport_arg")
     @classmethod
     def _validate_optional_command_token(cls, value: str | None) -> str | None:
         return _validate_command_token(value, "command argument")
+
+    @model_validator(mode="after")
+    def _validate_prompt_transport_arg(self) -> Self:
+        if self.prompt_transport == "argv" and self.prompt_transport_arg is None:
+            raise ValueError(
+                "prompt_transport_arg is required when prompt_transport is argv"
+            )
+        if self.prompt_transport == "stdin" and self.prompt_transport_arg == "":
+            raise ValueError("prompt_transport_arg cannot be blank")
+        return self
 
     @field_validator("extra_args")
     @classmethod
@@ -150,18 +205,6 @@ class AgentConfig(BaseModel):
             raise ValueError("invocation timeout values must be greater than 0")
         return value
 
-    @field_validator("quota_parser", mode="before")
-    @classmethod
-    def _validate_quota_parser(cls, value: object) -> object:
-        if not isinstance(value, str):
-            return value
-        normalized = value.strip().lower()
-        if normalized not in ALLOWED_QUOTA_PARSER_SET:
-            raise ValueError(
-                f"quota_parser must be one of: {', '.join(ALLOWED_QUOTA_PARSERS)}"
-            )
-        return normalized
-
     def get_command(self) -> list[str]:
         return list(self.cli_cmd)
 
@@ -170,7 +213,7 @@ class IntegrationSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     implementation: str
-    options: dict[str, Any] = Field(default_factory=dict)
+    options: JsonObject = Field(default_factory=dict)
 
     @field_validator("implementation", mode="before")
     @classmethod

@@ -5,6 +5,7 @@ from threading import Event
 
 from rich.console import Console
 
+from orchestrator_cli.architecture.contracts import AgentInvoker
 from orchestrator_cli.artifacts import OutputManager, safe_artifact_name
 from orchestrator_cli.bootstrap import build_runtime_config_snapshot
 from orchestrator_cli.core.config import AgentConfig, Config
@@ -18,7 +19,6 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.runtime.agent.types import AgentInvoker
 from orchestrator_cli.runtime.execution import (
     execute_parallel_stage as _execute_compiled_parallel_stage,
 )

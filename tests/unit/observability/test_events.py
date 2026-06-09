@@ -55,7 +55,7 @@ def test_execution_event_log_uses_typed_payload_fields() -> None:
         operation="runtime_warning",
     )
 
-    assert event.message == "payload message"
+    assert event.payload.message == "payload message"
     assert execution_event_log_record(event)["message"] == "payload message"
 
 
@@ -67,7 +67,7 @@ def test_workflow_event_exposes_payload_error() -> None:
         error="workflow failed",
     )
 
-    assert event.error == "workflow failed"
+    assert event.payload.error == "workflow failed"
     assert execution_event_log_record(event)["error"] == "workflow failed"
 
 

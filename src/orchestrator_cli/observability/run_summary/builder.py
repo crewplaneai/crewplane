@@ -5,18 +5,16 @@ from orchestrator_cli.observability.events import ExecutionEvent
 from orchestrator_cli.observability.timing import format_elapsed_seconds
 from orchestrator_cli.observability.types import DashboardSnapshot, RunResult
 
+from .accumulator import RunSummaryAccumulator
 from .formatting import duration_label
 from .issues import issue_summaries
 from .models import (
     ArtifactReferenceSummary,
+    IssueSummary,
     NodeCounts,
     NodeOutcomeSummary,
     RunSummary,
-)
-from .spend import (
-    invocation_usage_summaries,
-    provider_usage_rollups,
-    spend_totals,
+    RunSummaryFacts,
 )
 
 
@@ -27,29 +25,67 @@ def build_run_summary(
     result: RunResult,
     fallback_workflow_name: str,
     fallback_run_id: str,
+    dropped_event_count: int = 0,
+    summary_facts: RunSummaryFacts | None = None,
 ) -> RunSummary:
     workflow_name = (
         snapshot.state.workflow_name if snapshot is not None else fallback_workflow_name
     )
     run_id = snapshot.state.run_id if snapshot is not None else fallback_run_id
-    invocation_usages = invocation_usage_summaries(events)
+    facts = summary_facts or run_summary_facts_from_events(events)
+    invocation_usages = facts.invocation_usages
     return RunSummary(
         workflow_name=workflow_name,
         run_id=run_id,
         workflow_status=workflow_status(snapshot, result),
-        review_consensus_unresolved=review_consensus_unresolved(events),
-        started_at=event_time(events, "workflow_started"),
-        completed_at=event_time(events, "workflow_finished", "workflow_failed"),
+        review_consensus_unresolved=facts.review_consensus_unresolved,
+        started_at=facts.started_at,
+        completed_at=facts.completed_at,
         elapsed_label=elapsed_label(snapshot),
         node_counts=node_counts(snapshot),
-        spend=spend_totals(invocation_usages),
-        provider_rollups=provider_usage_rollups(invocation_usages),
+        spend=facts.spend,
+        provider_rollups=facts.provider_rollups,
         invocation_usages=invocation_usages,
+        omitted_invocation_usage_count=facts.omitted_invocation_usage_count,
         node_outcomes=node_outcome_summaries(artifact_store, snapshot),
-        issues=issue_summaries(events),
+        issues=summary_issues(
+            artifact_store=artifact_store,
+            events=events,
+            dropped_event_count=dropped_event_count,
+        ),
         artifact_references=artifact_reference_summaries(snapshot),
         event_log_path=artifact_store.get_orchestrator_event_log_path(),
         summary_path=artifact_store.get_orchestrator_summary_path(),
+    )
+
+
+def run_summary_facts_from_events(events: list[ExecutionEvent]) -> RunSummaryFacts:
+    accumulator = RunSummaryAccumulator()
+    for event in events:
+        accumulator.record(event)
+    return accumulator.snapshot()
+
+
+def summary_issues(
+    artifact_store: ArtifactStorePort,
+    events: list[ExecutionEvent],
+    dropped_event_count: int,
+) -> tuple[IssueSummary, ...]:
+    issues = issue_summaries(events)
+    if dropped_event_count == 0:
+        return issues
+    return (
+        IssueSummary(
+            level="warning",
+            timestamp_utc="n/a",
+            message=(
+                "[warning] Summary detail retained the latest "
+                f"{len(events)} event(s); {dropped_event_count} earlier event(s) "
+                "were omitted from in-memory summary detail. Full events remain in "
+                f"{artifact_store.get_orchestrator_event_log_path()}."
+            ),
+        ),
+        *issues,
     )
 
 
@@ -60,16 +96,6 @@ def workflow_status(snapshot: DashboardSnapshot | None, result: RunResult) -> st
             return "failed" if result.failed else "succeeded"
         return status
     return "failed" if result.failed else "succeeded"
-
-
-def review_consensus_unresolved(events: list[ExecutionEvent]) -> bool:
-    return any(
-        event.event_type == "runtime_log"
-        and event.operation == "review_loop_consensus_exhausted"
-        and event.attributes is not None
-        and event.attributes.get("continued") is True
-        for event in events
-    )
 
 
 def elapsed_label(snapshot: DashboardSnapshot | None) -> str | None:
@@ -89,13 +115,6 @@ def node_counts(snapshot: DashboardSnapshot | None) -> NodeCounts:
         blocked=state.blocked_nodes,
         failed=state.failed_nodes,
     )
-
-
-def event_time(events: list[ExecutionEvent], *event_types: str) -> str:
-    for event in reversed(events):
-        if event.event_type in event_types:
-            return event.timestamp_utc
-    return "n/a"
 
 
 def node_outcome_summaries(

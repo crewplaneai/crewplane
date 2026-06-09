@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from orchestrator_cli.core.versions import WORKFLOW_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
+from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
 
 
 def _write_workflow(path: Path, lines: list[str]) -> None:

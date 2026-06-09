@@ -18,12 +18,12 @@ from orchestrator_cli.core.preflight import (
 )
 from orchestrator_cli.core.preflight.secrets import FingerprintKeyPolicy
 from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 def _config() -> Config:
@@ -129,6 +129,7 @@ def test_preflight_stops_before_static_policies_after_reference_errors(
     assert [
         (diagnostic.code, diagnostic.phase) for diagnostic in preview.diagnostics
     ] == [("PREFLIGHT-VALIDATION", "reference")]
+    assert preview.diagnostics[0].metadata["workflow_code"] == "WORKFLOW-TEMPLATE"
     assert preview.static_resources == []
     assert preview.static_file_payloads == {}
     assert preview.render_plans == []
@@ -282,3 +283,47 @@ def test_successful_preflight_preview_builds_execution_contract(
     assert preview.workflow_signature is not None
     assert preview.execution_order == ["build"]
     assert preview.nodes[0].provider_records[0].agent_config_key == "alpha"
+
+
+def test_preflight_preview_warns_on_argv_prompt_transport(
+    tmp_path: Path,
+) -> None:
+    workflow = WorkflowPlan(
+        name="demo",
+        nodes=[
+            WorkflowNode(
+                id="build",
+                mode="sequential",
+                providers=[ProviderSpec(provider="alpha")],
+                prompt_segments=[PromptSegment(role="shared", content="build")],
+            )
+        ],
+    )
+    config = _config()
+    config.agents["alpha"].prompt_transport = "argv"
+    config.agents["alpha"].prompt_transport_arg = "--prompt"
+    config_snapshot = build_runtime_config_snapshot(
+        config=config,
+        workflow_schema_version=workflow.schema_version,
+        console=Console(file=None),
+        no_live=True,
+    )
+    preview = compile_preflight_preview(
+        source=PreflightWorkflowSource.from_workflow(workflow),
+        config=config,
+        runtime_snapshot=config_snapshot.snapshot,
+        options=PreflightCompileOptions(
+            project_root=tmp_path,
+            orchestrator_dir=tmp_path / ".orchestrator",
+            fingerprint_key_policy="read_only",
+            environment=None,
+            runtime_variables={},
+        ),
+    )
+
+    self_diagnostics = [
+        (diagnostic.code, diagnostic.severity, diagnostic.phase)
+        for diagnostic in preview.diagnostics
+        if diagnostic.code == "PROVIDER-CONFIG"
+    ]
+    assert ("PROVIDER-CONFIG", "warning", "provider") in self_diagnostics

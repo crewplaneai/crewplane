@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from orchestrator_cli.runtime.agent.types import InvocationContext
+from orchestrator_cli.architecture.contracts import (
+    InvocationContext,
+    MockInvokerOptions,
+)
 
-from .options import MockOptions
 from .outputs import OutputResolution
 
 
 def write_invocation_log(
-    options: MockOptions,
+    options: MockInvokerOptions,
     log_file: Path | None,
     output_file: Path,
     context: InvocationContext | None,

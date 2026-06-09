@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from orchestrator_cli.core.versions import WORKFLOW_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_markdown import (
     parse_workflow_markdown_document,
     parse_workflow_markdown_text,
     validate_workflow_markdown_text,
 )
+from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
 
 
 def test_crlf_markdown_preserves_role_segment_boundaries(tmp_path: Path) -> None:

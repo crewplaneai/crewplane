@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 from orchestrator_cli.artifacts import OutputManager, safe_artifact_name
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -16,6 +15,7 @@ from orchestrator_cli.observability.events import ExecutionEvent
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     DelayByModelInvoker,
     FailingLogOutputManager,
@@ -278,20 +278,22 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(finished_events), 1)
 
             beta_failed = failed_events[0]
-            self.assertEqual(beta_failed.node_id, "parallel.events")
-            self.assertEqual(beta_failed.provider, "beta")
+            self.assertEqual(beta_failed.context.node_id, "parallel.events")
+            self.assertEqual(beta_failed.context.provider, "beta")
             self.assertEqual(
-                beta_failed.task_id, f"{safe_artifact_name('beta')}_executor_1"
+                beta_failed.context.task_id,
+                f"{safe_artifact_name('beta')}_executor_1",
             )
-            self.assertIsNotNone(beta_failed.log_file)
-            self.assertGreaterEqual(beta_failed.duration_ms, 0)
-            self.assertIn("simulated failure for fail", beta_failed.error)
+            self.assertIsNotNone(beta_failed.context.log_file)
+            self.assertGreaterEqual(beta_failed.payload.duration_ms, 0)
+            self.assertIn("simulated failure for fail", beta_failed.payload.error or "")
 
             alpha_finished = finished_events[0]
-            self.assertEqual(alpha_finished.node_id, "parallel.events")
-            self.assertEqual(alpha_finished.provider, "alpha")
+            self.assertEqual(alpha_finished.context.node_id, "parallel.events")
+            self.assertEqual(alpha_finished.context.provider, "alpha")
             self.assertEqual(
-                alpha_finished.task_id, f"{safe_artifact_name('alpha')}_executor_0"
+                alpha_finished.context.task_id,
+                f"{safe_artifact_name('alpha')}_executor_0",
             )
 
     async def test_parallel_failure_event_sink_error_preserves_original_failure(
@@ -424,7 +426,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             def event_sink(event: ExecutionEvent) -> None:
                 if (
                     event.event_type == "invocation_started"
-                    and event.provider == "beta"
+                    and event.context.provider == "beta"
                 ):
                     raise RuntimeError("event sink boom")
                 events.append(event)
@@ -456,10 +458,11 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             failed_events = [
                 event
                 for event in events
-                if event.event_type == "invocation_failed" and event.provider == "beta"
+                if event.event_type == "invocation_failed"
+                and event.context.provider == "beta"
             ]
             self.assertEqual(len(failed_events), 1)
-            self.assertIn("event sink boom", failed_events[0].error or "")
+            self.assertIn("event sink boom", failed_events[0].payload.error or "")
 
     async def test_parallel_max_invocations_queues_before_started_event(
         self,
@@ -507,7 +510,10 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                 if event.event_type in {"invocation_started", "invocation_finished"}
             ]
             self.assertEqual(
-                [(event.event_type, event.provider) for event in invocation_events],
+                [
+                    (event.event_type, event.context.provider)
+                    for event in invocation_events
+                ],
                 [
                     ("invocation_started", "alpha"),
                     ("invocation_finished", "alpha"),
@@ -519,9 +525,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             beta_started = invocation_events[2]
             beta_finished = invocation_events[3]
             self.assertGreaterEqual(beta_started.timestamp, alpha_finished.timestamp)
-            self.assertIsNotNone(alpha_finished.duration_ms)
-            self.assertIsNotNone(beta_finished.duration_ms)
+            self.assertIsNotNone(alpha_finished.payload.duration_ms)
+            self.assertIsNotNone(beta_finished.payload.duration_ms)
             self.assertLess(
-                beta_finished.duration_ms or 0,
-                alpha_finished.duration_ms or 0,
+                beta_finished.payload.duration_ms or 0,
+                alpha_finished.payload.duration_ms or 0,
             )

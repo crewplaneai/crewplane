@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from orchestrator_cli.observability.events import ExecutionEvent
+from orchestrator_cli.observability.events import (
+    ExecutionEvent,
+    InvocationEventPayload,
+    NodeEventPayload,
+    RuntimeLogEventPayload,
+    WorkflowEventPayload,
+)
 
 from .models import IssueSummary
 
@@ -21,22 +27,23 @@ def issue_summaries(events: list[ExecutionEvent]) -> tuple[IssueSummary, ...]:
 
 def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
     blocked_runtime_nodes = {
-        event.node_id
+        event.context.node_id
         for event in events
         if event.event_type == "runtime_log"
-        and event.operation == "blocked_dependencies"
-        and event.node_id is not None
+        and runtime_payload(event).operation == "blocked_dependencies"
+        and event.context.node_id is not None
     }
     issues: list[tuple[int, str, str]] = []
     for event in events:
         if event.event_type == "runtime_log":
-            if event.level not in {"warning", "error"} or not event.message:
+            payload = runtime_payload(event)
+            if payload.level not in {"warning", "error"} or not payload.message:
                 continue
             issues.append(
                 (
-                    severity_rank(event.level),
+                    severity_rank(payload.level),
                     event.timestamp_utc,
-                    format_runtime_issue(event),
+                    format_runtime_issue(event, payload),
                 )
             )
             continue
@@ -68,7 +75,7 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
             )
             continue
         if event.event_type == "node_blocked":
-            if event.node_id in blocked_runtime_nodes:
+            if event.context.node_id in blocked_runtime_nodes:
                 continue
             issues.append(
                 (
@@ -85,48 +92,72 @@ def issue_sort_key(issue: tuple[int, str, str]) -> tuple[int, str]:
     return severity, timestamp
 
 
-def format_runtime_issue(event: ExecutionEvent) -> str:
-    if event.operation == "stderr_fallback":
+def runtime_payload(event: ExecutionEvent) -> RuntimeLogEventPayload:
+    if not isinstance(event.payload, RuntimeLogEventPayload):
+        raise TypeError(
+            f"Expected runtime-log payload for event_type '{event.event_type}'."
+        )
+    return event.payload
+
+
+def format_runtime_issue(event: ExecutionEvent, payload: RuntimeLogEventPayload) -> str:
+    if payload.operation == "stderr_fallback":
         label = (
             "Invocation succeeded with empty stdout; used stderr as output. "
             "Provider log contains the original stderr lines."
         )
     else:
-        label = event.message or "runtime warning"
+        label = payload.message or "runtime warning"
     details = event_detail_segments(event)
     if not details:
-        return f"[{event.level}] {label}"
-    return f"[{event.level}] {label} ({'; '.join(details)})"
+        return f"[{payload.level}] {label}"
+    return f"[{payload.level}] {label} ({'; '.join(details)})"
 
 
 def format_failure_issue(prefix: str, event: ExecutionEvent) -> str:
-    label = event.error or event.message or "unspecified error"
+    label = error_label(event)
     details = event_detail_segments(event)
     if not details:
         return f"[error] {prefix}: {label}"
     return f"[error] {prefix}: {label} ({'; '.join(details)})"
 
 
+def error_label(event: ExecutionEvent) -> str:
+    payload = event.payload
+    if isinstance(payload, RuntimeLogEventPayload):
+        return payload.error or payload.message or "unspecified error"
+    if isinstance(payload, (WorkflowEventPayload, NodeEventPayload)):
+        return payload.error or "unspecified error"
+    if isinstance(payload, InvocationEventPayload):
+        return payload.error or "unspecified error"
+    return "unspecified error"
+
+
 def event_detail_segments(event: ExecutionEvent) -> list[str]:
     details: list[str] = []
-    if event.failure_kind:
-        details.append(f"failure: {event.failure_kind}")
-    if event.failure_advice:
-        details.append(f"advice: {event.failure_advice}")
-    if event.node_id:
-        details.append(f"node: {event.node_id}")
-    if event.task_id:
-        details.append(f"task: {event.task_id}")
-    if event.audit_round_num is not None and event.round_num is not None:
-        details.append(f"round: audit{event.audit_round_num}/round{event.round_num}")
-    elif event.audit_round_num is not None:
-        details.append(f"round: audit{event.audit_round_num}")
-    elif event.round_num is not None:
-        details.append(f"round: round{event.round_num}")
-    if event.output_file:
-        details.append(f"output: {event.output_file}")
-    if event.log_file:
-        details.append(f"log: {event.log_file}")
+    context = event.context
+    payload = event.payload
+    if isinstance(payload, InvocationEventPayload):
+        if payload.failure_kind:
+            details.append(f"failure: {payload.failure_kind}")
+        if payload.failure_advice:
+            details.append(f"advice: {payload.failure_advice}")
+    if context.node_id:
+        details.append(f"node: {context.node_id}")
+    if context.task_id:
+        details.append(f"task: {context.task_id}")
+    if context.audit_round_num is not None and context.round_num is not None:
+        details.append(
+            f"round: audit{context.audit_round_num}/round{context.round_num}"
+        )
+    elif context.audit_round_num is not None:
+        details.append(f"round: audit{context.audit_round_num}")
+    elif context.round_num is not None:
+        details.append(f"round: round{context.round_num}")
+    if context.output_file:
+        details.append(f"output: {context.output_file}")
+    if context.log_file:
+        details.append(f"log: {context.log_file}")
     return details
 
 

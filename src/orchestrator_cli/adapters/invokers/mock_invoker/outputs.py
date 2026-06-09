@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from orchestrator_cli.architecture.contracts import InvocationContext
 from orchestrator_cli.core.review_contract import render_no_findings_review_contract
-from orchestrator_cli.runtime.agent.types import InvocationContext
 
 
 @dataclass(frozen=True)

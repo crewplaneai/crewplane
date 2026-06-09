@@ -1,3 +1,4 @@
+from orchestrator_cli.architecture.contracts import CommandResult
 from orchestrator_cli.runtime.agent.invocation.retry import (
     NoFailureRetry,
     QuotaRetryFailure,
@@ -19,7 +20,6 @@ from orchestrator_cli.runtime.agent.invocation.transitions import (
     transition_from_structured_output,
     transition_from_terminal_failure,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult
 from orchestrator_cli.runtime.agent.usage import ParsedProviderUsage
 
 

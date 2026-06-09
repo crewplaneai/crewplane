@@ -1,27 +1,21 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
+from orchestrator_cli.architecture.contracts import (
+    JsonObject,
+    MockInvokerFailSelector,
+)
+from orchestrator_cli.architecture.contracts import (
+    MockInvokerOptions as MockInvokerOptionsContract,
+)
 from orchestrator_cli.core.config import DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS
 
 from .selectors import FailSelector, validate_fail_selectors
 
 type OutputMode = Literal["lorem", "echo", "file"]
-
-
-@dataclass(frozen=True)
-class MockOptions:
-    delay_seconds: float
-    observation_delay_seconds: float
-    output_mode: OutputMode
-    output_dir: Path | None
-    strict_file_mode: bool
-    seed: int | None
-    fail_when: tuple[FailSelector, ...]
 
 
 def _validate_non_negative_number(value: object, option_name: str) -> float:
@@ -72,7 +66,18 @@ def _validate_output_dir(value: object) -> Path | None:
     return Path(value).resolve()
 
 
-def parse_options(options: Mapping[str, Any] | None) -> MockOptions:
+def _selector_to_contract(selector: FailSelector) -> MockInvokerFailSelector:
+    return MockInvokerFailSelector(
+        node_id=selector.criteria.get("node_id"),
+        task_id=selector.criteria.get("task_id"),
+        provider=selector.criteria.get("provider"),
+        role=selector.criteria.get("role"),
+        audit_round_num=selector.criteria.get("audit_round_num"),
+        round_num=selector.criteria.get("round_num"),
+    )
+
+
+def parse_options(options: JsonObject | None) -> MockInvokerOptionsContract:
     resolved = dict(options or {})
     for raw_key in resolved:
         if not isinstance(raw_key, str):
@@ -115,19 +120,23 @@ def parse_options(options: Mapping[str, Any] | None) -> MockOptions:
         "strict_file_mode",
     )
     seed = _validate_optional_int(resolved.pop("seed", None), "seed")
-    fail_when = validate_fail_selectors(resolved.pop("fail_when", []))
+    fail_when = tuple(
+        _selector_to_contract(selector)
+        for selector in validate_fail_selectors(resolved.pop("fail_when", []))
+    )
 
     if output_mode == "file" and output_dir is None:
         raise ValueError(
             "mock invoker option 'output_dir' is required when output_mode='file'"
         )
 
-    return MockOptions(
+    return MockInvokerOptionsContract(
         delay_seconds=delay_seconds,
         observation_delay_seconds=observation_delay_seconds,
         output_mode=output_mode,
-        output_dir=output_dir,
+        output_dir=str(output_dir) if output_dir is not None else None,
         strict_file_mode=strict_file_mode,
         seed=seed,
         fail_when=fail_when,
+        fixture_metadata={},
     )

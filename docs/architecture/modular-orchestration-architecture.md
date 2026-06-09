@@ -44,12 +44,19 @@ Stable contracts are under `orchestrator_cli.architecture.ports`:
 - `UIRuntimePlan`
 - `RuntimeComponents`
 
-`orchestrator_cli.architecture.api_version.EXT_API_VERSION` is the extension API version boundary.
+`orchestrator_cli.versions.INTEGRATION_API_VERSION` is the extension API version boundary. Config, workflow, preflight, and integration API versions are authored in `orchestrator_cli.versions`.
 
 ## Configuration Model
 Config schema is `1.0` and uses `settings.integrations`:
 
 ```yaml
+agents:
+  codex:
+    cli_cmd: ["codex", "exec"]
+    provider_kind: "codex"
+    prompt_transport: "stdin"
+    prompt_transport_arg: "-"
+
 settings:
   integrations:
     invoker:

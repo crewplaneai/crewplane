@@ -17,7 +17,7 @@ from orchestrator_cli.core.config import (
     Settings,
 )
 from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )

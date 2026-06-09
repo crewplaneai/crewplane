@@ -14,10 +14,15 @@ class PromptBudgetExceededError(RuntimeError):
 
 
 def compiled_token_budget(node: PreflightExecutionNode) -> dict[str, int | None]:
-    budget = node.execution_policy.token_budget or {}
+    budget = node.execution_policy.token_budget
+    if budget is None:
+        return {
+            "fail_threshold_chars": None,
+            "warn_threshold_chars": None,
+        }
     return {
-        "fail_threshold_chars": budget.get("fail_threshold_chars"),
-        "warn_threshold_chars": budget.get("warn_threshold_chars"),
+        "fail_threshold_chars": budget.fail_threshold_chars,
+        "warn_threshold_chars": budget.warn_threshold_chars,
     }
 
 

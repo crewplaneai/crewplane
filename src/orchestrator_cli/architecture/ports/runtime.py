@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from orchestrator_cli.architecture.contracts import AgentInvoker, Observer
 from orchestrator_cli.architecture.ports.artifacts import ArtifactStorePort
-from orchestrator_cli.observability.observer import Observer
-from orchestrator_cli.runtime.agent.types import AgentInvoker
 
 
 @dataclass(frozen=True, init=False)

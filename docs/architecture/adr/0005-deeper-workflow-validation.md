@@ -11,9 +11,18 @@ Enhance the `orchestrator validate` command to perform deep preflight validation
 - Checking provider existence in the resolved configuration.
 - Verifying the presence of provider CLI executables on the system `PATH`.
 - Validating external template references (`{{file:...}}`, `{{env:...}}`, `{{var:...}}`) using the shared preflight logic.
+- Reusing the same structured workflow diagnostics, workflow syntax constants,
+  provider resolution checks, token-budget checks, file-access checks, and
+  env/var template checks used by run preflight.
+- Emitting warning diagnostics for explicit argv prompt transport because it can
+  expose rendered prompt content in process arguments.
+- Preserving boundary validation for duplicate-key YAML rejection, schema
+  versions, duplicate agent names, exact keyword sets, command token checks,
+  retry/quota policy checks, pricing checks, audit-round checks, and configured
+  provider resolution.
 
 ## Context
-The `orchestrator validate` command previously checked only the markdown shape, schema conformity, DAG dependency validity, and output-reference topology. However, the runtime preflight phase additionally checked for provider availability and template resolution readiness.
+The `orchestrator validate` command previously checked only the markdown shape, schema conformity, DAG dependency validity, and output-reference topology. However, the runtime preflight phase additionally checked provider availability and template reference resolution.
 Because `validate` did not execute these same runtime checks, workflows could pass Continuous Integration (CI) validation but still fail during an actual `run`.
 
 ## Rationale
@@ -32,3 +41,7 @@ Because `validate` did not execute these same runtime checks, workflows could pa
 
 ## Updates
 - **2026-04-10**: Implemented the shared preflight validation logic across both the `run` and `validate` Typer commands in `app.py`, backed by the deeper checks in `workflow_validation.py`.
+- **2026-06-07**: Folded in validation boundary hardening. Workflow syntax and
+  keyword constants are centralized, validation emits structured diagnostics,
+  and preflight delegates to the shared diagnostic path rather than duplicating
+  structural checks.

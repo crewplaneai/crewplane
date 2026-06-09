@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Protocol
 
+from orchestrator_cli.architecture.contracts import (
+    AgentInvoker,
+    CanonicalIntegrationConfig,
+    JsonObject,
+)
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
-from orchestrator_cli.runtime.agent.types import AgentInvoker
 
 
 class InvokerAdapterPort(Protocol):
@@ -15,13 +17,13 @@ class InvokerAdapterPort(Protocol):
         self,
         implementation: str,
         resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         """Validate and canonicalize invoker options without side effects."""
 
     def create_invoker(
         self,
         config: Config,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> AgentInvoker:
         """Build an invoker for the configured provider transport."""

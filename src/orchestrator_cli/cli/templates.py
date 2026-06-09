@@ -3,7 +3,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )

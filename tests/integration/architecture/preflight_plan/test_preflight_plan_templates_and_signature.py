@@ -9,7 +9,7 @@ from typing import Any
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.api_version import EXT_API_VERSION
+from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
 from orchestrator_cli.bootstrap import build_runtime_config_snapshot
 from orchestrator_cli.core.config import (
     AgentConfig,
@@ -25,13 +25,13 @@ from orchestrator_cli.core.preflight import (
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
 from orchestrator_cli.core.prompt_segments import PromptSegment
 from orchestrator_cli.core.workflow_models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
+from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 
 def _mock_config() -> Config:
@@ -110,7 +110,7 @@ class SensitiveOptionInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=EXT_API_VERSION,
+            api_version=INTEGRATION_API_VERSION,
             options={"api_token": api_token},
             sensitive_options=["api_token"],
             option_scopes={"api_token": "execution"},

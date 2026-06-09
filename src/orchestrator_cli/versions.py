@@ -1,0 +1,13 @@
+"""Authored version constants for schemas and integration contracts."""
+
+CONFIG_SCHEMA_VERSION = "1.0"
+WORKFLOW_SCHEMA_VERSION = "1.0"
+PREFLIGHT_PLAN_SCHEMA_VERSION = "1.0"
+INTEGRATION_API_VERSION = "1"
+
+__all__ = [
+    "CONFIG_SCHEMA_VERSION",
+    "INTEGRATION_API_VERSION",
+    "PREFLIGHT_PLAN_SCHEMA_VERSION",
+    "WORKFLOW_SCHEMA_VERSION",
+]

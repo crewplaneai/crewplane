@@ -3,17 +3,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.runtime.agent.invoker import DefaultAgentInvoker
-from orchestrator_cli.runtime.agent.types import CommandResult
+from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     execute_workflow,
 )
@@ -71,7 +72,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                     config,
                     workflow,
                     output,
-                    invoker=DefaultAgentInvoker(),
+                    invoker=PlannedAgentInvoker(build_cli_invocation_plan),
                     suppress_progress_output=True,
                 )
 
@@ -132,7 +133,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                     config,
                     workflow,
                     output,
-                    invoker=DefaultAgentInvoker(),
+                    invoker=PlannedAgentInvoker(build_cli_invocation_plan),
                     suppress_progress_output=True,
                 )
 
@@ -204,7 +205,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                     config,
                     workflow,
                     output,
-                    invoker=DefaultAgentInvoker(),
+                    invoker=PlannedAgentInvoker(build_cli_invocation_plan),
                     suppress_progress_output=True,
                 )
 

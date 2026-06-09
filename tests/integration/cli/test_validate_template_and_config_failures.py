@@ -5,14 +5,14 @@ import unittest
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )
 from tests.integration.cli.cli_workflow_helpers import (
+    ConsoleFactory,
     write_basic_config,
     write_basic_workflow,
 )
@@ -58,8 +58,8 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -69,11 +69,50 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Provider validation failed", output_text)
             self.assertIn("definitely-not-installed-cli", output_text)
+
+    def test_validate_shows_warning_for_argv_prompt_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yml"
+            workflow_path = tmp_path / "workflow.task.md"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        f'version: "{CONFIG_SCHEMA_VERSION}"',
+                        "",
+                        "agents:",
+                        "  alpha:",
+                        '    cli_cmd: ["echo"]',
+                        '    default_model: "model-a"',
+                        '    prompt_transport: "argv"',
+                        '    prompt_transport_arg: "--prompt"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            write_basic_workflow(workflow_path)
+
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            )
+            try:
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+            finally:
+                cli.Console = original_console_cls
+
+            output_text = stream.getvalue()
+            self.assertIn("Preflight warnings:", output_text)
+            self.assertIn("uses argv prompt transport", output_text)
 
     def test_validate_fails_fast_for_missing_env_template_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -102,9 +141,9 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_env = os.environ.get("ORCH_VALIDATE_REQUIRED_ENV")
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -119,7 +158,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                     os.environ.pop("ORCH_VALIDATE_REQUIRED_ENV", None)
                 else:
                     os.environ["ORCH_VALIDATE_REQUIRED_ENV"] = original_env
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight compilation failed", output_text)
@@ -156,8 +195,8 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -167,7 +206,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight compilation failed", output_text)
@@ -208,8 +247,8 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -219,7 +258,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight compilation failed", output_text)
@@ -272,8 +311,8 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -283,7 +322,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Token budget validation failed", output_text)
@@ -317,8 +356,8 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console = cli.console
-            cli.console = Console(
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -328,7 +367,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight compilation failed", output_text)
@@ -366,9 +405,9 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console = cli.console
+            original_console_cls = cli.Console
             original_cwd = Path.cwd()
-            cli.console = Console(
+            cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
@@ -380,7 +419,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                     cli.validate(tasks_file=workflow_path, config_file=None)
             finally:
                 os.chdir(original_cwd)
-                cli.console = original_console
+                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn(".orchestrator/config.yml not found", output_text)

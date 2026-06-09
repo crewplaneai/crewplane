@@ -11,7 +11,7 @@ from orchestrator_cli.core.config import (
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.versions import (
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )
@@ -60,8 +60,10 @@ def test_observer_only_no_live_is_excluded_from_runtime_signature() -> None:
         first.effective_runtime_config_signature
         == second.effective_runtime_config_signature
     )
-    assert first.observer["no_live"] is False
-    assert second.observer["no_live"] is True
+    assert first.observer.no_live is False
+    assert second.observer.no_live is True
+    assert first.redacted_payload()["observer"]["no_live"] is False
+    assert second.redacted_payload()["observer"]["no_live"] is True
 
 
 def test_snapshot_invalid_options_fail_before_artifact_allocation(

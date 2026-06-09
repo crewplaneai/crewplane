@@ -7,6 +7,7 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowPlan,
 )
 from orchestrator_cli.core.workflow_validation import (
+    collect_workflow_validation_diagnostics,
     validate_workflow_plan,
 )
 
@@ -110,6 +111,58 @@ class WorkflowValidationDependencyTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "depends on unknown node"):
             validate_workflow_plan(invalid_workflow)
+
+    def test_unknown_dependency_returns_structured_diagnostic(self) -> None:
+        invalid_workflow = WorkflowPlan(
+            name="Unknown dependency",
+            nodes=[
+                WorkflowNode(
+                    id="summary.final",
+                    mode="sequential",
+                    prompt_segments=[PromptSegment(role="shared", content="summarize")],
+                    needs=["missing.node"],
+                    providers=[ProviderSpec(provider="gpt4", role="executor")],
+                )
+            ],
+        )
+
+        diagnostics = collect_workflow_validation_diagnostics(invalid_workflow)
+
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(diagnostics[0].code, "WORKFLOW-STRUCTURE")
+        self.assertEqual(diagnostics[0].phase, "reference")
+        self.assertEqual(diagnostics[0].node_id, "summary.final")
+        self.assertIn("depends on unknown node", diagnostics[0].message)
+
+    def test_structured_diagnostics_collect_independent_rule_failures(self) -> None:
+        invalid_workflow = WorkflowPlan(
+            name="Multiple invalid rules",
+            nodes=[
+                WorkflowNode(
+                    id="summary.final",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(
+                            role="shared",
+                            content="Summarize {{src/orchestrator_cli/runtime}}",
+                        )
+                    ],
+                    needs=["missing.node"],
+                    providers=[ProviderSpec(provider="gpt4", role="executor")],
+                )
+            ],
+        )
+
+        diagnostics = collect_workflow_validation_diagnostics(invalid_workflow)
+
+        messages = [diagnostic.message for diagnostic in diagnostics]
+        self.assertTrue(
+            any("depends on unknown node" in message for message in messages)
+        )
+        self.assertTrue(
+            any("references unsupported template" in message for message in messages)
+        )
+        self.assertGreaterEqual(len(diagnostics), 2)
 
     def test_cycle_rejected(self) -> None:
         invalid_workflow = WorkflowPlan(

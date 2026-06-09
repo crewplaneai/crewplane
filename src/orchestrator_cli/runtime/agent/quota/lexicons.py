@@ -2,14 +2,6 @@ from __future__ import annotations
 
 import re
 
-AUTO_QUOTA_PARSER_PROVIDER_BY_EXECUTABLE = {
-    "codex": "codex",
-    "copilot": "copilot",
-    "claude": "claude",
-    "kilocode": "kilo",
-    "kilo": "kilo",
-    "gemini": "gemini",
-}
 QUOTA_PARSER_HINTS: dict[str, tuple[str, ...]] = {
     "codex": (
         "usage limit exceeded",

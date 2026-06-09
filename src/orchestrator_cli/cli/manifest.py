@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
 
+from orchestrator_cli.architecture.contracts import JsonObject
 from orchestrator_cli.core.workflow_models import WorkflowPayload
 
 
@@ -17,9 +18,9 @@ class ExecutionManifest(TypedDict):
     workflow: str
     composed_workflow: WorkflowPayload
     referenced_workflows: list[WorkflowReferenceRecord]
-    runtime_config_snapshot: dict[str, Any]
+    runtime_config_snapshot: JsonObject
     preflight_plan: str
     effective_runtime_config_signature: str
     completed_at: NotRequired[str]
     status: NotRequired[str]
-    preflight: NotRequired[dict[str, Any]]
+    preflight: NotRequired[JsonObject]

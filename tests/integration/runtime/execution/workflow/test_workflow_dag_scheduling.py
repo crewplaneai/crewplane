@@ -17,7 +17,6 @@ from orchestrator_cli.core.preflight import (
 )
 from orchestrator_cli.core.preflight.models import ArtifactContract
 from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -31,6 +30,7 @@ from orchestrator_cli.runtime.execution import (
 from orchestrator_cli.runtime.execution.consensus import (
     extract_verdict,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     GraphDependencyOrderInvoker,
     MockAgentInvoker,
@@ -337,17 +337,19 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "prompt_budget_warning"
+                and event.payload.operation == "prompt_budget_warning"
             ]
             expected_char_count = len(
                 output.get_stage_output_path("node.source").read_text(encoding="utf-8")
             )
             self.assertEqual(len(warning_events), 1)
-            self.assertEqual(warning_events[0].node_id, "node.parallel")
-            self.assertIn("node.source.output", warning_events[0].message)
-            self.assertIn("Shorten the upstream artifact", warning_events[0].message)
+            self.assertEqual(warning_events[0].context.node_id, "node.parallel")
+            self.assertIn("node.source.output", warning_events[0].payload.message)
+            self.assertIn(
+                "Shorten the upstream artifact", warning_events[0].payload.message
+            )
             self.assertEqual(
-                warning_events[0].attributes,
+                warning_events[0].payload.attributes,
                 {
                     "upstream_node_id": "node.source",
                     "upstream_artifact_name": "output",
@@ -479,13 +481,13 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "prompt_budget_warning"
-                and event.node_id == "node.summary"
+                and event.payload.operation == "prompt_budget_warning"
+                and event.context.node_id == "node.summary"
             ]
             self.assertEqual(len(warning_events), 1)
-            self.assertIn("node.review.findings", warning_events[0].message)
+            self.assertIn("node.review.findings", warning_events[0].payload.message)
             self.assertEqual(
-                warning_events[0].attributes["upstream_artifact_name"],
+                warning_events[0].payload.attributes["upstream_artifact_name"],
                 "findings",
             )
 

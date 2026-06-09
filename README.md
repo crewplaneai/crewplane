@@ -120,7 +120,7 @@ This creates:
 - `.orchestrator/workflows/example-templates/*.task.md` (additional runnable templates)
 - `.orchestrator/inputs/*.md` (sample raw input files used by reusable workflow examples)
 
-Schema versions in generated files are rendered from `src/orchestrator_cli/core/versions.py`.
+Schema versions in generated files are rendered from `src/orchestrator_cli/versions.py`.
 
 ### 2. Configure Providers
 
@@ -132,6 +132,8 @@ agents:
   # Optional: omit default_model to let the provider CLI choose its configured default.
   claude:
     cli_cmd: ["claude"]
+    provider_kind: "claude"
+    prompt_transport: "stdin"
     default_model: "sonnet"
     # Optional configured pricing per million tokens:
     # pricing:
@@ -139,12 +141,12 @@ agents:
     #   output: 15.0
     #   cached_input: 0.3
     #   cache_write: 3.75
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
     extra_args:
       - "--bare"
       - "--dangerously-skip-permissions"
-    quota_parser: "claude"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "usage limit reached"
@@ -155,20 +157,20 @@ agents:
 
   codex:
     cli_cmd: ["codex", "exec"]
+    provider_kind: "codex"
+    prompt_transport: "stdin"
+    prompt_transport_arg: "-"
     default_model: "gpt-5.4"
     # pricing:
     #   input: 1.5
     #   cached_input: 0.375
     #   output: 6.0
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
-    prompt_arg: null
-    use_stdin: true
-    stdin_prompt_arg: "-"
     extra_args:
       - "--skip-git-repo-check"
       - "--dangerously-bypass-approvals-and-sandbox"
-    quota_parser: "codex"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "usage limit exceeded"
@@ -178,18 +180,17 @@ agents:
 
   gemini:
     cli_cmd: ["gemini"]
+    provider_kind: "gemini"
+    prompt_transport: "stdin"
     default_model: "auto"
     # pricing:
     #   input: 0.35
     #   output: 1.05
+    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
     invocation_timeout_seconds: 1800
     invocation_idle_timeout_seconds: 1800
-    use_stdin: false
-    model_arg: "--model"
-    prompt_arg: null
     extra_args:
       - "--approval-mode=yolo"
-    quota_parser: "gemini"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "exhausted your capacity"
@@ -229,10 +230,11 @@ Claude `--dangerously-skip-permissions`, Codex
 and Copilot `--allow-all-tools` so a DAG node does not block forever waiting
 for an interactive confirmation prompt. Agent invocations also have finite
 per-attempt `invocation_timeout_seconds` and
-`invocation_idle_timeout_seconds` guards so a provider CLI that stops exiting
-or stops producing output cannot freeze the workflow indefinitely. The generated
-default matches the 30-minute wall-clock attempt timeout so long-running
-provider generations are bounded without being killed by a short quiet window.
+`invocation_idle_timeout_seconds` guards so a provider CLI cannot freeze the
+workflow indefinitely by running forever or by going quiet. The generated
+default keeps a 30-minute hard wall-clock attempt timeout and a 30-minute idle
+timeout. Set `invocation_timeout_seconds: null` only when an external supervisor
+supplies the elapsed-time cap.
 
 Treat those flags as a trust boundary decision. Orchestrator CLI coordinates
 provider CLIs and writes auditable artifacts; it does not sandbox provider tool
@@ -262,6 +264,8 @@ For GitHub Copilot CLI, use the standalone `copilot` binary in programmatic mode
 ```yaml
   copilot:
     cli_cmd: ["copilot"]
+    provider_kind: "copilot"
+    prompt_transport: "stdin"
     # Choose a model shown by `copilot /model`; availability varies by plan.
     default_model: "claude-sonnet-4.5"
     # Visible-estimate-only in spend observability v2.
@@ -274,7 +278,6 @@ For GitHub Copilot CLI, use the standalone `copilot` binary in programmatic mode
       # Replace broad access with precise allow/deny rules when needed:
       # - "--allow-tool=write,shell(git:*)"
       # - "--deny-tool=shell(git push)"
-    quota_parser: "copilot"
     quota_reset_sleep_floor_seconds: 5
     quota_reached_on_contains:
       - "rate limit reached"
@@ -583,23 +586,28 @@ Merge:
 | Field | Type | Description |
 |-------|------|-------------|
 | `cli_cmd` | `list[str]` | Command to invoke (e.g., `["codex", "exec"]`, `["copilot"]`) |
+| `provider_kind` | `str` | Built-in CLI capability profile: `claude`, `codex`, `copilot`, `gemini`, `kilo`, or `generic`. This selects adapter-owned prompt/model/output, usage, quota, and failure-classification behavior |
 | `default_model` | `str \| null` | Optional default model identifier; model resolution is workflow provider `model` -> `default_model` -> provider CLI default, and when both are omitted orchestrator does not pass a model flag |
-| `model_arg` | `str \| null` | Model flag (e.g., `--model`), null to skip |
-| `prompt_arg` | `str \| null` | Prompt flag (e.g., `--prompt`), null for positional |
-| `use_stdin` | `bool` | Pass prompt via stdin |
+| `model_arg` | `str \| null` | Generic-provider model flag (e.g., `--model`), null to skip. Built-in provider profiles own their model flag mapping and ignore this field |
+| `prompt_transport` | `"stdin" \| "argv"` | Prompt transport. Defaults to `stdin` so rendered prompt text is not placed in process argv. Use `argv` only for generic CLIs that cannot read stdin |
+| `prompt_transport_arg` | `str \| null` | Optional stdin sentinel or argv prompt flag. For example, Codex uses `-` with stdin; generic argv transport requires an explicit flag such as `--prompt` |
 | `extra_args` | `list[str]` | Additional CLI flags (for example, Copilot `--silent`, `--no-ask-user`, `--allow-tool=...`) |
-| `invocation_timeout_seconds` | `float \| null` | Hard wall-clock timeout for one provider CLI attempt (default `1800`). Set `null` only when an external supervisor is responsible for hung processes |
+| `invocation_timeout_seconds` | `float \| null` | Hard wall-clock timeout for one provider CLI attempt (default `1800`). Set `null` only when an external supervisor supplies the elapsed-time cap |
 | `invocation_idle_timeout_seconds` | `float \| null` | Maximum quiet period with no provider stdout/stderr before the attempt is killed (default `1800`). Set `null` only for provider CLIs that can legitimately stay silent longer under an external supervisor |
 | `pricing` | `object` | Optional configured rates per million tokens. Supported buckets: `input`, `cached_input`, `cache_write`, `output`, `reasoning`, or exclusive `total` |
 | `quota_reached_on_contains` | `list[str]` | Specific strings that identify provider quota/rate-limit error responses |
 | `quota_reached_retry_delay_seconds` | `int` | Fallback retry delay when quota reset time is not parseable |
-| `quota_parser` | `str` | Quota parser profile: `auto`, `codex`, `copilot`, `claude`, `kilo`, `gemini`, `generic` |
 | `quota_reset_sleep_floor_seconds` | `int` | Added floor buffer for parsed reset waits (default `5`) |
 | `settings.sequential_consensus_on_exhaustion` | `"continue" \| "fatal"` | Policy when sequential reviewer rounds exhaust without consensus (default `"continue"`) |
 | `settings.max_audit_rounds` | `int` | Maximum allowed `audit_rounds` value on multi-provider sequential review nodes (default `5`) |
 | `settings.token_budget.warn_threshold_chars` | `int \| null` | Warn when a node artifact content injection such as `{{node.output}}` / `{{node.findings}}`, or review-loop previous-candidate context, exceeds this size in characters (default `50000`) |
 | `settings.token_budget.fail_threshold_chars` | `int \| null` | Fail before provider invocation when a node artifact content injection such as `{{node.output}}` / `{{node.findings}}`, or review-loop previous-candidate context, exceeds this size in characters (default `null`) |
 | `settings.integrations.artifacts.options.allowed_template_paths` | `list[str]` | Explicit allowlist for external `{{file:path}}` template files |
+
+`prompt_transport: "stdin"` is the safe default for generated and in-memory
+configuration. `prompt_transport: "argv"` is still available for generic CLIs
+that require prompt text in argv, but validation and preflight diagnostics make
+that exposure explicit.
 
 ### Integration Implementations
 

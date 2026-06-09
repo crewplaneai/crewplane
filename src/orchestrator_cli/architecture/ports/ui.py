@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 from rich.console import Console
 
+from orchestrator_cli.architecture.contracts import (
+    CanonicalIntegrationConfig,
+    JsonObject,
+    WorkflowTopology,
+)
 from orchestrator_cli.architecture.ports.runtime import UIRuntimePlan
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
-from orchestrator_cli.observability.types import WorkflowTopology
 
 
 @dataclass(frozen=True)
@@ -29,7 +32,7 @@ class UIAdapterPort(Protocol):
         self,
         implementation: str,
         resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         """Validate and canonicalize UI options without side effects."""
 
@@ -39,7 +42,7 @@ class UIAdapterPort(Protocol):
         workflow_topology: WorkflowTopology,
         run_id: str,
         console: Console,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
         warning_sink: Callable[[str], None] | None = None,
         which_fn: Callable[[str], str | None] | None = None,
     ) -> UIRuntimePlan:

@@ -10,7 +10,7 @@ from typing import Any
 from rich.console import Console
 
 import orchestrator_cli.core.preflight.secrets as preflight_secrets
-from orchestrator_cli.architecture.api_version import EXT_API_VERSION
+from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
 from orchestrator_cli.bootstrap import build_runtime_config_snapshot
 from orchestrator_cli.core.config import (
     AgentConfig,
@@ -20,6 +20,7 @@ from orchestrator_cli.core.config import (
     Settings,
 )
 from orchestrator_cli.core.preflight import (
+    FingerprintKeyCache,
     FingerprintKeyProvider,
     PreflightCompileOptions,
     PreflightExecutionPlan,
@@ -27,13 +28,13 @@ from orchestrator_cli.core.preflight import (
     compile_preflight_preview,
     signature_for_payload,
 )
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
 from orchestrator_cli.core.prompt_segments import PromptSegment
 from orchestrator_cli.core.workflow_models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
+from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 
 def _mock_config() -> Config:
@@ -112,7 +113,7 @@ class SensitiveOptionInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=EXT_API_VERSION,
+            api_version=INTEGRATION_API_VERSION,
             options={"api_token": api_token},
             sensitive_options=["api_token"],
             option_scopes={"api_token": "execution"},
@@ -460,7 +461,7 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
     assert key_path.stat().st_size == 32
 
 
-def test_absent_read_only_fingerprint_key_is_process_local_and_artifact_free(
+def test_absent_read_only_fingerprint_key_is_run_scoped_and_artifact_free(
     tmp_path: Path,
 ) -> None:
     config = _mock_config()
@@ -484,17 +485,12 @@ def test_absent_read_only_fingerprint_key_is_process_local_and_artifact_free(
         no_live=True,
     )
 
-    def compile_once() -> str:
+    def compile_once(options: PreflightCompileOptions) -> str:
         preview = compile_preflight_preview(
             source=_source(workflow),
             config=config,
             runtime_snapshot=snapshot.snapshot,
-            options=PreflightCompileOptions(
-                project_root=tmp_path,
-                orchestrator_dir=tmp_path / ".orchestrator",
-                environment={"API_TOKEN": "super-secret"},
-                fingerprint_key_policy="read_only",
-            ),
+            options=options,
         )
         assert not preview.diagnostics
         assert preview.workflow_signature is not None
@@ -502,8 +498,38 @@ def test_absent_read_only_fingerprint_key_is_process_local_and_artifact_free(
         assert preview.fingerprint_metadata["persisted_key_path"] is None
         return preview.workflow_signature
 
-    assert compile_once() == compile_once()
+    first_run_options = PreflightCompileOptions(
+        project_root=tmp_path,
+        orchestrator_dir=tmp_path / ".orchestrator",
+        environment={"API_TOKEN": "super-secret"},
+        fingerprint_key_policy="read_only",
+    )
+    second_run_options = PreflightCompileOptions(
+        project_root=tmp_path,
+        orchestrator_dir=tmp_path / ".orchestrator",
+        environment={"API_TOKEN": "super-secret"},
+        fingerprint_key_policy="read_only",
+    )
+
+    assert compile_once(first_run_options) == compile_once(first_run_options)
+    assert compile_once(first_run_options) != compile_once(second_run_options)
     assert not (tmp_path / ".orchestrator" / "preflight" / "fingerprint.key").exists()
+
+
+def test_ephemeral_fingerprint_key_cache_is_explicitly_scoped(tmp_path: Path) -> None:
+    orchestrator_dir = tmp_path / ".orchestrator"
+    cache = FingerprintKeyCache()
+
+    first = FingerprintKeyProvider(orchestrator_dir, cache=cache).load_key("ephemeral")
+    second = FingerprintKeyProvider(orchestrator_dir, cache=cache).load_key("ephemeral")
+    independent = FingerprintKeyProvider(
+        orchestrator_dir,
+        cache=FingerprintKeyCache(),
+    ).load_key("ephemeral")
+
+    assert first.key == second.key
+    assert first.key != independent.key
+    assert not (orchestrator_dir / "preflight" / "fingerprint.key").exists()
 
 
 def test_concurrent_first_fingerprint_key_publish_converges(

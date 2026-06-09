@@ -5,14 +5,15 @@ from asyncio import sleep as asyncio_sleep
 from time import monotonic
 from typing import Any, BinaryIO
 
-from ..retry_units import normalize_retry_wait_units_in_text
-from ..types import InvocationDiagnosticSink
+from orchestrator_cli.architecture.contracts import InvocationDiagnosticSink
+
 from .diagnostics import (
     PROCESS_PIPE_DRAIN_GRACE_SECONDS,
     emit_idle_timeout_diagnostic,
     emit_pipe_drain_timeout_diagnostic,
     emit_process_already_exited_diagnostic,
 )
+from .log_rendering import render_log_text_segments
 from .signals import (
     kill_process_or_group,
     reap_failed_process,
@@ -20,9 +21,11 @@ from .signals import (
     terminate_process_or_group,
     wait_for_process_exit,
 )
+from .stream_capture import CapturedStream, ProcessOutputCapture, ProcessStreamCapture
 
 STDERR_PREFIX = b"[stderr] "
 PROCESS_IDLE_POLL_INTERVAL_SECONDS = 1.0
+LOG_QUEUE_MAX_ITEMS = 64
 
 
 class ProcessActivity:
@@ -62,80 +65,99 @@ async def collect_process_output(
     diagnostic_sink: InvocationDiagnosticSink | None = None,
     process_group_id: int | None = None,
     idle_timeout_seconds: float | None = None,
-) -> tuple[bytes, bytes]:
+) -> ProcessOutputCapture:
     if process.stdout is None or process.stderr is None:
         raise RuntimeError("Failed to capture process streams.")
 
-    stdout_chunks: list[bytes] = []
-    stderr_chunks: list[bytes] = []
+    stdout_capture = CapturedStream()
+    stderr_capture = CapturedStream()
+    output_capture: ProcessOutputCapture | None = None
     log_queue: asyncio.Queue[bytes | None] | None = None
     writer_status: asyncio.Future[Exception | None] | None = None
     if log_handle is not None:
-        log_queue = asyncio.Queue()
+        log_queue = asyncio.Queue(maxsize=LOG_QUEUE_MAX_ITEMS)
         writer_status = asyncio.get_running_loop().create_future()
 
     try:
-        async with asyncio.TaskGroup() as task_group:
-            task_group.create_task(
-                capture_process_streams(
-                    process,
-                    log_queue,
-                    stdout_chunks,
-                    stderr_chunks,
-                    diagnostic_sink,
-                    process_group_id,
-                    idle_timeout_seconds,
-                )
-            )
-            if log_handle is not None and log_queue is not None:
+        try:
+            async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(
-                    drain_log_queue(log_handle, log_queue, writer_status)
-                )
-                task_group.create_task(
-                    watch_log_writer_status(
+                    capture_process_streams(
                         process,
-                        writer_status,
+                        log_queue,
+                        stdout_capture,
+                        stderr_capture,
                         diagnostic_sink,
                         process_group_id,
+                        idle_timeout_seconds,
                     )
                 )
-    except asyncio.CancelledError:
-        await reap_failed_process(process, process_group_id, diagnostic_sink)
-        raise
-    except Exception as exc:
-        if process.returncode is None:
-            try:
-                kill_process_or_group(process, process_group_id)
-            except ProcessLookupError:
-                emit_process_already_exited_diagnostic(diagnostic_sink, "kill")
-            await wait_for_process_exit(process)
-        error = unwrap_task_group_error(exc)
-        if error is exc:
+                if log_handle is not None and log_queue is not None:
+                    task_group.create_task(
+                        drain_log_queue(log_handle, log_queue, writer_status)
+                    )
+                    task_group.create_task(
+                        watch_log_writer_status(
+                            process,
+                            writer_status,
+                            diagnostic_sink,
+                            process_group_id,
+                        )
+                    )
+        except asyncio.CancelledError:
+            await reap_failed_process(process, process_group_id, diagnostic_sink)
             raise
-        raise error from exc
+        except Exception as exc:
+            if process.returncode is None:
+                try:
+                    kill_process_or_group(process, process_group_id)
+                except ProcessLookupError:
+                    emit_process_already_exited_diagnostic(diagnostic_sink, "kill")
+                await wait_for_process_exit(process)
+            error = unwrap_task_group_error(exc)
+            if error is not exc:
+                raise error from exc
+            raise
 
-    return b"".join(stdout_chunks), b"".join(stderr_chunks)
+        output_capture = ProcessOutputCapture(
+            stdout=ProcessStreamCapture(
+                path=stdout_capture.path,
+                tail_bytes=stdout_capture.tail_bytes,
+            ),
+            stderr=ProcessStreamCapture(
+                path=stderr_capture.path,
+                tail_bytes=stderr_capture.tail_bytes,
+            ),
+        )
+        return output_capture
+    finally:
+        if output_capture is None:
+            stdout_capture.cleanup()
+            stderr_capture.cleanup()
+        else:
+            stdout_capture.close()
+            stderr_capture.close()
 
 
 async def capture_process_streams(
     process: asyncio.subprocess.Process,
     log_queue: asyncio.Queue[bytes | None] | None,
-    stdout_chunks: list[bytes],
-    stderr_chunks: list[bytes],
+    stdout_capture: CapturedStream,
+    stderr_capture: CapturedStream,
     diagnostic_sink: InvocationDiagnosticSink | None = None,
     process_group_id: int | None = None,
     idle_timeout_seconds: float | None = None,
 ) -> None:
     activity = ProcessActivity()
     stdout_task = asyncio.create_task(
-        pipe_stream(process.stdout, log_queue, b"", stdout_chunks, activity)
+        pipe_stream(process.stdout, log_queue, b"", stdout_capture, activity)
     )
     stderr_task = asyncio.create_task(
         pipe_stream(
             process.stderr,
             log_queue,
             STDERR_PREFIX,
-            stderr_chunks,
+            stderr_capture,
             activity,
         )
     )
@@ -170,33 +192,26 @@ async def pipe_stream(
     reader: asyncio.StreamReader,
     log_queue: asyncio.Queue[bytes | None] | None,
     prefix: bytes,
-    buffer: list[bytes],
+    capture: CapturedStream,
     activity: ProcessActivity | None = None,
 ) -> None:
-    pending_text = ""
-    try:
-        while True:
-            chunk = await reader.read(1024)
-            if not chunk:
-                return
-            if activity is not None:
-                activity.mark_output()
-            buffer.append(chunk)
-            if log_queue is None:
-                continue
-            pending_text += chunk.decode(errors="replace")
-            lines = pending_text.splitlines(keepends=True)
-            if lines and not lines[-1].endswith(("\n", "\r")):
-                pending_text = lines.pop()
-            else:
-                pending_text = ""
-            if lines:
-                await log_queue.put(
-                    b"".join(render_log_text_line(line, prefix) for line in lines)
-                )
-    finally:
-        if log_queue is not None and pending_text:
-            await log_queue.put(render_log_text_line(pending_text, prefix))
+    line_open = False
+    while True:
+        chunk = await reader.read(1024)
+        if not chunk:
+            return
+        if activity is not None:
+            activity.mark_output()
+        capture.write(chunk)
+        if log_queue is None:
+            continue
+        payload, line_open = render_log_text_segments(
+            chunk.decode(errors="replace"),
+            prefix,
+            line_open,
+        )
+        if payload:
+            await log_queue.put(payload)
 
 
 async def drain_log_queue(
@@ -313,7 +328,7 @@ async def wait_for_process_or_idle_timeout(
     wait_tasks: set[asyncio.Task[Any]] = {process_exit_task}
     if idle_task is not None:
         wait_tasks.add(idle_task)
-    done, _pending = await asyncio.wait(
+    done, _ = await asyncio.wait(
         wait_tasks,
         return_when=asyncio.FIRST_COMPLETED,
     )
@@ -340,14 +355,6 @@ def build_idle_timeout_task(
             process_group_id,
         )
     )
-
-
-def render_log_text_line(line: str, prefix: bytes) -> bytes:
-    transformed = normalize_retry_wait_units_in_text(line)
-    payload = transformed.encode("utf-8")
-    if prefix:
-        return prefix + payload
-    return payload
 
 
 def write_log_bytes(log_handle: BinaryIO, payload: bytes) -> None:

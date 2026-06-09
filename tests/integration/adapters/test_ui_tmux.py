@@ -6,8 +6,8 @@ from rich.console import Console
 import orchestrator_cli.adapters.ui.tmux as tmux_adapter_module
 from orchestrator_cli.adapters.ui.tmux import TmuxUIAdapter
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.observability.types import WorkflowTopology
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class TmuxUIAdapterTests(unittest.TestCase):

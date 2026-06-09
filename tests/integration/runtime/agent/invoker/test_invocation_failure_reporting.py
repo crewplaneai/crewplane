@@ -2,15 +2,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
     classify_invocation_failure,
 )
+from orchestrator_cli.runtime.agent.failures.patterns import MAX_FAILURE_LINES
 from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 
 
 class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
@@ -57,6 +59,7 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                     log_file=log_file,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
     async def test_invoke_agent_with_runner_prefers_structured_failure_message(
@@ -90,9 +93,10 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
+                provider_kind="codex",
                 default_model="test-model",
-                use_stdin=True,
-                stdin_prompt_arg="-",
+                prompt_transport="stdin",
+                prompt_transport_arg="-",
             )
             with self.assertRaisesRegex(
                 RuntimeError,
@@ -106,6 +110,7 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                     log_file=log_file,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
             self.assertIsInstance(caught.exception, InvocationFailureError)
             failure = caught.exception
@@ -224,3 +229,51 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(summary.kind, expected_kind)
                 self.assertEqual(summary.phase, expected_phase)
                 self.assertEqual(summary.source, expected_source)
+
+    def test_classifies_provider_failure_from_persisted_stderr_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "provider.log"
+            path.write_text(
+                "\n".join(
+                    ["noise"] * 500
+                    + ["Automatic compaction failed: conversation too long."]
+                ),
+                encoding="utf-8",
+            )
+            summary = classify_invocation_failure(
+                "kilo",
+                CommandResult(
+                    returncode=1,
+                    stdout_text="",
+                    stderr_text="",
+                    stderr_path=path,
+                ),
+            )
+
+            self.assertEqual(summary.kind, "provider_session_context_exhausted")
+            self.assertEqual(summary.phase, "provider_session")
+            self.assertEqual(summary.source, "stderr_text")
+
+    def test_classifies_provider_failure_from_marker_beyond_retained_summary_window(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "provider.log"
+            marker = "Automatic compaction failed: conversation too long."
+            path.write_text(
+                "\n".join(["noise"] * (MAX_FAILURE_LINES + 5) + [marker]),
+                encoding="utf-8",
+            )
+            summary = classify_invocation_failure(
+                "kilo",
+                CommandResult(
+                    returncode=1,
+                    stdout_text="",
+                    stderr_text="",
+                    stderr_path=path,
+                ),
+            )
+
+            self.assertEqual(summary.kind, "provider_session_context_exhausted")
+            self.assertEqual(summary.phase, "provider_session")
+            self.assertEqual(summary.source, "stderr_text")

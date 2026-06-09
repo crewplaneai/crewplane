@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol
 
+from orchestrator_cli.architecture.contracts import (
+    CommandRunner,
+    InvocationContext,
+    InvocationPlan,
+)
 from orchestrator_cli.core.config import AgentConfig
 
 from .invocation import command as invocation_command_module
 from .invocation import loop as invocation_loop_module
-from .types import CommandRunner, InvocationContext
+
+
+class InvocationPlanBuilder(Protocol):
+    def __call__(
+        self,
+        config: AgentConfig,
+        model: str | None,
+        prompt: str,
+        output_file: Path,
+    ) -> InvocationPlan: ...
 
 
 async def invoke_agent(
@@ -16,7 +31,12 @@ async def invoke_agent(
     output_file: Path,
     log_file: Path | None = None,
     invocation_context: InvocationContext | None = None,
+    plan_builder: InvocationPlanBuilder | None = None,
 ) -> None:
+    if plan_builder is None:
+        raise RuntimeError(
+            "Agent invocation requires an explicit invocation plan builder."
+        )
     return await invoke_agent_with_runner(
         config=config,
         model=model,
@@ -25,6 +45,7 @@ async def invoke_agent(
         log_file=log_file,
         invocation_context=invocation_context,
         command_runner=invocation_command_module.run_command_once,
+        plan_builder=plan_builder,
     )
 
 
@@ -36,20 +57,25 @@ async def invoke_agent_with_runner(
     log_file: Path | None,
     invocation_context: InvocationContext | None,
     command_runner: CommandRunner,
+    plan_builder: InvocationPlanBuilder,
 ) -> None:
+    plan = plan_builder(config, model, prompt, output_file)
     return await invocation_loop_module.run_invocation_loop(
         config=config,
-        model=model,
         prompt=prompt,
         output_file=output_file,
         log_file=log_file,
         invocation_context=invocation_context,
         command_runner=command_runner,
+        plan=plan,
     )
 
 
-class DefaultAgentInvoker:
-    """Invoke provider CLIs through the default subprocess runner."""
+class PlannedAgentInvoker:
+    """Invoke provider CLIs through an adapter-supplied invocation plan."""
+
+    def __init__(self, plan_builder: InvocationPlanBuilder) -> None:
+        self._plan_builder = plan_builder
 
     async def invoke(
         self,
@@ -67,4 +93,5 @@ class DefaultAgentInvoker:
             output_file,
             log_file,
             invocation_context=invocation_context,
+            plan_builder=self._plan_builder,
         )

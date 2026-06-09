@@ -126,7 +126,9 @@ class TmuxCompactRuntime:
             self._request_stop()
         return outcome
 
-    def stop(self, result: RunResult) -> None:  # noqa: ARG002 - Observer callback signature.
+    def stop(self, result: RunResult) -> None:
+        if not isinstance(result, RunResult):
+            raise TypeError("result must be a RunResult instance")
         self._stop_refresh_thread()
         try:
             self._lifecycle.stop_session(self._session, self._auto_close_session)

@@ -3,8 +3,8 @@ import tempfile
 from pathlib import Path
 
 from orchestrator_cli.adapters.invokers.mock import MockInvokerAdapter
+from orchestrator_cli.architecture.contracts import InvocationContext
 from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.types import InvocationContext
 from tests.integration.adapters.mock_invoker.mock_invoker_test_case import (
     MockInvokerAdapterTestCase,
 )

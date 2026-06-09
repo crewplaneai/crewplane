@@ -4,12 +4,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from orchestrator_cli.architecture.contracts import OutputExtractionStatus
 from orchestrator_cli.observability.events.types import (
     EventType,
     LogLevel,
     RuntimeLogValue,
 )
-from orchestrator_cli.runtime.agent.usage import OutputExtractionStatus
 
 
 @dataclass(frozen=True)

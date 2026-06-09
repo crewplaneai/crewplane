@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from orchestrator_cli.architecture.contracts import OutputExtractionStatus
 from orchestrator_cli.observability.events.execution_event import (
     ExecutionEvent,
     ExecutionEventContext,
@@ -21,7 +22,6 @@ from orchestrator_cli.observability.events.types import (
     RuntimeLogValue,
     WorkflowEventType,
 )
-from orchestrator_cli.runtime.agent.usage import OutputExtractionStatus
 
 
 def workflow_event(

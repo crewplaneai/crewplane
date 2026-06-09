@@ -1,7 +1,21 @@
+"""Recursive redaction for arbitrary JSON-compatible config snapshots.
+
+The public preflight models use typed fields or JsonObject. This module keeps
+the traversal boundary JSON-compatible while walking nested user config values
+for deterministic signatures and persisted plans.
+"""
+
 from __future__ import annotations
 
 import re
-from typing import Any
+
+from orchestrator_cli.architecture.contracts import (
+    CanonicalIntegrationConfig,
+    JsonObject,
+    JsonValue,
+    redacted_integration_option_value,
+    sensitive_integration_option_keys,
+)
 
 from .secrets import FINGERPRINT_SCHEMA_VERSION, fingerprint_payload
 
@@ -20,16 +34,16 @@ def config_value_handle(path: str) -> str:
 
 
 def redact_sensitive_config(
-    payload: dict[str, Any],
-) -> tuple[dict[str, Any], list[str]]:
+    payload: JsonObject,
+) -> tuple[JsonObject, list[str]]:
     redacted, paths = _redact_sensitive_value(payload, ("agents",), None)
     return _ensure_dict(redacted), sorted(paths)
 
 
 def redact_sensitive_config_with_fingerprints(
-    payload: dict[str, Any],
+    payload: JsonObject,
     fingerprint_key: bytes | None,
-) -> tuple[dict[str, Any], list[dict[str, str]]]:
+) -> tuple[JsonObject, list[dict[str, str]]]:
     redacted, _, fingerprints = _redact_sensitive_value_with_fingerprints(
         payload,
         ("agents",),
@@ -38,18 +52,9 @@ def redact_sensitive_config_with_fingerprints(
     return _ensure_dict(redacted), sorted(fingerprints, key=lambda item: item["path"])
 
 
-def sensitive_integration_option_keys(config: Any) -> set[str]:
-    return {
-        key
-        for key in config.options
-        if key in config.sensitive_options
-        or _SENSITIVE_CONFIG_PATH_PATTERN.search(key) is not None
-    }
-
-
 def sensitive_integration_option_paths(
     integration_name: str,
-    config: Any,
+    config: CanonicalIntegrationConfig,
 ) -> list[str]:
     return sorted(
         f"integrations.{integration_name}.options.{key}"
@@ -58,15 +63,15 @@ def sensitive_integration_option_paths(
 
 
 def integration_with_sensitive_option_fingerprints(
-    config: Any,
+    config: CanonicalIntegrationConfig,
     integration_name: str,
     fingerprint_key: bytes | None,
-) -> tuple[Any, list[dict[str, str]]]:
+) -> tuple[CanonicalIntegrationConfig, list[dict[str, str]]]:
     sensitive_keys = sensitive_integration_option_keys(config)
     if not sensitive_keys:
         return config, []
 
-    redacted_options: dict[str, Any] = {}
+    redacted_options: JsonObject = {}
     fingerprints: list[dict[str, str]] = []
     for key, value in sorted(config.options.items()):
         if key not in sensitive_keys:
@@ -95,22 +100,17 @@ def integration_with_sensitive_option_fingerprints(
 
 
 def redacted_option_value(
-    value: Any,
+    value: JsonValue,
     fingerprint: str | None = None,
     value_handle: str | None = None,
-) -> dict[str, Any]:
-    redacted = dict(value) if _is_redacted_option_payload(value) else {"redacted": True}
-    if fingerprint is not None:
-        redacted["fingerprint"] = fingerprint
-    if value_handle is not None:
-        redacted["value_handle"] = value_handle
-    return redacted
+) -> JsonObject:
+    return redacted_integration_option_value(value, fingerprint, value_handle)
 
 
 def config_fingerprint(
     fingerprint_key: bytes | None,
     path: str,
-    value: Any,
+    value: JsonValue,
 ) -> str | None:
     if fingerprint_key is None:
         return None
@@ -126,24 +126,16 @@ def config_fingerprint(
     )
 
 
-def _is_redacted_option_payload(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    if value.get("redacted") is not True:
-        return False
-    return set(value) <= {"fingerprint", "redacted", "value_handle"}
-
-
 def _redact_sensitive_value(
-    value: Any,
+    value: JsonValue,
     path: tuple[str, ...],
     list_parent: str | None,
-) -> tuple[Any, list[str]]:
+) -> tuple[JsonValue, list[str]]:
     if _is_sensitive_config_value(value, path, list_parent):
         return {"redacted": True}, [_path_label(path)]
     if isinstance(value, dict):
         paths: list[str] = []
-        redacted: dict[str, Any] = {}
+        redacted: JsonObject = {}
         for key, child in sorted(value.items()):
             child_value, child_paths = _redact_sensitive_value(
                 child,
@@ -159,11 +151,11 @@ def _redact_sensitive_value(
 
 
 def _redact_sensitive_value_with_fingerprints(
-    value: Any,
+    value: JsonValue,
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
     list_parent: str | None = None,
-) -> tuple[Any, list[str], list[dict[str, str]]]:
+) -> tuple[JsonValue, list[str], list[dict[str, str]]]:
     if _is_sensitive_config_value(value, path, list_parent):
         return _redacted_sensitive_leaf(value, path, fingerprint_key)
     if isinstance(value, dict):
@@ -174,13 +166,13 @@ def _redact_sensitive_value_with_fingerprints(
 
 
 def _redacted_sensitive_leaf(
-    value: Any,
+    value: JsonValue,
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
-) -> tuple[dict[str, Any], list[str], list[dict[str, str]]]:
+) -> tuple[JsonObject, list[str], list[dict[str, str]]]:
     path_label = _path_label(path)
     fingerprint = config_fingerprint(fingerprint_key, path_label, value)
-    redacted_value: dict[str, Any] = {
+    redacted_value: JsonObject = {
         "redacted": True,
         "value_handle": config_value_handle(path_label),
     }
@@ -195,13 +187,13 @@ def _redacted_sensitive_leaf(
 
 
 def _redacted_sensitive_dict(
-    value: dict[Any, Any],
+    value: dict[str, JsonValue],
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
-) -> tuple[dict[str, Any], list[str], list[dict[str, str]]]:
+) -> tuple[JsonObject, list[str], list[dict[str, str]]]:
     paths: list[str] = []
     fingerprints: list[dict[str, str]] = []
-    redacted: dict[str, Any] = {}
+    redacted: JsonObject = {}
     for key, child in sorted(value.items()):
         child_value, child_paths, child_fingerprints = (
             _redact_sensitive_value_with_fingerprints(
@@ -217,10 +209,10 @@ def _redacted_sensitive_dict(
 
 
 def _redacted_sensitive_list(
-    value: list[Any],
+    value: list[JsonValue],
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
-) -> tuple[list[Any], list[str], list[dict[str, str]]]:
+) -> tuple[list[JsonValue], list[str], list[dict[str, str]]]:
     paths = []
     fingerprints = []
     redacted_list = []
@@ -252,7 +244,7 @@ def _redacted_sensitive_list(
 
 
 def _is_sensitive_config_value(
-    value: Any,
+    value: JsonValue,
     path: tuple[str, ...],
     list_parent: str | None,
 ) -> bool:
@@ -266,9 +258,9 @@ def _is_sensitive_config_value(
 
 
 def _redact_sensitive_list(
-    value: list[Any],
+    value: list[JsonValue],
     path: tuple[str, ...],
-) -> tuple[list[Any], list[str]]:
+) -> tuple[list[JsonValue], list[str]]:
     paths = []
     redacted_list = []
     sensitive_indices = _sensitive_extra_arg_indices(value, path)
@@ -289,7 +281,7 @@ def _redact_sensitive_list(
 
 
 def _sensitive_extra_arg_indices(
-    value: list[Any],
+    value: list[JsonValue],
     path: tuple[str, ...],
 ) -> set[int]:
     if not path or path[-1] != "extra_args":
@@ -316,7 +308,7 @@ def _path_label(path: tuple[str, ...]) -> str:
     return ".".join(path)
 
 
-def _ensure_dict(value: Any) -> dict[str, Any]:
+def _ensure_dict(value: JsonValue) -> JsonObject:
     if not isinstance(value, dict):
         raise TypeError("Runtime config payload must remain a dictionary.")
-    return value
+    return dict(value)

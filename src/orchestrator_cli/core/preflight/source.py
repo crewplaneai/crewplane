@@ -135,7 +135,7 @@ def _build_workflow_source(
     workflow_payload = dict(data)
     if tasks_file.suffix.lower() == ".md":
         workflow_payload.pop("imports", None)
-    workflow = WorkflowPlan(**workflow_payload)
+    workflow = WorkflowPlan.model_validate(workflow_payload)
     composed_workflow = (
         cast(WorkflowPayload, data)
         if tasks_file.suffix.lower() == ".md"

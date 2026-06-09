@@ -5,7 +5,6 @@ from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -15,6 +14,7 @@ from orchestrator_cli.observability.events import ExecutionEvent
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     ArtifactDriftInvoker,
     MockAgentInvoker,
@@ -82,11 +82,12 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_invalid_candidate"
+                and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
             self.assertEqual(
-                invalid_events[0].attributes["reason"], "invalid_candidate.redirected"
+                invalid_events[0].payload.attributes["reason"],
+                "invalid_candidate.redirected",
             )
 
     async def test_multi_provider_sequential_skips_reviewer_on_redirect_status_note(
@@ -146,11 +147,12 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_invalid_candidate"
+                and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
             self.assertEqual(
-                invalid_events[0].attributes["reason"], "invalid_candidate.redirected"
+                invalid_events[0].payload.attributes["reason"],
+                "invalid_candidate.redirected",
             )
 
     async def test_multi_provider_sequential_accepts_referenced_candidate_with_substantive_body(
@@ -208,7 +210,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_invalid_candidate"
+                and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(invalid_events, [])
 
@@ -266,7 +268,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_no_canonical_candidate"
+                and event.payload.operation == "review_loop_no_canonical_candidate"
             ]
             self.assertEqual(len(no_candidate_events), 1)
 
@@ -331,8 +333,8 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_artifact_drift"
-                and event.level == "warning"
+                and event.payload.operation == "review_loop_artifact_drift"
+                and event.payload.level == "warning"
             ]
             self.assertEqual(len(drift_events), 1)
             status_payload = json.loads(

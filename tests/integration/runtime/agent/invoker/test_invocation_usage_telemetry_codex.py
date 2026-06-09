@@ -8,12 +8,13 @@ from contextlib import suppress
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 from orchestrator_cli.runtime.agent.usage import parse_provider_usage
 
 
@@ -56,6 +57,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(len(usages), 1)
@@ -122,6 +124,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(len(usages), 1)
@@ -168,9 +171,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             )
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
+                provider_kind="codex",
                 default_model="gpt-5.4",
-                use_stdin=True,
-                stdin_prompt_arg="-",
+                prompt_transport="stdin",
+                prompt_transport_arg="-",
                 pricing={"input": 1.5, "output": 6.0},
             )
             await invoke_agent_with_runner(
@@ -181,6 +185,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(len(usages), 1)
@@ -234,9 +239,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             diagnostics = []
             config = AgentConfig(
                 cli_cmd=[str(fake_codex), "exec"],
+                provider_kind="codex",
                 default_model="gpt-5.4",
-                use_stdin=True,
-                stdin_prompt_arg="-",
+                prompt_transport="stdin",
+                prompt_transport_arg="-",
             )
             context = InvocationContext(
                 node_id="node.a",
@@ -256,6 +262,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                         output_file=output_file,
                         log_file=log_file,
                         invocation_context=context,
+                        plan_builder=build_cli_invocation_plan,
                     ),
                     timeout=3.0,
                 )
@@ -299,7 +306,6 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path), str(pid_file)],
                 default_model=None,
                 model_arg=None,
-                prompt_arg=None,
                 invocation_timeout_seconds=0.2,
             )
             context = InvocationContext(
@@ -311,7 +317,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 diagnostics=diagnostics.append,
             )
 
-            with self.assertRaisesRegex(RuntimeError, "timed out after 0.2s"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "wall-clock timeout reached after 0.2s",
+            ):
                 await invoke_agent(
                     config=config,
                     model=None,
@@ -319,6 +328,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     output_file=output_file,
                     log_file=log_file,
                     invocation_context=context,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertFalse(output_file.exists())
@@ -326,6 +336,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 [diagnostic.operation for diagnostic in diagnostics],
                 ["invocation_timeout"],
             )
+            self.assertEqual(diagnostics[0].attributes["timeout_scope"], "wall_clock")
             self.assertIn("provider started", log_file.read_text(encoding="utf-8"))
 
             pid = int(pid_file.read_text(encoding="utf-8"))
@@ -366,7 +377,6 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path), str(pid_file)],
                 default_model=None,
                 model_arg=None,
-                prompt_arg=None,
                 invocation_timeout_seconds=5.0,
                 invocation_idle_timeout_seconds=0.2,
             )
@@ -390,6 +400,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     output_file=output_file,
                     log_file=log_file,
                     invocation_context=context,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertFalse(output_file.exists())
@@ -465,10 +476,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             )
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
+                provider_kind="codex",
                 default_model="gpt-5.4",
-                use_stdin=True,
-                stdin_prompt_arg="-",
-                quota_parser="codex",
+                prompt_transport="stdin",
+                prompt_transport_arg="-",
                 quota_reached_retry_delay_seconds=0,
             )
             sleep_mock = AsyncMock()
@@ -484,6 +495,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(output_file.read_text(encoding="utf-8"), "final answer")
@@ -520,9 +532,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
+                provider_kind="codex",
                 default_model="gpt-5.4",
-                use_stdin=True,
-                stdin_prompt_arg="-",
+                prompt_transport="stdin",
+                prompt_transport_arg="-",
                 max_retries=1,
                 retry_delay_seconds=0,
                 retry_on_output_contains=["retry marker"],
@@ -540,6 +553,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)
@@ -600,9 +614,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             )
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
+                provider_kind="codex",
                 default_model="gpt-5.4",
-                use_stdin=True,
-                stdin_prompt_arg="-",
+                prompt_transport="stdin",
+                prompt_transport_arg="-",
                 pricing={"input": 1.5, "output": 6.0},
             )
             await invoke_agent_with_runner(
@@ -613,6 +628,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(len(usages), 1)
@@ -655,9 +671,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             )
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
+                provider_kind="codex",
                 default_model="gpt-5.4",
-                use_stdin=True,
-                stdin_prompt_arg="-",
+                prompt_transport="stdin",
+                prompt_transport_arg="-",
                 pricing={"input": 1.5, "output": 6.0},
             )
             with self.assertRaisesRegex(
@@ -671,6 +688,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(usages[0].output_extraction_status, "missing")

@@ -1,4 +1,4 @@
-# ADR 0023: Preflight-Compiled Runtime Execution Plan
+# ADR 0012: Preflight-Compiled Runtime Execution Plan
 
 ## Status
 Accepted and implemented
@@ -87,6 +87,12 @@ Each execution node owns the full runtime contract for mode, findings behavior, 
 
 Provider records carry normalized provider, role, model, task id, agent config key, invoker alias, and config signatures. Artifact contracts carry the expected stage, output, findings, log, manifest, and result locators. These are runtime inputs, not hints.
 
+The plan also carries the auditable boundary facts needed by runtime: signed
+config snapshots, workflow signatures, provider config fingerprints, static
+resource plans, persisted manifest locators, runtime snapshots, redaction
+metadata, generated-file validation, reference validation, and signed-plan
+verification inputs.
+
 Preflight may first produce a no-run preview for validation, dry-run, and duplicate lookup. The persisted execution plan adds run identity and allocated paths, but the preview and persisted plan must have the same `workflow_signature` because run-specific fields are excluded from that signature.
 
 ### Runtime Config Snapshot
@@ -151,6 +157,11 @@ The stable HMAC key lives at `.orchestrator/preflight/fingerprint.key` and conta
 
 Corrupt, truncated, symlinked, or permission-unsafe persisted keys are deterministic preflight failures. Provider-emitted node output remains outside the orchestrator redaction boundary and is not rewritten by the orchestrator.
 
+The 2026-06-07 boundary hardening update scopes ephemeral fingerprint key state
+through preflight compile options/state rather than process-global module state.
+Preview signatures remain deterministic within a compile context, and real runs
+continue to use the persisted key only when sensitive fingerprints are needed.
+
 ### Artifact Flow
 Successful runs use the current hyphenated artifact layout:
 
@@ -169,6 +180,10 @@ Preflight failure artifacts do not write a final execution manifest and cannot t
 
 `orchestrator validate` and `orchestrator run --dry-run` remain artifact-free and invoke no providers.
 
+Stage, output, findings, log, manifest, and result locators are allocated as
+safe artifact paths. Reserved run-root names stay protected, and node-derived
+filenames use stage-safe forms so distinct valid node IDs remain distinct.
+
 ### Runtime And Observability Boundaries
 Runtime assembles prompts from ordered render fragments:
 
@@ -185,6 +200,22 @@ Render streams are grouped by runtime target role. Executor streams include auth
 Runtime must not create dependency edges outside `dependency_graph`, invent artifact keys, or reinterpret assembled prompt text as template syntax.
 
 UI and observability receive a narrow plan-derived topology view. They do not receive the full `WorkflowPlan` or full `PreflightExecutionPlan` as execution authority, and UI adapters are observer-only for this decision.
+
+## Schema Version Evolution
+Schema and integration version constants live in `orchestrator_cli.versions`.
+Config and workflow models exact-match the current supported versions.
+
+Future schema-breaking changes must be introduced as one coordinated change
+that:
+
+- bumps the relevant version constant;
+- updates generated templates and README examples;
+- updates CLI validation and preflight diagnostics;
+- updates architecture, config, workflow, and template tests;
+- records the migration behavior or hard-break rationale in docs.
+
+Compatibility shims should not be added for unsupported schema breaks unless a
+new ADR explicitly changes that policy.
 
 ## Rejected Alternatives
 1. Keep runtime template resolution and pre-run template inspection.
@@ -257,5 +288,16 @@ Negative consequences:
 - adapter option signature scoping must be kept precise as adapters evolve
 
 ## Related ADRs
+- [ADR 0001: Ports + Adapters Runtime Integrations](0001-ports-adapters-runtime-integrations.md)
+- [ADR 0005: Deeper Workflow Validation in Preflight](0005-deeper-workflow-validation.md)
+- [ADR 0006: Workflow Composition Primitives](0006-workflow-composition-primitives.md)
 - [ADR 0007: Fail Fast on Template Reference Failures](0007-template-reference-failures.md)
+- [ADR 0008: Corrupt Manifest Skip Behavior](0008-corrupt-manifest-skip-behavior.md)
 - [ADR 0009: Workflow Signature Idempotency and Caching](0009-context-hash-idempotency.md)
+- [ADR 0010: Core Positioning - Infrastructure as Code](0010-core-positioning-infrastructure-as-code.md)
+
+## Updates
+- **2026-06-07**: Folded in preflight boundary hardening. Ephemeral fingerprint
+  keys are scoped through compile state, version constants are centralized in
+  `orchestrator_cli.versions`, and future schema-breaking changes require
+  coordinated templates, docs, CLI diagnostics, tests, and migration notes.

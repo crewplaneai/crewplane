@@ -3,9 +3,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -13,8 +14,8 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowPlan,
 )
 from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.agent.invoker import DefaultAgentInvoker
-from orchestrator_cli.runtime.agent.types import CommandResult
+from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     SelectiveFailInvoker,
@@ -127,8 +128,8 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "prompt_budget_warning"
-                and event.node_id == "node.summary"
+                and event.payload.operation == "prompt_budget_warning"
+                and event.context.node_id == "node.summary"
             ]
             self.assertEqual(warning_events, [])
             self.assertEqual(len(invoker.calls), 2)
@@ -330,18 +331,18 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 event for event in events if event.event_type == "node_blocked"
             ]
             self.assertEqual(len(blocked_events), 1)
-            self.assertEqual(blocked_events[0].node_id, "node.dep")
+            self.assertEqual(blocked_events[0].context.node_id, "node.dep")
             blocked_runtime_logs = [
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "blocked_dependencies"
+                and event.payload.operation == "blocked_dependencies"
             ]
             self.assertEqual(len(blocked_runtime_logs), 1)
-            self.assertEqual(blocked_runtime_logs[0].node_id, "node.dep")
+            self.assertEqual(blocked_runtime_logs[0].context.node_id, "node.dep")
             self.assertIn(
                 "unsatisfied dependencies: node.root.fail",
-                blocked_runtime_logs[0].message,
+                blocked_runtime_logs[0].payload.message,
             )
 
     async def test_nonzero_exit_still_emits_invocation_failed_event(self) -> None:
@@ -395,7 +396,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                     config,
                     workflow,
                     output,
-                    invoker=DefaultAgentInvoker(),
+                    invoker=PlannedAgentInvoker(build_cli_invocation_plan),
                     event_sink=events.append,
                 )
 
@@ -403,6 +404,8 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 event for event in events if event.event_type == "invocation_failed"
             ]
             self.assertEqual(len(invocation_failed_events), 1)
-            self.assertEqual(invocation_failed_events[0].node_id, "node.fail")
-            self.assertEqual(invocation_failed_events[0].error, "Exit code 2: boom")
-            self.assertIsNotNone(invocation_failed_events[0].log_file)
+            self.assertEqual(invocation_failed_events[0].context.node_id, "node.fail")
+            self.assertEqual(
+                invocation_failed_events[0].payload.error, "Exit code 2: boom"
+            )
+            self.assertIsNotNone(invocation_failed_events[0].context.log_file)

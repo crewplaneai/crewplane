@@ -1,3 +1,11 @@
+"""Threaded observability fanout for asyncio-driven workflow runs.
+
+Execution calls emit events from the main runtime path. The hub keeps state
+updates locked, delivers slow observer snapshots on a bounded worker queue, and
+uses short shutdown timeouts so live UI or summary observers cannot stall the
+workflow process indefinitely.
+"""
+
 from __future__ import annotations
 
 import copy
@@ -14,6 +22,10 @@ from orchestrator_cli.observability.events import (
 )
 from orchestrator_cli.observability.layout import compute_topology_layout
 from orchestrator_cli.observability.observer import Observer
+from orchestrator_cli.observability.observer_lifecycle import (
+    start_observer_with_timeout,
+    stop_observers_with_timeout,
+)
 from orchestrator_cli.observability.types import (
     DashboardSnapshot,
     RunContext,
@@ -75,7 +87,13 @@ class ObservabilityHub:
     def __enter__(self) -> ObservabilityHub:
         active: list[Observer] = []
         for observer in self._observers:
-            if self._start_observer(observer):
+            if start_observer_with_timeout(
+                observer=observer,
+                context=self._context,
+                warn=self._warn,
+                thread_factory=Thread,
+                timeout_seconds=OBSERVER_START_TIMEOUT_SECONDS,
+            ):
                 active.append(observer)
 
         with self._lock:
@@ -105,7 +123,13 @@ class ObservabilityHub:
             started_observers = list(reversed(self._started_observers))
             self._active_observers = []
         try:
-            self._stop_observers(started_observers, result)
+            stop_observers_with_timeout(
+                observers=started_observers,
+                result=result,
+                warn=self._warn,
+                thread_factory=Thread,
+                timeout_seconds=OBSERVER_STOP_TIMEOUT_SECONDS,
+            )
         except Exception as stop_exc:
             if exc is not None:
                 exc.add_note(f"observability observer shutdown failed: {stop_exc}")
@@ -262,83 +286,6 @@ class ObservabilityHub:
                 "observability observer delivery did not stop promptly; continuing"
             )
 
-    def _start_observer(self, observer: Observer) -> bool:
-        failure: list[Exception] = []
-        timed_out = Event()
-        cleanup_lock = Lock()
-        cleanup_done = False
-
-        def cleanup_after_timeout() -> None:
-            nonlocal cleanup_done
-            with cleanup_lock:
-                if cleanup_done:
-                    return
-                cleanup_done = True
-            self._stop_timed_out_observer(observer)
-
-        def start_observer() -> None:
-            try:
-                observer.start(self._context)
-            except Exception as exc:
-                failure.append(exc)
-                if timed_out.is_set():
-                    self._warn(
-                        "observability observer start failed after timeout: "
-                        f"{observer.__class__.__name__}: {exc}"
-                    )
-                return
-            if timed_out.is_set():
-                cleanup_after_timeout()
-
-        start_thread = Thread(
-            target=start_observer,
-            name=f"orchestrator-observer-start-{observer.__class__.__name__}",
-            daemon=True,
-        )
-        try:
-            start_thread.start()
-        except RuntimeError as exc:
-            self._warn(
-                "observability observer start thread failed: "
-                f"{observer.__class__.__name__}: {exc}"
-            )
-            if bool(getattr(observer, "required", False)):
-                raise
-            return False
-        start_thread.join(timeout=OBSERVER_START_TIMEOUT_SECONDS)
-        if start_thread.is_alive():
-            timed_out.set()
-            if not start_thread.is_alive() and not failure:
-                cleanup_after_timeout()
-            self._warn(
-                f"observability observer start timed out: {observer.__class__.__name__}"
-            )
-            if bool(getattr(observer, "required", False)):
-                raise TimeoutError(
-                    "observability observer start timed out: "
-                    f"{observer.__class__.__name__}"
-                )
-            return False
-        if failure:
-            self._warn(f"observability observer start failed: {failure[0]}")
-            if bool(getattr(observer, "required", False)):
-                raise failure[0]
-            return False
-        return True
-
-    def _stop_timed_out_observer(self, observer: Observer) -> None:
-        # Some observers make stop() user-visible by writing final artifacts.
-        # Once startup has timed out, let those observers opt out of synthetic cleanup.
-        if not bool(getattr(observer, "cleanup_after_start_timeout", True)):
-            return
-        try:
-            observer.stop(RunResult(failed=True))
-        except Exception as exc:
-            self._warn(
-                "observability observer cleanup after start timeout failed: "
-                f"{observer.__class__.__name__}: {exc}"
-            )
-
     def _enqueue_snapshot(
         self,
         event: ExecutionEvent | None,
@@ -400,57 +347,6 @@ class ObservabilityHub:
             if not self._pending_deliveries:
                 self._delivery_available.clear()
             return delivery
-
-    def _stop_observers(
-        self,
-        observers: Iterable[Observer],
-        result: RunResult,
-    ) -> None:
-        required_failures: list[Exception] = []
-        for observer in observers:
-            failure: list[Exception] = []
-
-            def stop_observer(
-                target_observer: Observer = observer,
-                target_failure: list[Exception] = failure,
-            ) -> None:
-                try:
-                    target_observer.stop(result)
-                except Exception as exc:
-                    target_failure.append(exc)
-
-            stop_thread = Thread(
-                target=stop_observer,
-                name=f"orchestrator-observer-stop-{observer.__class__.__name__}",
-                daemon=True,
-            )
-            try:
-                stop_thread.start()
-            except RuntimeError as exc:
-                self._warn(
-                    "observability observer stop thread failed: "
-                    f"{observer.__class__.__name__}: {exc}"
-                )
-                if bool(getattr(observer, "required", False)):
-                    required_failures.append(exc)
-                continue
-            stop_thread.join(timeout=OBSERVER_STOP_TIMEOUT_SECONDS)
-            if stop_thread.is_alive():
-                message = (
-                    f"observability observer stop timed out: "
-                    f"{observer.__class__.__name__}"
-                )
-                self._warn(message)
-                if bool(getattr(observer, "required", False)):
-                    required_failures.append(TimeoutError(message))
-                continue
-            if failure:
-                self._warn(f"observability observer stop failed: {failure[0]}")
-                if bool(getattr(observer, "required", False)):
-                    required_failures.append(failure[0])
-
-        if required_failures:
-            raise required_failures[0]
 
     def _warn(self, message: str) -> None:
         if self._warning_sink is None:

@@ -5,7 +5,6 @@ from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -18,6 +17,7 @@ from orchestrator_cli.runtime.execution.common import (
 from orchestrator_cli.runtime.execution.consensus import (
     extract_verdict,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     OptionalOutputInvoker,
@@ -225,7 +225,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_output_normalization"
+                and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(warning_events, [])
 
@@ -288,7 +288,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_consensus_exhausted"
+                and event.payload.operation == "review_loop_consensus_exhausted"
             ]
             self.assertEqual(len(exhaustion_events), 1)
 
@@ -401,11 +401,12 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_invalid_candidate"
+                and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
             self.assertEqual(
-                invalid_events[0].attributes["reason"], "invalid_candidate.empty"
+                invalid_events[0].payload.attributes["reason"],
+                "invalid_candidate.empty",
             )
 
     async def test_multi_provider_sequential_skips_reviewer_on_missing_remediation_candidate(
@@ -473,11 +474,12 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_invalid_candidate"
+                and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
             self.assertEqual(
-                invalid_events[0].attributes["reason"], "invalid_candidate.empty"
+                invalid_events[0].payload.attributes["reason"],
+                "invalid_candidate.empty",
             )
 
     async def test_multi_provider_sequential_skips_reviewer_on_unchanged_remediation_candidate(
@@ -546,7 +548,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_no_progress"
+                and event.payload.operation == "review_loop_no_progress"
             ]
             self.assertEqual(len(no_progress_events), 1)
 
@@ -605,6 +607,6 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_loop_invalid_candidate"
+                and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(invalid_events, [])

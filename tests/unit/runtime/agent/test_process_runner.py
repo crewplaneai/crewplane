@@ -1,10 +1,18 @@
 import asyncio
 import time
 import unittest
+from unittest.mock import patch
 
 from orchestrator_cli.runtime.agent.process.runner import (
     collect_process_output,
     reap_failed_process,
+)
+from orchestrator_cli.runtime.agent.process.stream_capture import (
+    CapturedStream as RealCapturedStream,
+)
+from orchestrator_cli.runtime.agent.process.streams import (
+    LOG_QUEUE_MAX_ITEMS,
+    pipe_stream,
 )
 
 
@@ -70,6 +78,17 @@ class _AlreadyExitedOnTerminateProcessDouble:
 
 
 class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
+    def test_captured_stream_keeps_full_file_and_bounded_tail(self) -> None:
+        capture = RealCapturedStream(max_memory_bytes=4)
+        try:
+            capture.write(b"abcdef")
+            capture.close()
+
+            self.assertEqual(capture.tail_bytes, b"cdef")
+            self.assertEqual(capture.path.read_bytes(), b"abcdef")
+        finally:
+            capture.cleanup()
+
     async def test_collect_process_output_keeps_event_loop_live_with_slow_log_sink(
         self,
     ) -> None:
@@ -141,6 +160,37 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b"partial stdout", log_payload)
         self.assertIn(b"[stderr] partial stderr", log_payload)
 
+    async def test_pipe_stream_logs_long_lines_in_bounded_chunks(self) -> None:
+        reader = asyncio.StreamReader()
+        reader.feed_data(b"x" * 10_000)
+        reader.feed_eof()
+        log_queue: asyncio.Queue[bytes | None] = asyncio.Queue(
+            maxsize=LOG_QUEUE_MAX_ITEMS
+        )
+        capture = RealCapturedStream()
+        try:
+            await pipe_stream(reader, log_queue, b"[stderr] ", capture)
+            payloads: list[bytes] = []
+            while not log_queue.empty():
+                payload = await log_queue.get()
+                if payload is not None:
+                    payloads.append(payload)
+
+            self.assertGreater(len(payloads), 1)
+            self.assertTrue(payloads[0].startswith(b"[stderr] "))
+            self.assertFalse(
+                any(payload.startswith(b"[stderr] ") for payload in payloads[1:])
+            )
+            self.assertTrue(
+                all(len(payload) <= 1024 + len(b"[stderr] ") for payload in payloads)
+            )
+            self.assertEqual(
+                b"".join(payload.removeprefix(b"[stderr] ") for payload in payloads),
+                b"x" * 10_000,
+            )
+        finally:
+            capture.cleanup()
+
     async def test_collect_process_output_reaps_process_when_log_writer_fails(
         self,
     ) -> None:
@@ -156,6 +206,35 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(process.wait(), timeout=1.0)
         self.assertEqual(process.returncode, -9)
         self.assertEqual(process.kill_calls, 1)
+
+    async def test_collect_process_output_removes_capture_files_when_collection_fails(
+        self,
+    ) -> None:
+        created_paths = []
+
+        class TrackingCapturedStream(RealCapturedStream):
+            def __init__(self) -> None:
+                super().__init__()
+                created_paths.append(self.path)
+
+        process = _ProcessDouble()
+        process.stdout.feed_data(b"line\n")
+
+        with (
+            patch(
+                "orchestrator_cli.runtime.agent.process.streams.CapturedStream",
+                TrackingCapturedStream,
+            ),
+            self.assertRaisesRegex(OSError, "disk full"),
+        ):
+            await asyncio.wait_for(
+                collect_process_output(process, _FailingLogHandle()),
+                timeout=1.0,
+            )
+
+        self.assertEqual(process.returncode, -9)
+        self.assertGreaterEqual(len(created_paths), 2)
+        self.assertTrue(all(not path.exists() for path in created_paths))
 
     async def test_collect_process_output_reaps_process_when_cancelled(self) -> None:
         process = _ProcessDouble()

@@ -1,8 +1,8 @@
 import unittest
 
+from orchestrator_cli.architecture.contracts import InvocationContext
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
-from orchestrator_cli.runtime.agent.types import InvocationContext
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class MockInvokerAdapterTestCase(unittest.IsolatedAsyncioTestCase):

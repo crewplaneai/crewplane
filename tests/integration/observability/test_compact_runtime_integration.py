@@ -11,7 +11,6 @@ from rich.console import Console
 
 from orchestrator_cli.bootstrap.container import build_runtime_components
 from orchestrator_cli.core.config import Config, load_config
-from orchestrator_cli.core.versions import WORKFLOW_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
@@ -23,6 +22,7 @@ from orchestrator_cli.core.workflow_validation import validate_workflow_plan
 from orchestrator_cli.observability.runtime import ObservabilityHub
 from orchestrator_cli.observability.types import RunContext, RunResult
 from orchestrator_cli.runtime.execution.workflow import execute_workflow
+from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
 from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime

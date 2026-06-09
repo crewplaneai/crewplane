@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
@@ -39,7 +40,9 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                         "if count < 2:",
                         "    print('usage limit exceeded. Please try again in 45.622s')",
                         "    sys.exit(0)",
-                        "print('ok')",
+                        "output_path = Path(sys.argv[sys.argv.index('--output-last-message') + 1])",
+                        "output_path.write_text('ok', encoding='utf-8')",
+                        'print(\'{"type":"response.completed","response":{}}\')',
                     ]
                 ),
                 encoding="utf-8",
@@ -52,8 +55,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
-                    quota_parser="codex",
+                    provider_kind="codex",
                     quota_reached_retry_delay_seconds=0,
                 )
                 output_file = tmp_path / "output.txt"
@@ -62,7 +64,13 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                     "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
-                    await invoke_agent(config, "test-model", "prompt", output_file)
+                    await invoke_agent(
+                        config,
+                        "test-model",
+                        "prompt",
+                        output_file,
+                        plan_builder=build_cli_invocation_plan,
+                    )
             finally:
                 if original_state is None:
                     os.environ.pop("STATE_FILE", None)
@@ -89,12 +97,17 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path)],
                 default_model="test",
                 model_arg=None,
-                prompt_arg=None,
-                quota_parser="codex",
+                provider_kind="codex",
             )
             output_file = tmp_path / "output.txt"
             with self.assertRaisesRegex(RuntimeError, "exceeds 5 hours") as caught:
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
             self.assertIsInstance(caught.exception, InvocationFailureError)
             failure = caught.exception
             assert isinstance(failure, InvocationFailureError)
@@ -135,8 +148,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                         cli_cmd=[sys.executable, str(script_path)],
                         default_model="test",
                         model_arg=None,
-                        prompt_arg=None,
-                        quota_parser=parser_name,
+                        provider_kind=parser_name,
                         quota_reached_retry_delay_seconds=0,
                     )
                     output_file = tmp_path / f"{parser_name}_output.txt"
@@ -145,7 +157,13 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                         "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
                         sleep_mock,
                     ):
-                        await invoke_agent(config, "test-model", "prompt", output_file)
+                        await invoke_agent(
+                            config,
+                            "test-model",
+                            "prompt",
+                            output_file,
+                            plan_builder=build_cli_invocation_plan,
+                        )
                 finally:
                     if original_state is None:
                         os.environ.pop("STATE_FILE", None)

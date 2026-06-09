@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from orchestrator_cli.core.config import AgentConfig
-
-from ..types import (
+from orchestrator_cli.architecture.contracts import (
     InvocationContext,
     InvocationDiagnostic,
     InvocationLogLevel,
     RuntimeLogValue,
 )
+from orchestrator_cli.core.config import AgentConfig
+
 from ..usage import InvocationUsage
 from .state import (
     ContinueAttemptTransition,
@@ -150,7 +150,11 @@ def _record_extracted_transition_output(
 ) -> None:
     usage_state.record_extracted_output(extracted_output)
     emit_notice(invocation_context, extracted_output.notice)
-    if attempt_output_for_usage and not extracted_output.output_text:
+    if (
+        attempt_output_for_usage
+        and extracted_output.output_path is None
+        and not extracted_output.output_text
+    ):
         usage_state.record_attempt_output(attempt_output_for_usage)
 
 

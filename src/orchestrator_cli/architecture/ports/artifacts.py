@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
+from orchestrator_cli.architecture.contracts import (
+    CanonicalIntegrationConfig,
+    JsonObject,
+)
 from orchestrator_cli.core.preflight.models import PreflightExecutionPlan
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
 
 
 @dataclass(frozen=True)
@@ -84,25 +86,25 @@ class ArtifactStorePort(Protocol):
     def write_preflight_static_file(self, content_ref: str, payload: bytes) -> Path:
         """Persist bundled static content read by preflight."""
 
-    def write_preflight_manifest(self, payload: Any) -> Path:
+    def write_preflight_manifest(self, payload: object) -> Path:
         """Persist the preflight status manifest."""
 
-    def write_preflight_diagnostics(self, payload: Any) -> Path:
+    def write_preflight_diagnostics(self, payload: object) -> Path:
         """Persist preflight diagnostics."""
 
-    def write_preflight_metadata(self, payload: Any) -> Path:
+    def write_preflight_metadata(self, payload: object) -> Path:
         """Persist preflight run metadata."""
 
     def write_preflight_summary(self, content: str) -> Path:
         """Persist the human-readable preflight summary."""
 
-    def write_preflight_render_plan(self, payload: Any) -> Path:
+    def write_preflight_render_plan(self, payload: object) -> Path:
         """Persist successful render-plan metadata."""
 
-    def write_preflight_execution_bundle(self, payload: Any) -> Path:
+    def write_preflight_execution_bundle(self, payload: object) -> Path:
         """Persist successful compiled execution-bundle metadata."""
 
-    def write_preflight_json(self, relative_path: str, payload: Any) -> Path:
+    def write_preflight_json(self, relative_path: str, payload: object) -> Path:
         """Persist a JSON preflight artifact under the run preflight directory."""
 
     def write_preflight_text(self, relative_path: str, content: str) -> Path:
@@ -114,7 +116,7 @@ class ArtifactStorePort(Protocol):
         """Return whether a successful manifest exists for this workflow signature."""
 
     def write_manifest(
-        self, workflow_signature: str, manifest_data: dict[str, Any]
+        self, workflow_signature: str, manifest_data: JsonObject
     ) -> Path:
         """Persist a run manifest and return its path."""
 
@@ -126,7 +128,7 @@ class ArtifactAdapterPort(Protocol):
         self,
         implementation: str,
         resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         """Validate and canonicalize artifact options without side effects."""
 
@@ -134,7 +136,7 @@ class ArtifactAdapterPort(Protocol):
         self,
         workflow_name: str,
         orchestrator_dir: Path,
-        options: Mapping[str, Any] | None,
+        options: JsonObject | None,
         workflow_signature: str,
     ) -> bool:
         """Return whether a successful manifest exists without allocating a run."""
@@ -144,6 +146,6 @@ class ArtifactAdapterPort(Protocol):
         workflow_name: str,
         orchestrator_dir: Path,
         project_root: Path,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> ArtifactStorePort:
         """Build the artifact store for a concrete workflow run."""

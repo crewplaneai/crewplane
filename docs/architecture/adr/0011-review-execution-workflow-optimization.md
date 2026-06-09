@@ -352,6 +352,29 @@ in-memory process buffers and provider-specific temporary files for parsing, but
 it does not create a separate durable raw-output channel when logging is
 disabled.
 
+### Invocation Boundary Update
+The 2026-06-07 boundary hardening keeps review execution provider-neutral while
+tightening the invocation layer around it:
+
+- Review verdict constants, sentinels, parsed result data, and render helpers
+  live in `core/review_contract.py`. Runtime consensus and the mock invoker
+  depend on that core-neutral contract instead of sharing consensus internals.
+- Built-in provider prompt/model/output/quota/usage behavior belongs behind the
+  invoker adapter boundary. Runtime review execution consumes provider-agnostic
+  invocation plans and does not infer provider behavior from executable names.
+- Provider processes are started through direct subprocess execution without a
+  shell. POSIX runs read the process group with `os.getpgid(process.pid)` after
+  spawn and use explicit process group/session cleanup with idle timeout
+  handling, pipe-drain grace periods, clean task cancellation, and
+  SIGTERM-to-SIGKILL fallback.
+- Invocation state transitions use explicit transition/state models with
+  exhaustive dispatch. Runtime snapshots and invocation plans are narrower so
+  illegal states are harder to represent.
+- Retry, quota, provider failure classification, JSON/text provider-error
+  parsing, quota reset parsing, and bounded quota retry behavior remain
+  explicit invoker/runtime behavior. Diagnostics use condensed log-reference
+  context and are covered by regression tests.
+
 ## Sequential Review Loop Semantics
 A multi-provider sequential node runs as an executor/reviewer loop:
 
@@ -699,6 +722,10 @@ because they are easy to misread from the high-level workflow:
   framing.
 - **2026-04-30**: Accepted role-scoped prompt segments with AST-based Markdown
   parsing.
+- **2026-06-07**: Folded in review and invocation boundary hardening. Review
+  contract rendering moved to a core-neutral module, runtime provider inference
+  remains behind invoker capabilities, and invocation lifecycle handling uses
+  explicit state transitions and subprocess cleanup.
 
 ## References
 - [ADR 0001: Ports + Adapters Runtime Integrations](0001-ports-adapters-runtime-integrations.md)

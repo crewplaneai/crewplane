@@ -53,7 +53,7 @@ class SnapshotRecorder:
         self.snapshots.append(
             RecordedSnapshot(
                 event_type=None if event is None else event.event_type,
-                node_id=None if event is None else event.node_id,
+                node_id=None if event is None else event.context.node_id,
                 snapshot=snapshot,
             )
         )

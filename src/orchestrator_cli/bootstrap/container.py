@@ -5,6 +5,7 @@ from pathlib import Path
 
 from rich.console import Console
 
+from orchestrator_cli.architecture.contracts import JsonObject
 from orchestrator_cli.architecture.loader import instantiate_adapter
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.architecture.ports.runtime import RuntimeComponents, UIRuntimePlan
@@ -21,9 +22,9 @@ def build_runtime_components(
     no_live: bool,
     warning_sink: Callable[[str], None] | None = None,
     which_fn: Callable[[str], str | None] | None = None,
-    invoker_options: dict[str, object] | None = None,
-    artifact_options: dict[str, object] | None = None,
-    ui_options: dict[str, object] | None = None,
+    invoker_options: JsonObject | None = None,
+    artifact_options: JsonObject | None = None,
+    ui_options: JsonObject | None = None,
     artifact_store: ArtifactStorePort | None = None,
 ) -> RuntimeComponents:
     """Build the concrete runtime components for a workflow execution."""

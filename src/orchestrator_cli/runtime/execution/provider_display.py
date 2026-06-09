@@ -4,12 +4,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.types import (
+from orchestrator_cli.architecture.contracts import (
     AgentInvoker,
     ConsoleMessageSink,
     InvocationContext,
 )
+from orchestrator_cli.core.config import AgentConfig
 
 from .execution_activity import ExecutionTelemetry
 from .execution_console import execution_console, progress_context, should_print_console

@@ -2,7 +2,7 @@ import unittest
 
 from orchestrator_cli.adapters.invokers.cli import CliInvokerAdapter
 from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class CliInvokerAdapterTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class CliInvokerAdapterTests(unittest.TestCase):
             },
         )
         invoker = adapter.create_invoker(config=config, options={})
-        self.assertEqual(invoker.__class__.__name__, "DefaultAgentInvoker")
+        self.assertEqual(invoker.__class__.__name__, "PlannedAgentInvoker")
 
     def test_create_invoker_rejects_unknown_options(self) -> None:
         adapter = CliInvokerAdapter()

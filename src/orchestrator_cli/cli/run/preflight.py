@@ -111,6 +111,7 @@ def raise_for_preflight_preview_errors(
     preview: PreflightCompilationPreview,
     console: Console,
 ) -> None:
+    print_preflight_diagnostics(preview.diagnostics, console)
     if not preview.has_errors():
         return
     console.print("[red]Preflight compilation failed:[/]")
@@ -253,6 +254,20 @@ def write_preflight_diagnostics(
     for diagnostic in diagnostics:
         summary_lines.append(f"- {diagnostic.code}: {diagnostic.message}")
     output.write_preflight_summary("\n".join(summary_lines) + "\n")
+
+
+def print_preflight_diagnostics(
+    diagnostics: list[PreflightDiagnostic],
+    console: Console,
+) -> None:
+    warnings = [
+        diagnostic for diagnostic in diagnostics if diagnostic.severity == "warning"
+    ]
+    if not warnings:
+        return
+    console.print("[yellow]Preflight warnings:[/]")
+    for diagnostic in warnings:
+        console.print(f"  - {diagnostic.code}: {diagnostic.message}")
 
 
 def write_preflight_success_artifacts(

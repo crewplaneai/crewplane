@@ -52,6 +52,12 @@ def terminal_spend_lines(summary: RunSummary) -> list[str]:
         for row in spend_overview_rows(summary.spend)
         if row.show_in_terminal
     )
+    if summary.omitted_invocation_usage_count > 0:
+        lines.append(
+            "  Invocation detail: retained latest "
+            f"{len(summary.invocation_usages)} invocation(s); "
+            f"{summary.omitted_invocation_usage_count} earlier omitted"
+        )
     if summary.provider_rollups:
         lines.append("  Providers:")
         for provider_rollup in summary.provider_rollups:

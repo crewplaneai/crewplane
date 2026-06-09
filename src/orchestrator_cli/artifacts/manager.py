@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
 
+from orchestrator_cli.architecture.contracts import JsonObject
 from orchestrator_cli.architecture.ports.artifacts import (
     StageFinalizeResult,
     StageTaskSpec,
@@ -104,18 +104,37 @@ class OutputManager:
             workspace_root=resolved_template_base_dir,
         )
 
-        # Backward-compatible attributes used by callers/tests.
-        self.base_dir = self._directories.base_dir
-        self.task_name = self._directories.task_name
-        self.log_cli_output = self._directories.log_cli_output
-        self.run_id = self._directories.run_id
-        self.stages_dir = self._directories.stages_dir
-        self.results_dir = self._directories.results_dir
-        self.logs_dir = self._directories.logs_dir
-
     @staticmethod
     def _safe_name(name: str) -> str:
         return safe_artifact_name(name)
+
+    @property
+    def base_dir(self) -> Path:
+        return self._directories.base_dir
+
+    @property
+    def task_name(self) -> str:
+        return self._directories.task_name
+
+    @property
+    def log_cli_output(self) -> bool:
+        return self._directories.log_cli_output
+
+    @property
+    def run_id(self) -> str:
+        return self._directories.run_id
+
+    @property
+    def stages_dir(self) -> Path:
+        return self._directories.stages_dir
+
+    @property
+    def results_dir(self) -> Path:
+        return self._directories.results_dir
+
+    @property
+    def logs_dir(self) -> Path:
+        return self._directories.logs_dir
 
     def create_stage_dir(self, stage_name: str) -> Path:
         return self._directories.create_stage_dir(stage_name)
@@ -183,25 +202,25 @@ class OutputManager:
         path.write_bytes(payload)
         return path
 
-    def write_preflight_manifest(self, payload: Any) -> Path:
+    def write_preflight_manifest(self, payload: object) -> Path:
         return self.write_preflight_json("manifest.json", payload)
 
-    def write_preflight_diagnostics(self, payload: Any) -> Path:
+    def write_preflight_diagnostics(self, payload: object) -> Path:
         return self.write_preflight_json("diagnostics.json", payload)
 
-    def write_preflight_metadata(self, payload: Any) -> Path:
+    def write_preflight_metadata(self, payload: object) -> Path:
         return self.write_preflight_json("metadata.json", payload)
 
     def write_preflight_summary(self, content: str) -> Path:
         return self.write_preflight_text("summary.md", content)
 
-    def write_preflight_render_plan(self, payload: Any) -> Path:
+    def write_preflight_render_plan(self, payload: object) -> Path:
         return self.write_preflight_json("render-plans.json", payload)
 
-    def write_preflight_execution_bundle(self, payload: Any) -> Path:
+    def write_preflight_execution_bundle(self, payload: object) -> Path:
         return self.write_preflight_json("execution-bundle.json", payload)
 
-    def write_preflight_json(self, relative_path: str, payload: Any) -> Path:
+    def write_preflight_json(self, relative_path: str, payload: object) -> Path:
         path = self._preflight_artifact_path(relative_path)
         path.write_text(pretty_sorted_json(payload) + "\n", encoding="utf-8")
         return path
@@ -233,7 +252,7 @@ class OutputManager:
     def write_manifest(
         self,
         workflow_signature: str,
-        manifest_data: dict[str, Any],
+        manifest_data: JsonObject,
     ) -> Path:
         safe_workflow_signature = _validate_workflow_signature(workflow_signature)
         manifests_dir = self._directories.ensure_manifests_dir()

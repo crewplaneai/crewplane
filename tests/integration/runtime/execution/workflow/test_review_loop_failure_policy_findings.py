@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from orchestrator_cli.architecture.contracts import AgentInvoker
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -13,13 +13,13 @@ from orchestrator_cli.core.workflow_models import (
     WorkflowPlan,
 )
 from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.agent.types import AgentInvoker
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
 from orchestrator_cli.runtime.execution.consensus import (
     extract_verdict,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_sequential_stage,
@@ -357,6 +357,6 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
                 event
                 for event in events
                 if event.event_type == "runtime_log"
-                and event.operation == "review_output_normalization"
+                and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(len(warning_events), 1)

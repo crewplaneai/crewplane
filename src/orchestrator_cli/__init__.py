@@ -1,4 +1,4 @@
-from orchestrator_cli.core import (
+from orchestrator_cli.versions import (
     CONFIG_SCHEMA_VERSION,
     WORKFLOW_SCHEMA_VERSION,
 )

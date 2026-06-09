@@ -6,6 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src"
 TESTS_ROOT = REPO_ROOT / "tests"
+PRODUCTION_LINE_LIMIT = 400
 
 ORIGINAL_OVERSIZED_FILES = (
     "src/orchestrator_cli/core/workflow_markdown.py",
@@ -279,6 +280,15 @@ def test_split_modules_stay_under_line_limit() -> None:
     assert offenders == []
 
 
+def test_all_production_modules_stay_under_line_limit() -> None:
+    offenders = [
+        f"{path.relative_to(REPO_ROOT)}: {physical_line_count(path)}"
+        for path in python_files(SRC_ROOT / "orchestrator_cli")
+        if physical_line_count(path) > PRODUCTION_LINE_LIMIT
+    ]
+    assert offenders == []
+
+
 def test_adapters_do_not_import_runtime_execution_modules() -> None:
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "orchestrator_cli" / "adapters"):
@@ -292,6 +302,29 @@ def test_adapters_do_not_import_runtime_execution_modules() -> None:
                 isinstance(node, ast.ImportFrom)
                 and node.module
                 and node.module.startswith("orchestrator_cli.runtime.execution")
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_architecture_ports_do_not_import_runtime_or_observability() -> None:
+    forbidden_prefixes = (
+        "orchestrator_cli.core.preflight.runtime_config",
+        "orchestrator_cli.runtime",
+        "orchestrator_cli.observability",
+    )
+    offenders: list[str] = []
+    for path in python_files(SRC_ROOT / "orchestrator_cli" / "architecture" / "ports"):
+        module = parse_python(path)
+        for node in ast.walk(module):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith(forbidden_prefixes):
+                        offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith(forbidden_prefixes)
             ):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
     assert offenders == []
@@ -318,6 +351,21 @@ def test_runtime_modules_do_not_own_module_level_console_singletons() -> None:
             offenders.extend(
                 f"{path.relative_to(REPO_ROOT)}:{node.lineno}" for _ in targets
             )
+    assert offenders == []
+
+
+def test_cli_modules_do_not_own_module_level_console_singletons() -> None:
+    offenders: list[str] = []
+    for path in python_files(SRC_ROOT / "orchestrator_cli" / "cli"):
+        module = parse_python(path)
+        for node in module.body:
+            value: ast.expr | None
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                value = node.value
+            else:
+                continue
+            if isinstance(value, ast.Call) and call_name(value.func) == "Console":
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
     assert offenders == []
 
 
@@ -364,6 +412,15 @@ def test_no_cross_module_single_underscore_attribute_access() -> None:
                 offenders.append(
                     f"{path.relative_to(REPO_ROOT)}:{node.lineno}: {'.'.join(expression_chain(node))}"
                 )
+    assert offenders == []
+
+
+def test_source_does_not_suppress_unused_arguments() -> None:
+    offenders = [
+        f"{path.relative_to(REPO_ROOT)}"
+        for path in python_files(SRC_ROOT / "orchestrator_cli")
+        if "noqa: ARG002" in path.read_text(encoding="utf-8")
+    ]
     assert offenders == []
 
 
@@ -463,6 +520,282 @@ def test_execution_events_do_not_use_legacy_flat_fields() -> None:
                     offenders.append(
                         f"{path.relative_to(REPO_ROOT)}:{node.lineno}: {sorted(legacy_keywords)}"
                     )
+    assert offenders == []
+
+
+def test_execution_event_has_no_legacy_flat_accessors() -> None:
+    path = (
+        SRC_ROOT
+        / "orchestrator_cli"
+        / "observability"
+        / "events"
+        / "execution_event.py"
+    )
+    module = parse_python(path)
+    legacy_properties: list[str] = []
+    for node in ast.walk(module):
+        if (
+            not isinstance(node, ast.FunctionDef)
+            or node.name not in LEGACY_EVENT_FIELDS
+        ):
+            continue
+        if any(call_name(decorator) == "property" for decorator in node.decorator_list):
+            legacy_properties.append(node.name)
+    assert legacy_properties == []
+
+
+def test_runtime_code_uses_event_builders_instead_of_direct_event_construction() -> (
+    None
+):
+    offenders: list[str] = []
+    runtime_root = SRC_ROOT / "orchestrator_cli" / "runtime"
+    for path in python_files(runtime_root):
+        module = parse_python(path)
+        for node in ast.walk(module):
+            if isinstance(node, ast.Call) and call_name(node.func) == "ExecutionEvent":
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> None:
+    forbidden_names = {
+        "AUTO_QUOTA_PARSER_PROVIDER_BY_EXECUTABLE",
+        "parser_resolution",
+    }
+    offenders: list[str] = []
+    for path in python_files(SRC_ROOT / "orchestrator_cli" / "runtime" / "agent"):
+        source = path.read_text(encoding="utf-8")
+        for forbidden_name in forbidden_names:
+            if forbidden_name in source:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden_name}")
+        module = parse_python(path)
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom) and node.module == "os.path":
+                imported_names = {alias.name for alias in node.names}
+                if "basename" in imported_names:
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == "basename"
+                and expression_chain(node.value) in {("os", "path"), ("posixpath",)}
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_process_stream_capture_uses_persisted_files_and_bounded_tails() -> None:
+    streams_path = (
+        SRC_ROOT / "orchestrator_cli" / "runtime" / "agent" / "process" / "streams.py"
+    )
+    capture_path = (
+        SRC_ROOT
+        / "orchestrator_cli"
+        / "runtime"
+        / "agent"
+        / "process"
+        / "stream_capture.py"
+    )
+    streams_source = streams_path.read_text(encoding="utf-8")
+    capture_source = capture_path.read_text(encoding="utf-8")
+    assert "asyncio.Queue(maxsize=LOG_QUEUE_MAX_ITEMS)" in streams_source
+    assert "stdout_chunks" not in streams_source
+    assert "stderr_chunks" not in streams_source
+    assert "tempfile.mkstemp" in capture_source
+    assert "MAX_CAPTURE_MEMORY_BYTES" in capture_source
+    assert "tail_bytes" in capture_source
+    assert "SpooledTemporaryFile" not in streams_source
+    assert "SpooledTemporaryFile" not in capture_source
+
+
+def test_provider_invocation_fallback_usage_does_not_materialize_artifact() -> None:
+    path = (
+        SRC_ROOT
+        / "orchestrator_cli"
+        / "runtime"
+        / "execution"
+        / "provider_invocation.py"
+    )
+    source = path.read_text(encoding="utf-8")
+    assert ".read_text(" not in source
+    assert "build_fallback_usage_from_output_file" in source
+
+
+def test_persistent_run_logger_retains_bounded_event_window() -> None:
+    path = SRC_ROOT / "orchestrator_cli" / "observability" / "run_summary" / "logger.py"
+    source = path.read_text(encoding="utf-8")
+    assert "MAX_RETAINED_SUMMARY_EVENTS" in source
+    assert "deque(maxlen=MAX_RETAINED_SUMMARY_EVENTS)" in source
+    assert "list[ExecutionEvent]" not in source
+
+
+def test_run_summary_retains_bounded_invocation_usage_details() -> None:
+    accumulator_path = (
+        SRC_ROOT
+        / "orchestrator_cli"
+        / "observability"
+        / "run_summary"
+        / "accumulator.py"
+    )
+    markdown_path = (
+        SRC_ROOT / "orchestrator_cli" / "observability" / "run_summary" / "markdown.py"
+    )
+    accumulator_source = accumulator_path.read_text(encoding="utf-8")
+    markdown_source = markdown_path.read_text(encoding="utf-8")
+    assert "MAX_RETAINED_INVOCATION_USAGE_DETAILS" in accumulator_source
+    assert "deque[InvocationUsageSummary]" in accumulator_source
+    assert "maxlen=MAX_RETAINED_INVOCATION_USAGE_DETAILS" in accumulator_source
+    assert "UsageRollupAccumulator" in accumulator_source
+    assert "list[InvocationUsageSummary]" not in accumulator_source
+    assert "omitted_invocation_usage_count" in markdown_source
+    assert "Full invocation events remain" in markdown_source
+
+
+def test_docs_and_templates_do_not_reference_legacy_prompt_config_fields() -> None:
+    legacy_terms = {
+        "prompt_arg",
+        "quota_parser",
+        "stdin_prompt_arg",
+        "use_stdin",
+    }
+    checked_paths = [
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "docs" / "architecture" / "modular-orchestration-architecture.md",
+        SRC_ROOT / "orchestrator_cli" / "example_templates" / "config.yml",
+    ]
+    offenders: list[str] = []
+    for path in checked_paths:
+        source = path.read_text(encoding="utf-8")
+        for term in legacy_terms:
+            if term in source:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {term}")
+    assert offenders == []
+
+
+def test_version_catalog_has_single_public_python_source() -> None:
+    stale_paths = [
+        SRC_ROOT / "orchestrator_cli" / "core" / "versions.py",
+        SRC_ROOT / "orchestrator_cli" / "architecture" / "api_version.py",
+    ]
+    assert [
+        path.relative_to(REPO_ROOT).as_posix() for path in stale_paths if path.exists()
+    ] == []
+    offenders: list[str] = []
+    for path in python_files(SRC_ROOT / "orchestrator_cli"):
+        source = path.read_text(encoding="utf-8")
+        if "orchestrator_cli.core.versions" in source:
+            offenders.append(f"{path.relative_to(REPO_ROOT)}: core.versions")
+        if "orchestrator_cli.architecture.api_version" in source:
+            offenders.append(f"{path.relative_to(REPO_ROOT)}: architecture.api_version")
+    assert offenders == []
+
+
+def test_public_package_exports_are_narrow() -> None:
+    import orchestrator_cli.core as core_package
+    import orchestrator_cli.runtime as runtime_package
+
+    assert core_package.__all__ == [
+        "CONFIG_SCHEMA_VERSION",
+        "WORKFLOW_SCHEMA_VERSION",
+    ]
+    assert runtime_package.__all__ == []
+    assert "__getattr__" not in vars(runtime_package)
+
+
+def test_output_manager_directory_fields_are_read_only_properties() -> None:
+    path = SRC_ROOT / "orchestrator_cli" / "artifacts" / "manager.py"
+    module = parse_python(path)
+    managed_fields = {
+        "base_dir",
+        "log_cli_output",
+        "logs_dir",
+        "results_dir",
+        "run_id",
+        "stages_dir",
+        "task_name",
+    }
+    assigned_fields: list[str] = []
+    property_fields: set[str] = set()
+    for node in module.body:
+        if not isinstance(node, ast.ClassDef) or node.name != "OutputManager":
+            continue
+        for member in node.body:
+            if (
+                isinstance(member, ast.FunctionDef)
+                and member.name in managed_fields
+                and any(
+                    call_name(decorator) == "property"
+                    for decorator in member.decorator_list
+                )
+            ):
+                property_fields.add(member.name)
+            if not isinstance(member, ast.FunctionDef) or member.name != "__init__":
+                continue
+            for child in ast.walk(member):
+                targets: list[ast.expr] = []
+                if isinstance(child, ast.Assign):
+                    targets = list(child.targets)
+                elif isinstance(child, ast.AnnAssign):
+                    targets = [child.target]
+                for target in targets:
+                    if (
+                        isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"
+                        and target.attr in managed_fields
+                    ):
+                        assigned_fields.append(target.attr)
+    assert assigned_fields == []
+    assert property_fields == managed_fields
+
+
+def test_preflight_fingerprint_key_state_is_scoped() -> None:
+    secrets_path = SRC_ROOT / "orchestrator_cli" / "core" / "preflight" / "secrets.py"
+    compile_state_path = (
+        SRC_ROOT / "orchestrator_cli" / "core" / "preflight" / "compile_state.py"
+    )
+    secrets_source = secrets_path.read_text(encoding="utf-8")
+    compile_state_source = compile_state_path.read_text(encoding="utf-8")
+    assert "_EPHEMERAL_KEYS" not in secrets_source
+    assert "class FingerprintKeyCache" in secrets_source
+    assert "fingerprint_key_cache: FingerprintKeyCache" in compile_state_source
+
+
+def test_boundary_option_contracts_use_json_object() -> None:
+    checked_paths = [
+        SRC_ROOT / "orchestrator_cli" / "architecture",
+        SRC_ROOT / "orchestrator_cli" / "bootstrap",
+        SRC_ROOT / "orchestrator_cli" / "adapters",
+    ]
+    offenders = [
+        f"{path.relative_to(REPO_ROOT)}"
+        for root in checked_paths
+        for path in python_files(root)
+        if "dict[str, Any]" in path.read_text(encoding="utf-8")
+        or "dict[str, object]" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+
+
+def test_preflight_any_maps_are_limited_to_redaction_traversal() -> None:
+    allowed_path = (
+        SRC_ROOT
+        / "orchestrator_cli"
+        / "core"
+        / "preflight"
+        / "runtime_config_redaction.py"
+    )
+    offenders: list[str] = []
+    for path in python_files(SRC_ROOT / "orchestrator_cli" / "core" / "preflight"):
+        source = path.read_text(encoding="utf-8")
+        if "dict[str, Any]" not in source:
+            continue
+        if path != allowed_path:
+            offenders.append(f"{path.relative_to(REPO_ROOT)}")
+            continue
+        module = parse_python(path)
+        docstring = ast.get_docstring(module) or ""
+        if "arbitrary JSON-compatible config snapshots" not in docstring:
+            offenders.append(f"{path.relative_to(REPO_ROOT)}: missing rationale")
     assert offenders == []
 
 

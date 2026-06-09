@@ -105,4 +105,11 @@ validation.
    handle resizes responsively.
 
 ## Follow-ups
-None currently.
+- **Optional tmux packaging split**: Deferred. The current architecture
+  preserves graceful tmux degradation, `--no-live` behavior, and dashboard
+  auto-sizing, but does not move tmux support into an optional package.
+
+## Updates
+- **2026-06-07**: Reaffirmed that auto-sizing remains a UI-adapter concern.
+  Missing tmux, disabled live mode, or observer startup failure must not affect
+  workflow execution.

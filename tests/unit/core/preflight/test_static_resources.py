@@ -17,12 +17,12 @@ from orchestrator_cli.core.preflight import (
     compile_preflight_preview,
 )
 from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
 from orchestrator_cli.core.workflow_models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 def _config() -> Config:

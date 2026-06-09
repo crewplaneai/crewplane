@@ -13,6 +13,11 @@ from orchestrator_cli.core.preflight.models import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.core.preflight.signatures import signature_for_payload
+from orchestrator_cli.observability.events import (
+    format_execution_event_log_line,
+    invocation_event,
+    runtime_log_event,
+)
 from orchestrator_cli.runtime.execution.common import (
     CompiledRuntimeContext,
     ProviderCallDisplay,
@@ -294,6 +299,54 @@ def test_event_log_append_mismatch_is_fatal_only_under_strict_append_check(
 
     assert strict_drift.fatal_paths == (event_log_path,)
     assert non_strict_drift.fatal_paths == ()
+
+
+def test_event_log_append_allows_ambient_runtime_warning(
+    tmp_path: Path,
+) -> None:
+    event_log_path = tmp_path / "events.ndjson"
+    started = format_execution_event_log_line(
+        invocation_event(
+            "invocation_started",
+            "workflow",
+            "run-1",
+            node_id="review.node",
+            provider="exec",
+            role="executor",
+            task_id="exec_executor_0",
+        )
+    ).encode("utf-8")
+    finished = format_execution_event_log_line(
+        invocation_event(
+            "invocation_finished",
+            "workflow",
+            "run-1",
+            node_id="review.node",
+            provider="exec",
+            role="executor",
+            task_id="exec_executor_0",
+        )
+    ).encode("utf-8")
+    ambient_warning = format_execution_event_log_line(
+        runtime_log_event(
+            "workflow",
+            "run-1",
+            level="warning",
+            message="tmux command timed out; live dashboard may be stale",
+            operation="runtime_warning",
+        )
+    ).encode("utf-8")
+
+    drift = review_loop_drift_detection.detect_event_log_drift(
+        event_log_path,
+        before=b'{"event":"baseline"}\n',
+        after=b'{"event":"baseline"}\n' + started + ambient_warning + finished,
+        expected_append=started + finished,
+        strict_expected_append=True,
+    )
+
+    assert drift.fatal_paths == ()
+    assert drift.warning_paths == ()
 
 
 def test_node_local_unexpected_writes_are_warning_level(tmp_path: Path) -> None:

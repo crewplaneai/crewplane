@@ -10,7 +10,7 @@ from orchestrator_cli.core.workflow_models import WorkflowNode
 from .diagnostics import PreflightDiagnostic
 from .models import DependencyEdge, StaticResource, TokenCatalogEntry
 from .references import TemplateReference
-from .secrets import FingerprintKeyPolicy, SecretContext
+from .secrets import FingerprintKeyCache, FingerprintKeyPolicy, SecretContext
 from .source import PreflightWorkflowSource
 
 _SAFE_ARTIFACT_PATTERN = re.compile(r"[^a-z0-9]+")
@@ -47,7 +47,11 @@ class PreflightCompileOptions:
     runtime_variables: dict[str, str] = field(default_factory=dict)
     environment: dict[str, str] | None = None
     fingerprint_key_policy: FingerprintKeyPolicy = "read_only"
+    fingerprint_key_cache: FingerprintKeyCache = field(
+        default_factory=FingerprintKeyCache
+    )
     additional_validation_errors: tuple[str, ...] = ()
+    additional_validation_warnings: tuple[str, ...] = ()
 
     def with_source_metadata(
         self,
@@ -145,6 +149,7 @@ def append_diagnostic(
     message: str,
     node_id: str | None = None,
     path: str | None = None,
+    severity: Literal["error", "warning"] = "error",
 ) -> None:
     diagnostic = PreflightDiagnostic(
         code=code,
@@ -152,6 +157,7 @@ def append_diagnostic(
         node_id=node_id,
         path=path,
         message=message,
+        severity=severity,
     )
     key = diagnostic_key(diagnostic)
     if key in state.diagnostic_keys:

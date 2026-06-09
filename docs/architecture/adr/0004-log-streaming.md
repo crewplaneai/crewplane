@@ -107,6 +107,34 @@ cleanly when disabled, unavailable, or unable to start.
 This is intentionally not a general Python `logging` rollout. The feature is
 run-scoped, artifact-backed, local-first, and auditable on disk.
 
+### Observability Contract Update
+The 2026-06-07 boundary hardening keeps this ADR as the owning decision record
+for runtime events, persistent run logs, and live UI behavior. It adds these
+settled rules:
+
+- `ExecutionEvent` uses typed `context` and `payload` fields as the canonical
+  event representation. Runtime event construction goes through event builders,
+  reducers read structured fields, and legacy flat-field compatibility paths are
+  removed.
+- Event payloads are validated and persisted as structured JSON lines. Runtime
+  summaries, terminal rendering, and dashboard reducers consume the same typed
+  event records.
+- Runtime presentation dependencies flow through telemetry, output sinks,
+  warning sinks, UI adapters, and observer wiring rather than import-time
+  `Console()` singletons. Guardrail tests reject module-level `Console()`
+  assignments.
+- `ObservabilityHub` owns the thread-plus-asyncio fanout model. Its worker
+  queue is bounded, log queue backpressure is explicit, observer start/stop
+  behavior is isolated in lifecycle helpers, and shutdown timeouts are explicit.
+- Process streams use disk-backed capture files with bounded in-memory tails.
+  Run summaries retain bounded event and invocation-detail windows while
+  preserving full logs, events, rotated log files, and final artifacts on disk.
+- The tmux dashboard remains optional presentation. `--no-live`, missing tmux,
+  or live observer startup failure must not change workflow execution semantics.
+  Auto-fitting layouts, wave/timeline display modes, sticky cells, log
+  streaming, and the optional tmux packaging split remain UI-adapter concerns.
+  Splitting tmux into an optional package remains deferred.
+
 ### Public Contracts
 `ArtifactStorePort` exposes run-level log paths:
 
@@ -397,6 +425,8 @@ the default UI readable while preserving exact log inspection when users need it
 - Rendering stays inside the UI adapter boundary.
 - Core DAG semantics and workflow parsing are untouched.
 - Replaceable UI, invoker, and artifact boundaries remain respected.
+- Runtime event contracts remain typed and neutral; architecture ports do not
+  import concrete runtime or observability implementation types.
 - Future structured progress hints should be a versioned extension surface under
   the ports contract.
 
@@ -463,3 +493,8 @@ The implementation is covered by deterministic local tests for:
 
 ## Follow-Ups
 None currently.
+
+## Updates
+- **2026-06-07**: Folded in observability boundary hardening for typed events,
+  bounded event and stream retention, observer lifecycle isolation, injected
+  presentation dependencies, and tmux degradation policy.

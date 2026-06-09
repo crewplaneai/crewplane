@@ -39,7 +39,7 @@ def _build_workflow_load_result(
     workflow_data = dict(data)
     if path.suffix.lower() == ".md":
         workflow_data.pop("imports", None)
-    workflow = WorkflowPlan(**workflow_data)
+    workflow = WorkflowPlan.model_validate(workflow_data)
     composed_workflow = (
         cast(WorkflowPayload, data)
         if path.suffix.lower() == ".md"

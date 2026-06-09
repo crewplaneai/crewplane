@@ -2,13 +2,13 @@ from __future__ import annotations
 
 __all__ = ["MockInvokerAdapter"]
 
-from collections.abc import Mapping
-from typing import Any
-
-from orchestrator_cli.architecture.api_version import EXT_API_VERSION
+from orchestrator_cli.architecture.contracts import (
+    AgentInvoker,
+    CanonicalIntegrationConfig,
+    JsonObject,
+)
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
-from orchestrator_cli.runtime.agent.types import AgentInvoker
+from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 from .mock_invoker import MockAgentInvoker, parse_options
 
@@ -20,16 +20,14 @@ class MockInvokerAdapter:
         self,
         implementation: str,
         resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         parsed = parse_options(options)
         canonical_options = {
             "delay_seconds": parsed.delay_seconds,
-            "fail_when": [dict(selector.criteria) for selector in parsed.fail_when],
+            "fail_when": [selector.__dict__ for selector in parsed.fail_when],
             "observation_delay_seconds": parsed.observation_delay_seconds,
-            "output_dir": (
-                parsed.output_dir.as_posix() if parsed.output_dir is not None else None
-            ),
+            "output_dir": parsed.output_dir,
             "output_mode": parsed.output_mode,
             "seed": parsed.seed,
             "strict_file_mode": parsed.strict_file_mode,
@@ -37,16 +35,22 @@ class MockInvokerAdapter:
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=EXT_API_VERSION,
+            api_version=INTEGRATION_API_VERSION,
             options=canonical_options,
             option_scopes={key: "execution" for key in canonical_options},
         )
 
     def create_invoker(
         self,
-        config: Config,  # noqa: ARG002 - Required by callback or protocol signature.
-        options: Mapping[str, Any] | None = None,
+        config: Config,
+        options: JsonObject | None = None,
     ) -> AgentInvoker:
         """Build a mock invoker from the configured integration options."""
 
+        _validate_config(config)
         return MockAgentInvoker(options=parse_options(options))
+
+
+def _validate_config(config: Config) -> None:
+    if not isinstance(config, Config):
+        raise TypeError("config must be a Config instance")

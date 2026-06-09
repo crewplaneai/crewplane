@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
@@ -14,7 +16,6 @@ from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 
 
 class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
@@ -51,14 +52,19 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
                     max_retries=1,
                     retry_delay_seconds=0,
                     retry_on_exit_codes=[2],
                     retry_on_stderr_contains=["temporary error"],
                 )
                 output_file = tmp_path / "output.txt"
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
             finally:
                 if original_state is None:
                     os.environ.pop("STATE_FILE", None)
@@ -88,7 +94,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path)],
                 default_model="test-model",
                 model_arg=None,
-                prompt_arg=None,
             )
             output_file = tmp_path / "output.txt"
             log_file = tmp_path / "agent.log"
@@ -99,6 +104,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 "prompt",
                 output_file,
                 log_file=log_file,
+                plan_builder=build_cli_invocation_plan,
             )
 
             log_content = log_file.read_text(encoding="utf-8")
@@ -124,7 +130,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=[sys.executable, str(script_path)],
                 model_arg=None,
-                prompt_arg=None,
             )
             output_file = tmp_path / "output.txt"
             log_file = tmp_path / "agent.log"
@@ -135,6 +140,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 "prompt",
                 output_file,
                 log_file=log_file,
+                plan_builder=build_cli_invocation_plan,
             )
 
             log_content = log_file.read_text(encoding="utf-8")
@@ -160,7 +166,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path)],
                 default_model="test-model",
                 model_arg=None,
-                prompt_arg=None,
             )
             output_file = tmp_path / "output.txt"
             log_file = tmp_path / "agent.log"
@@ -171,6 +176,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 "prompt",
                 output_file,
                 log_file=log_file,
+                plan_builder=build_cli_invocation_plan,
             )
 
             log_content = log_file.read_text(encoding="utf-8")
@@ -208,7 +214,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test-model",
                     model_arg=None,
-                    prompt_arg=None,
                 )
                 output_file = tmp_path / "output.txt"
                 log_file = tmp_path / "agent.log"
@@ -226,6 +231,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                         "prompt",
                         output_file,
                         log_file=log_file,
+                        plan_builder=build_cli_invocation_plan,
                     )
 
                 await asyncio.sleep(0.6)
@@ -246,7 +252,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path)],
                 default_model="test",
                 model_arg=None,
-                prompt_arg=None,
                 quota_reached_on_contains=["usage limit reached"],
                 quota_reached_retry_delay_seconds=0,
             )
@@ -262,7 +267,13 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     "Quota retry guard exceeded after 5 hours",
                 ) as caught,
             ):
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
 
             self.assertIsInstance(caught.exception, InvocationFailureError)
             failure = caught.exception
@@ -304,13 +315,18 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
                     max_retries=1,
                     retry_delay_seconds=0,
                     retry_on_output_contains=["temporary error"],
                 )
                 output_file = tmp_path / "output.txt"
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
             finally:
                 if original_state is None:
                     os.environ.pop("STATE_FILE", None)
@@ -341,7 +357,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 cli_cmd=[sys.executable, str(script_path)],
                 default_model="test",
                 model_arg=None,
-                prompt_arg=None,
                 max_retries=0,
                 retry_delay_seconds=0,
                 retry_on_output_contains=["temporary error"],
@@ -351,7 +366,13 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(
                 RuntimeError, "matched configured retry conditions"
             ):
-                await invoke_agent(config, "test-model", "prompt", output_file)
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    plan_builder=build_cli_invocation_plan,
+                )
             self.assertFalse(output_file.exists())
 
     async def test_invoke_agent_with_runner_retries_and_succeeds(self) -> None:
@@ -391,6 +412,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
             self.assertEqual(attempts["count"], 2)
             self.assertEqual(output_file.read_text(encoding="utf-8"), "done")
@@ -425,7 +447,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["echo"],
                 default_model="test",
-                quota_parser="gemini",
+                provider_kind="gemini",
                 quota_reached_retry_delay_seconds=0,
             )
             await invoke_agent_with_runner(
@@ -436,6 +458,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
             self.assertEqual(attempts["count"], 1)
             self.assertEqual(output_file.read_text(encoding="utf-8"), "review complete")
@@ -472,7 +495,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["echo"],
                 default_model="test",
-                quota_parser="gemini",
+                provider_kind="gemini",
                 quota_reached_retry_delay_seconds=0,
             )
             sleep_mock = AsyncMock()
@@ -488,6 +511,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
             self.assertEqual(attempts["count"], 2)
             self.assertEqual(sleep_mock.await_count, 1)
@@ -523,8 +547,8 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["copilot"],
+                provider_kind="copilot",
                 default_model="test-model",
-                quota_parser="copilot",
                 quota_reached_on_contains=["rate limit", "quota", "too many requests"],
                 quota_reached_retry_delay_seconds=0,
             )
@@ -541,6 +565,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 1)
@@ -578,8 +603,8 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
             config = AgentConfig(
                 cli_cmd=["copilot"],
+                provider_kind="copilot",
                 default_model="test-model",
-                quota_parser="copilot",
                 quota_reached_on_contains=["rate limit", "quota", "too many requests"],
                 quota_reached_retry_delay_seconds=0,
                 quota_reset_sleep_floor_seconds=0,
@@ -597,6 +622,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)

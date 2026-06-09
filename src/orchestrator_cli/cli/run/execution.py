@@ -38,6 +38,7 @@ from .observability import (
 from .preflight import (
     compile_preview,
     materialize_preflight_success,
+    print_preflight_diagnostics,
     run_cli_availability_errors,
     write_preflight_diagnostics,
     write_preflight_failure_artifacts,
@@ -156,6 +157,7 @@ async def execute_workflow_run(
             which_fn,
         ),
     )
+    print_preflight_diagnostics(preview.diagnostics, context.console)
     if preview.has_errors() or preview.workflow_signature is None:
         write_preflight_failure_artifacts(
             context=context,

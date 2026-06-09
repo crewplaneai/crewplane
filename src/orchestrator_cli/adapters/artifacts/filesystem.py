@@ -1,26 +1,21 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from orchestrator_cli.architecture.api_version import EXT_API_VERSION
+from orchestrator_cli.architecture.contracts import (
+    CanonicalIntegrationConfig,
+    FilesystemArtifactOptions,
+    JsonObject,
+)
 from orchestrator_cli.architecture.ports.artifacts import (
     ArtifactStorePort,
 )
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.artifacts.manager import filesystem_manifest_exists
-from orchestrator_cli.core.preflight.runtime_config import CanonicalIntegrationConfig
+from orchestrator_cli.versions import INTEGRATION_API_VERSION
 
 
-@dataclass(frozen=True)
-class _FilesystemArtifactsOptions:
-    log_cli_output: bool
-    allowed_template_paths: list[str]
-
-
-def _parse_options(options: Mapping[str, Any] | None) -> _FilesystemArtifactsOptions:
+def _parse_options(options: JsonObject | None) -> FilesystemArtifactOptions:
     resolved_options = dict(options or {})
 
     log_cli_output_raw = resolved_options.pop("log_cli_output", True)
@@ -41,9 +36,12 @@ def _parse_options(options: Mapping[str, Any] | None) -> _FilesystemArtifactsOpt
             f"{', '.join(sorted(resolved_options))}"
         )
 
-    return _FilesystemArtifactsOptions(
+    return FilesystemArtifactOptions(
         log_cli_output=log_cli_output_raw,
-        allowed_template_paths=allowed_template_paths_raw,
+        allowed_template_paths=tuple(
+            Path(path).expanduser().resolve(strict=False).as_posix()
+            for path in allowed_template_paths_raw
+        ),
     )
 
 
@@ -54,20 +52,17 @@ class FilesystemArtifactsAdapter:
         self,
         implementation: str,
         resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         parsed_options = _parse_options(options)
         canonical_options = {
-            "allowed_template_paths": [
-                Path(path).expanduser().resolve(strict=False).as_posix()
-                for path in parsed_options.allowed_template_paths
-            ],
+            "allowed_template_paths": list(parsed_options.allowed_template_paths),
             "log_cli_output": parsed_options.log_cli_output,
         }
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
-            api_version=EXT_API_VERSION,
+            api_version=INTEGRATION_API_VERSION,
             options=canonical_options,
             option_scopes={
                 "allowed_template_paths": "artifact",
@@ -79,7 +74,7 @@ class FilesystemArtifactsAdapter:
         self,
         workflow_name: str,
         orchestrator_dir: Path,
-        options: Mapping[str, Any] | None,
+        options: JsonObject | None,
         workflow_signature: str,
     ) -> bool:
         """Return whether a successful manifest exists without creating a run."""
@@ -96,7 +91,7 @@ class FilesystemArtifactsAdapter:
         workflow_name: str,
         orchestrator_dir: Path,
         project_root: Path,
-        options: Mapping[str, Any] | None = None,
+        options: JsonObject | None = None,
     ) -> ArtifactStorePort:
         """Build an artifact store rooted under the orchestrator directory."""
 

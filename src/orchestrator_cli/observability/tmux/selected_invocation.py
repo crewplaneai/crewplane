@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
-from orchestrator_cli.observability.events import NodeRuntimeState
-from orchestrator_cli.observability.tmux.log_tail import read_log_snapshot
-from orchestrator_cli.observability.tmux.rendering import (
-    PreparedSelectedInvocation,
-    select_invocation,
+from orchestrator_cli.observability.events import (
+    InvocationRuntimeState,
+    NodeRuntimeState,
 )
+from orchestrator_cli.observability.tmux.log_tail import LogSnapshot, read_log_snapshot
+from orchestrator_cli.observability.tmux.selection import select_invocation
+
+
+@dataclass(frozen=True)
+class PreparedSelectedInvocation:
+    invocation: InvocationRuntimeState
+    log_snapshot: LogSnapshot | None = None
+    log_unavailable_message: str | None = None
 
 
 def prepare_selected_invocation(

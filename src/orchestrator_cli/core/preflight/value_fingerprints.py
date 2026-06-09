@@ -18,9 +18,10 @@ def load_fingerprint_key_if_needed(
         return
     if state.fingerprint_key is not None:
         return
-    result = FingerprintKeyProvider(options.orchestrator_dir).load_key(
-        options.fingerprint_key_policy
-    )
+    result = FingerprintKeyProvider(
+        options.orchestrator_dir,
+        cache=options.fingerprint_key_cache,
+    ).load_key(options.fingerprint_key_policy)
     extend_diagnostics(state, result.diagnostics)
     if result.diagnostics:
         return

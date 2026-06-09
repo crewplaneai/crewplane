@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from orchestrator_cli.versions import WORKFLOW_SCHEMA_VERSION
 
 from .prompt_segments import (
     PromptSegment,
@@ -20,7 +21,6 @@ from .token_budget import (
     TokenBudgetPayload,
     token_budget_payload_dict,
 )
-from .versions import WORKFLOW_SCHEMA_VERSION
 from .workflow_keywords import (
     ALLOWED_NODE_MODE_SET,
     ALLOWED_NODE_MODES,
@@ -30,8 +30,7 @@ from .workflow_keywords import (
     ProviderRole,
     validate_exact_keyword,
 )
-
-INPUT_SOURCE_PATTERN = re.compile(r"^\{\{\s*file:[^}]+\}\}$")
+from .workflow_syntax import INPUT_SOURCE_PATTERN
 
 
 class ProviderSpec(BaseModel):

@@ -14,7 +14,7 @@ from orchestrator_cli.core.config import (
     load_config,
 )
 from orchestrator_cli.core.token_budget import TokenBudgetOverride, resolve_token_budget
-from orchestrator_cli.core.versions import CONFIG_SCHEMA_VERSION
+from orchestrator_cli.versions import CONFIG_SCHEMA_VERSION
 
 
 class ConfigTests(unittest.TestCase):
@@ -36,7 +36,9 @@ class ConfigTests(unittest.TestCase):
         config = AgentConfig(cli_cmd=["echo"])
         self.assertIsNone(config.default_model)
 
-    def test_agent_config_defaults_invocation_timeout(self) -> None:
+    def test_agent_config_defaults_to_finite_attempt_timeouts(
+        self,
+    ) -> None:
         config = AgentConfig(cli_cmd=["echo"])
 
         self.assertEqual(
@@ -46,10 +48,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             config.invocation_idle_timeout_seconds,
             DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
-        )
-        self.assertEqual(
-            DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
-            DEFAULT_INVOCATION_TIMEOUT_SECONDS,
         )
 
     def test_agent_config_allows_disabled_invocation_timeout(self) -> None:
@@ -74,31 +72,51 @@ class ConfigTests(unittest.TestCase):
         cmd.append("mutated")
         self.assertEqual(config.cli_cmd, ["echo"])
 
-    def test_agent_config_accepts_quota_parser(self) -> None:
+    def test_agent_config_accepts_provider_kind(self) -> None:
         config = AgentConfig(
             cli_cmd=["echo"],
             default_model="test-model",
-            quota_parser="gemini",
+            provider_kind="gemini",
         )
-        self.assertEqual(config.quota_parser, "gemini")
+        self.assertEqual(config.provider_kind, "gemini")
 
-    def test_agent_config_normalizes_quota_parser_before_literal_validation(
+    def test_agent_config_normalizes_provider_kind_before_literal_validation(
         self,
     ) -> None:
         config = AgentConfig(
             cli_cmd=["echo"],
             default_model="test-model",
-            quota_parser=" Gemini ",
+            provider_kind=" Gemini ",
         )
-        self.assertEqual(config.quota_parser, "gemini")
+        self.assertEqual(config.provider_kind, "gemini")
 
-    def test_agent_config_rejects_invalid_quota_parser(self) -> None:
-        with self.assertRaisesRegex(ValueError, "quota_parser"):
+    def test_agent_config_rejects_invalid_provider_kind(self) -> None:
+        with self.assertRaisesRegex(ValueError, "provider_kind"):
             AgentConfig(
                 cli_cmd=["echo"],
                 default_model="test-model",
-                quota_parser="unsupported",
+                provider_kind="unsupported",
             )
+
+    def test_agent_config_defaults_prompt_transport_to_stdin(self) -> None:
+        config = AgentConfig(cli_cmd=["echo"])
+
+        self.assertEqual(config.prompt_transport, "stdin")
+        self.assertIsNone(config.prompt_transport_arg)
+
+    def test_agent_config_requires_argv_prompt_transport_arg(self) -> None:
+        with self.assertRaisesRegex(ValueError, "prompt_transport_arg"):
+            AgentConfig(cli_cmd=["echo"], prompt_transport="argv")
+
+    def test_agent_config_allows_explicit_argv_prompt_transport(self) -> None:
+        config = AgentConfig(
+            cli_cmd=["echo"],
+            prompt_transport="argv",
+            prompt_transport_arg="--prompt",
+        )
+
+        self.assertEqual(config.prompt_transport, "argv")
+        self.assertEqual(config.prompt_transport_arg, "--prompt")
 
     def test_agent_config_rejects_negative_quota_sleep_floor(self) -> None:
         with self.assertRaisesRegex(ValueError, "quota_reset_sleep_floor_seconds"):

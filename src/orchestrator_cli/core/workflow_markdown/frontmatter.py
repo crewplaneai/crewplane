@@ -64,4 +64,4 @@ def workflow_node_from_frontmatter(
         node_data["source"] = node.source or ""
     else:
         node_data["prompt_segments"] = prompt_segments
-    return WorkflowNode(**node_data)
+    return WorkflowNode.model_validate(node_data)

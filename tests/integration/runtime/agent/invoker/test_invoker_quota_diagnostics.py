@@ -5,12 +5,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.types import CommandResult, InvocationContext
 
 
 class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
@@ -46,8 +47,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    prompt_arg=None,
-                    quota_parser="copilot",
+                    provider_kind="copilot",
                     quota_reached_on_contains=[
                         "rate limit",
                         "quota",
@@ -69,6 +69,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                         "prompt",
                         output_file,
                         log_file=log_file,
+                        plan_builder=build_cli_invocation_plan,
                     )
             finally:
                 if original_state is None:
@@ -117,6 +118,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
             self.assertEqual(
                 output_file.read_text(encoding="utf-8"),
@@ -163,6 +165,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
             )
 
             self.assertEqual(len(diagnostics), 1)
@@ -224,6 +227,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)
@@ -266,8 +270,8 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
             )
             config = AgentConfig(
                 cli_cmd=["gemini"],
+                provider_kind="gemini",
                 default_model="test-model",
-                quota_parser="gemini",
                 quota_reached_retry_delay_seconds=0,
                 quota_reset_sleep_floor_seconds=5,
             )
@@ -284,6 +288,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
                 )
 
             self.assertEqual(attempts["count"], 2)

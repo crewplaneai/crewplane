@@ -11,10 +11,11 @@ from rich.console import Console
 
 import orchestrator_cli.cli.templates as templates
 import orchestrator_cli.cli.workflow_runner as workflow_runner
-from orchestrator_cli.core.config import load_config
+from orchestrator_cli.core.config import DEFAULT_INVOCATION_TIMEOUT_SECONDS, load_config
 from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
+from orchestrator_cli.core.yaml_loader import load_yaml_unique
 
 
 def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
@@ -139,14 +140,36 @@ class ExampleTemplateTests(unittest.TestCase):
             "auto",
         )
         self.assertIn("--approval-mode=yolo", config.agents["gemini"].extra_args)
-        self.assertEqual(config.agents["gemini"].model_arg, "--model")
-        self.assertIsNone(config.agents["gemini"].prompt_arg)
-        self.assertFalse(config.agents["gemini"].use_stdin)
+        self.assertEqual(config.agents["gemini"].prompt_transport, "stdin")
+        self.assertIsNone(config.agents["gemini"].prompt_transport_arg)
+        for agent_config in config.agents.values():
+            self.assertEqual(
+                agent_config.invocation_timeout_seconds,
+                DEFAULT_INVOCATION_TIMEOUT_SECONDS,
+            )
         self.assertIsNone(config.agents["claude"].pricing.input)
         self.assertIsNone(config.agents["codex"].pricing.output)
         assert config.settings is not None
         self.assertEqual(config.settings.token_budget.warn_threshold_chars, 50000)
         self.assertIsNone(config.settings.token_budget.fail_threshold_chars)
+
+    def test_built_in_provider_template_omits_generic_model_arg(self) -> None:
+        rendered = templates.render_template_content(
+            (self.template_dir / "config.yml").read_text(encoding="utf-8")
+        )
+        payload = load_yaml_unique(rendered)
+        assert isinstance(payload, dict)
+        agents = payload["agents"]
+        assert isinstance(agents, dict)
+
+        offenders = [
+            agent_name
+            for agent_name, agent_payload in agents.items()
+            if isinstance(agent_payload, dict)
+            and agent_payload.get("provider_kind") != "generic"
+            and "model_arg" in agent_payload
+        ]
+        self.assertEqual(offenders, [])
 
     def test_workflow_markdown_template_is_valid(self) -> None:
         workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
