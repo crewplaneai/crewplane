@@ -7,6 +7,10 @@ from orchestrator_cli.core.preflight.models import (
     PreflightExecutionPlan,
     ProviderRecord,
 )
+from orchestrator_cli.core.preflight.runtime_config import (
+    RuntimeAgentConfigSnapshot,
+    runtime_agent_execution_payload,
+)
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.core.preflight.signatures import signature_for_payload
 
@@ -33,7 +37,8 @@ class CompiledRuntimeContext:
         )
         if not isinstance(resolved_payload, dict):
             raise ValueError("Runtime agent config metadata must be a mapping.")
-        return AgentConfig(**resolved_payload)
+        runtime_agent = RuntimeAgentConfigSnapshot.model_validate(resolved_payload)
+        return AgentConfig(**runtime_agent_execution_payload(runtime_agent))
 
     def _validate_provider_record(self, provider: ProviderRecord) -> None:
         expected_agent_signature = agent_config_signature_from_plan(

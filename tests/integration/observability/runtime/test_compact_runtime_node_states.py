@@ -49,7 +49,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
         right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
         self.assertIn("Waiting for dependencies to complete...", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_wraps_pending_message_without_ellipsis(self) -> None:
         workflow = single_node_workflow()
@@ -81,7 +81,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
         )
         self.assertNotIn("Waiting for depe...", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_blocked_node_shows_causality(self) -> None:
         workflow = single_node_workflow()
@@ -118,7 +118,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
         right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
         self.assertIn("Blocked: unsatisfied dependencies: node.root", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_running_invocation_without_output_shows_liveness(
         self,
@@ -195,7 +195,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
             self.assertIn("updated 5.0s ago", right_text)
             self.assertIn("Awaiting first output from provider...", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_running_invocation_shows_quiet_state(self) -> None:
         workflow = single_node_workflow()
@@ -274,7 +274,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
             self.assertIn("Provider still running; waiting for new output.", right_text)
             self.assertIn("tail-line", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_wraps_quiet_state_metadata(self) -> None:
         workflow = single_node_workflow()
@@ -355,7 +355,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
             self.assertIn("ut.", right_text)
             self.assertNotIn("running; waiting...", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_running_invocation_shows_quiet_state_at_threshold(
         self,
@@ -434,4 +434,4 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
             self.assertIn("No new output for 2m00s.", right_text)
             self.assertIn("Provider still running; waiting for new output.", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))

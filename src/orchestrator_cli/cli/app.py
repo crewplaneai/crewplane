@@ -28,6 +28,7 @@ from .paths import (
     resolve_orchestrator_file,
     resolve_tasks_file,
 )
+from .run.resume import print_dry_run_resume_advisory
 from .templates import (
     CONFIG_TEMPLATE,
     DEFAULT_WORKFLOW_TEMPLATE,
@@ -285,6 +286,15 @@ def run(
                 context, no_live=True, console=console
             )
             print_dry_run_plan(preview, console)
+            print_dry_run_resume_advisory(
+                config=context.config,
+                source=context.source,
+                preview=preview,
+                project_root=context.paths.project_root,
+                orchestrator_dir=context.paths.orchestrator_dir,
+                force=force,
+                console=console,
+            )
             return
     except typer.Exit:
         raise

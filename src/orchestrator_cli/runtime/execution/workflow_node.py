@@ -15,6 +15,7 @@ from .common import (
 )
 from .input import execute_input_stage
 from .parallel import execute_parallel_stage
+from .resume import write_successful_node_state
 from .sequential import execute_sequential_stage
 
 
@@ -42,6 +43,7 @@ async def execute_node(
     invoker: AgentInvoker,
     runtime_context: CompiledRuntimeContext,
     telemetry: ExecutionTelemetry | None,
+    workflow_identity: str,
 ) -> None:
     emit_workflow_event(telemetry, "node_started", node_id=node.id)
     if should_print_console(telemetry):
@@ -75,5 +77,12 @@ async def execute_node(
         task_specs=build_stage_task_specs(node),
     )
     emit_stage_finalize_logs(telemetry, stage_finalize_result)
+    write_successful_node_state(
+        node,
+        runtime_context.plan,
+        output,
+        workflow_identity,
+        stage_finalize_result,
+    )
     if should_print_console(telemetry):
         execution_console(telemetry).print(f"[green]✓[/] Node '{node.id}' complete\n")

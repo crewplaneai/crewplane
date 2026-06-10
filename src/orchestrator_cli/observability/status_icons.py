@@ -5,6 +5,7 @@ STATUS_ICON_BY_STATE: dict[str, str] = {
     "running": "⏳",
     "succeeded": "✅",
     "failed": "❌",
+    "cancelled": "⏹",
     "blocked": "⛔",
 }
 

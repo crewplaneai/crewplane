@@ -22,6 +22,10 @@ Supports building modular, scalable orchestration graphs through imports, explic
 
 Built-in idempotency suppresses identical successful workflow runs. Preflight compiles a workflow-level signature from the composed workflow, referenced workflow files, dependency graph, static file content hashes, env/var/config fingerprints, provider execution settings, and execution/artifact-scoped integration options. A later run with the same `workflow_signature` is skipped unless `--force` is provided. Observer-only UI settings such as `--no-live` do not affect this signature.
 
+## Node-Boundary Resume
+
+When no valid same-context success exists, a failed or cancelled filesystem-backed run can resume from validated completed node boundaries. The resumed execution always gets a fresh run directory, hydrates only consolidated results and required findings artifacts, and reruns any unresolved or invalid frontier. `--force` bypasses both duplicate skip and resume hydration; `--dry-run` reports only advisory resume decisions.
+
 ## Robust Preflight Validation
 
 Employs strict, fail-fast validation before execution begins. It compiles provider records, prompt render plans, dependency graph, static resources, token catalog, and a redacted runtime config snapshot before provider invocation; failures write diagnostics and summaries, while successful preflight writes a reusable execution bundle.
@@ -32,7 +36,7 @@ Provides a dynamic terminal-based dashboard that automatically scales to the use
 
 ## Self-Healing State Management
 
-Maintains operational resilience by cleanly recovering from damaged or incomplete local cache states. Corrupt manifests are inherently treated as cache misses, safely prompting re-execution and state overwrite instead of catastrophic failure.
+Maintains operational resilience by cleanly recovering from damaged or incomplete local cache states. Corrupt run manifests or node-state records are treated as unusable history, safely prompting re-execution instead of skip or resume from untrusted state.
 
 ## Deterministic Simulation Engine
 

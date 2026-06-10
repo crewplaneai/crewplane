@@ -8,6 +8,7 @@ from orchestrator_cli.architecture.contracts import (
     CanonicalIntegrationConfig,
     JsonObject,
 )
+from orchestrator_cli.core.execution_state import NodeState, RunManifest, RunStatus
 from orchestrator_cli.core.preflight.models import PreflightExecutionPlan
 
 
@@ -35,6 +36,7 @@ class ArtifactStorePort(Protocol):
     """Runtime-facing artifact store used during a single workflow run."""
 
     run_id: str
+    run_key_name: str
     task_name: str
     stages_dir: Path
     results_dir: Path
@@ -110,15 +112,23 @@ class ArtifactStorePort(Protocol):
     def write_preflight_text(self, relative_path: str, content: str) -> Path:
         """Persist a text preflight artifact under the run preflight directory."""
 
-    def workflow_signature_exists(
-        self, workflow_name: str, workflow_signature: str
-    ) -> bool:
-        """Return whether a successful manifest exists for this workflow signature."""
+    def write_run_manifest(self, manifest: RunManifest) -> Path:
+        """Persist the current run manifest."""
 
-    def write_manifest(
-        self, workflow_signature: str, manifest_data: JsonObject
+    def update_run_manifest_status(
+        self,
+        status: RunStatus,
+        completed_at: str,
+        failure_message: str | None = None,
+        cancel_reason: str | None = None,
     ) -> Path:
-        """Persist a run manifest and return its path."""
+        """Persist a terminal status update for the current run manifest."""
+
+    def write_node_success_state(self, node_state: NodeState) -> Path:
+        """Persist a successful node-boundary state record."""
+
+    def write_resume_source(self, node_id: str, payload: JsonObject) -> Path:
+        """Persist the validated source metadata for a hydrated resumed node."""
 
 
 class ArtifactAdapterPort(Protocol):
@@ -131,15 +141,6 @@ class ArtifactAdapterPort(Protocol):
         options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         """Validate and canonicalize artifact options without side effects."""
-
-    def workflow_signature_exists(
-        self,
-        workflow_name: str,
-        orchestrator_dir: Path,
-        options: JsonObject | None,
-        workflow_signature: str,
-    ) -> bool:
-        """Return whether a successful manifest exists without allocating a run."""
 
     def create_store(
         self,

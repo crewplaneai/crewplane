@@ -107,7 +107,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                 "Provider still running; waiting for new output.", right_text
             )
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_left_pane_elapsed_uses_live_monotonic_time(self) -> None:
         workflow = single_node_workflow()
@@ -147,7 +147,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
         self.assertIn("⏳ 30.0s alpha", left_text)
         self.assertNotIn("⏳ 0.0s alpha", left_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_respects_fixed_log_tail_limit(self) -> None:
         workflow = single_node_workflow()
@@ -215,7 +215,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             self.assertIn("line-4", right_text)
             self.assertNotIn("line-2", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_wraps_long_fixed_tail_lines(self) -> None:
         workflow = single_node_workflow()
@@ -282,7 +282,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             self.assertIn("efghijklmnop", right_text)
             self.assertNotIn("...", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_wraps_header_status_and_invocation_header(self) -> None:
         workflow = WorkflowPlan(
@@ -377,7 +377,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             self.assertNotIn("Node Outp...", right_text)
             self.assertNotIn("Status: ...", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_auto_sizes_log_tail_from_pane_height(self) -> None:
         workflow = single_node_workflow()
@@ -448,7 +448,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             self.assertIn("line-6", right_text)
             self.assertNotIn("line-3", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_auto_tail_budgets_wrapped_visual_rows(self) -> None:
         workflow = single_node_workflow()
@@ -518,4 +518,4 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             self.assertIn("short-2", right_text)
             self.assertEqual(len(right_text.splitlines()), runtime.right_pane_height)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))

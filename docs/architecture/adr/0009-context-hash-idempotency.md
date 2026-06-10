@@ -7,7 +7,7 @@ Accepted
 2026-04-10
 
 ## Decision
-Utilize a coarse-grained, workflow-level signature strategy for run idempotency instead of implementing a fine-grained, dependency-aware drift detection engine. Each successful run writes a manifest (`{workflow_signature}.json`) under the run's `.orchestrator/execution-stages/<workflow>-<run_id>/manifests/` directory. Future runs that produce an identical successful workflow signature bypass the whole workflow unless `--force` is provided.
+Utilize a coarse-grained, workflow-level signature strategy for run idempotency instead of implementing a fine-grained, dependency-aware drift detection engine. Each execution attempt that proceeds writes current run state under `.orchestrator/execution-stages/<run_key>/manifests/run.json`, where `<run_key>` is the bounded generated run directory name. Future runs that produce an identical successful workflow signature bypass the whole workflow unless `--force` is provided.
 
 The signature is based on the compiled execution contract, not on presentation
 state. It includes composed workflow semantics, static file hashes, env/var and
@@ -38,3 +38,8 @@ The architecture review identified "Run Idempotency / State" as a feature requir
   scoped through preflight compile state rather than process-global key state,
   runtime config snapshots are classified by signature scope, and duplicate
   detection remains whole-workflow rather than node-level.
+- **2026-06-09**: Current-layout per-run `run.json` state under
+  `.orchestrator/execution-stages/<run_key>/manifests/` owns duplicate
+  detection. Success-first idempotency remains whole-workflow: any valid
+  same-context success skips before failed/cancelled node-boundary resume is
+  considered.

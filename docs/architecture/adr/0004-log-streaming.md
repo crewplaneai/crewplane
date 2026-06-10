@@ -67,7 +67,7 @@ structured progress stream.
 Run-level operational logs are stored under:
 
 ```text
-.orchestrator/execution-stages/<workflow>-<run_id>/logs/
+.orchestrator/execution-stages/<run_key>/logs/
 ```
 
 The run-level files are:
@@ -78,13 +78,13 @@ The run-level files are:
 Existing provider CLI logs remain under each node:
 
 ```text
-.orchestrator/execution-stages/<workflow>-<run_id>/<node>/logs/<provider>/<task>.log
+.orchestrator/execution-stages/<run_key>/<node>/logs/<provider>/<task>.log
 ```
 
 Run manifests remain metadata-only under:
 
 ```text
-.orchestrator/execution-stages/<workflow>-<run_id>/manifests/*.json
+.orchestrator/execution-stages/<run_key>/manifests/*.json
 ```
 
 `logs` and `manifests` are reserved run-root names and are invalid workflow node

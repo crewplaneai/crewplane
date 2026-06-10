@@ -181,7 +181,7 @@ class CompactRuntimeSetupTests(unittest.TestCase):
         self.assertIn("quit-requested.txt", inspect_quit_binding)
         self.assertIn("kill-session -t orchestrator-compact-run", inspect_quit_binding)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_overrides_mouse_bindings_in_all_live_tables(self) -> None:
         workflow = single_node_workflow()
@@ -219,7 +219,7 @@ class CompactRuntimeSetupTests(unittest.TestCase):
                 self.assertIn("select-pane -t =", binding)
                 self.assertNotIn("copy-mode -q -t", binding)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_uses_pane_option_titles_without_select_pane_titles(
         self,
@@ -275,4 +275,4 @@ class CompactRuntimeSetupTests(unittest.TestCase):
         ]
         self.assertFalse(title_select_pane_calls)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))

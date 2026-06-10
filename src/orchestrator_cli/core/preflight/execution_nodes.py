@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from orchestrator_cli.artifacts.naming import (
+    build_findings_filename,
+    build_result_filename,
+    build_stage_directory_name,
+    safe_artifact_name,
+)
 from orchestrator_cli.core.config import Config
 from orchestrator_cli.core.token_budget import resolve_token_budget
 from orchestrator_cli.core.workflow_models import ProviderSpec, WorkflowNode
@@ -9,7 +15,6 @@ from .compile_state import (
     PreflightCompileOptions,
     module_id,
     node_source_span,
-    safe_artifact_name,
     source_file,
     source_root,
 )
@@ -21,7 +26,7 @@ from .models import (
     ProviderRecord,
     RenderPlan,
 )
-from .runtime_config import RuntimeConfigSnapshot
+from .runtime_config import RuntimeConfigSnapshot, runtime_agent_snapshot_payload
 from .signatures import signature_for_payload
 
 
@@ -64,11 +69,11 @@ def compile_execution_node(
         provider_records=provider_records(node, config, runtime_snapshot),
         execution_policy=policy,
         artifact_contract=ArtifactContract(
-            stage_path=node.id,
-            output_path=f"{node.id}-result.md",
-            findings_path=f"{node.id}-findings.md" if node.findings else None,
-            log_path=f"{node.id}/logs",
-            result_path=f"{node.id}-result.md",
+            stage_path=build_stage_directory_name(node.id),
+            output_path=build_result_filename(node.id),
+            findings_path=build_findings_filename(node.id) if node.findings else None,
+            log_path=f"{build_stage_directory_name(node.id)}/logs",
+            result_path=build_result_filename(node.id),
         ),
         input_content_ref=state.input_content_refs.get(node.id),
     )
@@ -134,9 +139,14 @@ def agent_config_signature(
 ) -> str:
     """Sign the redacted, fingerprinted agent config captured by preflight."""
 
+    agent_snapshot = runtime_snapshot.agents.get(agent_config_key)
     return signature_for_payload(
         {
-            "agent_config": runtime_snapshot.agents.get(agent_config_key),
+            "agent_config": (
+                runtime_agent_snapshot_payload(agent_snapshot)
+                if agent_snapshot is not None
+                else None
+            ),
             "agent_config_key": agent_config_key,
         }
     )

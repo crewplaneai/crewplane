@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
@@ -12,8 +11,6 @@ from .models import DependencyEdge, StaticResource, TokenCatalogEntry
 from .references import TemplateReference
 from .secrets import FingerprintKeyCache, FingerprintKeyPolicy, SecretContext
 from .source import PreflightWorkflowSource
-
-_SAFE_ARTIFACT_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -58,7 +55,9 @@ class PreflightCompileOptions:
         source: PreflightWorkflowSource,
     ) -> PreflightCompileOptions:
         root_source_path = (
-            source.referenced_workflows[0].path.resolve(strict=False)
+            source.root_workflow_path.resolve(strict=False)
+            if source.root_workflow_path is not None
+            else source.referenced_workflows[0].path.resolve(strict=False)
             if source.referenced_workflows
             else None
         )
@@ -260,8 +259,3 @@ def allowed_template_paths(options: PreflightCompileOptions) -> tuple[Path, ...]
         path.expanduser().resolve(strict=False)
         for path in options.allowed_template_paths
     )
-
-
-def safe_artifact_name(name: str) -> str:
-    slug = _SAFE_ARTIFACT_PATTERN.sub("-", name.strip().lower()).strip("-")
-    return slug or "task"

@@ -41,7 +41,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                 refresh_per_second=0,
             )
         )
-        runtime_close.stop(result=RunResult(failed=False))
+        runtime_close.stop(result=RunResult(status="succeeded"))
         kill_calls = [
             args
             for args, _, _ in runtime_close.calls
@@ -57,13 +57,56 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                 refresh_per_second=0,
             )
         )
-        runtime_keep.stop(result=RunResult(failed=False))
+        runtime_keep.stop(result=RunResult(status="succeeded"))
         keep_kill_calls = [
             args
             for args, _, _ in runtime_keep.calls
             if args[:2] == ["kill-session", "-t"]
         ]
         self.assertEqual(len(keep_kill_calls), 0)
+
+    def test_compact_runtime_stop_renders_cancelled_status_for_preserved_session(
+        self,
+    ) -> None:
+        workflow = single_node_workflow()
+        run_id = "compact-cancelled-preserved"
+        runtime = SimulatedTmuxRuntime(auto_close_session=False)
+        runtime.start(
+            RunContext(
+                workflow_topology=topology_from_workflow(workflow),
+                run_id=run_id,
+                refresh_per_second=0,
+            )
+        )
+
+        state = build_initial_state(topology_from_workflow(workflow), run_id=run_id)
+        apply_event(
+            state,
+            make_execution_event(
+                event_type="workflow_started",
+                workflow_name=workflow.name,
+                run_id=run_id,
+            ),
+        )
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
+        runtime.write_runtime_file("quit_requested", "1")  # type: ignore[arg-type]
+
+        runtime.stop(RunResult(status="cancelled", cancel_reason="ui_stop_requested"))
+
+        status_left_writes = [
+            args
+            for args, _, _ in runtime.calls
+            if len(args) >= 5 and args[0] == "set-option" and args[3] == "status-left"
+        ]
+        self.assertTrue(status_left_writes)
+        self.assertIn("⏹ cancelled", status_left_writes[-1][4])
+        self.assertNotIn("running", status_left_writes[-1][4])
 
     def test_compact_runtime_requests_stop_when_quit_file_is_written(self) -> None:
         workflow = single_node_workflow()
@@ -82,7 +125,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
 
         self.assertTrue(runtime.stop_requested)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_status_bar_includes_blocked_count(self) -> None:
         workflow = single_node_workflow()
@@ -124,7 +167,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         self.assertTrue(status_right_writes)
         self.assertIn("⛔ 1", status_right_writes[-1][4])
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_stops_refresh_when_session_is_gone(self) -> None:
         workflow = single_node_workflow()
@@ -150,7 +193,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         runtime.refresh_once()
         self.assertTrue(runtime.stop_requested)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_has_session_timeout_does_not_request_stop(self) -> None:
         workflow = single_node_workflow()
@@ -177,7 +220,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
 
         self.assertFalse(runtime.stop_requested)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_display_message_timeout_uses_fallback_dimensions(
         self,
@@ -210,7 +253,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         self.assertTrue(right_text)
         self.assertFalse(runtime.stop_requested)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_tmux_command_times_out(self) -> None:
         warnings: list[str] = []
@@ -312,7 +355,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
             self.assertIn((table, "Down"), bindings)
             self.assertIn((table, "Enter"), bindings)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_inspect_mode_keeps_locked_log_when_selection_changes(
         self,
@@ -394,7 +437,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                 {(args[3], args[5]) for args in pane_title_writes},
             )
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_switches_copy_mode_bindings_with_mode_changes(
         self,
@@ -459,7 +502,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         self.assertIn(("copy-mode", "Up"), restored_bindings)
         self.assertIn(("copy-mode-vi", "WheelUpPane"), restored_bindings)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_enter_binding_noops_without_selected_log(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -526,4 +569,4 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                 )
                 self.assertFalse(fake_tmux_log.exists())
             finally:
-                runtime.stop(RunResult(failed=False))
+                runtime.stop(RunResult(status="succeeded"))

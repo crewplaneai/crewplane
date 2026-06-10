@@ -105,7 +105,7 @@ def test_refresh_loop_warns_and_continues_after_refresh_exception() -> None:
             sleep(0.05)
             deadline -= 1
     finally:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     assert refresh.call_count >= 2
     assert any(

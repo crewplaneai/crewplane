@@ -29,6 +29,8 @@ from orchestrator_cli.observability.persistent import render_run_summary_termina
 from orchestrator_cli.observability.types import WorkflowTopology
 
 UI_STOP_POLL_INTERVAL_SECONDS = 0.1
+EXTERNAL_CANCEL_REASON = "external_cancellation"
+UI_STOP_CANCEL_REASON = "ui_stop_requested"
 WORKFLOW_CANCELLED_MESSAGE = "Workflow cancelled by live dashboard quit request."
 WARNING_RECORD_TIMEOUT_SECONDS = 0.1
 SUMMARY_REFRESH_TIMEOUT_SECONDS = 1.0
@@ -55,6 +57,8 @@ class ExecuteWorkflowCallable(Protocol):
         event_sink: EventSink | None = None,
         run_id: str | None = None,
         suppress_progress_output: bool = False,
+        workflow_identity: str | None = None,
+        resumed_node_ids: tuple[str, ...] = (),
     ) -> None: ...
 
 
@@ -215,6 +219,8 @@ async def call_execute_workflow(
     event_sink: EventSink | None = None,
     run_id: str | None = None,
     suppress_progress_output: bool = False,
+    workflow_identity: str | None = None,
+    resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
     await execute_workflow_impl(
         plan,
@@ -224,6 +230,8 @@ async def call_execute_workflow(
         event_sink=event_sink,
         run_id=run_id,
         suppress_progress_output=suppress_progress_output,
+        workflow_identity=workflow_identity,
+        resumed_node_ids=resumed_node_ids,
     )
 
 
@@ -279,7 +287,7 @@ def refresh_failed_run_summary(
 
     def refresh_summary() -> None:
         record_failure_summary_event(persistent_logger, workflow, run_id, exc)
-        persistent_logger.refresh_summary(RunResult(failed=True))
+        persistent_logger.refresh_summary(RunResult(status="failed"))
 
     result = run_best_effort_thread(
         refresh_summary,
@@ -319,6 +327,15 @@ def print_end_of_run_summary(
     console.print(render_run_summary_terminal(summary), markup=False)
 
 
+def _set_cancelled_hub_terminal_result(
+    hub: ObservabilityHubInstance,
+    cancel_reason: str,
+) -> None:
+    setter = getattr(hub, "set_terminal_result", None)
+    if callable(setter):
+        setter(RunResult(status="cancelled", cancel_reason=cancel_reason))
+
+
 async def execute_workflow_with_observability(
     components: RuntimeComponents,
     workflow_topology: WorkflowTopology,
@@ -329,6 +346,8 @@ async def execute_workflow_with_observability(
     persistent_logger: PersistentRunLogger,
     warning_recorder: WorkflowWarningRecorder,
     observability_hub_cls: ObservabilityHubFactory | None,
+    workflow_identity: str | None = None,
+    resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
     observability_hub_factory = (
         ObservabilityHub if observability_hub_cls is None else observability_hub_cls
@@ -356,16 +375,25 @@ async def execute_workflow_with_observability(
         selected_suppress_progress_output = (
             False if ui_observers_unavailable else components.suppress_progress_output
         )
-        await await_workflow_or_stop_request(
-            call_execute_workflow(
-                execute_workflow_impl,
-                plan,
-                output,
-                invoker=components.base_invoker,
-                secret_context=secret_context,
-                event_sink=hub.emit,
-                run_id=output.run_id,
-                suppress_progress_output=selected_suppress_progress_output,
-            ),
-            hub,
-        )
+        try:
+            await await_workflow_or_stop_request(
+                call_execute_workflow(
+                    execute_workflow_impl,
+                    plan,
+                    output,
+                    invoker=components.base_invoker,
+                    secret_context=secret_context,
+                    event_sink=hub.emit,
+                    run_id=output.run_id,
+                    suppress_progress_output=selected_suppress_progress_output,
+                    workflow_identity=workflow_identity,
+                    resumed_node_ids=resumed_node_ids,
+                ),
+                hub,
+            )
+        except asyncio.CancelledError:
+            _set_cancelled_hub_terminal_result(hub, EXTERNAL_CANCEL_REASON)
+            raise
+        except WorkflowCancelledByUser:
+            _set_cancelled_hub_terminal_result(hub, UI_STOP_CANCEL_REASON)
+            raise

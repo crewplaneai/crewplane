@@ -5,7 +5,6 @@ import asyncio
 from orchestrator_cli.architecture.contracts import AgentInvoker
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.core.preflight.models import (
-    DependencyEdge,
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
@@ -25,73 +24,13 @@ from .common import (
     safe_error_message,
     should_print_console,
 )
+from .resume import emit_resumed_node_events
 from .workflow_node import (
     execute_node,
     mark_node_finished_activity,
     mark_node_running_activity,
 )
-
-
-def _validate_dependency_edge(edge: DependencyEdge, node_ids: set[str]) -> None:
-    if edge.source_node not in node_ids:
-        raise ValueError(
-            "Compiled dependency graph references unknown source node "
-            f"'{edge.source_node}'."
-        )
-    if edge.target_node not in node_ids:
-        raise ValueError(
-            "Compiled dependency graph references unknown target node "
-            f"'{edge.target_node}'."
-        )
-
-
-def _dependencies_by_node(plan: PreflightExecutionPlan) -> dict[str, set[str]]:
-    node_ids = {node.id for node in plan.nodes}
-    dependencies = {node.id: set() for node in plan.nodes}
-    for edge in plan.dependency_graph:
-        _validate_dependency_edge(edge, node_ids)
-        dependencies[edge.target_node].add(edge.source_node)
-    return dependencies
-
-
-def _build_dependents_map(dependencies: dict[str, set[str]]) -> dict[str, list[str]]:
-    dependents: dict[str, list[str]] = {node_id: [] for node_id in dependencies}
-    for node_id, node_dependencies in dependencies.items():
-        for needed in node_dependencies:
-            dependents[needed].append(node_id)
-    return dependents
-
-
-def _initialize_workflow_execution_state(
-    plan: PreflightExecutionPlan,
-) -> WorkflowExecutionState:
-    node_order = {node_id: index for index, node_id in enumerate(plan.execution_order)}
-    for node in plan.nodes:
-        node_order.setdefault(node.id, len(node_order))
-    dependencies_by_node = _dependencies_by_node(plan)
-    remaining_dependencies = {
-        node_id: len(dependencies)
-        for node_id, dependencies in dependencies_by_node.items()
-    }
-    ready = sorted(
-        (
-            node_id
-            for node_id, dependency_count in remaining_dependencies.items()
-            if dependency_count == 0
-        ),
-        key=node_order.__getitem__,
-    )
-    return WorkflowExecutionState(
-        ready=ready,
-        running={},
-        statuses={node.id: "pending" for node in plan.nodes},
-        node_errors={},
-        failed_dependencies={node.id: set() for node in plan.nodes},
-        remaining_dependencies=remaining_dependencies,
-        dependents=_build_dependents_map(dependencies_by_node),
-        dependencies_by_node=dependencies_by_node,
-        node_order=node_order,
-    )
+from .workflow_state import initialize_workflow_execution_state
 
 
 def _wrap_node_task(
@@ -101,6 +40,7 @@ def _wrap_node_task(
     runtime_context: CompiledRuntimeContext,
     telemetry: ExecutionTelemetry | None,
     node_semaphore: asyncio.Semaphore | None,
+    workflow_identity: str,
 ) -> asyncio.Task[None]:
     async def _run() -> None:
         if node_semaphore is None:
@@ -110,6 +50,7 @@ def _wrap_node_task(
                 invoker,
                 runtime_context,
                 telemetry,
+                workflow_identity,
             )
             return
         async with node_semaphore:
@@ -119,6 +60,7 @@ def _wrap_node_task(
                 invoker,
                 runtime_context,
                 telemetry,
+                workflow_identity,
             )
 
     return asyncio.create_task(_run())
@@ -133,6 +75,7 @@ def _schedule_ready_nodes(
     telemetry: ExecutionTelemetry | None,
     max_concurrent_nodes: int | None,
     node_semaphore: asyncio.Semaphore | None,
+    workflow_identity: str,
 ) -> None:
     while state.ready and (
         max_concurrent_nodes is None or len(state.running) < max_concurrent_nodes
@@ -149,6 +92,7 @@ def _schedule_ready_nodes(
             runtime_context,
             telemetry,
             node_semaphore,
+            workflow_identity,
         )
 
 
@@ -331,6 +275,8 @@ async def execute_workflow(
     event_sink: EventSink | None = None,
     run_id: str | None = None,
     suppress_progress_output: bool = False,
+    workflow_identity: str | None = None,
+    resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
     """Execute a compiled preflight plan with optional live observability hooks."""
 
@@ -359,8 +305,11 @@ async def execute_workflow(
     nodes_by_id: dict[str, PreflightExecutionNode] = {
         node.id: node for node in plan.nodes
     }
-    state = _initialize_workflow_execution_state(plan)
+    resolved_workflow_identity = workflow_identity or plan.workflow_name
+    state = initialize_workflow_execution_state(plan, resumed_node_ids)
     try:
+        for node_id in sorted(resumed_node_ids, key=state.node_order.__getitem__):
+            emit_resumed_node_events(node_id, telemetry)
         while state.ready or state.running:
             _schedule_ready_nodes(
                 nodes_by_id=nodes_by_id,
@@ -371,6 +320,7 @@ async def execute_workflow(
                 telemetry=telemetry,
                 max_concurrent_nodes=max_concurrent_nodes,
                 node_semaphore=node_semaphore,
+                workflow_identity=resolved_workflow_identity,
             )
             if not state.running:
                 break

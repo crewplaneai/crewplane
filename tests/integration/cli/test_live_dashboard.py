@@ -1,4 +1,6 @@
+import asyncio
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -7,6 +9,7 @@ from pathlib import Path
 import typer
 
 import orchestrator_cli.cli.app as cli
+from orchestrator_cli.observability.types import RunContext, RunResult
 from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
@@ -241,6 +244,114 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn(
                 "Workflow cancelled by live dashboard quit request.",
                 stream.getvalue(),
+            )
+
+    def test_run_finalizes_manifest_and_summary_when_dashboard_requests_cancel(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yml"
+            workflow_path = tmp_path / "workflow.task.md"
+            write_basic_config(config_path)
+            write_basic_workflow(workflow_path)
+
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            original_execute_workflow = cli.execute_workflow
+            original_hub = cli.ObservabilityHub
+            original_cwd = Path.cwd()
+            hub_instances = []
+
+            class StopRequestedHub:
+                def __init__(
+                    self,
+                    workflow_topology,
+                    run_id: str,
+                    observers,
+                    refresh_per_second: int = 4,
+                    warning_sink=None,
+                ) -> None:
+                    self._context = RunContext(
+                        workflow_topology=workflow_topology,
+                        run_id=run_id,
+                        refresh_per_second=refresh_per_second,
+                    )
+                    self._observers = list(observers)
+                    self._terminal_result: RunResult | None = None
+                    self.stop_requested = False
+                    self.active_observer_count = 0
+                    self.warning_sink = warning_sink
+                    hub_instances.append(self)
+
+                def __enter__(self):
+                    for observer in self._observers:
+                        observer.start(self._context)
+                    self.active_observer_count = len(self._observers)
+                    return self
+
+                def __exit__(self, exc_type, _exc, _traceback) -> None:
+                    result = self._terminal_result or RunResult(
+                        status="failed" if exc_type is not None else "succeeded"
+                    )
+                    for observer in reversed(self._observers):
+                        observer.stop(result)
+
+                def emit(self, event) -> None:
+                    del event
+                    return None
+
+                def set_terminal_result(self, result: RunResult) -> None:
+                    self._terminal_result = result
+
+                def request_stop(self) -> None:
+                    self.stop_requested = True
+
+            async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
+                hub_instances[-1].request_stop()
+                await asyncio.sleep(60)
+
+            cli.Console = ConsoleFactory(file=stream, force_terminal=False)
+            cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
+            cli.ObservabilityHub = StopRequestedHub  # type: ignore[assignment]
+            os.chdir(tmp_path)
+            try:
+                with self.assertRaises(typer.Exit) as raised:
+                    cli.run(
+                        tasks_file=workflow_path,
+                        config_file=config_path,
+                        dry_run=False,
+                        force=False,
+                    )
+            finally:
+                os.chdir(original_cwd)
+                cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
+                cli.ObservabilityHub = original_hub  # type: ignore[assignment]
+                cli.Console = original_console_cls
+
+            self.assertEqual(raised.exception.exit_code, 130)
+            run_dirs = sorted(
+                path
+                for path in (tmp_path / ".orchestrator" / "execution-stages").iterdir()
+                if path.is_dir()
+            )
+            self.assertEqual(len(run_dirs), 1)
+            manifest = json.loads(
+                (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["status"], "cancelled")
+            self.assertEqual(manifest["cancel_reason"], "ui_stop_requested")
+            self.assertIsNotNone(manifest["completed_at"])
+
+            summary_text = (run_dirs[0] / "logs" / "summary.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("- Status: cancelled", summary_text)
+            console_text = stream.getvalue()
+            self.assertIn("Status: cancelled", console_text)
+            self.assertIn(
+                "Workflow cancelled by live dashboard quit request.",
+                console_text,
             )
 
     def test_tty_live_dashboard_uses_configured_tmux_auto_close(self) -> None:

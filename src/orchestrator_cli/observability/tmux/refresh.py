@@ -38,7 +38,7 @@ from orchestrator_cli.observability.tmux.selection import (
 )
 from orchestrator_cli.observability.tmux.session_lifecycle import StartedCompactSession
 from orchestrator_cli.observability.tmux.window import TmuxCompactWindowOptions
-from orchestrator_cli.observability.types import DashboardSnapshot
+from orchestrator_cli.observability.types import DashboardSnapshot, RunResult
 
 
 class StopReason(StrEnum):
@@ -100,6 +100,37 @@ class TmuxCompactRefreshController:
         if snapshot is None:
             return RefreshOutcome()
 
+        self._render_snapshot(session, snapshot)
+        return RefreshOutcome()
+
+    def render_terminal_result(
+        self,
+        session: StartedCompactSession,
+        result: RunResult,
+    ) -> RefreshOutcome:
+        if not session.tmux.session_exists(session.targets.session_name):
+            return RefreshOutcome(stop_reason=StopReason.SESSION_GONE)
+
+        with self._snapshot_lock:
+            snapshot = copy.deepcopy(self._latest_snapshot)
+            if snapshot is None:
+                return RefreshOutcome()
+            snapshot.state.workflow_status = result.status
+            if snapshot.state.workflow_finished_at is None:
+                snapshot.state.workflow_finished_at = self._monotonic_now()
+            self._latest_snapshot = copy.deepcopy(snapshot)
+
+        self._render_snapshot(session, snapshot)
+        return RefreshOutcome()
+
+    def _render_snapshot(
+        self,
+        session: StartedCompactSession,
+        snapshot: DashboardSnapshot,
+    ) -> None:
+        runtime_files = session.runtime_files
+        targets = session.targets
+        tmux = session.tmux
         state = snapshot.state
         selection = resolve_dashboard_selection(
             snapshot,
@@ -166,7 +197,6 @@ class TmuxCompactRefreshController:
                 inspect_node_id=inspect_node_id,
             ),
         )
-        return RefreshOutcome()
 
     def render_selected_output(
         self,

@@ -318,7 +318,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     )
                 )
 
-            persistent_logger.stop(RunResult(failed=False))
+            persistent_logger.stop(RunResult(status="succeeded"))
 
             self.assertEqual(
                 persistent_logger.dropped_event_count,
@@ -381,7 +381,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     )
                 )
 
-            persistent_logger.stop(RunResult(failed=False))
+            persistent_logger.stop(RunResult(status="succeeded"))
 
             summary = persistent_logger.last_summary
             self.assertIsNotNone(summary)
@@ -447,7 +447,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
 
             persistent_logger.start(context)
-            persistent_logger.stop(RunResult(failed=False))
+            persistent_logger.stop(RunResult(status="succeeded"))
 
             with self.assertRaisesRegex(RuntimeError, "cannot be restarted"):
                 persistent_logger.start(context)
@@ -464,7 +464,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     refresh_per_second=0,
                 )
             )
-            persistent_logger.stop(RunResult(failed=True))
+            persistent_logger.stop(RunResult(status="failed"))
 
             persistent_logger.record_event(
                 make_execution_event(
@@ -481,7 +481,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 run_id=output.run_id,
                 message="failure after stop",
             )
-            summary = persistent_logger.refresh_summary(RunResult(failed=True))
+            summary = persistent_logger.refresh_summary(RunResult(status="failed"))
 
             self.assertIsNotNone(summary)
             assert summary is not None

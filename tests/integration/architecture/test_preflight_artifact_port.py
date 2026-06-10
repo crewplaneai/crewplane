@@ -81,19 +81,6 @@ def test_filesystem_artifact_store_writes_preflight_success_contract(
     assert (preflight_dir / "execution-bundle.json").exists()
 
 
-def test_successful_manifest_lookup_is_side_effect_free(tmp_path: Path) -> None:
-    adapter = FilesystemArtifactsAdapter()
-
-    assert not adapter.workflow_signature_exists(
-        workflow_name="Workflow",
-        orchestrator_dir=tmp_path,
-        options={"allowed_template_paths": [], "log_cli_output": True},
-        workflow_signature="0" * 64,
-    )
-    assert not (tmp_path / "execution-stages").exists()
-    assert not (tmp_path / "execution-results").exists()
-
-
 def test_artifact_store_contract_has_no_runtime_template_variable_handoff() -> None:
     assert (
         "template_variables"

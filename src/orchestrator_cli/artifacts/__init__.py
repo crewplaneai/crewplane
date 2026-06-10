@@ -1,4 +1,4 @@
-from .directory_manager import safe_artifact_name
+from .naming import safe_artifact_name
 
 __all__ = [
     "FindingsExtractionError",

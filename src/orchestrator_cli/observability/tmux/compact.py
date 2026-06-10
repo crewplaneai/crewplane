@@ -130,12 +130,21 @@ class TmuxCompactRuntime:
         if not isinstance(result, RunResult):
             raise TypeError("result must be a RunResult instance")
         self._stop_refresh_thread()
+        self._render_terminal_result(result)
         try:
             self._lifecycle.stop_session(self._session, self._auto_close_session)
         finally:
             if self._auto_close_session:
                 self._session = None
                 self._control_state.reset()
+
+    def _render_terminal_result(self, result: RunResult) -> None:
+        if self._session is None or self._auto_close_session:
+            return
+        try:
+            self._refresh.render_terminal_result(self._session, result)
+        except Exception as exc:  # pragma: no cover - defensive shutdown path
+            self._warn(f"tmux compact final render failed: {exc}")
 
     def _reset_for_start(self) -> None:
         self._stop_requested.clear()

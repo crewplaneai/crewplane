@@ -57,9 +57,7 @@ class CliRunContextHashingTests(unittest.TestCase):
                 manifests_dir = stage_runs[0] / "manifests"
                 # A failure manifest is now written so the run is recorded.
                 self.assertTrue(manifests_dir.exists())
-                manifest_files = [
-                    f for f in manifests_dir.glob("*.json") if f.name != "latest.json"
-                ]
+                manifest_files = list(manifests_dir.glob("*.json"))
                 self.assertEqual(len(manifest_files), 1)
                 import json as _json
 

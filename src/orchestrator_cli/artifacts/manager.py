@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 from pathlib import Path
 
 from orchestrator_cli.architecture.contracts import JsonObject
@@ -9,72 +7,14 @@ from orchestrator_cli.architecture.ports.artifacts import (
     StageFinalizeResult,
     StageTaskSpec,
 )
+from orchestrator_cli.core.execution_state import NodeState, RunManifest, RunStatus
 from orchestrator_cli.core.preflight.models import PreflightExecutionPlan
 from orchestrator_cli.core.preflight.serialization import pretty_sorted_json
 
+from .atomic import atomic_write_bytes, atomic_write_json, atomic_write_text
 from .directory_manager import DirectoryManager, safe_artifact_name
+from .naming import build_node_state_filename
 from .result_writer import ResultWriter
-
-WORKFLOW_SIGNATURE_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-
-
-def _validate_workflow_signature(workflow_signature: str) -> str:
-    if not WORKFLOW_SIGNATURE_PATTERN.fullmatch(workflow_signature):
-        raise ValueError(
-            "Manifest workflow_signature must be 64 lowercase hexadecimal characters."
-        )
-    return workflow_signature
-
-
-def _iter_run_dirs(base_dir: Path, task_name: str) -> list[Path]:
-    stages_root = base_dir / "execution-stages"
-    safe_task_name = safe_artifact_name(task_name)
-    if not stages_root.exists():
-        return []
-    run_dir_name_pattern = re.compile(
-        rf"^{re.escape(safe_task_name)}-\d{{8}}-\d{{6}}(?:-\d{{6}})?$"
-    )
-    return sorted(
-        (
-            candidate
-            for candidate in stages_root.iterdir()
-            if run_dir_name_pattern.fullmatch(candidate.name)
-            if candidate.is_dir()
-        ),
-        key=lambda candidate: candidate.name,
-        reverse=True,
-    )
-
-
-def _read_manifest_result(manifest_file: Path) -> bool | None:
-    try:
-        data = json.loads(manifest_file.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    status = data.get("status")
-    if status == "succeeded":
-        return True
-    if status == "failed":
-        return False
-    return None
-
-
-def filesystem_manifest_exists(
-    base_dir: Path,
-    task_name: str,
-    workflow_signature: str,
-) -> bool:
-    safe_workflow_signature = _validate_workflow_signature(workflow_signature)
-    for run_dir in _iter_run_dirs(base_dir.resolve(), task_name):
-        manifest_file = run_dir / "manifests" / f"{safe_workflow_signature}.json"
-        if not manifest_file.exists():
-            continue
-        manifest_result = _read_manifest_result(manifest_file)
-        if manifest_result is True:
-            return True
-    return False
 
 
 class OutputManager:
@@ -123,6 +63,10 @@ class OutputManager:
     @property
     def run_id(self) -> str:
         return self._directories.run_id
+
+    @property
+    def run_key_name(self) -> str:
+        return self._directories.run_key_name
 
     @property
     def stages_dir(self) -> Path:
@@ -190,17 +134,14 @@ class OutputManager:
         preflight_dir = self.stages_dir / "preflight"
         preflight_dir.mkdir(parents=True, exist_ok=True)
         plan_path = preflight_dir / "execution-plan.json"
-        plan_path.write_text(pretty_sorted_json(plan) + "\n", encoding="utf-8")
-        return plan_path
+        return atomic_write_text(plan_path, pretty_sorted_json(plan) + "\n")
 
     def write_preflight_static_file(self, content_ref: str, payload: bytes) -> Path:
         normalized_ref = Path(content_ref)
         if normalized_ref.is_absolute() or ".." in normalized_ref.parts:
             raise ValueError(f"Invalid preflight content reference '{content_ref}'.")
         path = self.stages_dir / "preflight" / normalized_ref
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
-        return path
+        return atomic_write_bytes(path, payload)
 
     def write_preflight_manifest(self, payload: object) -> Path:
         return self.write_preflight_json("manifest.json", payload)
@@ -222,13 +163,11 @@ class OutputManager:
 
     def write_preflight_json(self, relative_path: str, payload: object) -> Path:
         path = self._preflight_artifact_path(relative_path)
-        path.write_text(pretty_sorted_json(payload) + "\n", encoding="utf-8")
-        return path
+        return atomic_write_text(path, pretty_sorted_json(payload) + "\n")
 
     def write_preflight_text(self, relative_path: str, content: str) -> Path:
         path = self._preflight_artifact_path(relative_path)
-        path.write_text(content, encoding="utf-8")
-        return path
+        return atomic_write_text(path, content)
 
     def _preflight_artifact_path(self, relative_path: str) -> Path:
         normalized_ref = Path(relative_path)
@@ -238,40 +177,46 @@ class OutputManager:
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 
-    def workflow_signature_exists(
-        self,
-        workflow_name: str,
-        workflow_signature: str,
-    ) -> bool:
-        return filesystem_manifest_exists(
-            base_dir=self.base_dir,
-            task_name=workflow_name,
-            workflow_signature=workflow_signature,
-        )
-
-    def write_manifest(
-        self,
-        workflow_signature: str,
-        manifest_data: JsonObject,
-    ) -> Path:
-        safe_workflow_signature = _validate_workflow_signature(workflow_signature)
+    def write_run_manifest(self, manifest: RunManifest) -> Path:
         manifests_dir = self._directories.ensure_manifests_dir()
-        manifest_file = manifests_dir / f"{safe_workflow_signature}.json"
-        manifest_file.write_text(
-            json.dumps(manifest_data, indent=2, sort_keys=True),
-            encoding="utf-8",
+        return atomic_write_json(
+            manifests_dir / "run.json",
+            manifest.model_dump(mode="json", exclude_none=True),
         )
 
-        latest_file = manifests_dir / "latest.json"
-        latest_file.write_text(
-            json.dumps(
-                {
-                    "workflow_signature": safe_workflow_signature,
-                    "manifest_file": manifest_file.name,
-                },
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
+    def update_run_manifest_status(
+        self,
+        status: RunStatus,
+        completed_at: str,
+        failure_message: str | None = None,
+        cancel_reason: str | None = None,
+    ) -> Path:
+        manifest_path = self._run_manifest_path()
+        current = RunManifest.model_validate_json(
+            manifest_path.read_text(encoding="utf-8")
         )
-        return manifest_file
+        updated = current.model_copy(
+            update={
+                "status": status,
+                "completed_at": completed_at,
+                "failure_message": failure_message,
+                "cancel_reason": cancel_reason,
+            }
+        )
+        validated = RunManifest.model_validate(updated.model_dump(mode="json"))
+        return self.write_run_manifest(validated)
+
+    def write_node_success_state(self, node_state: NodeState) -> Path:
+        node_state_dir = self._directories.ensure_manifests_dir() / "nodes"
+        node_state_path = node_state_dir / build_node_state_filename(node_state.node_id)
+        return atomic_write_json(
+            node_state_path,
+            node_state.model_dump(mode="json", exclude_none=True),
+        )
+
+    def write_resume_source(self, node_id: str, payload: JsonObject) -> Path:
+        stage_dir = self.create_stage_dir(node_id)
+        return atomic_write_json(stage_dir / "resume-source.json", payload)
+
+    def _run_manifest_path(self) -> Path:
+        return self._directories.ensure_manifests_dir() / "run.json"

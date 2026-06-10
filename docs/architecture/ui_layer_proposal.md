@@ -265,7 +265,7 @@ execution_stages/<workflow>_<run_id>/logs/<provider>/<stage>_<task_id>_round<r>_
 ### Proposed
 
 ```
-execution-stages/<workflow>-<run_id>/<node_id>/logs/<provider>/<task_id>-round<r>.log
+execution-stages/<run_key>/<node_id>/logs/<provider>/<task_id>-round<r>.log
 ```
 
 ### Example

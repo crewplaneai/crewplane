@@ -1,32 +1,20 @@
 from __future__ import annotations
 
-import re
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
 from orchestrator_cli.core.workflow_keywords import RESERVED_RUN_ROOT_NAMES
 
-_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
-_STAGE_PATTERN = re.compile(r"[^a-z0-9._-]+")
-
-
-def _slugify_name(name: str, pattern: re.Pattern[str]) -> str:
-    stripped = name.strip().lower()
-    if not stripped:
-        return "task"
-    if stripped in {".", ".."}:
-        return "task"
-    slug = pattern.sub("-", stripped).strip("-")
-    return slug or "task"
-
-
-def safe_artifact_name(name: str) -> str:
-    return _slugify_name(name, _SLUG_PATTERN)
-
-
-def safe_stage_name(name: str) -> str:
-    return _slugify_name(name, _STAGE_PATTERN)
+from .naming import (
+    build_findings_filename,
+    build_log_filename,
+    build_result_filename,
+    build_run_key_name,
+    build_stage_directory_name,
+    safe_artifact_name,
+    safe_stage_name,
+)
 
 
 def _is_dot_segment(name: str) -> bool:
@@ -43,9 +31,15 @@ class DirectoryManager:
         log_cli_output: bool,
     ) -> None:
         self.base_dir = base_dir.resolve()
+        self._workflow_name = task_name
         self.task_name = safe_artifact_name(task_name)
         self.log_cli_output = log_cli_output
-        self.run_id, self.stages_dir, self.results_dir = self._create_run_dirs()
+        (
+            self.run_id,
+            self.run_key_name,
+            self.stages_dir,
+            self.results_dir,
+        ) = self._create_run_dirs()
 
         self.logs_dir = self.stages_dir / "logs"
         self.manifests_dir = self.stages_dir / "manifests"
@@ -54,7 +48,7 @@ class DirectoryManager:
 
     def create_stage_dir(self, stage_name: str) -> Path:
         self._validate_stage_name(stage_name)
-        stage_dir = self.stages_dir / safe_stage_name(stage_name)
+        stage_dir = self.stages_dir / build_stage_directory_name(stage_name)
         stage_dir.mkdir(parents=True, exist_ok=True)
         self._current_stage_dirs[stage_name] = stage_dir
         return stage_dir
@@ -64,13 +58,11 @@ class DirectoryManager:
 
     def get_stage_result_file(self, stage_name: str) -> Path:
         self._validate_stage_name(stage_name)
-        safe_stage = safe_stage_name(stage_name)
-        return self.results_dir / f"{safe_stage}-result.md"
+        return self.results_dir / build_result_filename(stage_name)
 
     def get_stage_findings_file(self, stage_name: str) -> Path:
         self._validate_stage_name(stage_name)
-        safe_stage = safe_stage_name(stage_name)
-        return self.results_dir / f"{safe_stage}-findings.md"
+        return self.results_dir / build_findings_filename(stage_name)
 
     def ensure_run_logs_dir(self) -> Path:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
@@ -97,10 +89,7 @@ class DirectoryManager:
         provider_dir = stage_dir / "logs" / safe_artifact_name(provider)
         provider_dir.mkdir(parents=True, exist_ok=True)
 
-        audit_part = f"-audit{audit_round_num}" if audit_round_num is not None else ""
-        round_part = f"-round{round_num}" if round_num is not None else ""
-        safe_task = safe_artifact_name(task_id)
-        filename = f"{safe_task}{audit_part}{round_part}.log"
+        filename = build_log_filename(task_id, audit_round_num, round_num)
         return provider_dir / filename
 
     def ensure_manifests_dir(self) -> Path:
@@ -118,19 +107,23 @@ class DirectoryManager:
                 f"Stage name '{stage_name}' is reserved. Names cannot be: {reserved}."
             )
 
-    def _create_run_dirs(self) -> tuple[str, Path, Path]:
+    def _create_run_dirs(self) -> tuple[str, str, Path, Path]:
         now = datetime.now()
         run_id = now.strftime("%Y%m%d-%H%M%S")
         run_paths = self._run_paths(run_id)
         try:
             self._create_stage_run_dir(*run_paths)
-            return run_id, *run_paths
+            return run_id, build_run_key_name(self._workflow_name, run_id), *run_paths
         except FileExistsError:
             retry_run_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
             retry_paths = self._run_paths(retry_run_id)
             try:
                 self._create_stage_run_dir(*retry_paths)
-                return retry_run_id, *retry_paths
+                return (
+                    retry_run_id,
+                    build_run_key_name(self._workflow_name, retry_run_id),
+                    *retry_paths,
+                )
             except FileExistsError as exc:
                 raise RuntimeError(
                     "Unable to allocate unique run directories after retrying with "
@@ -138,7 +131,7 @@ class DirectoryManager:
                 ) from exc
 
     def _run_paths(self, run_id: str) -> tuple[Path, Path]:
-        run_key = f"{self.task_name}-{run_id}"
+        run_key = build_run_key_name(self._workflow_name, run_id)
         stages_dir = self.base_dir / "execution-stages" / run_key
         results_dir = self.base_dir / "execution-results" / run_key
         return stages_dir, results_dir

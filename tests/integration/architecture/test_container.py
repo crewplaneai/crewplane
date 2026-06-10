@@ -72,7 +72,7 @@ def _compiled_test_plan(
     plan = PreflightExecutionPlan.from_preview(
         preview=preview,
         run_id=output.run_id,
-        run_key_name=output.stages_dir.name,
+        run_key_name=output.run_key_name,
         context_root=output.stages_dir.as_posix(),
         manifest_root=(output.stages_dir / "manifests").as_posix(),
         created_at=datetime(2026, 6, 3),

@@ -30,6 +30,7 @@ class PreflightWorkflowSource:
     node_source_paths: dict[str, Path]
     node_source_spans: dict[str, dict[str, int]]
     prompt_segment_spans: dict[str, list[dict[str, int]]]
+    root_workflow_path: Path | None = None
 
     @classmethod
     def from_workflow(
@@ -41,6 +42,7 @@ class PreflightWorkflowSource:
         node_source_paths: dict[str, Path] | None = None,
         node_source_spans: dict[str, dict[str, int]] | None = None,
         prompt_segment_spans: dict[str, list[dict[str, int]]] | None = None,
+        root_workflow_path: Path | None = None,
     ) -> PreflightWorkflowSource:
         return cls(
             workflow=workflow,
@@ -53,6 +55,7 @@ class PreflightWorkflowSource:
                 node_id: list(spans)
                 for node_id, spans in (prompt_segment_spans or {}).items()
             },
+            root_workflow_path=root_workflow_path,
         )
 
     def referenced_workflow_payloads(self) -> list[dict[str, str]]:
@@ -149,4 +152,5 @@ def _build_workflow_source(
         node_source_paths=node_source_paths,
         node_source_spans=node_source_spans,
         prompt_segment_spans=prompt_segment_spans,
+        root_workflow_path=tasks_file.resolve(strict=False),
     )

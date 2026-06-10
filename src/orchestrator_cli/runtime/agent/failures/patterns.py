@@ -31,6 +31,7 @@ JSON_FAILURE_MARKERS: tuple[str, ...] = (
     '"type": "turn.failed"',
     '"type":"error"',
     '"type": "error"',
+    '"is_error"',
     '"error"',
     '"message"',
 )
@@ -147,6 +148,8 @@ OUTPUT_LIMIT_PATTERNS: tuple[str, ...] = (
 )
 TRANSPORT_ERROR_PATTERNS: tuple[str, ...] = (
     "stream disconnected",
+    "socket connection was closed unexpectedly",
+    "connection was closed unexpectedly",
     "connection reset",
     "connection aborted",
     "network error",

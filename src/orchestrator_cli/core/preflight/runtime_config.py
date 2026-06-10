@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import cast
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -89,6 +90,35 @@ def runtime_agent_snapshots(
     }
 
 
+def _model_payload_preserving_explicit_nulls(config: BaseModel) -> JsonObject:
+    payload = cast(JsonObject, config.model_dump(mode="json", exclude_none=True))
+    for field_name in sorted(config.model_fields_set):
+        if getattr(config, field_name) is None:
+            payload[field_name] = None
+    return payload
+
+
+def agent_config_input_payload(config: BaseModel) -> JsonObject:
+    return _model_payload_preserving_explicit_nulls(config)
+
+
+def runtime_agent_snapshot_payload(config: RuntimeAgentConfigSnapshot) -> JsonObject:
+    return _model_payload_preserving_explicit_nulls(config)
+
+
+def runtime_agent_execution_payload(config: RuntimeAgentConfigSnapshot) -> JsonObject:
+    return cast(JsonObject, config.model_dump(mode="json", exclude_none=False))
+
+
+def runtime_agent_snapshot_payloads(
+    agents: Mapping[str, RuntimeAgentConfigSnapshot],
+) -> dict[str, JsonObject]:
+    return {
+        name: runtime_agent_snapshot_payload(agent)
+        for name, agent in sorted(agents.items())
+    }
+
+
 class RuntimeConfigSnapshot(BaseModel):
     """Core-owned runtime config input to preflight compilation."""
 
@@ -137,7 +167,7 @@ class RuntimeConfigSnapshot(BaseModel):
             token_budget=settings.token_budget,
         )
         raw_agents = {
-            name: agent.model_dump(mode="json", exclude_none=True)
+            name: agent_config_input_payload(agent)
             for name, agent in sorted(config.agents.items())
         }
         agents, sensitive_agent_paths = redact_sensitive_config(raw_agents)
@@ -170,7 +200,7 @@ class RuntimeConfigSnapshot(BaseModel):
             None,
         )
         payload = {
-            "agents": agent_snapshots,
+            "agents": runtime_agent_snapshot_payloads(agent_snapshots),
             "artifacts": redacted_artifacts.scoped_payload({"artifact", "execution"}),
             "execution": execution,
             "invoker": redacted_invoker.scoped_payload({"execution", "artifact"}),
@@ -195,6 +225,7 @@ class RuntimeConfigSnapshot(BaseModel):
 
     def redacted_payload(self) -> JsonObject:
         payload = cast(JsonObject, self.model_dump(mode="json", exclude_none=True))
+        payload["agents"] = runtime_agent_snapshot_payloads(self.agents)
         payload["invoker"] = self.invoker.redacted_payload()
         payload["artifacts"] = self.artifacts.redacted_payload()
         payload["ui"] = self.ui.redacted_payload()
@@ -259,14 +290,14 @@ class RuntimeConfigSnapshot(BaseModel):
 
     def _effective_signature(
         self,
-        agents: object,
+        agents: Mapping[str, RuntimeAgentConfigSnapshot],
         invoker: CanonicalIntegrationConfig | None = None,
         artifacts: CanonicalIntegrationConfig | None = None,
     ) -> str:
         signature_invoker = invoker or self.invoker
         signature_artifacts = artifacts or self.artifacts
         payload = {
-            "agents": agents,
+            "agents": runtime_agent_snapshot_payloads(agents),
             "artifacts": signature_artifacts.scoped_payload({"artifact", "execution"}),
             "execution": self.execution,
             "invoker": signature_invoker.scoped_payload({"execution", "artifact"}),

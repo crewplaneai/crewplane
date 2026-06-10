@@ -98,7 +98,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
             self.assertNotIn("Running for", right_text)
             self.assertIn("Awaiting first output from provider...", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_preserves_missing_log_file_messages(self) -> None:
         workflow = single_node_workflow()
@@ -168,7 +168,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
             )  # type: ignore[union-attr]
             self.assertIn(f"Log file not found: {missing_path}", missing_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_wraps_missing_log_message(self) -> None:
         workflow = single_node_workflow()
@@ -218,7 +218,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
             self.assertIn(str(missing_path)[0:20], missing_text)
             self.assertNotIn("Log file not foun...", missing_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_read_log_tail_preserves_yaml_like_small_log_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

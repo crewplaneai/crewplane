@@ -57,6 +57,11 @@ class MockAgentInvoker(AgentInvoker):
                 "model": model,
                 "prompt": prompt,
                 "output_file": str(output_file),
+                "node_id": (
+                    invocation_context.node_id
+                    if invocation_context is not None
+                    else None
+                ),
                 "task_id": (
                     invocation_context.task_id
                     if invocation_context is not None
@@ -147,7 +152,7 @@ def _compile_test_plan(
     plan = PreflightExecutionPlan.from_preview(
         preview=preview,
         run_id=output.run_id,
-        run_key_name=output.stages_dir.name,
+        run_key_name=output.run_key_name,
         context_root=output.stages_dir.as_posix(),
         manifest_root=(output.stages_dir / "manifests").as_posix(),
         created_at=datetime(2026, 6, 3),
@@ -168,6 +173,8 @@ async def execute_workflow(
     event_sink=None,  # type: ignore[no-untyped-def]
     run_id: str | None = None,
     suppress_progress_output: bool = False,
+    workflow_identity: str | None = None,
+    resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
     plan, runtime_context = _compile_test_plan(config, workflow, output)
     await _execute_compiled_workflow(
@@ -178,6 +185,8 @@ async def execute_workflow(
         event_sink=event_sink,
         run_id=run_id,
         suppress_progress_output=suppress_progress_output,
+        workflow_identity=workflow_identity,
+        resumed_node_ids=resumed_node_ids,
     )
 
 

@@ -61,6 +61,22 @@ def test_observer_only_no_live_is_excluded_from_runtime_signature() -> None:
     assert second.redacted_payload()["observer"]["no_live"] is True
 
 
+def test_agent_snapshot_persists_disabled_invocation_timeout() -> None:
+    config = _config()
+    config.agents["alpha"].invocation_timeout_seconds = None
+
+    snapshot = build_runtime_config_snapshot(
+        config=config,
+        console=Console(file=None),
+        no_live=True,
+    ).snapshot
+
+    assert (
+        snapshot.redacted_payload()["agents"]["alpha"]["invocation_timeout_seconds"]
+        is None
+    )
+
+
 def test_snapshot_invalid_options_fail_before_artifact_allocation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

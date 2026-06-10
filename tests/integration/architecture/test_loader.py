@@ -20,10 +20,7 @@ class UIWithoutCapabilities:
         return None
 
 
-class ArtifactsWithoutSignatureLookup:
-    def canonicalize_options(self):  # type: ignore[no-untyped-def]
-        return None
-
+class ArtifactsWithoutCanonicalOptions:
     def create_store(self):  # type: ignore[no-untyped-def]
         return None
 
@@ -91,11 +88,11 @@ class LoaderTests(unittest.TestCase):
                 f"{__name__}:UIWithoutCapabilities",
             )
 
-    def test_artifact_contract_requires_signature_lookup(self) -> None:
-        with self.assertRaisesRegex(AdapterContractError, "workflow_signature_exists"):
+    def test_artifact_contract_requires_canonical_options(self) -> None:
+        with self.assertRaisesRegex(AdapterContractError, "canonicalize_options"):
             load_adapter_class(
                 "artifacts",
-                f"{__name__}:ArtifactsWithoutSignatureLookup",
+                f"{__name__}:ArtifactsWithoutCanonicalOptions",
             )
 
     def test_invalid_colon_path_raises_clear_error(self) -> None:

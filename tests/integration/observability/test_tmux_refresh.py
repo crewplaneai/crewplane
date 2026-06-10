@@ -28,7 +28,7 @@ def test_refresh_tick_is_noop_until_first_snapshot() -> None:
         assert outcome.stop_reason is None
         assert not any(args[0] == "display-message" for args, _, _ in runtime.calls)
     finally:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
 
 def test_quit_file_detection_requests_stop() -> None:
@@ -41,7 +41,7 @@ def test_quit_file_detection_requests_stop() -> None:
         assert outcome.stop_reason == StopReason.QUIT_REQUESTED
         assert runtime.stop_requested
     finally:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
 
 def test_missing_session_detection_requests_stop() -> None:
@@ -54,7 +54,7 @@ def test_missing_session_detection_requests_stop() -> None:
         assert outcome.stop_reason == StopReason.SESSION_GONE
         assert runtime.stop_requested
     finally:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
 
 def test_pane_dimension_timeout_uses_fallback_without_stopping() -> None:
@@ -81,7 +81,7 @@ def test_pane_dimension_timeout_uses_fallback_without_stopping() -> None:
             encoding="utf-8"
         )
     finally:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
 
 def started_runtime(run_id: str) -> SimulatedTmuxRuntime:

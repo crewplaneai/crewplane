@@ -206,12 +206,12 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             plan = PreflightExecutionPlan(
                 run_id=output.run_id,
-                run_key_name=output.stages_dir.name,
+                run_key_name=output.run_key_name,
                 context_root=output.stages_dir.as_posix(),
                 manifest_root=(output.stages_dir / "manifests").as_posix(),
                 created_at="2026-06-03T00:00:00",
                 workflow_name="compiled.graph",
-                workflow_signature="workflow-signature",
+                workflow_signature="0" * 64,
                 execution_order=["first", "second"],
                 nodes=[first, second],
                 render_plans=[
@@ -264,7 +264,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                     "invoker": {**invoker_payload, "option_scopes": {}},
                     "schema_version": SCHEMA_VERSION,
                 },
-                effective_runtime_config_signature="runtime-signature",
+                effective_runtime_config_signature="1" * 64,
                 fingerprint_metadata={"payload_version": "1"},
             )
             invoker = GraphDependencyOrderInvoker()

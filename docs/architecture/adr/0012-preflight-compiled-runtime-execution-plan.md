@@ -166,10 +166,10 @@ continue to use the persisted key only when sensitive fingerprints are needed.
 Successful runs use the current hyphenated artifact layout:
 
 ```text
-.orchestrator/execution-stages/<workflow-or-fallback>-<run_id>/preflight/
-.orchestrator/execution-stages/<workflow-or-fallback>-<run_id>/preflight/static-files/
-.orchestrator/execution-stages/<workflow-or-fallback>-<run_id>/manifests/
-.orchestrator/execution-results/<workflow-or-fallback>-<run_id>/
+.orchestrator/execution-stages/<run_key>/preflight/
+.orchestrator/execution-stages/<run_key>/preflight/static-files/
+.orchestrator/execution-stages/<run_key>/manifests/
+.orchestrator/execution-results/<run_key>/
 ```
 
 `orchestrator run` compiles a no-run preview before duplicate lookup. If compilation succeeds and a duplicate successful manifest exists, the command skips without run allocation. If execution proceeds, one run context is allocated and shared by preflight artifact writing, runtime execution, manifests, logs, and results.

@@ -61,7 +61,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
         self.assertNotIn("⏸  parallel", left_text)
         self.assertNotIn("⏸  sequential", left_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_default_selection_uses_topological_order(self) -> None:
         workflow = WorkflowPlan(
@@ -105,7 +105,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
         right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
         self.assertIn("Node Output: root", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_skips_redundant_status_option_updates(self) -> None:
         workflow = single_node_workflow()
@@ -134,7 +134,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
         second_count = status_option_write_count(runtime.calls)
         self.assertEqual(first_count, second_count)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_skips_redundant_pane_title_updates(self) -> None:
         workflow = single_node_workflow()
@@ -169,7 +169,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
         )
         self.assertEqual(first_count, second_count)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_prefers_running_invocation_for_output_tail(self) -> None:
         workflow = single_node_workflow()
@@ -249,7 +249,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             self.assertIn("round2-line", right_text)
             self.assertNotIn("round1-line", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_prefers_newest_running_invocation_in_same_round(
         self,
@@ -328,4 +328,4 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             self.assertIn("alpha-line", right_text)
             self.assertNotIn("beta-line", right_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))

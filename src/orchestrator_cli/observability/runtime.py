@@ -83,6 +83,7 @@ class ObservabilityHub:
         self._delivery_worker: Thread | None = None
         self._pending_deliveries: deque[_SnapshotDelivery] = deque()
         self._delivery_queue_warning_emitted = False
+        self._terminal_result: RunResult | None = None
 
     def __enter__(self) -> ObservabilityHub:
         active: list[Observer] = []
@@ -118,7 +119,9 @@ class ObservabilityHub:
             self._ticker.join(timeout=1.0)
             self._ticker = None
         self._stop_delivery_worker()
-        result = RunResult(failed=exc is not None)
+        result = self._terminal_result or RunResult(
+            status="failed" if exc is not None else "succeeded"
+        )
         with self._lock:
             started_observers = list(reversed(self._started_observers))
             self._active_observers = []
@@ -156,6 +159,10 @@ class ObservabilityHub:
         return any(
             bool(getattr(observer, "stop_requested", False)) for observer in observers
         )
+
+    def set_terminal_result(self, result: RunResult) -> None:
+        with self._lock:
+            self._terminal_result = result
 
     def _tick_loop(self) -> None:
         while not self._stop_event.wait(self._refresh_interval):

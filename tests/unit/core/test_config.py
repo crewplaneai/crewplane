@@ -36,19 +36,25 @@ class ConfigTests(unittest.TestCase):
         config = AgentConfig(cli_cmd=["echo"])
         self.assertIsNone(config.default_model)
 
-    def test_agent_config_defaults_to_finite_attempt_timeouts(
+    def test_agent_config_defaults_to_finite_wall_clock_timeout(
         self,
     ) -> None:
         config = AgentConfig(cli_cmd=["echo"])
 
-        self.assertEqual(
-            config.invocation_timeout_seconds,
-            DEFAULT_INVOCATION_TIMEOUT_SECONDS,
-        )
+        self.assertEqual(DEFAULT_INVOCATION_TIMEOUT_SECONDS, 1800.0)
+        self.assertEqual(config.invocation_timeout_seconds, 1800.0)
         self.assertEqual(
             config.invocation_idle_timeout_seconds,
             DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
         )
+
+    def test_agent_config_allows_finite_invocation_timeout(self) -> None:
+        config = AgentConfig(
+            cli_cmd=["echo"],
+            invocation_timeout_seconds=7200,
+        )
+
+        self.assertEqual(config.invocation_timeout_seconds, 7200)
 
     def test_agent_config_allows_disabled_invocation_timeout(self) -> None:
         config = AgentConfig(

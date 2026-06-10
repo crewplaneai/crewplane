@@ -146,7 +146,7 @@ def render_compact_dashboard(run_result) -> tuple[str, str]:  # type: ignore[no-
         right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")
         return left_text, right_text
     finally:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
 
 def test_auto_closing_stop_clears_runtime_file_state() -> None:
@@ -161,7 +161,7 @@ def test_auto_closing_stop_clears_runtime_file_state() -> None:
         )
     )
 
-    runtime.stop(RunResult(failed=False))
+    runtime.stop(RunResult(status="succeeded"))
 
     assert runtime.lifecycle.session is None
     assert runtime.lifecycle.last_session is not None
@@ -182,7 +182,7 @@ def test_non_auto_closing_stop_preserves_runtime_file_state() -> None:
     left_content_path = runtime.runtime_files.left_content
 
     try:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
         preserved_path = runtime.runtime_files.left_content
         assert preserved_path == left_content_path
@@ -379,7 +379,8 @@ COMPACT_RUNTIME_CASES = [
             "expected_right_fragments": (
                 "Node Output: auth.plan",
                 "alpha/executor/alpha_executor_0 (round1) [succeeded]",
-                '"output_mode": "echo"',
+                '"source"',
+                '"echo"',
             ),
         },
         id="compact-namespaced-dashboard",
@@ -481,7 +482,7 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
             for args in pane_title_writes
         )
     finally:
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
 
 def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(

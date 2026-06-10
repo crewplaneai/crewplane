@@ -118,12 +118,19 @@ def _should_parse_json(line: str) -> bool:
         return False
     if len(line) <= MAX_JSON_LINE_CHARS:
         return any(marker in line for marker in JSON_FAILURE_MARKERS)
-    return '"type":"turn.failed"' in line or '"type": "turn.failed"' in line
+    return (
+        '"type":"turn.failed"' in line
+        or '"type": "turn.failed"' in line
+        or '"is_error":true' in line
+        or '"is_error": true' in line
+    )
 
 
 def _payload_reports_error(payload: dict[str, object]) -> bool:
     event_type = str(payload.get("type") or "").casefold()
     if any(marker in event_type for marker in PROVIDER_ERROR_EVENT_TYPES):
+        return True
+    if payload.get("is_error") is True:
         return True
     error = payload.get("error")
     return error is not None and error != "" and error is not False
@@ -137,7 +144,7 @@ def _json_failure_message(payload: dict[str, object]) -> str | None:
             return message
     if isinstance(error, str) and error.strip():
         return error.strip()
-    return _first_string(payload, ("message", "detail", "status"))
+    return _first_string(payload, ("message", "detail", "result", "status"))
 
 
 def _first_string(payload: dict[object, object], keys: tuple[str, ...]) -> str | None:
@@ -159,6 +166,8 @@ def _json_event_priority(payload: dict[str, object]) -> int:
     error = payload.get("error")
     if error is not None and error != "" and error is not False:
         return 350
+    if payload.get("is_error") is True:
+        return 300
     return 100
 
 

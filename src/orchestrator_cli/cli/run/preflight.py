@@ -233,7 +233,7 @@ def write_preflight_diagnostics(
     metadata_payload = {
         "created_at": created_at,
         "run_id": output.run_id,
-        "run_key_name": output.stages_dir.name,
+        "run_key_name": output.run_key_name,
         "workflow_name": workflow_name,
     }
     output.write_preflight_metadata(metadata_payload)
@@ -247,7 +247,7 @@ def write_preflight_diagnostics(
         "# Preflight Summary",
         "",
         f"- Workflow: {workflow_name or 'unknown'}",
-        f"- Run Key: {output.stages_dir.name}",
+        f"- Run Key: {output.run_key_name}",
         f"- Diagnostics: {len(diagnostics)}",
     ]
     for diagnostic in diagnostics:
@@ -277,7 +277,7 @@ def write_preflight_success_artifacts(
     metadata_payload = {
         "created_at": created_at,
         "run_id": output.run_id,
-        "run_key_name": output.stages_dir.name,
+        "run_key_name": output.run_key_name,
         "workflow_name": plan.workflow_name,
         "workflow_signature": plan.workflow_signature,
     }
@@ -360,7 +360,7 @@ def materialize_preflight_success(
     preview: PreflightCompilationPreview,
 ) -> PreflightExecutionPlan:
     created_at = datetime.now()
-    run_key_name = output.stages_dir.name
+    run_key_name = output.run_key_name
     plan = PreflightExecutionPlan.from_preview(
         preview=preview,
         run_id=output.run_id,

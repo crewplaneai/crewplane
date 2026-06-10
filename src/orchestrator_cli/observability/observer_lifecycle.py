@@ -95,7 +95,7 @@ def stop_timed_out_observer(observer: Observer, warn: WarningSink) -> None:
     if not bool(getattr(observer, "cleanup_after_start_timeout", True)):
         return
     try:
-        observer.stop(RunResult(failed=True))
+        observer.stop(RunResult(status="failed"))
     except Exception as exc:
         warn(
             "observability observer cleanup after start timeout failed: "

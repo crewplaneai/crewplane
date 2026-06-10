@@ -869,16 +869,19 @@ When the `continue` policy lets a run finish after unresolved review consensus, 
 
 ## Output
 
-Results are saved to:
-- `.orchestrator/execution-stages/<workflow>-<run_id>/<node>/` – Individual outputs per round for a run
-- `.orchestrator/execution-stages/<workflow>-<run_id>/preflight/` – Compiled execution plan, preflight manifest/metadata/summary, render plans, dependency graph, runtime config snapshot, token catalog, diagnostics when preflight fails, and bundled static files
-- `.orchestrator/execution-stages/<workflow>-<run_id>/logs/events.ndjson` – Run-level orchestrator event log
-- `.orchestrator/execution-stages/<workflow>-<run_id>/logs/summary.md` – Run-level orchestrator summary for postmortems
-- `.orchestrator/execution-stages/<workflow>-<run_id>/<node>/logs/<provider>/` – Per-invocation logs for each node
-- `.orchestrator/execution-stages/<workflow>-<run_id>/manifests/` – Run manifest files (`<workflow_signature>.json`, `latest.json`)
-- `.orchestrator/execution-results/<workflow>-<run_id>/` – Consolidated per-node results for a run, created only after node results are finalized
+Results are saved under a bounded run key shaped like
+`<workflow>--<hash>-<run_id>`:
+- `.orchestrator/execution-stages/<run_key>/<node>/` – Individual outputs per round for a run
+- `.orchestrator/execution-stages/<run_key>/preflight/` – Compiled execution plan, preflight manifest/metadata/summary, render plans, dependency graph, runtime config snapshot, token catalog, diagnostics when preflight fails, and bundled static files
+- `.orchestrator/execution-stages/<run_key>/logs/events.ndjson` – Run-level orchestrator event log
+- `.orchestrator/execution-stages/<run_key>/logs/summary.md` – Run-level orchestrator summary for postmortems
+- `.orchestrator/execution-stages/<run_key>/<node>/logs/<provider>/` – Per-invocation logs for each node
+- `.orchestrator/execution-stages/<run_key>/manifests/run.json` – Current-layout run state, including terminal status, workflow identity, workflow signature, preflight references, and resume metadata
+- `.orchestrator/execution-stages/<run_key>/manifests/nodes/` – Successful node-boundary state records used for same-context resume
+- `.orchestrator/locks/` – Same-context filesystem locks used by real runs before skip, resume, or full execution decisions
+- `.orchestrator/execution-results/<run_key>/` – Consolidated per-node results for a run, created only after node results are finalized
 
-Run manifests use a single workflow-level signature built from the composed workflow, referenced workflow files, provider execution settings, execution/artifact-scoped integration options, dependency graph, static file content hashes, and env/var/config fingerprints. They store the scoped `effective_runtime_config_signature` and redacted runtime config snapshot, not raw config YAML. Observer-only live UI settings such as `--no-live` are excluded. When an identical successful workflow signature already exists, `orchestrator run` suppresses the whole run unless `--force` is provided; it does not perform per-node incremental caching.
+Run manifests use a single workflow-level signature built from the composed workflow, referenced workflow files, provider execution settings, execution/artifact-scoped integration options, dependency graph, static file content hashes, and env/var/config fingerprints. They store the scoped `effective_runtime_config_signature` and redacted runtime config snapshot, not raw config YAML. Observer-only live UI settings such as `--no-live` are excluded. When any valid same-context successful `run.json` already exists, `orchestrator run` suppresses the whole run unless `--force` is provided. If no same-context success exists, a failed or cancelled current-layout run may resume only validated completed node boundaries by hydrating consolidated result artifacts and required findings artifacts into a fresh run directory. Raw stage outputs, logs, review scratch state, and review-loop status are not reused. `--force` bypasses skip and resume hydration while still using the same-context lock. `--dry-run` is advisory and side-effect-free.
 
 Preflight secrets are fingerprinted with `.orchestrator/preflight/fingerprint.key`. `orchestrator init` creates this key, and `orchestrator run` creates it only when sensitive env/var/config values need stable fingerprints. `orchestrator validate` and `orchestrator run --dry-run` do not write artifacts or create the key; if the key is absent, they use a process-local ephemeral key for that preview. Sensitive values are persisted only as handles and fingerprints, so persisted plans cannot replay sensitive prompt text without the same-process secret context. Provider-emitted output is outside orchestrator redaction and may contain anything the provider prints.
 

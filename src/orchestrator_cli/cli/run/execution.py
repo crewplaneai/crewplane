@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
@@ -8,7 +9,9 @@ from rich.console import Console
 
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.architecture.ports.runtime import RuntimeComponents
+from orchestrator_cli.artifacts.locks import acquire_same_context_lock
 from orchestrator_cli.artifacts.manager import OutputManager
+from orchestrator_cli.artifacts.resume_hydration import hydrate_resume_frontier
 from orchestrator_cli.bootstrap import build_runtime_config_snapshot
 from orchestrator_cli.core.config import Config
 from orchestrator_cli.core.preflight import PreflightExecutionPlan
@@ -21,15 +24,18 @@ from orchestrator_cli.runtime.execution import execute_workflow
 from .components import allocate_run_output, build_components_for_run
 from .context import WorkflowRunContext, resolve_orchestrator_dir, resolve_project_root
 from .manifest import (
-    PreparedExecutionManifest,
-    build_manifest_from_plan,
-    finalize_manifest,
+    build_run_manifest_from_plan,
+    finalize_run_manifest,
     print_duplicate_context_message,
-    workflow_signature_already_exists,
+    print_resume_context_message,
+    write_running_run_manifest,
 )
 from .observability import (
+    EXTERNAL_CANCEL_REASON,
+    UI_STOP_CANCEL_REASON,
     ExecuteWorkflowCallable,
     ObservabilityHubFactory,
+    WorkflowCancelledByUser,
     WorkflowWarningRecorder,
     execute_workflow_with_observability,
     print_end_of_run_summary,
@@ -43,6 +49,12 @@ from .preflight import (
     write_preflight_diagnostics,
     write_preflight_failure_artifacts,
 )
+from .resume import (
+    ResumePlan,
+    build_resume_plan,
+    require_filesystem_artifacts_backend,
+    workflow_identity_for_source,
+)
 from .topology import workflow_topology_from_plan, workflow_topology_from_preview
 
 
@@ -52,10 +64,11 @@ async def run_and_finalize_workflow(
     components: RuntimeComponents,
     plan: PreflightExecutionPlan,
     secret_context: SecretContext,
-    prepared_manifest: PreparedExecutionManifest,
     execute_workflow_impl: ExecuteWorkflowCallable,
     warning_recorder: WorkflowWarningRecorder,
     observability_hub_cls: ObservabilityHubFactory | None,
+    workflow_identity: str,
+    resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
     try:
         persistent_logger = PersistentRunLogger(output)
@@ -70,13 +83,30 @@ async def run_and_finalize_workflow(
             persistent_logger,
             warning_recorder,
             observability_hub_cls,
+            workflow_identity=workflow_identity,
+            resumed_node_ids=resumed_node_ids,
         )
-    except Exception as exc:
-        finalize_manifest(
+    except asyncio.CancelledError:
+        finalize_run_manifest(
             output,
-            prepared_manifest.workflow_signature,
-            prepared_manifest.manifest,
+            "cancelled",
+            cancel_reason=EXTERNAL_CANCEL_REASON,
+        )
+        print_end_of_run_summary(context.console, warning_recorder.persistent_logger)
+        raise
+    except WorkflowCancelledByUser:
+        finalize_run_manifest(
+            output,
+            "cancelled",
+            cancel_reason=UI_STOP_CANCEL_REASON,
+        )
+        print_end_of_run_summary(context.console, warning_recorder.persistent_logger)
+        raise
+    except Exception as exc:
+        finalize_run_manifest(
+            output,
             "failed",
+            failure_message=str(exc),
         )
         summary_logger = refresh_failed_run_summary(
             warning_recorder.persistent_logger,
@@ -87,10 +117,8 @@ async def run_and_finalize_workflow(
         print_end_of_run_summary(context.console, summary_logger)
         raise
 
-    finalize_manifest(
+    finalize_run_manifest(
         output,
-        prepared_manifest.workflow_signature,
-        prepared_manifest.manifest,
         "succeeded",
     )
     print_end_of_run_summary(context.console, warning_recorder.persistent_logger)
@@ -170,40 +198,101 @@ async def execute_workflow_run(
             )
         raise typer.Exit(code=1)
 
-    if workflow_signature_already_exists(
-        context,
-        snapshot_result,
+    require_filesystem_artifacts_backend(config)
+    workflow_identity = workflow_identity_for_source(source, context.project_root)
+    same_context_lock = acquire_same_context_lock(
+        context.orchestrator_dir,
+        context.workflow.name,
+        workflow_identity,
         preview.workflow_signature,
-        force,
-    ):
-        print_duplicate_context_message(context)
-        return
+    )
+    try:
+        resume_plan = build_resume_plan(
+            config,
+            source,
+            preview,
+            context.project_root,
+            context.orchestrator_dir,
+            force,
+        )
+        if resume_plan.decision.kind == "skip":
+            successful_run = resume_plan.decision.successful_run
+            print_duplicate_context_message(
+                context,
+                (
+                    successful_run.manifest.run_id
+                    if successful_run is not None
+                    else None
+                ),
+            )
+            return
 
-    workflow_topology = workflow_topology_from_preview(preview)
-    output = allocate_run_output(context, snapshot_result, warning_recorder)
-    plan = materialize_preflight_success(output, preview)
-    components = build_components_for_run(
-        context=context,
-        snapshot_result=snapshot_result,
-        workflow_topology=workflow_topology,
-        artifact_store=output,
-        no_live=no_live,
-        warning_recorder=warning_recorder,
-        which_fn=which_fn,
-    )
-    prepared_manifest = PreparedExecutionManifest(
-        workflow_signature=plan.workflow_signature,
-        manifest=build_manifest_from_plan(plan=plan, source=source),
-    )
+        workflow_topology = workflow_topology_from_preview(preview)
+        output = allocate_run_output(context, snapshot_result, warning_recorder)
+        same_context_lock.update_run(output.run_id, output.run_key_name)
+        plan = materialize_preflight_success(output, preview)
+        _write_initial_run_manifest(
+            output,
+            plan,
+            source,
+            resume_plan,
+        )
+        try:
+            if resume_plan.frontier is not None:
+                hydrate_resume_frontier(resume_plan.frontier, plan, output)
+                source_run = resume_plan.decision.resume_source
+                if source_run is not None:
+                    print_resume_context_message(
+                        context,
+                        len(resume_plan.resumed_node_ids),
+                        source_run.manifest.run_id,
+                    )
+            components = build_components_for_run(
+                context=context,
+                snapshot_result=snapshot_result,
+                workflow_topology=workflow_topology,
+                artifact_store=output,
+                no_live=no_live,
+                warning_recorder=warning_recorder,
+                which_fn=which_fn,
+            )
+        except Exception as exc:
+            finalize_run_manifest(output, "failed", failure_message=str(exc))
+            raise
 
-    await run_and_finalize_workflow(
-        context,
-        output,
-        components,
-        plan,
-        preview.secret_context,
-        prepared_manifest,
-        execute_workflow_impl,
-        warning_recorder,
-        observability_hub_cls,
+        await run_and_finalize_workflow(
+            context,
+            output,
+            components,
+            plan,
+            preview.secret_context,
+            execute_workflow_impl,
+            warning_recorder,
+            observability_hub_cls,
+            workflow_identity=resume_plan.workflow_identity,
+            resumed_node_ids=resume_plan.resumed_node_ids,
+        )
+    finally:
+        same_context_lock.release()
+
+
+def _write_initial_run_manifest(
+    output: ArtifactStorePort,
+    plan: PreflightExecutionPlan,
+    source: PreflightWorkflowSource,
+    resume_plan: ResumePlan,
+) -> None:
+    resume_source = resume_plan.decision.resume_source
+    manifest = build_run_manifest_from_plan(
+        plan=plan,
+        source=source,
+        workflow_identity=resume_plan.workflow_identity,
+        resumed_nodes=resume_plan.resumed_node_ids,
+        resume_source_run_id=(
+            resume_source.manifest.run_id if resume_source is not None else None
+        ),
+        resume_source_run_key_name=(
+            resume_source.manifest.run_key_name if resume_source is not None else None
+        ),
     )
+    write_running_run_manifest(output, manifest)

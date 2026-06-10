@@ -119,6 +119,61 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(failure.phase, "provider_session")
             self.assertEqual(failure.source, "stdout_json")
 
+    async def test_invoke_agent_with_runner_summarizes_claude_result_error(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_file = tmp_path / "output.txt"
+            log_file = tmp_path / "agent.log"
+
+            async def runner(
+                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            ) -> CommandResult:
+                return CommandResult(
+                    returncode=1,
+                    stdout_text=(
+                        '{"type":"result","subtype":"success","is_error":true,'
+                        '"result":"API Error: The socket connection was closed unexpectedly. '
+                        "For more information, pass `verbose: true` in the second "
+                        'argument to fetch()"}'
+                    ),
+                    stderr_text="",
+                )
+
+            config = AgentConfig(
+                cli_cmd=["claude"],
+                provider_kind="claude",
+                default_model="sonnet",
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Exit code 1: API Error: The socket connection was closed unexpectedly\\.",
+            ) as caught:
+                await invoke_agent_with_runner(
+                    config=config,
+                    model="sonnet",
+                    prompt="prompt",
+                    output_file=output_file,
+                    log_file=log_file,
+                    invocation_context=None,
+                    command_runner=runner,
+                    plan_builder=build_cli_invocation_plan,
+                )
+            self.assertIsInstance(caught.exception, InvocationFailureError)
+            failure = caught.exception
+            assert isinstance(failure, InvocationFailureError)
+            self.assertNotIn('{"type":"result"', str(failure))
+            self.assertEqual(failure.kind, "provider_transport_error")
+            self.assertEqual(failure.phase, "provider_transport")
+            self.assertEqual(failure.source, "stdout_json")
+
     def test_classifies_provider_failure_categories(self) -> None:
         cases = [
             (
@@ -131,6 +186,20 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                 "initial_request_too_large",
                 "initial_request",
                 "stderr_text",
+            ),
+            (
+                "claude",
+                CommandResult(
+                    returncode=1,
+                    stdout_text=(
+                        '{"type":"result","subtype":"success","is_error":true,'
+                        '"result":"API Error: The socket connection was closed unexpectedly."}'
+                    ),
+                    stderr_text="",
+                ),
+                "provider_transport_error",
+                "provider_transport",
+                "stdout_json",
             ),
             (
                 "copilot",

@@ -11,7 +11,6 @@ from orchestrator_cli.architecture.ports.artifacts import (
     ArtifactStorePort,
 )
 from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.manager import filesystem_manifest_exists
 
 
 def _parse_options(options: JsonObject | None) -> FilesystemArtifactOptions:
@@ -66,22 +65,6 @@ class FilesystemArtifactsAdapter:
                 "allowed_template_paths": "artifact",
                 "log_cli_output": "artifact",
             },
-        )
-
-    def workflow_signature_exists(
-        self,
-        workflow_name: str,
-        orchestrator_dir: Path,
-        options: JsonObject | None,
-        workflow_signature: str,
-    ) -> bool:
-        """Return whether a successful manifest exists without creating a run."""
-
-        _parse_options(options)
-        return filesystem_manifest_exists(
-            orchestrator_dir,
-            workflow_name,
-            workflow_signature,
         )
 
     def create_store(

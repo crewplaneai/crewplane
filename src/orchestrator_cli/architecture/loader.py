@@ -30,7 +30,7 @@ REQUIRED_FACTORY_METHOD: dict[IntegrationKind, str] = {
 ADDITIONAL_REQUIRED_FACTORY_METHODS: dict[IntegrationKind, tuple[str, ...]] = {
     "invoker": ("canonicalize_options",),
     "ui": ("canonicalize_options",),
-    "artifacts": ("canonicalize_options", "workflow_signature_exists"),
+    "artifacts": ("canonicalize_options",),
 }
 
 

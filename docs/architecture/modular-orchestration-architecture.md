@@ -157,6 +157,11 @@ Implement `UIAdapterPort.create_runtime(...)` and return observer-only runtime U
 ### Alternative artifact adapter (future)
 Implement side-effect-free artifact option canonicalization plus the `ArtifactStorePort` surface via `ArtifactAdapter.create_store(...)` for concrete workflow runs.
 
+Artifact-backed duplicate skip, same-context locking, run-history scan, and
+node-boundary resume are filesystem-only in v1. Real execution with another
+artifact backend fails before lock/skip/resume/full-run semantics are applied;
+`validate` and `run --dry-run` remain side-effect-free advisory paths.
+
 ## Compatibility and Migration
 - Schema version policy is documented in `DEVELOPMENT.md` and [ADR 0013](adr/0013-version-source-of-truth-and-documentation-drift-reduction.md).
 - The current schema version is authored in `orchestrator_cli.version`.

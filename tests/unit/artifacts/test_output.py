@@ -7,6 +7,12 @@ from datetime import datetime
 from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
+from orchestrator_cli.core.execution_state import (
+    RUN_STATE_SCHEMA_VERSION,
+    ArtifactDescriptor,
+    NodeState,
+    RunManifest,
+)
 from orchestrator_cli.core.preflight.models import (
     ArtifactContract,
     ExecutionPolicy,
@@ -25,7 +31,7 @@ def _workflow_signature(label: str) -> str:
 def _minimal_plan(output: OutputManager) -> PreflightExecutionPlan:
     return PreflightExecutionPlan(
         run_id=output.run_id,
-        run_key_name=output.stages_dir.name,
+        run_key_name=output.run_key_name,
         context_root=output.stages_dir.as_posix(),
         manifest_root=(output.stages_dir / "manifests").as_posix(),
         created_at=datetime(2026, 6, 3).isoformat(),
@@ -47,6 +53,30 @@ def _minimal_plan(output: OutputManager) -> PreflightExecutionPlan:
         runtime_config_snapshot={"schema_version": SCHEMA_VERSION},
         effective_runtime_config_signature=_workflow_signature("runtime"),
         fingerprint_metadata={"payload_version": "1"},
+    )
+
+
+def _running_manifest(
+    output: OutputManager,
+    workflow_signature: str | None = None,
+) -> RunManifest:
+    return RunManifest(
+        run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
+        plan_schema_version=SCHEMA_VERSION,
+        workflow_identity=".orchestrator/workflows/workflow.task.md",
+        workflow_name="workflow",
+        workflow_signature=workflow_signature or _workflow_signature("workflow"),
+        run_id=output.run_id,
+        run_key_name=output.run_key_name,
+        started_at=datetime(2026, 6, 3, 12, 0).isoformat(),
+        status="running",
+        effective_runtime_config_signature=_workflow_signature("runtime"),
+        preflight_plan_path="preflight/execution-plan.json",
+        preflight_manifest_path="preflight/manifest.json",
+        runtime_config_snapshot_path="preflight/runtime-config-snapshot.json",
+        runtime_config_snapshot={"schema_version": SCHEMA_VERSION},
+        workflow_source="workflow source",
+        composed_workflow={"schema_version": SCHEMA_VERSION, "name": "workflow"},
     )
 
 
@@ -81,66 +111,68 @@ class OutputManagerTests(unittest.TestCase):
             self.assertIn("alpha", result_text)
             self.assertIn("beta", result_text)
 
-    def test_successful_workflow_signature_manifest_dedupes_across_runs(self) -> None:
+    def test_stage_names_do_not_escape_or_collide_after_normalization(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            signature = _workflow_signature("abc123")
-            first = OutputManager("Workflow", base_dir=base_dir)
-            first.write_manifest(signature, {"status": "succeeded"})
+            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
 
-            second = OutputManager("Workflow", base_dir=base_dir)
-
-            self.assertTrue(second.workflow_signature_exists("Workflow", signature))
-
-    def test_failed_or_corrupt_manifest_does_not_dedupe(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            failed_signature = _workflow_signature("failed")
-            corrupt_signature = _workflow_signature("corrupt")
-            first = OutputManager("Workflow", base_dir=base_dir)
-            first.write_manifest(failed_signature, {"status": "failed"})
-            corrupt_dir = first.stages_dir / "manifests"
-            corrupt_dir.mkdir(parents=True, exist_ok=True)
-            (corrupt_dir / f"{corrupt_signature}.json").write_text(
-                "{",
-                encoding="utf-8",
-            )
-
-            second = OutputManager("Workflow", base_dir=base_dir)
-
-            self.assertFalse(
-                second.workflow_signature_exists("Workflow", failed_signature)
-            )
-            self.assertFalse(
-                second.workflow_signature_exists("Workflow", corrupt_signature)
-            )
-
-    def test_newer_failed_or_corrupt_manifest_does_not_mask_success(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            failed_signature = _workflow_signature("success-then-failed")
-            corrupt_signature = _workflow_signature("success-then-corrupt")
-            first = OutputManager("Workflow", base_dir=base_dir)
-            first.write_manifest(failed_signature, {"status": "succeeded"})
-            first.write_manifest(corrupt_signature, {"status": "succeeded"})
-            second = OutputManager("Workflow", base_dir=base_dir)
-            second.write_manifest(failed_signature, {"status": "failed"})
-            third = OutputManager("Workflow", base_dir=base_dir)
-            corrupt_dir = third.stages_dir / "manifests"
-            corrupt_dir.mkdir(parents=True, exist_ok=True)
-            (corrupt_dir / f"{corrupt_signature}.json").write_text(
-                "{",
-                encoding="utf-8",
-            )
-
-            lookup = OutputManager("Workflow", base_dir=base_dir)
+            escaped_candidate = output.create_stage_dir("..-")
+            dashed = output.create_stage_dir("-a")
+            plain = output.create_stage_dir("a")
 
             self.assertTrue(
-                lookup.workflow_signature_exists("Workflow", failed_signature)
+                escaped_candidate.resolve().is_relative_to(output.stages_dir)
             )
-            self.assertTrue(
-                lookup.workflow_signature_exists("Workflow", corrupt_signature)
+            self.assertNotEqual(dashed, plain)
+            self.assertNotEqual(
+                output.get_stage_output_path("-a"), output.get_stage_output_path("a")
             )
+
+    def test_write_and_update_run_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            manifest = _running_manifest(output)
+
+            output.write_run_manifest(manifest)
+            output.update_run_manifest_status(
+                "succeeded",
+                datetime(2026, 6, 3, 12, 1).isoformat(),
+            )
+
+            manifest_path = output.stages_dir / "manifests" / "run.json"
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "succeeded")
+            self.assertEqual(payload["workflow_signature"], manifest.workflow_signature)
+            self.assertEqual(payload["run_key_name"], output.run_key_name)
+
+    def test_write_node_success_state_uses_bounded_manifest_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
+            node_state = NodeState(
+                run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
+                plan_schema_version=SCHEMA_VERSION,
+                workflow_identity=".orchestrator/workflows/workflow.task.md",
+                workflow_name="workflow",
+                workflow_signature=_workflow_signature("workflow"),
+                run_id=output.run_id,
+                run_key_name=output.run_key_name,
+                node_id="build.node",
+                completed_at=datetime(2026, 6, 3, 12, 0).isoformat(),
+                artifacts=[
+                    ArtifactDescriptor(
+                        kind="output",
+                        relative_path="build.node-result.md",
+                        sha256=_workflow_signature("result"),
+                        size_bytes=6,
+                    )
+                ],
+            )
+
+            path = output.write_node_success_state(node_state)
+
+            self.assertEqual(path.name, "build.node--811a9309e00c.json")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["node_id"], "build.node")
 
     def test_write_preflight_plan_and_static_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -168,7 +200,7 @@ class OutputManagerTests(unittest.TestCase):
             )
             self.assertEqual(plan_payload["plan_schema_version"], SCHEMA_VERSION)
             self.assertNotIn("schema_version", plan_payload)
-            self.assertEqual(plan_payload["run_key_name"], output.stages_dir.name)
+            self.assertEqual(plan_payload["run_key_name"], output.run_key_name)
             self.assertEqual(manifest_path.name, "manifest.json")
             self.assertEqual(diagnostics_path.name, "diagnostics.json")
             self.assertEqual(metadata_path.name, "metadata.json")
@@ -176,12 +208,15 @@ class OutputManagerTests(unittest.TestCase):
             self.assertEqual(bundle_path.name, "execution-bundle.json")
             self.assertEqual(summary_path.read_text(encoding="utf-8"), "# Preflight\n")
 
-    def test_manifest_signature_must_be_sha256_hex(self) -> None:
+    def test_run_manifest_signature_must_be_sha256_hex(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             output = OutputManager("Workflow", base_dir=Path(tmp_dir))
 
             with self.assertRaisesRegex(ValueError, "workflow_signature"):
-                output.write_manifest("not-a-signature", {"status": "succeeded"})
+                _running_manifest(
+                    output,
+                    workflow_signature="not-a-signature",
+                )
 
 
 if __name__ == "__main__":

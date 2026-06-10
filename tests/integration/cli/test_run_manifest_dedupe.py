@@ -148,9 +148,11 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             results_root = str(tmp_path / ".orchestrator" / "execution-results")
             self.assertRegex(
                 output_text,
-                re.escape(stages_root) + r"/review-apps-\d{8}-\d{6}(?:-\d{6})?",
+                re.escape(stages_root)
+                + r"/review-apps--[0-9a-f]{12}-\d{8}-\d{6}(?:-\d{6})?",
             )
             self.assertRegex(
                 output_text,
-                re.escape(results_root) + r"/review-apps-\d{8}-\d{6}(?:-\d{6})?",
+                re.escape(results_root)
+                + r"/review-apps--[0-9a-f]{12}-\d{8}-\d{6}(?:-\d{6})?",
             )

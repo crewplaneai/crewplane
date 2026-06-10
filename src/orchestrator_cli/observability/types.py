@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from orchestrator_cli.architecture.contracts import (
     TopologyNode as TopologyNode,
@@ -40,4 +40,5 @@ class DashboardSnapshot:
 class RunResult:
     """Terminal outcome passed to observers during shutdown."""
 
-    failed: bool
+    status: Literal["succeeded", "failed", "cancelled"]
+    cancel_reason: str | None = None

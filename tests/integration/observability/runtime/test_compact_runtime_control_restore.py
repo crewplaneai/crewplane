@@ -99,7 +99,7 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
             self.assertIn("line-2", resized_text)
             self.assertIn("line-6", resized_text)
 
-        runtime.stop(RunResult(failed=False))
+        runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_restores_dashboard_control_after_resize(self) -> None:
         resize_cases = {
@@ -163,7 +163,7 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
                     )
                     self.assertIn(["select-pane", "-t", "%10"], commands)
                 finally:
-                    runtime.stop(RunResult(failed=False))
+                    runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_retries_failed_resize_control_restore(self) -> None:
         workflow = single_node_workflow()
@@ -220,7 +220,7 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
             ]
             self.assertEqual(len(retry_attempts), 1)
         finally:
-            runtime.stop(RunResult(failed=False))
+            runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_restores_control_on_first_snapshot(self) -> None:
         workflow = single_node_workflow()
@@ -260,7 +260,7 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
             )
             self.assertIn(["select-pane", "-t", "%10"], commands)
         finally:
-            runtime.stop(RunResult(failed=False))
+            runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_preserves_inspect_control_after_resize(self) -> None:
         workflow = single_node_workflow()
@@ -308,4 +308,4 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
             )
             self.assertIn(["select-pane", "-t", "%20"], commands)
         finally:
-            runtime.stop(RunResult(failed=False))
+            runtime.stop(RunResult(status="succeeded"))

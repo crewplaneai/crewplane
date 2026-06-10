@@ -36,14 +36,10 @@ from orchestrator_cli.version import SCHEMA_VERSION
 
 class DuplicateReportingArtifactsAdapter:
     create_store_calls = 0
-    workflow_signature_exists_calls = 0
-    last_lookup: tuple[str, Path, dict[str, Any], str] | None = None
 
     @classmethod
     def reset(cls) -> None:
         cls.create_store_calls = 0
-        cls.workflow_signature_exists_calls = 0
-        cls.last_lookup = None
 
     def canonicalize_options(
         self,
@@ -57,22 +53,6 @@ class DuplicateReportingArtifactsAdapter:
             options=dict(options or {}),
             option_scopes={key: "artifact" for key in dict(options or {})},
         )
-
-    def workflow_signature_exists(
-        self,
-        workflow_name: str,
-        orchestrator_dir: Path,
-        options: Mapping[str, Any] | None,
-        workflow_signature: str,
-    ) -> bool:
-        type(self).workflow_signature_exists_calls += 1
-        type(self).last_lookup = (
-            workflow_name,
-            orchestrator_dir,
-            dict(options or {}),
-            workflow_signature,
-        )
-        return True
 
     def create_store(
         self,
@@ -234,6 +214,7 @@ async def _run_workflow(
             workflow,
             workflow_content="workflow source",
             composed_workflow=_workflow_payload(workflow),
+            root_workflow_path=Path.cwd() / "workflow.task.md",
         ),
         force=force,
         no_live=True,
@@ -263,7 +244,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(_run_dirs(root)), run_count)
             self.assertIn("Identical context detected", stream.getvalue())
 
-    async def test_custom_artifact_duplicate_skips_before_store_allocation(
+    async def test_custom_artifact_real_run_fails_before_store_allocation(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -281,27 +262,16 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             DuplicateReportingArtifactsAdapter.reset()
             os.chdir(root)
             try:
-                await _run_workflow(workflow, config, console)
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "filesystem artifacts backend",
+                ):
+                    await _run_workflow(workflow, config, console)
             finally:
                 os.chdir(original_cwd)
 
-            self.assertEqual(
-                DuplicateReportingArtifactsAdapter.workflow_signature_exists_calls,
-                1,
-            )
-            self.assertIsNotNone(DuplicateReportingArtifactsAdapter.last_lookup)
-            last_lookup = DuplicateReportingArtifactsAdapter.last_lookup
-            if last_lookup is None:
-                self.fail("Expected duplicate lookup inputs to be recorded.")
-            workflow_name, orchestrator_dir, options, workflow_signature = last_lookup
-            self.assertEqual(workflow_name, "Task")
-            self.assertEqual(orchestrator_dir, root / ".orchestrator")
-            self.assertEqual(options, {"marker": "duplicate"})
-            self.assertEqual(len(workflow_signature), 64)
-            self.assertTrue(set(workflow_signature) <= set("0123456789abcdef"))
             self.assertEqual(DuplicateReportingArtifactsAdapter.create_store_calls, 0)
             self.assertEqual(_run_dirs(root), [])
-            self.assertIn("Identical context detected", stream.getvalue())
 
     async def test_force_ignores_duplicate_signature(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -396,9 +366,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 execution_bundle["value_fingerprints"],
                 plan["value_fingerprints"],
             )
-            manifest_path = (
-                run_dirs[0] / "manifests" / f"{plan['workflow_signature']}.json"
-            )
+            manifest_path = run_dirs[0] / "manifests" / "run.json"
             manifest_text = manifest_path.read_text(encoding="utf-8")
             manifest = json.loads(manifest_text)
 
@@ -433,6 +401,8 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 event_sink=None,  # noqa: ARG001 - Required by callback signature.
                 run_id=None,  # noqa: ARG001 - Required by callback signature.
                 suppress_progress_output=False,  # noqa: ARG001 - Required by callback signature.
+                workflow_identity=None,  # noqa: ARG001 - Required by callback signature.
+                resumed_node_ids=(),  # noqa: ARG001 - Required by callback signature.
             ) -> None:
                 captured_command.extend(
                     plan.runtime_config_snapshot["agents"]["alpha"]["cli_cmd"]

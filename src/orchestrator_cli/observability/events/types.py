@@ -31,7 +31,7 @@ InvocationEventType = Literal[
     "invocation_finished",
     "invocation_failed",
 ]
-WorkflowStatus = Literal["pending", "running", "succeeded", "failed"]
+WorkflowStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
 NodeStatus = Literal["pending", "running", "succeeded", "failed", "blocked"]
 InvocationStatus = Literal["pending", "running", "succeeded", "failed"]
 LogLevel = Literal["debug", "info", "warning", "error"]

@@ -93,9 +93,9 @@ def workflow_status(snapshot: DashboardSnapshot | None, result: RunResult) -> st
     if snapshot is not None:
         status = snapshot.state.workflow_status
         if status in {"pending", "running"}:
-            return "failed" if result.failed else "succeeded"
+            return result.status
         return status
-    return "failed" if result.failed else "succeeded"
+    return result.status
 
 
 def elapsed_label(snapshot: DashboardSnapshot | None) -> str | None:

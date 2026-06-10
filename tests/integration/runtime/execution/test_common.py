@@ -114,6 +114,20 @@ class _FailingInvoker:
         raise RuntimeError("provider boom")
 
 
+def test_runtime_context_preserves_disabled_invocation_timeout() -> None:
+    agent_config = AgentConfig(
+        cli_cmd=["echo"],
+        invocation_timeout_seconds=None,
+    )
+    runtime_context = _runtime_context({"alpha": agent_config})
+
+    resolved_config = runtime_context.agent_config_for_provider(
+        _provider_record("alpha", agent_config=agent_config),
+    )
+
+    assert resolved_config.invocation_timeout_seconds is None
+
+
 def test_failure_telemetry_error_does_not_mask_provider_error(
     tmp_path: Path,
 ) -> None:
