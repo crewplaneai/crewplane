@@ -90,20 +90,30 @@ def runtime_agent_snapshots(
     }
 
 
-def _model_payload_preserving_explicit_nulls(config: BaseModel) -> JsonObject:
+def _field_default_is_none(config: BaseModel, field_name: str) -> bool:
+    field = type(config).model_fields[field_name]
+    if field.is_required():
+        return False
+    return field.get_default(call_default_factory=True) is None
+
+
+def _model_payload_preserving_non_default_nulls(config: BaseModel) -> JsonObject:
     payload = cast(JsonObject, config.model_dump(mode="json", exclude_none=True))
     for field_name in sorted(config.model_fields_set):
-        if getattr(config, field_name) is None:
+        if getattr(config, field_name) is None and not _field_default_is_none(
+            config,
+            field_name,
+        ):
             payload[field_name] = None
     return payload
 
 
 def agent_config_input_payload(config: BaseModel) -> JsonObject:
-    return _model_payload_preserving_explicit_nulls(config)
+    return _model_payload_preserving_non_default_nulls(config)
 
 
 def runtime_agent_snapshot_payload(config: RuntimeAgentConfigSnapshot) -> JsonObject:
-    return _model_payload_preserving_explicit_nulls(config)
+    return _model_payload_preserving_non_default_nulls(config)
 
 
 def runtime_agent_execution_payload(config: RuntimeAgentConfigSnapshot) -> JsonObject:

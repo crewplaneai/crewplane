@@ -141,8 +141,10 @@ agents:
     #   output: 15.0
     #   cached_input: 0.3
     #   cache_write: 3.75
-    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
-    invocation_timeout_seconds: 1800
+    # Wall-clock kill is opt-in. By default, active provider CLIs may run past
+    # 30 minutes; the idle timeout below only kills processes that stop producing
+    # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
+    invocation_timeout_seconds: null
     invocation_idle_timeout_seconds: 1800
     extra_args:
       - "--bare"
@@ -165,8 +167,10 @@ agents:
     #   input: 1.5
     #   cached_input: 0.375
     #   output: 6.0
-    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
-    invocation_timeout_seconds: 1800
+    # Wall-clock kill is opt-in. By default, active provider CLIs may run past
+    # 30 minutes; the idle timeout below only kills processes that stop producing
+    # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
+    invocation_timeout_seconds: null
     invocation_idle_timeout_seconds: 1800
     extra_args:
       - "--skip-git-repo-check"
@@ -186,8 +190,10 @@ agents:
     # pricing:
     #   input: 0.35
     #   output: 1.05
-    # Default 30-minute hard wall-clock kill; set null only under an external supervisor.
-    invocation_timeout_seconds: 1800
+    # Wall-clock kill is opt-in. By default, active provider CLIs may run past
+    # 30 minutes; the idle timeout below only kills processes that stop producing
+    # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
+    invocation_timeout_seconds: null
     invocation_idle_timeout_seconds: 1800
     extra_args:
       - "--approval-mode=yolo"
@@ -228,13 +234,18 @@ workflow execution. They include provider-specific approval bypass flags such as
 Claude `--dangerously-skip-permissions`, Codex
 `--dangerously-bypass-approvals-and-sandbox`, Gemini `--approval-mode=yolo`,
 and Copilot `--allow-all-tools` so a DAG node does not block forever waiting
-for an interactive confirmation prompt. Agent invocations also have finite
-per-attempt `invocation_timeout_seconds` and
-`invocation_idle_timeout_seconds` guards so a provider CLI cannot freeze the
-workflow indefinitely by running forever or by going quiet. The generated
-default keeps a 30-minute hard wall-clock attempt timeout and a 30-minute idle
-timeout. Set `invocation_timeout_seconds: null` only when an external supervisor
-supplies the elapsed-time cap.
+for an interactive confirmation prompt. Agent invocations keep a finite
+per-attempt `invocation_idle_timeout_seconds` guard so a provider CLI cannot
+freeze the workflow indefinitely by going quiet. The wall-clock
+`invocation_timeout_seconds` guard defaults to `null` because a finite value
+hard-stops the provider process; set it only for special cases such as CI,
+disposable runners, or an explicit external operations policy.
+
+The wall-clock `invocation_timeout_seconds` guard defaults to `null` by policy:
+active provider CLIs are not hard-stopped solely for elapsed time. This means an
+active-but-never-exiting provider can continue until it exits or is externally
+supervised. Set a finite value for CI, disposable runners, or environments that
+require an absolute per-attempt cap.
 
 Treat those flags as a trust boundary decision. Orchestrator CLI coordinates
 provider CLIs and writes auditable artifacts; it does not sandbox provider tool
@@ -593,7 +604,7 @@ Merge:
 | `prompt_transport` | `"stdin" \| "argv"` | Prompt transport. Defaults to `stdin` so rendered prompt text is not placed in process argv. Use `argv` only for generic CLIs that cannot read stdin |
 | `prompt_transport_arg` | `str \| null` | Optional stdin sentinel or argv prompt flag. For example, Codex uses `-` with stdin; generic argv transport requires an explicit flag such as `--prompt` |
 | `extra_args` | `list[str]` | Additional CLI flags (for example, Copilot `--silent`, `--no-ask-user`, `--allow-tool=...`) |
-| `invocation_timeout_seconds` | `float \| null` | Hard wall-clock timeout for one provider CLI attempt (default `1800`). Set `null` only when an external supervisor supplies the elapsed-time cap |
+| `invocation_timeout_seconds` | `float \| null` | Optional hard wall-clock timeout for one provider CLI attempt (default `null`). A finite value hard-stops the provider process and should be used only for special cases such as CI or disposable runners |
 | `invocation_idle_timeout_seconds` | `float \| null` | Maximum quiet period with no provider stdout/stderr before the attempt is killed (default `1800`). Set `null` only for provider CLIs that can legitimately stay silent longer under an external supervisor |
 | `pricing` | `object` | Optional configured rates per million tokens. Supported buckets: `input`, `cached_input`, `cache_write`, `output`, `reasoning`, or exclusive `total` |
 | `quota_reached_on_contains` | `list[str]` | Specific strings that identify provider quota/rate-limit error responses |

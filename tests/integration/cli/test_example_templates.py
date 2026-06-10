@@ -11,7 +11,11 @@ from rich.console import Console
 
 import orchestrator_cli.cli.templates as templates
 import orchestrator_cli.cli.workflow_runner as workflow_runner
-from orchestrator_cli.core.config import DEFAULT_INVOCATION_TIMEOUT_SECONDS, load_config
+from orchestrator_cli.core.config import (
+    DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
+    DEFAULT_INVOCATION_TIMEOUT_SECONDS,
+    load_config,
+)
 from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
@@ -129,10 +133,12 @@ class ExampleTemplateTests(unittest.TestCase):
         self.assertIn("--approval-mode=yolo", config.agents["gemini"].extra_args)
         self.assertEqual(config.agents["gemini"].prompt_transport, "stdin")
         self.assertIsNone(config.agents["gemini"].prompt_transport_arg)
+        self.assertIsNone(DEFAULT_INVOCATION_TIMEOUT_SECONDS)
         for agent_config in config.agents.values():
+            self.assertIsNone(agent_config.invocation_timeout_seconds)
             self.assertEqual(
-                agent_config.invocation_timeout_seconds,
-                DEFAULT_INVOCATION_TIMEOUT_SECONDS,
+                agent_config.invocation_idle_timeout_seconds,
+                DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
             )
         self.assertIsNone(config.agents["claude"].pricing.input)
         self.assertIsNone(config.agents["codex"].pricing.output)

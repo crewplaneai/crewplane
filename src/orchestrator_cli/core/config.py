@@ -40,7 +40,11 @@ ALLOWED_PROVIDER_KIND_SET: Final = set(ALLOWED_PROVIDER_KINDS)
 ALLOWED_PROMPT_TRANSPORTS: Final = ("stdin", "argv")
 ALLOWED_PROMPT_TRANSPORT_SET: Final = set(ALLOWED_PROMPT_TRANSPORTS)
 DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS: Final = 5.0
-DEFAULT_INVOCATION_TIMEOUT_SECONDS: Final[float] = 1800.0
+
+# Default policy: do not wall-clock kill active provider CLIs. The idle timeout
+# remains the default safety guard for quiet/stalled processes; set this value
+# only when the deployment needs an absolute per-attempt cap.
+DEFAULT_INVOCATION_TIMEOUT_SECONDS: Final[float | None] = None
 DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS: Final = 1800.0
 
 
@@ -125,6 +129,7 @@ class AgentConfig(BaseModel):
     quota_reached_on_contains: list[str] = Field(default_factory=list)
     quota_reached_retry_delay_seconds: float = Field(default=300.0, ge=0)
     quota_reset_sleep_floor_seconds: float = Field(default=5.0, ge=0)
+    # A finite wall-clock timeout cancels and reaps the provider process.
     invocation_timeout_seconds: float | None = DEFAULT_INVOCATION_TIMEOUT_SECONDS
     invocation_idle_timeout_seconds: float | None = (
         DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS
