@@ -7,6 +7,7 @@ from orchestrator_cli.architecture.contracts import (
     CommandRunner,
     InvocationContext,
     InvocationPlan,
+    LogPresentationDescriptor,
 )
 from orchestrator_cli.core.config import AgentConfig
 
@@ -22,6 +23,10 @@ class InvocationPlanBuilder(Protocol):
         prompt: str,
         output_file: Path,
     ) -> InvocationPlan: ...
+
+
+class LogPresentationBuilder(Protocol):
+    def __call__(self, config: AgentConfig) -> LogPresentationDescriptor | None: ...
 
 
 async def invoke_agent(
@@ -74,8 +79,19 @@ async def invoke_agent_with_runner(
 class PlannedAgentInvoker:
     """Invoke provider CLIs through an adapter-supplied invocation plan."""
 
-    def __init__(self, plan_builder: InvocationPlanBuilder) -> None:
+    def __init__(
+        self,
+        plan_builder: InvocationPlanBuilder,
+        log_presentation_builder: LogPresentationBuilder,
+    ) -> None:
         self._plan_builder = plan_builder
+        self._log_presentation_builder = log_presentation_builder
+
+    def log_presentation_for(
+        self,
+        config: AgentConfig,
+    ) -> LogPresentationDescriptor | None:
+        return self._log_presentation_builder(config)
 
     async def invoke(
         self,

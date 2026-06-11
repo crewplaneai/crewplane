@@ -28,6 +28,7 @@ from .execution_events import (
     failure_event_fields,
     safe_error_message,
 )
+from .log_presentation import resolve_log_presentation_descriptor
 from .provider_display import (
     ProviderCallDisplay,
     invoke_with_display,
@@ -161,6 +162,18 @@ async def _run_provider_invocation_lifecycle(
             request.round_num,
         )
         invocation_metadata = replace(invocation_metadata, log_file=log_file)
+        descriptor = resolve_log_presentation_descriptor(
+            request.invoker,
+            agent_config,
+            request.telemetry,
+            invocation_metadata.event_context(),
+        )
+        if descriptor is not None:
+            invocation_metadata = replace(
+                invocation_metadata,
+                log_presentation_format=descriptor.format,
+                log_presentation_profile=descriptor.profile,
+            )
         if log_file is not None and request.on_log_file_resolved is not None:
             request.on_log_file_resolved(log_file)
         invocation_context, event_capture = build_invocation_context(

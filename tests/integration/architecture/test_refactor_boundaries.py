@@ -137,6 +137,8 @@ LEGACY_EVENT_FIELDS = {
     "round_num",
     "output_file",
     "log_file",
+    "log_presentation_format",
+    "log_presentation_profile",
     "duration_ms",
     "error",
     "attempt_count",
@@ -580,6 +582,60 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
                 and expression_chain(node.value) in {("os", "path"), ("posixpath",)}
             ):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_log_presentation_does_not_import_runtime_output_extractors() -> None:
+    forbidden_modules = {
+        "orchestrator_cli.runtime.agent.invocation.output",
+        "orchestrator_cli.runtime.agent.invocation.claude_json",
+        "orchestrator_cli.runtime.agent.usage_parsing",
+        "orchestrator_cli.runtime.agent.quota",
+        "orchestrator_cli.runtime.agent.failures",
+    }
+    offenders: list[str] = []
+    presentation_root = (
+        SRC_ROOT / "orchestrator_cli" / "observability" / "log_presentation"
+    )
+    for path in python_files(presentation_root):
+        module = parse_python(path)
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom):
+                module_name = import_from_module_name(path, node)
+                if any(
+                    module_name == forbidden or module_name.startswith(f"{forbidden}.")
+                    for forbidden in forbidden_modules
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if any(
+                        alias.name == forbidden
+                        or alias.name.startswith(f"{forbidden}.")
+                        for forbidden in forbidden_modules
+                    ):
+                        offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+    assert offenders == []
+
+
+def test_runtime_and_tmux_do_not_infer_log_presentation_from_provider_names() -> None:
+    provider_literals = {"claude", "codex", "copilot", "gemini", "kilo"}
+    checked_roots = [
+        SRC_ROOT / "orchestrator_cli" / "runtime" / "execution",
+        SRC_ROOT / "orchestrator_cli" / "observability" / "tmux",
+    ]
+    offenders: list[str] = []
+    for root in checked_roots:
+        for path in python_files(root):
+            source = path.read_text(encoding="utf-8")
+            for provider_literal in provider_literals:
+                if (
+                    f'"{provider_literal}"' in source
+                    or f"'{provider_literal}'" in source
+                ):
+                    offenders.append(
+                        f"{path.relative_to(REPO_ROOT)}: {provider_literal}"
+                    )
     assert offenders == []
 
 

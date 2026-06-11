@@ -3,18 +3,23 @@ HAVE_UV := $(shell if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2
 
 ifeq ($(HAVE_UV),1)
 INSTALL_CMD = uv sync --extra dev
+UNINSTALL_CMD = uv pip uninstall orchestrator-cli
 RUN_PYTEST = uv run --extra dev python -m pytest -q
 RUN_RUFF = uv run --extra dev python -m ruff
 else
 INSTALL_CMD = $(PYTHON) -m pip install -e '.[dev]'
+UNINSTALL_CMD = $(PYTHON) -m pip uninstall orchestrator-cli
 RUN_PYTEST = $(PYTHON) -m pytest -q
 RUN_RUFF = $(PYTHON) -m ruff
 endif
 
-.PHONY: setup test lint format format-check check clean
+.PHONY: setup uninstall test lint format format-check check clean
 
 setup:
 	$(INSTALL_CMD)
+
+uninstall:
+	$(UNINSTALL_CMD)
 
 test:
 	$(RUN_PYTEST)

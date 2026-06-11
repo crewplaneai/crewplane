@@ -12,6 +12,14 @@ from orchestrator_cli.observability.events import (
 )
 from orchestrator_cli.observability.layout import compute_topology_layout
 from orchestrator_cli.observability.tmux.client import TmuxCommandClient
+from orchestrator_cli.observability.tmux.inspect_snapshot import (
+    read_snapshot,
+    write_inspect_snapshot,
+)
+from orchestrator_cli.observability.tmux.selection_control import (
+    SelectionControlState,
+    write_selection_control,
+)
 from orchestrator_cli.observability.types import (
     DashboardSnapshot,
     RunContext,
@@ -419,21 +427,30 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
             runtime.refresh_once()
 
             runtime.write_runtime_file("mode", "inspect")  # type: ignore[arg-type]
-            runtime.write_runtime_file("inspect_log", str(first_log))  # type: ignore[arg-type]
-            runtime.write_runtime_file("inspect_node_id", "node.a")  # type: ignore[arg-type]
-            runtime.write_runtime_file("selection_index", "1")  # type: ignore[arg-type]
+            selected = read_snapshot(runtime.runtime_files.selected_invocation)
+            self.assertIsNotNone(selected)
+            write_inspect_snapshot(runtime.runtime_files, selected or {}, "raw")
+            write_selection_control(
+                runtime.runtime_files,
+                SelectionControlState(
+                    selected_index=1,
+                    selection_generation=1,
+                    updated_at=0.0,
+                ),
+            )
             runtime.write_runtime_file("right_content", "inspection-active")  # type: ignore[arg-type]
             runtime.refresh_once()
 
             right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
             self.assertEqual(right_text, "inspection-active")
-            self.assertEqual(
-                runtime.runtime_files.selected_log.read_text(encoding="utf-8"),  # type: ignore[union-attr]
-                str(second_log),
+            selected_after_move = read_snapshot(
+                runtime.runtime_files.selected_invocation
             )
+            self.assertIsNotNone(selected_after_move)
+            self.assertEqual(selected_after_move.get("log_file"), str(second_log))  # type: ignore[union-attr]
             pane_title_writes = pane_option_writes(runtime.calls, "@orchestrator_title")
             self.assertIn(
-                ("%20", "Node Log: node.a"),
+                ("%20", "Node Log: node.a (raw)"),
                 {(args[3], args[5]) for args in pane_title_writes},
             )
 
@@ -547,10 +564,13 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                     binding_parts[:4], ["if-shell", "-F", "1", "run-shell"]
                 )
                 command = binding_parts[4]
-                self.assertTrue(command.endswith("inspect-enter.sh"))
-                self.assertTrue(Path(command).exists())
+                self.assertIn(
+                    "orchestrator_cli.observability.tmux.inspect_control",
+                    command,
+                )
+                self.assertIn("--view auto", command)
                 subprocess.run(
-                    [command],
+                    shlex.split(command),
                     check=True,
                     env={**os.environ, "FAKE_TMUX_LOG": str(fake_tmux_log)},
                 )
@@ -559,14 +579,10 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                     runtime.runtime_files.mode.read_text(encoding="utf-8"),  # type: ignore[union-attr]
                     "dashboard",
                 )
-                self.assertEqual(
-                    runtime.runtime_files.inspect_log.read_text(encoding="utf-8"),  # type: ignore[union-attr]
-                    "",
+                inspect_snapshot = read_snapshot(
+                    runtime.runtime_files.inspect_invocation
                 )
-                self.assertEqual(
-                    runtime.runtime_files.inspect_node_id.read_text(encoding="utf-8"),  # type: ignore[union-attr]
-                    "",
-                )
+                self.assertIsNone(inspect_snapshot)
                 self.assertFalse(fake_tmux_log.exists())
             finally:
                 runtime.stop(RunResult(status="succeeded"))

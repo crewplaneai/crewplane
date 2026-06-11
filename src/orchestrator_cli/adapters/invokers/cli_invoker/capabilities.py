@@ -8,6 +8,8 @@ from pathlib import Path
 
 from orchestrator_cli.architecture.contracts import (
     InvocationPlan,
+    LogPresentationDescriptor,
+    LogPresentationFormat,
     OutputExtractionMode,
     ProviderKind,
     QuotaParserProfile,
@@ -24,6 +26,8 @@ class CliProviderCapability:
     output_extraction_mode: OutputExtractionMode
     quota_parser: QuotaParserProfile
     usage_parser: UsageParserProfile
+    log_presentation_format: LogPresentationFormat
+    log_presentation_profile: str
     model_arg: str | None = "--model"
     structured_output_args: tuple[str, ...] = ()
 
@@ -35,6 +39,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         output_extraction_mode="claude_json",
         quota_parser="claude",
         usage_parser="claude",
+        log_presentation_format="json_object",
+        log_presentation_profile="claude",
         structured_output_args=("--output-format", "json"),
     ),
     "codex": CliProviderCapability(
@@ -43,6 +49,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         output_extraction_mode="codex_last_message_file",
         quota_parser="codex",
         usage_parser="codex",
+        log_presentation_format="json_lines",
+        log_presentation_profile="codex",
     ),
     "copilot": CliProviderCapability(
         provider_kind="copilot",
@@ -50,6 +58,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         output_extraction_mode="visible",
         quota_parser="copilot",
         usage_parser="none",
+        log_presentation_format="plain",
+        log_presentation_profile="generic",
     ),
     "gemini": CliProviderCapability(
         provider_kind="gemini",
@@ -57,6 +67,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         output_extraction_mode="visible",
         quota_parser="gemini",
         usage_parser="none",
+        log_presentation_format="plain",
+        log_presentation_profile="generic",
     ),
     "kilo": CliProviderCapability(
         provider_kind="kilo",
@@ -64,6 +76,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         output_extraction_mode="visible",
         quota_parser="kilo",
         usage_parser="none",
+        log_presentation_format="plain",
+        log_presentation_profile="generic",
     ),
     "generic": CliProviderCapability(
         provider_kind="generic",
@@ -71,6 +85,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         output_extraction_mode="visible",
         quota_parser="generic",
         usage_parser="none",
+        log_presentation_format="plain",
+        log_presentation_profile="generic",
     ),
 }
 
@@ -104,6 +120,14 @@ def build_cli_invocation_plan(
             model=model,
             output_file=output_file,
         ),
+    )
+
+
+def build_cli_log_presentation(config: AgentConfig) -> LogPresentationDescriptor:
+    capability = get_cli_provider_capability(config.provider_kind)
+    return LogPresentationDescriptor(
+        format=capability.log_presentation_format,
+        profile=capability.log_presentation_profile,
     )
 
 

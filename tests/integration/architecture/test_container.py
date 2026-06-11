@@ -82,6 +82,34 @@ def _compiled_test_plan(
     return plan, preview.secret_context
 
 
+class _MissingPresentationInvoker:
+    async def invoke(self, *_args, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+        del _args, _kwargs
+        raise AssertionError("not used")
+
+
+class MissingPresentationInvokerAdapter:
+    def canonicalize_options(
+        self,
+        implementation: str,
+        resolved_identity: str,
+        options: object | None = None,  # noqa: ARG002 - Required by protocol.
+    ) -> object:
+        return {
+            "implementation": implementation,
+            "resolved_identity": resolved_identity,
+            "options": {},
+            "option_scopes": {},
+        }
+
+    def create_invoker(
+        self,
+        config: Config,  # noqa: ARG002 - Required by adapter protocol.
+        options: object | None = None,  # noqa: ARG002 - Required by adapter protocol.
+    ) -> object:
+        return _MissingPresentationInvoker()
+
+
 class ContainerTests(unittest.TestCase):
     def _build_config(self, settings: Settings | None = None) -> Config:
         return Config(
@@ -164,6 +192,35 @@ class ContainerTests(unittest.TestCase):
 
         self.assertEqual(components.observers, ())
         self.assertFalse(hasattr(components, "invoker_override"))
+
+    def test_container_rejects_invoker_without_log_presentation_contract(self) -> None:
+        workflow = self._build_workflow()
+        config = self._build_config(
+            Settings(
+                integrations={
+                    "invoker": {
+                        "implementation": (
+                            "tests.integration.architecture.test_container:"
+                            "MissingPresentationInvokerAdapter"
+                        ),
+                        "options": {},
+                    },
+                    "ui": {"implementation": "none", "options": {}},
+                    "artifacts": {"implementation": "filesystem", "options": {}},
+                }
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with self.assertRaisesRegex(TypeError, "log_presentation_for"):
+                build_runtime_components(
+                    config=config,
+                    workflow_topology=topology_from_workflow(workflow),
+                    orchestrator_dir=tmp_path,
+                    project_root=tmp_path,
+                    console=Console(file=io.StringIO(), force_terminal=False),
+                    no_live=True,
+                )
 
     def test_container_accepts_dotted_override_for_ui(self) -> None:
         workflow = self._build_workflow()

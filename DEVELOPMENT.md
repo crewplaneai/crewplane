@@ -30,6 +30,7 @@ make format       # project-env ruff format src tests
 make format-check # project-env ruff format --check src tests
 make check        # lint + format-check + tests
 make clean        # remove caches and build artifacts
+make uninstall    # uninstall package from current environment
 ```
 
 ## Cleanup and Deletion
@@ -47,7 +48,7 @@ rm -rf .orchestrator/execution-stages .orchestrator/execution-results
 rm -rf .orchestrator
 
 # Uninstall package from current environment
-python -m pip uninstall orchestrator-cli
+make uninstall
 ```
 
 ## Project Structure

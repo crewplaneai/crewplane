@@ -29,6 +29,8 @@ from .invocation import (
     InvocationPlan,
     InvocationUsage,
     InvocationUsageSink,
+    LogPresentationDescriptor,
+    LogPresentationFormat,
     OutputExtractionMode,
     OutputExtractionStatus,
     PromptTransport,
@@ -40,6 +42,9 @@ from .invocation import (
     RuntimeLogValue,
     StructuredOutputMode,
     UsageParserProfile,
+    normalize_log_presentation_profile,
+    validate_log_presentation_descriptor,
+    validate_log_presentation_format,
 )
 from .json import JsonObject, JsonScalar, JsonValue
 from .observer import Observer, TopologyNode, TopologyProvider, WorkflowTopology
@@ -65,6 +70,8 @@ __all__ = [
     "JsonObject",
     "JsonScalar",
     "JsonValue",
+    "LogPresentationDescriptor",
+    "LogPresentationFormat",
     "MockInvokerFailSelector",
     "MockInvokerOptions",
     "NullUiOptions",
@@ -85,6 +92,9 @@ __all__ = [
     "TopologyProvider",
     "UsageParserProfile",
     "WorkflowTopology",
+    "normalize_log_presentation_profile",
     "redacted_integration_option_value",
     "sensitive_integration_option_keys",
+    "validate_log_presentation_descriptor",
+    "validate_log_presentation_format",
 ]

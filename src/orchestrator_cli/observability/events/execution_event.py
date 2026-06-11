@@ -27,6 +27,8 @@ class ExecutionEventContext:
     round_num: int | None = None
     output_file: str | None = None
     log_file: str | None = None
+    log_presentation_format: str | None = None
+    log_presentation_profile: str | None = None
 
     def as_event_fields(self) -> dict[str, object]:
         return {
@@ -39,6 +41,8 @@ class ExecutionEventContext:
             "round_num": self.round_num,
             "output_file": self.output_file,
             "log_file": self.log_file,
+            "log_presentation_format": self.log_presentation_format,
+            "log_presentation_profile": self.log_presentation_profile,
         }
 
 

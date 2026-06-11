@@ -371,6 +371,9 @@ def test_drift_is_checked_when_provider_call_fails(tmp_path: Path) -> None:
     request, _output, node_dir = _request(tmp_path)
 
     class MutatingFailingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
         async def invoke(  # type: ignore[no-untyped-def]
             self,
             config,  # noqa: ARG002 - Required by protocol.

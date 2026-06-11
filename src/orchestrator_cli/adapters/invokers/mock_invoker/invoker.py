@@ -6,6 +6,7 @@ from pathlib import Path
 
 from orchestrator_cli.architecture.contracts import (
     InvocationContext,
+    LogPresentationDescriptor,
     MockInvokerFailSelector,
 )
 from orchestrator_cli.core.config import AgentConfig
@@ -25,6 +26,13 @@ from .outputs import (
 class MockAgentInvoker:
     def __init__(self, options: MockInvokerOptionsContract) -> None:
         self._options = options
+
+    def log_presentation_for(
+        self,
+        config: AgentConfig,
+    ) -> LogPresentationDescriptor | None:
+        self._validate_invocation_request(config, model=None)
+        return LogPresentationDescriptor(format="json_lines", profile="mock")
 
     async def invoke(
         self,
@@ -59,7 +67,8 @@ class MockAgentInvoker:
         for selector in self._options.fail_when:
             if _selector_matches(selector, context):
                 raise RuntimeError(
-                    f"mock invoker forced failure by selector: {_selector_summary(selector)}"
+                    "mock invoker forced failure by selector: "
+                    f"{_selector_summary(selector)}"
                 )
 
     async def _resolve_output(
@@ -137,7 +146,10 @@ class MockAgentInvoker:
             [
                 "",
                 "## Summary",
-                "Synthetic output generated for deterministic local orchestration checks.",
+                (
+                    "Synthetic output generated for deterministic local "
+                    "orchestration checks."
+                ),
                 "",
                 "## Notes",
                 f"- Prompt length: {len(prompt)} characters",

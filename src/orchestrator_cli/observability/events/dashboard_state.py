@@ -29,6 +29,8 @@ class InvocationRuntimeState:
     error: str | None = None
     output_file: str | None = None
     log_file: str | None = None
+    log_presentation_format: str | None = None
+    log_presentation_profile: str | None = None
 
 
 @dataclass

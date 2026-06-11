@@ -102,6 +102,9 @@ def _invoker_signature() -> str:
 
 
 class _FailingInvoker:
+    def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+        return None
+
     async def invoke(  # type: ignore[no-untyped-def]
         self,
         config,  # noqa: ARG002 - Required by protocol.
@@ -175,6 +178,9 @@ class _RecordingInvoker:
     def __init__(self) -> None:
         self.models: list[str | None] = []
         self.commands: list[list[str]] = []
+
+    def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+        return None
 
     async def invoke(  # type: ignore[no-untyped-def]
         self,

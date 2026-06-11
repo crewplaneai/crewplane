@@ -47,6 +47,7 @@ def build_runtime_components(
         if invoker_options is not None
         else dict(invoker_spec.options),
     )
+    _validate_invoker_contract(base_invoker)
     if artifact_store is None:
         artifacts_adapter = instantiate_adapter(
             "artifacts",
@@ -101,3 +102,12 @@ def build_runtime_components(
         observers=ui_runtime.observers,
         suppress_progress_output=ui_runtime.suppress_progress_output,
     )
+
+
+def _validate_invoker_contract(invoker: object) -> None:
+    if not callable(getattr(invoker, "invoke", None)):
+        raise TypeError("invoker adapter returned object without callable invoke")
+    if not callable(getattr(invoker, "log_presentation_for", None)):
+        raise TypeError(
+            "invoker adapter returned object without callable log_presentation_for"
+        )

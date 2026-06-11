@@ -8,6 +8,7 @@ from orchestrator_cli.observability.events import (
     InvocationRuntimeState,
     NodeRuntimeState,
 )
+from orchestrator_cli.observability.log_presentation import LogPresentationSnapshot
 from orchestrator_cli.observability.text_layout import fit_text, wrap_text
 from orchestrator_cli.observability.timing import format_elapsed_seconds
 from orchestrator_cli.observability.tmux.log_tail import LogSnapshot
@@ -70,19 +71,21 @@ def render_left_dashboard(
 
 def _dashboard_footer(inspect_mode: bool) -> str:
     if inspect_mode:
-        return "[Log Inspect] [Esc] return  [q] quit run"
-    return "[↑/↓] select  [Enter] inspect log  [q] quit run"
+        return "[Log Inspect] [r] raw  [f] formatted  [Esc] return  [q] quit"
+    return "[↑/↓] select  [Enter] inspect  [r] raw inspect  [q] quit"
 
 
 def right_pane_title(
     mode: str,
     selected_node_id: str | None,
     inspect_node_id: str | None,
+    inspect_view: str | None = None,
 ) -> str:
     if mode == "inspect":
+        view_suffix = f" ({inspect_view})" if inspect_view else ""
         if inspect_node_id:
-            return f"Node Log: {inspect_node_id}"
-        return "Node Log"
+            return f"Node Log: {inspect_node_id}{view_suffix}"
+        return f"Node Log{view_suffix}"
     if selected_node_id is None:
         return "Node Output"
     return f"Node Output: {selected_node_id}"
@@ -131,6 +134,7 @@ def render_selected_output(context: SelectedOutputRenderContext) -> list[str]:
         lines=lines,
         invocation=invocation,
         log_snapshot=prepared_invocation.log_snapshot,
+        presentation_snapshot=prepared_invocation.presentation_snapshot,
         context=context,
     )
     return lines
@@ -148,6 +152,7 @@ def _append_log_snapshot_lines(
     lines: list[str],
     invocation: InvocationRuntimeState,
     log_snapshot: LogSnapshot,
+    presentation_snapshot: LogPresentationSnapshot | None,
     context: SelectedOutputRenderContext,
 ) -> None:
     if invocation.status == "running" and not log_snapshot.tail_lines:
@@ -164,7 +169,8 @@ def _append_log_snapshot_lines(
     ):
         _append_quiet_running_message(lines, invocation, log_snapshot, context)
 
-    wrapped_tail_lines = _wrap_pane_lines(list(log_snapshot.tail_lines), context.width)
+    display_lines = _display_log_lines(presentation_snapshot, log_snapshot)
+    wrapped_tail_lines = _wrap_pane_lines(display_lines, context.width)
     if context.log_tail_lines is None:
         available_tail_rows = max(1, context.pane_height - len(lines))
         wrapped_tail_lines = wrapped_tail_lines[-available_tail_rows:]
@@ -172,6 +178,17 @@ def _append_log_snapshot_lines(
         lines.extend(wrapped_tail_lines)
         return
     lines.extend(_wrap_pane_line("No log output yet.", context.width))
+
+
+def _display_log_lines(
+    presentation_snapshot: LogPresentationSnapshot | None,
+    log_snapshot: LogSnapshot,
+) -> list[str]:
+    if presentation_snapshot is None:
+        return list(log_snapshot.tail_lines)
+    lines = [notice.message for notice in presentation_snapshot.notices]
+    lines.extend(presentation_snapshot.lines)
+    return lines
 
 
 def _append_running_metadata(

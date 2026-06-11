@@ -33,6 +33,12 @@ from orchestrator_cli.core.workflow_models import (
 )
 from orchestrator_cli.version import SCHEMA_VERSION
 
+DESCRIPTOR_LEAK_TOKENS = (
+    "log_presentation_format",
+    "log_presentation_profile",
+    "json_lines",
+)
+
 
 class DuplicateReportingArtifactsAdapter:
     create_store_calls = 0
@@ -72,6 +78,9 @@ class DuplicateReportingArtifactsAdapter:
 
 
 class PreflightOrderingInvoker:
+    def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by invoker protocol.
+        return None
+
     async def invoke(  # type: ignore[no-untyped-def]
         self,
         config,  # noqa: ARG002 - Required by invoker protocol.
@@ -197,6 +206,58 @@ def _result_dirs(root: Path) -> list[Path]:
     return sorted(path for path in results_root.iterdir() if path.is_dir())
 
 
+def _descriptor_leakage_paths(
+    run_dir: Path,
+    result_dir: Path,
+    preflight_dir: Path,
+) -> list[Path]:
+    paths: list[Path] = []
+    paths.extend(_text_files_under(preflight_dir))
+    paths.extend(_text_files_under(run_dir / "manifests"))
+    paths.extend(_text_files_under(result_dir))
+    paths.extend(sorted(path for path in run_dir.rglob("*.log") if path.is_file()))
+    summary_path = run_dir / "logs" / "summary.md"
+    if summary_path.exists():
+        paths.append(summary_path)
+    return sorted(set(paths))
+
+
+def _text_files_under(root: Path) -> list[Path]:
+    if not root.exists():
+        return []
+    return sorted(path for path in root.rglob("*") if path.is_file())
+
+
+def _assert_descriptor_metadata_event_persisted(
+    test_case: unittest.TestCase,
+    run_dir: Path,
+) -> None:
+    event_log_path = run_dir / "logs" / "events.ndjson"
+    records = [
+        json.loads(line)
+        for line in event_log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    test_case.assertTrue(
+        any(
+            record.get("log_presentation_format") == "json_lines"
+            and record.get("log_presentation_profile") == "mock"
+            for record in records
+        )
+    )
+
+
+def _assert_descriptor_metadata_absent(
+    test_case: unittest.TestCase,
+    paths: list[Path],
+) -> None:
+    test_case.assertGreater(len(paths), 0)
+    for path in paths:
+        content = path.read_text(encoding="utf-8")
+        for token in DESCRIPTOR_LEAK_TOKENS:
+            test_case.assertNotIn(token, content, msg=f"{token} leaked into {path}")
+
+
 async def _run_workflow(
     workflow: WorkflowPlan,
     config: Config,
@@ -319,8 +380,9 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 os.chdir(original_cwd)
 
             run_dirs = _run_dirs(root)
+            result_dirs = _result_dirs(root)
             self.assertEqual(len(run_dirs), 1)
-            self.assertEqual(len(_result_dirs(root)), 1)
+            self.assertEqual(len(result_dirs), 1)
             preflight_dir = run_dirs[0] / "preflight"
             expected_preflight_files = {
                 "dependency-graph.json",
@@ -379,6 +441,15 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 manifest["runtime_config_snapshot"],
                 plan["runtime_config_snapshot"],
+            )
+            _assert_descriptor_metadata_event_persisted(self, run_dirs[0])
+            _assert_descriptor_metadata_absent(
+                self,
+                _descriptor_leakage_paths(
+                    run_dir=run_dirs[0],
+                    result_dir=result_dirs[0],
+                    preflight_dir=preflight_dir,
+                ),
             )
 
     async def test_runtime_receives_preflight_plan_agent_configs_only(self) -> None:

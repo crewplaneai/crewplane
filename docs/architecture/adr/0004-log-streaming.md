@@ -261,6 +261,8 @@ Records include applicable event context and payload fields such as:
 - `duration_ms`
 - `output_file`
 - `log_file`
+- `log_presentation_format`
+- `log_presentation_profile`
 - `error`
 - `attributes`
 
@@ -293,6 +295,7 @@ raw log passthrough. It uses the following local signals:
 | Role | `InvocationRuntimeState.role` | right invocation header |
 | Audit/round number | `InvocationRuntimeState.audit_round_num` and `round_num` | right invocation header |
 | Log file path | `InvocationRuntimeState.log_file` | selected invocation tail and inspect mode |
+| Presentation metadata | `InvocationRuntimeState.log_presentation_format` and `log_presentation_profile` | display-only formatter selection when valid |
 | Invocation start time | `InvocationRuntimeState.started_at` | elapsed running time |
 | Log file size | `Path.stat().st_size` | liveness metadata |
 | Log modification time | `Path.stat().st_mtime` | quiet/stale metadata |
@@ -375,18 +378,27 @@ Elapsed-time rendering is computed in the tmux runtime refresh thread from local
 monotonic time plus `invocation.started_at`, not from continuously ticking
 snapshots.
 
-### On-Demand Raw Log Inspect Mode
+### On-Demand Log Inspect Mode
 The compact summary remains the default. Pressing `Enter` swaps the right pane
-onto the selected invocation's real log with:
+into formatted inspect when valid adapter-owned presentation metadata exists.
+Otherwise it opens raw inspect. Pressing `r` opens or switches to raw inspect,
+and pressing `f` switches back to formatted inspect when valid metadata exists.
+
+Raw inspect opens the exact persisted provider `.log` file with:
 
 ```text
-tail -n +1 -F <log_path>
+tail -n +1 -F -- <log_path>
 ```
 
 Inspect mode stays locked to the chosen log even if dashboard selection changes.
 `Esc` restores the compact dashboard view. tmux handles scrolling, copy-mode,
-and scrollback against the real file instead of the dashboard renderer simulating
-those behaviors.
+and scrollback against the pane process instead of the dashboard renderer
+simulating those behaviors.
+
+Display-only provider log presentation is specified in
+[ADR 0015](0015-display-only-provider-log-presentation.md). Missing metadata,
+invalid descriptors, missing logs, and formatter failures fall back to
+raw/plain display and do not affect workflow execution.
 
 ### Approach Comparison
 | Approach | Solves "is it dead?" | Clean output | Architecture fit |
@@ -416,8 +428,9 @@ schema.
 Keeping liveness derivation inside the UI adapter preserves core DAG semantics,
 workflow parsing, and provider invocation contracts.
 
-Raw logs are still available, but only as an explicit inspect mode. This keeps
-the default UI readable while preserving exact log inspection when users need it.
+Raw logs are still available through explicit raw inspect. This keeps the
+default UI readable while preserving exact persisted `.log` inspection when
+users need it.
 
 ## Architecture Alignment
 - The observer contract remains stable for implemented behavior:

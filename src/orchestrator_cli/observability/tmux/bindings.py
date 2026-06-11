@@ -14,7 +14,9 @@ from orchestrator_cli.observability.tmux.commands import (
     inspect_copy_mode_key_bindings,
     inspect_enter_command,
     inspect_exit_command,
+    inspect_formatted_command,
     inspect_key_bindings,
+    inspect_raw_command,
     quit_dashboard_commands,
     selection_move_command,
     tmux_command_string,
@@ -42,6 +44,8 @@ class TmuxCompactKeyBindings:
         self._move_down_command: str | None = None
         self._enter_inspect_command: str | None = None
         self._exit_inspect_command: str | None = None
+        self._raw_inspect_command: str | None = None
+        self._formatted_inspect_command: str | None = None
 
     def reset(self) -> None:
         self._copy_mode_bindings_mode = None
@@ -49,6 +53,8 @@ class TmuxCompactKeyBindings:
         self._move_down_command = None
         self._enter_inspect_command = None
         self._exit_inspect_command = None
+        self._raw_inspect_command = None
+        self._formatted_inspect_command = None
 
     def install(
         self,
@@ -57,13 +63,11 @@ class TmuxCompactKeyBindings:
         session: TmuxSessionTargets,
     ) -> None:
         move_up = selection_move_command(
-            index_path=runtime_files.selection_index,
-            count_path=runtime_files.node_count,
+            runtime_files=runtime_files,
             direction="up",
         )
         move_down = selection_move_command(
-            index_path=runtime_files.selection_index,
-            count_path=runtime_files.node_count,
+            runtime_files=runtime_files,
             direction="down",
         )
         inspect_context = InspectCommandContext(
@@ -77,12 +81,15 @@ class TmuxCompactKeyBindings:
         )
         enter_inspect = inspect_enter_command(
             inspect_context,
-            exit_inspect=exit_inspect,
         )
+        raw_inspect = inspect_raw_command(inspect_context)
+        formatted_inspect = inspect_formatted_command(inspect_context)
         self._move_up_command = move_up
         self._move_down_command = move_down
         self._enter_inspect_command = enter_inspect
         self._exit_inspect_command = exit_inspect
+        self._raw_inspect_command = raw_inspect
+        self._formatted_inspect_command = formatted_inspect
 
         self._install_dashboard_bindings(
             tmux,
@@ -91,10 +98,18 @@ class TmuxCompactKeyBindings:
             move_up,
             move_down,
             enter_inspect,
+            raw_inspect,
         )
         self._apply_dashboard_copy_mode_bindings(tmux, runtime_files, session)
         self._copy_mode_bindings_mode = MODE_DASHBOARD
-        self._install_inspect_bindings(tmux, runtime_files, session, exit_inspect)
+        self._install_inspect_bindings(
+            tmux,
+            runtime_files,
+            session,
+            exit_inspect,
+            raw_inspect,
+            formatted_inspect,
+        )
 
     def sync_copy_mode_bindings(
         self,
@@ -119,6 +134,7 @@ class TmuxCompactKeyBindings:
         move_up: str,
         move_down: str,
         enter_inspect: str,
+        raw_inspect: str,
     ) -> None:
         dashboard_bindings = dashboard_key_bindings(
             session_name=session.session_name,
@@ -126,6 +142,7 @@ class TmuxCompactKeyBindings:
             move_up=move_up,
             move_down=move_down,
             enter_inspect=enter_inspect,
+            raw_inspect=raw_inspect,
             quit_requested_path=runtime_files.quit_requested,
         )
         for key, commands in dashboard_bindings.items():
@@ -153,10 +170,14 @@ class TmuxCompactKeyBindings:
         runtime_files: RuntimeFiles,
         session: TmuxSessionTargets,
         exit_inspect: str,
+        raw_inspect: str,
+        formatted_inspect: str,
     ) -> None:
         inspect_bindings = inspect_key_bindings(
             right_pane_id=session.right_pane_id,
             exit_inspect=exit_inspect,
+            raw_inspect=raw_inspect,
+            formatted_inspect=formatted_inspect,
             quit_commands=quit_dashboard_commands(
                 session.session_name,
                 runtime_files.quit_requested,
@@ -175,6 +196,7 @@ class TmuxCompactKeyBindings:
             self._move_up_command is None
             or self._move_down_command is None
             or self._enter_inspect_command is None
+            or self._raw_inspect_command is None
         ):
             return
 
@@ -184,6 +206,7 @@ class TmuxCompactKeyBindings:
             move_up=self._move_up_command,
             move_down=self._move_down_command,
             enter_inspect=self._enter_inspect_command,
+            raw_inspect=self._raw_inspect_command,
             quit_requested_path=runtime_files.quit_requested,
         )
         focus_mouse_target = focus_commands("=")
@@ -209,11 +232,17 @@ class TmuxCompactKeyBindings:
         runtime_files: RuntimeFiles,
         session: TmuxSessionTargets,
     ) -> None:
-        if self._exit_inspect_command is None:
+        if (
+            self._exit_inspect_command is None
+            or self._raw_inspect_command is None
+            or self._formatted_inspect_command is None
+        ):
             return
 
         inspect_bindings = inspect_copy_mode_key_bindings(
             self._exit_inspect_command,
+            raw_inspect=self._raw_inspect_command,
+            formatted_inspect=self._formatted_inspect_command,
             quit_commands=quit_dashboard_commands(
                 session.session_name,
                 runtime_files.quit_requested,

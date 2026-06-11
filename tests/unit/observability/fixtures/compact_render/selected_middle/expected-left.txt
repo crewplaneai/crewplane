@@ -4,4 +4,4 @@ DAG Summary
 ▸● node.c                   ⏸  gamma
 ... below ...
 
-[↑/↓] select  [Enter] inspect log  [q] quit run
+[↑/↓] select  [Enter] inspect  [r] raw inspect  [q] quit

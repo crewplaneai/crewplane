@@ -3,7 +3,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.adapters.invokers.cli_invoker import (
+    build_cli_invocation_plan,
+    build_cli_log_presentation,
+)
 from orchestrator_cli.architecture.contracts import CommandResult
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
@@ -396,7 +399,10 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                     config,
                     workflow,
                     output,
-                    invoker=PlannedAgentInvoker(build_cli_invocation_plan),
+                    invoker=PlannedAgentInvoker(
+                        plan_builder=build_cli_invocation_plan,
+                        log_presentation_builder=build_cli_log_presentation,
+                    ),
                     event_sink=events.append,
                 )
 

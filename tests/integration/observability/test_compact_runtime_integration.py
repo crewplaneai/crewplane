@@ -20,6 +20,14 @@ from orchestrator_cli.core.workflow_models import (
 )
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
 from orchestrator_cli.observability.runtime import ObservabilityHub
+from orchestrator_cli.observability.tmux.inspect_snapshot import (
+    read_snapshot,
+    write_inspect_snapshot,
+)
+from orchestrator_cli.observability.tmux.selection_control import (
+    SelectionControlState,
+    write_selection_control,
+)
 from orchestrator_cli.observability.types import RunContext, RunResult
 from orchestrator_cli.runtime.execution.workflow import execute_workflow
 from orchestrator_cli.version import SCHEMA_VERSION
@@ -137,8 +145,13 @@ def render_compact_dashboard(run_result) -> tuple[str, str]:  # type: ignore[no-
         node_index = ordered_node_ids(run_result.selected_snapshot).index(
             run_result.selected_node_id
         )
-        runtime.runtime_files.selection_index.write_text(
-            str(node_index), encoding="utf-8"
+        write_selection_control(
+            runtime.runtime_files,
+            SelectionControlState(
+                selected_index=node_index,
+                selection_generation=1,
+                updated_at=0.0,
+            ),
         )
         runtime.on_snapshot(None, run_result.selected_snapshot)
         runtime.refresh_once()
@@ -360,7 +373,8 @@ COMPACT_RUNTIME_CASES = [
             "expected_right_fragments": (
                 "Node Output: design.iteration",
                 "codex/executor/codex_executor_0 (round1) [succeeded]",
-                '"provider": "codex"',
+                "mock: source=echo output_mode=echo",
+                "node_id=design.iteration task_id=codex_executor_0",
             ),
         },
         id="compact-linear-dashboard",
@@ -379,8 +393,8 @@ COMPACT_RUNTIME_CASES = [
             "expected_right_fragments": (
                 "Node Output: auth.plan",
                 "alpha/executor/alpha_executor_0 (round1) [succeeded]",
-                '"source"',
-                '"echo"',
+                "mock: source=echo output_mode=echo",
+                "node_id=auth.plan task_id=alpha_executor_0",
             ),
         },
         id="compact-namespaced-dashboard",
@@ -419,7 +433,8 @@ def test_compact_runtime_dashboard_help_mentions_log_inspect_mode(
     run_result = run_visualization_case(tmp_path, case_data)
     left_text, _ = render_compact_dashboard(run_result)
 
-    assert "[Enter] inspect log" in left_text
+    assert "[Enter] inspect" in left_text
+    assert "[r] raw inspect" in left_text
 
 
 def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
@@ -448,18 +463,22 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
         node_index = ordered_node_ids(run_result.selected_snapshot).index(
             run_result.selected_node_id
         )
-        runtime.runtime_files.selection_index.write_text(
-            str(node_index), encoding="utf-8"
+        write_selection_control(
+            runtime.runtime_files,
+            SelectionControlState(
+                selected_index=node_index,
+                selection_generation=1,
+                updated_at=0.0,
+            ),
         )
         runtime.on_snapshot(None, run_result.selected_snapshot)
         runtime.refresh_once()
 
         runtime.calls.clear()
         runtime.runtime_files.mode.write_text("inspect", encoding="utf-8")
-        runtime.runtime_files.inspect_node_id.write_text(
-            run_result.selected_node_id,
-            encoding="utf-8",
-        )
+        selected = read_snapshot(runtime.runtime_files.selected_invocation)
+        assert selected is not None
+        write_inspect_snapshot(runtime.runtime_files, selected, "raw")
         runtime.runtime_files.right_content.write_text(
             "inspection-active", encoding="utf-8"
         )
@@ -475,10 +494,10 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
             and args[4] == "@orchestrator_title"
         ]
 
-        assert "[Log Inspect] [Esc] return  [q] quit run" in left_text
+        assert "[Log Inspect] [r] raw  [f] formatted  [Esc] return" in left_text
         assert right_text == "inspection-active"
         assert any(
-            args[5] == f"Node Log: {run_result.selected_node_id}"
+            args[5] == f"Node Log: {run_result.selected_node_id} (raw)"
             for args in pane_title_writes
         )
     finally:
@@ -563,7 +582,21 @@ def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(
         for command in bind_key_commands
     )
     bind_key_args = [arg for command in bind_key_commands for arg in command]
-    assert any("inspect-enter.sh" in arg for arg in bind_key_args)
+    assert any(
+        "orchestrator_cli.observability.tmux.inspect_control" in arg
+        and "--view auto" in arg
+        for arg in bind_key_args
+    )
+    assert any(
+        "orchestrator_cli.observability.tmux.inspect_control" in arg
+        and "--view raw" in arg
+        for arg in bind_key_args
+    )
+    assert any(
+        "orchestrator_cli.observability.tmux.inspect_control" in arg
+        and "--view formatted" in arg
+        for arg in bind_key_args
+    )
     assert any("inspect-exit.sh" in arg for arg in bind_key_args)
     assert not any(
         'respawn-pane -k -t "$right_pane" tail -n +1 -F "$log_path"' in arg

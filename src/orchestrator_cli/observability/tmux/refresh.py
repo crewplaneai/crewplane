@@ -6,12 +6,25 @@ from dataclasses import dataclass
 from enum import StrEnum
 from threading import Lock
 from time import monotonic, time
+from typing import Any
 
-from orchestrator_cli.observability.events import ExecutionEvent, NodeRuntimeState
+from orchestrator_cli.observability.events import (
+    ExecutionEvent,
+    NodeRuntimeState,
+    RunDashboardState,
+)
+from orchestrator_cli.observability.events.dashboard_state import (
+    InvocationRuntimeState,
+)
+from orchestrator_cli.observability.log_presentation import JSON_OBJECT_THROTTLE
 from orchestrator_cli.observability.tmux.bindings import TmuxCompactKeyBindings
 from orchestrator_cli.observability.tmux.control_state import (
     PaneGeometry,
     TmuxCompactControlState,
+)
+from orchestrator_cli.observability.tmux.inspect_snapshot import (
+    SNAPSHOT_SCHEMA_VERSION,
+    read_snapshot,
 )
 from orchestrator_cli.observability.tmux.labels import counts_line, status_line
 from orchestrator_cli.observability.tmux.rendering import (
@@ -23,10 +36,10 @@ from orchestrator_cli.observability.tmux.rendering import (
 from orchestrator_cli.observability.tmux.runtime_files import (
     MODE_INSPECT,
     RuntimeFiles,
-    read_index,
     read_runtime_mode,
     read_runtime_value,
     write_atomic,
+    write_json_atomic,
 )
 from orchestrator_cli.observability.tmux.selected_invocation import (
     prepare_selected_invocation,
@@ -34,7 +47,11 @@ from orchestrator_cli.observability.tmux.selected_invocation import (
 from orchestrator_cli.observability.tmux.selection import (
     DashboardSelection,
     resolve_dashboard_selection,
-    selected_invocation_log_path,
+    select_invocation,
+)
+from orchestrator_cli.observability.tmux.selection_control import (
+    SelectionControlState,
+    read_selection_control,
 )
 from orchestrator_cli.observability.tmux.session_lifecycle import StartedCompactSession
 from orchestrator_cli.observability.tmux.window import TmuxCompactWindowOptions
@@ -73,10 +90,13 @@ class TmuxCompactRefreshController:
         self._wall_time_now = wall_time_now
         self._snapshot_lock = Lock()
         self._latest_snapshot: DashboardSnapshot | None = None
+        self._dashboard_generation = 0
 
     def reset(self) -> None:
         with self._snapshot_lock:
             self._latest_snapshot = None
+            self._dashboard_generation = 0
+        JSON_OBJECT_THROTTLE.clear_all()
 
     def on_snapshot(
         self, event: ExecutionEvent | None, snapshot: DashboardSnapshot
@@ -132,15 +152,24 @@ class TmuxCompactRefreshController:
         targets = session.targets
         tmux = session.tmux
         state = snapshot.state
+        self._dashboard_generation += 1
+        selection_control = read_selection_control(runtime_files)
         selection = resolve_dashboard_selection(
             snapshot,
-            read_index(runtime_files.selection_index),
+            selection_control.selected_index,
         )
         selected_node_id = selection.selected_node_id
-        self._write_runtime_selection(runtime_files, selection, state.nodes)
+        self._write_runtime_selection(
+            runtime_files,
+            selection,
+            selection_control,
+            state,
+        )
 
         mode = read_runtime_mode(runtime_files.mode)
-        inspect_node_id = read_runtime_value(runtime_files.inspect_node_id)
+        inspect_snapshot = read_snapshot(runtime_files.inspect_invocation)
+        inspect_node_id = _snapshot_string(inspect_snapshot, "node_id")
+        inspect_view = _snapshot_string(inspect_snapshot, "inspect_view")
         inspect_mode = mode == MODE_INSPECT
         self._bindings.sync_copy_mode_bindings(
             tmux,
@@ -195,6 +224,7 @@ class TmuxCompactRefreshController:
                 mode=mode,
                 selected_node_id=selected_node_id,
                 inspect_node_id=inspect_node_id,
+                inspect_view=inspect_view,
             ),
         )
 
@@ -273,15 +303,77 @@ class TmuxCompactRefreshController:
         self,
         runtime_files: RuntimeFiles,
         selection: DashboardSelection,
-        nodes: Mapping[str, NodeRuntimeState],
+        selection_control: SelectionControlState,
+        state: RunDashboardState,
     ) -> None:
         write_atomic(runtime_files.node_count, str(len(selection.ordered_node_ids)))
-        write_atomic(runtime_files.selection_index, str(selection.selected_index))
-        write_atomic(runtime_files.selected_node_id, selection.selected_node_id or "")
-        write_atomic(
-            runtime_files.selected_log,
-            selected_invocation_log_path(nodes, selection.selected_node_id) or "",
+        write_json_atomic(
+            runtime_files.selected_invocation,
+            self._selected_invocation_record(
+                state,
+                selection,
+                selection_control,
+            ),
         )
+
+    def _selected_invocation_record(
+        self,
+        state: RunDashboardState,
+        selection: DashboardSelection,
+        selection_control: SelectionControlState,
+    ) -> dict[str, object]:
+        invocation = _selected_invocation(state, selection.selected_node_id)
+        record: dict[str, object] = {
+            "schema_version": SNAPSHOT_SCHEMA_VERSION,
+            "workflow_name": state.workflow_name,
+            "run_id": state.run_id,
+            "dashboard_generation": self._dashboard_generation,
+            "selection_generation": selection_control.selection_generation,
+            "requested_selected_index": selection_control.selected_index,
+            "resolved_selected_index": selection.selected_index,
+            "node_count": len(selection.ordered_node_ids),
+            "node_id": selection.selected_node_id,
+            "written_at": self._wall_time_now(),
+        }
+        if invocation is None:
+            return record
+        record.update(
+            {
+                "task_id": invocation.task_id,
+                "provider": invocation.provider,
+                "role": invocation.role,
+                "model": invocation.model,
+                "audit_round_num": invocation.audit_round_num,
+                "round_num": invocation.round_num,
+                "invocation_status": invocation.status,
+                "output_file": invocation.output_file,
+                "log_file": invocation.log_file,
+            }
+        )
+        if invocation.log_presentation_format is not None:
+            record["log_presentation_format"] = invocation.log_presentation_format
+        if invocation.log_presentation_profile is not None:
+            record["log_presentation_profile"] = invocation.log_presentation_profile
+        return record
 
     def _quit_requested(self, runtime_files: RuntimeFiles) -> bool:
         return read_runtime_value(runtime_files.quit_requested) == "1"
+
+
+def _selected_invocation(
+    state: RunDashboardState,
+    selected_node_id: str | None,
+) -> InvocationRuntimeState | None:
+    if selected_node_id is None:
+        return None
+    node = state.nodes.get(selected_node_id)
+    if node is None:
+        return None
+    return select_invocation(node)
+
+
+def _snapshot_string(snapshot: dict[str, Any] | None, key: str) -> str | None:
+    if snapshot is None:
+        return None
+    value = snapshot.get(key)
+    return value if isinstance(value, str) else None

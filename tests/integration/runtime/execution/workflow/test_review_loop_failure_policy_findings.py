@@ -153,6 +153,12 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             def __init__(self) -> None:
                 self.contexts = []
 
+            def log_presentation_for(
+                self,
+                config: AgentConfig,  # noqa: ARG002 - Required by protocol.
+            ) -> None:
+                return None
+
             async def invoke(
                 self,
                 config: AgentConfig,  # noqa: ARG002 - Required by test double or callback signature.

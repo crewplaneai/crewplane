@@ -55,6 +55,22 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 options=self._options(mystery=1),
             )
 
+    def test_create_invoker_exposes_mock_log_presentation_descriptor(self) -> None:
+        adapter = MockInvokerAdapter()
+        invoker = adapter.create_invoker(
+            config=self._build_config(),
+            options=self._options(),
+        )
+
+        descriptor = invoker.log_presentation_for(
+            AgentConfig(cli_cmd=["echo"], default_model="model-a")
+        )
+
+        assert descriptor is not None
+        self.assertEqual(
+            (descriptor.format, descriptor.profile), ("json_lines", "mock")
+        )
+
     def test_create_invoker_rejects_invalid_option_types_and_values(self) -> None:
         adapter = MockInvokerAdapter()
         invalid_options = [

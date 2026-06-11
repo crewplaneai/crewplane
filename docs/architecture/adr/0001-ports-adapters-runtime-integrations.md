@@ -26,6 +26,9 @@ for runtime integration boundaries. It adds these settled rules:
   capability records and rendered as provider-agnostic invocation plans. Runtime
   execution consumes those plans and does not infer provider behavior from
   executable basenames, CLI flags, output formats, quota text, or usage text.
+- Display-only provider log presentation descriptors are also owned by invoker
+  adapters. Runtime transports only validated observer metadata, as defined in
+  [ADR 0015](0015-display-only-provider-log-presentation.md).
 - The built-in CLI invoker owns provider capability records for `claude`,
   `codex`, `copilot`, `gemini`, `kilo`, and `generic`.
 - Agent prompt transport defaults to `prompt_transport: "stdin"`. Passing
@@ -89,6 +92,8 @@ The prior structure had meaningful seams but orchestration wiring still hardcode
 - **2026-06-07**: Folded boundary hardening decisions into this ADR. Runtime
   provider inference remains behind the invoker adapter boundary, ports expose
   neutral contracts, and prompt argv transport is an explicit opt-in.
+- **2026-06-10**: Added ADR 0015 link for adapter-owned, display-only provider
+  log presentation descriptors.
 
 ## Follow-ups
 1. Add `llm_api` invoker adapter.

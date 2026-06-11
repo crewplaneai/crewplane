@@ -116,8 +116,12 @@ class CompactRuntimeSetupTests(unittest.TestCase):
 
         dashboard_enter_binding = bindings[("orchestrator-dashboard", "Enter")]
         self.assertIn("run-shell", dashboard_enter_binding)
-        self.assertIn("inspect-enter.sh", dashboard_enter_binding)
-        self.assertLess(len(dashboard_enter_binding), 300)
+        self.assertIn(
+            "orchestrator_cli.observability.tmux.inspect_control",
+            dashboard_enter_binding,
+        )
+        self.assertIn("--view auto", dashboard_enter_binding)
+        self.assertLess(len(dashboard_enter_binding), 500)
         self.assertNotIn('[[ -n "$log_path" ]] || exit 0', dashboard_enter_binding)
         self.assertNotIn(
             'respawn-pane -k -t "$right_pane" tail -n +1 -F "$log_path"',
@@ -133,7 +137,11 @@ class CompactRuntimeSetupTests(unittest.TestCase):
         self.assertIn("send-keys -X cancel", enter_binding)
         self.assertIn("switch-client -T orchestrator-dashboard", enter_binding)
         self.assertIn("run-shell", enter_binding)
-        self.assertIn("inspect-enter.sh", enter_binding)
+        self.assertIn(
+            "orchestrator_cli.observability.tmux.inspect_control",
+            enter_binding,
+        )
+        self.assertIn("--view auto", enter_binding)
         self.assertNotIn("select-pane -t %20", enter_binding)
 
         escape_binding = bindings[("orchestrator-dashboard", "Escape")]

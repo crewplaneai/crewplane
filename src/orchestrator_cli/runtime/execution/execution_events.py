@@ -30,6 +30,8 @@ class RuntimeEventContext:
     round_num: int | None = None
     output_file: Path | None = None
     log_file: Path | None = None
+    log_presentation_format: str | None = None
+    log_presentation_profile: str | None = None
 
     def as_execution_event_fields(self) -> dict[str, object]:
         return {
@@ -42,6 +44,8 @@ class RuntimeEventContext:
             "round_num": self.round_num,
             "output_file": str(self.output_file) if self.output_file else None,
             "log_file": str(self.log_file) if self.log_file else None,
+            "log_presentation_format": self.log_presentation_format,
+            "log_presentation_profile": self.log_presentation_profile,
         }
 
 
@@ -57,6 +61,8 @@ class InvocationMetadata:
     output_file: Path
     log_file: Path | None
     findings_enabled: bool = False
+    log_presentation_format: str | None = None
+    log_presentation_profile: str | None = None
 
     def event_context(self) -> RuntimeEventContext:
         return RuntimeEventContext(
@@ -69,6 +75,8 @@ class InvocationMetadata:
             round_num=self.round_num,
             output_file=self.output_file,
             log_file=self.log_file,
+            log_presentation_format=self.log_presentation_format,
+            log_presentation_profile=self.log_presentation_profile,
         )
 
 

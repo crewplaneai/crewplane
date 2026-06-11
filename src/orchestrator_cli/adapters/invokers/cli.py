@@ -13,7 +13,7 @@ from orchestrator_cli.core.config import Config
 from orchestrator_cli.core.workflow_models import WorkflowPlan
 from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
 
-from .cli_invoker import build_cli_invocation_plan
+from .cli_invoker import build_cli_invocation_plan, build_cli_log_presentation
 
 
 def collect_cli_availability_errors(
@@ -86,7 +86,10 @@ class CliInvokerAdapter:
 
         _validate_config(config)
         self.canonicalize_options("cli", self.__class__.__module__, options)
-        return PlannedAgentInvoker(build_cli_invocation_plan)
+        return PlannedAgentInvoker(
+            plan_builder=build_cli_invocation_plan,
+            log_presentation_builder=build_cli_log_presentation,
+        )
 
 
 def _validate_config(config: Config) -> None:

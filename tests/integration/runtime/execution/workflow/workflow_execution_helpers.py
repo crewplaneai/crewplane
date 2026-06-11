@@ -5,7 +5,10 @@ from threading import Event
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import AgentInvoker
+from orchestrator_cli.architecture.contracts import (
+    AgentInvoker,
+    LogPresentationDescriptor,
+)
 from orchestrator_cli.artifacts import OutputManager, safe_artifact_name
 from orchestrator_cli.bootstrap import build_runtime_config_snapshot
 from orchestrator_cli.core.config import AgentConfig, Config
@@ -38,7 +41,15 @@ from orchestrator_cli.runtime.execution.consensus import (
 )
 
 
-class MockAgentInvoker(AgentInvoker):
+class NoPresentationInvoker(AgentInvoker):
+    def log_presentation_for(
+        self,
+        config: AgentConfig,  # noqa: ARG002 - Required by protocol signature.
+    ) -> LogPresentationDescriptor | None:
+        return None
+
+
+class MockAgentInvoker(NoPresentationInvoker):
     def __init__(self, outputs: list[str] | None = None) -> None:
         self.outputs = outputs or []
         self.calls: list[dict[str, str | int | None]] = []
@@ -87,7 +98,7 @@ class MockAgentInvoker(AgentInvoker):
         output_file.write_text(content, encoding="utf-8")
 
 
-class GraphDependencyOrderInvoker(AgentInvoker):
+class GraphDependencyOrderInvoker(NoPresentationInvoker):
     def __init__(self) -> None:
         self.first_completed = False
         self.calls: list[str] = []
@@ -226,7 +237,7 @@ async def execute_parallel_stage(
     )
 
 
-class OptionalOutputInvoker(AgentInvoker):
+class OptionalOutputInvoker(NoPresentationInvoker):
     def __init__(self, outputs: list[str | None]) -> None:
         self.outputs = outputs
         self.calls: list[dict[str, str | int | None]] = []
@@ -259,7 +270,7 @@ class OptionalOutputInvoker(AgentInvoker):
         output_file.write_text(content, encoding="utf-8")
 
 
-class ArtifactDriftInvoker(AgentInvoker):
+class ArtifactDriftInvoker(NoPresentationInvoker):
     def __init__(
         self,
         outputs: list[str],
@@ -308,7 +319,7 @@ class ArtifactDriftInvoker(AgentInvoker):
                 handle.write(content)
 
 
-class SelectiveFailInvoker(AgentInvoker):
+class SelectiveFailInvoker(NoPresentationInvoker):
     def __init__(self, failing_models: set[str]) -> None:
         self.failing_models = failing_models
         self.calls: list[dict[str, str]] = []
@@ -330,7 +341,7 @@ class SelectiveFailInvoker(AgentInvoker):
         output_file.write_text(f"success: {model}", encoding="utf-8")
 
 
-class FindingsSelectiveFailInvoker(AgentInvoker):
+class FindingsSelectiveFailInvoker(NoPresentationInvoker):
     def __init__(self, failing_models: set[str]) -> None:
         self.failing_models = failing_models
         self.calls: list[dict[str, str]] = []
@@ -361,7 +372,7 @@ class FindingsSelectiveFailInvoker(AgentInvoker):
         )
 
 
-class DelayByModelInvoker(AgentInvoker):
+class DelayByModelInvoker(NoPresentationInvoker):
     def __init__(self, delays: dict[str, float]) -> None:
         self.delays = delays
         self.calls: list[str] = []
@@ -409,7 +420,7 @@ class FailingLogOutputManager(OutputManager):
         )
 
 
-class TimedTaskOutputInvoker(AgentInvoker):
+class TimedTaskOutputInvoker(NoPresentationInvoker):
     def __init__(
         self,
         outputs_by_task_id: dict[str, str],
@@ -449,7 +460,7 @@ class TimedTaskOutputInvoker(AgentInvoker):
         output_file.write_text(content, encoding="utf-8")
 
 
-class ParallelReviewerTimingInvoker(AgentInvoker):
+class ParallelReviewerTimingInvoker(NoPresentationInvoker):
     def __init__(self, reviewer_delay: float) -> None:
         self.reviewer_delay = reviewer_delay
         self.started_at: dict[str, float] = {}
@@ -474,7 +485,7 @@ class ParallelReviewerTimingInvoker(AgentInvoker):
         output_file.write_text("executor output", encoding="utf-8")
 
 
-class CleanupOnCancelInvoker(AgentInvoker):
+class CleanupOnCancelInvoker(NoPresentationInvoker):
     def __init__(self, cleanup_delay_seconds: float = 0.05) -> None:
         self.started = asyncio.Event()
         self.cleanup_started = asyncio.Event()

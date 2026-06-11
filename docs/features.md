@@ -32,7 +32,7 @@ Employs strict, fail-fast validation before execution begins. It compiles provid
 
 ## Progressive UI Observability
 
-Provides a dynamic terminal-based dashboard that automatically scales to the user's workspace. It utilizes objective metrics—like elapsed time and artifact growth—to convey liveness during long-running tasks, while still allowing on-demand access to scrollable raw provider logs.
+Provides a dynamic terminal-based dashboard that automatically scales to the user's workspace. It utilizes objective metrics—like elapsed time and artifact growth—to convey liveness during long-running tasks, uses bounded formatted provider-log presentation when valid metadata exists, and still allows on-demand raw inspect of the exact persisted provider `.log`.
 
 ## Self-Healing State Management
 

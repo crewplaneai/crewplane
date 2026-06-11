@@ -34,7 +34,9 @@ Current built-in invokers are:
 - `cli` for real provider CLI execution
 - `mock` for deterministic, cost-free local validation
 
-Current built-in `tmux` UI uses a compact two-pane dashboard with an on-demand raw log inspect mode and runs as observer-only (no invoker override).
+Current built-in `tmux` UI uses a compact two-pane dashboard with
+display-only provider-log presentation when valid adapter metadata exists,
+explicit raw log inspect, and observer-only behavior (no invoker override).
 
 ### Contracts (Ports)
 Stable contracts are under `orchestrator_cli.architecture.ports`:
@@ -78,7 +80,10 @@ settings:
 tmux UI option intent:
 - `quiet_after_seconds`: when a running invocation has not appended new log output for this long, render quiet-state liveness messaging in the right pane.
 - `log_tail_lines`: optional fixed cap for tailed log lines in compact dashboard mode; omit it or set it to `null` to fit the right pane height automatically.
-- `Enter` opens the selected node's raw log in the same right pane, and that inspect mode stays locked to the chosen log until `Esc`.
+- `Enter` opens formatted inspect when valid presentation metadata exists, otherwise raw inspect.
+- `r` opens or switches to raw inspect, which shows the exact persisted provider `.log`.
+- `f` switches back to formatted inspect when valid metadata exists.
+- `Esc` returns from inspect mode to the compact dashboard.
 
 ## Implementation Resolution Strategy
 Resolution is alias-first with dotted-path override:
@@ -119,6 +124,7 @@ Why this was chosen:
 
 ### Replaceable responsibilities
 - Invocation transport (CLI/API/etc).
+- Invoker-owned display descriptors for provider log presentation.
 - Runtime live visualization and interaction model.
 - Artifact storage and template resolution implementation.
 

@@ -3,7 +3,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from orchestrator_cli.adapters.invokers.cli_invoker import (
+    build_cli_invocation_plan,
+    build_cli_log_presentation,
+)
 from orchestrator_cli.architecture.contracts import InvocationContext
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.invocation.command import run_command_once
@@ -74,7 +77,10 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                 "orchestrator_cli.runtime.agent.invoker.invoke_agent",
                 delegated,
             ):
-                await PlannedAgentInvoker(build_cli_invocation_plan).invoke(
+                await PlannedAgentInvoker(
+                    plan_builder=build_cli_invocation_plan,
+                    log_presentation_builder=build_cli_log_presentation,
+                ).invoke(
                     config=AgentConfig(cli_cmd=["echo"], default_model="test"),
                     model="test",
                     prompt="prompt",

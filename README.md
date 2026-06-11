@@ -304,8 +304,10 @@ Kilo follows the same spend-observability limitation as Copilot in this release:
 For the tmux live dashboard:
 - `quiet_after_seconds` controls when a still-running invocation is treated as "quiet" and the right pane adds liveness messaging like "waiting for new output."
 - `log_tail_lines` is optional. Omit it or set it to `null` to fit the compact dashboard right pane height automatically, or set an integer to enforce a fixed cap.
-- The default right pane is a compact summary/tail view for the selected node.
-- Press `Enter` to switch the right pane into a scrollable raw log inspector for the selected node's current invocation log. That inspector stays locked to the opened log until you leave it.
+- The default right pane is a compact summary/tail view for the selected node. It uses bounded formatted log presentation when the invoker supplies valid metadata, and falls back to sanitized plain tails when metadata is missing or formatting fails.
+- Press `Enter` to inspect the selected node's current invocation log. It opens formatted inspect when valid presentation metadata exists, otherwise raw inspect.
+- Press `r` to open or switch to raw inspect. Raw inspect shows the exact persisted provider `.log` file.
+- Press `f` in inspect mode to switch back to formatted inspect when valid presentation metadata exists.
 - Press `Esc` in inspect mode to return to the compact dashboard view. Scrolling there uses tmux history/copy-mode semantics rather than terminal scrollback.
 - Press `q` to cancel the running workflow, close the dashboard, and return control to the terminal.
 

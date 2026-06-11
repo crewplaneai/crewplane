@@ -9,6 +9,7 @@ from orchestrator_cli.observability.tmux.runtime_files import (
     RuntimeFiles,
     initial_runtime_file_contents,
     write_atomic,
+    write_json_atomic,
 )
 from orchestrator_cli.observability.tmux.session import TmuxSessionTargets
 from tests.integration.observability.tmux_fakes import FakeTmuxClient
@@ -30,8 +31,38 @@ def test_bindings_install_dashboard_inspect_and_copy_mode_tables(
     assert ("copy-mode", "Up") in table_keys
     assert ("copy-mode-vi", "WheelDownPane") in table_keys
     enter_binding = table_keys[("orchestrator-dashboard", "Enter")]
-    assert "inspect-enter.sh" in enter_binding
+    assert "orchestrator_cli.observability.tmux.inspect_control" in enter_binding
+    assert "--view auto" in enter_binding
     assert "respawn-pane" not in enter_binding
+    assert ("orchestrator-dashboard", "r") in table_keys
+    assert ("orchestrator-inspect", "r") in table_keys
+    assert ("orchestrator-inspect", "f") in table_keys
+
+
+def test_bindings_do_not_embed_dynamic_log_or_descriptor_values(
+    tmp_path: Path,
+) -> None:
+    client = FakeTmuxClient()
+    runtime_files = initialized_runtime_files(tmp_path)
+    write_json_atomic(
+        runtime_files.selected_invocation,
+        {
+            "schema_version": 1,
+            "selection_generation": 0,
+            "requested_selected_index": -1,
+            "log_file": str(tmp_path / "bad;$(path).log"),
+            "log_presentation_format": "json_lines",
+            "log_presentation_profile": "mock",
+        },
+    )
+    bindings = TmuxCompactKeyBindings(refresh_interval_seconds=1000.0)
+
+    bindings.install(client, runtime_files, tmux_targets())
+
+    commands = "\n".join(binding_keys(client.calls).values())
+    assert "bad;$(path).log" not in commands
+    assert "json_lines" not in commands
+    assert "mock" not in commands
 
 
 def test_copy_mode_bindings_switch_between_dashboard_and_inspect(

@@ -13,6 +13,7 @@ from orchestrator_cli.architecture.contracts import (
     WorkflowTopology as WorkflowTopology,
 )
 
+# Snapshot fields point back to observability modules that already import these types.
 if TYPE_CHECKING:
     from orchestrator_cli.observability.events import RunDashboardState
     from orchestrator_cli.observability.layout import TopologyLayout

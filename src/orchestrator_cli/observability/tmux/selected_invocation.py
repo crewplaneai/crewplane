@@ -4,9 +4,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from orchestrator_cli.architecture.contracts import LogPresentationDescriptor
 from orchestrator_cli.observability.events import (
     InvocationRuntimeState,
     NodeRuntimeState,
+)
+from orchestrator_cli.observability.log_presentation import (
+    LogPresentationSnapshot,
+    format_log_file,
 )
 from orchestrator_cli.observability.tmux.log_tail import LogSnapshot, read_log_snapshot
 from orchestrator_cli.observability.tmux.selection import select_invocation
@@ -16,6 +21,7 @@ from orchestrator_cli.observability.tmux.selection import select_invocation
 class PreparedSelectedInvocation:
     invocation: InvocationRuntimeState
     log_snapshot: LogSnapshot | None = None
+    presentation_snapshot: LogPresentationSnapshot | None = None
     log_unavailable_message: str | None = None
 
 
@@ -56,7 +62,40 @@ def prepare_selected_invocation(
             invocation=invocation,
             log_unavailable_message="Log file unavailable for this invocation.",
         )
+    presentation_snapshot = _format_presentation_snapshot(
+        invocation,
+        log_path,
+        line_budget=log_line_count,
+        wall_time_now=wall_time_now,
+    )
     return PreparedSelectedInvocation(
         invocation=invocation,
         log_snapshot=log_snapshot,
+        presentation_snapshot=presentation_snapshot,
     )
+
+
+def _format_presentation_snapshot(
+    invocation: InvocationRuntimeState,
+    log_path: Path,
+    line_budget: int,
+    wall_time_now: float,
+) -> LogPresentationSnapshot | None:
+    if (
+        invocation.log_presentation_format is None
+        or invocation.log_presentation_profile is None
+    ):
+        return None
+    try:
+        return format_log_file(
+            log_path,
+            LogPresentationDescriptor(
+                format=invocation.log_presentation_format,
+                profile=invocation.log_presentation_profile,
+            ),
+            line_budget=line_budget,
+            invocation_status=invocation.status,
+            wall_time_now=wall_time_now,
+        )
+    except Exception:
+        return None

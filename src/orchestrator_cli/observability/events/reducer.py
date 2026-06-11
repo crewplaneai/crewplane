@@ -144,6 +144,8 @@ def require_invocation(
             round_num=context.round_num,
             output_file=context.output_file,
             log_file=context.log_file,
+            log_presentation_format=context.log_presentation_format,
+            log_presentation_profile=context.log_presentation_profile,
         )
         node.invocations[invocation_key] = invocation
 
@@ -151,6 +153,10 @@ def require_invocation(
         invocation.output_file = context.output_file
     if context.log_file is not None:
         invocation.log_file = context.log_file
+    if context.log_presentation_format is not None:
+        invocation.log_presentation_format = context.log_presentation_format
+    if context.log_presentation_profile is not None:
+        invocation.log_presentation_profile = context.log_presentation_profile
 
     return invocation
 

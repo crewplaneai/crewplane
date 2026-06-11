@@ -16,9 +16,6 @@ from orchestrator_cli.observability.tmux.session import TmuxSessionTargets
 from orchestrator_cli.observability.tmux.shell_commands import (
     pane_render_args,
     pane_render_command,
-    shell_bind_key_lines,
-    shell_read_value_function,
-    shell_write_value_function,
     tmux_bash_array,
     tmux_command_string,
     write_runtime_shell_script,
@@ -57,7 +54,9 @@ __all__ = [
     "inspect_copy_mode_key_bindings",
     "inspect_enter_command",
     "inspect_exit_command",
+    "inspect_formatted_command",
     "inspect_key_bindings",
+    "inspect_raw_command",
     "pane_render_command",
     "quit_dashboard_commands",
     "selection_move_command",
@@ -130,6 +129,8 @@ def quit_dashboard_commands(
 def inspect_key_bindings(
     right_pane_id: str,
     exit_inspect: str,
+    raw_inspect: str,
+    formatted_inspect: str,
     quit_commands: list[list[str]],
 ) -> dict[str, list[list[str]]]:
     enter_copy_mode = [
@@ -177,6 +178,8 @@ def inspect_key_bindings(
                 "scroll-down",
             ],
         ],
+        "r": [["run-shell", raw_inspect]],
+        "f": [["run-shell", formatted_inspect]],
         "Escape": [["run-shell", exit_inspect]],
         "q": quit_commands,
     }
@@ -184,6 +187,8 @@ def inspect_key_bindings(
 
 def inspect_copy_mode_key_bindings(
     exit_inspect: str,
+    raw_inspect: str | None = None,
+    formatted_inspect: str | None = None,
     quit_commands: list[list[str]] | None = None,
 ) -> dict[str, list[list[str]]]:
     exit_copy_mode = [
@@ -198,12 +203,20 @@ def inspect_copy_mode_key_bindings(
             else [["run-shell", exit_inspect]]
         ),
     ]
+    raw_copy_mode = [["send-keys", "-X", "cancel"]]
+    raw_copy_mode.extend([["run-shell", raw_inspect]] if raw_inspect else [])
+    formatted_copy_mode = [["send-keys", "-X", "cancel"]]
+    formatted_copy_mode.extend(
+        [["run-shell", formatted_inspect]] if formatted_inspect else []
+    )
     return {
         "Up": [["send-keys", "-X", "cursor-up"]],
         "Down": [["send-keys", "-X", "cursor-down"]],
         "PageUp": [["send-keys", "-X", "page-up"]],
         "PageDown": [["send-keys", "-X", "page-down"]],
         "Enter": [["send-keys", "-X", "cancel"]],
+        "r": raw_copy_mode,
+        "f": formatted_copy_mode,
         "Escape": exit_copy_mode,
         "q": quit_copy_mode,
         "MouseDown1Pane": [["select-pane", "-t", "="]],
@@ -243,6 +256,7 @@ def dashboard_key_bindings(
     move_up: str,
     move_down: str,
     enter_inspect: str,
+    raw_inspect: str,
     quit_requested_path: Path,
 ) -> dict[str, list[list[str]]]:
     focus_left = focus_commands(left_pane_id)
@@ -250,6 +264,7 @@ def dashboard_key_bindings(
         "Up": [*focus_left, ["run-shell", move_up]],
         "Down": [*focus_left, ["run-shell", move_down]],
         "Enter": [["run-shell", enter_inspect]],
+        "r": [["run-shell", raw_inspect]],
         "Escape": focus_left,
         "q": quit_dashboard_commands(session_name, quit_requested_path),
     }
@@ -257,55 +272,38 @@ def dashboard_key_bindings(
 
 def inspect_enter_command(
     context: InspectCommandContext,
-    exit_inspect: str,
 ) -> str:
-    runtime_files = context.runtime_files
+    return _inspect_control_command(context, "auto")
+
+
+def inspect_raw_command(context: InspectCommandContext) -> str:
+    return _inspect_control_command(context, "raw")
+
+
+def inspect_formatted_command(context: InspectCommandContext) -> str:
+    return _inspect_control_command(context, "formatted")
+
+
+def _inspect_control_command(context: InspectCommandContext, view: str) -> str:
     session = context.session
-    tmux_command = tmux_bash_array(
+    command = [
+        sys.executable,
+        "-m",
+        "orchestrator_cli.observability.tmux.inspect_control",
+        "--runtime-root",
+        str(context.runtime_files.root),
+        "--tmux-executable",
         context.tmux_executable,
-        session.socket_name,
-    )
-    inspect_copy_mode_bindings = inspect_copy_mode_key_bindings(
-        exit_inspect,
-        quit_commands=quit_dashboard_commands(
-            session.session_name,
-            runtime_files.quit_requested,
-        ),
-    )
-    inspect_copy_mode_binding_lines = [
-        line
-        for table in COPY_MODE_KEY_TABLES
-        for line in shell_bind_key_lines(table, inspect_copy_mode_bindings)
+        "--session-name",
+        session.session_name,
+        "--right-pane-id",
+        session.right_pane_id,
+        "--view",
+        view,
     ]
-    script_lines = [
-        f"mode_file={shlex.quote(str(runtime_files.mode))}",
-        f"selected_node_file={shlex.quote(str(runtime_files.selected_node_id))}",
-        f"selected_log_file={shlex.quote(str(runtime_files.selected_log))}",
-        f"inspect_log_file={shlex.quote(str(runtime_files.inspect_log))}",
-        f"inspect_node_file={shlex.quote(str(runtime_files.inspect_node_id))}",
-        f"session_name={shlex.quote(session.session_name)}",
-        f"right_pane={shlex.quote(session.right_pane_id)}",
-        f"title_option={shlex.quote(PANE_TITLE_OPTION)}",
-        f"tmux_cmd=({tmux_command})",
-        shell_read_value_function(),
-        shell_write_value_function(),
-        'log_path=$(read_value "$selected_log_file")',
-        'node_id=$(read_value "$selected_node_file")',
-        '[[ -n "$log_path" ]] || exit 0',
-        'write_value "$inspect_log_file" "$log_path"',
-        'write_value "$inspect_node_file" "$node_id"',
-        '"${tmux_cmd[@]}" respawn-pane -k -t "$right_pane" tail -n +1 -F "$log_path" || exit 0',
-        f'write_value "$mode_file" "{MODE_INSPECT}"',
-        f'"${{tmux_cmd[@]}}" set-option -t "$session_name" key-table {INSPECT_KEY_TABLE}',
-        *inspect_copy_mode_binding_lines,
-        'if [[ -n "$node_id" ]]; then title="Node Log: $node_id"; else title="Node Log"; fi',
-        '"${tmux_cmd[@]}" set-option -p -t "$right_pane" "$title_option" "$title"',
-        '"${tmux_cmd[@]}" select-pane -t "$right_pane"',
-    ]
-    return write_runtime_shell_script(
-        runtime_files.root / "inspect-enter.sh",
-        script_lines,
-    )
+    if session.socket_name:
+        command.extend(["--socket-name", session.socket_name])
+    return shlex.join(command)
 
 
 def inspect_exit_command(
@@ -327,21 +325,27 @@ def inspect_exit_command(
     )
     script_lines = [
         f"mode_file={shlex.quote(str(runtime_files.mode))}",
-        f"inspect_log_file={shlex.quote(str(runtime_files.inspect_log))}",
-        f"inspect_node_file={shlex.quote(str(runtime_files.inspect_node_id))}",
+        f"inspect_snapshot={shlex.quote(str(runtime_files.inspect_invocation))}",
         f"session_name={shlex.quote(session.session_name)}",
         f"left_pane={shlex.quote(session.left_pane_id)}",
         f"right_pane={shlex.quote(session.right_pane_id)}",
         f"title_option={shlex.quote(PANE_TITLE_OPTION)}",
         f"tmux_cmd=({tmux_command})",
-        shell_read_value_function(),
-        shell_write_value_function(),
-        f'[[ "$(read_value "$mode_file")" == "{MODE_INSPECT}" ]] || exit 0',
-        f'"${{tmux_cmd[@]}}" respawn-pane -k -t "$right_pane" {render_args} || exit 0',
-        f'write_value "$mode_file" "{MODE_DASHBOARD}"',
-        'write_value "$inspect_log_file" ""',
-        'write_value "$inspect_node_file" ""',
-        f'"${{tmux_cmd[@]}}" set-option -t "$session_name" key-table {DASHBOARD_KEY_TABLE}',
+        (
+            f'[[ "$(cat "$mode_file" 2>/dev/null || true)" == "{MODE_INSPECT}" ]] '
+            "|| exit 0"
+        ),
+        (
+            f'"${{tmux_cmd[@]}}" respawn-pane -k -t "$right_pane" {render_args} '
+            "|| exit 0"
+        ),
+        f'printf "%s" "{MODE_DASHBOARD}" > "${{mode_file}}.tmp"',
+        'mv "${mode_file}.tmp" "$mode_file"',
+        'rm -f "$inspect_snapshot"',
+        (
+            f'"${{tmux_cmd[@]}}" set-option -t "$session_name" key-table '
+            f"{DASHBOARD_KEY_TABLE}"
+        ),
         '"${tmux_cmd[@]}" set-option -p -t "$right_pane" "$title_option" "Node Output"',
         '"${tmux_cmd[@]}" select-pane -t "$left_pane"',
     ]
@@ -352,38 +356,19 @@ def inspect_exit_command(
 
 
 def selection_move_command(
-    index_path: Path,
-    count_path: Path,
+    runtime_files: RuntimeFiles,
     direction: str,
 ) -> str:
     if direction not in {"up", "down"}:
         raise ValueError("selection move direction must be 'up' or 'down'")
-    script = " ".join(
+    return shlex.join(
         [
-            f"index_file={shlex.quote(str(index_path))}",
-            ";",
-            f"count_file={shlex.quote(str(count_path))}",
-            ";",
-            f"direction={shlex.quote(direction)}",
-            ";",
-            'count=$(cat "$count_file" 2>/dev/null || echo 0)',
-            ";",
-            '[[ "$count" =~ ^[0-9]+$ ]] || exit 0',
-            ";",
-            "(( count > 0 )) || exit 0",
-            ";",
-            'current=$(cat "$index_file" 2>/dev/null || echo -1)',
-            ";",
-            '[[ "$current" =~ ^-?[0-9]+$ ]] || current=-1',
-            ";",
-            "if (( current < 0 || current >= count )); then current=0; fi",
-            ";",
-            'if [[ "$direction" == "up" ]]; then next=$(( (current - 1 + count) % count ));',
-            "else next=$(( (current + 1) % count )); fi",
-            ";",
-            'printf "%s" "$next" > "${index_file}.tmp"',
-            ";",
-            'mv "${index_file}.tmp" "$index_file"',
+            sys.executable,
+            "-m",
+            "orchestrator_cli.observability.tmux.selection_control",
+            "--runtime-root",
+            str(runtime_files.root),
+            "--direction",
+            direction,
         ]
     )
-    return f"bash -lc {shlex.quote(script)}"

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from .json import JsonObject
 
+# Config imports these contracts, so keep AgentConfig type-only to avoid a cycle.
 if TYPE_CHECKING:
     from orchestrator_cli.core.config import AgentConfig
 
@@ -23,6 +25,13 @@ FailureClassificationProfile = ProviderKind
 ProviderUsageStatus = Literal["full", "partial", "none", "malformed"]
 InvocationCostConfidence = Literal["full", "partial", "none"]
 AggregateCostConfidence = Literal["full", "partial", "none", "mixed"]
+LogPresentationFormat = Literal["plain", "json_lines", "json_object"]
+
+_LOG_PRESENTATION_FORMATS: frozenset[str] = frozenset(
+    {"plain", "json_lines", "json_object"}
+)
+_LOG_PRESENTATION_PROFILE_PATTERN = re.compile(r"^[a-z0-9_.-]+$")
+_MAX_LOG_PRESENTATION_PROFILE_LENGTH = 64
 
 
 @dataclass(frozen=True)
@@ -85,6 +94,65 @@ class InvocationUsage:
         }
 
 
+@dataclass(frozen=True)
+class LogPresentationDescriptor:
+    format: LogPresentationFormat
+    profile: str = "generic"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "format",
+            validate_log_presentation_format(self.format),
+        )
+        object.__setattr__(
+            self,
+            "profile",
+            normalize_log_presentation_profile(self.profile),
+        )
+
+
+def validate_log_presentation_format(value: object) -> LogPresentationFormat:
+    if not isinstance(value, str):
+        raise TypeError("log presentation format must be a string")
+    if value not in _LOG_PRESENTATION_FORMATS:
+        raise ValueError(f"unsupported log presentation format: {value!r}")
+    return cast(LogPresentationFormat, value)
+
+
+def normalize_log_presentation_profile(profile: str) -> str:
+    if not isinstance(profile, str):
+        raise TypeError("log presentation profile must be a string")
+    normalized = profile.strip().lower()
+    if not normalized:
+        raise ValueError("log presentation profile must not be empty")
+    if len(normalized) > _MAX_LOG_PRESENTATION_PROFILE_LENGTH:
+        raise ValueError("log presentation profile is too long")
+    if _LOG_PRESENTATION_PROFILE_PATTERN.fullmatch(normalized) is None:
+        raise ValueError("log presentation profile contains unsafe characters")
+    return normalized
+
+
+def validate_log_presentation_descriptor(
+    value: object,
+) -> LogPresentationDescriptor:
+    if isinstance(value, LogPresentationDescriptor):
+        return LogPresentationDescriptor(
+            format=value.format,
+            profile=value.profile,
+        )
+    if not isinstance(value, Mapping):
+        raise TypeError("log presentation descriptor must be a descriptor or mapping")
+
+    if "format" not in value:
+        raise ValueError("log presentation descriptor missing format")
+    profile = value.get("profile", "generic")
+    return LogPresentationDescriptor(
+        format=validate_log_presentation_format(value["format"]),
+        profile=normalize_log_presentation_profile(profile),
+    )
+
+
 class AgentInvoker(Protocol):
     async def invoke(
         self,
@@ -96,6 +164,12 @@ class AgentInvoker(Protocol):
         invocation_context: InvocationContext | None = None,
     ) -> None:
         """Invoke an agent and write the output to a file."""
+
+    def log_presentation_for(
+        self,
+        config: AgentConfig,
+    ) -> LogPresentationDescriptor | None:
+        """Return display-only log presentation metadata for an invocation."""
 
 
 RuntimeLogValue = str | int | float | bool | None

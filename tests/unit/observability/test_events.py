@@ -14,9 +14,11 @@ from orchestrator_cli.observability.events import (
     apply_event,
     build_initial_state,
     execution_event_log_record,
+    invocation_event,
     runtime_log_event,
     workflow_event,
 )
+from orchestrator_cli.observability.run_summary.issues import issue_summaries
 from tests.helpers.observability import topology_from_workflow
 
 
@@ -121,3 +123,90 @@ def test_runtime_log_reducer_preserves_status_and_filters_recent_events() -> Non
 
     assert state.workflow_status == "running"
     assert list(state.nodes["node.a"].recent_events) == ["ERROR node warning"]
+
+
+def test_invocation_event_records_log_presentation_context() -> None:
+    event = invocation_event(
+        event_type="invocation_started",
+        workflow_name="workflow",
+        run_id="run-1",
+        node_id="node.a",
+        provider="alpha",
+        role="executor",
+        task_id="alpha_executor_0",
+        log_presentation_format="json_lines",
+        log_presentation_profile="mock",
+    )
+
+    record = execution_event_log_record(event)
+
+    assert record["log_presentation_format"] == "json_lines"
+    assert record["log_presentation_profile"] == "mock"
+
+
+def test_reducer_does_not_clear_log_presentation_context() -> None:
+    workflow = WorkflowPlan(
+        name="workflow",
+        nodes=[
+            WorkflowNode(
+                id="node.a",
+                mode="parallel",
+                prompt_segments=[PromptSegment(role="shared", content="run")],
+                providers=[ProviderSpec(provider="alpha")],
+            )
+        ],
+    )
+    state = build_initial_state(topology_from_workflow(workflow), run_id="run-1")
+
+    apply_event(
+        state,
+        invocation_event(
+            event_type="invocation_started",
+            workflow_name="workflow",
+            run_id="run-1",
+            node_id="node.a",
+            provider="alpha",
+            role="executor",
+            task_id="alpha_executor_0",
+            log_presentation_format="json_lines",
+            log_presentation_profile="mock",
+        ),
+    )
+    apply_event(
+        state,
+        invocation_event(
+            event_type="invocation_finished",
+            workflow_name="workflow",
+            run_id="run-1",
+            node_id="node.a",
+            provider="alpha",
+            role="executor",
+            task_id="alpha_executor_0",
+            duration_ms=1,
+        ),
+    )
+
+    invocation = state.nodes["node.a"].invocations["alpha_executor_0"]
+    assert invocation.log_presentation_format == "json_lines"
+    assert invocation.log_presentation_profile == "mock"
+
+
+def test_summary_issues_ignore_log_presentation_context() -> None:
+    event = runtime_log_event(
+        workflow_name="workflow",
+        run_id="run-1",
+        node_id="node.a",
+        level="warning",
+        message="Log presentation metadata was unavailable; using plain log display.",
+        operation="log_presentation_descriptor_invalid",
+        log_presentation_format="json_lines",
+        log_presentation_profile="mock",
+        attributes={"reason": "ValueError"},
+    )
+
+    issues = issue_summaries([event])
+
+    assert len(issues) == 1
+    assert "json_lines" not in issues[0].message
+    assert "mock" not in issues[0].message
+    assert "ValueError" not in issues[0].message
