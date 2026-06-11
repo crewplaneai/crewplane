@@ -205,6 +205,158 @@ def test_codex_json_lines_render_item_events_without_raw_payload(
     assert not any('"item"' in line for line in snapshot.lines)
 
 
+def test_codex_json_lines_renders_nested_item_text(tmp_path: Path) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "msg_123",
+                    "type": "agent_message",
+                    "text": "Nested answer text",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=5,
+        wall_time_now=0.0,
+    )
+
+    assert snapshot.lines == ("agent_message completed: Nested answer text",)
+
+
+def test_codex_json_lines_renders_nested_tool_details(tmp_path: Path) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "status": "completed",
+                "exit_code": 0,
+                "item": {
+                    "type": "local_shell",
+                    "command": "uv run python -m pytest -q tests/unit",
+                    "stdout": "2 passed",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=5,
+        wall_time_now=0.0,
+    )
+
+    assert snapshot.lines == (
+        "local_shell completed: "
+        "command: uv run python -m pytest -q tests/unit | "
+        "status: completed | exit_code: 0 | stdout: 2 passed",
+    )
+
+
+def test_codex_json_lines_renders_observed_aggregated_output_snippet(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "aggregated_output": "Observed transcript output",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=5,
+        wall_time_now=0.0,
+    )
+
+    assert snapshot.lines == (
+        "agent_message completed: aggregated_output: Observed transcript output",
+    )
+
+
+def test_codex_json_lines_unknown_item_shape_falls_back_safely(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "opaque_123",
+                    "type": "unknown_shape",
+                    "action": {"type": "opaque"},
+                    "metadata": {"opaque": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=5,
+        wall_time_now=0.0,
+    )
+
+    assert len(snapshot.lines) == 1
+    assert snapshot.lines[0].startswith("item.completed: {")
+    assert "unknown_shape" in snapshot.lines[0]
+    assert snapshot.notices == ()
+
+
+def test_codex_json_lines_sanitizes_and_clips_nested_item_content(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "first\nsecond\rthird " + ("x" * 80),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=5,
+        wall_time_now=0.0,
+        limits=LogPresentationLimits(max_display_chars_per_record=56),
+    )
+
+    assert len(snapshot.lines) == 1
+    assert len(snapshot.lines[0]) == 56
+    assert "\n" not in snapshot.lines[0]
+    assert "\r" not in snapshot.lines[0]
+    assert snapshot.lines[0].startswith("agent_message completed: first second")
+    assert snapshot.lines[0].endswith("...")
+
+
 def test_claude_json_object_parses_stderr_lines_and_redacts(tmp_path: Path) -> None:
     log_path = tmp_path / "claude.log"
     log_path.write_text(

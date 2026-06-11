@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -106,6 +107,111 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             self.assertNotIn(
                 "Provider still running; waiting for new output.", right_text
             )
+
+        runtime.stop(RunResult(status="succeeded"))
+
+    def test_compact_runtime_renders_codex_nested_jsonl_log_content(self) -> None:
+        workflow = single_node_workflow()
+        runtime = SimulatedTmuxRuntime(
+            auto_close_session=True,
+            log_tail_lines=10,
+        )
+        runtime.start(
+            RunContext(
+                workflow_topology=topology_from_workflow(workflow),
+                run_id="compact-codex-jsonl",
+                refresh_per_second=0,
+            )
+        )
+
+        state = build_initial_state(
+            topology_from_workflow(workflow), run_id="compact-codex-jsonl"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            log_path = Path(tmp_dir) / "codex.log"
+            records = [
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": "Nested Codex answer",
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "web_search",
+                        "action": {
+                            "type": "search",
+                            "query": "codex jsonl presentation",
+                        },
+                    },
+                },
+                {
+                    "type": "item.completed",
+                    "status": "completed",
+                    "exit_code": 0,
+                    "item": {
+                        "type": "local_shell",
+                        "command": "uv run python -m pytest -q tests/unit",
+                        "stdout": "2 passed",
+                    },
+                },
+            ]
+            log_path.write_text(
+                "\n".join(json.dumps(record) for record in records),
+                encoding="utf-8",
+            )
+
+            apply_event(
+                state,
+                make_execution_event(
+                    event_type="node_started",
+                    workflow_name=workflow.name,
+                    run_id="compact-codex-jsonl",
+                    node_id="node.a",
+                ),
+            )
+            apply_event(
+                state,
+                make_execution_event(
+                    event_type="invocation_started",
+                    workflow_name=workflow.name,
+                    run_id="compact-codex-jsonl",
+                    node_id="node.a",
+                    provider="codex",
+                    role="executor",
+                    model="gpt-5",
+                    task_id="codex_executor_0",
+                    round_num=1,
+                    log_file=str(log_path),
+                    log_presentation_format="json_lines",
+                    log_presentation_profile="codex",
+                ),
+            )
+
+            snapshot = DashboardSnapshot(
+                state=state,
+                layout=compute_topology_layout(topology_from_workflow(workflow)),
+                now=0.0,
+            )
+            runtime.on_snapshot(None, snapshot)
+            runtime.refresh_once()
+
+            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+            flattened_right_text = "".join(right_text.splitlines())
+            right_lines = set(right_text.splitlines())
+            self.assertIn("Nested Codex answer", right_text)
+            self.assertIn("command: uv run python -m pytest -q tests/unit", right_text)
+            self.assertIn("status: completed", right_text)
+            self.assertIn("exit_code: 0", flattened_right_text)
+            self.assertIn("stdout: 2 passed", right_text)
+            self.assertIn(
+                "web_search completed: codex jsonl presentation",
+                right_text,
+            )
+            self.assertNotIn("agent_message completed", right_lines)
+            self.assertNotIn("web_search completed", right_lines)
 
         runtime.stop(RunResult(status="succeeded"))
 

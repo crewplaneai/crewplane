@@ -7,6 +7,16 @@ from typing import Any
 from .limits import DEFAULT_LIMITS, LogPresentationLimits
 from .sanitize import clip_text, redact_json_value, sanitize_line
 
+_CODEX_DIRECT_CONTENT_FIELDS = ("message", "content", "text", "delta")
+_CODEX_ITEM_TEXT_FIELDS = ("text", "content")
+_CODEX_ITEM_OUTPUT_FIELDS = (
+    "output",
+    "stdout",
+    "stderr",
+    "result",
+    "aggregated_output",
+)
+
 
 def exceeds_json_depth(value: Any, max_depth: int) -> bool:
     stack: list[tuple[Any, int]] = [(value, 1)]
@@ -81,7 +91,7 @@ def render_codex_record(
     record: Mapping[str, Any],
     limits: LogPresentationLimits,
 ) -> list[str]:
-    for key in ("message", "content", "text", "delta"):
+    for key in _CODEX_DIRECT_CONTENT_FIELDS:
         value = record.get(key)
         if isinstance(value, str) and value.strip():
             return [sanitize_line(value, limits)]
@@ -94,6 +104,11 @@ def render_codex_record(
         detail = _codex_detail(record, limits)
         label = event_type if not detail else f"{event_type}: {detail}"
         return [sanitize_line(label, limits)]
+    item = record.get("item")
+    if isinstance(item, Mapping):
+        detail = _codex_item_detail(record, item, limits)
+        if detail:
+            return [sanitize_line(f"item: {detail}", limits)]
     return render_generic_record(record, limits)
 
 
@@ -137,10 +152,19 @@ def _field(key: str, record: Mapping[str, Any]) -> str | None:
 
 
 def _codex_detail(record: Mapping[str, Any], limits: LogPresentationLimits) -> str:
-    for key in ("message", "content", "text", "status"):
+    for key in ("message", "content", "text"):
         value = record.get(key)
         if isinstance(value, str) and value.strip():
             return clip_text(value, limits.max_display_chars_per_record)
+    item = record.get("item")
+    if isinstance(item, Mapping):
+        detail = _codex_item_detail(record, item, limits)
+        if detail:
+            return detail
+    for key in ("status", "exit_code"):
+        value = _display_field_value(record.get(key), limits)
+        if value:
+            return f"{key}: {value}"
     return compact_json_line(record, limits)
 
 
@@ -157,20 +181,58 @@ def _codex_item_event_line(
 
     phase = event_type.removeprefix("item.")
     item_type = _string_field(item, "type") or "item"
-    detail = _codex_item_detail(item)
+    detail = _codex_item_detail(record, item, limits)
     if detail:
         return sanitize_line(f"{item_type} {phase}: {detail}", limits)
-    return sanitize_line(f"{item_type} {phase}", limits)
+    if _codex_is_empty_web_search_event(item):
+        return sanitize_line(f"{item_type} {phase}", limits)
+    return None
 
 
-def _codex_item_detail(item: Mapping[str, Any]) -> str | None:
-    for value in _codex_item_detail_candidates(item):
+def _codex_item_detail(
+    record: Mapping[str, Any],
+    item: Mapping[str, Any],
+    limits: LogPresentationLimits,
+) -> str | None:
+    components: list[str] = []
+    search_query = _codex_web_search_detail(item)
+    if search_query:
+        components.append(search_query)
+
+    text = _first_display_value(item, _CODEX_ITEM_TEXT_FIELDS, limits)
+    if text:
+        components.append(text)
+
+    command = _display_field_value(item.get("command"), limits)
+    if command:
+        components.append(f"command: {command}")
+
+    for key in ("status", "exit_code"):
+        raw_value = item.get(key)
+        if raw_value is None:
+            raw_value = record.get(key)
+        value = _display_field_value(raw_value, limits)
+        if value:
+            components.append(f"{key}: {value}")
+
+    for key in _CODEX_ITEM_OUTPUT_FIELDS:
+        value = _display_field_value(item.get(key), limits)
+        if value:
+            components.append(f"{key}: {value}")
+
+    if components:
+        return " | ".join(components)
+    return None
+
+
+def _codex_web_search_detail(item: Mapping[str, Any]) -> str | None:
+    for value in _codex_web_search_detail_candidates(item):
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
 
 
-def _codex_item_detail_candidates(item: Mapping[str, Any]) -> list[Any]:
+def _codex_web_search_detail_candidates(item: Mapping[str, Any]) -> list[Any]:
     action = item.get("action")
     candidates: list[Any] = []
     if isinstance(action, Mapping):
@@ -180,6 +242,36 @@ def _codex_item_detail_candidates(item: Mapping[str, Any]) -> list[Any]:
             candidates.extend(queries)
     candidates.append(item.get("query"))
     return candidates
+
+
+def _codex_is_empty_web_search_event(item: Mapping[str, Any]) -> bool:
+    return _string_field(item, "type") == "web_search"
+
+
+def _first_display_value(
+    record: Mapping[str, Any],
+    keys: tuple[str, ...],
+    limits: LogPresentationLimits,
+) -> str | None:
+    for key in keys:
+        value = _display_field_value(record.get(key), limits)
+        if value:
+            return value
+    return None
+
+
+def _display_field_value(
+    value: Any,
+    limits: LogPresentationLimits,
+) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    if isinstance(value, (bool, int, float)):
+        return str(value)
+    return compact_json_line(value, limits)
 
 
 def _string_field(record: Mapping[str, Any], key: str) -> str | None:
