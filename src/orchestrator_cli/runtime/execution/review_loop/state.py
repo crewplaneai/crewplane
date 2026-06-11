@@ -10,6 +10,7 @@ from ..consensus import EvaluatedReviewResult
 from .types import (
     REVIEW_LOOP_STATUS_FILE,
     ExecutorRoundArtifact,
+    ReviewerInvocationFailure,
     ReviewerRoundArtifact,
     ReviewLoopProgress,
     ReviewLoopStatusOutputEntry,
@@ -66,13 +67,20 @@ def _has_unresolved_review_issues(evaluation: EvaluatedReviewResult) -> bool:
     )
 
 
+def _has_feedback_for_executor(evaluation: EvaluatedReviewResult) -> bool:
+    return (
+        _has_unresolved_review_issues(evaluation)
+        or evaluation.unstructured_feedback is not None
+    )
+
+
 def render_unresolved_review_packet(
     reviewer_outputs: list[ReviewerRoundArtifact],
 ) -> str | None:
     sections: list[str] = []
     for artifact in reviewer_outputs:
         evaluation = artifact.evaluation
-        if not _has_unresolved_review_issues(evaluation):
+        if not _has_feedback_for_executor(evaluation):
             continue
         sections.extend(
             [
@@ -97,9 +105,23 @@ def render_unresolved_review_packet(
                     "",
                 ]
             )
+        if evaluation.unstructured_feedback is not None:
+            sections.extend(
+                [
+                    "#### Unstructured Feedback",
+                    (
+                        "The runtime could not normalize this reviewer response into "
+                        "Major Issues, Minor Issues, or Nitpicks. Treat this as raw "
+                        "reviewer feedback, not as normalized candidate findings."
+                    ),
+                    "",
+                    evaluation.unstructured_feedback,
+                    "",
+                ]
+            )
     if not sections:
         return None
-    return "\n".join(["## Unresolved Issues", "", *sections]).strip()
+    return "\n".join(["## Reviewer Feedback", "", *sections]).strip()
 
 
 def persist_review_state(
@@ -127,6 +149,7 @@ def persist_review_state(
         "major_issues": reviewer_output.evaluation.major_issues,
         "minor_issues": reviewer_output.evaluation.minor_issues,
         "nitpicks": reviewer_output.evaluation.nitpicks,
+        "unstructured_feedback": reviewer_output.evaluation.unstructured_feedback,
         "unresolved_fingerprints": list(
             reviewer_output.evaluation.unresolved_fingerprints
         ),
@@ -135,6 +158,36 @@ def persist_review_state(
         "normalized_output_artifact": reviewer_output.output_file.name,
         "raw_output_artifact": raw_output_path.name,
         "metadata_artifact": metadata_path.name,
+    }
+    return _write_review_state_file(
+        artifact_dir=artifact_dir,
+        file_name=state_file_name,
+        content=json.dumps(payload, indent=2, sort_keys=True),
+    )
+
+
+def persist_reviewer_failure_state(
+    artifact_dir: Path,
+    audit_round_num: int | None,
+    round_num: int,
+    failure: ReviewerInvocationFailure,
+) -> Path:
+    state_file_name = (
+        f"{safe_artifact_name(failure.task_id)}-round-{round_num}.state.json"
+    )
+    payload = {
+        "reviewer": failure.provider.provider,
+        "task_id": failure.task_id,
+        "audit_round_num": audit_round_num,
+        "round_num": round_num,
+        "approved": False,
+        "evaluation_kind": "reviewer_failure",
+        "failure_kind": failure.failure_kind,
+        "failure_message": str(failure.error),
+        "output_artifact": (
+            failure.output_file.name if failure.output_file.exists() else None
+        ),
+        "warnings": [failure.warning],
     }
     return _write_review_state_file(
         artifact_dir=artifact_dir,

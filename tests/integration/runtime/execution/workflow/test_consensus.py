@@ -121,6 +121,82 @@ class ExecutorConsensusTests(unittest.TestCase):
         self.assertTrue(result.had_trailing_text)
         self.assertIn("Ignored commentary below", result.warnings[0])
 
+    def test_evaluate_review_output_repairs_missing_major_for_nits_only(
+        self,
+    ) -> None:
+        result = evaluate_review_output(
+            "\n".join(
+                [
+                    "## Minor Issues",
+                    "None",
+                    "",
+                    "## Nitpicks",
+                    "- Tighten the final section title.",
+                    "",
+                    "---",
+                    "VERDICT: NITS_ONLY",
+                    "",
+                ]
+            )
+        )
+
+        self.assertTrue(result.approved)
+        self.assertEqual(result.verdict, "NITS_ONLY")
+        self.assertEqual(result.major_issues, "None")
+        self.assertEqual(result.minor_issues, "None")
+        self.assertEqual(result.unresolved_issue_count, 0)
+        self.assertIn("missing Major Issues section", result.warnings[0])
+
+    def test_evaluate_review_output_ignores_h3_contract_lookalike(
+        self,
+    ) -> None:
+        result = evaluate_review_output(
+            "\n".join(
+                [
+                    "### Major Issues",
+                    "- This commentary heading is not part of the final contract.",
+                    "",
+                    review_output(
+                        major="- Real final issue.",
+                        verdict="CHANGES_REQUESTED",
+                    ),
+                ]
+            )
+        )
+
+        self.assertFalse(result.approved)
+        self.assertEqual(result.verdict, "CHANGES_REQUESTED")
+        self.assertEqual(result.major_issues, "- Real final issue.")
+        self.assertNotIn("commentary heading", result.major_issues)
+
+    def test_evaluate_review_output_does_not_repair_ambiguous_prior_h2(
+        self,
+    ) -> None:
+        result = evaluate_review_output(
+            "\n".join(
+                [
+                    "## Major Issues",
+                    "- This exact H2 section appeared before the final block.",
+                    "",
+                    "## Notes",
+                    "The final block starts below.",
+                    "",
+                    "## Nitpicks",
+                    "- Tighten the final section title.",
+                    "",
+                    "---",
+                    "VERDICT: NITS_ONLY",
+                    "",
+                ]
+            )
+        )
+
+        self.assertFalse(result.approved)
+        self.assertIsNone(result.verdict)
+        self.assertEqual(result.evaluation_kind, "unstructured_feedback")
+        self.assertEqual(result.original_verdict, "NITS_ONLY")
+        self.assertEqual(result.unresolved_issue_count, 0)
+
     def test_evaluate_review_output_rejects_interstitial_commentary_before_verdict(
         self,
     ) -> None:
@@ -148,10 +224,11 @@ class ExecutorConsensusTests(unittest.TestCase):
         )
 
         self.assertFalse(result.approved)
-        self.assertEqual(result.verdict, "CHANGES_REQUESTED")
-        self.assertEqual(result.evaluation_kind, "unstructured_nonapproval")
+        self.assertIsNone(result.verdict)
+        self.assertEqual(result.evaluation_kind, "unstructured_feedback")
         self.assertEqual(result.original_verdict, "NO_FINDINGS")
-        self.assertIn("malformed structured review block", result.minor_issues)
+        self.assertEqual(result.unresolved_issue_count, 0)
+        self.assertIn("raw reviewer feedback", result.normalized_markdown)
 
     def test_evaluate_review_output_infers_plain_language_nits_only(self) -> None:
         result = evaluate_review_output(
@@ -269,8 +346,12 @@ class ExecutorConsensusTests(unittest.TestCase):
         result = evaluate_review_output("Please double-check the edge cases here.")
 
         self.assertFalse(result.approved)
-        self.assertEqual(result.verdict, "CHANGES_REQUESTED")
-        self.assertEqual(result.evaluation_kind, "unstructured_nonapproval")
+        self.assertIsNone(result.verdict)
+        self.assertEqual(result.evaluation_kind, "unstructured_feedback")
+        self.assertEqual(
+            result.unstructured_feedback, "Please double-check the edge cases here."
+        )
+        self.assertEqual(result.unresolved_issue_count, 0)
 
     def test_evaluate_review_output_treats_malformed_structured_block_as_nonapproval(
         self,
@@ -294,7 +375,9 @@ class ExecutorConsensusTests(unittest.TestCase):
         )
 
         self.assertFalse(result.approved)
-        self.assertEqual(result.verdict, "CHANGES_REQUESTED")
-        self.assertEqual(result.evaluation_kind, "unstructured_nonapproval")
+        self.assertIsNone(result.verdict)
+        self.assertEqual(result.evaluation_kind, "unstructured_feedback")
         self.assertEqual(result.original_verdict, "NO_FINDINGS")
-        self.assertIn("malformed structured review block", result.minor_issues)
+        self.assertEqual(result.major_issues, "None")
+        self.assertEqual(result.minor_issues, "None")
+        self.assertEqual(result.unresolved_issue_count, 0)

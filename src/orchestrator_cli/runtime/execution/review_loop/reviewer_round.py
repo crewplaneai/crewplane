@@ -18,16 +18,25 @@ from .drift import (
     run_provider_call_with_drift_guard,
 )
 from .prompts import build_reviewer_prompt
-from .state import persist_review_evaluation, persist_review_state
+from .state import (
+    persist_review_evaluation,
+    persist_review_state,
+    persist_reviewer_failure_state,
+)
 from .types import (
     DriftGuardCallRequest,
+    ReviewerInvocationFailure,
     ReviewerInvocationResult,
     ReviewerRoundArtifact,
     ReviewerRoundRequest,
     ReviewerRoundRunResult,
     ReviewerRoundRuntime,
 )
-from .validation import emit_review_evaluation_warnings
+from .validation import emit_review_evaluation_warnings, emit_reviewer_failure_warning
+
+
+class ReviewerOutputMissingError(RuntimeError):
+    """Raised when a reviewer invocation produced no review text."""
 
 
 async def run_reviewer_round(
@@ -47,17 +56,22 @@ async def run_reviewer_round(
         for index, provider in enumerate(request.reviewers)
     ]
     completed = await asyncio.gather(*tasks, return_exceptions=True)
-    ordered_results = collect_ordered_reviewer_results(
+    ordered_results, ordered_failures = collect_ordered_reviewer_results(
+        request,
         completed,
-        len(request.reviewers),
     )
-    ordered_outputs = [
-        evaluate_reviewer_output(request, result) for result in ordered_results
-    ]
+    ordered_outputs, output_failures = evaluate_reviewer_outputs(
+        request,
+        ordered_results,
+    )
+    ordered_failures.extend(output_failures)
+    persist_reviewer_failures(request, ordered_failures)
+    enforce_reviewer_failure_policy(request, ordered_failures)
     drift_warning_count = sum(result.drift_warning_count for result in ordered_results)
     return ReviewerRoundRunResult(
         outputs=ordered_outputs,
         drift_warning_count=drift_warning_count,
+        reviewer_failure_count=len(ordered_failures),
     )
 
 
@@ -137,26 +151,79 @@ async def invoke_reviewer_with_drift_guard(
 
 
 def collect_ordered_reviewer_results(
+    request: ReviewerRoundRequest,
     completed: list[ReviewerInvocationResult | BaseException],
-    reviewer_count: int,
-) -> list[ReviewerInvocationResult]:
+) -> tuple[list[ReviewerInvocationResult], list[ReviewerInvocationFailure]]:
     invocation_results: list[ReviewerInvocationResult] = []
-    for result in completed:
-        if isinstance(result, BaseException):
+    invocation_failures: list[ReviewerInvocationFailure] = []
+    for index, result in enumerate(completed):
+        provider = request.reviewers[index]
+        task_id, output_file = reviewer_output_path(request, provider)
+        if isinstance(result, asyncio.CancelledError):
             raise result
+        if isinstance(result, BaseException) and not isinstance(result, Exception):
+            raise result
+        if isinstance(result, BaseException):
+            invocation_failures.append(
+                ReviewerInvocationFailure(
+                    index=index,
+                    provider=provider,
+                    task_id=task_id,
+                    output_file=output_file,
+                    error=result,
+                    failure_kind="invocation_failed",
+                    warning=(
+                        "Reviewer invocation failed. Preserving failure state "
+                        "without treating provider metadata as review feedback."
+                    ),
+                )
+            )
+            continue
         invocation_results.append(result)
 
     results_by_index = {result.index: result for result in invocation_results}
-    return [results_by_index[index] for index in range(reviewer_count)]
+    ordered_results = [
+        results_by_index[index]
+        for index in range(len(request.reviewers))
+        if index in results_by_index
+    ]
+    return ordered_results, invocation_failures
+
+
+def evaluate_reviewer_outputs(
+    request: ReviewerRoundRequest,
+    invocation_results: list[ReviewerInvocationResult],
+) -> tuple[list[ReviewerRoundArtifact], list[ReviewerInvocationFailure]]:
+    outputs: list[ReviewerRoundArtifact] = []
+    failures: list[ReviewerInvocationFailure] = []
+    for result in invocation_results:
+        try:
+            outputs.append(evaluate_reviewer_output(request, result))
+        except ReviewerOutputMissingError as exc:
+            failures.append(
+                ReviewerInvocationFailure(
+                    index=result.index,
+                    provider=result.provider,
+                    task_id=result.task_id,
+                    output_file=result.output_file,
+                    error=exc,
+                    failure_kind="missing_review_content",
+                    warning=(
+                        "Reviewer invocation completed, but no review content was "
+                        "extracted. Preserving failure state without sending "
+                        "provider metadata to the executor."
+                    ),
+                )
+            )
+    return outputs, failures
 
 
 def evaluate_reviewer_output(
     request: ReviewerRoundRequest,
     invocation_result: ReviewerInvocationResult,
 ) -> ReviewerRoundArtifact:
-    evaluation = evaluate_review_output(
-        invocation_result.output_file.read_text(encoding="utf-8")
-    )
+    raw_output = read_reviewer_output(invocation_result.output_file)
+    evaluation = evaluate_review_output(raw_output)
     persist_review_evaluation(invocation_result.output_file, evaluation)
     emit_review_evaluation_warnings(
         telemetry=request.telemetry,
@@ -181,6 +248,49 @@ def evaluate_reviewer_output(
         reviewer_output=reviewer_output,
     )
     return reviewer_output
+
+
+def read_reviewer_output(output_file: Path) -> str:
+    if not output_file.exists():
+        raise ReviewerOutputMissingError("No reviewer output artifact was created.")
+    raw_output = output_file.read_text(encoding="utf-8")
+    if not raw_output.strip():
+        raise ReviewerOutputMissingError("No review content was extracted.")
+    return raw_output
+
+
+def persist_reviewer_failures(
+    request: ReviewerRoundRequest,
+    failures: list[ReviewerInvocationFailure],
+) -> None:
+    for failure in failures:
+        persist_reviewer_failure_state(
+            artifact_dir=request.artifact_dir,
+            audit_round_num=request.audit_round_num,
+            round_num=request.round_num,
+            failure=failure,
+        )
+        emit_reviewer_failure_warning(
+            telemetry=request.telemetry,
+            node_id=request.node.id,
+            failure=failure,
+            audit_round_num=request.audit_round_num,
+            round_num=request.round_num,
+        )
+
+
+def enforce_reviewer_failure_policy(
+    request: ReviewerRoundRequest,
+    failures: list[ReviewerInvocationFailure],
+) -> None:
+    if not failures or request.node.execution_policy.continue_on_failure:
+        return
+    if len(failures) == 1:
+        raise failures[0].error
+    failure_names = ", ".join(failure.task_id for failure in failures)
+    raise RuntimeError(
+        f"Reviewer invocation failed for node '{request.node.id}': {failure_names}."
+    ) from failures[0].error
 
 
 def quiet_telemetry_for_reviewer_round(

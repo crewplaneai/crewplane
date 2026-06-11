@@ -11,15 +11,29 @@ from orchestrator_cli.core.review_contract import (
     ParsedReviewResult,
 )
 
+from .review_markdown import (
+    ReviewHeading,
+    code_block_lines,
+    collect_root_h2_review_headings,
+)
 from .review_types import ReviewContractError, StructuredReviewMatch
 
 _VERDICT_PATTERN = "|".join(sorted(VALID_REVIEW_VERDICTS))
-_STRUCTURED_REVIEW_PATTERN = re.compile(
-    rf"(?is)##\s*Major\s+Issues\s*(?P<major>.*?)\s*"
-    rf"##\s*Minor\s+Issues\s*(?P<minor>.*?)\s*"
-    rf"##\s*Nitpicks\s*(?P<nitpicks>.*?)\s*"
-    rf"---\s*VERDICT:\s*(?P<verdict>{_VERDICT_PATTERN})\b"
+_VERDICT_LINE_PATTERN = re.compile(
+    rf"^\s*VERDICT:\s*(?P<verdict>{_VERDICT_PATTERN})\s*$",
+    re.IGNORECASE,
 )
+_SECTION_ORDER = ("major_issues", "minor_issues", "nitpicks")
+_SECTION_INDEX = {section: index for index, section in enumerate(_SECTION_ORDER)}
+_SECTION_DISPLAY_NAME = {
+    "major_issues": "Major Issues",
+    "minor_issues": "Minor Issues",
+    "nitpicks": "Nitpicks",
+}
+_APPROVED_REPAIRABLE_MISSING_SECTIONS = {
+    VERDICT_NITS_ONLY: frozenset({"major_issues", "minor_issues"}),
+    VERDICT_NO_FINDINGS: frozenset(_SECTION_ORDER),
+}
 _GENERIC_EMPTY_SENTINELS = frozenset(
     {
         "",
@@ -42,19 +56,178 @@ _GENERIC_EMPTY_SENTINELS = frozenset(
 
 
 def extract_structured_review(output: str) -> StructuredReviewMatch | None:
-    matches = list(_STRUCTURED_REVIEW_PATTERN.finditer(output))
-    if not matches:
+    lines = output.splitlines(keepends=True)
+    verdict = extract_final_review_verdict(output)
+    if verdict is None:
         return None
 
-    match = matches[-1]
-    return StructuredReviewMatch(
-        verdict=match.group("verdict").strip().upper(),
-        major_issues=match.group("major"),
-        minor_issues=match.group("minor"),
-        nitpicks=match.group("nitpicks"),
-        prefix=output[: match.start()],
-        suffix=output[match.end() :],
+    verdict_line = final_review_verdict_line(output)
+    if verdict_line is None:
+        return None
+
+    headings = collect_root_h2_review_headings(output, verdict_line)
+    review_headings = final_review_heading_run(headings)
+    if not review_headings:
+        return None
+
+    validate_review_heading_run(review_headings)
+    content_end_line = review_content_end_line(lines, verdict_line)
+    sections = collect_review_section_content(lines, review_headings, content_end_line)
+    earlier_sections = collect_earlier_review_sections(headings, review_headings)
+    repaired_sections, warnings = repair_missing_sections(
+        verdict,
+        sections,
+        earlier_sections,
     )
+
+    return StructuredReviewMatch(
+        verdict=verdict,
+        major_issues=repaired_sections["major_issues"],
+        minor_issues=repaired_sections["minor_issues"],
+        nitpicks=repaired_sections["nitpicks"],
+        prefix="".join(lines[: review_headings[0].start_line]),
+        suffix="".join(lines[verdict_line + 1 :]),
+        warnings=warnings,
+    )
+
+
+def extract_final_review_verdict(output: str) -> str | None:
+    verdict_line = final_review_verdict_line(output)
+    if verdict_line is None:
+        return None
+    match = _VERDICT_LINE_PATTERN.match(output.splitlines()[verdict_line])
+    if match is None:
+        return None
+    return match.group("verdict").upper()
+
+
+def final_review_verdict_line(output: str) -> int | None:
+    ignored_lines = code_block_lines(output)
+    verdict_line: int | None = None
+    for index, line in enumerate(output.splitlines()):
+        if index in ignored_lines:
+            continue
+        if _VERDICT_LINE_PATTERN.match(line) is not None:
+            verdict_line = index
+    return verdict_line
+
+
+def review_output_uses_structured_contract(output: str) -> bool:
+    if extract_final_review_verdict(output) is not None:
+        return True
+    return any(
+        heading.section is not None
+        for heading in collect_root_h2_review_headings(output)
+    )
+
+
+def final_review_heading_run(headings: list[ReviewHeading]) -> list[ReviewHeading]:
+    if not headings or headings[-1].section is None:
+        return []
+    start_index = len(headings) - 1
+    while start_index > 0 and headings[start_index - 1].section is not None:
+        start_index -= 1
+    return headings[start_index:]
+
+
+def validate_review_heading_run(headings: list[ReviewHeading]) -> None:
+    sections = [heading.section for heading in headings if heading.section is not None]
+    if len(set(sections)) != len(sections):
+        raise ReviewContractError(
+            "Reviewer output contains duplicate structured review sections."
+        )
+    ordered_sections = sorted(sections, key=_SECTION_INDEX.__getitem__)
+    if sections != ordered_sections:
+        raise ReviewContractError(
+            "Reviewer output structured review sections are out of order."
+        )
+
+
+def review_content_end_line(lines: list[str], verdict_line: int) -> int:
+    cursor = verdict_line
+    while cursor > 0 and not lines[cursor - 1].strip():
+        cursor -= 1
+    if cursor == 0 or lines[cursor - 1].strip() != "---":
+        raise ReviewContractError(
+            "Reviewer output must include a review delimiter before the final verdict."
+        )
+    return cursor - 1
+
+
+def collect_review_section_content(
+    lines: list[str],
+    headings: list[ReviewHeading],
+    content_end_line: int,
+) -> dict[str, str]:
+    sections: dict[str, str] = {}
+    for index, heading in enumerate(headings):
+        if heading.section is None:
+            continue
+        next_start = (
+            headings[index + 1].start_line
+            if index + 1 < len(headings)
+            else content_end_line
+        )
+        sections[heading.section] = "".join(
+            lines[heading.content_start_line : next_start]
+        )
+    return sections
+
+
+def collect_earlier_review_sections(
+    headings: list[ReviewHeading],
+    review_headings: list[ReviewHeading],
+) -> frozenset[str]:
+    run_start_line = review_headings[0].start_line
+    return frozenset(
+        heading.section
+        for heading in headings
+        if heading.section is not None and heading.start_line < run_start_line
+    )
+
+
+def repair_missing_sections(
+    verdict: str,
+    sections: dict[str, str],
+    earlier_sections: frozenset[str],
+) -> tuple[dict[str, str], tuple[str, ...]]:
+    missing_sections = set(_SECTION_ORDER).difference(sections)
+    if not missing_sections:
+        return sections, ()
+
+    ambiguous_sections = missing_sections.intersection(earlier_sections)
+    if ambiguous_sections:
+        missing_names = ", ".join(
+            _SECTION_DISPLAY_NAME[section]
+            for section in sorted(ambiguous_sections, key=_SECTION_INDEX.__getitem__)
+        )
+        raise ReviewContractError(
+            "Reviewer output omitted section(s) from the final review block after "
+            f"using the same section heading earlier: {missing_names}."
+        )
+
+    repairable_sections = _APPROVED_REPAIRABLE_MISSING_SECTIONS.get(
+        verdict, frozenset()
+    )
+    unrepaired_sections = missing_sections.difference(repairable_sections)
+    if unrepaired_sections:
+        missing_names = ", ".join(
+            _SECTION_DISPLAY_NAME[section]
+            for section in sorted(unrepaired_sections, key=_SECTION_INDEX.__getitem__)
+        )
+        raise ReviewContractError(
+            f"Reviewer output omitted required section(s): {missing_names}."
+        )
+
+    repaired = dict(sections)
+    warnings: list[str] = []
+    for section in sorted(missing_sections, key=_SECTION_INDEX.__getitem__):
+        repaired[section] = REQUIRED_EMPTY_SENTINEL
+        warnings.append(
+            "Repaired reviewer output: missing "
+            f"{_SECTION_DISPLAY_NAME[section]} section treated as None."
+        )
+    return repaired, tuple(warnings)
 
 
 def normalize_review_result(result: ParsedReviewResult) -> ParsedReviewResult:
@@ -163,7 +336,7 @@ def structured_review_warnings(
     match: StructuredReviewMatch,
     normalized: ParsedReviewResult,
 ) -> tuple[str, ...]:
-    warnings: list[str] = []
+    warnings: list[str] = list(match.warnings)
     if match.suffix.strip():
         warnings.append(
             "Ignored commentary below the structured review block during review parsing."

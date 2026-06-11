@@ -144,6 +144,7 @@ async def run_review_phase(
     persist_round_review_inbox(request, progress, reviewer_outputs, round_num)
     return ReviewRoundState(
         reviewer_outputs=reviewer_outputs,
+        reviewer_failure_count=reviewer_run.reviewer_failure_count,
         current_review_packet=render_unresolved_review_packet(reviewer_outputs),
         current_unresolved_fingerprints=collect_unresolved_fingerprints(
             reviewer_outputs
@@ -234,6 +235,8 @@ def review_phase_reached_consensus(
     round_state: ReviewRoundState,
     round_num: int,
 ) -> bool:
+    if round_state.reviewer_failure_count > 0:
+        return False
     if not check_consensus(
         [artifact.evaluation for artifact in round_state.reviewer_outputs]
     ):

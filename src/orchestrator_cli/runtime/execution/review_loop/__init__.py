@@ -49,7 +49,7 @@ from .types import (
 # 11. Any invalid executor in a multi-executor round: the whole candidate set is invalid.
 # 12. Fresh audits re-review the seeded candidate without inherited unresolved state.
 # 13. Reviewer invocation failure: normal invocation failure path.
-# 14. Malformed reviewer output: normalized as non-approval, not a runtime failure.
+# 14. Malformed reviewer output with content: preserved as unstructured feedback.
 # 15. Reviewer mutation of node-local artifacts or review-state: warning-level drift.
 # 16. Reviewer mutation of reserved run-root artifacts: fatal when attributable.
 # 17. Consensus exhaustion with a valid candidate: persist status and apply continuation policy.

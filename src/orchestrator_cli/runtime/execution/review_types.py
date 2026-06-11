@@ -15,11 +15,12 @@ class StructuredReviewMatch:
     nitpicks: str
     prefix: str
     suffix: str
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class EvaluatedReviewResult:
-    verdict: str
+    verdict: str | None
     approved: bool
     major_issues: str
     minor_issues: str
@@ -33,6 +34,7 @@ class EvaluatedReviewResult:
     original_verdict: str | None = None
     had_leading_text: bool = False
     had_trailing_text: bool = False
+    unstructured_feedback: str | None = None
 
     def to_metadata_dict(self) -> dict[str, object]:
         return {
@@ -42,6 +44,7 @@ class EvaluatedReviewResult:
             "had_trailing_text": self.had_trailing_text,
             "normalized_verdict": self.verdict,
             "original_verdict": self.original_verdict,
+            "unstructured_feedback": self.unstructured_feedback,
             "unresolved_issue_count": self.unresolved_issue_count,
             "warnings": list(self.warnings),
         }

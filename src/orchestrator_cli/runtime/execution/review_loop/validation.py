@@ -17,6 +17,7 @@ from .types import (
     AuditRoundProgress,
     CandidateValidationResult,
     ExecutorRoundArtifact,
+    ReviewerInvocationFailure,
     ReviewerRoundArtifact,
 )
 
@@ -182,6 +183,34 @@ def emit_review_evaluation_warnings(
             context=context,
             attributes=attributes,
         )
+
+
+def emit_reviewer_failure_warning(
+    telemetry: ExecutionTelemetry | None,
+    node_id: str,
+    failure: ReviewerInvocationFailure,
+    audit_round_num: int | None,
+    round_num: int,
+) -> None:
+    emit_runtime_log(
+        telemetry,
+        level="warning",
+        message=failure.warning,
+        operation="reviewer_invocation_failure",
+        context=RuntimeEventContext(
+            node_id=node_id,
+            provider=failure.provider.provider,
+            role="reviewer",
+            task_id=failure.task_id,
+            audit_round_num=audit_round_num,
+            round_num=round_num,
+            output_file=failure.output_file,
+        ),
+        attributes={
+            "failure_kind": failure.failure_kind,
+            "error": str(failure.error),
+        },
+    )
 
 
 def _split_candidate_paragraphs(content: str) -> tuple[str, ...]:

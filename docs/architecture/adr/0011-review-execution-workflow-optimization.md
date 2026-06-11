@@ -420,19 +420,78 @@ VERDICT: CHANGES_REQUESTED | NITS_ONLY | NO_FINDINGS
 ```
 
 `NITS_ONLY` and `NO_FINDINGS` are approval verdicts. `CHANGES_REQUESTED` is not.
-Malformed structured review output is normalized as non-approval and preserved
-for inspection; it is not treated as a runtime invocation failure. Format drift
-such as leading or trailing text around the structured block is captured in
-review metadata and can emit warnings without failing the provider invocation.
+Reviewer output is classified into three cases. Each case is handled according
+to the problem it represents rather than forcing every failure into the same
+synthetic review result.
+
+1. **Review content is parseable, or safely repairable**
+
+   Issue: the reviewer returned actual review content and an explicit final
+   verdict, but the section shape is imperfect. For example, a `NITS_ONLY`
+   review may omit an empty `## Major Issues` section while still providing
+   `## Minor Issues`, `## Nitpicks`, and the final verdict.
+
+   Mitigation: parse from the final valid `VERDICT:` line first, then read
+   exact review headings as the contract boundary. If the final verdict and
+   nearby sections make an omitted section safely empty, repair that section to
+   `None`, persist a warning, and keep the repaired approval verdict eligible
+   for consensus. Do not create synthetic executor findings during repair.
+
+2. **Review content exists, but is not safely parseable**
+
+   Issue: the provider returned actual reviewer text, but after verdict-first
+   parsing and deterministic repair the runtime still cannot normalize the text
+   into the structured contract with confidence. This is a reviewer contract
+   problem, not proof that the executor candidate is defective.
+
+   Mitigation: preserve the extracted text as labeled unstructured reviewer
+   feedback, emit a warning, and hand that raw feedback to the next executor
+   pass when remediation continues. Treat the reviewer as not approved for
+   consensus because approval cannot be proven. Do not convert parser failures
+   into normalized `Major Issues`, `Minor Issues`, `Nitpicks`, or synthetic
+   candidate findings.
+
+3. **Provider ran, but no review content was extracted**
+
+   Issue: the provider invocation produced audit metadata, logs, usage, stop
+   reasons, or other envelope data, but no review text was extracted. That
+   metadata is not a review verdict and cannot prove approval or rejection.
+
+   Mitigation: persist a reviewer invocation/output failure state, preserve any
+   successful peer reviewer outputs first, and do not send provider metadata to
+   the executor as feedback. Apply the node's `continue_on_failure` policy to
+   the failed reviewer. If continuation is disabled, fail the node after
+   preserving artifacts. If continuation is enabled, continue without counting
+   the missing reviewer result as approval or feedback.
+
+Format drift such as leading or trailing text around a valid structured block is
+captured in review metadata and can emit warnings without failing the provider
+invocation.
 During remediation, reviewer prompts emphasize verification of previous
 unresolved major/minor issues and regression checking for new issues introduced
 or revealed by the current candidate.
 
+Separate review-loop hardening decisions extracted from these fixes are:
+
+- Verdict-first parsing is the review contract boundary; a failed whole-block
+  match is not enough to reject otherwise clear reviewer intent.
+- Reviewer contract/parser failures are separate from executor candidate
+  defects.
+- Actual reviewer text should be preserved and auditable even when it cannot be
+  normalized.
+- Missing review content is an invocation/output failure, not unstructured
+  feedback and not telemetry-only state.
+- Parallel reviewer successes are normalized and persisted before reviewer
+  failure policy is enforced.
+- Reviewer failures never count as approval. With multiple reviewers, consensus
+  requires every collected required reviewer result to be approved and no
+  reviewer invocation/output failures in that round.
+
 Review state artifacts are written under the node stage directory:
 
 - `review-state/<reviewer-task>-round-<n>.state.json`
-- `review-state/review-inbox-round-<n>.md` when unresolved major or minor issues
-  remain
+- `review-state/review-inbox-round-<n>.md` when unresolved major/minor issues or
+  unstructured reviewer feedback must be handed to the next executor pass
 - reviewer normalized output files
 - reviewer raw sidecars with `.raw.txt`
 - reviewer metadata sidecars with `.review.json`
@@ -441,15 +500,20 @@ Each reviewer state JSON records the reviewer provider, task id, audit round,
 local round, approval flag, normalized verdict, evaluation kind, original
 verdict, leading/trailing text flags, parsed major issues, parsed minor issues,
 parsed nitpicks, unresolved fingerprints, unresolved issue count, normalization
-warnings, and the related normalized, raw, and metadata artifact names. The
-normalized review markdown becomes the reviewer output artifact; the raw
-sidecar preserves the provider's original text.
+warnings, unstructured feedback when present, and the related normalized, raw,
+and metadata artifact names. The normalized review markdown becomes the reviewer
+output artifact; the raw sidecar preserves the provider's original text.
+Reviewer invocation/output failures are persisted as reviewer state with failure
+kind, failure message, warning text, and any output artifact name that exists;
+they do not have normalized review sidecars.
 
 Each review inbox Markdown artifact records:
 
 - node id and local round context
 - unresolved major and minor issues grouped by reviewer
-- reviewer source artifacts for unresolved issues
+- unstructured reviewer feedback grouped by reviewer when structured parsing
+  could not safely normalize actual reviewer text
+- reviewer source artifacts for unresolved issues or unstructured feedback
 - current executor output paths
 - previous executor output paths when a remediation round has prior candidates
 - the round goal for the next executor pass
@@ -463,10 +527,13 @@ When `audit_rounds > 1`, per-audit review artifacts are grouped under
 and local round numbering. Provider logs remain at the node root under
 `logs/<provider>/` with audit-aware filenames.
 
-Only unresolved major and minor issues are carried forward. Nitpicks are not
-carried unless a reviewer expresses them as major or minor correctness concerns.
-Approved reviewer outputs with empty major, minor, and nitpick sections are
-preserved as artifacts but do not add primary carry-forward context.
+Only unresolved major/minor issues and unstructured reviewer feedback are handed
+forward to executors. Nitpicks are not carried unless a reviewer expresses them
+as major or minor correctness concerns. Approved reviewer outputs with empty
+major, minor, and nitpick sections are preserved as artifacts but do not add
+primary carry-forward context.
+Unstructured reviewer feedback is not fingerprinted or counted as a normalized
+candidate finding.
 Unresolved fingerprints are computed from normalized reviewer issues. Repeated
 unresolved fingerprints after later executor changes emit warning-level stall
 diagnostics; they do not automatically fail the node.
@@ -650,6 +717,11 @@ Rejected alternatives:
 18. Group review-loop state, transport, and reviewer-skip semantics under a
     generic `token_optimization` feature. Those are review-loop semantics, not
     just token tuning.
+19. Convert reviewer parser or contract failures into synthetic executor
+    findings.
+20. Infer review verdicts from provider metadata when no review content was
+    extracted.
+21. Discard successful parallel reviewer outputs because a peer reviewer failed.
 
 ## Validation Coverage
 The implementation requires deterministic coverage for:
@@ -669,9 +741,17 @@ The implementation requires deterministic coverage for:
   candidate context injections.
 - Findings extraction success and failure cases, including mixed
   executor/reviewer nodes.
-- Review-loop state artifacts, review inboxes, unresolved-only carry-forward,
+- Review-loop state artifacts, review inboxes, review-feedback carry-forward,
   stall warnings, audit-round grouping, fresh audit restart behavior, and
   parallel reviewer execution.
+- Reviewer output classification for parseable or safely repairable structured
+  reviews, unstructured reviewer feedback with actual text, and missing review
+  content.
+- Verdict-first review parsing, exact review-heading recognition, code-literal
+  immunity, and deterministic repair of omitted empty sections for approved
+  verdicts.
+- Reviewer invocation/output failure state, `continue_on_failure` behavior, and
+  preservation of successful peer reviewer artifacts before failure handling.
 - Invalid candidate skipping, no-progress skipping, artifact drift warnings and
   fatal drift, status-artifact finalization, and fallback finalization for older
   runs.
@@ -680,9 +760,9 @@ The implementation requires deterministic coverage for:
   rendering.
 - Mock invoker end-to-end runs for findings and review-loop artifact behavior.
 - Manual multi-round mock runs that inspect
-  `.orchestrator/execution-stages/`, confirm unresolved-only carry-forward is
-  legible and auditable, and compare prompt size before and after
-  unresolved-only carry-forward.
+  `.orchestrator/execution-stages/`, confirm review feedback carry-forward is
+  legible and auditable, and compare prompt size before and after compact
+  carry-forward.
 
 ## Implementation Clarifications
 The codebase is the source of truth. These details are captured explicitly
@@ -704,7 +784,10 @@ because they are easy to misread from the high-level workflow:
 - Review inboxes are Markdown-only in the current implementation. A parallel
   JSON inbox, an explicit stall failure policy, and reviewer-scope-based
   skipping remain future design questions.
-- No source-code discrepancy was found that requires an implementation change.
+- Reviewer output handling distinguishes reviewer content problems from
+  executor candidate problems. Parser failures with actual text preserve that
+  text as unstructured feedback; missing review content follows reviewer
+  invocation/output failure policy.
 
 ## Updates
 - **2026-04-10**: Accepted spend observability v2, prompt-size guardrails, and
@@ -726,6 +809,10 @@ because they are easy to misread from the high-level workflow:
   contract rendering moved to a core-neutral module, runtime provider inference
   remains behind invoker capabilities, and invocation lifecycle handling uses
   explicit state transitions and subprocess cleanup.
+- **2026-06-11**: Clarified reviewer output classification after review-loop
+  parser hardening: safely repairable structured reviews, unstructured reviewer
+  feedback with actual text, and missing review content as reviewer
+  invocation/output failure.
 
 ## References
 - [ADR 0001: Ports + Adapters Runtime Integrations](0001-ports-adapters-runtime-integrations.md)

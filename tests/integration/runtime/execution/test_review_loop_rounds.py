@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -160,6 +161,55 @@ def test_reviewer_outputs_are_ordered_by_declared_reviewer_index(
         "fast_reviewer_1",
     ]
     assert len(set(session_ids)) == 1
+
+
+def test_parallel_reviewer_success_is_persisted_before_peer_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = _node()
+    node_dir = output.create_stage_dir(node.id)
+
+    async def fake_guard(request):
+        if request.provider.provider == "failed":
+            raise RuntimeError("simulated reviewer failure")
+        request.output_file.write_text(review_output(), encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(
+        review_loop_reviewer_round, "run_provider_call_with_drift_guard", fake_guard
+    )
+    request = ReviewerRoundRequest(
+        runtime_context=_runtime_context(),
+        node=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        reviewers=(
+            provider("ok", "reviewer", "ok_reviewer_0"),
+            provider("failed", "reviewer", "failed_reviewer_1"),
+        ),
+        artifact_dir=node_dir,
+        reviewer_prompt_context="Review task.",
+        review_context="Candidate",
+        previous_review_packet=None,
+        audit_round_num=None,
+        round_num=1,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated reviewer failure"):
+        asyncio.run(review_loop_rounds.run_reviewer_round(request))
+
+    assert (node_dir / "ok_reviewer_0_round1.raw.txt").exists()
+    assert (node_dir / "ok_reviewer_0_round1.review.json").exists()
+    assert (node_dir / "review-state" / "ok-reviewer-0-round-1.state.json").exists()
+    failure_state = node_dir / "review-state" / "failed-reviewer-1-round-1.state.json"
+    assert failure_state.exists()
+    payload = json.loads(failure_state.read_text(encoding="utf-8"))
+    assert payload["evaluation_kind"] == "reviewer_failure"
+    assert payload["failure_kind"] == "invocation_failed"
 
 
 def test_invalid_candidate_round_skips_reviewers_and_tracks_accounting(

@@ -144,6 +144,7 @@ class ExecutorRoundRunResult:
 class ReviewerRoundRunResult:
     outputs: list[ReviewerRoundArtifact]
     drift_warning_count: int
+    reviewer_failure_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -153,6 +154,17 @@ class ReviewerInvocationResult:
     task_id: str
     output_file: Path
     drift_warning_count: int
+
+
+@dataclass(frozen=True)
+class ReviewerInvocationFailure:
+    index: int
+    provider: ProviderRecord
+    task_id: str
+    output_file: Path
+    error: Exception
+    failure_kind: str
+    warning: str
 
 
 @dataclass(frozen=True)
@@ -343,6 +355,7 @@ class ReviewLoopRunContext:
 @dataclass
 class ReviewRoundState:
     reviewer_outputs: list[ReviewerRoundArtifact]
+    reviewer_failure_count: int
     current_review_packet: str | None
     current_unresolved_fingerprints: tuple[str, ...]
     current_executor_fingerprint: str

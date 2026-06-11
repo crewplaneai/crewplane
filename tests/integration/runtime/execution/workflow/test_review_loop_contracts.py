@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config
+from orchestrator_cli.core.config import AgentConfig, Config, Settings
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,
     ProviderSpec,
@@ -21,6 +21,7 @@ from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     OptionalOutputInvoker,
+    TimedTaskOutputInvoker,
     execute_sequential_stage,
     review_inbox_path,
     review_loop_status_path,
@@ -143,14 +144,212 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(raw_output, malformed_review)
             self.assertIn(
-                "malformed structured review block",
+                "Unstructured Reviewer Feedback",
                 normalized_output,
             )
-            self.assertEqual(
-                state_payload["evaluation_kind"], "unstructured_nonapproval"
-            )
+            self.assertEqual(state_payload["evaluation_kind"], "unstructured_feedback")
             self.assertEqual(state_payload["original_verdict"], "NO_FINDINGS")
+            self.assertEqual(state_payload["major_issues"], "None")
+            self.assertEqual(state_payload["minor_issues"], "None")
+            self.assertEqual(state_payload["unresolved_issue_count"], 0)
+            self.assertIn("## Minor Issues", state_payload["unstructured_feedback"])
             self.assertTrue(review_inbox_path(node_dir, 1).exists())
+            inbox_text = review_inbox_path(node_dir, 1).read_text(encoding="utf-8")
+            self.assertIn("#### Unstructured Feedback", inbox_text)
+            self.assertNotIn("#### Minor Issues", inbox_text)
+
+    async def test_missing_major_section_nits_only_review_reaches_consensus(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                },
+            )
+            node = WorkflowNode(
+                id="review.node.repaired.nits",
+                mode="sequential",
+                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                depth=1,
+                providers=[
+                    ProviderSpec(provider="exec", role="executor"),
+                    ProviderSpec(provider="review", role="reviewer"),
+                ],
+            )
+            reviewer_output = "\n".join(
+                [
+                    "## Minor Issues",
+                    "None",
+                    "",
+                    "## Nitpicks",
+                    "- Tighten the closing sentence.",
+                    "",
+                    "---",
+                    "VERDICT: NITS_ONLY",
+                    "",
+                ]
+            )
+            output = OutputManager("workflow", base_dir=tmp_path)
+            events: list[ExecutionEvent] = []
+
+            await execute_sequential_stage(
+                config,
+                node,
+                output,
+                invoker=MockAgentInvoker(outputs=["executor output", reviewer_output]),
+                telemetry=ExecutionTelemetry(
+                    workflow_name="workflow",
+                    run_id="run-1",
+                    event_sink=events.append,
+                ),
+            )
+
+            node_dir = output.get_stage_dir(node.id)
+            if node_dir is None:
+                self.fail("Expected node directory to be created")
+            state_payload = json.loads(
+                review_state_path(node_dir, "review_reviewer_0", 1).read_text(
+                    encoding="utf-8"
+                )
+            )
+            metadata = json.loads(
+                (node_dir / "review_reviewer_0_round1.review.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertTrue(state_payload["approved"])
+            self.assertEqual(state_payload["verdict"], "NITS_ONLY")
+            self.assertEqual(state_payload["major_issues"], "None")
+            self.assertEqual(state_payload["minor_issues"], "None")
+            self.assertEqual(state_payload["unresolved_issue_count"], 0)
+            self.assertFalse(review_inbox_path(node_dir, 1).exists())
+            self.assertIn("missing Major Issues section", metadata["warnings"][0])
+            warning_events = [
+                event
+                for event in events
+                if event.event_type == "runtime_log"
+                and event.payload.operation == "review_output_normalization"
+            ]
+            self.assertEqual(len(warning_events), 1)
+
+    async def test_empty_reviewer_output_persists_failure_state_and_honors_policy(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                settings=Settings(sequential_consensus_on_exhaustion="fatal"),
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                },
+            )
+            node = WorkflowNode(
+                id="review.node.empty.reviewer",
+                mode="sequential",
+                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                depth=1,
+                continue_on_failure=True,
+                providers=[
+                    ProviderSpec(provider="exec", role="executor"),
+                    ProviderSpec(provider="review", role="reviewer"),
+                ],
+            )
+            output = OutputManager("workflow", base_dir=tmp_path)
+
+            await execute_sequential_stage(
+                config,
+                node,
+                output,
+                invoker=MockAgentInvoker(outputs=["executor output", "  "]),
+            )
+
+            node_dir = output.get_stage_dir(node.id)
+            if node_dir is None:
+                self.fail("Expected node directory to be created")
+            state_payload = json.loads(
+                review_state_path(node_dir, "review_reviewer_0", 1).read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertEqual(state_payload["evaluation_kind"], "reviewer_failure")
+            self.assertEqual(state_payload["failure_kind"], "missing_review_content")
+            self.assertFalse(
+                (node_dir / "review_reviewer_0_round1.review.json").exists()
+            )
+            self.assertFalse(review_inbox_path(node_dir, 1).exists())
+
+    async def test_empty_peer_reviewer_does_not_allow_partial_consensus(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                settings=Settings(sequential_consensus_on_exhaustion="fatal"),
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                    "review-a": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                    "review-b": AgentConfig(cli_cmd=["mock"], default_model="m3"),
+                },
+            )
+            node = WorkflowNode(
+                id="review.node.partial.failure",
+                mode="sequential",
+                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                depth=1,
+                continue_on_failure=True,
+                providers=[
+                    ProviderSpec(provider="exec", role="executor"),
+                    ProviderSpec(provider="review-a", role="reviewer"),
+                    ProviderSpec(provider="review-b", role="reviewer"),
+                ],
+            )
+            output = OutputManager("workflow", base_dir=tmp_path)
+
+            await execute_sequential_stage(
+                config,
+                node,
+                output,
+                invoker=TimedTaskOutputInvoker(
+                    outputs_by_task_id={
+                        "exec_executor_0": "executor output",
+                        "review-a_reviewer_0": review_output(verdict="NO_FINDINGS"),
+                        "review-b_reviewer_1": "  ",
+                    },
+                ),
+            )
+
+            node_dir = output.get_stage_dir(node.id)
+            if node_dir is None:
+                self.fail("Expected node directory to be created")
+            status_payload = json.loads(
+                review_loop_status_path(node_dir).read_text(encoding="utf-8")
+            )
+            review_a_state = json.loads(
+                review_state_path(node_dir, "review-a_reviewer_0", 1).read_text(
+                    encoding="utf-8"
+                )
+            )
+            review_b_state = json.loads(
+                review_state_path(node_dir, "review-b_reviewer_1", 1).read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertFalse(status_payload["consensus_reached"])
+            self.assertTrue(status_payload["continued_after_consensus_exhaustion"])
+            self.assertTrue(review_a_state["approved"])
+            self.assertEqual(review_b_state["evaluation_kind"], "reviewer_failure")
+            self.assertEqual(review_b_state["failure_kind"], "missing_review_content")
+            self.assertFalse(review_inbox_path(node_dir, 1).exists())
 
     async def test_multi_provider_sequential_normalizes_reviewer_preamble(
         self,

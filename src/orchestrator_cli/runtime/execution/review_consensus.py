@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from orchestrator_cli.core.review_contract import (
     REQUIRED_EMPTY_SENTINEL,
-    VERDICT_CHANGES_REQUESTED,
     VERDICT_NITS_ONLY,
     VERDICT_NO_FINDINGS,
     ParsedReviewResult,
@@ -13,21 +12,35 @@ from .plain_language_review import infer_plain_language_review
 from .review_fingerprints import build_unresolved_fingerprints, count_unresolved_issues
 from .review_types import EvaluatedReviewResult, ReviewContractError
 from .structured_review import (
+    extract_final_review_verdict,
     extract_structured_review,
     normalize_review_result,
     parse_review_result,
+    review_output_uses_structured_contract,
     structured_review_warnings,
 )
 
 APPROVED_VERDICTS = frozenset({VERDICT_NITS_ONLY, VERDICT_NO_FINDINGS})
 
 
-def is_approved_verdict(verdict: str) -> bool:
+def is_approved_verdict(verdict: str | None) -> bool:
     return verdict in APPROVED_VERDICTS
 
 
 def evaluate_review_output(output: str) -> EvaluatedReviewResult:
-    structured_match = extract_structured_review(output)
+    try:
+        structured_match = extract_structured_review(output)
+    except ReviewContractError as exc:
+        return build_unstructured_review_feedback_result(
+            raw_text=output,
+            warning=(
+                "Reviewer output looked like a structured review, but it could "
+                "not be parsed safely. Preserving it as unstructured reviewer "
+                f"feedback: {exc}"
+            ),
+            original_verdict=extract_final_review_verdict(output),
+        )
+
     if structured_match is not None:
         try:
             parsed = normalize_review_result(
@@ -39,21 +52,12 @@ def evaluate_review_output(output: str) -> EvaluatedReviewResult:
                 )
             )
         except ReviewContractError as exc:
-            return build_evaluated_review_result(
-                parsed=ParsedReviewResult(
-                    verdict=VERDICT_CHANGES_REQUESTED,
-                    major_issues=REQUIRED_EMPTY_SENTINEL,
-                    minor_issues=(
-                        "Reviewer output included a malformed structured review block "
-                        f"({exc}). Inspect the raw reviewer sidecar artifact."
-                    ),
-                    nitpicks=REQUIRED_EMPTY_SENTINEL,
-                ),
+            return build_unstructured_review_feedback_result(
                 raw_text=output,
-                evaluation_kind="unstructured_nonapproval",
-                warnings=(
+                warning=(
                     "Reviewer output included a structured review block, but it could "
-                    "not be normalized and was treated as non-approval.",
+                    "not be normalized. Preserving it as unstructured reviewer "
+                    f"feedback: {exc}"
                 ),
                 original_verdict=structured_match.verdict,
                 had_leading_text=bool(structured_match.prefix.strip()),
@@ -70,6 +74,17 @@ def evaluate_review_output(output: str) -> EvaluatedReviewResult:
             had_trailing_text=bool(structured_match.suffix.strip()),
         )
 
+    if review_output_uses_structured_contract(output):
+        return build_unstructured_review_feedback_result(
+            raw_text=output,
+            warning=(
+                "Reviewer output contained structured review markers, but no safe "
+                "structured review result could be extracted. Preserving it as "
+                "unstructured reviewer feedback."
+            ),
+            original_verdict=extract_final_review_verdict(output),
+        )
+
     inferred = infer_plain_language_review(output)
     if inferred is not None:
         return build_evaluated_review_result(
@@ -79,22 +94,12 @@ def evaluate_review_output(output: str) -> EvaluatedReviewResult:
             warnings=inferred.warnings,
         )
 
-    return build_evaluated_review_result(
-        parsed=ParsedReviewResult(
-            verdict=VERDICT_CHANGES_REQUESTED,
-            major_issues=REQUIRED_EMPTY_SENTINEL,
-            minor_issues=(
-                "Reviewer output could not be normalized into the structured "
-                "review contract, and approval could not be inferred. Inspect "
-                "the raw reviewer sidecar artifact."
-            ),
-            nitpicks=REQUIRED_EMPTY_SENTINEL,
-        ),
+    return build_unstructured_review_feedback_result(
         raw_text=output,
-        evaluation_kind="unstructured_nonapproval",
-        warnings=(
+        warning=(
             "Reviewer output did not include a structured review block, and "
-            "approval could not be inferred from plain-language cues.",
+            "approval could not be inferred from plain-language cues. Preserving "
+            "it as unstructured reviewer feedback."
         ),
     )
 
@@ -123,6 +128,54 @@ def build_evaluated_review_result(
         original_verdict=original_verdict,
         had_leading_text=had_leading_text,
         had_trailing_text=had_trailing_text,
+    )
+
+
+def build_unstructured_review_feedback_result(
+    raw_text: str,
+    warning: str,
+    original_verdict: str | None = None,
+    had_leading_text: bool = False,
+    had_trailing_text: bool = False,
+) -> EvaluatedReviewResult:
+    feedback = raw_text.strip()
+    return EvaluatedReviewResult(
+        verdict=None,
+        approved=False,
+        major_issues=REQUIRED_EMPTY_SENTINEL,
+        minor_issues=REQUIRED_EMPTY_SENTINEL,
+        nitpicks=REQUIRED_EMPTY_SENTINEL,
+        unresolved_fingerprints=(),
+        unresolved_issue_count=0,
+        normalized_markdown=render_unstructured_review_feedback(feedback),
+        raw_text=raw_text,
+        evaluation_kind="unstructured_feedback",
+        warnings=(warning,),
+        original_verdict=original_verdict,
+        had_leading_text=had_leading_text,
+        had_trailing_text=had_trailing_text,
+        unstructured_feedback=feedback,
+    )
+
+
+def render_unstructured_review_feedback(raw_text: str) -> str:
+    feedback = raw_text or "No reviewer text was available."
+    return "\n".join(
+        [
+            "# Unstructured Reviewer Feedback",
+            "",
+            (
+                "The runtime could not normalize this reviewer response into "
+                "Major Issues, Minor Issues, or Nitpicks. Treat the content "
+                "below as raw reviewer feedback, not as normalized candidate "
+                "findings."
+            ),
+            "",
+            "## Raw Feedback",
+            "",
+            feedback,
+            "",
+        ]
     )
 
 
