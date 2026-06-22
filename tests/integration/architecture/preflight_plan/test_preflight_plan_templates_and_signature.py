@@ -186,11 +186,15 @@ def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> Non
     assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-ENCODING"]
 
 
-def test_imported_file_token_resolves_from_imported_module_root(tmp_path: Path) -> None:
+def test_imported_file_token_resolves_from_project_root(tmp_path: Path) -> None:
     root = tmp_path
     child_dir = root / "child"
-    child_dir.mkdir()
-    (child_dir / "context.md").write_text("child context", encoding="utf-8")
+    root_context = root / "docs" / "context.md"
+    child_context = child_dir / "docs" / "context.md"
+    root_context.parent.mkdir()
+    child_context.parent.mkdir(parents=True)
+    root_context.write_text("project context", encoding="utf-8")
+    child_context.write_text("child context", encoding="utf-8")
     (child_dir / "workflow.task.md").write_text(
         "\n".join(
             [
@@ -205,7 +209,7 @@ def test_imported_file_token_resolves_from_imported_module_root(tmp_path: Path) 
                 "",
                 "## build",
                 "",
-                "{{file:context.md}}",
+                "{{file:docs/context.md}}",
             ]
         ),
         encoding="utf-8",
@@ -251,10 +255,9 @@ def test_imported_file_token_resolves_from_imported_module_root(tmp_path: Path) 
     )
 
     assert not preview.diagnostics
-    assert set(preview.static_file_payloads.values()) == {b"child context"}
+    assert set(preview.static_file_payloads.values()) == {b"project context"}
     assert all(
-        resource.source_root == child_dir.as_posix()
-        for resource in preview.static_resources
+        resource.source_root == root.as_posix() for resource in preview.static_resources
     )
 
 

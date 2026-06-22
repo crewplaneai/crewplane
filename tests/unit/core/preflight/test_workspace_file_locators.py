@@ -3,17 +3,26 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
-from orchestrator_cli.core.preflight import workspace_git_file_reads
+from orchestrator_cli.bootstrap import build_runtime_config_snapshot
+from orchestrator_cli.core.preflight import (
+    PreflightCompileOptions,
+    compile_preflight_preview,
+    load_workflow_source_for_preflight,
+    workspace_git_file_reads,
+)
 from orchestrator_cli.core.prompt_segments import PromptSegment
 from orchestrator_cli.core.workflow_models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
+    workspace_config,
     workspace_source_snapshot,
     workspace_workflow,
 )
@@ -64,6 +73,98 @@ def test_workspace_enabled_file_tokens_compile_to_workspace_locators(
         "workspace_file_locator"
     )
     assert preview.token_catalog[0].canonical_locator == project_locator.locator_id
+
+
+def test_workspace_imported_file_token_resolves_from_project_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path
+    child_dir = root / ".orchestrator" / "workflows" / "child"
+    root_requirements = root / "docs" / "requirements.md"
+    child_requirements = child_dir / "docs" / "requirements.md"
+    root_requirements.parent.mkdir()
+    child_requirements.parent.mkdir(parents=True)
+    root_requirements.write_text("project requirements\n", encoding="utf-8")
+    child_requirements.write_text("child requirements\n", encoding="utf-8")
+    (child_dir / "workflow.task.md").write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Child",
+                "worktrees:",
+                "  primary:",
+                "    kind: worktree",
+                "nodes:",
+                "  - id: implement",
+                "    mode: sequential",
+                "    providers: [alpha]",
+                "---",
+                "",
+                "## implement",
+                "",
+                "Read {{file:docs/requirements.md}}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    root_workflow = root / ".orchestrator" / "workflows" / "root.task.md"
+    root_workflow.write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Root",
+                "imports:",
+                "  - path: child/workflow.task.md",
+                "    as: child",
+                "nodes: []",
+                "---",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    source_snapshot = init_git_repo(root)
+    source = load_workflow_source_for_preflight(root_workflow, project_root=root)
+    config = workspace_config()
+    runtime_snapshot = build_runtime_config_snapshot(
+        config=config,
+        console=Console(file=None),
+        no_live=True,
+    )
+
+    preview = compile_preflight_preview(
+        source=source,
+        config=config,
+        runtime_snapshot=runtime_snapshot.snapshot,
+        options=PreflightCompileOptions(
+            project_root=root,
+            orchestrator_dir=root / ".orchestrator",
+            fingerprint_key_policy="read_only",
+            workspace_source_snapshot=source_snapshot,
+        ),
+    )
+
+    assert preview.diagnostics == []
+    assert {
+        locator.workspace_relative_path for locator in preview.workspace_file_locators
+    } == {"docs/requirements.md"}
+    assert {
+        locator.git_top_relative_path for locator in preview.workspace_file_locators
+    } == {"docs/requirements.md"}
+    locator = next(
+        locator
+        for locator in preview.workspace_file_locators
+        if locator.source_class == "project_initial"
+    )
+    assert locator.source_root == root.as_posix()
+    assert locator.source_root_relative_to_project == "."
+    assert locator.workspace_relative_path == "docs/requirements.md"
+    assert locator.git_top_relative_path == "docs/requirements.md"
+    assert locator.content_ref is not None
+    assert preview.workspace_file_payloads == {
+        locator.content_ref: b"project requirements\n"
+    }
 
 
 def test_downstream_worktree_executor_file_locator_can_use_candidate_source(

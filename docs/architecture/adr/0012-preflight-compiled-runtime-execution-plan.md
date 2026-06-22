@@ -137,12 +137,12 @@ Node references resolve through canonical locators and allowed artifact keys:
 
 Duplicate references to the same canonical upstream artifact in one source node produce one dependency edge. Later occurrences remain in the token catalog for auditability.
 
-Imported workflow inputs remain explicit `child_input_id -> caller locator` bindings. Child modules see only declared child input IDs, and file references resolve relative to the authored child module root before project/allowlist containment checks. `{{<child_input_id>._artifact}}` is not legal template grammar.
+Imported workflow inputs remain explicit `child_input_id -> caller locator` bindings. Child modules see only declared child input IDs, and relative file references resolve from the project root before project/allowlist containment checks. Imported workflow source paths remain provenance metadata for diagnostics and audit. `{{<child_input_id>._artifact}}` is not legal template grammar.
 
 Token catalog entries are occurrence-level audit records with source provenance and `token_signature` values. Dependency edges are graph-level records keyed by canonical target locator, artifact key, source node, and `dependency_signature`.
 
 ### Static Files
-When workspace isolation is disabled, `{{file:path}}` injects UTF-8 text only. Preflight resolves paths against the authored node source root, applies containment policy, reads bytes, rejects undecodable or NUL-containing content, records size and hash, and writes the content into the preflight static bundle.
+When workspace isolation is disabled, `{{file:path}}` injects UTF-8 text only. Preflight resolves relative paths against the project root, applies containment policy, reads bytes, rejects undecodable or NUL-containing content, records size and hash, and writes the content into the preflight static bundle.
 
 Runtime consumes only the bundle `content_ref`. It must not read the original `resolved_path` or rerun path policy.
 
@@ -296,7 +296,7 @@ Positive consequences:
 - preflight diagnostics are more complete and happen before provider invocation
 - runtime execution is simpler to reason about and test
 - artifact manifests reflect the compiled execution contract
-- imported workflow behavior is deterministic across module roots
+- imported workflow file-token behavior is deterministic across module roots
 - duplicate detection ignores presentation-only UI changes
 - sensitive values stay out of persisted orchestrator-owned artifacts
 

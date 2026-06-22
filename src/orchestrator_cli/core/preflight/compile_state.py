@@ -66,13 +66,6 @@ class PreflightCompileOptions:
         self,
         source: PreflightWorkflowSource,
     ) -> PreflightCompileOptions:
-        root_source_path = (
-            source.root_workflow_path.resolve(strict=False)
-            if source.root_workflow_path is not None
-            else source.referenced_workflows[0].path.resolve(strict=False)
-            if source.referenced_workflows
-            else None
-        )
         node_source_files = {
             node_id: source_path.resolve(strict=False)
             for node_id, source_path in source.node_source_paths.items()
@@ -80,12 +73,8 @@ class PreflightCompileOptions:
         return replace(
             self,
             node_source_roots={
-                node_id: _source_root_for_node(
-                    source_path,
-                    root_source_path,
-                    self.project_root,
-                )
-                for node_id, source_path in node_source_files.items()
+                node_id: self.project_root.resolve(strict=False)
+                for node_id in node_source_files
             },
             node_source_files=node_source_files,
             node_source_spans={
@@ -97,16 +86,6 @@ class PreflightCompileOptions:
                 for node_id, spans in source.prompt_segment_spans.items()
             },
         )
-
-
-def _source_root_for_node(
-    source_path: Path,
-    root_source_path: Path | None,
-    project_root: Path,
-) -> Path:
-    if root_source_path is not None and source_path == root_source_path:
-        return project_root.resolve(strict=False)
-    return source_path.parent.resolve(strict=False)
 
 
 @dataclass
