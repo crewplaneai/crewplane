@@ -207,6 +207,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             plan = PreflightExecutionPlan(
                 run_id=output.run_id,
                 run_key_name=output.run_key_name,
+                project_root=output.base_dir.as_posix(),
                 context_root=output.stages_dir.as_posix(),
                 manifest_root=(output.stages_dir / "manifests").as_posix(),
                 created_at="2026-06-03T00:00:00",

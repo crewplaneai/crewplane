@@ -1,4 +1,5 @@
 import inspect
+import io
 import os
 import subprocess
 import sys
@@ -7,14 +8,20 @@ import unittest
 from pathlib import Path
 
 import orchestrator_cli.cli.app as cli
+from orchestrator_cli.cli.run.git_source_probe import GIT_MIN_VERSION, parse_git_version
 from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
+    ConsoleFactory,
     project_pythonpath,
     write_basic_config_without_default_model,
     write_basic_workflow_with_provider_model,
     write_review_workflow,
 )
-from tests.integration.cli.dry_run_helpers import run_dry_run, write_standard_project
+from tests.integration.cli.dry_run_helpers import (
+    artifact_tree,
+    run_dry_run,
+    write_standard_project,
+)
 
 
 class CliDryRunTests(unittest.TestCase):
@@ -110,6 +117,73 @@ class CliDryRunTests(unittest.TestCase):
                 output_text,
             )
 
+    def test_workspace_enabled_dry_run_succeeds_without_artifacts(
+        self,
+    ) -> None:
+        self._skip_without_workspace_git()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
+            _commit_workspace_project(tmp_path)
+
+            output_text = run_dry_run(tmp_path, config_path, workflow_path)
+
+            self.assertIn("Dry run mode", output_text)
+            self.assertIn("Workspace: enabled", output_text)
+            self.assertIn("contract: blob_exact", output_text)
+            self.assertIn("source: commit=", output_text)
+            self.assertIn("invoker: mock launch=mock_no_child_process", output_text)
+            self.assertIn("rendered workspace files:", output_text)
+            self.assertIn("project_initial=", output_text)
+            self.assertIn("cleanup: cleanup_on_success=True", output_text)
+            self.assertIn(
+                "workspace: snapshot name=scratch source=project",
+                output_text,
+            )
+            self.assertIn("result=discarded_snapshot_drift", output_text)
+            self.assertIn("review.node", output_text)
+            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), ())
+
+    def test_workspace_enabled_validate_succeeds_without_artifacts(
+        self,
+    ) -> None:
+        self._skip_without_workspace_git()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
+            _commit_workspace_project(tmp_path)
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            )
+            original_cwd = Path.cwd()
+            os.chdir(tmp_path)
+            try:
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+            finally:
+                os.chdir(original_cwd)
+                cli.Console = original_console_cls
+
+            self.assertIn("✓ Valid", stream.getvalue())
+            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), ())
+
+    def _skip_without_workspace_git(self) -> None:
+        try:
+            version_text = subprocess.run(
+                ["git", "--version"],
+                check=True,
+                capture_output=True,
+            ).stdout.decode("utf-8")
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            self.skipTest("git is unavailable")
+        version = parse_git_version(version_text)
+        if version is None or version < GIT_MIN_VERSION:
+            self.skipTest("Git 2.34.1+ is required for workspace source policy")
+
 
 def _write_workflow_provider_model(path: Path) -> None:
     write_basic_workflow_with_provider_model(path, model="workflow-model")
@@ -143,3 +217,93 @@ def _write_input_node_workflow(path: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def _write_workspace_enabled_project(root: Path) -> tuple[Path, Path]:
+    orchestrator_dir = root / ".orchestrator"
+    workflow_dir = orchestrator_dir / "workflows"
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    docs_dir = root / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "requirements.md").write_text("requirements\n", encoding="utf-8")
+    config_path = orchestrator_dir / "config.yml"
+    workflow_path = workflow_dir / "workflow.task.md"
+    _write_workspace_enabled_config(config_path)
+    _write_workspace_file_workflow(workflow_path)
+    return config_path, workflow_path
+
+
+def _write_workspace_enabled_config(path: Path) -> None:
+    root = path.parent.parent
+    cache_root = root.parent / f"{root.name}-workspace-cache"
+    path.write_text(
+        "\n".join(
+            [
+                f'version: "{SCHEMA_VERSION}"',
+                "",
+                "agents:",
+                "  alpha:",
+                '    cli_cmd: ["echo"]',
+                '    default_model: "model-a"',
+                "settings:",
+                "  workspace:",
+                "    enabled: true",
+                f'    cache_root: "{cache_root.as_posix()}"',
+                "  integrations:",
+                "    invoker:",
+                '      implementation: "mock"',
+                "      options:",
+                "        output_mode: echo",
+                "        observation_delay_seconds: 0",
+                "    ui:",
+                '      implementation: "none"',
+                "      options: {}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_workspace_file_workflow(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Workspace Task",
+                "worktrees:",
+                "  scratch:",
+                "    kind: snapshot",
+                "nodes:",
+                "  - id: review.node",
+                "    mode: sequential",
+                "    worktree: scratch",
+                "    providers:",
+                "      - provider: alpha",
+                "        role: executor",
+                "---",
+                "",
+                "## review.node",
+                "",
+                "Read {{file:docs/requirements.md}}.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _commit_workspace_project(root: Path) -> None:
+    _git(root, "init")
+    _git(root, "config", "user.name", "Orchestrator Test")
+    _git(root, "config", "user.email", "orchestrator-test@example.invalid")
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "initial")
+
+
+def _git(root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", root.as_posix(), *args],
+        check=True,
+        capture_output=True,
+    )
+    return result.stdout.decode("utf-8").strip()

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from orchestrator_cli.artifacts import OutputManager
+from orchestrator_cli.artifacts.generated_files import generated_file_source_root
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.core.preflight.models import (
     ArtifactContract,
@@ -14,6 +15,7 @@ from orchestrator_cli.core.preflight.models import (
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.core.preflight.signatures import signature_for_payload
 from orchestrator_cli.observability.events import (
+    ExecutionEventContext,
     format_execution_event_log_line,
     invocation_event,
     runtime_log_event,
@@ -59,6 +61,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
             plan=PreflightExecutionPlan(
                 run_id="run-1",
                 run_key_name="run-1",
+                project_root=".",
                 context_root=".",
                 manifest_root=".orchestrator",
                 created_at="2026-06-03T00:00:00",
@@ -312,10 +315,14 @@ def test_event_log_append_allows_ambient_runtime_warning(
             "invocation_started",
             "workflow",
             "run-1",
-            node_id="review.node",
-            provider="exec",
-            role="executor",
-            task_id="exec_executor_0",
+            context=ExecutionEventContext(
+                workflow_name="workflow",
+                run_id="run-1",
+                node_id="review.node",
+                provider="exec",
+                role="executor",
+                task_id="exec_executor_0",
+            ),
         )
     ).encode("utf-8")
     finished = format_execution_event_log_line(
@@ -323,10 +330,14 @@ def test_event_log_append_allows_ambient_runtime_warning(
             "invocation_finished",
             "workflow",
             "run-1",
-            node_id="review.node",
-            provider="exec",
-            role="executor",
-            task_id="exec_executor_0",
+            context=ExecutionEventContext(
+                workflow_name="workflow",
+                run_id="run-1",
+                node_id="review.node",
+                provider="exec",
+                role="executor",
+                task_id="exec_executor_0",
+            ),
         )
     ).encode("utf-8")
     ambient_warning = format_execution_event_log_line(
@@ -367,6 +378,68 @@ def test_node_local_unexpected_writes_are_warning_level(tmp_path: Path) -> None:
     assert drift.fatal_paths == ()
 
 
+def test_runtime_generated_file_source_snapshots_are_allowed(
+    tmp_path: Path,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    snapshot_root = generated_file_source_root(request.output_file)
+    generated_source = snapshot_root / "src/app.txt"
+    generated_source.parent.mkdir(parents=True)
+    generated_source.write_text("generated", encoding="utf-8")
+    request.runtime_context.generated_file_workspaces.record(
+        request.node.id,
+        request.output_file,
+        snapshot_root,
+    )
+    review_loop_drift.allow_runtime_generated_file_snapshots(request)
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot=None,
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=None),
+    )
+
+    drift = review_loop_drift_detection.detect_provider_call_drift(
+        request,
+        window,
+        event_log_capture=None,
+        event_log_start_index=0,
+    )
+
+    assert generated_source in request.allowed_paths
+    assert drift.warning_paths == ()
+    assert drift.fatal_paths == ()
+
+
+def test_unregistered_generated_file_source_snapshots_are_drift(
+    tmp_path: Path,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    generated_source = generated_file_source_root(request.output_file) / "src/app.txt"
+    generated_source.parent.mkdir(parents=True)
+    generated_source.write_text("generated", encoding="utf-8")
+    review_loop_drift.allow_runtime_generated_file_snapshots(request)
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot=None,
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=None),
+    )
+
+    drift = review_loop_drift_detection.detect_provider_call_drift(
+        request,
+        window,
+        event_log_capture=None,
+        event_log_start_index=0,
+    )
+
+    assert generated_source not in request.allowed_paths
+    assert drift.warning_paths == (generated_source,)
+    assert drift.fatal_paths == ()
+
+
 def test_drift_is_checked_when_provider_call_fails(tmp_path: Path) -> None:
     request, _output, node_dir = _request(tmp_path)
 
@@ -380,6 +453,7 @@ def test_drift_is_checked_when_provider_call_fails(tmp_path: Path) -> None:
             model,  # noqa: ARG002 - Required by protocol.
             prompt,  # noqa: ARG002 - Required by protocol.
             output_file,  # noqa: ARG002 - Required by protocol.
+            cwd,  # noqa: ARG002 - Required by protocol.
             log_file=None,  # noqa: ARG002 - Required by protocol.
             invocation_context=None,  # noqa: ARG002 - Required by protocol.
         ) -> None:

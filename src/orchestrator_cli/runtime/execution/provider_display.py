@@ -66,6 +66,7 @@ async def invoke_with_display(
     model: str | None,
     prompt: str,
     output_file: Path,
+    cwd: Path,
     log_file: Path | None,
     invocation_context: InvocationContext,
 ) -> None:
@@ -75,6 +76,7 @@ async def invoke_with_display(
         model,
         prompt,
         output_file,
+        cwd,
         log_file,
         invocation_context,
     )
@@ -96,6 +98,7 @@ def _build_invoke_callback(
     model: str | None,
     prompt: str,
     output_file: Path,
+    cwd: Path,
     log_file: Path | None,
     invocation_context: InvocationContext,
 ) -> Callable[[], Awaitable[None]]:
@@ -105,6 +108,7 @@ def _build_invoke_callback(
             model,
             prompt,
             output_file,
+            cwd,
             log_file,
             invocation_context=invocation_context,
         )

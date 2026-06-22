@@ -22,6 +22,7 @@ class StageFinalizeResult:
     included_outputs: tuple[Path, ...]
     skipped_empty_outputs: tuple[Path, ...]
     warnings: tuple[str, ...]
+    generated_files: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,8 @@ class ArtifactStorePort(Protocol):
         stage_name: str,
         findings_enabled: bool = False,
         task_specs: tuple[StageTaskSpec, ...] = (),
+        generated_file_detection_enabled: bool = True,
+        generated_file_workspace_roots: dict[Path, Path] | None = None,
     ) -> StageFinalizeResult:
         """Consolidate a stage's run artifacts into result artifacts."""
 
@@ -129,6 +132,11 @@ class ArtifactStorePort(Protocol):
 
     def write_resume_source(self, node_id: str, payload: JsonObject) -> Path:
         """Persist the validated source metadata for a hydrated resumed node."""
+
+    def write_workspace_export(
+        self, logical_worktree_name: str, payload: object
+    ) -> Path:
+        """Persist a run-level workspace branch export record."""
 
 
 class ArtifactAdapterPort(Protocol):

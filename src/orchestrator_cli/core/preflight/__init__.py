@@ -1,7 +1,11 @@
 """Preflight compiler contracts for compiled workflow execution."""
 
 from .compiler import PreflightCompileOptions, compile_preflight_preview
-from .diagnostics import PreflightDiagnostic
+from .diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from .models import (
     PREFLIGHT_STATUS_FAILED,
     PREFLIGHT_STATUS_SUCCEEDED,
@@ -16,6 +20,7 @@ from .models import (
     RenderStream,
     StaticResource,
     TokenCatalogEntry,
+    WorkspaceFileLocator,
 )
 from .runner import load_workflow_source_for_preflight
 from .runtime_config import (
@@ -39,6 +44,8 @@ __all__ = [
     "PreflightCompilationPreview",
     "PreflightCompileOptions",
     "PreflightDiagnostic",
+    "PreflightDiagnosticCode",
+    "PreflightDiagnosticPhase",
     "PreflightExecutionNode",
     "PreflightExecutionPlan",
     "PreflightWorkflowSource",
@@ -50,6 +57,7 @@ __all__ = [
     "SecretContext",
     "StaticResource",
     "TokenCatalogEntry",
+    "WorkspaceFileLocator",
     "build_builtin_template_variables",
     "canonical_json",
     "canonical_json_bytes",

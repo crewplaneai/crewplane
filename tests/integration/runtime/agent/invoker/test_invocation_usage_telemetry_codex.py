@@ -9,7 +9,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
+from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
+    CommandResult,
+    InvocationContext,
+)
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.invoker import (
     invoke_agent,
@@ -31,8 +35,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 return CommandResult(returncode=0, stdout_text="done", stderr_text="")
 
@@ -54,6 +60,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 model="test-model",
                 prompt="prompt",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
@@ -84,8 +91,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] == 1:
@@ -121,6 +130,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
@@ -154,8 +164,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 output_path = Path(cmd[cmd.index("--output-last-message") + 1])
                 output_path.write_text("done", encoding="utf-8")
@@ -170,7 +182,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
-                cli_cmd=["codex", "exec"],
+                cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
                 default_model="gpt-5.4",
                 prompt_transport="stdin",
@@ -182,6 +194,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 model="gpt-5.4",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
@@ -260,6 +273,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                         model="gpt-5.4",
                         prompt="review the repository",
                         output_file=output_file,
+                        cwd=output_file.parent,
                         log_file=log_file,
                         invocation_context=context,
                         plan_builder=build_cli_invocation_plan,
@@ -326,6 +340,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     model=None,
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=log_file,
                     invocation_context=context,
                     plan_builder=build_cli_invocation_plan,
@@ -398,6 +413,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     model=None,
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=log_file,
                     invocation_context=context,
                     plan_builder=build_cli_invocation_plan,
@@ -458,8 +474,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 output_path = Path(cmd[cmd.index("--output-last-message") + 1])
                 output_path.write_text("final answer", encoding="utf-8")
@@ -475,7 +493,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
-                cli_cmd=["codex", "exec"],
+                cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
                 default_model="gpt-5.4",
                 prompt_transport="stdin",
@@ -492,6 +510,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     model="gpt-5.4",
                     prompt="review the repository",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
@@ -517,8 +536,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 output_path = Path(cmd[cmd.index("--output-last-message") + 1])
@@ -531,7 +552,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             config = AgentConfig(
-                cli_cmd=["codex", "exec"],
+                cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
                 default_model="gpt-5.4",
                 prompt_transport="stdin",
@@ -550,6 +571,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     model="gpt-5.4",
                     prompt="review the repository",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -597,8 +619,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 output_path = Path(cmd[cmd.index("--output-last-message") + 1])
                 output_path.write_text("done", encoding="utf-8")
@@ -613,7 +637,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
-                cli_cmd=["codex", "exec"],
+                cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
                 default_model="gpt-5.4",
                 prompt_transport="stdin",
@@ -625,6 +649,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 model="gpt-5.4",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
@@ -656,8 +681,10 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
 
@@ -670,7 +697,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
-                cli_cmd=["codex", "exec"],
+                cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
                 default_model="gpt-5.4",
                 prompt_transport="stdin",
@@ -685,6 +712,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                     model="gpt-5.4",
                     prompt="review the repository",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,

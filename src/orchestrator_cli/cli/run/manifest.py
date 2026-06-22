@@ -10,6 +10,9 @@ from orchestrator_cli.core.execution_state import (
 )
 from orchestrator_cli.core.preflight import PreflightExecutionPlan
 from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
+from orchestrator_cli.core.preflight.workspace_observability import (
+    workspace_observability_descriptor,
+)
 
 from .context import WorkflowRunContext
 
@@ -85,6 +88,7 @@ def build_run_manifest_from_plan(
         workflow_source=source.workflow_content,
         composed_workflow=source.composed_workflow,
         referenced_workflows=source.referenced_workflow_payloads(),
+        workspace=workspace_observability_descriptor(plan),
         resumed_nodes=list(resumed_nodes),
         resume_source_run_id=resume_source_run_id,
         resume_source_run_key_name=resume_source_run_key_name,

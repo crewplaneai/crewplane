@@ -13,6 +13,7 @@ from orchestrator_cli.observability.events.payloads import (
     NodeEventPayload,
     RuntimeLogEventPayload,
     WorkflowEventPayload,
+    WorkspaceEventPayload,
 )
 from orchestrator_cli.observability.events.types import (
     EventType,
@@ -21,6 +22,7 @@ from orchestrator_cli.observability.events.types import (
     NodeEventType,
     RuntimeLogValue,
     WorkflowEventType,
+    WorkspaceEventType,
 )
 
 
@@ -28,7 +30,6 @@ def workflow_event(
     event_type: WorkflowEventType,
     workflow_name: str,
     run_id: str,
-    *,
     error: str | None = None,
     timestamp: float | None = None,
     timestamp_utc: str | None = None,
@@ -49,7 +50,6 @@ def node_event(
     workflow_name: str,
     run_id: str,
     node_id: str,
-    *,
     error: str | None = None,
     timestamp: float | None = None,
     timestamp_utc: str | None = None,
@@ -73,18 +73,7 @@ def invocation_event(
     event_type: InvocationEventType,
     workflow_name: str,
     run_id: str,
-    *,
-    node_id: str,
-    provider: str,
-    role: str,
-    task_id: str,
-    model: str | None = None,
-    audit_round_num: int | None = None,
-    round_num: int | None = None,
-    output_file: str | None = None,
-    log_file: str | None = None,
-    log_presentation_format: str | None = None,
-    log_presentation_profile: str | None = None,
+    context: ExecutionEventContext,
     duration_ms: int | None = None,
     error: str | None = None,
     attempt_count: int | None = None,
@@ -105,25 +94,12 @@ def invocation_event(
     timestamp: float | None = None,
     timestamp_utc: str | None = None,
 ) -> ExecutionEvent:
+    _validate_invocation_context(context)
     return _build_event(
         event_type=event_type,
         workflow_name=workflow_name,
         run_id=run_id,
-        context=ExecutionEventContext(
-            workflow_name=workflow_name,
-            run_id=run_id,
-            node_id=node_id,
-            provider=provider,
-            role=role,
-            model=model,
-            task_id=task_id,
-            audit_round_num=audit_round_num,
-            round_num=round_num,
-            output_file=output_file,
-            log_file=log_file,
-            log_presentation_format=log_presentation_format,
-            log_presentation_profile=log_presentation_profile,
-        ),
+        context=context,
         payload=InvocationEventPayload(
             duration_ms=duration_ms,
             error=error,
@@ -148,24 +124,34 @@ def invocation_event(
     )
 
 
+def workspace_event(
+    event_type: WorkspaceEventType,
+    workflow_name: str,
+    run_id: str,
+    context: ExecutionEventContext,
+    payload: WorkspaceEventPayload,
+    timestamp: float | None = None,
+    timestamp_utc: str | None = None,
+) -> ExecutionEvent:
+    _validate_workspace_context(context)
+    return _build_event(
+        event_type=event_type,
+        workflow_name=workflow_name,
+        run_id=run_id,
+        context=context,
+        payload=payload,
+        timestamp=timestamp,
+        timestamp_utc=timestamp_utc,
+    )
+
+
 def runtime_log_event(
     workflow_name: str,
     run_id: str,
-    *,
     level: LogLevel,
     message: str,
     operation: str,
-    node_id: str | None = None,
-    provider: str | None = None,
-    role: str | None = None,
-    model: str | None = None,
-    task_id: str | None = None,
-    audit_round_num: int | None = None,
-    round_num: int | None = None,
-    output_file: str | None = None,
-    log_file: str | None = None,
-    log_presentation_format: str | None = None,
-    log_presentation_profile: str | None = None,
+    context: ExecutionEventContext | None = None,
     attributes: Mapping[str, RuntimeLogValue] | None = None,
     duration_ms: int | None = None,
     error: str | None = None,
@@ -176,21 +162,8 @@ def runtime_log_event(
         event_type="runtime_log",
         workflow_name=workflow_name,
         run_id=run_id,
-        context=ExecutionEventContext(
-            workflow_name=workflow_name,
-            run_id=run_id,
-            node_id=node_id,
-            provider=provider,
-            role=role,
-            model=model,
-            task_id=task_id,
-            audit_round_num=audit_round_num,
-            round_num=round_num,
-            output_file=output_file,
-            log_file=log_file,
-            log_presentation_format=log_presentation_format,
-            log_presentation_profile=log_presentation_profile,
-        ),
+        context=context
+        or ExecutionEventContext(workflow_name=workflow_name, run_id=run_id),
         payload=RuntimeLogEventPayload(
             level=level,
             message=message,
@@ -204,8 +177,22 @@ def runtime_log_event(
     )
 
 
+def _validate_invocation_context(context: ExecutionEventContext) -> None:
+    if (
+        context.node_id is None
+        or context.provider is None
+        or context.role is None
+        or context.task_id is None
+    ):
+        raise ValueError("Invocation event requires node, provider, role, and task.")
+
+
+def _validate_workspace_context(context: ExecutionEventContext) -> None:
+    if context.node_id is None or context.task_id is None:
+        raise ValueError("Workspace event requires node and task.")
+
+
 def _build_event(
-    *,
     event_type: EventType,
     workflow_name: str,
     run_id: str,

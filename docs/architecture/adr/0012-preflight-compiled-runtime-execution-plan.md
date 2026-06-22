@@ -142,9 +142,28 @@ Imported workflow inputs remain explicit `child_input_id -> caller locator` bind
 Token catalog entries are occurrence-level audit records with source provenance and `token_signature` values. Dependency edges are graph-level records keyed by canonical target locator, artifact key, source node, and `dependency_signature`.
 
 ### Static Files
-`{{file:path}}` injects UTF-8 text only. Preflight resolves paths against the authored node source root, applies containment policy, reads bytes, rejects undecodable or NUL-containing content, records size and hash, and writes the content into the preflight static bundle.
+When workspace isolation is disabled, `{{file:path}}` injects UTF-8 text only. Preflight resolves paths against the authored node source root, applies containment policy, reads bytes, rejects undecodable or NUL-containing content, records size and hash, and writes the content into the preflight static bundle.
 
 Runtime consumes only the bundle `content_ref`. It must not read the original `resolved_path` or rerun path policy.
+
+When ADR 0016 workspace isolation is enabled and preflight has a trusted
+workspace source snapshot, repo-relative file tokens compile into
+`workspace_file_locator` fragments and `workspace_file_locators` plan records.
+Project-initial locators are validated with literal Git tree/object reads and
+record Git blob identity plus canonical byte digest. Candidate/upstream-source
+locators record syntax and containment only and defer blob identity to runtime.
+Allowlisted absolute external files remain static resources. The current core
+preflight model supports those records only when a trusted workspace source
+snapshot is supplied. Enabled core preflight without that snapshot fails closed
+instead of reverting repo-relative file tokens to disabled static resources.
+The CLI source gate issues that trusted source snapshot after the current
+blob_exact source-policy checks pass. Project-initial workspace file locators
+are read from Git blob bytes at the recorded base commit. Runtime-dynamic
+upstream, reviewer, and remediation locators are resolved from captured result
+commits for the current invocation source after an executor candidate has been
+captured. Workspace-aware duplicate-skip/resume validates workspace state and
+bundle descriptors instead of rereading prompt source bytes from live
+workspaces.
 
 ### Secrets And Fingerprints
 Orchestrator-owned diagnostics, summaries, manifests, plans, runtime snapshots, and generated logs must not leak raw sensitive values.
@@ -189,6 +208,7 @@ Runtime assembles prompts from ordered render fragments:
 
 - `literal`
 - `static_file_content`
+- `workspace_file_locator`
 - `static_env`
 - `static_var`
 - `runtime_locator_lookup`
@@ -300,6 +320,20 @@ Negative consequences:
 ## Updates
 - **2026-06-07**: Folded in preflight boundary hardening. Ephemeral fingerprint
   keys are scoped through compile state, the schema version constant is
-  centralized in `orchestrator_cli.version`, and future schema-breaking changes
-  require coordinated templates, docs, CLI diagnostics, tests, and migration
-  notes.
+  centralized in `src/orchestrator_cli/version.py`, and future schema-breaking
+  changes require coordinated templates, docs, CLI diagnostics, tests, and
+  migration notes.
+- **2026-06-12**: ADR 0016 initial build pass added disabled-by-default
+  workspace policy records and the enabled workspace contract marker. Disabled
+  mode keeps ADR 0012 static file resources. Core preflight now models
+  `workspace_file_locator` fragments and records for repo-relative enabled file
+  tokens when a trusted source snapshot is supplied. The CLI source gate issues
+  that snapshot after the implemented blob_exact source checks pass, and runtime
+  supports project-initial blob reads, snapshot provider workspaces, mutable
+  worktree provider workspaces, deterministic result commits, exported
+  bundles, runtime-dynamic upstream/reviewer locator resolution,
+  workspace-aware duplicate-skip/resume validation, and cleanup of generated
+  workspace paths. Full source-policy hardening and observability remain ADR
+  0016 hardening work.
+  Explicitly allowlisted absolute external files remain static preflight
+  resources.

@@ -4,6 +4,8 @@ import hashlib
 import re
 
 MAX_GENERATED_PATH_COMPONENT_CHARS = 180
+MAX_GENERATED_FILE_RESULT_DIR_CHARS = 120
+GENERATED_FILE_RESULT_DIR_HASH_CHARS = 12
 
 _SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 _STAGE_PATTERN = re.compile(r"[^a-z0-9._-]+")
@@ -51,6 +53,11 @@ def build_node_state_filename(node_id: str) -> str:
     return _bounded_with_suffix(safe_stage_name(node_id), suffix)
 
 
+def build_workspace_export_filename(logical_worktree_name: str) -> str:
+    suffix = f"--{_short_hash(logical_worktree_name)}.json"
+    return _bounded_with_suffix(safe_artifact_name(logical_worktree_name), suffix)
+
+
 def build_stage_directory_name(node_id: str) -> str:
     safe_name = safe_stage_name(node_id)
     if len(safe_name) <= MAX_GENERATED_PATH_COMPONENT_CHARS:
@@ -64,6 +71,19 @@ def build_result_filename(node_id: str) -> str:
 
 def build_findings_filename(node_id: str) -> str:
     return _bounded_artifact_filename(node_id, "-findings.md")
+
+
+def build_generated_file_result_dir_name(name: str) -> str:
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-")
+    if not safe_name:
+        return "stage"
+    if len(safe_name) <= MAX_GENERATED_FILE_RESULT_DIR_CHARS:
+        return safe_name
+    digest = hashlib.sha256(name.encode()).hexdigest()
+    suffix = f"-{digest[:GENERATED_FILE_RESULT_DIR_HASH_CHARS]}"
+    available = MAX_GENERATED_FILE_RESULT_DIR_CHARS - len(suffix)
+    prefix = safe_name[:available].rstrip(".-")
+    return f"{prefix or 'stage'}{suffix}"
 
 
 def build_log_filename(

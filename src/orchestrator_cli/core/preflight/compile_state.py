@@ -6,8 +6,18 @@ from typing import Literal
 
 from orchestrator_cli.core.workflow_models import WorkflowNode
 
-from .diagnostics import PreflightDiagnostic
-from .models import DependencyEdge, StaticResource, TokenCatalogEntry
+from .diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
+from .models import (
+    DependencyEdge,
+    StaticResource,
+    TokenCatalogEntry,
+    WorkspaceFileLocator,
+    WorkspaceSourceSnapshot,
+)
 from .references import TemplateReference
 from .secrets import FingerprintKeyCache, FingerprintKeyPolicy, SecretContext
 from .source import PreflightWorkflowSource
@@ -49,6 +59,8 @@ class PreflightCompileOptions:
     )
     additional_validation_errors: tuple[str, ...] = ()
     additional_validation_warnings: tuple[str, ...] = ()
+    additional_diagnostics: tuple[PreflightDiagnostic, ...] = ()
+    workspace_source_snapshot: WorkspaceSourceSnapshot | None = None
 
     def with_source_metadata(
         self,
@@ -106,6 +118,7 @@ class CompileState:
     token_catalog: list[TokenCatalogEntry] = field(default_factory=list)
     static_resources: list[StaticResource] = field(default_factory=list)
     static_payloads: dict[str, bytes] = field(default_factory=dict)
+    workspace_file_payloads: dict[str, bytes] = field(default_factory=dict)
     static_file_references: dict[str, ResolvedStaticFileReference] = field(
         default_factory=dict
     )
@@ -121,17 +134,25 @@ class CompileState:
     fingerprint_key_persisted: bool = False
     value_fingerprints: list[dict[str, str]] = field(default_factory=list)
     input_content_refs: dict[str, str] = field(default_factory=dict)
+    input_workspace_file_locator_ids: dict[str, str] = field(default_factory=dict)
     input_source_tokens: dict[str, TemplateReference] = field(default_factory=dict)
-    render_token_index: int = 0
+    workspace_file_references: dict[str, WorkspaceFileLocator] = field(
+        default_factory=dict
+    )
+    workspace_file_locators: list[WorkspaceFileLocator] = field(default_factory=list)
 
 
-def append_multiline_diagnostics(state: CompileState, phase: str, message: str) -> None:
+def append_multiline_diagnostics(
+    state: CompileState,
+    phase: PreflightDiagnosticPhase,
+    message: str,
+) -> None:
     for line in message.splitlines():
         if not line.strip():
             continue
         append_diagnostic(
             state,
-            code="PREFLIGHT-VALIDATION",
+            code=PreflightDiagnosticCode.PREFLIGHT_VALIDATION,
             phase=phase,
             message=line,
         )
@@ -143,8 +164,8 @@ def has_errors(state: CompileState) -> bool:
 
 def append_diagnostic(
     state: CompileState,
-    code: str,
-    phase: str,
+    code: PreflightDiagnosticCode,
+    phase: PreflightDiagnosticPhase,
     message: str,
     node_id: str | None = None,
     path: str | None = None,

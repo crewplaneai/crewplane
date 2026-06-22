@@ -113,3 +113,11 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
 ## Updates
 - Updates ADR 0008 and ADR 0009 so current-layout per-run `run.json` state is
   the only supported duplicate/resume history source.
+- **2026-06-12**: ADR 0016 workspace implementation preserves existing
+  duplicate skip/resume behavior for disabled workspace mode and extends
+  workspace-enabled skip/resume validation to `workspace-state.json`
+  descriptors and exported bundles. Blob-only input nodes, snapshot provider
+  workspaces, and mutable worktree provider workspaces can execute in
+  fresh runs. Resume hydration copies ordinary node-boundary artifacts plus
+  workspace state/bundle descriptors into the new run layout; it does not reuse
+  old live workspace directories or cached refs as truth.

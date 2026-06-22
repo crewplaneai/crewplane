@@ -15,6 +15,7 @@ from orchestrator_cli.core.workflow_validation_policies import (
     collect_missing_provider_locations,
     collect_provider_validation_errors,
     collect_token_budget_validation_errors,
+    collect_workspace_validation_diagnostics,
     validate_audit_rounds_settings,
     validate_provider_references,
     validate_token_budget_settings,
@@ -30,6 +31,7 @@ __all__ = [
     "collect_provider_validation_diagnostics",
     "collect_provider_validation_errors",
     "collect_token_budget_validation_errors",
+    "collect_workspace_validation_diagnostics",
     "collect_workflow_policy_diagnostics",
     "collect_workflow_validation_diagnostics",
     "extract_template_tokens",
@@ -110,6 +112,7 @@ def collect_workflow_policy_diagnostics(
     audit_round_messages = collect_audit_rounds_validation_errors(workflow, config)
     token_budget_messages = collect_token_budget_validation_errors(workflow, config)
     return (
+        *collect_workspace_validation_diagnostics(workflow, config),
         *_diagnostics_from_messages(
             "WORKFLOW-POLICY",
             "node_policy",

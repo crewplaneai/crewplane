@@ -32,6 +32,22 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not support audit_rounds"):
             validate_workflow_plan(workflow)
 
+    def test_workspace_exports_is_reserved_run_root_node_id(self) -> None:
+        workflow = WorkflowPlan(
+            name="Reserved workspace exports",
+            nodes=[
+                WorkflowNode(
+                    id="workspace-exports",
+                    mode="sequential",
+                    prompt_segments=[PromptSegment(role="shared", content="implement")],
+                    providers=[ProviderSpec(provider="gpt4")],
+                )
+            ],
+        )
+
+        with self.assertRaisesRegex(ValueError, "workspace-exports.*reserved"):
+            validate_workflow_plan(workflow)
+
     def test_input_node_rejects_audit_rounds(self) -> None:
         workflow = WorkflowPlan(
             name="Input audit rounds",

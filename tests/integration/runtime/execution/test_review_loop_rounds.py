@@ -12,6 +12,7 @@ from orchestrator_cli.core.preflight.models import (
     ProviderRecord,
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
+from orchestrator_cli.runtime.execution import review_loop as review_loop_runtime
 from orchestrator_cli.runtime.execution.common import CompiledRuntimeContext
 from orchestrator_cli.runtime.execution.consensus import (
     ParsedReviewResult,
@@ -22,6 +23,9 @@ from orchestrator_cli.runtime.execution.review_loop import (
     audit_round as review_loop_audit_round,
 )
 from orchestrator_cli.runtime.execution.review_loop import (
+    executor_round as review_loop_executor_round,
+)
+from orchestrator_cli.runtime.execution.review_loop import (
     reviewer_round as review_loop_reviewer_round,
 )
 from orchestrator_cli.runtime.execution.review_loop import (
@@ -30,12 +34,14 @@ from orchestrator_cli.runtime.execution.review_loop import (
 from orchestrator_cli.runtime.execution.review_loop.types import (
     AuditRoundRequest,
     ExecutorRoundArtifact,
+    ExecutorRoundRequest,
     ExecutorRoundRunResult,
     ReviewerRoundArtifact,
     ReviewerRoundRequest,
     ReviewerRoundRunResult,
 )
 from orchestrator_cli.version import SCHEMA_VERSION
+from tests.helpers.workspace_records import workspace_selection_record
 
 
 def _runtime_context() -> CompiledRuntimeContext:
@@ -43,6 +49,7 @@ def _runtime_context() -> CompiledRuntimeContext:
         plan=PreflightExecutionPlan(
             run_id="run-1",
             run_key_name="run-1",
+            project_root=".",
             context_root=".",
             manifest_root=".orchestrator",
             created_at="2026-06-03T00:00:00",
@@ -79,6 +86,19 @@ def _node() -> PreflightExecutionNode:
         id="review.node",
         mode="sequential",
         artifact_contract=ArtifactContract(output_path="review.node-result.md"),
+    )
+
+
+def _worktree_node() -> PreflightExecutionNode:
+    return _node().model_copy(
+        update={
+            "workspace_policy": workspace_selection_record(
+                enabled=True,
+                kind="worktree",
+                clean_start="strict",
+                materialization="worktree_checkout",
+            )
+        }
     )
 
 
@@ -124,9 +144,11 @@ def test_reviewer_outputs_are_ordered_by_declared_reviewer_index(
     node = _node()
     node_dir = output.create_stage_dir(node.id)
     session_ids: list[int] = []
+    allowed_paths_by_task: dict[str, set[Path]] = {}
 
     async def fake_guard(request):
         session_ids.append(id(request.drift_session))
+        allowed_paths_by_task[request.task_id] = set(request.allowed_paths)
         if request.provider.provider == "slow":
             await asyncio.sleep(0.02)
         request.output_file.write_text(review_output(), encoding="utf-8")
@@ -161,6 +183,143 @@ def test_reviewer_outputs_are_ordered_by_declared_reviewer_index(
         "fast_reviewer_1",
     ]
     assert len(set(session_ids)) == 1
+    reviewer_output_paths = {
+        node_dir / "slow_reviewer_0_round1.md",
+        node_dir / "fast_reviewer_1_round1.md",
+    }
+    assert allowed_paths_by_task["slow_reviewer_0"] == reviewer_output_paths
+    assert allowed_paths_by_task["fast_reviewer_1"] == reviewer_output_paths
+
+
+def test_executor_drift_guard_allows_runtime_workspace_state_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = _worktree_node()
+    node_dir = output.create_stage_dir(node.id)
+    captured_allowed_paths: set[Path] = set()
+
+    async def fake_guard(request):
+        captured_allowed_paths.update(request.allowed_paths)
+        request.output_file.write_text("candidate", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(
+        review_loop_executor_round, "run_provider_call_with_drift_guard", fake_guard
+    )
+    request = ExecutorRoundRequest(
+        runtime_context=_runtime_context(),
+        node=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        executors=(provider("exec", "executor", "exec_executor_0"),),
+        artifact_dir=node_dir,
+        executor_prompt="Implement.",
+        previous_review_packet=None,
+        previous_executor_outputs=None,
+        audit_round_num=None,
+        round_num=1,
+    )
+
+    result = asyncio.run(review_loop_executor_round.run_executor_round(request))
+
+    assert [artifact.task_id for artifact in result.outputs] == ["exec_executor_0"]
+    assert (
+        node_dir / "workspace-state-review.node-exec_executor_0-round1.json"
+        in captured_allowed_paths
+    )
+    assert (
+        node_dir / "workspace-bundles" / "review.node-exec_executor_0-round1.bundle"
+        in captured_allowed_paths
+    )
+
+
+def test_executor_drift_guard_does_not_allow_workspace_paths_without_managed_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = _node()
+    node_dir = output.create_stage_dir(node.id)
+    captured_allowed_paths: set[Path] = set()
+
+    async def fake_guard(request):
+        captured_allowed_paths.update(request.allowed_paths)
+        request.output_file.write_text("candidate", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(
+        review_loop_executor_round, "run_provider_call_with_drift_guard", fake_guard
+    )
+    request = ExecutorRoundRequest(
+        runtime_context=_runtime_context(),
+        node=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        executors=(provider("exec", "executor", "exec_executor_0"),),
+        artifact_dir=node_dir,
+        executor_prompt="Implement.",
+        previous_review_packet=None,
+        previous_executor_outputs=None,
+        audit_round_num=None,
+        round_num=1,
+    )
+
+    asyncio.run(review_loop_executor_round.run_executor_round(request))
+
+    assert node_dir / "exec_executor_0_round1.md" in captured_allowed_paths
+    assert (
+        node_dir / "workspace-state-review.node-exec_executor_0-round1.json"
+        not in captured_allowed_paths
+    )
+    assert (
+        node_dir / "workspace-bundles" / "review.node-exec_executor_0-round1.bundle"
+        not in captured_allowed_paths
+    )
+
+
+def test_seed_executor_outputs_aliases_generated_file_workspace_roots(
+    tmp_path: Path,
+) -> None:
+    runtime_context = _runtime_context()
+    node_id = "review.node"
+    node_dir = tmp_path / "node"
+    audit_dir = node_dir / "audit-round-2"
+    audit_dir.mkdir(parents=True)
+    original_output = node_dir / "exec_executor_0_round2.md"
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    artifact = ExecutorRoundArtifact(
+        provider=provider("exec", "executor", "exec_executor_0"),
+        task_id="exec_executor_0",
+        content="Updated `src/app.txt`.",
+        output_file=original_output,
+    )
+    runtime_context.generated_file_workspaces.record(
+        node_id,
+        original_output,
+        workspace_root,
+    )
+
+    seeded = review_loop_runtime.seed_executor_outputs(
+        runtime_context,
+        node_id,
+        audit_dir,
+        [artifact],
+        1,
+    )
+
+    seeded_output = audit_dir / "exec_executor_0_round1.md"
+    roots = runtime_context.generated_file_workspaces.roots_for_node(node_id)
+    assert seeded[0].output_file == seeded_output
+    assert roots[seeded_output.resolve(strict=False)] == workspace_root.resolve(
+        strict=False
+    )
 
 
 def test_parallel_reviewer_success_is_persisted_before_peer_failure(
@@ -299,3 +458,75 @@ def test_no_progress_candidate_skips_second_review_round_and_tracks_accounting(
     assert result.no_progress_round_count == 1
     assert result.latest_executor_outputs is not None
     assert result.latest_executor_outputs[0].content == candidate
+
+
+def test_no_progress_candidate_discards_executor_workspace_lineage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = _worktree_node()
+    node_dir = output.create_stage_dir(node.id)
+    candidate = "Candidate body"
+    state_path = node_dir / "workspace-state-review.node-exec_executor_0-round2.json"
+
+    async def fake_review(request):  # noqa: ARG001 - Test double callback signature.
+        return ReviewerRoundRunResult(
+            outputs=[_reviewer_artifact(node_dir, "- Fix the retry branch")],
+            drift_warning_count=0,
+        )
+
+    async def fake_executor(request):  # noqa: ARG001 - Test double callback signature.
+        state_path.write_text(
+            json.dumps(
+                {
+                    "status": "succeeded",
+                    "workspace": {"lineage_producer": True},
+                    "result": {
+                        "candidate_commit": "a" * 40,
+                        "result_commit": "b" * 40,
+                        "candidate_tree": "c" * 40,
+                        "result_tree": "d" * 40,
+                        "changed_path_count": 1,
+                    },
+                    "refs": {"result": "refs/orchestrator-cli/result"},
+                    "bundle": {"path": "workspace-bundles/candidate.bundle"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return ExecutorRoundRunResult(
+            outputs=[_executor_artifact(node_dir, candidate)],
+            drift_warning_count=0,
+        )
+
+    monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
+    monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fake_executor)
+    request = AuditRoundRequest(
+        runtime_context=_runtime_context(),
+        stage=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        executors=(provider("exec", "executor", "exec_executor_0"),),
+        reviewers=(provider("review", "reviewer", "review_reviewer_0"),),
+        executor_prompt="Implement.",
+        reviewer_prompt_context="Review.",
+        audit_dir=node_dir,
+        remediation_depth=1,
+        initial_executor_outputs=[_executor_artifact(node_dir, candidate)],
+        audit_round_num=None,
+    )
+
+    result = asyncio.run(review_loop_rounds.execute_single_audit_round(request))
+
+    assert not result.consensus_reached
+    assert result.no_progress_round_count == 1
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["workspace"]["lineage_producer"] is False
+    assert state["result"]["lineage_produced"] is False
+    assert state["result"]["lineage_discarded"] is True
+    assert state["result"]["lineage_discard_reason"] == "no_progress_candidate"
+    assert "refs" not in state
+    assert "bundle" not in state

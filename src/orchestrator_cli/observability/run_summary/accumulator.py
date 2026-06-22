@@ -7,8 +7,12 @@ from orchestrator_cli.observability.events import (
     RuntimeLogEventPayload,
 )
 
-from .models import InvocationUsageSummary, RunSummaryFacts
+from .models import InvocationUsageSummary, RunSummaryFacts, WorkspaceInvocationSummary
 from .spend import UsageRollupAccumulator, invocation_usage_summary_from_event
+from .workspace import (
+    workspace_invocation_key,
+    workspace_invocation_summary_from_event,
+)
 
 MAX_RETAINED_INVOCATION_USAGE_DETAILS = 200
 
@@ -22,6 +26,10 @@ class RunSummaryAccumulator:
         )
         self._omitted_invocation_usage_count = 0
         self._usage_rollups = UsageRollupAccumulator()
+        self._workspace_invocations: dict[
+            tuple[object, ...],
+            WorkspaceInvocationSummary,
+        ] = {}
         self._review_consensus_unresolved = False
         self._started_at = "n/a"
         self._completed_at = "n/a"
@@ -37,12 +45,18 @@ class RunSummaryAccumulator:
             if len(self._invocation_usages) == MAX_RETAINED_INVOCATION_USAGE_DETAILS:
                 self._omitted_invocation_usage_count += 1
             self._invocation_usages.append(usage_summary)
+        workspace_summary = workspace_invocation_summary_from_event(event)
+        if workspace_summary is not None:
+            self._workspace_invocations[workspace_invocation_key(workspace_summary)] = (
+                workspace_summary
+            )
         if _is_unresolved_consensus_event(event):
             self._review_consensus_unresolved = True
 
     def snapshot(self) -> RunSummaryFacts:
         return RunSummaryFacts(
             invocation_usages=tuple(self._invocation_usages),
+            workspace_invocations=tuple(self._workspace_invocations.values()),
             spend=self._usage_rollups.spend_totals(),
             provider_rollups=self._usage_rollups.provider_usage_rollups(),
             omitted_invocation_usage_count=self._omitted_invocation_usage_count,

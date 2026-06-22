@@ -25,12 +25,20 @@ from .common import (
     should_print_console,
 )
 from .resume import emit_resumed_node_events
+from .workflow_cleanup import (
+    cleanup_successful_workspace_run_refs,
+    emit_cleanup_errors,
+    refresh_workspace_node_manifests,
+    refresh_workspace_node_manifests_for_state_paths,
+)
 from .workflow_node import (
     execute_node,
     mark_node_finished_activity,
     mark_node_running_activity,
 )
 from .workflow_state import initialize_workflow_execution_state
+
+DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS = 30.0
 
 
 def _wrap_node_task(
@@ -340,9 +348,50 @@ async def execute_workflow(
             dependencies_by_node=state.dependencies_by_node,
             statuses=state.statuses,
         )
+        await cleanup_successful_workspace_run_refs(plan, telemetry)
     except Exception as exc:
         emit_workflow_event(telemetry, "workflow_failed", error=safe_error_message(exc))
         raise
     finally:
         await _cancel_running_node_tasks(state)
+        deferred_workspace_cleanup_errors = (
+            await runtime_context.deferred_workspace_cleanups.drain(
+                DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS
+            )
+        )
+        emit_cleanup_errors(
+            telemetry,
+            "workspace_preparation_cancellation_cleanup",
+            deferred_workspace_cleanup_errors,
+        )
+        generated_file_cleanup = await asyncio.to_thread(
+            runtime_context.generated_file_workspaces.cleanup_all
+        )
+        emit_cleanup_errors(
+            telemetry,
+            "generated_file_workspace_cleanup",
+            generated_file_cleanup.errors,
+        )
+        worktree_cleanup = await asyncio.to_thread(
+            runtime_context.worktree_reuse_cache.cleanup_all
+        )
+        emit_cleanup_errors(
+            telemetry,
+            "worktree_reuse_cleanup",
+            worktree_cleanup.errors,
+        )
+        await refresh_workspace_node_manifests_for_state_paths(
+            plan,
+            output,
+            state.statuses,
+            worktree_cleanup.updated_state_paths,
+            telemetry,
+        )
+        await refresh_workspace_node_manifests(
+            plan,
+            output,
+            state.statuses,
+            set(generated_file_cleanup.cleaned_node_ids),
+            telemetry,
+        )
     emit_workflow_event(telemetry, "workflow_finished")

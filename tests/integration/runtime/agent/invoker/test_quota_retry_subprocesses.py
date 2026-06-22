@@ -6,7 +6,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
+from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
+    CommandResult,
+    InvocationContext,
+)
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
@@ -60,6 +64,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
             finally:
@@ -118,6 +123,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                         "test-model",
                         "prompt",
                         output_file,
+                        output_file.parent,
                         plan_builder=build_cli_invocation_plan,
                     )
             finally:
@@ -179,6 +185,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                         "test-model",
                         "prompt",
                         output_file,
+                        output_file.parent,
                         plan_builder=build_cli_invocation_plan,
                     )
             finally:
@@ -226,6 +233,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
             self.assertIsInstance(caught.exception, InvocationFailureError)
@@ -250,8 +258,10 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
@@ -282,6 +292,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -307,8 +318,10 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
@@ -341,6 +354,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -366,8 +380,10 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
@@ -398,6 +414,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -423,8 +440,10 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
@@ -458,6 +477,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -515,6 +535,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                         "test-model",
                         "prompt",
                         output_file,
+                        output_file.parent,
                         plan_builder=build_cli_invocation_plan,
                     )
             finally:
@@ -566,6 +587,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
             self.assertFalse(output_file.exists())

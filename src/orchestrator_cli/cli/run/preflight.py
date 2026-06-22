@@ -22,13 +22,16 @@ from orchestrator_cli.bootstrap import (
 from orchestrator_cli.core.config import Config, Settings
 from orchestrator_cli.core.preflight import (
     PREFLIGHT_STATUS_FAILED,
-    PREFLIGHT_STATUS_SUCCEEDED,
     PreflightCompilationPreview,
     PreflightCompileOptions,
     PreflightExecutionPlan,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.preflight.diagnostics import PreflightDiagnostic
+from orchestrator_cli.core.preflight.diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from orchestrator_cli.core.preflight.secrets import FingerprintKeyPolicy
 from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
 from orchestrator_cli.core.workflow_models import WorkflowPlan
@@ -39,6 +42,9 @@ from .context import (
     resolve_orchestrator_dir,
     resolve_project_root,
 )
+from .preflight_success import write_preflight_success_artifacts
+from .workspace_preflight_diagnostics import workspace_preflight_diagnostics
+from .workspace_source_policy import collect_workspace_source_policy
 
 
 def normalize_object_path(implementation: str) -> str:
@@ -77,6 +83,7 @@ def compile_workflow_preview(
     orchestrator_dir: Path | None = None,
     check_cli_availability: bool = False,
     which_fn: Callable[[str], str | None] | None = None,
+    workspace_real_execution: bool = False,
 ) -> PreflightCompilationPreview:
     resolved_project_root = resolve_project_root(project_root)
     context = WorkflowRunContext(
@@ -99,10 +106,16 @@ def compile_workflow_preview(
         snapshot_result=snapshot_result,
         fingerprint_key_policy=fingerprint_key_policy,
         additional_validation_errors=(
-            run_cli_availability_errors(source.workflow, config, which_fn)
+            run_cli_availability_errors(
+                source.workflow,
+                config,
+                which_fn,
+                resolved_project_root,
+            )
             if check_cli_availability
             else ()
         ),
+        workspace_real_execution=workspace_real_execution,
     )
 
 
@@ -131,11 +144,22 @@ def preview_error_titles(preview: PreflightCompilationPreview) -> tuple[str, ...
 
 
 def diagnostic_error_title(diagnostic: PreflightDiagnostic) -> str | None:
-    if diagnostic.code == "PROVIDER-CLI" or diagnostic.phase == "provider":
+    if diagnostic.code.startswith("WORKSPACE-"):
+        return "Workspace validation failed"
+    if (
+        diagnostic.code == PreflightDiagnosticCode.PROVIDER_CLI
+        or diagnostic.phase == PreflightDiagnosticPhase.PROVIDER
+    ):
         return "Provider validation failed"
-    if diagnostic.phase == "node_policy" and "audit_rounds" in diagnostic.message:
+    if (
+        diagnostic.phase == PreflightDiagnosticPhase.NODE_POLICY
+        and "audit_rounds" in diagnostic.message
+    ):
         return "Audit rounds validation failed"
-    if diagnostic.phase == "node_policy" and "token_budget" in diagnostic.message:
+    if (
+        diagnostic.phase == PreflightDiagnosticPhase.NODE_POLICY
+        and "token_budget" in diagnostic.message
+    ):
         return "Token budget validation failed"
     return None
 
@@ -164,8 +188,8 @@ def write_early_preflight_failure_run(
         output=output,
         diagnostics=[
             PreflightDiagnostic(
-                code="PREFLIGHT-SETUP",
-                phase="parse",
+                code=PreflightDiagnosticCode.PREFLIGHT_SETUP,
+                phase=PreflightDiagnosticPhase.PARSE,
                 path=path_label,
                 message=message,
             )
@@ -188,7 +212,16 @@ def compile_preview(
     snapshot_result: RuntimeConfigSnapshotBuildResult,
     fingerprint_key_policy: FingerprintKeyPolicy,
     additional_validation_errors: tuple[str, ...] = (),
+    workspace_real_execution: bool = False,
 ) -> PreflightCompilationPreview:
+    workspace_check = collect_workspace_source_policy(
+        config=context.config,
+        workflow=context.source.workflow,
+        project_root=context.project_root,
+        orchestrator_dir=context.orchestrator_dir,
+        real_execution=workspace_real_execution,
+        invoker_capabilities=snapshot_result.snapshot.invoker.capabilities,
+    )
     return compile_preflight_preview(
         source=context.source,
         config=context.config,
@@ -199,6 +232,8 @@ def compile_preview(
             allowed_template_paths=allowed_template_paths(snapshot_result),
             fingerprint_key_policy=fingerprint_key_policy,
             additional_validation_errors=additional_validation_errors,
+            additional_diagnostics=workspace_preflight_diagnostics(workspace_check),
+            workspace_source_snapshot=workspace_check.source_snapshot,
         ),
     )
 
@@ -207,6 +242,7 @@ def run_cli_availability_errors(
     workflow: WorkflowPlan,
     config: Config,
     which_fn: Callable[[str], str | None] | None,
+    project_root: Path,
 ) -> tuple[str, ...]:
     if not uses_cli_invoker(config):
         return ()
@@ -215,6 +251,7 @@ def run_cli_availability_errors(
             workflow,
             config,
             which_fn=which_fn,
+            project_root=project_root,
         )
     )
 
@@ -269,70 +306,6 @@ def print_preflight_diagnostics(
         console.print(f"  - {diagnostic.code}: {diagnostic.message}")
 
 
-def write_preflight_success_artifacts(
-    output: ArtifactStorePort,
-    plan: PreflightExecutionPlan,
-) -> None:
-    created_at = datetime.now().isoformat()
-    metadata_payload = {
-        "created_at": created_at,
-        "run_id": output.run_id,
-        "run_key_name": output.run_key_name,
-        "workflow_name": plan.workflow_name,
-        "workflow_signature": plan.workflow_signature,
-    }
-    manifest_payload = {
-        **metadata_payload,
-        "dependency_count": len(plan.dependency_graph),
-        "render_plan_count": len(plan.render_plans),
-        "static_resource_count": len(plan.static_resources),
-        "status": PREFLIGHT_STATUS_SUCCEEDED,
-        "token_count": len(plan.token_catalog),
-        "value_fingerprint_count": len(plan.value_fingerprints),
-    }
-    output.write_preflight_metadata(metadata_payload)
-    output.write_preflight_manifest(manifest_payload)
-    output.write_preflight_render_plan(plan.render_plans)
-    output.write_preflight_json("static-resources.json", plan.static_resources)
-    output.write_preflight_json("token-catalog.json", plan.token_catalog)
-    output.write_preflight_json("dependency-graph.json", plan.dependency_graph)
-    output.write_preflight_execution_bundle(
-        {
-            "dependency_graph": plan.dependency_graph,
-            "render_plans": plan.render_plans,
-            "static_resources": plan.static_resources,
-            "token_catalog": plan.token_catalog,
-            "value_fingerprints": plan.value_fingerprints,
-        }
-    )
-    output.write_preflight_json(
-        "runtime-config-snapshot.json",
-        plan.runtime_config_snapshot,
-    )
-    output.write_preflight_summary(
-        "\n".join(preflight_success_summary_lines(plan)) + "\n"
-    )
-
-
-def preflight_success_summary_lines(plan: PreflightExecutionPlan) -> list[str]:
-    return [
-        "# Preflight Summary",
-        "",
-        f"- Workflow: {plan.workflow_name}",
-        f"- Run Key: {plan.run_key_name}",
-        f"- Workflow Signature: {plan.workflow_signature}",
-        f"- Effective Runtime Config Signature: {plan.effective_runtime_config_signature}",
-        "- Execution Plan: preflight/execution-plan.json",
-        "- Execution Bundle: preflight/execution-bundle.json",
-        f"- Nodes: {len(plan.nodes)}",
-        f"- Render Plans: {len(plan.render_plans)}",
-        f"- Static Resources: {len(plan.static_resources)}",
-        f"- Dependency Edges: {len(plan.dependency_graph)}",
-        f"- Tokens: {len(plan.token_catalog)}",
-        f"- Value Fingerprints: {len(plan.value_fingerprints)}",
-    ]
-
-
 def write_preflight_failure_artifacts(
     context: WorkflowRunContext,
     snapshot_result: RuntimeConfigSnapshotBuildResult,
@@ -358,6 +331,7 @@ def write_preflight_failure_artifacts(
 def materialize_preflight_success(
     output: ArtifactStorePort,
     preview: PreflightCompilationPreview,
+    project_root: Path,
 ) -> PreflightExecutionPlan:
     created_at = datetime.now()
     run_key_name = output.run_key_name
@@ -365,11 +339,14 @@ def materialize_preflight_success(
         preview=preview,
         run_id=output.run_id,
         run_key_name=run_key_name,
+        project_root=project_root.as_posix(),
         context_root=output.stages_dir.as_posix(),
         manifest_root=(output.stages_dir / "manifests").as_posix(),
         created_at=created_at,
     )
     for content_ref, payload in preview.static_file_payloads.items():
+        output.write_preflight_static_file(content_ref, payload)
+    for content_ref, payload in preview.workspace_file_payloads.items():
         output.write_preflight_static_file(content_ref, payload)
     output.write_preflight_plan(plan)
     write_preflight_success_artifacts(output, plan)

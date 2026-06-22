@@ -95,6 +95,50 @@ class InvocationEventPayload(EventPayload):
 
 
 @dataclass(frozen=True)
+class WorkspaceEventPayload(EventPayload):
+    """Payload for workspace facts linked to an invocation."""
+
+    status: str | None = None
+    workspace_kind: str | None = None
+    workspace_logical_worktree_name: str | None = None
+    workspace_materialization: str | None = None
+    workspace_source_kind: str | None = None
+    workspace_source_node_id: str | None = None
+    workspace_source_commit: str | None = None
+    workspace_source_tree: str | None = None
+    worktree_contract_mode: str | None = None
+    worktree_contract_schema_version: str | None = None
+    workspace_state_path: str | None = None
+    workspace_writable: bool | None = None
+    workspace_lineage_producer: bool | None = None
+    workspace_child_environment_required: bool | None = None
+    workspace_child_environment_applied: bool | None = None
+
+    def as_event_fields(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "workspace_kind": self.workspace_kind,
+            "workspace_logical_worktree_name": self.workspace_logical_worktree_name,
+            "workspace_materialization": self.workspace_materialization,
+            "workspace_source_kind": self.workspace_source_kind,
+            "workspace_source_node_id": self.workspace_source_node_id,
+            "workspace_source_commit": self.workspace_source_commit,
+            "workspace_source_tree": self.workspace_source_tree,
+            "worktree_contract_mode": self.worktree_contract_mode,
+            "worktree_contract_schema_version": self.worktree_contract_schema_version,
+            "workspace_state_path": self.workspace_state_path,
+            "workspace_writable": self.workspace_writable,
+            "workspace_lineage_producer": self.workspace_lineage_producer,
+            "workspace_child_environment_required": (
+                self.workspace_child_environment_required
+            ),
+            "workspace_child_environment_applied": (
+                self.workspace_child_environment_applied
+            ),
+        }
+
+
+@dataclass(frozen=True)
 class RuntimeLogEventPayload(EventPayload):
     """Payload for runtime log events."""
 
@@ -142,6 +186,10 @@ def validate_payload_type(event_type: EventType, payload: EventPayload) -> None:
             event_type
             in {"invocation_started", "invocation_finished", "invocation_failed"}
             and isinstance(payload, InvocationEventPayload)
+        )
+        or (
+            event_type == "workspace_context_recorded"
+            and isinstance(payload, WorkspaceEventPayload)
         )
     )
     if not valid:

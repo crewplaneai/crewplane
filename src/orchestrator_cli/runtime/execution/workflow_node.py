@@ -7,10 +7,13 @@ from orchestrator_cli.core.preflight.models import PreflightExecutionNode
 from .common import (
     CompiledRuntimeContext,
     ExecutionTelemetry,
+    RuntimeEventContext,
     build_stage_task_specs,
+    emit_runtime_log,
     emit_stage_finalize_logs,
     emit_workflow_event,
     execution_console,
+    safe_error_message,
     should_print_console,
 )
 from .input import execute_input_stage
@@ -75,8 +78,18 @@ async def execute_node(
         node.id,
         findings_enabled=node.findings,
         task_specs=build_stage_task_specs(node),
+        generated_file_detection_enabled=generated_file_detection_enabled(node),
+        generated_file_workspace_roots=(
+            runtime_context.generated_file_workspaces.roots_for_node(node.id)
+        ),
     )
     emit_stage_finalize_logs(telemetry, stage_finalize_result)
+    cleanup_errors = (
+        await runtime_context.generated_file_workspaces.cleanup_node_best_effort_async(
+            node.id,
+        )
+    )
+    _emit_generated_file_workspace_cleanup_errors(telemetry, node.id, cleanup_errors)
     write_successful_node_state(
         node,
         runtime_context.plan,
@@ -86,3 +99,30 @@ async def execute_node(
     )
     if should_print_console(telemetry):
         execution_console(telemetry).print(f"[green]✓[/] Node '{node.id}' complete\n")
+
+
+def generated_file_detection_enabled(node: PreflightExecutionNode) -> bool:
+    return node.mode != "input"
+
+
+def _emit_generated_file_workspace_cleanup_errors(
+    telemetry: ExecutionTelemetry | None,
+    node_id: str,
+    errors: tuple[Exception, ...],
+) -> None:
+    if not errors:
+        return
+    emit_runtime_log(
+        telemetry,
+        level="warning",
+        message=(
+            "Generated-file workspace cleanup failed "
+            f"({len(errors)} error(s)); workspace was retained for later cleanup."
+        ),
+        operation="generated_file_workspace_cleanup",
+        context=RuntimeEventContext(node_id=node_id),
+        attributes={
+            "error_count": len(errors),
+            "first_error": safe_error_message(errors[0]),
+        },
+    )

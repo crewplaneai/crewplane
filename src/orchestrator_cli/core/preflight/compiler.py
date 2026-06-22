@@ -12,6 +12,7 @@ from .compile_state import (
     has_errors,
 )
 from .dependency_edges import append_dependency_edge
+from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .execution_nodes import compile_execution_node, nodes_with_graph_dependencies
 from .models import (
     DependencyEdge,
@@ -19,7 +20,10 @@ from .models import (
     PreflightExecutionNode,
     RenderPlan,
 )
-from .plan_signatures import workflow_signature
+from .plan_signatures import (
+    effective_runtime_config_signature_for_plan,
+    workflow_signature,
+)
 from .prompt_transport_warnings import collect_prompt_transport_warnings
 from .render_plans import (
     apply_env_policy,
@@ -42,6 +46,8 @@ from .value_fingerprints import (
     persisted_value_fingerprints,
 )
 from .variables import build_builtin_template_variables
+from .workspace_records import workspace_policy_records
+from .workspace_snapshot_guard import append_missing_workspace_snapshot_diagnostic
 
 
 def compile_preflight_preview(
@@ -131,12 +137,20 @@ def compile_preflight_preview(
         )
 
     value_fingerprints = persisted_value_fingerprints(state)
+    runtime_snapshot = runtime_snapshot.model_copy(
+        update={
+            "effective_runtime_config_signature": (
+                effective_runtime_config_signature_for_plan(runtime_snapshot, nodes)
+            )
+        }
+    )
     compiled_workflow_signature = workflow_signature(
         source=source,
         options=effective_options,
         runtime_snapshot=runtime_snapshot,
         render_plans=render_plans,
         static_resources=state.static_resources,
+        workspace_file_locators=state.workspace_file_locators,
         token_catalog=state.token_catalog,
         dependency_graph=dependency_graph,
         nodes=nodes,
@@ -164,7 +178,7 @@ def _compile_template_plan(
 ) -> tuple[list[RenderPlan], list[PreflightExecutionNode], list[DependencyEdge]]:
     render_plans: list[RenderPlan] = []
     nodes: list[PreflightExecutionNode] = []
-    state.render_token_index = 0
+    workspace_records = workspace_policy_records(workflow, config)
     for node in workflow.nodes:
         for dependency in node.needs:
             append_dependency_edge(
@@ -184,6 +198,7 @@ def _compile_template_plan(
                 options,
                 render_plan,
                 state,
+                workspace_records.get(node.id),
             )
         )
     dependency_graph = list(state.dependency_edges.values())
@@ -286,11 +301,13 @@ def _build_preview(
         nodes=resolved_nodes,
         render_plans=resolved_render_plans,
         static_resources=state.static_resources,
+        workspace_file_locators=state.workspace_file_locators,
         token_catalog=state.token_catalog,
         dependency_graph=resolved_dependency_graph,
         diagnostics=state.diagnostics,
         runtime_config_snapshot=runtime_snapshot,
         effective_runtime_config_signature=runtime_snapshot.effective_runtime_config_signature,
+        workspace_source=options.workspace_source_snapshot,
         value_fingerprints=value_fingerprints,
         fingerprint_metadata={
             "payload_version": FINGERPRINT_PAYLOAD_VERSION,
@@ -304,6 +321,7 @@ def _build_preview(
         },
         secret_context=state.secret_context,
         static_file_payloads=state.static_payloads,
+        workspace_file_payloads=state.workspace_file_payloads,
     )
 
 
@@ -335,18 +353,20 @@ def _collect_validation_diagnostics(
         collect_preflight_provider_reference_diagnostics(workflow, config),
     )
     extend_diagnostics(state, collect_preflight_policy_diagnostics(workflow, config))
+    extend_diagnostics(state, options.additional_diagnostics)
+    append_missing_workspace_snapshot_diagnostic(workflow, config, options, state)
     for message in options.additional_validation_errors:
         append_diagnostic(
             state,
-            code="PROVIDER-CLI",
-            phase="validation",
+            code=PreflightDiagnosticCode.PROVIDER_CLI,
+            phase=PreflightDiagnosticPhase.VALIDATION,
             message=message,
         )
     for message in options.additional_validation_warnings:
         append_diagnostic(
             state,
-            code="PROVIDER-CLI",
-            phase="validation",
+            code=PreflightDiagnosticCode.PROVIDER_CLI,
+            phase=PreflightDiagnosticPhase.VALIDATION,
             message=message,
             severity="warning",
         )
@@ -358,8 +378,8 @@ def _execution_order(workflow: WorkflowPlan, state: CompileState) -> list[str]:
     except ValueError as exc:
         append_diagnostic(
             state,
-            code="DAG",
-            phase="reference",
+            code=PreflightDiagnosticCode.DAG,
+            phase=PreflightDiagnosticPhase.REFERENCE,
             message=str(exc),
         )
         return [node.id for node in workflow.nodes]

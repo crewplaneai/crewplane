@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from ..common import execution_console, should_print_console
+from ..common import (
+    execution_console,
+    resolve_prompt_with_output_budget_details,
+    should_print_console,
+)
 from ..consensus import check_consensus
+from ..workspace_files import WorkspaceCandidateSourceContext
 from .executor_round import run_executor_round
 from .prompts import build_review_context
 from .reviewer_round import run_reviewer_round
@@ -30,6 +35,7 @@ from .validation import (
     is_no_progress_candidate,
     validate_executor_outputs,
 )
+from .workspace_state_paths import discard_executor_workspace_lineage
 
 
 async def execute_single_audit_round(
@@ -106,6 +112,7 @@ async def run_remediation_executor_round(
             round_num=round_num,
             artifact_dir=request.audit_dir,
             executor_prompt=request.executor_prompt,
+            executor_prompt_workspace_files=request.executor_prompt_workspace_files,
             previous_review_packet=progress.previous_review_packet,
             previous_executor_outputs=progress.previous_executor_outputs,
         )
@@ -121,6 +128,23 @@ async def run_review_phase(
     round_num: int,
 ) -> ReviewRoundState:
     progress.latest_valid_executor_outputs = progress.executor_outputs
+    reviewer_prompt_context = request.reviewer_prompt_context
+    reviewer_prompt_workspace_files = request.reviewer_prompt_workspace_files
+    if not reviewer_prompt_context:
+        resolved_prompt = resolve_prompt_with_output_budget_details(
+            request.runtime_context,
+            request.stage,
+            request.output,
+            role="reviewer",
+            telemetry=request.telemetry,
+            workspace_candidate_context=WorkspaceCandidateSourceContext(
+                role_label="reviewer",
+                round_num=round_num,
+                audit_round_num=request.audit_round_num,
+            ),
+        )
+        reviewer_prompt_context = resolved_prompt.text
+        reviewer_prompt_workspace_files = resolved_prompt.workspace_files
     reviewer_run = await run_reviewer_round(
         ReviewerRoundRequest(
             runtime_context=request.runtime_context,
@@ -133,7 +157,8 @@ async def run_review_phase(
             audit_round_num=request.audit_round_num,
             round_num=round_num,
             artifact_dir=request.audit_dir,
-            reviewer_prompt_context=request.reviewer_prompt_context,
+            reviewer_prompt_context=reviewer_prompt_context,
+            reviewer_prompt_workspace_files=reviewer_prompt_workspace_files,
             review_context=build_review_context(progress.executor_outputs),
             previous_review_packet=progress.previous_review_packet,
         )
@@ -160,6 +185,14 @@ def record_invalid_candidate_and_should_stop(
     round_num: int,
 ) -> bool:
     progress.record_invalid_candidate()
+    discard_executor_workspace_lineage(
+        request.output,
+        request.stage,
+        {artifact.task_id for artifact in progress.executor_outputs},
+        request.audit_round_num,
+        round_num,
+        validation.reason or "invalid_candidate",
+    )
     emit_invalid_candidate_warning(
         telemetry=request.telemetry,
         node_id=request.stage.id,
@@ -181,6 +214,14 @@ def record_no_progress_candidate(
     round_num: int,
 ) -> None:
     progress.record_no_progress()
+    discard_executor_workspace_lineage(
+        request.output,
+        request.stage,
+        {artifact.task_id for artifact in progress.executor_outputs},
+        request.audit_round_num,
+        round_num,
+        "no_progress_candidate",
+    )
     emit_no_progress_warning(
         telemetry=request.telemetry,
         node_id=request.stage.id,

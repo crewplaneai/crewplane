@@ -5,6 +5,11 @@ from pathlib import Path
 
 from ..workflow_markdown import parse_workflow_markdown_document
 from ..workflow_models import WorkflowPayload, workflow_node_payload_dict
+from ..workspace_policy import (
+    PROJECT_ROOT_WORKTREE_SELECTOR,
+    WorktreeDeclaration,
+    worktree_declarations_payload,
+)
 from .imports import (
     bind_import_params,
     resolve_import_path,
@@ -50,7 +55,13 @@ class WorkflowComposer:
             namespace_prefix="",
             inherited_params={},
             bound_inputs={},
+            inherited_implicit_worktree_selector=None,
             import_stack=(),
+        )
+        composed_nodes = _materialize_implicit_worktree_selectors(
+            composition.nodes,
+            composed_worktree_count=len(composition.worktrees),
+            root_worktree_count=len(root_workflow.worktrees),
         )
 
         workflow_payload: WorkflowPayload = {
@@ -59,9 +70,13 @@ class WorkflowComposer:
             "description": root_workflow.description,
             "inputs": dict(root_workflow.inputs),
             "nodes": [
-                workflow_node_payload_dict(node.payload) for node in composition.nodes
+                workflow_node_payload_dict(node.payload) for node in composed_nodes
             ],
         }
+        if composition.worktrees:
+            workflow_payload["worktrees"] = worktree_declarations_payload(
+                composition.worktrees
+            )
         source_records = [
             WorkflowSourceRecord(
                 path=source_path, sha256=self._source_hashes[source_path]
@@ -82,6 +97,7 @@ class WorkflowComposer:
         namespace_prefix: str,
         inherited_params: dict[str, ParamBinding],
         bound_inputs: dict[str, str],
+        inherited_implicit_worktree_selector: str | None,
         import_stack: tuple[Path, ...],
     ) -> CompositionResult:
         if path in import_stack:
@@ -100,12 +116,18 @@ class WorkflowComposer:
                 bound_inputs,
             ),
             import_stack=(*import_stack, path),
+            implicit_worktree_selector=_context_implicit_worktree_selector(
+                namespace_prefix,
+                workflow.worktrees,
+                inherited_implicit_worktree_selector,
+            ),
         )
 
         import_result = self._compose_imports(context)
         local_result = self.compose_local_nodes(context)
         return CompositionResult(
             nodes=[*import_result.nodes, *local_result.nodes],
+            worktrees=_merge_worktrees(import_result.worktrees, local_result.worktrees),
             consumed_param_bindings=(
                 import_result.consumed_param_bindings
                 | local_result.consumed_param_bindings
@@ -114,15 +136,21 @@ class WorkflowComposer:
 
     def _compose_imports(self, context: CompositionContext) -> CompositionResult:
         composed_nodes: list[ComposedNode] = []
+        composed_worktrees: dict[str, WorktreeDeclaration] = {}
         consumed_param_bindings: set[str] = set()
 
         for import_spec in context.workflow.imports:
             child_result = self._compose_import(context, import_spec)
             consumed_param_bindings.update(child_result.consumed_param_bindings)
             composed_nodes.extend(child_result.nodes)
+            composed_worktrees = _merge_worktrees(
+                composed_worktrees,
+                child_result.worktrees,
+            )
 
         return CompositionResult(
             nodes=composed_nodes,
+            worktrees=composed_worktrees,
             consumed_param_bindings=consumed_param_bindings,
         )
 
@@ -149,6 +177,7 @@ class WorkflowComposer:
                 )
                 for key, source_id in import_spec.inputs.items()
             },
+            inherited_implicit_worktree_selector=context.implicit_worktree_selector,
             import_stack=context.import_stack,
         )
         validate_import_params_consumed(import_spec, child_namespace, child_result)
@@ -168,6 +197,7 @@ class WorkflowComposer:
 
         return CompositionResult(
             nodes=composed_nodes,
+            worktrees=_compose_worktree_declarations(context),
             consumed_param_bindings=consumed_param_bindings,
         )
 
@@ -258,3 +288,86 @@ class WorkflowComposer:
             raise ValueError(f"{label} does not exist: {path}")
         if not path.is_file():
             raise ValueError(f"{label} is not a file: {path}")
+
+
+def _compose_worktree_declarations(
+    context: CompositionContext,
+) -> dict[str, WorktreeDeclaration]:
+    return {
+        qualify_id(context.namespace_prefix, name): declaration
+        for name, declaration in context.workflow.worktrees.items()
+    }
+
+
+def _context_implicit_worktree_selector(
+    namespace_prefix: str,
+    worktrees: dict[str, WorktreeDeclaration],
+    inherited_selector: str | None,
+) -> str | None:
+    if len(worktrees) == 1:
+        return qualify_id(namespace_prefix, next(iter(worktrees)))
+    if not worktrees:
+        return inherited_selector
+    return None
+
+
+def _materialize_implicit_worktree_selectors(
+    nodes: list[ComposedNode],
+    composed_worktree_count: int,
+    root_worktree_count: int,
+) -> list[ComposedNode]:
+    if composed_worktree_count == 0:
+        return nodes
+    return [
+        _materialize_worktree_selector(node)
+        if _needs_materialized_selector(
+            node,
+            composed_worktree_count,
+            root_worktree_count,
+        )
+        else node
+        for node in nodes
+    ]
+
+
+def _needs_materialized_selector(
+    node: ComposedNode,
+    composed_worktree_count: int,
+    root_worktree_count: int,
+) -> bool:
+    if node.payload.mode == "input":
+        return False
+    if node.payload.worktree is not None:
+        return False
+    if node.local_worktree_count == 0:
+        if node.implicit_worktree_selector is not None:
+            return composed_worktree_count > 1
+        return root_worktree_count != 1 or composed_worktree_count > 1
+    return node.implicit_worktree_selector is not None and composed_worktree_count > 1
+
+
+def _materialize_worktree_selector(node: ComposedNode) -> ComposedNode:
+    return ComposedNode(
+        payload=node.payload.model_copy(
+            update={
+                "worktree": node.implicit_worktree_selector
+                or PROJECT_ROOT_WORKTREE_SELECTOR
+            }
+        ),
+        source_path=node.source_path,
+        source_span=node.source_span,
+        prompt_segment_spans=node.prompt_segment_spans,
+        local_worktree_count=node.local_worktree_count,
+        implicit_worktree_selector=node.implicit_worktree_selector,
+    )
+
+
+def _merge_worktrees(
+    first: dict[str, WorktreeDeclaration],
+    second: dict[str, WorktreeDeclaration],
+) -> dict[str, WorktreeDeclaration]:
+    collisions = sorted(set(first).intersection(second))
+    if collisions:
+        joined = ", ".join(collisions)
+        raise ValueError(f"Worktree declaration collision after composition: {joined}")
+    return {**first, **second}

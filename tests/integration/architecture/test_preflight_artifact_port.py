@@ -18,6 +18,7 @@ def _plan(context_root: Path) -> PreflightExecutionPlan:
     return PreflightExecutionPlan(
         run_id="run",
         run_key_name=context_root.name,
+        project_root=context_root.as_posix(),
         context_root=context_root.as_posix(),
         manifest_root=(context_root / "manifests").as_posix(),
         created_at=datetime(2026, 6, 3).isoformat(),

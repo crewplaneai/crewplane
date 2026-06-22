@@ -5,6 +5,7 @@ __all__ = ["MockInvokerAdapter"]
 from orchestrator_cli.architecture.contracts import (
     AgentInvoker,
     CanonicalIntegrationConfig,
+    InvokerAdapterCapabilities,
     JsonObject,
 )
 from orchestrator_cli.core.config import Config
@@ -14,6 +15,12 @@ from .mock_invoker import MockAgentInvoker, parse_options
 
 class MockInvokerAdapter:
     """Create deterministic mock invokers for local orchestration runs."""
+
+    def workspace_capabilities(self) -> InvokerAdapterCapabilities:
+        return InvokerAdapterCapabilities.workspace_supported(
+            launch_mode="mock_no_child_process",
+            controlled_child_environment=False,
+        )
 
     def canonicalize_options(
         self,
@@ -36,6 +43,7 @@ class MockInvokerAdapter:
             resolved_identity=resolved_identity,
             options=canonical_options,
             option_scopes={key: "execution" for key in canonical_options},
+            capabilities=self.workspace_capabilities().as_dict(),
         )
 
     def create_invoker(

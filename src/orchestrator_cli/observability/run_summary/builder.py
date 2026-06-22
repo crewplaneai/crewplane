@@ -16,6 +16,7 @@ from .models import (
     RunSummary,
     RunSummaryFacts,
 )
+from .workspace import build_workspace_run_summary
 
 
 def build_run_summary(
@@ -48,6 +49,10 @@ def build_run_summary(
         invocation_usages=invocation_usages,
         omitted_invocation_usage_count=facts.omitted_invocation_usage_count,
         node_outcomes=node_outcome_summaries(artifact_store, snapshot),
+        workspace=build_workspace_run_summary(
+            artifact_store,
+            facts.workspace_invocations,
+        ),
         issues=summary_issues(
             artifact_store=artifact_store,
             events=events,
@@ -90,6 +95,8 @@ def summary_issues(
 
 
 def workflow_status(snapshot: DashboardSnapshot | None, result: RunResult) -> str:
+    if result.status != "succeeded":
+        return result.status
     if snapshot is not None:
         status = snapshot.state.workflow_status
         if status in {"pending", "running"}:

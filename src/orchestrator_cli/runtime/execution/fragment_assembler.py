@@ -14,6 +14,12 @@ from orchestrator_cli.core.preflight.models import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 
+from .workspace_files import (
+    ResolvedWorkspaceFile,
+    WorkspaceCandidateSourceContext,
+    resolve_workspace_file,
+)
+
 OUTPUT_ARTIFACT_KEYS = {"output", "output_path", "output_size", "output_sha256"}
 FINDINGS_ARTIFACT_KEYS = {
     "findings",
@@ -30,18 +36,57 @@ class RuntimeLocatorInspection:
     char_count: int
 
 
+@dataclass(frozen=True)
+class ResolvedPrompt:
+    text: str
+    workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+
+
 def assemble_prompt(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     target_role: str,
     output: ArtifactStorePort,
     secret_context: SecretContext,
+    workspace_candidate_source: bool = False,
+    workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
 ) -> str:
+    return assemble_prompt_details(
+        plan,
+        node,
+        target_role,
+        output,
+        secret_context,
+        workspace_candidate_source=workspace_candidate_source,
+        workspace_candidate_context=workspace_candidate_context,
+    ).text
+
+
+def assemble_prompt_details(
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    target_role: str,
+    output: ArtifactStorePort,
+    secret_context: SecretContext,
+    workspace_candidate_source: bool = False,
+    workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
+) -> ResolvedPrompt:
     stream = _find_stream(plan, node, target_role)
-    return "".join(
-        _resolve_fragment(plan, fragment, output, secret_context)
-        for fragment in sorted(stream.fragments, key=lambda item: item.fragment_index)
-    )
+    text_parts: list[str] = []
+    workspace_files: list[ResolvedWorkspaceFile] = []
+    for fragment in sorted(stream.fragments, key=lambda item: item.fragment_index):
+        text, workspace_file = _resolve_fragment(
+            plan,
+            fragment,
+            output,
+            secret_context,
+            workspace_candidate_source,
+            workspace_candidate_context,
+        )
+        text_parts.append(text)
+        if workspace_file is not None:
+            workspace_files.append(workspace_file)
+    return ResolvedPrompt("".join(text_parts), tuple(workspace_files))
 
 
 def inspect_runtime_locators(
@@ -71,6 +116,25 @@ def inspect_runtime_locators(
     return tuple(inspections)
 
 
+def stream_has_runtime_dynamic_workspace_locator(
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    target_role: str,
+) -> bool:
+    stream = _find_stream(plan, node, target_role)
+    locator_ids = {
+        fragment.locator.get("locator_id")
+        for fragment in stream.fragments
+        if fragment.kind == "workspace_file_locator"
+        and isinstance(fragment.locator, dict)
+        and isinstance(fragment.locator.get("locator_id"), str)
+    }
+    return any(
+        locator.locator_id in locator_ids and locator.source_class == "runtime_dynamic"
+        for locator in plan.workspace_file_locators
+    )
+
+
 def _find_stream(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
@@ -92,23 +156,41 @@ def _resolve_fragment(
     fragment: Fragment,
     output: ArtifactStorePort,
     secret_context: SecretContext,
-) -> str:
+    workspace_candidate_source: bool,
+    workspace_candidate_context: WorkspaceCandidateSourceContext | None,
+) -> tuple[str, ResolvedWorkspaceFile | None]:
     match fragment.kind:
         case "literal":
-            return fragment.text or ""
+            return fragment.text or "", None
         case "static_file_content":
             if fragment.content_ref is None:
                 raise ValueError("Static file fragment is missing content_ref.")
-            return _read_static_file(plan, fragment.content_ref)
+            return _read_static_file(plan, fragment.content_ref), None
+        case "workspace_file_locator":
+            locator_id = (
+                fragment.locator.get("locator_id")
+                if fragment.locator is not None
+                else None
+            )
+            if locator_id is None:
+                raise ValueError("Workspace file fragment is missing locator_id.")
+            resolved = resolve_workspace_file(
+                plan,
+                output,
+                locator_id,
+                workspace_candidate_source=workspace_candidate_source,
+                workspace_candidate_context=workspace_candidate_context,
+            )
+            return resolved.text, resolved
         case "static_env" | "static_var":
             if fragment.value_stored is not None:
-                return fragment.value_stored
+                return fragment.value_stored, None
             if fragment.value_handle is None:
                 raise ValueError("Static value fragment is missing a value handle.")
-            return secret_context.get(fragment.value_handle)
+            return secret_context.get(fragment.value_handle), None
         case "runtime_locator_lookup":
             node_id, artifact_name = _locator_parts(fragment)
-            return _resolve_runtime_locator(plan, output, node_id, artifact_name)
+            return _resolve_runtime_locator(plan, output, node_id, artifact_name), None
 
 
 def _read_static_file(plan: PreflightExecutionPlan, content_ref: str) -> str:

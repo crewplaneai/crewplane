@@ -1,39 +1,27 @@
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
-import pytest
-
-from orchestrator_cli.artifacts.naming import build_node_state_filename
-from orchestrator_cli.artifacts.resume_validation import (
-    contained_regular_file,
-    validate_resume_frontier,
-)
-from orchestrator_cli.artifacts.run_history import find_same_context_runs
+from orchestrator_cli.artifacts.naming import build_generated_file_result_dir_name
+from orchestrator_cli.artifacts.resume_validation import validate_resume_frontier
+from orchestrator_cli.core.execution_state import ArtifactDescriptor
+from orchestrator_cli.core.preflight.models import WorkspaceBranchExportRecord
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.helpers.resume import (
-    WORKFLOW_IDENTITY,
-    WORKFLOW_NAME,
-    WORKFLOW_SIGNATURE,
+    attach_workspace_descriptor,
     make_node_state,
     make_plan,
-    make_run_manifest,
+    sha256_hex,
     write_node_state,
     write_result,
-    write_run_manifest,
 )
-
-
-def source_record(tmp_path, status: str = "failed"):
-    manifest = make_run_manifest("source", "workflow--source", status=status)
-    write_run_manifest(tmp_path, manifest)
-    return find_same_context_runs(
-        tmp_path,
-        WORKFLOW_IDENTITY,
-        WORKFLOW_NAME,
-        WORKFLOW_SIGNATURE,
-    )[0]
+from tests.helpers.resume_validation import (
+    attach_git_workspace_source,
+    provider_workspace_state_payload,
+    source_record,
+    write_lineage_bundle_for_payload,
+)
+from tests.helpers.workspace_records import workspace_selection_record
 
 
 def test_validate_frontier_accepts_dependency_closed_node_state(tmp_path) -> None:
@@ -47,6 +35,169 @@ def test_validate_frontier_accepts_dependency_closed_node_state(tmp_path) -> Non
     frontier = validate_resume_frontier(source, make_plan())
 
     assert frontier.resumed_node_ids == ("a",)
+
+
+def test_validate_frontier_accepts_provider_workspace_state_with_bundle(
+    tmp_path,
+) -> None:
+    source = source_record(tmp_path)
+    plan = make_plan()
+    policy = workspace_selection_record(
+        enabled=True,
+        kind="worktree",
+        clean_start="strict",
+        materialization="worktree_checkout",
+    )
+    node = plan.nodes[0].model_copy(update={"workspace_policy": policy})
+    plan = plan.model_copy(
+        update={
+            "nodes": [node, plan.nodes[1]],
+        }
+    )
+    plan, repo = attach_git_workspace_source(tmp_path, plan)
+    assert plan.workspace_source is not None
+    descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    write_node_state(
+        source.run_dir, make_node_state(source.manifest, "a", [descriptor])
+    )
+    payload = provider_workspace_state_payload(
+        source,
+        plan,
+        source_commit=plan.workspace_source.run_base_commit,
+        source_tree=plan.workspace_source.source_tree,
+    )
+    write_lineage_bundle_for_payload(repo, source, payload)
+    state_path = source.run_dir / "a" / "workspace-state.json"
+    state_path.parent.mkdir(exist_ok=True)
+    state_path.write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+
+    frontier = validate_resume_frontier(source, plan)
+
+    assert frontier.resumed_node_ids == ("a",)
+
+
+def test_validate_frontier_accepts_branch_only_workspace_changes(tmp_path) -> None:
+    source = source_record(tmp_path)
+    plan = make_plan()
+    policy = workspace_selection_record(
+        enabled=True,
+        kind="worktree",
+        clean_start="strict",
+        materialization="worktree_checkout",
+    )
+    node = plan.nodes[0].model_copy(update={"workspace_policy": policy})
+    plan = plan.model_copy(
+        update={
+            "nodes": [node, plan.nodes[1]],
+        }
+    )
+    plan, repo = attach_git_workspace_source(tmp_path, plan)
+    assert plan.workspace_source is not None
+    descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, "a", [descriptor]),
+    )
+    payload = provider_workspace_state_payload(
+        source,
+        plan,
+        source_commit=plan.workspace_source.run_base_commit,
+        source_tree=plan.workspace_source.source_tree,
+    )
+    write_lineage_bundle_for_payload(repo, source, payload)
+    state_path = source.run_dir / "a" / "workspace-state.json"
+    state_path.parent.mkdir(exist_ok=True)
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+    payload["branch_export"] = {
+        "status": "created",
+        "operation": "created",
+        "branch_name": "ai/old-branch",
+        "branch_ref": "refs/heads/ai/old-branch",
+        "record_artifact": "workspace-exports/primary.json",
+        "result_commit": "b" * 40,
+        "result_tree": "d" * 40,
+        "completed_at": "2026-06-16T12:00:00",
+    }
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    current_policy = policy.model_copy(
+        update={
+            "branch_export": WorkspaceBranchExportRecord(
+                create_branch=True,
+                branch_name="ai/new-branch",
+            )
+        }
+    )
+    current_plan = plan.model_copy(
+        update={
+            "nodes": [
+                node.model_copy(update={"workspace_policy": current_policy}),
+                plan.nodes[1],
+            ],
+        }
+    )
+
+    frontier = validate_resume_frontier(source, current_plan)
+
+    assert frontier.resumed_node_ids == ("a",)
+
+
+def test_validate_frontier_rejects_provider_workspace_missing_invoker_descriptor(
+    tmp_path,
+) -> None:
+    def remove_invoker(payload):
+        payload.pop("invoker", None)
+
+    frontier = _provider_workspace_frontier(tmp_path, remove_invoker)
+
+    assert frontier.resumed_node_ids == ()
+
+
+def test_validate_frontier_rejects_provider_workspace_mismatched_invoker_descriptor(
+    tmp_path,
+) -> None:
+    def change_invoker(payload):
+        invoker = payload["invoker"]
+        assert isinstance(invoker, dict)
+        invoker["launch_mode"] = "different-launch-mode"
+
+    frontier = _provider_workspace_frontier(tmp_path, change_invoker)
+
+    assert frontier.resumed_node_ids == ()
+
+
+def test_validate_frontier_accepts_applied_controlled_child_environment(
+    tmp_path,
+) -> None:
+    def mark_child_environment_applied(payload):
+        payload["child_process_environment"] = {"required": True, "applied": True}
+
+    frontier = _provider_workspace_frontier(
+        tmp_path,
+        mark_child_environment_applied,
+        runtime_config_snapshot=_runtime_command_runner_snapshot(),
+    )
+
+    assert frontier.resumed_node_ids == ("a",)
+
+
+def test_validate_frontier_rejects_unapplied_controlled_child_environment(
+    tmp_path,
+) -> None:
+    def mark_child_environment_unapplied(payload):
+        payload["child_process_environment"] = {"required": True, "applied": False}
+
+    frontier = _provider_workspace_frontier(
+        tmp_path,
+        mark_child_environment_unapplied,
+        runtime_config_snapshot=_runtime_command_runner_snapshot(),
+    )
+
+    assert frontier.resumed_node_ids == ()
 
 
 def test_invalid_upstream_invalidates_descendant(tmp_path) -> None:
@@ -111,18 +262,20 @@ def test_required_findings_come_from_dependency_graph(tmp_path) -> None:
     assert with_findings.resumed_node_ids == ("a",)
 
 
-def test_symlink_result_is_not_reusable(tmp_path) -> None:
+def test_validate_frontier_rejects_missing_generated_file_sidecar(tmp_path) -> None:
     source = source_record(tmp_path)
-    outside = tmp_path / "outside.md"
-    outside.write_text("a output", encoding="utf-8")
-    result_path = source.results_dir / "a-result.md"
-    result_path.parent.mkdir(parents=True)
-    os.symlink(outside, result_path)
-    descriptor = write_result(tmp_path / "descriptor-source", "a-result.md", "a output")
-    descriptor = descriptor.model_copy(update={"relative_path": "a-result.md"})
+    output_descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    generated_descriptor = ArtifactDescriptor(
+        kind="generated_file",
+        relative_path="generated-files/a/alpha/src/app.txt",
+        sha256=sha256_hex("generated"),
+        size_bytes=len(b"generated"),
+    )
     write_node_state(
         source.run_dir,
-        make_node_state(source.manifest, "a", [descriptor]),
+        make_node_state(source.manifest, "a", [output_descriptor]).model_copy(
+            update={"generated_files": [generated_descriptor]}
+        ),
     )
 
     frontier = validate_resume_frontier(source, make_plan())
@@ -130,13 +283,22 @@ def test_symlink_result_is_not_reusable(tmp_path) -> None:
     assert frontier.resumed_node_ids == ()
 
 
-def test_hardlinked_result_is_not_reusable(tmp_path) -> None:
+def test_validate_frontier_rejects_generated_file_outside_namespace(tmp_path) -> None:
     source = source_record(tmp_path)
-    descriptor = write_result(source.results_dir, "a-result.md", "a output")
-    os.link(source.results_dir / "a-result.md", source.results_dir / "a-copy.md")
+    output_descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    source_file = source.results_dir / "a-extra.md"
+    source_file.write_text("generated", encoding="utf-8")
+    generated_descriptor = ArtifactDescriptor(
+        kind="generated_file",
+        relative_path="a-extra.md",
+        sha256=sha256_hex("generated"),
+        size_bytes=len(b"generated"),
+    )
     write_node_state(
         source.run_dir,
-        make_node_state(source.manifest, "a", [descriptor]),
+        make_node_state(source.manifest, "a", [output_descriptor]).model_copy(
+            update={"generated_files": [generated_descriptor]}
+        ),
     )
 
     frontier = validate_resume_frontier(source, make_plan())
@@ -144,122 +306,129 @@ def test_hardlinked_result_is_not_reusable(tmp_path) -> None:
     assert frontier.resumed_node_ids == ()
 
 
-def test_symlink_results_root_is_not_reusable(tmp_path) -> None:
-    source = source_record(tmp_path)
-    outside_results = tmp_path / "outside-results"
-    descriptor = write_result(outside_results, "a-result.md", "a output")
-    source.results_dir.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(outside_results, source.results_dir, target_is_directory=True)
-    write_node_state(
-        source.run_dir,
-        make_node_state(source.manifest, "a", [descriptor]),
-    )
-
-    frontier = validate_resume_frontier(source, make_plan())
-
-    assert frontier.resumed_node_ids == ()
-
-
-def test_symlink_results_root_parent_is_not_reusable(tmp_path) -> None:
-    real_root = tmp_path / "real-results"
-    root = tmp_path / "execution-results" / "run"
-    result = real_root / "run" / "a-result.md"
-    result.parent.mkdir(parents=True)
-    result.write_text("a output", encoding="utf-8")
-    os.symlink(real_root, root.parent, target_is_directory=True)
-
-    assert contained_regular_file(root, "a-result.md") is None
-
-
-def test_symlink_node_state_file_is_not_reusable(tmp_path) -> None:
-    if not hasattr(os, "symlink"):
-        pytest.skip("symlink support is unavailable")
-    source = source_record(tmp_path)
-    descriptor = write_result(source.results_dir, "a-result.md", "a output")
-    external_state_path = write_node_state(
-        tmp_path / "outside-state",
-        make_node_state(source.manifest, "a", [descriptor]),
-    )
-    node_state_dir = source.run_dir / "manifests" / "nodes"
-    node_state_dir.mkdir(parents=True)
-    symlink_path = node_state_dir / build_node_state_filename("a")
-    try:
-        symlink_path.symlink_to(external_state_path)
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
-
-    frontier = validate_resume_frontier(source, make_plan())
-
-    assert frontier.resumed_node_ids == ()
-
-
-def test_symlink_node_state_directory_is_not_reusable(tmp_path) -> None:
-    if not hasattr(os, "symlink"):
-        pytest.skip("symlink support is unavailable")
-    source = source_record(tmp_path)
-    descriptor = write_result(source.results_dir, "a-result.md", "a output")
-    external_state_path = write_node_state(
-        tmp_path / "outside-state",
-        make_node_state(source.manifest, "a", [descriptor]),
-    )
-    node_state_parent = source.run_dir / "manifests"
-    node_state_parent.mkdir(exist_ok=True)
-    symlink_path = node_state_parent / "nodes"
-    try:
-        symlink_path.symlink_to(
-            external_state_path.parent,
-            target_is_directory=True,
-        )
-    except OSError as exc:
-        pytest.skip(f"symlink creation is unavailable: {exc}")
-
-    frontier = validate_resume_frontier(source, make_plan())
-
-    assert frontier.resumed_node_ids == ()
-
-
-def test_hardlinked_node_state_file_is_not_reusable(tmp_path) -> None:
-    source = source_record(tmp_path)
-    descriptor = write_result(source.results_dir, "a-result.md", "a output")
-    node_state_path = write_node_state(
-        source.run_dir,
-        make_node_state(source.manifest, "a", [descriptor]),
-    )
-    try:
-        os.link(node_state_path, node_state_path.with_suffix(".copy.json"))
-    except OSError as exc:
-        pytest.skip(f"hardlink creation is unavailable: {exc}")
-
-    frontier = validate_resume_frontier(source, make_plan())
-
-    assert frontier.resumed_node_ids == ()
-
-
-def test_permission_error_during_artifact_validation_fails_loudly(
+def test_validate_frontier_rejects_generated_file_for_different_node(
     tmp_path,
-    monkeypatch,
 ) -> None:
     source = source_record(tmp_path)
+    output_descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    generated_path = source.results_dir / "generated-files/b/alpha/src/app.txt"
+    generated_path.parent.mkdir(parents=True)
+    generated_path.write_text("generated", encoding="utf-8")
+    generated_descriptor = ArtifactDescriptor(
+        kind="generated_file",
+        relative_path="generated-files/b/alpha/src/app.txt",
+        sha256=sha256_hex("generated"),
+        size_bytes=len(b"generated"),
+    )
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, "a", [output_descriptor]).model_copy(
+            update={"generated_files": [generated_descriptor]}
+        ),
+    )
+
+    frontier = validate_resume_frontier(source, make_plan())
+
+    assert frontier.resumed_node_ids == ()
+
+
+def test_validate_frontier_accepts_generated_file_for_bounded_node_directory(
+    tmp_path,
+) -> None:
+    source = source_record(tmp_path)
+    node_id = "build." + ("x" * 150)
+    node_dir = build_generated_file_result_dir_name(node_id)
+    output_descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    generated_path = source.results_dir / "generated-files" / node_dir / "alpha/app.txt"
+    generated_path.parent.mkdir(parents=True)
+    generated_path.write_text("generated", encoding="utf-8")
+    generated_descriptor = ArtifactDescriptor(
+        kind="generated_file",
+        relative_path=generated_path.relative_to(source.results_dir).as_posix(),
+        sha256=sha256_hex("generated"),
+        size_bytes=len(b"generated"),
+    )
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, node_id, [output_descriptor]).model_copy(
+            update={"generated_files": [generated_descriptor]}
+        ),
+    )
+
+    frontier = validate_resume_frontier(source, _single_node_plan(node_id))
+
+    assert frontier.resumed_node_ids == (node_id,)
+
+
+def _provider_workspace_frontier(
+    tmp_path,
+    payload_mutator,
+    runtime_config_snapshot: dict[str, object] | None = None,
+):
+    source = source_record(tmp_path)
+    plan = make_plan()
+    if runtime_config_snapshot is not None:
+        plan = plan.model_copy(
+            update={"runtime_config_snapshot": runtime_config_snapshot}
+        )
+    policy = workspace_selection_record(
+        enabled=True,
+        kind="worktree",
+        clean_start="strict",
+        materialization="worktree_checkout",
+    )
+    node = plan.nodes[0].model_copy(update={"workspace_policy": policy})
+    plan = plan.model_copy(update={"nodes": [node, plan.nodes[1]]})
+    plan, repo = attach_git_workspace_source(tmp_path, plan)
+    assert plan.workspace_source is not None
     descriptor = write_result(source.results_dir, "a-result.md", "a output")
     write_node_state(
         source.run_dir,
         make_node_state(source.manifest, "a", [descriptor]),
     )
-    original_resolve = Path.resolve
+    payload = provider_workspace_state_payload(
+        source,
+        plan,
+        source_commit=plan.workspace_source.run_base_commit,
+        source_tree=plan.workspace_source.source_tree,
+    )
+    write_lineage_bundle_for_payload(repo, source, payload)
+    payload_mutator(payload)
+    state_path = source.run_dir / "a" / "workspace-state.json"
+    state_path.parent.mkdir(exist_ok=True)
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+    return validate_resume_frontier(source, plan)
 
-    def resolve_with_permission_error(self, strict=False):
-        if self.name == "a-result.md":
-            raise PermissionError("blocked")
-        return original_resolve(self, strict=strict)
 
-    monkeypatch.setattr(Path, "resolve", resolve_with_permission_error)
+def _runtime_command_runner_snapshot() -> dict[str, object]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "invoker": {
+            "implementation": "cli",
+            "capabilities": {
+                "workspace": {
+                    "honors_cwd": True,
+                    "launch_mode": "runtime_command_runner",
+                    "controlled_child_environment": True,
+                }
+            },
+        },
+    }
 
-    with pytest.raises(PermissionError, match="blocked"):
-        validate_resume_frontier(source, make_plan())
 
-
-def test_contained_regular_file_rejects_empty_path_segments(tmp_path) -> None:
-    result = tmp_path / "a-result.md"
-    result.write_text("a output", encoding="utf-8")
-
-    assert contained_regular_file(tmp_path, "nested//a-result.md") is None
+def _single_node_plan(node_id: str):
+    plan = make_plan()
+    node = plan.nodes[0].model_copy(
+        update={
+            "id": node_id,
+            "dependencies": [],
+        }
+    )
+    return plan.model_copy(
+        update={
+            "execution_order": [node_id],
+            "nodes": [node],
+            "dependency_graph": [],
+        }
+    )

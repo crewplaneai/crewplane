@@ -19,6 +19,7 @@ class InvalidDescriptorInvoker:
         _model: str | None,
         _prompt: str,
         _output_file: Path,
+        _cwd: Path,
         _log_file: Path | None = None,
         _invocation_context: InvocationContext | None = None,
     ) -> None:
@@ -27,6 +28,7 @@ class InvalidDescriptorInvoker:
             _model,
             _prompt,
             _output_file,
+            _cwd,
             _log_file,
             _invocation_context,
         )

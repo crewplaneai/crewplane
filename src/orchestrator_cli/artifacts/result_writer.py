@@ -8,18 +8,14 @@ from orchestrator_cli.architecture.ports.artifacts import (
     StageTaskSpec,
 )
 
-from .failure_artifacts import (
-    is_synthetic_invocation_failure,
-    strip_synthetic_invocation_failure_marker,
-)
 from .findings_extraction import (
-    FindingsSelection,
-    build_failure_findings_content,
     build_findings_document,
-    extract_findings_content,
 )
-from .generated_files import GeneratedFileReferenceDetector
-from .result_selection import is_raw_input_stage, latest_round_files, ordered_task_ids
+from .generated_files import (
+    GeneratedFileReferenceDetector,
+)
+from .result_selection import is_raw_input_stage, latest_round_files
+from .result_writer_aggregation import aggregate_stage_outputs
 from .review_loop_status import resolve_review_loop_status
 from .stage_output_aggregation import StageOutputAggregation
 from .stage_result_document import write_stage_result_file
@@ -51,6 +47,8 @@ class ResultWriter:
         stage_dir: Path | None,
         findings_enabled: bool = False,
         task_specs: tuple[StageTaskSpec, ...] = (),
+        generated_file_detection_enabled: bool = True,
+        generated_file_workspace_roots: dict[Path, Path] | None = None,
     ) -> StageFinalizeResult:
         result_file = self._result_file_resolver(stage_name)
         findings_file = (
@@ -70,18 +68,23 @@ class ResultWriter:
         if is_raw_input_stage(selected_files):
             return self._write_raw_input_result(stage_name, result_file, selected_files)
 
-        aggregation = self._aggregate_stage_outputs(
+        aggregation = aggregate_stage_outputs(
             selected_files,
             task_specs,
             findings_enabled,
+            result_file,
+            stage_name,
+            generated_file_workspace_roots or {},
+            generated_file_detection_enabled,
         )
         write_stage_result_file(
             result_file,
             stage_name,
             aggregation.result_sections,
             aggregation.generated_file_reference_content,
-            self._workspace_root,
-            self._generated_file_detector,
+            aggregation.generated_file_links,
+            self._generated_file_workspace_root(generated_file_detection_enabled),
+            self._generated_file_detector_for(generated_file_detection_enabled),
         )
         resolved_findings_file = self._write_findings_file(
             findings_file,
@@ -94,6 +97,11 @@ class ResultWriter:
             included_outputs=tuple(aggregation.included_outputs),
             skipped_empty_outputs=tuple(aggregation.skipped_empty_outputs),
             warnings=tuple(self._warnings_for_skipped_outputs(aggregation)),
+            generated_files=tuple(
+                dict.fromkeys(
+                    link.target_path for link in aggregation.generated_file_links
+                )
+            ),
         )
 
     def _select_stage_files(self, stage_name: str, stage_dir: Path) -> dict[str, Path]:
@@ -101,55 +109,6 @@ class ResultWriter:
         if resolved_status is not None:
             return resolved_status.selected_output_files
         return latest_round_files(stage_dir)
-
-    def _aggregate_stage_outputs(
-        self,
-        selected_files: dict[str, Path],
-        task_specs: tuple[StageTaskSpec, ...],
-        findings_enabled: bool,
-    ) -> StageOutputAggregation:
-        aggregation = StageOutputAggregation()
-        findings_selection = FindingsSelection.from_stage(
-            task_specs,
-            findings_enabled,
-        )
-        for task_id in ordered_task_ids(selected_files, task_specs):
-            self._add_output_to_aggregation(
-                aggregation,
-                task_id,
-                selected_files[task_id],
-                findings_selection,
-            )
-        return aggregation
-
-    def _add_output_to_aggregation(
-        self,
-        aggregation: StageOutputAggregation,
-        task_id: str,
-        output_file: Path,
-        findings_selection: FindingsSelection,
-    ) -> None:
-        raw_output = output_file.read_text(encoding="utf-8")
-        if not raw_output.strip():
-            aggregation.skipped_empty_outputs.append(output_file)
-            return
-
-        display_content = strip_synthetic_invocation_failure_marker(raw_output).strip()
-        aggregation.included_outputs.append(output_file)
-        aggregation.result_sections.append(
-            f"## {task_id}\n\n{display_content}\n\n---\n\n"
-        )
-        aggregation.generated_file_reference_content.append(display_content)
-        if findings_selection.selects_task(task_id) and is_synthetic_invocation_failure(
-            raw_output
-        ):
-            aggregation.findings_sections.append(
-                (task_id, build_failure_findings_content(task_id))
-            )
-            return
-        if findings_selection.should_extract(task_id, raw_output):
-            findings_content = extract_findings_content(raw_output, output_file)
-            aggregation.findings_sections.append((task_id, findings_content))
 
     def _write_raw_input_result(
         self,
@@ -195,3 +154,16 @@ class ResultWriter:
             f"Skipping empty output file {file_path.name}"
             for file_path in aggregation.skipped_empty_outputs
         ]
+
+    def _generated_file_workspace_root(self, enabled: bool) -> Path | None:
+        if not enabled:
+            return None
+        return self._workspace_root
+
+    def _generated_file_detector_for(
+        self,
+        enabled: bool,
+    ) -> GeneratedFileReferenceDetector | None:
+        if not enabled:
+            return None
+        return self._generated_file_detector

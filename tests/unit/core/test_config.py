@@ -32,6 +32,11 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "extra_args"):
             AgentConfig(cli_cmd=["echo"], extra_args=["--flag", ""])
 
+    def test_agent_config_allows_relative_cli_executable_path(self) -> None:
+        config = AgentConfig(cli_cmd=["./bin/provider"])
+
+        self.assertEqual(config.cli_cmd, ["./bin/provider"])
+
     def test_agent_config_allows_omitted_default_model(self) -> None:
         config = AgentConfig(cli_cmd=["echo"])
         self.assertIsNone(config.default_model)
@@ -217,6 +222,118 @@ class ConfigTests(unittest.TestCase):
                     "alpha": AgentConfig(cli_cmd=["echo"]),
                 },
             )
+
+    def test_workspace_settings_default_disabled(self) -> None:
+        settings = Settings()
+
+        self.assertFalse(settings.workspace.enabled)
+        self.assertIsNone(settings.workspace.cache_root)
+        self.assertTrue(settings.workspace.cleanup_on_success)
+        self.assertEqual(settings.workspace.worktree_contract, "blob_exact")
+        self.assertEqual(settings.workspace.clean_start, "strict")
+        self.assertFalse(settings.workspace.identity.include_cache_root)
+
+    def test_workspace_settings_reject_string_booleans(self) -> None:
+        for workspace in (
+            {"enabled": "true"},
+            {"cleanup_on_success": "false"},
+            {"identity": {"include_cache_root": "yes"}},
+        ):
+            with self.subTest(workspace=workspace), self.assertRaises(ValidationError):
+                Settings(workspace=workspace)
+
+    def test_workspace_settings_rejects_invalid_contract_modes(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "worktree_contract"):
+            Settings(workspace={"worktree_contract": "blob_exact_v1"})
+        with self.assertRaisesRegex(ValidationError, "worktree_contract"):
+            Settings(workspace={"worktree_contract": "text_normalized"})
+
+    def test_workspace_settings_rejects_invalid_clean_start(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "clean_start"):
+            Settings(workspace={"clean_start": "dirty_ok"})
+
+    def test_workspace_setup_profiles_require_argv_command_lists(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "at least one command"):
+            Settings(workspace={"setup_profiles": {"bootstrap": {"run": []}}})
+        with self.assertRaisesRegex(ValidationError, "at least one command"):
+            Settings(workspace={"setup_profiles": {"bootstrap": {}}})
+        with self.assertRaisesRegex(ValidationError, "not shell strings"):
+            Settings(workspace={"setup_profiles": {"bootstrap": {"run": ["uv sync"]}}})
+        with self.assertRaisesRegex(ValidationError, "commands cannot be empty"):
+            Settings(workspace={"setup_profiles": {"bootstrap": {"run": [[]]}}})
+        with self.assertRaisesRegex(ValidationError, "blank tokens"):
+            Settings(
+                workspace={"setup_profiles": {"bootstrap": {"run": [["uv", " "]]}}}
+            )
+
+    def test_workspace_materialization_and_disk_guardrails_are_validated(
+        self,
+    ) -> None:
+        with self.assertRaises(ValidationError):
+            Settings(workspace={"max_concurrent_materializations": 0})
+        with self.assertRaises(ValidationError):
+            Settings(workspace={"disk": {"warn_free_bytes": -1}})
+        with self.assertRaisesRegex(ValidationError, "cannot exceed warn_free_bytes"):
+            Settings(
+                workspace={
+                    "disk": {
+                        "warn_free_bytes": 100,
+                        "fail_free_bytes": 200,
+                    }
+                }
+            )
+
+    def test_workspace_settings_rejects_relative_cache_root_when_enabled(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            ValidationError,
+            "settings.workspace.cache_root must be absolute",
+        ):
+            Settings(
+                workspace={
+                    "enabled": True,
+                    "cache_root": ".orchestrator/workspaces",
+                }
+            )
+
+    def test_workspace_settings_reports_unresolved_cache_root_user(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "could not expand user home"):
+            Settings(
+                workspace={
+                    "enabled": True,
+                    "cache_root": "~orchestrator_cli_missing_user_for_tests/cache",
+                }
+            )
+
+    def test_settings_rejects_unknown_keys(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "Extra inputs are not permitted"):
+            Settings.model_validate({"default_workspace": ".orchestrator/workspaces"})
+
+    def test_load_config_rejects_unknown_settings_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "config.yml"
+            path.write_text(
+                "\n".join(
+                    [
+                        f'version: "{SCHEMA_VERSION}"',
+                        "",
+                        "agents:",
+                        "  alpha:",
+                        '    cli_cmd: ["echo"]',
+                        "",
+                        "settings:",
+                        '  default_workspace: ".orchestrator/workspaces"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "Extra inputs are not permitted",
+            ):
+                load_config(path)
 
     def test_load_config_preserves_mock_observation_delay_option(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

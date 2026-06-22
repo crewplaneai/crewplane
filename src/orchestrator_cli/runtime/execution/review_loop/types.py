@@ -16,6 +16,7 @@ from orchestrator_cli.observability.events import (
     ExecutionEvent,
     format_execution_event_log_line,
 )
+from orchestrator_cli.runtime.execution.workspace_files import ResolvedWorkspaceFile
 
 from ..common import CompiledRuntimeContext, ExecutionTelemetry
 from ..consensus import EvaluatedReviewResult
@@ -116,6 +117,7 @@ class DriftGuardCallRequest:
     allowed_paths: set[Path]
     display: ProviderCallDisplay
     drift_session: DriftGuardSession | None = None
+    rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -291,6 +293,7 @@ class ExecutorRoundRequest:
     previous_executor_outputs: list[ExecutorRoundArtifact] | None
     audit_round_num: int | None
     round_num: int
+    executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 
 @dataclass
@@ -308,6 +311,7 @@ class ReviewerRoundRequest:
     previous_review_packet: str | None
     audit_round_num: int | None
     round_num: int
+    reviewer_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 
 @dataclass
@@ -334,6 +338,8 @@ class AuditRoundRequest:
     remediation_depth: int
     initial_executor_outputs: list[ExecutorRoundArtifact]
     audit_round_num: int | None
+    executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+    reviewer_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 
 @dataclass
@@ -350,6 +356,8 @@ class ReviewLoopRunContext:
     reviewer_prompt_context: str
     remediation_depth: int
     audit_rounds: int
+    executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+    reviewer_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 
 @dataclass

@@ -165,6 +165,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
                 model: str,  # noqa: ARG002 - Required by test double or callback signature.
                 prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
                 output_file: Path,
+                cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
                 log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
                 invocation_context=None,  # type: ignore[no-untyped-def]
             ) -> None:

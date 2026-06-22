@@ -33,6 +33,7 @@ from .types import (
     ReviewerRoundRuntime,
 )
 from .validation import emit_review_evaluation_warnings, emit_reviewer_failure_warning
+from .workspace_state_paths import workspace_artifact_allowed_paths
 
 
 class ReviewerOutputMissingError(RuntimeError):
@@ -93,6 +94,18 @@ def build_reviewer_round_runtime(
     allowed_paths = {
         reviewer_output_path(request, provider)[1] for provider in request.reviewers
     }
+    allowed_paths.update(
+        path
+        for provider in request.reviewers
+        for path in workspace_artifact_allowed_paths(
+            request.output,
+            request.node,
+            provider.task_id,
+            "reviewer",
+            request.audit_round_num,
+            request.round_num,
+        )
+    )
     return ReviewerRoundRuntime(
         reviewer_prompt=reviewer_prompt,
         invocation_semaphore=invocation_semaphore,
@@ -132,6 +145,7 @@ async def invoke_reviewer_with_drift_guard(
                     progress_description=f"Reviewing with {provider.provider}...",
                 ),
                 drift_session=runtime.drift_session,
+                rendered_workspace_files=request.reviewer_prompt_workspace_files,
             )
         )
 
@@ -287,9 +301,11 @@ def enforce_reviewer_failure_policy(
         return
     if len(failures) == 1:
         raise failures[0].error
-    failure_names = ", ".join(failure.task_id for failure in failures)
+    failure_details = "; ".join(
+        f"{failure.task_id}: {failure.error}" for failure in failures
+    )
     raise RuntimeError(
-        f"Reviewer invocation failed for node '{request.node.id}': {failure_names}."
+        f"Reviewer invocation failed for node '{request.node.id}': {failure_details}."
     ) from failures[0].error
 
 

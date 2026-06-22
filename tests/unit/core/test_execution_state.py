@@ -68,9 +68,23 @@ def test_node_state_is_successful_boundary_only() -> None:
                 size_bytes=6,
             )
         ],
+        workspace={
+            "enabled": True,
+            "states": [
+                {
+                    "workspace_state_artifact": {
+                        "relative_path": "build/workspace-state.json",
+                        "sha256": sha256_hex("workspace-state"),
+                        "size_bytes": 100,
+                    }
+                }
+            ],
+        },
     )
 
     assert state.status == "succeeded"
+    assert state.workspace is not None
+    assert state.workspace["enabled"] is True
 
 
 def test_node_state_requires_schema_marker() -> None:

@@ -94,6 +94,17 @@ The prior structure had meaningful seams but orchestration wiring still hardcode
   neutral contracts, and prompt argv transport is an explicit opt-in.
 - **2026-06-10**: Added ADR 0015 link for adapter-owned, display-only provider
   log presentation descriptors.
+- **2026-06-12**: ADR 0016 initial build pass made provider `cwd`
+  explicit in `AgentInvoker` and `CommandRunner`, added neutral
+  `InvocationContext.workspace` metadata, and added optional invoker workspace
+  capability records. Built-in `cli` declares `runtime_command_runner`; built-in
+  `mock` declares `mock_no_child_process`. Disabled-mode adapters do not need
+  workspace metadata.
+- **2026-06-12**: Runtime now consumes compiled logical worktree metadata for
+  writable snapshot and lineage-producing worktree provider workspaces, passing
+  workspace `cwd` through the invoker contract while keeping Git
+  materialization, capture, setup, branch export, and cleanup inside
+  runtime-owned services.
 
 ## Follow-ups
 1. Add `llm_api` invoker adapter.

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from orchestrator_cli.version import SCHEMA_VERSION
 
@@ -16,6 +16,7 @@ from ..workflow_keywords import (
 )
 from ..workflow_models import ProviderSpec, WorkflowPayload
 from ..workflow_syntax import NODE_ID_PATTERN
+from ..workspace_policy import WorktreeDeclaration, validate_worktree_name
 
 PromptMarkerKind = Literal["open", "close"]
 PromptMarkerRole = Literal["executor", "reviewer"]
@@ -37,6 +38,16 @@ class WorkflowNodeConfig(BaseModel):
     failure_threshold: int | None = Field(default=None, ge=0)
     source: str | None = None
     token_budget: TokenBudgetOverride | None = None
+    worktree: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_workspace_block(cls, value: object) -> object:
+        if isinstance(value, dict) and "workspace" in value:
+            raise ValueError(
+                "node workspace blocks have been removed; use node worktree selectors"
+            )
+        return value
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -47,6 +58,18 @@ class WorkflowNodeConfig(BaseModel):
             allowed_values=ALLOWED_NODE_MODES,
             allowed_value_set=ALLOWED_NODE_MODE_SET,
         )
+
+    @field_validator("worktree", mode="before")
+    @classmethod
+    def _validate_worktree(cls, value: object) -> object:
+        if value is None:
+            return value
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("worktree selector cannot be blank")
+        return normalized
 
 
 class WorkflowImportConfig(BaseModel):
@@ -137,8 +160,18 @@ class WorkflowFrontmatter(BaseModel):
     name: str
     description: str | None = None
     inputs: dict[str, str] = Field(default_factory=dict)
+    worktrees: dict[str, WorktreeDeclaration] = Field(default_factory=dict)
     nodes: list[WorkflowNodeConfig]
     imports: list[WorkflowImportConfig] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_workspace_block(cls, value: object) -> object:
+        if isinstance(value, dict) and "workspace" in value:
+            raise ValueError(
+                "workflow workspace blocks have been removed; use workflow worktrees"
+            )
+        return value
 
     @field_validator("schema_version")
     @classmethod
@@ -149,6 +182,23 @@ class WorkflowFrontmatter(BaseModel):
                 f"Expected '{SCHEMA_VERSION}'."
             )
         return value
+
+    @field_validator("worktrees", mode="before")
+    @classmethod
+    def _validate_worktrees(cls, value: object) -> object:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            return value
+        normalized: dict[str, object] = {}
+        for raw_name, declaration in value.items():
+            if not isinstance(raw_name, str):
+                raise ValueError("worktree names must be strings")
+            name = validate_worktree_name(raw_name)
+            if name in normalized:
+                raise ValueError(f"Duplicate worktree name '{name}'")
+            normalized[name] = declaration
+        return normalized
 
     @field_validator("inputs", mode="before")
     @classmethod

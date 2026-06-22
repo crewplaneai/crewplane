@@ -6,6 +6,9 @@ from pathlib import Path
 
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.architecture.ports.artifacts import StageFinalizeResult
+from orchestrator_cli.artifacts.workspace_node_state import (
+    build_node_workspace_descriptor,
+)
 from orchestrator_cli.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
@@ -43,6 +46,8 @@ def write_successful_node_state(
             node_id=node.id,
             completed_at=datetime.now().isoformat(),
             artifacts=_descriptors_for_result(output, finalize_result),
+            generated_files=_generated_file_descriptors(output, finalize_result),
+            workspace=build_node_workspace_descriptor(node, plan, output),
         )
     )
 
@@ -74,6 +79,16 @@ def _descriptors_for_result(
             _descriptor("findings", output.results_dir, finalize_result.findings_file)
         )
     return descriptors
+
+
+def _generated_file_descriptors(
+    output: ArtifactStorePort,
+    finalize_result: StageFinalizeResult,
+) -> list[ArtifactDescriptor]:
+    return [
+        _descriptor("generated_file", output.results_dir, generated_file)
+        for generated_file in finalize_result.generated_files
+    ]
 
 
 def _descriptor(kind: str, root: Path, path: Path) -> ArtifactDescriptor:

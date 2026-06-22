@@ -1,4 +1,7 @@
+import stat
+import tempfile
 import unittest
+from pathlib import Path
 
 from orchestrator_cli.adapters.invokers.cli import collect_cli_availability_errors
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
@@ -75,6 +78,82 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         )
         self.assertEqual(len(errors), 1)
         self.assertIn("ghost-agent", errors[0])
+
+    def test_cli_adapter_validation_checks_relative_path_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            executable = project_root / "tools" / "provider"
+            executable.parent.mkdir()
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+            workflow = WorkflowPlan(
+                name="Workflow",
+                nodes=[
+                    WorkflowNode(
+                        id="node.a",
+                        mode="parallel",
+                        prompt_segments=[PromptSegment(role="shared", content="p")],
+                        providers=[ProviderSpec(provider="local-agent")],
+                    )
+                ],
+            )
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "local-agent": AgentConfig(
+                        cli_cmd=["tools/provider"],
+                        default_model="x",
+                    ),
+                },
+            )
+
+            errors = collect_cli_availability_errors(
+                workflow,
+                config,
+                which_fn=_missing_executable,
+                project_root=project_root,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_rejects_non_executable_relative_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            executable = project_root / "tools" / "provider"
+            executable.parent.mkdir()
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(executable.stat().st_mode & ~stat.S_IXUSR)
+            workflow = WorkflowPlan(
+                name="Workflow",
+                nodes=[
+                    WorkflowNode(
+                        id="node.a",
+                        mode="parallel",
+                        prompt_segments=[PromptSegment(role="shared", content="p")],
+                        providers=[ProviderSpec(provider="local-agent")],
+                    )
+                ],
+            )
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "local-agent": AgentConfig(
+                        cli_cmd=["tools/provider"],
+                        default_model="x",
+                    ),
+                },
+            )
+
+            errors = collect_cli_availability_errors(
+                workflow,
+                config,
+                which_fn=_missing_executable,
+                project_root=project_root,
+            )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("local-agent", errors[0])
+        self.assertIn("not found or not executable", errors[0])
 
     def test_provider_validation_ignores_cli_availability(self) -> None:
         workflow = WorkflowPlan(
@@ -194,3 +273,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         )
         waves = topological_waves(workflow)
         self.assertEqual(waves[0], ["node.z", "node.a"])
+
+
+def _missing_executable(executable: str) -> str | None:  # noqa: ARG001
+    return None

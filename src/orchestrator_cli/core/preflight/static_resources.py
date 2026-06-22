@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .compile_state import CompileState
-from .diagnostics import PreflightDiagnostic
+from .diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from .models import StaticResource
 
 
@@ -114,8 +118,8 @@ def _file_diagnostic(
         payload=None,
         diagnostics=(
             PreflightDiagnostic(
-                code="FILE-POLICY",
-                phase="file_policy",
+                code=PreflightDiagnosticCode.FILE_POLICY,
+                phase=PreflightDiagnosticPhase.FILE_POLICY,
                 message=message,
                 path=raw_path,
                 metadata=metadata,
@@ -134,8 +138,8 @@ def _encoding_diagnostic(
         payload=None,
         diagnostics=(
             PreflightDiagnostic(
-                code="FILE-ENCODING",
-                phase="file_policy",
+                code=PreflightDiagnosticCode.FILE_ENCODING,
+                phase=PreflightDiagnosticPhase.FILE_POLICY,
                 message=message,
                 path=raw_path,
                 metadata={"resolved_path": resolved_path.as_posix()},

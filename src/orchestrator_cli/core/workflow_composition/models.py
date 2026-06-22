@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..workflow_models import WorkflowNode, WorkflowPayload
+from ..workspace_policy import WorktreeDeclaration
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class ParsedWorkflow:
     name: str
     description: str
     inputs: dict[str, str]
+    worktrees: dict[str, WorktreeDeclaration]
     imports: tuple[ImportSpec, ...]
     nodes: tuple[NodeSpec, ...]
 
@@ -55,6 +57,8 @@ class ComposedNode:
     source_path: Path
     source_span: dict[str, int] | None
     prompt_segment_spans: tuple[dict[str, int], ...]
+    local_worktree_count: int = 0
+    implicit_worktree_selector: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,9 +74,11 @@ class CompositionContext:
     inherited_params: dict[str, ParamBinding]
     bound_input_nodes: dict[str, str]
     import_stack: tuple[Path, ...]
+    implicit_worktree_selector: str | None = None
 
 
 @dataclass(frozen=True)
 class CompositionResult:
     nodes: list[ComposedNode]
+    worktrees: dict[str, WorktreeDeclaration]
     consumed_param_bindings: set[str]

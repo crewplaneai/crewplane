@@ -13,7 +13,7 @@ from orchestrator_cli.core.preflight.serialization import pretty_sorted_json
 
 from .atomic import atomic_write_bytes, atomic_write_json, atomic_write_text
 from .directory_manager import DirectoryManager, safe_artifact_name
-from .naming import build_node_state_filename
+from .naming import build_node_state_filename, build_workspace_export_filename
 from .result_writer import ResultWriter
 
 
@@ -91,12 +91,16 @@ class OutputManager:
         stage_name: str,
         findings_enabled: bool = False,
         task_specs: tuple[StageTaskSpec, ...] = (),
+        generated_file_detection_enabled: bool = True,
+        generated_file_workspace_roots: dict[Path, Path] | None = None,
     ) -> StageFinalizeResult:
         return self._result_writer.finalize_stage(
             stage_name,
             self.get_stage_dir(stage_name),
             findings_enabled=findings_enabled,
             task_specs=task_specs,
+            generated_file_detection_enabled=generated_file_detection_enabled,
+            generated_file_workspace_roots=generated_file_workspace_roots,
         )
 
     def get_run_log_dir(self) -> Path:
@@ -217,6 +221,13 @@ class OutputManager:
     def write_resume_source(self, node_id: str, payload: JsonObject) -> Path:
         stage_dir = self.create_stage_dir(node_id)
         return atomic_write_json(stage_dir / "resume-source.json", payload)
+
+    def write_workspace_export(
+        self, logical_worktree_name: str, payload: object
+    ) -> Path:
+        export_dir = self.stages_dir / "workspace-exports"
+        export_name = build_workspace_export_filename(logical_worktree_name)
+        return atomic_write_json(export_dir / export_name, payload)
 
     def _run_manifest_path(self) -> Path:
         return self._directories.ensure_manifests_dir() / "run.json"

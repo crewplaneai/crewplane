@@ -17,6 +17,21 @@ from .plan_contract import (
 )
 from .runtime_config import RuntimeConfigSnapshot
 from .secrets import SecretContext
+from .workspace_models import (
+    WorkspaceBranchExportRecord as WorkspaceBranchExportRecord,
+)
+from .workspace_models import (
+    WorkspaceSelectionRecord as WorkspaceSelectionRecord,
+)
+from .workspace_models import (
+    WorkspaceSetupCommandRecord as WorkspaceSetupCommandRecord,
+)
+from .workspace_models import (
+    WorkspaceSetupRecord as WorkspaceSetupRecord,
+)
+from .workspace_models import (
+    WorkspaceSourceSnapshot as WorkspaceSourceSnapshot,
+)
 
 PREFLIGHT_STATUS_FAILED = "preflight_failed"
 PREFLIGHT_STATUS_SUCCEEDED = "preflight_succeeded"
@@ -26,6 +41,7 @@ TokenKind = Literal["node", "file", "env", "var"]
 FragmentKind = Literal[
     "literal",
     "static_file_content",
+    "workspace_file_locator",
     "static_env",
     "static_var",
     "runtime_locator_lookup",
@@ -67,7 +83,10 @@ class Fragment(BaseModel):
             raise ValueError("Literal fragments require text.")
         if self.kind == "static_file_content" and self.content_ref is None:
             raise ValueError("Static file fragments require content_ref.")
-        if self.kind == "runtime_locator_lookup" and self.locator is None:
+        if (
+            self.kind in {"runtime_locator_lookup", "workspace_file_locator"}
+            and self.locator is None
+        ):
             raise ValueError("Runtime locator fragments require locator.")
         if self.kind in {"static_env", "static_var"}:
             if self.key is None:
@@ -198,6 +217,39 @@ class ArtifactContract(BaseModel):
     result_path: str | None = None
 
 
+WorkspaceFileSourceClass = Literal["project_initial", "runtime_dynamic"]
+WorkspaceFileTarget = Literal["input_output", "executor_prompt", "reviewer_prompt"]
+
+
+class WorkspaceFileLocator(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    locator_id: str
+    content_ref: str | None = None
+    occurrence_id: str
+    node_id: str
+    target: WorkspaceFileTarget
+    source_class: WorkspaceFileSourceClass
+    raw_token: str
+    raw_path: str
+    source_file: str | None = None
+    source_span: dict[str, int] | None = None
+    token_raw_span: dict[str, int] | None = None
+    source_root: str
+    source_root_relative_to_project: str
+    project_root_relative_to_git_top: str
+    git_top_relative_path: str
+    workspace_relative_path: str
+    runtime_dynamic_after_candidate: bool = False
+    git_blob: str | None = None
+    git_file_mode: str | None = None
+    byte_size: int | None = None
+    canonical_blob_sha256: str | None = None
+    injected_sha256: str | None = None
+    literal_path_verified: bool = False
+    utf8_validated: bool = False
+
+
 class PreflightExecutionNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -212,8 +264,10 @@ class PreflightExecutionNode(BaseModel):
     render_plan_id: str | None = None
     provider_records: list[ProviderRecord] = Field(default_factory=list)
     execution_policy: ExecutionPolicy = Field(default_factory=ExecutionPolicy)
+    workspace_policy: WorkspaceSelectionRecord | None = None
     artifact_contract: ArtifactContract
     input_content_ref: str | None = None
+    input_workspace_file_locator_id: str | None = None
 
 
 class PreflightCompilationPreview(BaseModel):
@@ -226,15 +280,21 @@ class PreflightCompilationPreview(BaseModel):
     nodes: list[PreflightExecutionNode] = Field(default_factory=list)
     render_plans: list[RenderPlan] = Field(default_factory=list)
     static_resources: list[StaticResource] = Field(default_factory=list)
+    workspace_file_locators: list[WorkspaceFileLocator] = Field(default_factory=list)
     token_catalog: list[TokenCatalogEntry] = Field(default_factory=list)
     dependency_graph: list[DependencyEdge] = Field(default_factory=list)
     diagnostics: list[PreflightDiagnostic] = Field(default_factory=list)
     runtime_config_snapshot: RuntimeConfigSnapshot | None = None
     effective_runtime_config_signature: str | None = None
+    workspace_source: WorkspaceSourceSnapshot | None = None
     value_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     fingerprint_metadata: JsonObject = Field(default_factory=dict)
     secret_context: SecretContext = Field(default_factory=SecretContext, exclude=True)
     static_file_payloads: dict[str, bytes] = Field(default_factory=dict, exclude=True)
+    workspace_file_payloads: dict[str, bytes] = Field(
+        default_factory=dict,
+        exclude=True,
+    )
 
     @field_validator("plan_schema_version")
     @classmethod
@@ -251,6 +311,7 @@ class PreflightExecutionPlan(BaseModel):
     plan_schema_version: str = SCHEMA_VERSION
     run_id: str
     run_key_name: str
+    project_root: str
     context_root: str
     manifest_root: str
     created_at: str
@@ -261,10 +322,12 @@ class PreflightExecutionPlan(BaseModel):
     nodes: list[PreflightExecutionNode]
     render_plans: list[RenderPlan]
     static_resources: list[StaticResource]
+    workspace_file_locators: list[WorkspaceFileLocator] = Field(default_factory=list)
     token_catalog: list[TokenCatalogEntry]
     dependency_graph: list[DependencyEdge]
     runtime_config_snapshot: JsonObject
     effective_runtime_config_signature: str
+    workspace_source: WorkspaceSourceSnapshot | None = None
     value_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     fingerprint_metadata: JsonObject
 
@@ -288,6 +351,7 @@ class PreflightExecutionPlan(BaseModel):
         preview: PreflightCompilationPreview,
         run_id: str,
         run_key_name: str,
+        project_root: str,
         context_root: str,
         manifest_root: str,
         created_at: datetime,
@@ -299,6 +363,7 @@ class PreflightExecutionPlan(BaseModel):
         return cls(
             run_id=run_id,
             run_key_name=run_key_name,
+            project_root=project_root,
             context_root=context_root,
             manifest_root=manifest_root,
             created_at=created_at.isoformat(),
@@ -308,11 +373,13 @@ class PreflightExecutionPlan(BaseModel):
             nodes=list(preview.nodes),
             render_plans=list(preview.render_plans),
             static_resources=list(preview.static_resources),
+            workspace_file_locators=list(preview.workspace_file_locators),
             token_catalog=list(preview.token_catalog),
             dependency_graph=list(preview.dependency_graph),
             runtime_config_snapshot=preview.runtime_config_snapshot.redacted_payload(),
             effective_runtime_config_signature=preview.effective_runtime_config_signature
             or "",
+            workspace_source=preview.workspace_source,
             value_fingerprints=list(preview.value_fingerprints),
             fingerprint_metadata=dict(preview.fingerprint_metadata),
         )

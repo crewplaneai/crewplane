@@ -72,6 +72,110 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             self.assertIn("Provider validation failed", output_text)
             self.assertIn("definitely-not-installed-cli", output_text)
 
+    def test_validate_compiles_without_real_workspace_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yml"
+            workflow_path = tmp_path / "workflow.task.md"
+            write_basic_config(config_path)
+            write_basic_workflow(workflow_path)
+
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            original_compile = cli.workflow_runner.compile_workflow_preview
+            workspace_real_execution_values: list[bool | None] = []
+
+            def recording_compile_workflow_preview(*args: object, **kwargs: object):
+                workspace_real_execution_values.append(
+                    kwargs.get("workspace_real_execution")
+                )
+                return original_compile(*args, **kwargs)
+
+            cli.Console = ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            )
+            cli.workflow_runner.compile_workflow_preview = (
+                recording_compile_workflow_preview
+            )
+            try:
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+            finally:
+                cli.workflow_runner.compile_workflow_preview = original_compile
+                cli.Console = original_console_cls
+
+            self.assertEqual(workspace_real_execution_values, [False])
+
+    def test_validate_skips_real_workspace_relative_executable_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yml"
+            workflow_path = tmp_path / "workflow.task.md"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        f'version: "{SCHEMA_VERSION}"',
+                        "",
+                        "agents:",
+                        "  alpha:",
+                        '    cli_cmd: ["./bin/provider"]',
+                        "",
+                        "settings:",
+                        "  workspace:",
+                        "    enabled: true",
+                        "  integrations:",
+                        "    invoker:",
+                        '      implementation: "cli"',
+                        "      options: {}",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            workflow_path.write_text(
+                "\n".join(
+                    [
+                        "---",
+                        f'schema_version: "{SCHEMA_VERSION}"',
+                        "name: Workspace Task",
+                        "worktrees:",
+                        "  primary:",
+                        "    kind: worktree",
+                        "nodes:",
+                        "  - id: implement",
+                        "    mode: sequential",
+                        "    providers: [alpha]",
+                        "---",
+                        "",
+                        "## implement",
+                        "",
+                        "run",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            )
+            try:
+                with self.assertRaises(typer.Exit):
+                    cli.validate(tasks_file=workflow_path, config_file=config_path)
+            finally:
+                cli.Console = original_console_cls
+
+            output_text = stream.getvalue()
+            self.assertIn("Workspace validation failed", output_text)
+            self.assertIn("requires a Git repository", output_text)
+            self.assertNotIn("relative path executable", output_text)
+            self.assertIn("./bin/provider", output_text)
+
     def test_validate_shows_warning_for_argv_prompt_transport(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

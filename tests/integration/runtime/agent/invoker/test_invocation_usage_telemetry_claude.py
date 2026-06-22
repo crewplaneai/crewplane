@@ -3,7 +3,11 @@ import unittest
 from pathlib import Path
 
 from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
+from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
+    CommandResult,
+    InvocationContext,
+)
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
@@ -29,8 +33,10 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
                 captured["stdin_data"] = stdin_data
@@ -49,7 +55,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
-                cli_cmd=["claude"],
+                cli_cmd=["./claude"],
                 provider_kind="claude",
                 default_model="sonnet",
                 pricing={"input": 3.0, "output": 15.0},
@@ -59,6 +65,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 model="sonnet",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
@@ -68,7 +75,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 captured["cmd"],
                 [
-                    "claude",
+                    "./claude",
                     "--model",
                     "sonnet",
                     "--output-format",
@@ -93,8 +100,10 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 return CommandResult(
                     returncode=0,
@@ -111,7 +120,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
-                cli_cmd=["claude"],
+                cli_cmd=["./claude"],
                 provider_kind="claude",
                 default_model="sonnet",
             )
@@ -120,6 +129,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 model="sonnet",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
@@ -144,8 +154,10 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 return CommandResult(
                     returncode=0,
@@ -162,7 +174,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
-                cli_cmd=["claude"],
+                cli_cmd=["./claude"],
                 provider_kind="claude",
                 default_model="sonnet",
             )
@@ -174,6 +186,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                     model="sonnet",
                     prompt="review the repository",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
@@ -200,8 +213,10 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 return CommandResult(
                     returncode=0,
@@ -223,6 +238,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 model="test-model",
                 prompt="prompt",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
@@ -249,8 +265,10 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 return CommandResult(returncode=1, stdout_text="", stderr_text="boom")
 
@@ -269,6 +287,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,
@@ -294,8 +313,10 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 return CommandResult(
                     returncode=1,
@@ -318,6 +339,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=context,
                     command_runner=runner,

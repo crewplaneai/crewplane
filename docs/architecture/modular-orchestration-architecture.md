@@ -60,6 +60,20 @@ agents:
     prompt_transport_arg: "-"
 
 settings:
+  workspace:
+    enabled: false
+    cache_root: null
+    cleanup_on_success: true
+    worktree_contract: "blob_exact"
+    clean_start: "strict"
+    setup_profiles: {}
+    setup_timeout_seconds: 600
+    identity:
+      include_cache_root: false
+    max_concurrent_materializations: 1
+    disk:
+      warn_free_bytes: null
+      fail_free_bytes: null
   integrations:
     invoker:
       implementation: "cli"
@@ -76,6 +90,18 @@ settings:
         log_cli_output: true
         allowed_template_paths: []
 ```
+
+Workspace behavior:
+- `settings.workspace.enabled: false` preserves project-root execution and does not require Git.
+- `settings.workspace.enabled: true` is only a gate: managed workspaces are allocated only when a workflow declares `worktrees` and provider nodes select them.
+- Workflow declarations use `kind: worktree` for lineage-producing mutable checkouts and `kind: snapshot` for writable disposable checkouts.
+- Nodes select with `worktree: <name>` or opt out with `worktree: none`; input nodes never allocate provider workspaces.
+- Managed workspace preflight validates the `blob_exact` source contract, workflow policy, invoker cwd capability metadata, clean-start policy, and repo-relative workspace-file locators.
+- Disk guardrails estimate checkout size and compare expected remaining cache filesystem capacity with configured thresholds.
+- Real execution records workspace state, checkout size/provisioning metadata, and Git bundles under `.orchestrator/`.
+- Real execution supports runtime-dynamic upstream/reviewer file locators, verified artifact-backed duplicate-skip/resume, setup profiles, post-run local branch export with recorded fulfillment metadata, generated branch names shaped as `orchestrator/<workflow>/<worktree>/<run-key>`, and `orchestrator cleanup workspaces`.
+- Workspace isolation is source-tree isolation, not a provider sandbox.
+- Allowlisted absolute external files remain static preflight resources.
 
 tmux UI option intent:
 - `quiet_after_seconds`: when a running invocation has not appended new log output for this long, render quiet-state liveness messaging in the right pane.

@@ -8,6 +8,7 @@ from orchestrator_cli.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
 )
+from orchestrator_cli.runtime.execution.workspace_files import ResolvedWorkspaceFile
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class ParallelInvocation:
     prompt: str
     output_file: Path
     task_id: str
+    workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 
 @dataclass(frozen=True)

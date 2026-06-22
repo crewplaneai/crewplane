@@ -11,9 +11,21 @@ from orchestrator_cli.architecture.contracts import (
     PromptTransport,
     ProviderKind,
 )
-from orchestrator_cli.core.config import Config, Settings, TokenPricing
+from orchestrator_cli.core.config import (
+    Config,
+    Settings,
+    TokenPricing,
+)
+from orchestrator_cli.core.config_workspace import (
+    WorkspaceDiskGuardrails,
+    WorkspaceIdentitySettings,
+    WorkspaceSettings,
+    WorkspaceSetupProfile,
+)
 from orchestrator_cli.core.token_budget import TokenBudgetSettings
 from orchestrator_cli.core.workflow_keywords import SequentialConsensusPolicy
+from orchestrator_cli.core.workspace_cache import workspace_cache_root
+from orchestrator_cli.core.workspace_policy import WorktreeContract
 from orchestrator_cli.version import SCHEMA_VERSION
 
 from .runtime_config_redaction import (
@@ -26,8 +38,6 @@ from .signatures import signature_for_payload
 
 
 class RuntimeConfigSnapshotOptions(BaseModel):
-    """CLI/UI-derived flags classified before signature computation."""
-
     model_config = ConfigDict(extra="forbid")
 
     no_live: bool = False
@@ -43,6 +53,23 @@ class RuntimeExecutionSnapshot(BaseModel):
     max_parallel_invocations: int | None = None
     sequential_consensus_on_exhaustion: SequentialConsensusPolicy
     token_budget: TokenBudgetSettings
+
+
+class RuntimeWorkspaceSettingsSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    cache_root: str | None = None
+    cleanup_on_success: bool = True
+    worktree_contract: WorktreeContract = Field(default_factory=WorktreeContract)
+    clean_start: str = "strict"
+    setup_profiles: dict[str, WorkspaceSetupProfile] = Field(default_factory=dict)
+    setup_timeout_seconds: float = 600.0
+    identity: WorkspaceIdentitySettings = Field(
+        default_factory=WorkspaceIdentitySettings
+    )
+    max_concurrent_materializations: int = 1
+    disk: WorkspaceDiskGuardrails = Field(default_factory=WorkspaceDiskGuardrails)
 
 
 class RuntimeAgentConfigSnapshot(BaseModel):
@@ -144,6 +171,9 @@ class RuntimeConfigSnapshot(BaseModel):
         default_factory=RuntimeValidationSnapshot
     )
     observer: RuntimeObserverSnapshot = Field(default_factory=RuntimeObserverSnapshot)
+    workspace: RuntimeWorkspaceSettingsSnapshot = Field(
+        default_factory=RuntimeWorkspaceSettingsSnapshot
+    )
     sensitive_config_paths: list[str] = Field(default_factory=list)
     config_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     effective_runtime_config_signature: str
@@ -194,6 +224,7 @@ class RuntimeConfigSnapshot(BaseModel):
             console_is_terminal=options.console_is_terminal,
             no_live=options.no_live,
         )
+        workspace = runtime_workspace_snapshot(settings.workspace)
         redacted_invoker, _ = integration_with_sensitive_option_fingerprints(
             invoker,
             "invoker",
@@ -215,6 +246,7 @@ class RuntimeConfigSnapshot(BaseModel):
             "execution": execution,
             "invoker": redacted_invoker.scoped_payload({"execution", "artifact"}),
             "schema_version": config.version,
+            "workspace": workspace_signature_payload(workspace),
         }
         return cls(
             schema_version=config.version,
@@ -225,6 +257,7 @@ class RuntimeConfigSnapshot(BaseModel):
             ui=redacted_ui,
             validation=RuntimeValidationSnapshot(integrations_loaded=True),
             observer=observer,
+            workspace=workspace,
             sensitive_config_paths=sensitive_paths,
             raw_agents=raw_agents,
             raw_invoker=invoker,
@@ -312,5 +345,59 @@ class RuntimeConfigSnapshot(BaseModel):
             "execution": self.execution,
             "invoker": signature_invoker.scoped_payload({"execution", "artifact"}),
             "schema_version": self.schema_version,
+            "workspace": workspace_signature_payload(self.workspace),
         }
         return signature_for_payload(payload)
+
+
+def runtime_workspace_snapshot(
+    workspace: WorkspaceSettings,
+) -> RuntimeWorkspaceSettingsSnapshot:
+    if not workspace.enabled:
+        return RuntimeWorkspaceSettingsSnapshot()
+    return RuntimeWorkspaceSettingsSnapshot(
+        enabled=workspace.enabled,
+        cache_root=workspace.cache_root,
+        cleanup_on_success=workspace.cleanup_on_success,
+        worktree_contract=WorktreeContract(
+            mode=workspace.worktree_contract,
+            schema_version=SCHEMA_VERSION,
+        ),
+        clean_start=workspace.clean_start,
+        setup_profiles=dict(sorted(workspace.setup_profiles.items())),
+        setup_timeout_seconds=workspace.setup_timeout_seconds,
+        identity=workspace.identity,
+        max_concurrent_materializations=workspace.max_concurrent_materializations,
+        disk=workspace.disk,
+    )
+
+
+def workspace_signature_payload(
+    workspace: RuntimeWorkspaceSettingsSnapshot,
+) -> JsonObject:
+    if not workspace.enabled:
+        return {"enabled": False}
+    payload: JsonObject = {
+        "clean_start": workspace.clean_start,
+        "enabled": True,
+        "worktree_contract": workspace.worktree_contract.model_dump(mode="json"),
+    }
+    if workspace.identity.include_cache_root:
+        payload["cache_root"] = workspace_cache_root(workspace.cache_root).as_posix()
+        payload["identity"] = workspace.identity.model_dump(mode="json")
+    return payload
+
+
+def runtime_config_signature(
+    snapshot: RuntimeConfigSnapshot,
+    workspace_payload: JsonObject,
+) -> str:
+    payload = {
+        "agents": runtime_agent_snapshot_payloads(snapshot.agents),
+        "artifacts": snapshot.artifacts.scoped_payload({"artifact", "execution"}),
+        "execution": snapshot.execution,
+        "invoker": snapshot.invoker.scoped_payload({"execution", "artifact"}),
+        "schema_version": snapshot.schema_version,
+        "workspace": workspace_payload,
+    }
+    return signature_for_payload(payload)

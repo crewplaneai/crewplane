@@ -205,7 +205,20 @@ agents:
     quota_reached_retry_delay_seconds: 300
 
 settings:
-  default_workspace: ".orchestrator/workspaces"
+  workspace:
+    enabled: false
+    cache_root: null
+    cleanup_on_success: true
+    worktree_contract: "blob_exact"
+    clean_start: "strict" # strict | tracked_only
+    setup_profiles: {} # e.g. bootstrap: {run: [["uv", "sync"]]}
+    setup_timeout_seconds: 600
+    identity:
+      include_cache_root: false
+    max_concurrent_materializations: 1
+    disk:
+      warn_free_bytes: null
+      fail_free_bytes: null
   log_level: "info"
   sequential_consensus_on_exhaustion: "continue" # continue | fatal
   max_audit_rounds: 5
@@ -228,6 +241,98 @@ settings:
         log_cli_output: true
         allowed_template_paths: []
 ```
+
+Workspace isolation is opt-in and disabled by default. `enabled: false` keeps
+current project-root execution and does not require a Git repository. The
+removed `settings.default_workspace` key is rejected; use
+`settings.workspace.cache_root` only when workspace isolation is enabled.
+
+`settings.workspace.enabled: true` only permits managed workflow worktrees; it
+does not allocate a checkout unless the workflow declares `worktrees`. Managed
+workspace mode requires Git and the fail-closed `blob_exact` contract. The
+`clean_start` policy controls dirty-tree preflight (`strict` or
+`tracked_only`). `cache_root` is excluded from semantic workflow identity unless
+`identity.include_cache_root: true`. Disk guardrails estimate checkout size from
+Git object metadata, fall back to the project working tree when needed, and
+compare the expected remaining free bytes against `disk.warn_free_bytes` and
+`disk.fail_free_bytes`.
+
+Initial managed-workspace support is intentionally narrow:
+
+| Repository feature | Support | Remediation |
+| --- | --- | --- |
+| Clean ordinary Git repository | Yes | Use `settings.workspace.enabled: true` with workflow `worktrees` |
+| Non-Git project | No | Keep `settings.workspace.enabled: false` |
+| Git LFS or custom filters | No | Disable workspace isolation for that run |
+| Text/eol-transforming attributes | No | Disable workspace isolation or remove the attribute for workspace runs |
+| Submodules | No | Disable workspace isolation or restructure the workflow |
+| Sparse or partial clone | No | Use a full clone |
+| Ordinary ignored caches | Yes | Use setup profiles or writable `snapshot` scratch space |
+
+Workflow files declare logical worktrees at the workflow level and select them
+per provider node:
+
+```yaml
+---
+schema_version: "<schema-version>"
+name: Workspace Example
+worktrees:
+  implementation:
+    kind: worktree
+    setup_profile: bootstrap
+    create_branch: true
+    branch_name: feature/generated-change
+  scratch:
+    kind: snapshot
+nodes:
+  - id: implement
+    mode: sequential
+    providers: [codex]
+    worktree: implementation
+  - id: review
+    mode: sequential
+    needs: [implement]
+    providers: [claude]
+    worktree: scratch
+  - id: summarize
+    mode: sequential
+    needs: [review]
+    providers: [claude]
+    worktree: none
+---
+```
+
+If exactly one worktree is declared, provider nodes inherit it unless they set
+`worktree: none`. If multiple worktrees are declared, each provider node must
+select one or opt out with `worktree: none`. Input nodes never allocate
+provider workspaces and reject explicit `worktree` selectors.
+
+`kind: worktree` creates lineage-producing mutable checkouts for executor and
+remediator invocations; each successful lineage checkpoint writes
+`workspace-state.json` and a Git bundle under `.orchestrator/`. `kind: snapshot`
+creates writable disposable checkouts whose filesystem drift is discarded and
+reported with `snapshot_drift_discarded`, `changed_path_count`, a bounded
+`changed_paths` sample, and `changed_paths_truncated`; snapshots do not produce
+lineage bundles. Setup profiles run only for selected `kind: worktree`
+declarations, before provider invocation, and record argv, output, status,
+timing, and the effective working directory under `workspace-setup/`; do not put
+secrets directly in setup argv or output. Workspace state records checkout size
+and provisioning duration as execution metadata. Branch export runs after successful
+execution, resume, or duplicate-skip by creating or verifying a local branch
+from verified lineage artifacts. It refuses unrelated or mismatched existing
+branches and never pushes, merges, rebases, or switches the checkout. Fulfillment
+records include `status` (`fulfilled`, `skipped`, or `failed_verification`),
+the operation, branch existence before and after verification, checkpoint
+identity, and any failure message. They are written in `workspace-state.json`
+and in `workspace-exports/`, and successful run or duplicate-skip fulfillment
+prints the selected worktree, status, operation, branch, and result commit.
+When `branch_name` is omitted, generated branch names use
+`orchestrator/<workflow>/<worktree>/<run-key>`.
+`orchestrator run --dry-run` verifies the selected successful run's branch
+export plan without creating refs and prints the planned operation.
+Workspace isolation is source-tree isolation, not a provider sandbox. Disabled
+mode and allowlisted absolute external file resources keep their existing static
+preflight behavior.
 
 The generated provider profiles are intentionally optimized for unattended
 workflow execution. They include provider-specific approval bypass flags such as
@@ -501,6 +606,9 @@ Behavior:
 - `{{node.findings}}` resolves to the concise findings artifact extracted from the marked block.
 - `{{node.output_path}}` and `{{node.findings_path}}` resolve to the artifact paths without injecting artifact contents.
 - `{{node.output_size}}`, `{{node.findings_size}}`, `{{node.output_sha256}}`, and `{{node.findings_sha256}}` resolve to artifact metadata for compact handoff manifests.
+- Parent artifacts are still handed off explicitly through these tokens; plain
+  `needs` controls scheduling and validation, not automatic result-content
+  injection.
 - Findings artifacts are written only for nodes that declare `findings: true`.
 - Findings extraction reads the latest eligible executor outputs only, in configured provider order. Reviewer outputs are ignored in mixed-role sequential nodes.
 - Findings extraction fails the node if an eligible executor output is missing the block, contains multiple blocks, or contains an empty block.
@@ -516,6 +624,10 @@ orchestrator run --tasks .orchestrator/workflows/example-templates/design-review
 orchestrator run --tasks .orchestrator/workflows/example-templates/test-generation-example.task.md
 orchestrator run --tasks .orchestrator/workflows/example-templates/composition/review-fix-composed-example.task.md
 ```
+
+Worktree-specific examples live under
+`.orchestrator/workflows/example-templates/worktree/`. Enable
+`settings.workspace.enabled: true` before running those workflows.
 
 ### Full Parallel
 
@@ -592,6 +704,7 @@ Merge:
 | `orchestrator run --dry-run` | Preview without executing |
 | `orchestrator run --force` | Execute even when identical workflow-signature outputs already exist |
 | `orchestrator validate` | Validate workflow syntax, duplicate frontmatter keys, imports/composition, DAG/node sections, provider references, CLI availability when using the built-in `cli` invoker, token-budget settings, and `{{file/env/var}}` template references (uses `--config` or defaults to `.orchestrator/config.yml`) |
+| `orchestrator cleanup workspaces` | Preview or remove stale orchestrator-managed workspace cache entries |
 
 ## Configuration Reference
 
@@ -885,20 +998,21 @@ When the `continue` policy lets a run finish after unresolved review consensus, 
 Results are saved under a bounded run key shaped like
 `<workflow>--<hash>-<run_id>`:
 - `.orchestrator/execution-stages/<run_key>/<node>/` – Individual outputs per round for a run
-- `.orchestrator/execution-stages/<run_key>/preflight/` – Compiled execution plan, preflight manifest/metadata/summary, render plans, dependency graph, runtime config snapshot, token catalog, diagnostics when preflight fails, and bundled static files
+- `.orchestrator/execution-stages/<run_key>/preflight/` – Compiled execution plan, preflight manifest/metadata/summary, render plans, dependency graph, runtime config snapshot, token catalog, workspace-file locator records when a workspace source snapshot is present, diagnostics when preflight fails, and bundled static files
 - `.orchestrator/execution-stages/<run_key>/logs/events.ndjson` – Run-level orchestrator event log
-- `.orchestrator/execution-stages/<run_key>/logs/summary.md` – Run-level orchestrator summary for postmortems
+- `.orchestrator/execution-stages/<run_key>/logs/summary.md` – Run-level orchestrator summary for postmortems, including workspace setup, reuse/reset, snapshot drift, cache placement, and branch export observability when managed workspaces are used
 - `.orchestrator/execution-stages/<run_key>/<node>/logs/<provider>/` – Per-invocation logs for each node
+- `.orchestrator/execution-stages/<run_key>/workspace-exports/` – Local branch export fulfillment records for managed worktrees, including fulfilled, skipped, and failed-verification outcomes
 - `.orchestrator/execution-stages/<run_key>/manifests/run.json` – Current-layout run state, including terminal status, workflow identity, workflow signature, preflight references, and resume metadata
 - `.orchestrator/execution-stages/<run_key>/manifests/nodes/` – Successful node-boundary state records used for same-context resume
 - `.orchestrator/locks/` – Same-context filesystem locks used by real runs before skip, resume, or full execution decisions
 - `.orchestrator/execution-results/<run_key>/` – Consolidated per-node results for a run, created only after node results are finalized
 
-Run manifests use a single workflow-level signature built from the composed workflow, referenced workflow files, provider execution settings, execution/artifact-scoped integration options, dependency graph, static file content hashes, and env/var/config fingerprints. They store the scoped `effective_runtime_config_signature` and redacted runtime config snapshot, not raw config YAML. Observer-only live UI settings such as `--no-live` are excluded. When any valid same-context successful `run.json` already exists, `orchestrator run` suppresses the whole run unless `--force` is provided. If no same-context success exists, a failed or cancelled current-layout run may resume only validated completed node boundaries by hydrating consolidated result artifacts and required findings artifacts into a fresh run directory. Raw stage outputs, logs, review scratch state, and review-loop status are not reused. `--force` bypasses skip and resume hydration while still using the same-context lock. `--dry-run` is advisory and side-effect-free.
+Run manifests use a single workflow-level signature built from the composed workflow, referenced workflow files, provider execution settings, execution/artifact-scoped integration options, dependency graph, static file content hashes, and env/var/config fingerprints. They store the scoped `effective_runtime_config_signature` and redacted runtime config snapshot, not raw config YAML. Observer-only live UI settings such as `--no-live` are excluded. When any valid same-context successful `run.json` already exists, `orchestrator run` suppresses the whole run unless `--force` is provided. If no same-context success exists, a failed or cancelled current-layout run may resume only validated completed node boundaries by hydrating consolidated result artifacts, required findings artifacts, workspace state/bundle descriptors, and the selected review-loop status/output descriptors needed to preserve workspace lineage into a fresh run directory. Raw stage outputs, logs, review scratch state, and live workspace paths are not reused. `--force` bypasses skip and resume hydration while still using the same-context lock. `--dry-run` is advisory and side-effect-free.
 
 Preflight secrets are fingerprinted with `.orchestrator/preflight/fingerprint.key`. `orchestrator init` creates this key, and `orchestrator run` creates it only when sensitive env/var/config values need stable fingerprints. `orchestrator validate` and `orchestrator run --dry-run` do not write artifacts or create the key; if the key is absent, they use a process-local ephemeral key for that preview. Sensitive values are persisted only as handles and fingerprints, so persisted plans cannot replay sensitive prompt text without the same-process secret context. Provider-emitted output is outside orchestrator redaction and may contain anything the provider prints.
 
-`{{file:...}}` references are read during preflight as UTF-8 text and bundled under `preflight/static-files/`; binary, NUL-containing, or non-UTF-8 content fails before provider invocation. In imported Markdown workflows, relative file tokens resolve from the imported module's source directory before the normal project-root and allowlist checks.
+When workspace isolation is disabled, or when no provider node selects a managed worktree, `{{file:...}}` references are read during preflight as UTF-8 text and bundled under `preflight/static-files/`; binary, NUL-containing, or non-UTF-8 content fails before provider invocation. In imported Markdown workflows, relative file tokens resolve from the imported module's source directory before the normal project-root and allowlist checks. Managed-worktree repo-relative file tokens compile as workspace-file locator descriptors once the CLI source gate issues a trusted source snapshot. Project-initial locators read Git blob bytes from the recorded base commit. Runtime-dynamic upstream, reviewer, and remediation locators are resolved from captured result commits for the current invocation source after an executor candidate has been captured.
 
 Result filenames preserve distinct valid node IDs and use dash suffixes:
 - `<node-id>-result.md` for the full consolidated result
@@ -913,9 +1027,19 @@ Review-loop stage layout is conditional:
 
 Consolidated results remain current-output-only per task id for token efficiency, but review-loop stages now prefer the explicit paths in `review-loop-status.json` instead of inferring the final candidate from lexically latest filenames. Full history stays under `.orchestrator/execution-stages/`. Review inbox artifacts record the current and previous executor artifact paths for each executor in the local round so multi-executor follow-up stays auditable. When multiple outputs or findings are consolidated, sections are written in configured provider order where that order is meaningful, not alphabetical `task_id` order.
 
-When included stage outputs contain an explicit `Generated Files` section, or clearly say in past tense that they created, wrote, saved, generated, renamed, moved, or updated an existing workspace file, the consolidated result appends a `Generated Files` section with links to those files. Imperative review guidance such as "move this code" or "update this file" is ignored. This section is link-only: file contents stay in the workspace and are not copied into result artifacts.
+When included stage outputs contain an explicit `Generated Files` section, or
+clearly say in past tense that they created, wrote, saved, generated, renamed,
+moved, or updated an existing file, the consolidated result appends a
+`Generated Files` section with links to those files. Imperative review guidance
+such as "move this code" or "update this file" is ignored. Workspace-disabled
+nodes link to files under the project root. Workspace-enabled provider nodes
+resolve claims against the effective invocation root; verified workspace files
+are copied under task-specific directories in the run's result directory before
+linking, so cleanup does not leave stale links to deleted workspace paths and
+multiple outputs can claim the same relative path without overwriting each
+other.
 
-`logs` and `manifests` are reserved run-root names and cannot be used as node IDs.
+`logs`, `manifests`, and `workspace-exports` are reserved run-root names and cannot be used as node IDs.
 
 ## Contributing
 

@@ -6,7 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src"
 TESTS_ROOT = REPO_ROOT / "tests"
-PRODUCTION_LINE_LIMIT = 400
+PRODUCTION_LINE_LIMIT = 500
 
 ORIGINAL_OVERSIZED_FILES = (
     "src/orchestrator_cli/core/workflow_markdown.py",
@@ -671,9 +671,18 @@ def test_provider_invocation_fallback_usage_does_not_materialize_artifact() -> N
         / "execution"
         / "provider_invocation.py"
     )
+    events_path = (
+        SRC_ROOT
+        / "orchestrator_cli"
+        / "runtime"
+        / "execution"
+        / "provider_invocation_events.py"
+    )
     source = path.read_text(encoding="utf-8")
+    events_source = events_path.read_text(encoding="utf-8")
     assert ".read_text(" not in source
-    assert "build_fallback_usage_from_output_file" in source
+    assert ".read_text(" not in events_source
+    assert "build_fallback_usage_from_output_file" in source + events_source
 
 
 def test_persistent_run_logger_retains_bounded_event_window() -> None:

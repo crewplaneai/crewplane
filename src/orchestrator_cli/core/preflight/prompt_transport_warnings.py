@@ -5,6 +5,10 @@ from orchestrator_cli.core.preflight.compile_state import (
     CompileState,
     append_diagnostic,
 )
+from orchestrator_cli.core.preflight.diagnostics import (
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 
 
 def collect_prompt_transport_warnings(
@@ -27,8 +31,8 @@ def append_prompt_transport_warning(
     )
     append_diagnostic(
         state,
-        code="PROVIDER-CONFIG",
-        phase="provider",
+        code=PreflightDiagnosticCode.PROVIDER_CONFIG,
+        phase=PreflightDiagnosticPhase.PROVIDER,
         message=message,
         severity="warning",
     )

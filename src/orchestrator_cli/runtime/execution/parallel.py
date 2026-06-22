@@ -19,10 +19,11 @@ from .common import (
     ProviderCallDisplay,
     ProviderCallRequest,
     execution_console,
-    resolve_prompt_with_output_budget,
+    resolve_prompt_with_output_budget_details,
     run_provider_invocation,
     should_print_console,
 )
+from .workspace_files import ResolvedWorkspaceFile
 
 type ParallelInvocationResult = Path | Exception
 
@@ -32,6 +33,7 @@ def _build_parallel_invocations(
     node: PreflightExecutionNode,
     node_dir: Path,
     base_prompt: str,
+    workspace_files: tuple[ResolvedWorkspaceFile, ...],
     telemetry: ExecutionTelemetry | None,
 ) -> list[ParallelInvocation]:
     invocations: list[ParallelInvocation] = []
@@ -52,6 +54,7 @@ def _build_parallel_invocations(
                 prompt=base_prompt,
                 output_file=output_file,
                 task_id=provider.task_id,
+                workspace_files=workspace_files,
             )
         )
     return invocations
@@ -87,6 +90,7 @@ async def _run_parallel_invocations(
             invoker=invoker,
             telemetry=telemetry,
             findings_enabled=node.findings,
+            rendered_workspace_files=invocation.workspace_files,
         )
         result = await run_provider_invocation(
             request,
@@ -149,11 +153,16 @@ def _record_parallel_failure(
     return 1
 
 
-def _enforce_parallel_failure_policy(
+def enforce_parallel_failure_policy(
     node: PreflightExecutionNode,
     summary: ParallelResultSummary,
     telemetry: ExecutionTelemetry | None,
 ) -> bool:
+    if summary.failed and _lineage_worktree_node(node):
+        raise RuntimeError(
+            f"Parallel node '{node.id}' uses a lineage-producing worktree and "
+            "cannot continue after executor failure."
+        )
     failure_threshold = node.execution_policy.failure_threshold
     allowed_failures = failure_threshold if failure_threshold is not None else 0
     continue_on_failure = node.execution_policy.continue_on_failure
@@ -170,6 +179,16 @@ def _enforce_parallel_failure_policy(
             f"[yellow]WARN[/] {message} Continuing due to continue_on_failure=true."
         )
     return False
+
+
+def _lineage_worktree_node(node: PreflightExecutionNode) -> bool:
+    policy = node.workspace_policy
+    return (
+        policy is not None
+        and policy.enabled
+        and policy.materialization == "worktree_checkout"
+        and policy.lineage_producer
+    )
 
 
 def _warn_on_partial_parallel_failures(
@@ -202,7 +221,7 @@ def _handle_parallel_results(
         successful=len(invocations) - failed_count,
         failed=failed_count,
     )
-    should_warn_partial = _enforce_parallel_failure_policy(node, summary, telemetry)
+    should_warn_partial = enforce_parallel_failure_policy(node, summary, telemetry)
     if should_warn_partial:
         _warn_on_partial_parallel_failures(node, summary, telemetry)
     return summary
@@ -217,7 +236,7 @@ async def execute_parallel_stage(
 ) -> None:
     """Execute all providers in parallel with a shared node prompt."""
     node_dir = output.create_stage_dir(stage.id)
-    base_prompt = resolve_prompt_with_output_budget(
+    resolved_prompt = resolve_prompt_with_output_budget_details(
         runtime_context,
         stage,
         output,
@@ -228,7 +247,8 @@ async def execute_parallel_stage(
         runtime_context,
         stage,
         node_dir,
-        base_prompt,
+        resolved_prompt.text,
+        resolved_prompt.workspace_files,
         telemetry=telemetry,
     )
     results = await _run_parallel_invocations(

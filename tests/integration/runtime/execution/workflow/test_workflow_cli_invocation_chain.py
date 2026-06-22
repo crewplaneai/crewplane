@@ -7,7 +7,10 @@ from orchestrator_cli.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from orchestrator_cli.architecture.contracts import CommandResult
+from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
+    CommandResult,
+)
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config
 from orchestrator_cli.core.workflow_models import (
@@ -32,7 +35,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
             config = Config(
                 version=SCHEMA_VERSION,
                 agents={
-                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
+                    "alpha": AgentConfig(cli_cmd=["./mock"], default_model="alpha"),
                 },
             )
             workflow = WorkflowPlan(
@@ -57,8 +60,10 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by test double or callback signature.
                 append_log: bool,  # noqa: ARG001 - Required by test double or callback signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
+                cwd: Path,  # noqa: ARG001 - Required by test double or callback signature.
                 invocation_context,  # type: ignore[no-untyped-def]
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by test double or callback signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by test double or callback signature.
             ) -> CommandResult:
                 if invocation_context is None:
                     raise AssertionError(
@@ -96,7 +101,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
             config = Config(
                 version=SCHEMA_VERSION,
                 agents={
-                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
+                    "alpha": AgentConfig(cli_cmd=["./mock"], default_model="alpha"),
                 },
             )
             workflow = WorkflowPlan(
@@ -121,8 +126,10 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by test double or callback signature.
                 append_log: bool,  # noqa: ARG001 - Required by test double or callback signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
+                cwd: Path,  # noqa: ARG001 - Required by test double or callback signature.
                 invocation_context,  # type: ignore[no-untyped-def]
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by test double or callback signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by test double or callback signature.
             ) -> CommandResult:
                 if invocation_context is None:
                     raise AssertionError(
@@ -160,7 +167,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
             config = Config(
                 version=SCHEMA_VERSION,
                 agents={
-                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
+                    "alpha": AgentConfig(cli_cmd=["./mock"], default_model="alpha"),
                 },
             )
             workflow = WorkflowPlan(
@@ -196,8 +203,10 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by test double or callback signature.
                 append_log: bool,  # noqa: ARG001 - Required by test double or callback signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by test double or callback signature.
+                cwd: Path,  # noqa: ARG001 - Required by test double or callback signature.
                 invocation_context,  # type: ignore[no-untyped-def]
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by test double or callback signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by test double or callback signature.
             ) -> CommandResult:
                 if invocation_context is None:
                     raise AssertionError(

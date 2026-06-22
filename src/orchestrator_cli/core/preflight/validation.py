@@ -1,5 +1,9 @@
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight.diagnostics import PreflightDiagnostic
+from orchestrator_cli.core.preflight.diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from orchestrator_cli.core.workflow_diagnostics import WorkflowValidationDiagnostic
 from orchestrator_cli.core.workflow_models import WorkflowPlan
 from orchestrator_cli.core.workflow_validation import (
@@ -87,8 +91,8 @@ def _preflight_provider_diagnostics(
         provider_locations = ", ".join(sorted(set(locations)))
         diagnostics.append(
             PreflightDiagnostic(
-                code="PREFLIGHT-VALIDATION",
-                phase="provider",
+                code=PreflightDiagnosticCode.PREFLIGHT_VALIDATION,
+                phase=PreflightDiagnosticPhase.PROVIDER,
                 message=(
                     f"Unknown provider '{provider_name}' referenced at: "
                     f"{provider_locations}."
@@ -103,8 +107,8 @@ def _to_preflight_diagnostics(
 ) -> tuple[PreflightDiagnostic, ...]:
     return tuple(
         PreflightDiagnostic(
-            code="PREFLIGHT-VALIDATION",
-            phase=diagnostic.phase,
+            code=PreflightDiagnosticCode.PREFLIGHT_VALIDATION,
+            phase=PreflightDiagnosticPhase(diagnostic.phase),
             message=diagnostic.message,
             severity=diagnostic.severity,
             node_id=diagnostic.node_id,

@@ -16,13 +16,23 @@ from orchestrator_cli.artifacts.resume_validation import (
     ValidatedResumeFrontier,
     validate_resume_frontier,
 )
-from orchestrator_cli.artifacts.run_history import find_same_context_runs
+from orchestrator_cli.artifacts.run_history import (
+    RunHistoryError,
+    RunHistoryRecord,
+    find_same_context_runs,
+)
 from orchestrator_cli.core.config import Config, Settings
 from orchestrator_cli.core.preflight import (
     PreflightCompilationPreview,
     PreflightExecutionPlan,
 )
 from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
+from orchestrator_cli.core.preflight.workspace_observability import workspace_enabled
+from orchestrator_cli.runtime.workspace.branch_export import (
+    preview_branch_exports_from_history,
+)
+
+from .branch_export_output import print_branch_export_verifications
 
 FILESYSTEM_ARTIFACT_ADAPTER = (
     "orchestrator_cli.adapters.artifacts.filesystem:FilesystemArtifactsAdapter"
@@ -46,8 +56,9 @@ def require_filesystem_artifacts_backend(config: Config) -> None:
     if filesystem_artifacts_backend_enabled(config):
         return
     raise RuntimeError(
-        "Artifact-backed skip/resume requires the built-in filesystem artifacts "
-        "backend in this release."
+        "Real execution requires the built-in filesystem artifacts backend in "
+        "this release; non-filesystem artifact backends are limited to validate "
+        "and dry-run."
     )
 
 
@@ -85,14 +96,26 @@ def build_resume_plan(
     orchestrator_dir: Path,
     force: bool,
 ) -> ResumePlan:
-    require_filesystem_artifacts_backend(config)
     workflow_identity = workflow_identity_for_source(source, project_root)
     if preview.workflow_signature is None or preview.workflow_name is None:
         raise ValueError("Successful preflight preview is required for resume.")
+    require_filesystem_artifacts_backend(config)
     if force:
         return ResumePlan(
             workflow_identity=workflow_identity,
             decision=ResumeDecision(kind="execute_full"),
+        )
+    if workspace_enabled(preview):
+        records = find_same_context_runs(
+            orchestrator_dir=orchestrator_dir,
+            workflow_identity=workflow_identity,
+            workflow_name=preview.workflow_name,
+            workflow_signature=preview.workflow_signature,
+        )
+        return _workspace_resume_plan(
+            workflow_identity,
+            records,
+            _preview_plan_for_validation(preview, project_root),
         )
     records = find_same_context_runs(
         orchestrator_dir=orchestrator_dir,
@@ -103,7 +126,7 @@ def build_resume_plan(
     decision = decide_same_context_action(records, force)
     if decision.kind != "resume" or decision.resume_source is None:
         return ResumePlan(workflow_identity=workflow_identity, decision=decision)
-    validation_plan = _preview_plan_for_validation(preview)
+    validation_plan = _preview_plan_for_validation(preview, project_root)
     frontier = validate_resume_frontier(decision.resume_source, validation_plan)
     if not frontier.resumed_node_ids:
         return ResumePlan(
@@ -140,12 +163,38 @@ def print_dry_run_resume_advisory(
             orchestrator_dir,
             force,
         )
-    except ValueError as exc:
+    except (ValueError, PermissionError, RunHistoryError) as exc:
         console.print(f"Resume advisory: unavailable ({exc})")
         return
     match resume_plan.decision.kind:
         case "skip":
+            successful_run = resume_plan.decision.successful_run
+            branch_export_records = ()
+            if successful_run is not None:
+                branch_plan = _preview_plan_for_run(
+                    preview,
+                    successful_run.manifest.run_id,
+                    successful_run.manifest.run_key_name,
+                    project_root,
+                    successful_run.run_dir / "manifests",
+                )
+                branch_export_records = preview_branch_exports_from_history(
+                    branch_plan,
+                    successful_run,
+                )
+                if _branch_export_verification_failed(branch_export_records):
+                    print_branch_export_verifications(branch_export_records, console)
+                    console.print(
+                        "Resume advisory: unavailable "
+                        "(branch export verification failed)"
+                    )
+                    return
             console.print("Resume advisory: would_skip")
+            if branch_export_records:
+                print_branch_export_verifications(
+                    branch_export_records,
+                    console,
+                )
         case "resume":
             source_run = resume_plan.decision.resume_source
             source_run_id = (
@@ -165,14 +214,68 @@ def print_dry_run_resume_advisory(
 
 def _preview_plan_for_validation(
     preview: PreflightCompilationPreview,
+    project_root: Path,
 ) -> PreflightExecutionPlan:
     return PreflightExecutionPlan.from_preview(
         preview=preview,
         run_id="dry-run",
         run_key_name="dry-run",
+        project_root=project_root.as_posix(),
         context_root=".",
         manifest_root="./manifests",
         created_at=datetime.now(),
+    )
+
+
+def _branch_export_verification_failed(records: tuple[dict[str, object], ...]) -> bool:
+    return any(record.get("status") == "failed_verification" for record in records)
+
+
+def _preview_plan_for_run(
+    preview: PreflightCompilationPreview,
+    run_id: str,
+    run_key_name: str,
+    context_root: Path,
+    manifest_root: Path,
+) -> PreflightExecutionPlan:
+    return PreflightExecutionPlan.from_preview(
+        preview=preview,
+        run_id=run_id,
+        run_key_name=run_key_name,
+        project_root=context_root.as_posix(),
+        context_root=context_root.as_posix(),
+        manifest_root=manifest_root.as_posix(),
+        created_at=datetime.now(),
+    )
+
+
+def _workspace_resume_plan(
+    workflow_identity: str,
+    records: tuple[RunHistoryRecord, ...],
+    validation_plan: PreflightExecutionPlan,
+) -> ResumePlan:
+    for record in records:
+        if record.manifest.status != "succeeded":
+            continue
+        frontier = validate_resume_frontier(record, validation_plan)
+        if len(frontier.resumed_node_ids) == len(validation_plan.nodes):
+            return ResumePlan(
+                workflow_identity=workflow_identity,
+                decision=ResumeDecision(kind="skip", successful_run=record),
+            )
+    for record in records:
+        if record.manifest.status not in {"failed", "cancelled"}:
+            continue
+        frontier = validate_resume_frontier(record, validation_plan)
+        if frontier.resumed_node_ids:
+            return ResumePlan(
+                workflow_identity=workflow_identity,
+                decision=ResumeDecision(kind="resume", resume_source=record),
+                frontier=frontier,
+            )
+    return ResumePlan(
+        workflow_identity=workflow_identity,
+        decision=ResumeDecision(kind="execute_full"),
     )
 
 

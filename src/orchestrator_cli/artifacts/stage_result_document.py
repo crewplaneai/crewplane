@@ -4,7 +4,9 @@ from datetime import datetime
 from pathlib import Path
 
 from .generated_files import (
+    GeneratedFileLink,
     GeneratedFileReferenceDetector,
+    build_generated_file_links_section,
     build_generated_files_section,
 )
 
@@ -14,6 +16,7 @@ def write_stage_result_file(
     stage_name: str,
     result_sections: list[str],
     generated_file_reference_content: list[str],
+    generated_file_links: list[GeneratedFileLink],
     workspace_root: Path | None,
     generated_file_detector: GeneratedFileReferenceDetector | None,
 ) -> None:
@@ -24,6 +27,7 @@ def write_stage_result_file(
             stage_name,
             result_sections,
             generated_file_reference_content,
+            generated_file_links,
             workspace_root,
             generated_file_detector,
         ),
@@ -36,6 +40,7 @@ def build_stage_result_document(
     stage_name: str,
     result_sections: list[str],
     generated_file_reference_content: list[str],
+    generated_file_links: list[GeneratedFileLink],
     workspace_root: Path | None,
     generated_file_detector: GeneratedFileReferenceDetector | None,
 ) -> str:
@@ -47,6 +52,7 @@ def build_stage_result_document(
     generated_files_section = generated_files_section_for_result(
         result_file,
         generated_file_reference_content,
+        generated_file_links,
         workspace_root,
         generated_file_detector,
     )
@@ -58,9 +64,12 @@ def build_stage_result_document(
 def generated_files_section_for_result(
     result_file: Path,
     included_contents: list[str],
+    generated_file_links: list[GeneratedFileLink],
     workspace_root: Path | None,
     generated_file_detector: GeneratedFileReferenceDetector | None,
 ) -> str | None:
+    if generated_file_links:
+        return build_generated_file_links_section(result_file, generated_file_links)
     if workspace_root is None or generated_file_detector is None:
         return None
     generated_files = generated_file_detector.detect("\n".join(included_contents))

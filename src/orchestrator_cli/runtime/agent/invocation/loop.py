@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import assert_never
 
 from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
     CommandResult,
     CommandRunner,
     InvocationContext,
@@ -37,6 +38,7 @@ from .retry import (
     evaluate_failure_retry,
     evaluate_quota_retry,
 )
+from .retry_reset import reset_before_retry
 from .state import (
     ContinueAttemptTransition,
     ExtractedInvocationOutput,
@@ -71,9 +73,11 @@ async def run_invocation_loop(
     prompt: str,
     output_file: Path,
     log_file: Path | None,
+    cwd: Path,
     invocation_context: InvocationContext | None,
     command_runner: CommandRunner,
     plan: InvocationPlan,
+    child_environment: ChildProcessEnvironment | None = None,
 ) -> None:
     runtime = build_invocation_runtime(plan)
     attempt = 0
@@ -95,9 +99,11 @@ async def run_invocation_loop(
                 command_runner=command_runner,
                 log_file=log_file,
                 attempt=attempt,
+                cwd=cwd,
                 invocation_context=invocation_context,
                 timeout_seconds=config.invocation_timeout_seconds,
                 idle_timeout_seconds=config.invocation_idle_timeout_seconds,
+                child_environment=child_environment,
             )
             attempt_result = build_invocation_attempt_result(
                 runtime=runtime,
@@ -245,6 +251,7 @@ async def _execute_transition_action(
             ):
                 record_transition_outputs(transition, usage_state, invocation_context)
                 emit_notice(invocation_context, transition.notice)
+                await reset_before_retry(invocation_context)
                 next_attempt = await _sleep_before_next_attempt(
                     retry_delay_seconds,
                     attempt,

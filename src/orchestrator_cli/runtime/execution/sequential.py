@@ -11,10 +11,11 @@ from .common import (
     ExecutionTelemetry,
     ProviderCallDisplay,
     ProviderCallRequest,
-    resolve_prompt_with_output_budget,
+    resolve_prompt_with_output_budget_details,
     run_provider_call,
 )
 from .review_loop import execute_review_loop_stage
+from .workspace_files import WorkspaceCandidateSourceContext
 
 DEFAULT_SINGLE_PROVIDER_ROUNDS = 1
 
@@ -38,14 +39,24 @@ async def _execute_single_provider_sequential_node(
     telemetry: ExecutionTelemetry | None,
 ) -> None:
     provider = node.provider_records[0]
-    prompt = resolve_prompt_with_output_budget(
-        runtime_context,
-        node,
-        output,
-        role="executor",
-        telemetry=telemetry,
-    )
     for round_num in range(1, max_rounds + 1):
+        resolved_prompt = resolve_prompt_with_output_budget_details(
+            runtime_context,
+            node,
+            output,
+            role="executor",
+            telemetry=telemetry,
+            workspace_candidate_source=round_num > 1,
+            workspace_candidate_context=(
+                WorkspaceCandidateSourceContext(
+                    role_label="executor",
+                    round_num=round_num,
+                    audit_round_num=None,
+                )
+                if round_num > 1
+                else None
+            ),
+        )
         output_file = node_dir / f"{provider.task_id}_round{round_num}.md"
         await run_provider_call(
             ProviderCallRequest(
@@ -56,12 +67,13 @@ async def _execute_single_provider_sequential_node(
                 task_id=provider.task_id,
                 audit_round_num=None,
                 round_num=round_num,
-                prompt=prompt,
+                prompt=resolved_prompt.text,
                 output_file=output_file,
                 role_label="executor",
                 invoker=invoker,
                 telemetry=telemetry,
                 findings_enabled=node.findings,
+                rendered_workspace_files=resolved_prompt.workspace_files,
             ),
             display=ProviderCallDisplay(
                 telemetry=telemetry,

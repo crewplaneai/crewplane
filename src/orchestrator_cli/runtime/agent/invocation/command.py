@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
     CommandResult,
     CommandRunner,
     InvocationContext,
@@ -21,6 +22,7 @@ from ..process.runner import (
     write_stdin,
 )
 from ..process.stream_capture import ProcessOutputCapture
+from ..workspace_environment import record_workspace_child_environment_applied
 from .state import InvocationCommandRuntime
 from .telemetry import emit_invocation_diagnostic
 
@@ -47,8 +49,10 @@ async def run_command_once(
     log_file: Path | None,
     append_log: bool,
     log_header: bytes | None,
+    cwd: Path,
     invocation_context: InvocationContext | None,
     idle_timeout_seconds: float | None,
+    child_environment: ChildProcessEnvironment | None = None,
 ) -> CommandResult:
     log_handle: BinaryIO | None = None
     process: asyncio.subprocess.Process | None = None
@@ -64,7 +68,13 @@ async def run_command_once(
             stdin=asyncio.subprocess.PIPE if stdin_data else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+            env=_child_process_env(child_environment),
             **process_kwargs,
+        )
+        record_workspace_child_environment_applied(
+            invocation_context,
+            child_environment,
         )
         # start_new_session=True makes the child a session leader on POSIX; read
         # the actual process group after spawn so cleanup does not assume pid==pgid.
@@ -152,9 +162,11 @@ async def run_invocation_attempt(
     command_runner: CommandRunner,
     log_file: Path | None,
     attempt: int,
+    cwd: Path,
     invocation_context: InvocationContext | None,
     timeout_seconds: float | None,
     idle_timeout_seconds: float | None,
+    child_environment: ChildProcessEnvironment | None,
 ) -> CommandResult:
     attempt_result = command_runner(
         cmd=runtime.cmd,
@@ -162,8 +174,10 @@ async def run_invocation_attempt(
         log_file=log_file,
         append_log=attempt > 0,
         log_header=_retry_log_header(runtime, attempt),
+        cwd=cwd,
         invocation_context=invocation_context,
         idle_timeout_seconds=idle_timeout_seconds,
+        child_environment=child_environment,
     )
     return await _await_invocation_attempt(
         attempt_result=attempt_result,
@@ -211,3 +225,15 @@ async def _await_invocation_attempt(
             },
         )
         raise RuntimeError(message) from exc
+
+
+def _child_process_env(
+    child_environment: ChildProcessEnvironment | None,
+) -> dict[str, str] | None:
+    if child_environment is None:
+        return None
+    env = dict(os.environ)
+    for key in child_environment.unset:
+        env.pop(key, None)
+    env.update(child_environment.set)
+    return env

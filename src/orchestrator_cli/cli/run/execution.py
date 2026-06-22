@@ -12,23 +12,38 @@ from orchestrator_cli.architecture.ports.runtime import RuntimeComponents
 from orchestrator_cli.artifacts.locks import acquire_same_context_lock
 from orchestrator_cli.artifacts.manager import OutputManager
 from orchestrator_cli.artifacts.resume_hydration import hydrate_resume_frontier
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
+from orchestrator_cli.bootstrap import (
+    build_runtime_config_snapshot,
+)
 from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight import PreflightExecutionPlan
-from orchestrator_cli.core.preflight.diagnostics import PreflightDiagnostic
+from orchestrator_cli.core.preflight import (
+    PreflightExecutionPlan,
+)
+from orchestrator_cli.core.preflight.diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
 from orchestrator_cli.observability import PersistentRunLogger
 from orchestrator_cli.runtime.execution import execute_workflow
+from orchestrator_cli.runtime.workspace.branch_export import (
+    fulfill_branch_exports,
+)
 
+from .branch_export_output import print_branch_export_fulfillments
 from .components import allocate_run_output, build_components_for_run
 from .context import WorkflowRunContext, resolve_orchestrator_dir, resolve_project_root
+from .execution_helpers import (
+    handle_duplicate_skip,
+    raise_for_workspace_runtime_error,
+    raise_run_preflight_errors,
+    write_initial_run_manifest,
+)
 from .manifest import (
-    build_run_manifest_from_plan,
     finalize_run_manifest,
-    print_duplicate_context_message,
     print_resume_context_message,
-    write_running_run_manifest,
 )
 from .observability import (
     EXTERNAL_CANCEL_REASON,
@@ -40,6 +55,7 @@ from .observability import (
     execute_workflow_with_observability,
     print_end_of_run_summary,
     refresh_failed_run_summary,
+    refresh_successful_run_summary,
 )
 from .preflight import (
     compile_preview,
@@ -47,10 +63,8 @@ from .preflight import (
     print_preflight_diagnostics,
     run_cli_availability_errors,
     write_preflight_diagnostics,
-    write_preflight_failure_artifacts,
 )
 from .resume import (
-    ResumePlan,
     build_resume_plan,
     require_filesystem_artifacts_backend,
     workflow_identity_for_source,
@@ -117,11 +131,29 @@ async def run_and_finalize_workflow(
         print_end_of_run_summary(context.console, summary_logger)
         raise
 
+    try:
+        branch_export_records = fulfill_branch_exports(plan, output)
+    except Exception as exc:
+        finalize_run_manifest(
+            output,
+            "failed",
+            failure_message=str(exc),
+        )
+        summary_logger = refresh_failed_run_summary(
+            warning_recorder.persistent_logger,
+            context.workflow,
+            warning_recorder.run_id,
+            exc,
+        )
+        print_end_of_run_summary(context.console, summary_logger)
+        raise
     finalize_run_manifest(
         output,
         "succeeded",
     )
-    print_end_of_run_summary(context.console, warning_recorder.persistent_logger)
+    print_branch_export_fulfillments(branch_export_records, context.console)
+    summary_logger = refresh_successful_run_summary(warning_recorder.persistent_logger)
+    print_end_of_run_summary(context.console, summary_logger)
 
 
 async def execute_workflow_run(
@@ -160,8 +192,8 @@ async def execute_workflow_run(
     except Exception as exc:
         diagnostics = [
             PreflightDiagnostic(
-                code="RUNTIME-CONFIG",
-                phase="validation",
+                code=PreflightDiagnosticCode.RUNTIME_CONFIG,
+                phase=PreflightDiagnosticPhase.VALIDATION,
                 message=str(exc),
             )
         ]
@@ -182,21 +214,15 @@ async def execute_workflow_run(
             workflow,
             config,
             which_fn,
+            context.project_root,
         ),
+        workspace_real_execution=True,
     )
     print_preflight_diagnostics(preview.diagnostics, context.console)
     if preview.has_errors() or preview.workflow_signature is None:
-        write_preflight_failure_artifacts(
-            context=context,
-            snapshot_result=snapshot_result,
-            diagnostics=preview.diagnostics,
-            workflow_name=workflow.name,
-        )
-        for diagnostic in preview.diagnostics:
-            context.console.print(
-                f"[red]Preflight {diagnostic.code}:[/] {diagnostic.message}"
-            )
-        raise typer.Exit(code=1)
+        raise_run_preflight_errors(context, snapshot_result, preview, workflow.name)
+
+    raise_for_workspace_runtime_error(context, snapshot_result, config, preview)
 
     require_filesystem_artifacts_backend(config)
     workflow_identity = workflow_identity_for_source(source, context.project_root)
@@ -215,23 +241,14 @@ async def execute_workflow_run(
             context.orchestrator_dir,
             force,
         )
-        if resume_plan.decision.kind == "skip":
-            successful_run = resume_plan.decision.successful_run
-            print_duplicate_context_message(
-                context,
-                (
-                    successful_run.manifest.run_id
-                    if successful_run is not None
-                    else None
-                ),
-            )
+        if handle_duplicate_skip(context, preview, resume_plan):
             return
 
         workflow_topology = workflow_topology_from_preview(preview)
         output = allocate_run_output(context, snapshot_result, warning_recorder)
         same_context_lock.update_run(output.run_id, output.run_key_name)
-        plan = materialize_preflight_success(output, preview)
-        _write_initial_run_manifest(
+        plan = materialize_preflight_success(output, preview, context.project_root)
+        write_initial_run_manifest(
             output,
             plan,
             source,
@@ -274,25 +291,3 @@ async def execute_workflow_run(
         )
     finally:
         same_context_lock.release()
-
-
-def _write_initial_run_manifest(
-    output: ArtifactStorePort,
-    plan: PreflightExecutionPlan,
-    source: PreflightWorkflowSource,
-    resume_plan: ResumePlan,
-) -> None:
-    resume_source = resume_plan.decision.resume_source
-    manifest = build_run_manifest_from_plan(
-        plan=plan,
-        source=source,
-        workflow_identity=resume_plan.workflow_identity,
-        resumed_nodes=resume_plan.resumed_node_ids,
-        resume_source_run_id=(
-            resume_source.manifest.run_id if resume_source is not None else None
-        ),
-        resume_source_run_key_name=(
-            resume_source.manifest.run_key_name if resume_source is not None else None
-        ),
-    )
-    write_running_run_manifest(output, manifest)

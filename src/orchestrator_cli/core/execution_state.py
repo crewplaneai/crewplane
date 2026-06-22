@@ -20,7 +20,7 @@ RUN_STATUS_CANCELLED = "cancelled"
 
 RunStatus = Literal["running", "succeeded", "failed", "cancelled"]
 TerminalRunStatus = Literal["succeeded", "failed", "cancelled"]
-ArtifactKind = Literal["output", "findings"]
+ArtifactKind = Literal["output", "findings", "generated_file"]
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -91,6 +91,8 @@ class NodeState(BaseModel):
     status: Literal["succeeded"] = "succeeded"
     completed_at: str
     artifacts: list[ArtifactDescriptor] = Field(default_factory=list)
+    generated_files: list[ArtifactDescriptor] = Field(default_factory=list)
+    workspace: JsonObject | None = None
     resume_origin: ResumeOrigin | None = None
 
     @field_validator("run_state_schema_version")
@@ -139,6 +141,7 @@ class RunManifest(BaseModel):
     workflow_source: str
     composed_workflow: JsonObject
     referenced_workflows: list[dict[str, str]] = Field(default_factory=list)
+    workspace: JsonObject | None = None
     resumed_nodes: list[str] = Field(default_factory=list)
     resume_source_run_id: str | None = None
     resume_source_run_key_name: str | None = None

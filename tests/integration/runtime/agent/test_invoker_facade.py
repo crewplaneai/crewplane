@@ -32,10 +32,12 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                     model="test",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=Path(tmp_dir),
                     plan_builder=build_cli_invocation_plan,
                 )
 
             delegated.assert_awaited_once()
+            assert delegated.await_args.kwargs["cwd"] == Path(tmp_dir)
             assert delegated.await_args.kwargs["command_runner"] is run_command_once
 
     async def test_invoke_agent_with_runner_delegates_to_invocation_loop(self) -> None:
@@ -53,6 +55,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                     model="test",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=Path(tmp_dir),
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -60,6 +63,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             delegated.assert_awaited_once()
+            assert delegated.await_args.kwargs["cwd"] == Path(tmp_dir)
             assert delegated.await_args.kwargs["command_runner"] is runner
 
     async def test_planned_agent_invoker_delegates_to_invoke_agent(self) -> None:
@@ -85,8 +89,10 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                     model="test",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=Path(tmp_dir),
                     invocation_context=context,
                 )
 
             delegated.assert_awaited_once()
+            assert delegated.await_args.args[4] == Path(tmp_dir)
             assert delegated.await_args.kwargs["invocation_context"] is context

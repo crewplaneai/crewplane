@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from orchestrator_cli.core.config import Config
 from orchestrator_cli.core.token_budget import resolve_token_budget
+from orchestrator_cli.core.workflow_diagnostics import WorkflowValidationDiagnostic
 from orchestrator_cli.core.workflow_models import WorkflowPlan
+from orchestrator_cli.core.workflow_validation_workspace import (
+    collect_workspace_policy_diagnostics,
+)
 
 
 def validate_audit_rounds_settings(workflow: WorkflowPlan, config: Config) -> None:
@@ -51,6 +55,13 @@ def collect_token_budget_validation_errors(
         except ValueError as exc:
             errors.append(f"Node '{node.id}' token_budget is invalid: {exc}")
     return errors
+
+
+def collect_workspace_validation_diagnostics(
+    workflow: WorkflowPlan,
+    config: Config,
+) -> tuple[WorkflowValidationDiagnostic, ...]:
+    return collect_workspace_policy_diagnostics(workflow, config)
 
 
 def collect_missing_provider_locations(

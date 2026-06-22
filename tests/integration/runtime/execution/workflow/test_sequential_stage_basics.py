@@ -19,6 +19,7 @@ from orchestrator_cli.observability.types import RunContext
 from orchestrator_cli.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from orchestrator_cli.runtime.execution.fragment_assembler import ResolvedPrompt
 from orchestrator_cli.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
@@ -72,6 +73,48 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                     f"{safe_provider}_executor_0_round1.md",
                     f"{safe_provider}_executor_0_round2.md",
                     f"{safe_provider}_executor_0_round3.md",
+                ],
+            )
+
+    async def test_single_provider_sequential_rerenders_prompt_per_round(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={"exec": AgentConfig(cli_cmd=["mock"])},
+            )
+            node = WorkflowNode(
+                id="single.provider.rerender",
+                mode="sequential",
+                prompt_segments=[PromptSegment(role="shared", content="run")],
+                depth=3,
+                providers=[ProviderSpec(provider="exec", role="executor")],
+            )
+            invoker = MockAgentInvoker(outputs=["one", "two", "three"])
+            output = OutputManager("workflow", base_dir=tmp_path)
+            candidate_source_flags: list[bool] = []
+
+            def resolve_prompt(*args, **kwargs) -> ResolvedPrompt:  # type: ignore[no-untyped-def]
+                del args
+                candidate_source = kwargs["workspace_candidate_source"]
+                candidate_source_flags.append(candidate_source)
+                return ResolvedPrompt(f"prompt candidate={candidate_source}")
+
+            with patch(
+                "orchestrator_cli.runtime.execution.sequential.resolve_prompt_with_output_budget_details",
+                side_effect=resolve_prompt,
+            ):
+                await execute_sequential_stage(config, node, output, invoker=invoker)
+
+            self.assertEqual(candidate_source_flags, [False, True, True])
+            self.assertEqual(
+                [call["prompt"] for call in invoker.calls],
+                [
+                    "prompt candidate=False",
+                    "prompt candidate=True",
+                    "prompt candidate=True",
                 ],
             )
 

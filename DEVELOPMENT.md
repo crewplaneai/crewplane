@@ -138,7 +138,7 @@ Manual validation flow:
 1. Run `orchestrator run` with the mock invoker.
 2. Confirm node transitions (`pending -> running -> succeeded/failed`) in the CLI or tmux UI.
 3. Validate generated artifacts under `.orchestrator/execution-stages/` and `.orchestrator/execution-results/`, including findings artifacts for findings-enabled nodes, run-root logs in `.orchestrator/execution-stages/<workflow>-<run_id>/logs/`, and review-loop status artifacts in `<node>/review-state/review-loop-status.json` when a node uses sequential executor/reviewer review rounds.
-4. If using `output_mode: "file"`, verify fixture fallback order, `strict_file_mode` behavior, and optional `<fixture>.mutations.json` sidecars when testing artifact-drift handling.
+4. If using `output_mode: "file"`, verify fixture fallback order, `strict_file_mode` behavior, and optional `<fixture>.mutations.json` sidecars when testing artifact-drift handling, workspace checkout mutations, or prompt sentinel requirements.
 
 ## Coding Standards
 

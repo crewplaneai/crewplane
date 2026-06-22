@@ -13,6 +13,7 @@ EventType = Literal[
     "invocation_started",
     "invocation_finished",
     "invocation_failed",
+    "workspace_context_recorded",
     "runtime_log",
 ]
 WorkflowEventType = Literal[
@@ -31,6 +32,7 @@ InvocationEventType = Literal[
     "invocation_finished",
     "invocation_failed",
 ]
+WorkspaceEventType = Literal["workspace_context_recorded"]
 WorkflowStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
 NodeStatus = Literal["pending", "running", "succeeded", "failed", "blocked"]
 InvocationStatus = Literal["pending", "running", "succeeded", "failed"]

@@ -127,7 +127,40 @@ agents:
     quota_reached_retry_delay_seconds: 300
 
 settings:
-  default_workspace: ".orchestrator/workspaces"
+  # Workspace isolation is disabled by default. With enabled: false, providers
+  # run in the project root and non-Git projects work normally.
+  #
+  # Managed workspaces require settings.workspace.enabled: true, workflow-level
+  # worktrees declarations, and a supported Git repository. Initial support:
+  # - Clean ordinary Git repository: yes
+  # - Non-Git project: no; keep enabled: false
+  # - Git LFS or custom filters: no; disable workspace isolation for that run
+  # - text/eol/crlf conversion: no; disable isolation or remove the attribute
+  # - Submodules, sparse clone, partial clone: no; use disabled mode or full clone
+  # - Ordinary ignored caches: yes; use setup profiles or snapshot workspaces
+  workspace:
+    enabled: false
+    cache_root: null
+    cleanup_on_success: true
+    # blob_exact requires provider-visible file bytes to match Git blob bytes.
+    # It rejects Git LFS, custom filters, and text/eol/encoding transforms.
+    worktree_contract: "blob_exact"
+    clean_start: "strict" # strict | tracked_only
+    # Optional audited setup commands selected by workflow worktrees:
+    # setup_profiles:
+    #   node_dependencies:
+    #     run:
+    #       - ["uv", "sync"]
+    setup_profiles: {}
+    setup_timeout_seconds: 600
+    identity:
+      include_cache_root: false
+    max_concurrent_materializations: 1
+    # Disk guardrails compare estimated remaining cache filesystem bytes after
+    # checkout materialization against these optional thresholds.
+    disk:
+      warn_free_bytes: null
+      fail_free_bytes: null
   log_level: "info"
   sequential_consensus_on_exhaustion: "continue" # continue | fatal
   max_audit_rounds: 5 # max allowed value for sequential review nodes using audit_rounds

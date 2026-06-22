@@ -11,6 +11,7 @@ from .common import (
     RuntimeEventContext,
     emit_runtime_log,
 )
+from .workspace_files import resolve_project_initial_workspace_file
 
 
 def execute_input_stage(
@@ -20,20 +21,26 @@ def execute_input_stage(
     telemetry: ExecutionTelemetry | None = None,
 ) -> None:
     node_dir = output.create_stage_dir(stage.id)
-    if stage.input_content_ref is None:
+    if stage.input_workspace_file_locator_id is not None:
+        input_content = _read_workspace_input_content(
+            runtime_context,
+            stage.input_workspace_file_locator_id,
+        )
+    elif stage.input_content_ref is not None:
+        input_content = _read_input_content(
+            runtime_context.plan.context_root,
+            stage.input_content_ref,
+        )
+    else:
         raise ValueError(f"Input node '{stage.id}' is missing source content.")
 
-    resolved_source = _read_input_content(
-        runtime_context.plan.context_root,
-        stage.input_content_ref,
-    )
-    if not resolved_source.strip():
+    if not input_content.strip():
         raise RuntimeError(
             f"Resolved input content for node '{stage.id}' is empty after preflight assembly."
         )
 
     output_file = _input_output_file(node_dir)
-    output_file.write_text(resolved_source, encoding="utf-8")
+    output_file.write_text(input_content, encoding="utf-8")
     emit_runtime_log(
         telemetry,
         level="info",
@@ -56,3 +63,13 @@ def _read_input_content(context_root: str, content_ref: str) -> str:
         raise ValueError(f"Invalid input content reference '{content_ref}'.")
     source_path = Path(context_root) / "preflight" / normalized_ref
     return source_path.read_text(encoding="utf-8")
+
+
+def _read_workspace_input_content(
+    runtime_context: CompiledRuntimeContext,
+    locator_id: str,
+) -> str:
+    return resolve_project_initial_workspace_file(
+        runtime_context.plan,
+        locator_id,
+    ).text

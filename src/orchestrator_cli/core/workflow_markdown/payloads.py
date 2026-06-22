@@ -8,6 +8,7 @@ from ..workflow_models import (
     WorkflowPayload,
     workflow_node_payload_dict,
 )
+from ..workspace_policy import worktree_declarations_payload
 from .frontmatter import (
     normalize_provider_spec,
     workflow_node_from_frontmatter,
@@ -83,6 +84,8 @@ def build_workflow_payload(
         ],
         "nodes": node_payload,
     }
+    if workflow.worktrees:
+        payload["worktrees"] = worktree_declarations_payload(workflow.worktrees)
     return payload, node_source_spans, prompt_segment_spans_by_node
 
 

@@ -60,6 +60,7 @@ class MockAgentInvoker(NoPresentationInvoker):
         model: str,
         prompt: str,
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]
     ) -> None:
@@ -109,6 +110,7 @@ class GraphDependencyOrderInvoker(NoPresentationInvoker):
         model: str,  # noqa: ARG002 - Required by test double callback signature.
         prompt: str,  # noqa: ARG002 - Required by test double callback signature.
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]
     ) -> None:
@@ -164,6 +166,7 @@ def _compile_test_plan(
         preview=preview,
         run_id=output.run_id,
         run_key_name=output.run_key_name,
+        project_root=output.base_dir.as_posix(),
         context_root=output.stages_dir.as_posix(),
         manifest_root=(output.stages_dir / "manifests").as_posix(),
         created_at=datetime(2026, 6, 3),
@@ -248,6 +251,7 @@ class OptionalOutputInvoker(NoPresentationInvoker):
         model: str,  # noqa: ARG002 - Required by test double or callback signature.
         prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]
     ) -> None:
@@ -288,6 +292,7 @@ class ArtifactDriftInvoker(NoPresentationInvoker):
         model: str,  # noqa: ARG002 - Required by test double or callback signature.
         prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]
     ) -> None:
@@ -330,6 +335,7 @@ class SelectiveFailInvoker(NoPresentationInvoker):
         model: str,
         prompt: str,
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
     ) -> None:
@@ -352,6 +358,7 @@ class FindingsSelectiveFailInvoker(NoPresentationInvoker):
         model: str,
         prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
     ) -> None:
@@ -383,6 +390,7 @@ class DelayByModelInvoker(NoPresentationInvoker):
         model: str,
         prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
     ) -> None:
@@ -436,6 +444,7 @@ class TimedTaskOutputInvoker(NoPresentationInvoker):
         model: str,  # noqa: ARG002 - Required by test double or callback signature.
         prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]
     ) -> None:
@@ -471,6 +480,7 @@ class ParallelReviewerTimingInvoker(NoPresentationInvoker):
         model: str,  # noqa: ARG002 - Required by test double or callback signature.
         prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
         output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]
     ) -> None:
@@ -498,6 +508,7 @@ class CleanupOnCancelInvoker(NoPresentationInvoker):
         model: str,  # noqa: ARG002 - Required by test double or callback signature.
         prompt: str,  # noqa: ARG002 - Required by test double or callback signature.
         output_file: Path,  # noqa: ARG002 - Required by test double or callback signature.
+        cwd: Path,  # noqa: ARG002 - Required by test double or callback signature.
         log_file: Path | None = None,  # noqa: ARG002 - Required by test double or callback signature.
         invocation_context=None,  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
     ) -> None:

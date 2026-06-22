@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.core.preflight.models import (
@@ -13,12 +13,31 @@ from orchestrator_cli.core.preflight.runtime_config import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.core.preflight.signatures import signature_for_payload
+from orchestrator_cli.core.value_checks import positive_strict_int
+from orchestrator_cli.runtime.workspace.materialization import MaterializationLimiter
+from orchestrator_cli.runtime.workspace.reuse import WorktreeReuseCache
+
+from .deferred_cleanup import DeferredAsyncCleanupRegistry
+from .generated_file_workspaces import GeneratedFileWorkspaceRegistry
 
 
-@dataclass(frozen=True)
+@dataclass
 class CompiledRuntimeContext:
     plan: PreflightExecutionPlan
     secret_context: SecretContext
+    generated_file_workspaces: GeneratedFileWorkspaceRegistry = field(
+        default_factory=GeneratedFileWorkspaceRegistry
+    )
+    worktree_reuse_cache: WorktreeReuseCache = field(default_factory=WorktreeReuseCache)
+    deferred_workspace_cleanups: DeferredAsyncCleanupRegistry = field(
+        default_factory=DeferredAsyncCleanupRegistry
+    )
+    workspace_materialization_limiter: MaterializationLimiter = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.workspace_materialization_limiter = MaterializationLimiter.from_plan(
+            self.plan
+        )
 
     def validate_execution_contract(self) -> None:
         for node in self.plan.nodes:
@@ -67,11 +86,11 @@ class CompiledRuntimeContext:
 
     def max_concurrent_nodes(self) -> int | None:
         value = self._execution_setting("max_concurrent_nodes")
-        return value if isinstance(value, int) and value > 0 else None
+        return positive_strict_int(value)
 
     def max_parallel_invocations(self) -> int | None:
         value = self._execution_setting("max_parallel_invocations")
-        return value if isinstance(value, int) and value > 0 else None
+        return positive_strict_int(value)
 
     def sequential_consensus_on_exhaustion(self) -> str:
         value = self._execution_setting("sequential_consensus_on_exhaustion")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -138,7 +139,15 @@ def _build_argv(
     prompt: str,
     structured_output_file: Path | None,
 ) -> list[str]:
+    """Build the provider CLI argv and validate the executable.
+
+    The first argument identifies the process to launch, so it is resolved
+    before appending provider flags. This keeps command validation and log
+    headers tied to the actual executable while leaving user-supplied
+    arguments untouched.
+    """
     cmd = config.get_command()
+    cmd[0] = _resolved_cli_executable(cmd[0])
     model_arg = (
         config.model_arg if config.provider_kind == "generic" else capability.model_arg
     )
@@ -154,6 +163,42 @@ def _build_argv(
         raise ValueError("prompt_transport_arg is required for argv prompt transport.")
     cmd.extend([config.prompt_transport_arg, prompt])
     return cmd
+
+
+def _resolved_cli_executable(executable: str) -> str:
+    """Return an executable path suitable for subprocess invocation.
+
+    Bare executable names are resolved through `PATH` and validated. Absolute
+    paths are validated directly. Relative path-like commands are preserved so
+    subprocess can resolve them relative to the configured working directory.
+    """
+    executable_path = Path(executable)
+    if executable_path.is_absolute():
+        return _resolved_existing_executable(executable_path)
+    if _contains_path_separator(executable):
+        return executable
+    resolved = shutil.which(executable)
+    if resolved is None:
+        raise FileNotFoundError(f"CLI executable '{executable}' was not found.")
+    return _resolved_existing_executable(Path(resolved))
+
+
+def _resolved_existing_executable(executable: Path) -> str:
+    """Resolve an existing executable path and fail clearly if it is unusable."""
+    resolved = executable.resolve(strict=True)
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"CLI executable '{executable.as_posix()}' is not a file."
+        )
+    if not os.access(resolved, os.X_OK):
+        raise PermissionError(
+            f"CLI executable '{resolved.as_posix()}' is not executable."
+        )
+    return resolved.as_posix()
+
+
+def _contains_path_separator(value: str) -> bool:
+    return "/" in value or "\\" in value
 
 
 def _structured_output_args(

@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from collections.abc import Callable, Mapping
@@ -16,6 +17,7 @@ from rich.console import Console
 from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.artifacts.manager import OutputManager
+from orchestrator_cli.cli.run.git_source_probe import GIT_MIN_VERSION, parse_git_version
 from orchestrator_cli.cli.workflow_runner import (
     execute_workflow_run,
     write_early_preflight_failure_run,
@@ -87,6 +89,7 @@ class PreflightOrderingInvoker:
         model,  # noqa: ARG002 - Required by invoker protocol.
         prompt,  # noqa: ARG002 - Required by invoker protocol.
         output_file,
+        cwd,  # noqa: ARG002 - Required by invoker protocol.
         log_file=None,  # noqa: ARG002 - Required by invoker protocol.
         invocation_context=None,  # noqa: ARG002 - Required by invoker protocol.
     ) -> None:
@@ -182,6 +185,19 @@ def _workflow(prompt: str = "hello") -> WorkflowPlan:
     )
 
 
+def _input_workflow() -> WorkflowPlan:
+    return WorkflowPlan(
+        name="InputTask",
+        nodes=[
+            WorkflowNode(
+                id="requirements",
+                mode="input",
+                source="{{file:docs/input.md}}",
+            )
+        ],
+    )
+
+
 def _workflow_payload(workflow: WorkflowPlan) -> dict[str, object]:
     return {
         "schema_version": workflow.schema_version,
@@ -226,6 +242,28 @@ def _text_files_under(root: Path) -> list[Path]:
     if not root.exists():
         return []
     return sorted(path for path in root.rglob("*") if path.is_file())
+
+
+def _git(root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", root.as_posix(), *args],
+        check=True,
+        capture_output=True,
+    )
+    return result.stdout.decode("utf-8").strip()
+
+
+def _local_git_supports_workspace_policy() -> bool:
+    try:
+        version_text = subprocess.run(
+            ["git", "--version"],
+            check=True,
+            capture_output=True,
+        ).stdout.decode("utf-8")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+    version = parse_git_version(version_text)
+    return version is not None and version >= GIT_MIN_VERSION
 
 
 def _assert_descriptor_metadata_event_persisted(
@@ -305,7 +343,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(_run_dirs(root)), run_count)
             self.assertIn("Identical context detected", stream.getvalue())
 
-    async def test_custom_artifact_real_run_fails_before_store_allocation(
+    async def test_non_filesystem_artifact_real_run_fails_before_run_allocation(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -325,7 +363,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             try:
                 with self.assertRaisesRegex(
                     RuntimeError,
-                    "filesystem artifacts backend",
+                    "Real execution requires the built-in filesystem artifacts backend",
                 ):
                     await _run_workflow(workflow, config, console)
             finally:
@@ -333,6 +371,8 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(DuplicateReportingArtifactsAdapter.create_store_calls, 0)
             self.assertEqual(_run_dirs(root), [])
+            self.assertEqual(_result_dirs(root), [])
+            self.assertFalse((root / ".orchestrator" / "locks").exists())
 
     async def test_force_ignores_duplicate_signature(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -451,6 +491,44 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                     preflight_dir=preflight_dir,
                 ),
             )
+
+    async def test_workspace_enabled_input_only_run_skips_managed_workspace(
+        self,
+    ) -> None:
+        if not _local_git_supports_workspace_policy():
+            self.skipTest("Git 2.34.1+ is required for workspace source policy")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            cache_root = root.parent / f"{root.name}-workspace-cache"
+            (root / "docs").mkdir()
+            (root / "docs" / "input.md").write_text(
+                "workspace requirements\n",
+                encoding="utf-8",
+            )
+            _git(root, "init")
+            _git(root, "config", "user.name", "Orchestrator Test")
+            _git(root, "config", "user.email", "orchestrator-test@example.invalid")
+            _git(root, "add", "docs/input.md")
+            _git(root, "commit", "-m", "initial")
+            console = Console(file=io.StringIO(), force_terminal=False)
+            workflow = _input_workflow()
+            config = _mock_config()
+            config.settings.workspace.enabled = True
+            config.settings.workspace.cache_root = cache_root.as_posix()
+            original_cwd = Path.cwd()
+            os.chdir(root)
+            try:
+                await _run_workflow(workflow, config, console)
+            finally:
+                os.chdir(original_cwd)
+
+            run_dirs = _run_dirs(root)
+            result_dirs = _result_dirs(root)
+            self.assertEqual(len(run_dirs), 1)
+            self.assertEqual(len(result_dirs), 1)
+            workspace_state_path = run_dirs[0] / "requirements" / "workspace-state.json"
+            self.assertFalse(workspace_state_path.exists())
+            self.assertFalse(cache_root.exists())
 
     async def test_runtime_receives_preflight_plan_agent_configs_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

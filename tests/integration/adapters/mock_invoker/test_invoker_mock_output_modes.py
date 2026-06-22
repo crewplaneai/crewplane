@@ -30,6 +30,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="hello world",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(),
             )
             text = output_file.read_text(encoding="utf-8")
@@ -51,6 +52,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 model=None,
                 prompt="hello world",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(),
             )
             text = output_file.read_text(encoding="utf-8")
@@ -71,6 +73,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt=prompt,
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=InvocationContext(
                     node_id="node.echo",
                     task_id="alpha_executor_0",
@@ -98,6 +101,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt=prompt,
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(role="reviewer"),
             )
             text = output_file.read_text(encoding="utf-8")
@@ -129,6 +133,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=InvocationContext(
                     node_id="review.context",
                     task_id="alpha_executor_0",
@@ -160,6 +165,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(role="reviewer"),
             )
             text = output_file.read_text(encoding="utf-8")
@@ -192,6 +198,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="delay",
                 output_file=output_file,
+                cwd=(output_file).parent,
             )
             elapsed = time.perf_counter() - started_at
         self.assertGreaterEqual(elapsed, 0.045)
@@ -210,6 +217,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                     model="model-a",
                     prompt="x",
                     output_file=output_file,
+                    cwd=(output_file).parent,
                     invocation_context=InvocationContext(
                         node_id="node.fail",
                         task_id="alpha_executor_0",
@@ -242,6 +250,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                     model="model-a",
                     prompt="x",
                     output_file=output_file,
+                    cwd=(output_file).parent,
                     invocation_context=InvocationContext(
                         node_id="summary.final",
                         task_id="alpha_reviewer_0",
@@ -273,6 +282,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                     model="model-a",
                     prompt="x",
                     output_file=output_file,
+                    cwd=(output_file).parent,
                     invocation_context=InvocationContext(
                         node_id="review.node",
                         task_id="alpha_reviewer_0",

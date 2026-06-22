@@ -20,6 +20,7 @@ from .prompt_budgeting import (
     PromptBudgetExceededError,
     compiled_token_budget,
     resolve_prompt_with_output_budget,
+    resolve_prompt_with_output_budget_details,
 )
 from .provider_display import ProviderCallDisplay
 from .provider_invocation import (
@@ -60,6 +61,7 @@ __all__ = [
     "emit_workflow_event",
     "execution_console",
     "resolve_prompt_with_output_budget",
+    "resolve_prompt_with_output_budget_details",
     "resolve_provider_model",
     "run_provider_call",
     "run_provider_invocation",

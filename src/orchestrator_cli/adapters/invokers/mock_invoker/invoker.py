@@ -40,6 +40,7 @@ class MockAgentInvoker:
         model: str | None,
         prompt: str,
         output_file: Path,
+        cwd: Path,
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
@@ -51,6 +52,8 @@ class MockAgentInvoker:
             self._write_invocation_artifacts,
             resolution,
             output_file,
+            cwd,
+            prompt,
             log_file,
             invocation_context,
         )
@@ -167,14 +170,29 @@ class MockAgentInvoker:
         self,
         resolution: OutputResolution,
         output_file: Path,
+        cwd: Path,
+        prompt: str,
         log_file: Path | None,
         context: InvocationContext | None,
     ) -> None:
-        mutation_plan = build_fixture_mutation_plan(resolution, output_file)
+        mutation_plan = build_fixture_mutation_plan(
+            resolution,
+            output_file,
+            cwd,
+            context,
+            prompt,
+        )
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(resolution.content, encoding="utf-8")
         apply_fixture_mutations(mutation_plan)
-        write_invocation_log(self._options, log_file, output_file, context, resolution)
+        write_invocation_log(
+            self._options,
+            log_file,
+            output_file,
+            cwd,
+            context,
+            resolution,
+        )
 
     def _seed_marker(self, display: ContextDisplay) -> str:
         seed_value = self._options.seed if self._options.seed is not None else "no-seed"

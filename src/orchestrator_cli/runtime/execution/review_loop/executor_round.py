@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from ..common import ProviderCallDisplay
+from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details
+from ..workspace_files import WorkspaceCandidateSourceContext
 from .drift import run_provider_call_with_drift_guard
 from .prompts import (
     build_executor_prompt,
@@ -12,6 +13,7 @@ from .types import (
     ExecutorRoundRequest,
     ExecutorRoundRunResult,
 )
+from .workspace_state_paths import workspace_artifact_allowed_paths
 
 
 async def run_executor_round(
@@ -24,8 +26,26 @@ async def run_executor_round(
         request.previous_executor_outputs,
         request.telemetry,
     )
+    base_executor_prompt = request.executor_prompt
+    rendered_workspace_files = request.executor_prompt_workspace_files
+    if request.previous_executor_outputs is not None:
+        resolved_prompt = resolve_prompt_with_output_budget_details(
+            request.runtime_context,
+            request.node,
+            request.output,
+            role="executor",
+            telemetry=request.telemetry,
+            workspace_candidate_source=True,
+            workspace_candidate_context=WorkspaceCandidateSourceContext(
+                role_label="executor",
+                round_num=request.round_num,
+                audit_round_num=request.audit_round_num,
+            ),
+        )
+        base_executor_prompt = resolved_prompt.text
+        rendered_workspace_files = resolved_prompt.workspace_files
     executor_prompt = build_executor_prompt(
-        request.executor_prompt,
+        base_executor_prompt,
         previous_candidate_context,
         request.previous_review_packet,
     )
@@ -33,6 +53,16 @@ async def run_executor_round(
         task_id = provider.task_id
         output_file = request.artifact_dir / f"{task_id}_round{request.round_num}.md"
         allowed_paths = {output_file}
+        allowed_paths.update(
+            workspace_artifact_allowed_paths(
+                request.output,
+                request.node,
+                task_id,
+                "executor",
+                request.audit_round_num,
+                request.round_num,
+            )
+        )
         drift_warning_count += await run_provider_call_with_drift_guard(
             DriftGuardCallRequest(
                 runtime_context=request.runtime_context,
@@ -55,6 +85,7 @@ async def run_executor_round(
                     progress_description=f"Executing {provider.provider}...",
                 ),
                 drift_session=None,
+                rendered_workspace_files=rendered_workspace_files,
             )
         )
         content = (

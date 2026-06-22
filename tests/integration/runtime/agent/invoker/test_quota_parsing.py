@@ -69,6 +69,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                         "test-model",
                         "prompt",
                         output_file,
+                        output_file.parent,
                         plan_builder=build_cli_invocation_plan,
                     )
             finally:
@@ -106,6 +107,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
             self.assertIsInstance(caught.exception, InvocationFailureError)
@@ -162,6 +164,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                             "test-model",
                             "prompt",
                             output_file,
+                            output_file.parent,
                             plan_builder=build_cli_invocation_plan,
                         )
                 finally:

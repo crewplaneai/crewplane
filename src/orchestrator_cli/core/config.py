@@ -18,6 +18,7 @@ from orchestrator_cli.architecture.contracts import (
 )
 from orchestrator_cli.version import SCHEMA_VERSION
 
+from .config_workspace import WorkspaceSettings
 from .provider_names import normalize_provider_name
 from .token_budget import TokenBudgetSettings
 from .workflow_keywords import (
@@ -260,7 +261,7 @@ class IntegrationsConfig(BaseModel):
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    default_workspace: str = ".orchestrator/workspaces"
+    workspace: WorkspaceSettings = Field(default_factory=WorkspaceSettings)
     log_level: str = "info"
     sequential_consensus_on_exhaustion: SequentialConsensusPolicy = "continue"
     max_audit_rounds: int = Field(default=5, ge=1)

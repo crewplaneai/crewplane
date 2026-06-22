@@ -5,6 +5,7 @@ from orchestrator_cli.observability.events.builders import (
     node_event,
     runtime_log_event,
     workflow_event,
+    workspace_event,
 )
 from orchestrator_cli.observability.events.dashboard_state import (
     InvocationRuntimeState,
@@ -28,6 +29,7 @@ from orchestrator_cli.observability.events.payloads import (
     NodeEventPayload,
     RuntimeLogEventPayload,
     WorkflowEventPayload,
+    WorkspaceEventPayload,
 )
 from orchestrator_cli.observability.events.reducer import apply_event
 from orchestrator_cli.observability.events.types import (
@@ -40,6 +42,7 @@ from orchestrator_cli.observability.events.types import (
     RuntimeLogValue,
     WorkflowEventType,
     WorkflowStatus,
+    WorkspaceEventType,
 )
 
 __all__ = [
@@ -63,6 +66,8 @@ __all__ = [
     "WorkflowEventPayload",
     "WorkflowEventType",
     "WorkflowStatus",
+    "WorkspaceEventPayload",
+    "WorkspaceEventType",
     "apply_event",
     "build_initial_state",
     "emit_event",
@@ -71,5 +76,6 @@ __all__ = [
     "invocation_event",
     "node_event",
     "runtime_log_event",
+    "workspace_event",
     "workflow_event",
 ]

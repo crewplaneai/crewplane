@@ -103,6 +103,8 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             record_node_event(
                 node, f"FAIL {invocation.task_id}{duration_label}: {error_label}"
             )
+        case "workspace_context_recorded":
+            return
         case _:
             raise ValueError(f"Unsupported event type: {event.event_type}")
 

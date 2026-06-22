@@ -4,7 +4,11 @@ from datetime import datetime
 from pathlib import Path
 
 from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
+from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
+    CommandResult,
+    InvocationContext,
+)
 from orchestrator_cli.core.config import AgentConfig, Config
 from orchestrator_cli.core.preflight.models import (
     PreflightExecutionPlan,
@@ -38,8 +42,10 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 if invocation_context is not None:
                     captured["task_id"] = invocation_context.task_id
@@ -62,6 +68,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 model="test-model",
                 prompt="prompt",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=context,
                 command_runner=runner,
@@ -84,15 +91,17 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
                 captured["stdin_data"] = stdin_data
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             config = AgentConfig(
-                cli_cmd=["gemini"],
+                cli_cmd=["./gemini"],
                 provider_kind="gemini",
                 default_model="auto",
                 model_arg=None,
@@ -104,6 +113,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 model="auto",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
@@ -113,7 +123,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 captured["cmd"],
                 [
-                    "gemini",
+                    "./gemini",
                     "--model",
                     "auto",
                     "--approval-mode=yolo",
@@ -134,15 +144,17 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
                 captured["stdin_data"] = stdin_data
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             config = AgentConfig(
-                cli_cmd=["gemini"],
+                cli_cmd=["./gemini"],
                 provider_kind="gemini",
                 model_arg=None,
                 prompt_transport="stdin",
@@ -153,6 +165,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 model=None,
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
@@ -162,7 +175,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 captured["cmd"],
                 [
-                    "gemini",
+                    "./gemini",
                     "--approval-mode=yolo",
                 ],
             )
@@ -196,6 +209,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             plan=PreflightExecutionPlan(
                 run_id="run",
                 run_key_name="workflow-run",
+                project_root="/tmp/project-root",
                 context_root="/tmp/workflow-run",
                 manifest_root="/tmp/workflow-run/manifests",
                 created_at=datetime(2026, 6, 3).isoformat(),
@@ -252,15 +266,17 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 captured["cmd"] = cmd
                 captured["stdin_data"] = stdin_data
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             config = AgentConfig(
-                cli_cmd=["copilot"],
+                cli_cmd=["./copilot"],
                 provider_kind="copilot",
                 default_model="claude-sonnet-4.5",
                 extra_args=[
@@ -274,6 +290,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 model="claude-sonnet-4.5",
                 prompt="review the repository",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
@@ -283,7 +300,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 captured["cmd"],
                 [
-                    "copilot",
+                    "./copilot",
                     "--model",
                     "claude-sonnet-4.5",
                     "--silent",

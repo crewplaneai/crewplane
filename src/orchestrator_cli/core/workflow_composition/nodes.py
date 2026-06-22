@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..workflow_models import WorkflowNode
+from ..workspace_policy import PROJECT_ROOT_WORKTREE_SELECTOR
 from .models import ComposedNode, CompositionContext, NodeSpec
 from .rewrites import (
     qualify_id,
@@ -24,16 +26,24 @@ def compose_local_node(
         )
         for dependency in node_payload.needs
     )
+    composed_worktree = _compose_worktree_selector(context, node_payload)
+    implicit_worktree_selector = _implicit_worktree_selector(context, node_payload)
 
     if node_payload.mode == "input":
         return (
             ComposedNode(
                 payload=node_payload.model_copy(
-                    update={"id": composed_id, "needs": list(composed_needs)}
+                    update={
+                        "id": composed_id,
+                        "needs": list(composed_needs),
+                        "worktree": composed_worktree,
+                    }
                 ),
                 source_path=node.source_path,
                 source_span=node.source_span,
                 prompt_segment_spans=node.prompt_segment_spans,
+                local_worktree_count=len(context.workflow.worktrees),
+                implicit_worktree_selector=implicit_worktree_selector,
             ),
             set(),
         )
@@ -53,11 +63,14 @@ def compose_local_node(
                     "id": composed_id,
                     "needs": list(composed_needs),
                     "prompt_segments": resolved_segments,
+                    "worktree": composed_worktree,
                 }
             ),
             source_path=node.source_path,
             source_span=node.source_span,
             prompt_segment_spans=node.prompt_segment_spans,
+            local_worktree_count=len(context.workflow.worktrees),
+            implicit_worktree_selector=implicit_worktree_selector,
         ),
         consumed_params,
     )
@@ -80,3 +93,24 @@ def resolve_bound_input_nodes(
             )
         resolved[raw_node_id] = source_id
     return resolved
+
+
+def _compose_worktree_selector(
+    context: CompositionContext,
+    node_payload: WorkflowNode,
+) -> str | None:
+    selector = node_payload.worktree
+    if selector is None or selector == PROJECT_ROOT_WORKTREE_SELECTOR:
+        return selector
+    if not context.namespace_prefix:
+        return selector
+    return qualify_id(context.namespace_prefix, selector)
+
+
+def _implicit_worktree_selector(
+    context: CompositionContext,
+    node_payload: WorkflowNode,
+) -> str | None:
+    if node_payload.mode == "input" or node_payload.worktree is not None:
+        return None
+    return context.implicit_worktree_selector

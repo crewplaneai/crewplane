@@ -13,7 +13,11 @@ from typing import Literal
 
 from orchestrator_cli.architecture.contracts import JsonObject
 
-from .diagnostics import PreflightDiagnostic
+from .diagnostics import (
+    PreflightDiagnostic,
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from .serialization import canonical_json_bytes
 
 FingerprintKeyPolicy = Literal["persist_if_needed", "read_only", "ephemeral"]
@@ -111,8 +115,8 @@ class FingerprintKeyProvider:
         except OSError as exc:
             return [
                 PreflightDiagnostic(
-                    code="FINGERPRINT-KEY",
-                    phase="env_policy",
+                    code=PreflightDiagnosticCode.FINGERPRINT_KEY,
+                    phase=PreflightDiagnosticPhase.ENV_POLICY,
                     path=path_label,
                     message=f"Unable to inspect fingerprint key: {exc}",
                 )
@@ -120,8 +124,8 @@ class FingerprintKeyProvider:
         if stat.S_ISLNK(metadata.st_mode):
             diagnostics.append(
                 PreflightDiagnostic(
-                    code="FINGERPRINT-KEY",
-                    phase="env_policy",
+                    code=PreflightDiagnosticCode.FINGERPRINT_KEY,
+                    phase=PreflightDiagnosticPhase.ENV_POLICY,
                     path=path_label,
                     message="Fingerprint key must not be a symlink.",
                 )
@@ -129,8 +133,8 @@ class FingerprintKeyProvider:
         if not stat.S_ISREG(metadata.st_mode):
             diagnostics.append(
                 PreflightDiagnostic(
-                    code="FINGERPRINT-KEY",
-                    phase="env_policy",
+                    code=PreflightDiagnosticCode.FINGERPRINT_KEY,
+                    phase=PreflightDiagnosticPhase.ENV_POLICY,
                     path=path_label,
                     message="Fingerprint key must be a regular file.",
                 )
@@ -138,8 +142,8 @@ class FingerprintKeyProvider:
         if metadata.st_size != FINGERPRINT_KEY_SIZE:
             diagnostics.append(
                 PreflightDiagnostic(
-                    code="FINGERPRINT-KEY",
-                    phase="env_policy",
+                    code=PreflightDiagnosticCode.FINGERPRINT_KEY,
+                    phase=PreflightDiagnosticPhase.ENV_POLICY,
                     path=path_label,
                     message="Fingerprint key must contain exactly 32 bytes.",
                 )
@@ -147,8 +151,8 @@ class FingerprintKeyProvider:
         if os.name == "posix" and metadata.st_mode & 0o077:
             diagnostics.append(
                 PreflightDiagnostic(
-                    code="FINGERPRINT-KEY",
-                    phase="env_policy",
+                    code=PreflightDiagnosticCode.FINGERPRINT_KEY,
+                    phase=PreflightDiagnosticPhase.ENV_POLICY,
                     path=path_label,
                     message="Fingerprint key permissions must be owner-only.",
                 )

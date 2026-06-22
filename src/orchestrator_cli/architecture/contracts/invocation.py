@@ -26,6 +26,17 @@ ProviderUsageStatus = Literal["full", "partial", "none", "malformed"]
 InvocationCostConfidence = Literal["full", "partial", "none"]
 AggregateCostConfidence = Literal["full", "partial", "none", "mixed"]
 LogPresentationFormat = Literal["plain", "json_lines", "json_object"]
+InvocationSourceKind = Literal["project", "node", "candidate"]
+InvocationWorktreeContractMode = Literal["blob_exact"]
+InvocationWorkspaceKind = Literal["worktree", "snapshot"]
+InvocationWorkspaceMaterialization = Literal[
+    "snapshot_checkout",
+    "worktree_checkout",
+]
+InvokerWorkspaceLaunchMode = Literal[
+    "runtime_command_runner",
+    "mock_no_child_process",
+]
 
 _LOG_PRESENTATION_FORMATS: frozenset[str] = frozenset(
     {"plain", "json_lines", "json_object"}
@@ -160,6 +171,7 @@ class AgentInvoker(Protocol):
         model: str | None,
         prompt: str,
         output_file: Path,
+        cwd: Path,
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
@@ -195,6 +207,42 @@ class InvocationDiagnostic:
 InvocationDiagnosticSink = Callable[[InvocationDiagnostic], None]
 InvocationUsageSink = Callable[[InvocationUsage], None]
 ConsoleMessageSink = Callable[[str], None]
+InvocationRetryReset = Callable[[], None]
+InvocationRetryResetCancellation = Callable[[], None]
+WorkspaceEnvironmentAppliedSink = Callable[[], None]
+
+
+@dataclass(frozen=True)
+class InvocationSourceContext:
+    source_kind: InvocationSourceKind
+    source_node_id: str | None
+    source_commit: str
+    source_tree: str
+    candidate_sequence: int | None = None
+
+
+@dataclass(frozen=True)
+class InvocationWorktreeContract:
+    mode: InvocationWorktreeContractMode
+    schema_version: str
+
+
+@dataclass(frozen=True)
+class InvocationWorkspaceContext:
+    workspace_kind: InvocationWorkspaceKind
+    materialization: InvocationWorkspaceMaterialization
+    logical_worktree_name: str
+    cwd: Path
+    invocation_source: InvocationSourceContext
+    worktree_contract: InvocationWorktreeContract
+    checkout_root: Path | None = None
+    candidate_commit: str | None = None
+    result_commit: str | None = None
+    writable: bool = True
+    lineage_producer: bool = False
+    workspace_state_path: Path | None = None
+    child_environment_required: bool = False
+    child_environment_applied: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +257,12 @@ class InvocationContext:
     diagnostics: InvocationDiagnosticSink | None = None
     usage_recorder: InvocationUsageSink | None = None
     console_message_sink: ConsoleMessageSink | None = None
+    retry_reset: InvocationRetryReset | None = None
+    retry_reset_canceller: InvocationRetryResetCancellation | None = None
+    workspace_environment_applied_recorder: WorkspaceEnvironmentAppliedSink | None = (
+        None
+    )
+    workspace: InvocationWorkspaceContext | None = None
 
 
 @dataclass(frozen=True)
@@ -281,6 +335,73 @@ class InvocationPlan:
     log_provider_kind: ProviderKind
 
 
+@dataclass(frozen=True)
+class ChildProcessEnvironment:
+    set: Mapping[str, str]
+    unset: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "set", MappingProxyType(dict(self.set)))
+        object.__setattr__(self, "unset", tuple(self.unset))
+
+
+@dataclass(frozen=True)
+class InvokerWorkspaceSupport:
+    supported: bool
+    launch_mode: InvokerWorkspaceLaunchMode | None
+    honors_cwd: bool
+    controlled_child_environment: bool
+
+    @classmethod
+    def unsupported(cls) -> InvokerWorkspaceSupport:
+        return cls(
+            supported=False,
+            launch_mode=None,
+            honors_cwd=False,
+            controlled_child_environment=False,
+        )
+
+    def as_dict(self) -> JsonObject:
+        return {
+            "controlled_child_environment": self.controlled_child_environment,
+            "honors_cwd": self.honors_cwd,
+            "launch_mode": self.launch_mode,
+            "supported": self.supported,
+        }
+
+
+@dataclass(frozen=True)
+class InvokerAdapterCapabilities:
+    workspace: InvokerWorkspaceSupport
+
+    @classmethod
+    def workspace_supported(
+        cls,
+        launch_mode: InvokerWorkspaceLaunchMode,
+        controlled_child_environment: bool,
+    ) -> InvokerAdapterCapabilities:
+        return cls(
+            workspace=InvokerWorkspaceSupport(
+                supported=True,
+                launch_mode=launch_mode,
+                honors_cwd=True,
+                controlled_child_environment=controlled_child_environment,
+            )
+        )
+
+    @classmethod
+    def unsupported(cls) -> InvokerAdapterCapabilities:
+        return cls(workspace=InvokerWorkspaceSupport.unsupported())
+
+    def as_dict(self) -> JsonObject:
+        return {"workspace": self.workspace.as_dict()}
+
+
+class WorkspaceCompatibleInvokerAdapter(Protocol):
+    def workspace_capabilities(self) -> InvokerAdapterCapabilities:
+        """Return workspace launch compatibility metadata."""
+
+
 class CommandRunner(Protocol):
     async def __call__(
         self,
@@ -289,6 +410,8 @@ class CommandRunner(Protocol):
         log_file: Path | None,
         append_log: bool,
         log_header: bytes | None,
+        cwd: Path,
         invocation_context: InvocationContext | None,
         idle_timeout_seconds: float | None,
+        child_environment: ChildProcessEnvironment | None = None,
     ) -> CommandResult: ...

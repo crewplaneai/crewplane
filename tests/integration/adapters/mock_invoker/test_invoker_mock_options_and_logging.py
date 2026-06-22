@@ -33,6 +33,7 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="same prompt",
                 output_file=output_a,
+                cwd=(output_a).parent,
                 invocation_context=context,
             )
             await invoker.invoke(
@@ -40,6 +41,7 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="same prompt",
                 output_file=output_b,
+                cwd=(output_b).parent,
                 invocation_context=context,
             )
             self.assertEqual(
@@ -70,6 +72,16 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
         self.assertEqual(
             (descriptor.format, descriptor.profile), ("json_lines", "mock")
         )
+
+    def test_workspace_capabilities_declare_mock_no_child_process(self) -> None:
+        adapter = MockInvokerAdapter()
+
+        capabilities = adapter.workspace_capabilities().as_dict()["workspace"]
+
+        self.assertEqual(capabilities["supported"], True)
+        self.assertEqual(capabilities["launch_mode"], "mock_no_child_process")
+        self.assertEqual(capabilities["honors_cwd"], True)
+        self.assertEqual(capabilities["controlled_child_environment"], False)
 
     def test_create_invoker_rejects_invalid_option_types_and_values(self) -> None:
         adapter = MockInvokerAdapter()
@@ -135,6 +147,7 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 log_file=log_file,
                 invocation_context=InvocationContext(
                     node_id="node.a",
@@ -176,6 +189,7 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 log_file=log_file,
                 invocation_context=self._context(audit_round_num=3, round_num=1),
             )

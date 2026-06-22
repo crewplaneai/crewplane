@@ -1,6 +1,7 @@
 import asyncio
 import io
 import os
+import subprocess
 import tempfile
 import unittest
 from collections import deque
@@ -20,6 +21,7 @@ from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
 from orchestrator_cli.core.yaml_loader import load_yaml_unique
+from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
@@ -97,6 +99,31 @@ def _render_initialized_template_tree(rendered_root: Path) -> Path:
     return orchestrator_dir
 
 
+def _initialize_git_repository(root: Path) -> None:
+    _run_git(root, "init")
+    _run_git(root, "config", "user.name", "Orchestrator Test")
+    _run_git(root, "config", "user.email", "orchestrator-test@example.invalid")
+    _run_git(root, "add", ".")
+    _run_git(root, "commit", "-m", "initial")
+
+
+def _run_git(root: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", root.as_posix(), *args],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _readme_code_block_after(marker: str) -> str:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    marker_index = readme.index(marker)
+    fence_start = readme.index("```yaml", marker_index)
+    content_start = readme.index("\n", fence_start) + 1
+    content_end = readme.index("```", content_start)
+    return readme[content_start:content_end]
+
+
 class ExampleTemplateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.template_dir = Path("src/orchestrator_cli/example_templates")
@@ -163,6 +190,142 @@ class ExampleTemplateTests(unittest.TestCase):
             and "model_arg" in agent_payload
         ]
         self.assertEqual(offenders, [])
+
+    def test_config_template_documents_workspace_support(self) -> None:
+        rendered = templates.render_template_content(
+            (self.template_dir / "config.yml").read_text(encoding="utf-8")
+        )
+        expected_guidance = [
+            "non-Git projects work normally",
+            "Managed workspaces require settings.workspace.enabled: true",
+            "Clean ordinary Git repository: yes",
+            "Non-Git project: no; keep enabled: false",
+            "Git LFS or custom filters: no",
+            "text/eol/crlf conversion: no",
+            "Submodules, sparse clone, partial clone: no",
+            "blob_exact requires provider-visible file bytes",
+            "Optional audited setup commands selected by workflow worktrees",
+            '["uv", "sync"]',
+        ]
+
+        for expected_text in expected_guidance:
+            self.assertIn(expected_text, rendered)
+
+    def test_workflow_templates_cover_workspace_authoring_examples(self) -> None:
+        workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
+        self.assertGreaterEqual(len(workflow_templates), 1)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            rendered_root = Path(tmp_dir)
+            for workflow_path in workflow_templates:
+                rendered_workflow = rendered_root / workflow_path.relative_to(
+                    self.template_dir
+                )
+                rendered_workflow.parent.mkdir(parents=True, exist_ok=True)
+                rendered_workflow.write_text(
+                    templates.render_template_content(
+                        workflow_path.read_text(encoding="utf-8")
+                    ),
+                    encoding="utf-8",
+                )
+
+            workflows = []
+            for workflow_path in workflow_templates:
+                rendered_workflow = rendered_root / workflow_path.relative_to(
+                    self.template_dir
+                )
+                workflows.append(
+                    validate_workflow_plan(
+                        load_tasks_with_sources(
+                            rendered_workflow,
+                            project_root=rendered_root,
+                        ).workflow
+                    )
+                )
+
+        self.assertTrue(
+            any(workflow.worktrees for workflow in workflows),
+            msg="expected at least one generated workflow with worktrees",
+        )
+        self.assertTrue(
+            any(
+                declaration.kind == "snapshot"
+                for workflow in workflows
+                for declaration in workflow.worktrees.values()
+            ),
+            msg="expected a generated workflow with a snapshot worktree",
+        )
+        self.assertTrue(
+            any(
+                declaration.create_branch
+                for workflow in workflows
+                for declaration in workflow.worktrees.values()
+            ),
+            msg="expected a generated workflow with branch export",
+        )
+        self.assertTrue(
+            any(
+                len(workflow.worktrees) == 1
+                and any(
+                    node.mode != "input" and node.worktree is None
+                    for node in workflow.nodes
+                )
+                for workflow in workflows
+            ),
+            msg="expected a generated workflow demonstrating single-worktree inheritance",
+        )
+        self.assertTrue(
+            any(
+                len(
+                    {
+                        node.worktree
+                        for node in workflow.nodes
+                        if node.worktree
+                        and node.worktree != "none"
+                        and workflow.worktrees[node.worktree].kind == "worktree"
+                    }
+                )
+                > 1
+                for workflow in workflows
+            ),
+            msg="expected a generated workflow demonstrating separate worktrees",
+        )
+        self.assertTrue(
+            any(
+                any(node.worktree == "none" for node in workflow.nodes)
+                for workflow in workflows
+            ),
+            msg="expected a generated workflow demonstrating worktree: none",
+        )
+
+    def test_readme_workspace_example_is_valid_workflow_frontmatter(self) -> None:
+        frontmatter = _readme_code_block_after(
+            "Workflow files declare logical worktrees"
+        ).replace('"<schema-version>"', f'"{SCHEMA_VERSION}"')
+        workflow_markdown = (
+            frontmatter
+            + "\n\n## implement\nImplement the requested change.\n"
+            + "\n## review\nReview the implementation in writable scratch space.\n"
+            + "\n## summarize\nSummarize the review result from project root.\n"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            rendered_root = Path(tmp_dir)
+            workflow_path = rendered_root / "readme-workspace-example.task.md"
+            workflow_path.write_text(workflow_markdown, encoding="utf-8")
+
+            workflow = validate_workflow_plan(
+                load_tasks_with_sources(
+                    workflow_path,
+                    project_root=rendered_root,
+                ).workflow
+            )
+
+        review_node = next(node for node in workflow.nodes if node.id == "review")
+        self.assertEqual(review_node.worktree, "scratch")
+        self.assertEqual(
+            [provider.role for provider in review_node.providers], ["executor"]
+        )
 
     def test_workflow_markdown_template_is_valid(self) -> None:
         workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
@@ -316,8 +479,13 @@ class ExampleTemplateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             rendered_root = Path(tmp_dir)
             orchestrator_dir = _render_initialized_template_tree(rendered_root)
+            _initialize_git_repository(rendered_root)
             config = load_config(orchestrator_dir / "config.yml")
             assert config.settings is not None
+            config.settings.workspace.enabled = True
+            config.settings.workspace.cache_root = (
+                rendered_root.parent / f"{rendered_root.name}-workspace-cache"
+            ).as_posix()
             config.settings.integrations.invoker.implementation = "mock"
             config.settings.integrations.invoker.options = {
                 "delay_seconds": 0,

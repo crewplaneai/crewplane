@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from threading import Thread
 from typing import Protocol
 
 from rich.console import Console
@@ -28,6 +27,8 @@ from orchestrator_cli.observability.observer import Observer
 from orchestrator_cli.observability.persistent import render_run_summary_terminal
 from orchestrator_cli.observability.types import WorkflowTopology
 
+from .best_effort_thread import run_best_effort_thread
+
 UI_STOP_POLL_INTERVAL_SECONDS = 0.1
 EXTERNAL_CANCEL_REASON = "external_cancellation"
 UI_STOP_CANCEL_REASON = "ui_stop_requested"
@@ -38,13 +39,6 @@ SUMMARY_REFRESH_TIMEOUT_SECONDS = 1.0
 
 class WorkflowCancelledByUser(RuntimeError):
     """Raised when a live UI requests workflow cancellation."""
-
-
-@dataclass(frozen=True)
-class BestEffortThreadResult:
-    start_error: RuntimeError | None = None
-    timed_out: bool = False
-    operation_error: Exception | None = None
 
 
 class ExecuteWorkflowCallable(Protocol):
@@ -235,32 +229,6 @@ async def call_execute_workflow(
     )
 
 
-def run_best_effort_thread(
-    target: Callable[[], None],
-    name: str,
-    timeout_seconds: float,
-) -> BestEffortThreadResult:
-    operation_errors: list[Exception] = []
-
-    def guarded_target() -> None:
-        try:
-            target()
-        except Exception as exc:
-            operation_errors.append(exc)
-
-    thread = Thread(target=guarded_target, name=name, daemon=True)
-    try:
-        thread.start()
-    except RuntimeError as exc:
-        return BestEffortThreadResult(start_error=exc)
-    thread.join(timeout=timeout_seconds)
-    if thread.is_alive():
-        return BestEffortThreadResult(timed_out=True)
-    if operation_errors:
-        return BestEffortThreadResult(operation_error=operation_errors[0])
-    return BestEffortThreadResult()
-
-
 def record_failure_summary_event(
     persistent_logger: PersistentRunLogger | None,
     workflow: WorkflowPlan,
@@ -303,6 +271,24 @@ def refresh_failed_run_summary(
     if result.operation_error is not None:
         exc.add_note(f"end-of-run summary refresh failed: {result.operation_error}")
     return failed_summary_logger(persistent_logger)
+
+
+def refresh_successful_run_summary(
+    persistent_logger: PersistentRunLogger | None,
+) -> PersistentRunLogger | None:
+    if persistent_logger is None:
+        return None
+
+    result = run_best_effort_thread(
+        lambda: persistent_logger.refresh_summary(RunResult(status="succeeded")),
+        name="orchestrator-success-summary-refresh",
+        timeout_seconds=SUMMARY_REFRESH_TIMEOUT_SECONDS,
+    )
+    if result.start_error is not None or result.timed_out:
+        return persistent_logger
+    if result.operation_error is not None:
+        return persistent_logger
+    return persistent_logger
 
 
 def failed_summary_logger(

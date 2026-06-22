@@ -49,6 +49,8 @@ async def run_provider_call_with_drift_guard(
     except Exception as exc:
         provider_error = exc
 
+    allow_runtime_generated_file_snapshots(request)
+
     try:
         drift = detect_provider_call_drift(
             request,
@@ -131,6 +133,20 @@ async def invoke_provider_under_drift_guard(
             telemetry=captured_telemetry,
             findings_enabled=request.findings_enabled,
             on_log_file_resolved=request.allowed_paths.add,
+            rendered_workspace_files=request.rendered_workspace_files,
         ),
         display=replace(request.display, telemetry=captured_telemetry),
+    )
+
+
+def allow_runtime_generated_file_snapshots(request: DriftGuardCallRequest) -> None:
+    snapshot_root = request.runtime_context.generated_file_workspaces.roots_for_node(
+        request.node.id
+    ).get(request.output_file.resolve(strict=False))
+    if snapshot_root is None:
+        return
+    if not snapshot_root.exists():
+        return
+    request.allowed_paths.update(
+        path for path in snapshot_root.rglob("*") if path.is_file()
     )

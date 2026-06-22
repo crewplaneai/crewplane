@@ -19,11 +19,17 @@ from .compile_state import (
     token_source_span,
 )
 from .dependency_edges import append_dependency_edge, dependency_signature
+from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .models import Fragment
 from .references import TemplateReference
 from .signatures import signature_for_payload
 from .static_resources import append_static_resource, resolve_static_file
 from .token_catalog import append_token_catalog
+from .workspace_file_locators import (
+    token_signature_for_workspace_locator,
+    workspace_locator_metadata,
+    workspace_locator_resolved_payload,
+)
 
 _SENSITIVE_KEY_PATTERN = re.compile(
     r"(secret|token|password|passwd|api[_-]?key|credential|private)",
@@ -47,8 +53,8 @@ def node_reference_fragment(
     if artifact_name not in ALLOWED_NODE_ARTIFACT_NAME_SET:
         append_diagnostic(
             state,
-            code="NODE-REFERENCE",
-            phase="reference",
+            code=PreflightDiagnosticCode.NODE_REFERENCE,
+            phase=PreflightDiagnosticPhase.REFERENCE,
             node_id=node.id,
             message=f"Unsupported node artifact token '{reference.raw_token}'.",
         )
@@ -120,12 +126,41 @@ def file_reference_fragment(
     fragment_index: int,
     occurrence_id: str,
 ) -> Fragment | None:
+    workspace_locator = state.workspace_file_references.get(occurrence_id)
+    if workspace_locator is not None:
+        signature = token_signature_for_workspace_locator(workspace_locator)
+        append_token_catalog(
+            state=state,
+            occurrence_id=occurrence_id,
+            node=node,
+            target_role=target_role,
+            source_role=source_role,
+            reference=reference,
+            token_kind="file",
+            fragment_index=fragment_index,
+            signature=signature,
+            options=options,
+            source_span=token_source_span(node, options, segment_index, reference),
+            canonical_locator=workspace_locator.locator_id,
+            resolved=workspace_locator_resolved_payload(workspace_locator),
+            metadata=workspace_locator_metadata(workspace_locator),
+        )
+        return Fragment(
+            fragment_index=fragment_index,
+            kind="workspace_file_locator",
+            source_role=source_role,
+            locator={
+                "locator_id": workspace_locator.locator_id,
+                "source_class": workspace_locator.source_class,
+                "workspace_relative_path": workspace_locator.workspace_relative_path,
+            },
+        )
     resolution = state.static_file_references.get(occurrence_id)
     if resolution is None:
         append_diagnostic(
             state,
-            code="TEMPLATE-PLAN",
-            phase="template_plan",
+            code=PreflightDiagnosticCode.TEMPLATE_PLAN,
+            phase=PreflightDiagnosticPhase.TEMPLATE_PLAN,
             node_id=node.id,
             message=f"File token '{reference.raw_token}' was not resolved.",
         )
@@ -215,8 +250,8 @@ def static_value_fragment(
     if resolution is None:
         append_diagnostic(
             state,
-            code="TEMPLATE-PLAN",
-            phase="template_plan",
+            code=PreflightDiagnosticCode.TEMPLATE_PLAN,
+            phase=PreflightDiagnosticPhase.TEMPLATE_PLAN,
             node_id=node.id,
             message=f"Static value token '{reference.raw_token}' was not resolved.",
         )
@@ -333,11 +368,12 @@ def lookup_static_value(
     state: CompileState,
     node_id: str,
 ) -> str | None:
+    phase = static_value_phase(kind)
     if not key:
         append_diagnostic(
             state,
-            code="TEMPLATE-VALUE",
-            phase=f"{kind}_policy",
+            code=PreflightDiagnosticCode.TEMPLATE_VALUE,
+            phase=phase,
             node_id=node_id,
             message=f"{kind} template key is empty.",
         )
@@ -353,9 +389,17 @@ def lookup_static_value(
         return value
     append_diagnostic(
         state,
-        code="TEMPLATE-VALUE",
-        phase=f"{kind}_policy",
+        code=PreflightDiagnosticCode.TEMPLATE_VALUE,
+        phase=phase,
         node_id=node_id,
         message=f"{label} not set: {key}",
     )
     return None
+
+
+def static_value_phase(kind: str) -> PreflightDiagnosticPhase:
+    if kind == "env":
+        return PreflightDiagnosticPhase.ENV_POLICY
+    if kind == "var":
+        return PreflightDiagnosticPhase.VAR_POLICY
+    raise ValueError(f"Unsupported static value token kind: {kind}")

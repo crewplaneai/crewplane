@@ -1,189 +1,35 @@
 from __future__ import annotations
 
+import json
 import os
-import re
+import shutil
+import stat
 from collections.abc import Sequence
+from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
-GENERATED_FILE_ACTION_PATTERN = re.compile(
-    r"\b(?P<action>created|wrote|written|saved|generated|renamed|moved|updated)\b",
-    re.IGNORECASE,
+from .generated_file_detection import (
+    GENERATED_FILE_SNAPSHOT_METADATA_NAME,
+    GENERATED_FILE_SOURCE_METADATA_NAME,
+    GeneratedFileLink,
+    GeneratedFileReferenceDetector,
 )
-GENERATED_FILES_HEADING_PATTERN = re.compile(
-    r"^\s{0,3}#{1,6}\s+Generated Files\s*$",
-    re.IGNORECASE,
-)
-MARKDOWN_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s+\S")
-MODAL_GUIDANCE_PREFIX_FRAGMENT = (
-    r"\b(?:should|must|need(?:s|ed)?|could|would|will)\b"
-    r"(?:\W+\w+){0,4}\W+(?:be\W+)?"
-)
-NEGATED_CLAIM_PREFIX_FRAGMENT = (
-    r"\b(?:no|not|never|nothing|neither|without)\b(?:\W+\w+){0,6}\W+"
-)
-AUXILIARY_NOT_PREFIX_FRAGMENT = (
-    r"\b(?:was|were|is|are|did|does|do|has|have|had)\W+not\b"
-    r"(?:\W+\w+){0,5}\W+"
-)
-CONTRACTION_NOT_PREFIX_FRAGMENT = (
-    r"\b(?:wasn|weren|isn|aren|didn|doesn|don|hasn|haven|hadn)['’]t\b"
-    r"(?:\W+\w+){0,5}\W+"
-)
-# Review outputs often mention generated-file verbs in recommendations or negated
-# findings; only affirmative provider claims should create Generated Files links.
-NON_CLAIM_ACTION_PREFIX_PATTERN = re.compile(
-    r"(?:"
-    rf"{MODAL_GUIDANCE_PREFIX_FRAGMENT}"
-    rf"|{NEGATED_CLAIM_PREFIX_FRAGMENT}"
-    rf"|{AUXILIARY_NOT_PREFIX_FRAGMENT}"
-    rf"|{CONTRACTION_NOT_PREFIX_FRAGMENT}"
-    r")$",
-    re.IGNORECASE,
-)
-MARKDOWN_LINK_TARGET_PATTERN = re.compile(r"\[[^\]\n]+\]\((?P<target>[^)\n]+)\)")
-CODE_SPAN_PATTERN = re.compile(r"`(?P<path>[^`\n]+)`")
-URL_PATTERN = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
-BARE_PATH_PATTERN = re.compile(
-    r"(?<![\w@])(?P<path>(?:\.{1,2}/|[A-Za-z0-9_.-]+/)"
-    r"[A-Za-z0-9_./@%+-]+\.[A-Za-z0-9]{1,16})(?::\d+(?:-\d+)?)?"
-)
-LINE_NUMBER_SUFFIX_PATTERN = re.compile(r":\d+(?:-\d+)?$")
-RESERVED_WORKSPACE_PATH_ROOTS = frozenset(
-    {".orchestrator", "execution-stages", "execution-results"}
-)
+from .naming import build_generated_file_result_dir_name
+from .safe_files import contained_regular_file
+
+MAX_GENERATED_FILE_SNAPSHOT_FILES = 100
+MAX_GENERATED_FILE_SNAPSHOT_BYTES = 50 * 1024 * 1024
+MAX_GENERATED_FILE_SNAPSHOT_TOTAL_BYTES = 200 * 1024 * 1024
 
 
-class GeneratedFileReferenceDetector:
-    """Detect workspace files a provider output says it generated."""
-
-    def __init__(self, workspace_root: Path) -> None:
-        self._workspace_root = workspace_root.resolve()
-
-    def detect(self, content: str) -> tuple[Path, ...]:
-        generated_files: list[Path] = []
-        seen_generated_files: set[Path] = set()
-        in_explicit_section = False
-        for line in content.splitlines():
-            if GENERATED_FILES_HEADING_PATTERN.fullmatch(line):
-                in_explicit_section = True
-                continue
-            if in_explicit_section:
-                if MARKDOWN_HEADING_PATTERN.match(line):
-                    in_explicit_section = False
-                else:
-                    self._add_line_references(
-                        line, generated_files, seen_generated_files
-                    )
-                    continue
-
-            if not _line_claims_generated_file(line):
-                continue
-            self._add_claimed_line_references(
-                line, generated_files, seen_generated_files
-            )
-        return tuple(generated_files)
-
-    def _add_line_references(
-        self,
-        line: str,
-        generated_files: list[Path],
-        seen_generated_files: set[Path],
-    ) -> None:
-        for candidate in self._extract_candidates(line):
-            resolved_path = self._resolve_candidate(candidate)
-            if resolved_path is None or resolved_path in seen_generated_files:
-                continue
-            seen_generated_files.add(resolved_path)
-            generated_files.append(resolved_path)
-
-    def _add_claimed_line_references(
-        self,
-        line: str,
-        generated_files: list[Path],
-        seen_generated_files: set[Path],
-    ) -> None:
-        for candidate, start_index in self._extract_candidate_locations(line):
-            if not _candidate_claims_generated_file(line, start_index):
-                continue
-            resolved_path = self._resolve_candidate(candidate)
-            if resolved_path is None or resolved_path in seen_generated_files:
-                continue
-            seen_generated_files.add(resolved_path)
-            generated_files.append(resolved_path)
-
-    def _extract_candidates(self, line: str) -> tuple[str, ...]:
-        return tuple(
-            candidate
-            for candidate, _start_index in self._extract_candidate_locations(line)
-        )
-
-    def _extract_candidate_locations(self, line: str) -> tuple[tuple[str, int], ...]:
-        candidate_locations: list[tuple[str, int]] = []
-        candidate_locations.extend(
-            (match.group("target"), match.start("target"))
-            for match in MARKDOWN_LINK_TARGET_PATTERN.finditer(line)
-        )
-        candidate_locations.extend(
-            (match.group("path"), match.start("path"))
-            for match in CODE_SPAN_PATTERN.finditer(line)
-        )
-        scrubbed_line = URL_PATTERN.sub(
-            lambda match: " " * (match.end() - match.start()), line
-        )
-        candidate_locations.extend(
-            (match.group("path"), match.start("path"))
-            for match in BARE_PATH_PATTERN.finditer(scrubbed_line)
-        )
-        return tuple(candidate_locations)
-
-    def _resolve_candidate(self, raw_candidate: str) -> Path | None:
-        candidate = self._clean_candidate(raw_candidate)
-        if candidate is None:
-            return None
-
-        candidates = [candidate]
-        if any(char.isspace() for char in candidate):
-            candidates.append(candidate.split()[0])
-        for candidate_value in candidates:
-            resolved_path = self._resolve_clean_candidate(candidate_value)
-            if resolved_path is not None:
-                return resolved_path
-        return None
-
-    def _resolve_clean_candidate(self, candidate: str) -> Path | None:
-        candidate_path = Path(candidate)
-        if not candidate_path.suffix:
-            return None
-        target_path = (
-            candidate_path
-            if candidate_path.is_absolute()
-            else self._workspace_root / candidate_path
-        )
-        try:
-            resolved_path = target_path.resolve()
-            relative_path = resolved_path.relative_to(self._workspace_root)
-        except (OSError, ValueError):
-            return None
-        if not resolved_path.is_file():
-            return None
-        if _is_reserved_workspace_path(relative_path):
-            return None
-        return resolved_path
-
-    def _clean_candidate(self, raw_candidate: str) -> str | None:
-        candidate = raw_candidate.strip()
-        if not candidate or candidate.startswith(("#", "~")) or "://" in candidate:
-            return None
-        if candidate.startswith("<"):
-            closing_index = candidate.find(">")
-            if closing_index == -1:
-                return None
-            candidate = candidate[1:closing_index]
-        candidate = candidate.strip().strip("'\"")
-        candidate = LINE_NUMBER_SUFFIX_PATTERN.sub("", candidate)
-        if not candidate or candidate.startswith(("#", "~")) or "://" in candidate:
-            return None
-        return candidate
+@dataclass(frozen=True)
+class _GeneratedFileSnapshotCandidate:
+    source_path: Path
+    relative_path: Path
+    relative_label: str
+    size_bytes: int
+    changed: bool | None
 
 
 def build_generated_files_section(
@@ -203,10 +49,262 @@ def build_generated_files_section(
     return "\n".join(lines) + "\n"
 
 
-def _is_reserved_workspace_path(relative_path: Path) -> bool:
-    return bool(
-        relative_path.parts and relative_path.parts[0] in RESERVED_WORKSPACE_PATH_ROOTS
+def build_generated_file_links_section(
+    result_file: Path,
+    links: Sequence[GeneratedFileLink],
+) -> str | None:
+    if not links:
+        return None
+    lines = ["## Generated Files", ""]
+    seen_labels: set[str] = set()
+    for link in links:
+        if link.label in seen_labels:
+            continue
+        seen_labels.add(link.label)
+        link_target = os.path.relpath(link.target_path, result_file.parent)
+        lines.append(f"- [{link.label}]({_format_markdown_link_target(link_target)})")
+    return "\n".join(lines) + "\n"
+
+
+def generated_file_links_for_content(
+    content: str,
+    workspace_root: Path,
+    result_file: Path,
+    stage_name: str,
+    materialize: bool = False,
+    copy_namespace: str | None = None,
+) -> tuple[GeneratedFileLink, ...]:
+    detector = GeneratedFileReferenceDetector(
+        workspace_root,
+        source_root=_generated_file_snapshot_source_root(workspace_root),
     )
+    links: list[GeneratedFileLink] = []
+    for generated_file in detector.detect(content):
+        relative_path = generated_file.relative_to(workspace_root.resolve()).as_posix()
+        label = relative_path
+        target_path = generated_file
+        if materialize:
+            target_path = _copy_workspace_generated_file(
+                generated_file,
+                relative_path,
+                result_file,
+                stage_name,
+                copy_namespace,
+            )
+            if copy_namespace is not None:
+                label = f"{copy_namespace}/{relative_path}"
+        links.append(GeneratedFileLink(label=label, target_path=target_path))
+    return tuple(links)
+
+
+def snapshot_generated_file_workspace(
+    output_file: Path,
+    workspace_root: Path,
+    changed_paths: set[str] | None = None,
+) -> Path:
+    content = output_file.read_text(encoding="utf-8")
+    snapshot_root = generated_file_source_root(output_file)
+    resolved_workspace_root = workspace_root.resolve(strict=True)
+    detector = GeneratedFileReferenceDetector(resolved_workspace_root)
+    candidates = _generated_file_snapshot_candidates(
+        detector.detect(content),
+        resolved_workspace_root,
+        changed_paths,
+    )
+
+    _replace_generated_file_source_root(snapshot_root)
+    _write_generated_file_source_metadata(snapshot_root, resolved_workspace_root)
+    for candidate in candidates:
+        target = snapshot_root.joinpath(*candidate.relative_path.parts)
+        _ensure_contained_directory(snapshot_root, candidate.relative_path.parent)
+        _copy_generated_file_snapshot_candidate(candidate, target)
+    _write_generated_file_snapshot_metadata(
+        snapshot_root,
+        [
+            _generated_file_snapshot_candidate_metadata(candidate)
+            for candidate in candidates
+        ],
+    )
+    return snapshot_root
+
+
+def _generated_file_snapshot_candidates(
+    generated_files: Sequence[Path],
+    resolved_workspace_root: Path,
+    changed_paths: set[str] | None,
+) -> tuple[_GeneratedFileSnapshotCandidate, ...]:
+    total_bytes = 0
+    candidates: list[_GeneratedFileSnapshotCandidate] = []
+    for generated_file in generated_files:
+        relative_path = generated_file.relative_to(resolved_workspace_root)
+        relative_label = relative_path.as_posix()
+        if changed_paths is not None and relative_label not in changed_paths:
+            continue
+        if len(candidates) >= MAX_GENERATED_FILE_SNAPSHOT_FILES:
+            raise RuntimeError("Generated-file snapshot rejected too many files.")
+        size_bytes = generated_file.stat().st_size
+        if size_bytes > MAX_GENERATED_FILE_SNAPSHOT_BYTES:
+            raise RuntimeError(
+                f"Generated-file snapshot rejected oversized file: {relative_label}"
+            )
+        next_total_bytes = total_bytes + size_bytes
+        if next_total_bytes > MAX_GENERATED_FILE_SNAPSHOT_TOTAL_BYTES:
+            raise RuntimeError("Generated-file snapshot rejected oversized total.")
+        total_bytes = next_total_bytes
+        candidates.append(
+            _GeneratedFileSnapshotCandidate(
+                source_path=generated_file,
+                relative_path=relative_path,
+                relative_label=relative_label,
+                size_bytes=size_bytes,
+                changed=(
+                    relative_label in changed_paths
+                    if changed_paths is not None
+                    else None
+                ),
+            )
+        )
+    return tuple(candidates)
+
+
+def _generated_file_snapshot_candidate_metadata(
+    candidate: _GeneratedFileSnapshotCandidate,
+) -> dict[str, object]:
+    return {
+        "path": candidate.relative_label,
+        "changed": candidate.changed,
+        "size_bytes": candidate.size_bytes,
+    }
+
+
+def _copy_generated_file_snapshot_candidate(
+    candidate: _GeneratedFileSnapshotCandidate,
+    target: Path,
+) -> None:
+    shutil.copyfile(candidate.source_path, target)
+    if target.stat().st_size == candidate.size_bytes:
+        return
+    target.unlink(missing_ok=True)
+    raise RuntimeError(
+        "Generated-file snapshot source changed while copying: "
+        f"{candidate.relative_label}"
+    )
+
+
+def generated_file_source_root(output_file: Path) -> Path:
+    return _generated_file_source_root(output_file)
+
+
+def _generated_file_snapshot_source_root(snapshot_root: Path) -> Path | None:
+    metadata_file = contained_regular_file(
+        snapshot_root,
+        GENERATED_FILE_SOURCE_METADATA_NAME,
+    )
+    if metadata_file is None:
+        return None
+    try:
+        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    source_root = payload.get("source_root")
+    if not isinstance(source_root, str) or not source_root:
+        return None
+    return Path(source_root)
+
+
+def _write_generated_file_source_metadata(
+    snapshot_root: Path,
+    source_root: Path,
+) -> None:
+    metadata_file = snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME
+    metadata_file.write_text(
+        json.dumps({"source_root": source_root.as_posix()}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_generated_file_snapshot_metadata(
+    snapshot_root: Path,
+    copied_files: Sequence[dict[str, object]],
+) -> None:
+    metadata_file = snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME
+    metadata_file.write_text(
+        json.dumps({"files": list(copied_files)}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _copy_workspace_generated_file(
+    generated_file: Path,
+    relative_path: str,
+    result_file: Path,
+    stage_name: str,
+    copy_namespace: str | None,
+) -> Path:
+    target = (
+        result_file.parent
+        / "generated-files"
+        / build_generated_file_result_dir_name(stage_name)
+    )
+    if copy_namespace is not None:
+        target = target / build_generated_file_result_dir_name(copy_namespace)
+    for part in Path(relative_path).parts:
+        target = target / part
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(generated_file, target)
+    return target
+
+
+def _generated_file_source_root(output_file: Path) -> Path:
+    digest = sha256(output_file.resolve(strict=False).as_posix().encode()).hexdigest()
+    return (
+        output_file.parent
+        / "generated-file-sources"
+        / f"{build_generated_file_result_dir_name(output_file.stem)}-{digest[:12]}"
+    )
+
+
+def _replace_generated_file_source_root(path: Path) -> None:
+    _ensure_safe_directory(path.parent.parent)
+    _ensure_contained_directory(path.parent.parent, Path(path.parent.name))
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        path.mkdir(parents=True, exist_ok=False)
+        return
+    if not stat.S_ISDIR(mode) or stat.S_ISLNK(mode):
+        raise RuntimeError(
+            f"Generated-file source path is not a directory: {path.as_posix()}"
+        )
+    shutil.rmtree(path)
+    path.mkdir(parents=True, exist_ok=False)
+
+
+def _ensure_contained_directory(root: Path, relative_path: Path) -> Path:
+    current = root
+    for part in relative_path.parts:
+        if part in {"", ".", ".."}:
+            raise RuntimeError("Generated-file source path is unsafe.")
+        current = current / part
+        if current.exists() or current.is_symlink():
+            _ensure_safe_directory(current)
+            continue
+        current.mkdir(exist_ok=False)
+    return current
+
+
+def _ensure_safe_directory(path: Path) -> None:
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        path.mkdir(parents=True, exist_ok=True)
+        return
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        raise RuntimeError(
+            f"Generated-file source path is not a directory: {path.as_posix()}"
+        )
 
 
 def _format_markdown_link_target(link_target: str) -> str:
@@ -214,40 +312,3 @@ def _format_markdown_link_target(link_target: str) -> str:
     if any(char.isspace() for char in normalized_target):
         return f"<{normalized_target}>"
     return normalized_target
-
-
-def _line_claims_generated_file(line: str) -> bool:
-    return any(
-        not _action_match_is_non_claim(line, match.start())
-        for match in GENERATED_FILE_ACTION_PATTERN.finditer(line)
-    )
-
-
-def _action_match_is_non_claim(line: str, action_start: int) -> bool:
-    prefix = line[max(0, action_start - 120) : action_start]
-    return bool(NON_CLAIM_ACTION_PREFIX_PATTERN.search(prefix))
-
-
-def _candidate_claims_generated_file(line: str, candidate_start: int) -> bool:
-    action_matches = tuple(GENERATED_FILE_ACTION_PATTERN.finditer(line))
-    if not action_matches:
-        return False
-    nearest_action = min(
-        action_matches,
-        key=lambda match: _distance_to_candidate(
-            match.start(), match.end(), candidate_start
-        ),
-    )
-    return not _action_match_is_non_claim(line, nearest_action.start())
-
-
-def _distance_to_candidate(
-    action_start: int,
-    action_end: int,
-    candidate_start: int,
-) -> int:
-    if action_start <= candidate_start <= action_end:
-        return 0
-    if action_end < candidate_start:
-        return candidate_start - action_end
-    return action_start - candidate_start

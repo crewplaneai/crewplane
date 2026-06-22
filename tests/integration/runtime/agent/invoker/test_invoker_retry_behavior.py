@@ -7,7 +7,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
+from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
+    CommandResult,
+    InvocationContext,
+)
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.agent.failures import (
     InvocationFailureError,
@@ -63,6 +67,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
             finally:
@@ -103,13 +108,15 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 "test-model",
                 "prompt",
                 output_file,
+                output_file.parent,
                 log_file=log_file,
                 plan_builder=build_cli_invocation_plan,
             )
 
             log_content = log_file.read_text(encoding="utf-8")
             self.assertIn("started_at:", log_content)
-            self.assertIn(f"cli_executable: {sys.executable}", log_content)
+            resolved_python = Path(sys.executable).resolve(strict=True).as_posix()
+            self.assertIn(f"cli_executable: {resolved_python}", log_content)
             self.assertIn("model: test-model", log_content)
             self.assertIn(f"output_file: {output_file}", log_content)
             self.assertIn("---", log_content)
@@ -139,6 +146,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 None,
                 "prompt",
                 output_file,
+                output_file.parent,
                 log_file=log_file,
                 plan_builder=build_cli_invocation_plan,
             )
@@ -175,6 +183,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 "test-model",
                 "prompt",
                 output_file,
+                output_file.parent,
                 log_file=log_file,
                 plan_builder=build_cli_invocation_plan,
             )
@@ -230,6 +239,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                         "test-model",
                         "prompt",
                         output_file,
+                        output_file.parent,
                         log_file=log_file,
                         plan_builder=build_cli_invocation_plan,
                     )
@@ -272,6 +282,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
 
@@ -325,6 +336,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
             finally:
@@ -371,6 +383,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     "test-model",
                     "prompt",
                     output_file,
+                    output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
             self.assertFalse(output_file.exists())
@@ -387,8 +400,10 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] == 1:
@@ -409,6 +424,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 model="test-model",
                 prompt="prompt",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
@@ -431,8 +447,10 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 return CommandResult(
@@ -455,6 +473,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 model="test-model",
                 prompt="prompt",
                 output_file=output_file,
+                cwd=output_file.parent,
                 log_file=None,
                 invocation_context=None,
                 command_runner=runner,
@@ -477,8 +496,10 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] == 1:
@@ -508,6 +529,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -531,8 +553,10 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 return CommandResult(
@@ -562,6 +586,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,
@@ -589,8 +614,10 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
                 log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
                 invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] == 1:
@@ -619,6 +646,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     model="test-model",
                     prompt="prompt",
                     output_file=output_file,
+                    cwd=output_file.parent,
                     log_file=None,
                     invocation_context=None,
                     command_runner=runner,

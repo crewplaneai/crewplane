@@ -1,7 +1,15 @@
+import os
+import stat
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from orchestrator_cli.adapters.invokers.cli import CliInvokerAdapter
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_log_presentation
+from orchestrator_cli.adapters.invokers.cli_invoker import (
+    build_cli_invocation_plan,
+    build_cli_log_presentation,
+)
 from orchestrator_cli.core.config import AgentConfig, Config
 from orchestrator_cli.version import SCHEMA_VERSION
 
@@ -24,6 +32,16 @@ class CliInvokerAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not support options"):
             adapter.create_invoker(config=config, options={"x": 1})
 
+    def test_workspace_capabilities_declare_runtime_command_runner(self) -> None:
+        adapter = CliInvokerAdapter()
+
+        capabilities = adapter.workspace_capabilities().as_dict()["workspace"]
+
+        self.assertEqual(capabilities["supported"], True)
+        self.assertEqual(capabilities["launch_mode"], "runtime_command_runner")
+        self.assertEqual(capabilities["honors_cwd"], True)
+        self.assertEqual(capabilities["controlled_child_environment"], True)
+
     def test_builtin_provider_log_presentation_descriptors(self) -> None:
         claude = build_cli_log_presentation(
             AgentConfig(cli_cmd=["claude"], provider_kind="claude")
@@ -36,3 +54,53 @@ class CliInvokerAdapterTests(unittest.TestCase):
         self.assertEqual((claude.format, claude.profile), ("json_object", "claude"))
         self.assertEqual((codex.format, codex.profile), ("json_lines", "codex"))
         self.assertEqual((generic.format, generic.profile), ("plain", "generic"))
+
+    def test_invocation_plan_resolves_cli_executable_before_workspace_cwd(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tool_dir = Path(tmp_dir) / "tools"
+            tool_dir.mkdir()
+            executable = tool_dir / "provider"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+            expected_executable = executable.resolve(strict=True).as_posix()
+            workspace_dir = Path(tmp_dir) / "workspace"
+            workspace_dir.mkdir()
+            (workspace_dir / "provider").write_text(
+                "#!/bin/sh\nexit 99\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"PATH": tool_dir.as_posix()}):
+                plan = build_cli_invocation_plan(
+                    AgentConfig(cli_cmd=["provider"]),
+                    model=None,
+                    prompt="prompt",
+                    output_file=workspace_dir / "output.md",
+                )
+
+        self.assertEqual(plan.cmd[0], expected_executable)
+
+    def test_invocation_plan_preserves_relative_path_cli_executable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tool_dir = Path(tmp_dir) / "tools"
+            tool_dir.mkdir()
+            executable = tool_dir / "provider"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+            relative_executable = os.path.relpath(executable, Path.cwd())
+            config = AgentConfig(cli_cmd=["echo"]).model_copy(
+                update={"cli_cmd": [relative_executable]}
+            )
+
+            plan = build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+            )
+
+        self.assertEqual(plan.cmd[0], relative_executable)

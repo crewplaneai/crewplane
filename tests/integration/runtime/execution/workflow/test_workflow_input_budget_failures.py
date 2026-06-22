@@ -7,7 +7,10 @@ from orchestrator_cli.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from orchestrator_cli.architecture.contracts import CommandResult
+from orchestrator_cli.architecture.contracts import (
+    ChildProcessEnvironment,
+    CommandResult,
+)
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
 from orchestrator_cli.core.workflow_models import (
@@ -354,7 +357,10 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
             config = Config(
                 version=SCHEMA_VERSION,
                 agents={
-                    "alpha": AgentConfig(cli_cmd=["alpha-cli"], default_model="alpha"),
+                    "alpha": AgentConfig(
+                        cli_cmd=["./alpha-cli"],
+                        default_model="alpha",
+                    ),
                 },
             )
             workflow = WorkflowPlan(
@@ -379,8 +385,10 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 log_file: Path | None,
                 append_log: bool,  # noqa: ARG001 - Required by test double or callback signature.
                 log_header: bytes | None,
+                cwd: Path,  # noqa: ARG001 - Required by test double or callback signature.
                 invocation_context,  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by test double or callback signature.
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by test double or callback signature.
             ) -> CommandResult:
                 assert log_file is not None
                 log_file.parent.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
+from enum import StrEnum
 
 from orchestrator_cli.core.prompt_segments import PromptSegment, PromptSegmentRole
 from orchestrator_cli.core.workflow_models import WorkflowNode, WorkflowPlan
@@ -8,12 +10,14 @@ from orchestrator_cli.core.workflow_models import WorkflowNode, WorkflowPlan
 from .compile_state import (
     CompileState,
     PreflightCompileOptions,
+    allowed_template_paths,
     append_diagnostic,
     module_id,
     node_source_span,
     source_file,
     source_root,
 )
+from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .fragment_handlers import (
     file_reference_fragment,
     node_reference_fragment,
@@ -22,17 +26,20 @@ from .fragment_handlers import (
     static_value_fragment,
 )
 from .input_sources import append_input_source_token_catalog, resolve_input_source
-from .models import Fragment, RenderPlan, RenderStream
+from .models import Fragment, RenderPlan, RenderStream, WorkspaceFileTarget
 from .plan_signatures import template_hash
 from .references import TemplateReference, iter_template_references
 from .signatures import signature_for_payload
+from .workspace_file_locators import resolve_workspace_file_reference
+from .workspace_file_selection import (
+    is_allowlisted_absolute_path,
+    node_selects_managed_workspace,
+)
 
 
-@dataclass(frozen=True)
-class RenderTokenOccurrence:
-    node: WorkflowNode
-    reference: TemplateReference
-    occurrence_id: str
+class RenderTargetRole(StrEnum):
+    EXECUTOR = "executor"
+    REVIEWER = "reviewer"
 
 
 def apply_file_policy(
@@ -42,9 +49,26 @@ def apply_file_policy(
 ) -> None:
     for node in workflow.nodes:
         if node.mode == "input":
-            resolve_input_source(node, options, state)
+            resolve_input_source(workflow, node, options, state)
     for occurrence in iter_render_token_occurrences(workflow):
         if occurrence.reference.kind != "file":
+            continue
+        if should_use_workspace_file_locator(
+            workflow,
+            occurrence.node,
+            occurrence.reference,
+            options,
+        ):
+            resolve_workspace_file_reference(
+                workflow,
+                occurrence.node,
+                workspace_file_target_for_role(occurrence.target_role),
+                occurrence.segment_index,
+                occurrence.reference,
+                occurrence.occurrence_id,
+                options,
+                state,
+            )
             continue
         resolve_file_reference(
             occurrence.node,
@@ -53,6 +77,115 @@ def apply_file_policy(
             state,
             occurrence.occurrence_id,
         )
+
+
+def should_use_workspace_file_locator(
+    workflow: WorkflowPlan,
+    node: WorkflowNode,
+    reference: TemplateReference,
+    options: PreflightCompileOptions,
+) -> bool:
+    return (
+        options.workspace_source_snapshot is not None
+        and node_selects_managed_workspace(workflow, node)
+        and reference.key is not None
+        and not is_allowlisted_absolute_reference(reference.key, options)
+    )
+
+
+@dataclass(frozen=True)
+class RenderTokenOccurrence:
+    node: WorkflowNode
+    reference: TemplateReference
+    occurrence_id: str
+    target_role: RenderTargetRole
+    source_role: PromptSegmentRole
+    segment_index: int
+
+
+def iter_render_token_occurrences(
+    workflow: WorkflowPlan,
+) -> Iterator[RenderTokenOccurrence]:
+    for node in workflow.nodes:
+        if node.mode == "input":
+            continue
+        yield from iter_node_render_token_occurrences(node)
+
+
+def iter_node_render_token_occurrences(
+    node: WorkflowNode,
+) -> Iterator[RenderTokenOccurrence]:
+    for segment_index, segment in enumerate(node.prompt_segments):
+        yield from iter_segment_render_token_occurrences(
+            node,
+            segment_index,
+            segment,
+        )
+
+
+def iter_segment_render_token_occurrences(
+    node: WorkflowNode,
+    segment_index: int,
+    segment: PromptSegment,
+) -> Iterator[RenderTokenOccurrence]:
+    target_roles = target_roles_for_segment(segment)
+    for reference_index, reference in enumerate(
+        iter_template_references(segment.content)
+    ):
+        for target_role in target_roles:
+            yield RenderTokenOccurrence(
+                node=node,
+                reference=reference,
+                occurrence_id=render_token_occurrence_id(
+                    node.id,
+                    target_role,
+                    segment_index,
+                    reference_index,
+                ),
+                target_role=target_role,
+                source_role=segment.role,
+                segment_index=segment_index,
+            )
+
+
+def target_roles_for_segment(
+    segment: PromptSegment,
+) -> tuple[RenderTargetRole, ...]:
+    match segment.role:
+        case "shared":
+            return (RenderTargetRole.EXECUTOR, RenderTargetRole.REVIEWER)
+        case "executor":
+            return (RenderTargetRole.EXECUTOR,)
+        case "reviewer":
+            return (RenderTargetRole.REVIEWER,)
+    raise ValueError(f"Unsupported prompt segment role: {segment.role!r}")
+
+
+def workspace_file_target_for_role(
+    target_role: RenderTargetRole,
+) -> WorkspaceFileTarget:
+    match target_role:
+        case RenderTargetRole.EXECUTOR:
+            return "executor_prompt"
+        case RenderTargetRole.REVIEWER:
+            return "reviewer_prompt"
+    raise ValueError(f"Unsupported render target role: {target_role!r}")
+
+
+def render_token_occurrence_id(
+    node_id: str,
+    target_role: RenderTargetRole,
+    segment_index: int,
+    reference_index: int,
+) -> str:
+    return f"{node_id}:{target_role.value}:{segment_index}:{reference_index}"
+
+
+def is_allowlisted_absolute_reference(
+    raw_path: str,
+    options: PreflightCompileOptions,
+) -> bool:
+    return is_allowlisted_absolute_path(raw_path, allowed_template_paths(options))
 
 
 def apply_env_policy(
@@ -93,30 +226,6 @@ def apply_static_value_policy(
         )
 
 
-def iter_render_token_occurrences(
-    workflow: WorkflowPlan,
-) -> tuple[RenderTokenOccurrence, ...]:
-    occurrences: list[RenderTokenOccurrence] = []
-    for node in workflow.nodes:
-        if node.mode == "input":
-            continue
-        for target_role in ("executor", "reviewer"):
-            for segment in node.prompt_segments:
-                if segment.role not in ("shared", target_role):
-                    continue
-                for reference in iter_template_references(segment.content):
-                    occurrences.append(
-                        RenderTokenOccurrence(
-                            node=node,
-                            reference=reference,
-                            occurrence_id=(
-                                f"{node.id}:{target_role}:{len(occurrences)}"
-                            ),
-                        )
-                    )
-    return tuple(occurrences)
-
-
 def compile_render_plan(
     node: WorkflowNode,
     options: PreflightCompileOptions,
@@ -138,21 +247,21 @@ def compile_render_plan(
             {"node_id": node.id, "template_hash": compiled_template_hash}
         ),
         streams=[
-            compile_render_stream(node, "executor", options, state),
-            compile_render_stream(node, "reviewer", options, state),
+            compile_render_stream(node, RenderTargetRole.EXECUTOR, options, state),
+            compile_render_stream(node, RenderTargetRole.REVIEWER, options, state),
         ],
     )
 
 
 def compile_render_stream(
     node: WorkflowNode,
-    target_role: str,
+    target_role: RenderTargetRole,
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> RenderStream:
     fragments: list[Fragment] = []
     for segment_index, segment in enumerate(node.prompt_segments):
-        if segment.role not in ("shared", target_role):
+        if target_role not in target_roles_for_segment(segment):
             continue
         append_segment_fragments(
             node=node,
@@ -163,12 +272,12 @@ def compile_render_stream(
             state=state,
             fragments=fragments,
         )
-    return RenderStream(target_role=target_role, fragments=fragments)
+    return RenderStream(target_role=target_role.value, fragments=fragments)
 
 
 def append_segment_fragments(
     node: WorkflowNode,
-    target_role: str,
+    target_role: RenderTargetRole,
     segment_index: int,
     segment: PromptSegment,
     options: PreflightCompileOptions,
@@ -176,7 +285,14 @@ def append_segment_fragments(
     fragments: list[Fragment],
 ) -> None:
     cursor = 0
-    for reference in iter_template_references(segment.content):
+    for occurrence in iter_segment_render_token_occurrences(
+        node,
+        segment_index,
+        segment,
+    ):
+        if occurrence.target_role != target_role:
+            continue
+        reference = occurrence.reference
         if reference.start > cursor:
             fragments.append(
                 Fragment(
@@ -186,12 +302,8 @@ def append_segment_fragments(
                     text=segment.content[cursor : reference.start],
                 )
             )
-        fragment = fragment_for_reference(
-            node=node,
-            target_role=target_role,
-            source_role=segment.role,
-            segment_index=segment_index,
-            reference=reference,
+        fragment = fragment_for_occurrence(
+            occurrence=occurrence,
             options=options,
             state=state,
             fragment_index=len(fragments),
@@ -199,6 +311,7 @@ def append_segment_fragments(
         if fragment is not None:
             fragments.append(fragment)
         cursor = reference.end
+
     if cursor < len(segment.content):
         fragments.append(
             Fragment(
@@ -210,67 +323,64 @@ def append_segment_fragments(
         )
 
 
-def fragment_for_reference(
-    node: WorkflowNode,
-    target_role: str,
-    source_role: PromptSegmentRole,
-    segment_index: int,
-    reference: TemplateReference,
+def fragment_for_occurrence(
+    occurrence: RenderTokenOccurrence,
     options: PreflightCompileOptions,
     state: CompileState,
     fragment_index: int,
 ) -> Fragment | None:
-    occurrence_id = f"{node.id}:{target_role}:{state.render_token_index}"
-    state.render_token_index += 1
+    node = occurrence.node
+    target_role = occurrence.target_role.value
+    reference = occurrence.reference
     if reference.kind == "node":
         return node_reference_fragment(
             node,
             target_role,
-            source_role,
-            segment_index,
+            occurrence.source_role,
+            occurrence.segment_index,
             reference,
             options,
             state,
             fragment_index,
-            occurrence_id,
+            occurrence.occurrence_id,
         )
     if reference.kind == "file":
         return file_reference_fragment(
             node,
             target_role,
-            source_role,
-            segment_index,
+            occurrence.source_role,
+            occurrence.segment_index,
             reference,
             options,
             state,
             fragment_index,
-            occurrence_id,
+            occurrence.occurrence_id,
         )
     if reference.kind in {"env", "var"}:
         return static_value_fragment(
             node,
             target_role,
-            source_role,
-            segment_index,
+            occurrence.source_role,
+            occurrence.segment_index,
             reference,
             options,
             state,
             fragment_index,
-            occurrence_id,
+            occurrence.occurrence_id,
         )
     if reference.kind == "param":
         append_diagnostic(
             state,
-            code="PARAM-TOKEN",
-            phase="template_plan",
+            code=PreflightDiagnosticCode.PARAM_TOKEN,
+            phase=PreflightDiagnosticPhase.TEMPLATE_PLAN,
             node_id=node.id,
             message=f"Composition-only token '{reference.raw_token}' reached preflight.",
         )
         return None
     append_diagnostic(
         state,
-        code="TEMPLATE-TOKEN",
-        phase="template_plan",
+        code=PreflightDiagnosticCode.TEMPLATE_TOKEN,
+        phase=PreflightDiagnosticPhase.TEMPLATE_PLAN,
         node_id=node.id,
         message=f"Unsupported template token '{reference.raw_token}'.",
     )

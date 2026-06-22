@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import JsonObject
+from orchestrator_cli.architecture.contracts import (
+    CanonicalIntegrationConfig,
+    InvokerAdapterCapabilities,
+    JsonObject,
+)
 from orchestrator_cli.architecture.loader import (
     instantiate_adapter,
     resolve_implementation_path,
@@ -54,6 +59,7 @@ def build_runtime_config_snapshot(
         invoker_identity,
         dict(invoker_spec.options),
     )
+    invoker_config = normalize_invoker_capabilities(invoker_adapter, invoker_config)
     artifact_config = artifacts_adapter.canonicalize_options(
         artifacts_spec.implementation,
         artifacts_identity,
@@ -80,3 +86,51 @@ def build_runtime_config_snapshot(
         artifact_options=dict(artifact_config.options),
         ui_options=dict(ui_config.options),
     )
+
+
+def normalize_invoker_capabilities(
+    invoker_adapter: object,
+    invoker_config: CanonicalIntegrationConfig,
+) -> CanonicalIntegrationConfig:
+    declared = declared_invoker_capabilities(invoker_adapter)
+    capabilities = dict(invoker_config.capabilities)
+    if declared is None:
+        capabilities.setdefault(
+            "workspace",
+            InvokerAdapterCapabilities.unsupported().as_dict()["workspace"],
+        )
+        return invoker_config.model_copy(update={"capabilities": capabilities})
+    merge_declared_invoker_capabilities(capabilities, declared)
+    return invoker_config.model_copy(update={"capabilities": capabilities})
+
+
+def declared_invoker_capabilities(invoker_adapter: object) -> JsonObject | None:
+    capability_factory = getattr(invoker_adapter, "workspace_capabilities", None)
+    if not callable(capability_factory):
+        return None
+    capabilities = capability_factory()
+    as_dict = getattr(capabilities, "as_dict", None)
+    if not callable(as_dict):
+        raise ValueError(
+            "Invoker adapter workspace_capabilities() must return capability metadata."
+        )
+    payload = as_dict()
+    if not isinstance(payload, Mapping):
+        raise ValueError(
+            "Invoker adapter workspace_capabilities() returned non-mapping metadata."
+        )
+    return dict(payload)
+
+
+def merge_declared_invoker_capabilities(
+    capabilities: JsonObject,
+    declared: JsonObject,
+) -> None:
+    for name, value in declared.items():
+        existing = capabilities.get(name)
+        if existing is not None and existing != value:
+            raise ValueError(
+                "Invoker adapter workspace capability metadata conflicts with "
+                f"canonicalized capability '{name}'."
+            )
+        capabilities[name] = value

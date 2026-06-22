@@ -25,6 +25,7 @@ from .models import (
     PreflightExecutionNode,
     ProviderRecord,
     RenderPlan,
+    WorkspaceSelectionRecord,
 )
 from .runtime_config import RuntimeConfigSnapshot, runtime_agent_snapshot_payload
 from .signatures import signature_for_payload
@@ -37,6 +38,7 @@ def compile_execution_node(
     options: PreflightCompileOptions,
     render_plan: RenderPlan | None,
     state: CompileState,
+    workspace_policy: WorkspaceSelectionRecord | None = None,
 ) -> PreflightExecutionNode:
     policy = ExecutionPolicy(
         depth=node.depth,
@@ -68,6 +70,7 @@ def compile_execution_node(
         render_plan_id=render_plan.render_plan_id if render_plan is not None else None,
         provider_records=provider_records(node, config, runtime_snapshot),
         execution_policy=policy,
+        workspace_policy=workspace_policy,
         artifact_contract=ArtifactContract(
             stage_path=build_stage_directory_name(node.id),
             output_path=build_result_filename(node.id),
@@ -76,6 +79,9 @@ def compile_execution_node(
             result_path=build_result_filename(node.id),
         ),
         input_content_ref=state.input_content_refs.get(node.id),
+        input_workspace_file_locator_id=state.input_workspace_file_locator_ids.get(
+            node.id
+        ),
     )
 
 

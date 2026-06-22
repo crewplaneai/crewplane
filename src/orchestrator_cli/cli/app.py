@@ -20,6 +20,7 @@ from orchestrator_cli.observability import ObservabilityHub
 from orchestrator_cli.runtime.execution import execute_workflow
 
 from . import workflow_runner
+from .cleanup import cleanup_app
 from .dry_run import preview_topological_waves, print_dry_run_plan
 from .paths import (
     ORCHESTRATOR_DIR,
@@ -38,6 +39,7 @@ from .templates import (
 )
 
 app = typer.Typer(name="orchestrator", help="Multi-agent CLI orchestrator")
+app.add_typer(cleanup_app, name="cleanup")
 
 
 @dataclass(frozen=True)
@@ -172,6 +174,7 @@ def _compile_validate_preview_for_context(
         orchestrator_dir=context.paths.orchestrator_dir,
         check_cli_availability=True,
         which_fn=shutil.which,
+        workspace_real_execution=False,
     )
     workflow_runner.raise_for_preflight_preview_errors(preview, console)
     return preview

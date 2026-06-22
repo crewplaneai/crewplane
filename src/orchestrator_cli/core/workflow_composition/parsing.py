@@ -34,6 +34,7 @@ def parsed_workflow_from_markdown(
         name=document.frontmatter.name,
         description=document.frontmatter.description or "",
         inputs=workflow_inputs,
+        worktrees=dict(document.frontmatter.worktrees),
         imports=import_specs_from_frontmatter(
             document.frontmatter.imports, source_path
         ),

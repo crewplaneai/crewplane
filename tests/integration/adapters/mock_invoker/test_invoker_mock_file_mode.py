@@ -3,12 +3,18 @@ import tempfile
 from pathlib import Path
 
 from orchestrator_cli.adapters.invokers.mock import MockInvokerAdapter
-from orchestrator_cli.architecture.contracts import InvocationContext
+from orchestrator_cli.architecture.contracts import (
+    InvocationContext,
+    InvocationSourceContext,
+    InvocationWorkspaceContext,
+    InvocationWorktreeContract,
+)
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.runtime.execution.consensus import (
     VERDICT_NO_FINDINGS,
     parse_review_result,
 )
+from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.adapters.mock_invoker.mock_invoker_test_case import (
     MockInvokerAdapterTestCase,
 )
@@ -36,6 +42,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=InvocationContext(
                     node_id="node.a",
                     task_id="alpha_executor_0",
@@ -72,6 +79,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(
                     audit_round_num=2,
                     round_num=1,
@@ -116,6 +124,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(round_num=1),
             )
 
@@ -161,9 +170,138 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                     model="model-a",
                     prompt="x",
                     output_file=output_file,
+                    cwd=(output_file).parent,
                     invocation_context=self._context(round_num=1),
                 )
             self.assertFalse(output_file.exists())
+
+    async def test_file_mode_applies_workspace_mutation_sidecars(self) -> None:
+        adapter = MockInvokerAdapter()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            fixture = root / "fixtures" / "node.a" / "alpha_executor_0_round1.md"
+            fixture.parent.mkdir(parents=True, exist_ok=True)
+            fixture.write_text("fixture-round1", encoding="utf-8")
+            fixture.with_suffix(".mutations.json").write_text(
+                json.dumps(
+                    {
+                        "forbidden_prompt_contains": ["stale source"],
+                        "required_prompt_contains": ["candidate source"],
+                        "workspace_mutations": [
+                            {
+                                "path": "src/app.txt",
+                                "content": "workspace mutation applied",
+                            }
+                        ],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            invoker = adapter.create_invoker(
+                config=self._build_config(),
+                options=self._options(
+                    output_mode="file",
+                    output_dir=str(root / "fixtures"),
+                ),
+            )
+            output_file = root / "out.md"
+            await invoker.invoke(
+                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+                model="model-a",
+                prompt="candidate source",
+                output_file=output_file,
+                cwd=workspace,
+                invocation_context=self._workspace_context(workspace),
+            )
+
+            self.assertEqual(
+                (workspace / "src" / "app.txt").read_text(encoding="utf-8"),
+                "workspace mutation applied",
+            )
+
+    async def test_file_mode_rejects_workspace_mutation_without_workspace_context(
+        self,
+    ) -> None:
+        adapter = MockInvokerAdapter()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            fixture = root / "fixtures" / "node.a" / "alpha_executor_0_round1.md"
+            fixture.parent.mkdir(parents=True, exist_ok=True)
+            fixture.write_text("fixture-round1", encoding="utf-8")
+            fixture.with_suffix(".mutations.json").write_text(
+                json.dumps(
+                    {
+                        "workspace_mutations": [
+                            {"path": "src/app.txt", "content": "bad"}
+                        ]
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            invoker = adapter.create_invoker(
+                config=self._build_config(),
+                options=self._options(
+                    output_mode="file",
+                    output_dir=str(root / "fixtures"),
+                ),
+            )
+            output_file = root / "out.md"
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "workspace mutations require a workspace invocation context",
+            ):
+                await invoker.invoke(
+                    config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+                    model="model-a",
+                    prompt="candidate source",
+                    output_file=output_file,
+                    cwd=root,
+                    invocation_context=self._context(round_num=1),
+                )
+
+    async def test_file_mode_rejects_failed_prompt_sidecar_requirements(
+        self,
+    ) -> None:
+        adapter = MockInvokerAdapter()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            fixture = root / "fixtures" / "node.a" / "alpha_executor_0_round1.md"
+            fixture.parent.mkdir(parents=True, exist_ok=True)
+            fixture.write_text("fixture-round1", encoding="utf-8")
+            fixture.with_suffix(".mutations.json").write_text(
+                json.dumps(
+                    {"required_prompt_contains": ["candidate source"]},
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            invoker = adapter.create_invoker(
+                config=self._build_config(),
+                options=self._options(
+                    output_mode="file",
+                    output_dir=str(root / "fixtures"),
+                ),
+            )
+            output_file = root / "out.md"
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "prompt did not contain required fixture text",
+            ):
+                await invoker.invoke(
+                    config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+                    model="model-a",
+                    prompt="stale source",
+                    output_file=output_file,
+                    cwd=root,
+                    invocation_context=self._context(round_num=1),
+                )
 
     async def test_file_mode_fallback_priority(self) -> None:
         adapter = MockInvokerAdapter()
@@ -196,6 +334,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=context,
             )
             self.assertEqual(
@@ -211,6 +350,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=context,
             )
             self.assertEqual(output_file.read_text(encoding="utf-8"), "task-level")
@@ -222,6 +362,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=context,
             )
             self.assertEqual(output_file.read_text(encoding="utf-8"), "role-level")
@@ -233,6 +374,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=context,
             )
             self.assertEqual(output_file.read_text(encoding="utf-8"), "node-level")
@@ -246,6 +388,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=context,
             )
             self.assertEqual(
@@ -259,6 +402,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=context,
             )
             self.assertEqual(output_file.read_text(encoding="utf-8"), "default-level")
@@ -291,6 +435,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(role="executor", round_num=4),
             )
 
@@ -321,6 +466,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="review",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(role="reviewer", round_num=4),
             )
 
@@ -348,6 +494,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                     model="model-a",
                     prompt="x",
                     output_file=output_file,
+                    cwd=(output_file).parent,
                     invocation_context=InvocationContext(
                         node_id="node.a",
                         task_id="alpha_executor_0",
@@ -377,6 +524,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="x",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=InvocationContext(
                     node_id="node.a",
                     task_id="alpha_executor_0",
@@ -411,6 +559,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="review",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=InvocationContext(
                     node_id="review.context",
                     task_id="alpha_executor_0",
@@ -446,6 +595,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="review",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(
                     role="reviewer",
                     task_id="alpha_reviewer_0",
@@ -474,6 +624,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="review",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=self._context(role="reviewer"),
             )
 
@@ -504,6 +655,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 model="model-a",
                 prompt="review",
                 output_file=output_file,
+                cwd=(output_file).parent,
                 invocation_context=InvocationContext(
                     node_id="review.context",
                     task_id="alpha_executor_0",
@@ -515,3 +667,31 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
             )
 
             self.assertEqual(output_file.read_text(encoding="utf-8"), "fixture-content")
+
+    def _workspace_context(self, workspace: Path) -> InvocationContext:
+        return InvocationContext(
+            node_id="node.a",
+            task_id="alpha_executor_0",
+            provider="alpha",
+            role="executor",
+            round_num=1,
+            workspace=InvocationWorkspaceContext(
+                workspace_kind="worktree",
+                materialization="worktree_checkout",
+                logical_worktree_name="primary",
+                cwd=workspace,
+                invocation_source=InvocationSourceContext(
+                    source_kind="project",
+                    source_node_id=None,
+                    source_commit="abc123",
+                    source_tree="def456",
+                ),
+                worktree_contract=InvocationWorktreeContract(
+                    mode="blob_exact",
+                    schema_version=SCHEMA_VERSION,
+                ),
+                checkout_root=workspace,
+                writable=True,
+                lineage_producer=True,
+            ),
+        )

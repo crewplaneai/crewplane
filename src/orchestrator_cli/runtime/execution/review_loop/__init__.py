@@ -12,8 +12,12 @@ from ..common import (
     RuntimeEventContext,
     emit_runtime_log,
     execution_console,
-    resolve_prompt_with_output_budget,
+    resolve_prompt_with_output_budget_details,
     should_print_console,
+)
+from ..fragment_assembler import (
+    ResolvedPrompt,
+    stream_has_runtime_dynamic_workspace_locator,
 )
 from .policy import (
     audit_round_context,
@@ -109,19 +113,18 @@ async def execute_review_loop_stage(
         stage.id,
         stage.provider_records,
     )
-    executor_prompt = resolve_prompt_with_output_budget(
+    executor_prompt = resolve_prompt_with_output_budget_details(
         runtime_context,
         stage,
         output,
         role="executor",
         telemetry=telemetry,
     )
-    reviewer_prompt_context = resolve_prompt_with_output_budget(
+    reviewer_prompt_context = resolve_reviewer_prompt_context(
         runtime_context,
         stage,
         output,
-        role="reviewer",
-        telemetry=telemetry,
+        telemetry,
     )
     context = ReviewLoopRunContext(
         runtime_context=runtime_context,
@@ -132,8 +135,10 @@ async def execute_review_loop_stage(
         telemetry=telemetry,
         executors=tuple(executors),
         reviewers=tuple(reviewers),
-        executor_prompt=executor_prompt,
-        reviewer_prompt_context=reviewer_prompt_context,
+        executor_prompt=executor_prompt.text,
+        executor_prompt_workspace_files=executor_prompt.workspace_files,
+        reviewer_prompt_context=reviewer_prompt_context.text,
+        reviewer_prompt_workspace_files=reviewer_prompt_context.workspace_files,
         remediation_depth=resolve_remediation_depth(stage),
         audit_rounds=resolve_audit_rounds(stage),
     )
@@ -228,7 +233,9 @@ async def _execute_review_loop_audit_round(
             executors=context.executors,
             reviewers=context.reviewers,
             executor_prompt=context.executor_prompt,
+            executor_prompt_workspace_files=context.executor_prompt_workspace_files,
             reviewer_prompt_context=context.reviewer_prompt_context,
+            reviewer_prompt_workspace_files=context.reviewer_prompt_workspace_files,
             audit_dir=audit_dir,
             remediation_depth=context.remediation_depth,
             initial_executor_outputs=initial_executor_outputs,
@@ -238,6 +245,27 @@ async def _execute_review_loop_audit_round(
     progress.record_audit_result(audit_result)
     _persist_review_loop_status(context, progress)
     return audit_result
+
+
+def resolve_reviewer_prompt_context(
+    runtime_context: CompiledRuntimeContext,
+    stage: PreflightExecutionNode,
+    output: ArtifactStorePort,
+    telemetry: ExecutionTelemetry | None,
+) -> ResolvedPrompt:
+    if stream_has_runtime_dynamic_workspace_locator(
+        runtime_context.plan,
+        stage,
+        "reviewer",
+    ):
+        return ResolvedPrompt("")
+    return resolve_prompt_with_output_budget_details(
+        runtime_context,
+        stage,
+        output,
+        role="reviewer",
+        telemetry=telemetry,
+    )
 
 
 def _print_audit_round_header(
@@ -263,7 +291,9 @@ async def _initial_audit_executor_outputs(
     audit_context: int | None,
 ) -> list[ExecutorRoundArtifact]:
     if progress.latest_executor_outputs is not None:
-        return _seed_executor_outputs(
+        return seed_executor_outputs(
+            runtime_context=context.runtime_context,
+            node_id=context.stage.id,
             artifact_dir=audit_dir,
             executor_outputs=progress.latest_executor_outputs,
             round_num=1,
@@ -282,6 +312,7 @@ async def _initial_audit_executor_outputs(
             round_num=1,
             artifact_dir=audit_dir,
             executor_prompt=context.executor_prompt,
+            executor_prompt_workspace_files=context.executor_prompt_workspace_files,
             previous_review_packet=None,
             previous_executor_outputs=None,
         )
@@ -290,7 +321,9 @@ async def _initial_audit_executor_outputs(
     return executor_run.outputs
 
 
-def _seed_executor_outputs(
+def seed_executor_outputs(
+    runtime_context: CompiledRuntimeContext,
+    node_id: str,
     artifact_dir: Path,
     executor_outputs: list[ExecutorRoundArtifact],
     round_num: int,
@@ -299,6 +332,11 @@ def _seed_executor_outputs(
     for artifact in executor_outputs:
         output_file = artifact_dir / f"{artifact.task_id}_round{round_num}.md"
         output_file.write_text(artifact.content, encoding="utf-8")
+        runtime_context.generated_file_workspaces.alias_output_file(
+            node_id,
+            artifact.output_file,
+            output_file,
+        )
         seeded_outputs.append(
             ExecutorRoundArtifact(
                 provider=artifact.provider,
