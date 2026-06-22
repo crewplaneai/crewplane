@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace.worktree_result_validation import (
+from orchestrator_cli.runtime.workspace.worktree.result_validation import (
     validate_result_tree,
 )
 from tests.helpers.workspace_service import create_git_repo, run_git_text

@@ -10,7 +10,7 @@ from orchestrator_cli.core.execution_state import (
 )
 from orchestrator_cli.core.preflight import PreflightExecutionPlan
 from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
-from orchestrator_cli.core.preflight.workspace_observability import (
+from orchestrator_cli.core.preflight.workspace.observability import (
     workspace_observability_descriptor,
 )
 

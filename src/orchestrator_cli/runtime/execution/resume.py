@@ -6,7 +6,7 @@ from pathlib import Path
 
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.architecture.ports.artifacts import StageFinalizeResult
-from orchestrator_cli.artifacts.workspace_node_state import (
+from orchestrator_cli.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
 )
 from orchestrator_cli.core.execution_state import (

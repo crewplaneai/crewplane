@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.artifacts.resume_decision import decide_same_context_action
+from orchestrator_cli.artifacts.resume.decision import decide_same_context_action
 from orchestrator_cli.artifacts.run_history import RunHistoryRecord
 from tests.helpers.resume import make_run_manifest
 

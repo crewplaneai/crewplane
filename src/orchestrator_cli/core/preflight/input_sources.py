@@ -17,13 +17,13 @@ from .references import TemplateReference, iter_template_references
 from .signatures import signature_for_payload
 from .static_resources import append_static_resource, resolve_static_file
 from .token_catalog import append_token_catalog
-from .workspace_file_locators import (
+from .workspace.files.locators import (
     resolve_workspace_file_reference,
     token_signature_for_workspace_locator,
     workspace_locator_metadata,
     workspace_locator_resolved_payload,
 )
-from .workspace_file_selection import (
+from .workspace.files.selection import (
     is_allowlisted_absolute_path,
     workflow_has_managed_workspace_selection,
 )

@@ -7,16 +7,18 @@ from pathlib import Path
 
 import pytest
 
+import orchestrator_cli.runtime.workspace.worktree as worktree_module
 from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace import worktree as worktree_module
-from orchestrator_cli.runtime.workspace.source_refs import required_lineage_state
 from orchestrator_cli.runtime.workspace.worktree import (
     WorktreeSourceRef,
     create_worktree_workspace,
     remove_worktree_workspace,
 )
-from orchestrator_cli.runtime.workspace.worktree_lineage import (
+from orchestrator_cli.runtime.workspace.worktree.lineage import (
     worktree_protected_ref_scopes,
+)
+from orchestrator_cli.runtime.workspace.worktree.source_refs import (
+    required_lineage_state,
 )
 from tests.helpers.workspace_service import (
     create_git_repo,

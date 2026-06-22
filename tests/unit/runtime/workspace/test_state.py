@@ -12,7 +12,7 @@ from orchestrator_cli.runtime.workspace.state import (
     update_workspace_state,
     write_running_workspace_state,
 )
-from orchestrator_cli.runtime.workspace.worktree_types import WorktreeSourceRef
+from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
 
 

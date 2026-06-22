@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.artifacts.process_identity import ProcessIdentity
+from orchestrator_cli.artifacts.locks.process_identity import ProcessIdentity
 from orchestrator_cli.core.execution_state import RunManifest
 
 

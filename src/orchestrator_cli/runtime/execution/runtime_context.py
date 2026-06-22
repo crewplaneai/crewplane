@@ -15,10 +15,10 @@ from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.core.preflight.signatures import signature_for_payload
 from orchestrator_cli.core.value_checks import positive_strict_int
 from orchestrator_cli.runtime.workspace.materialization import MaterializationLimiter
-from orchestrator_cli.runtime.workspace.reuse import WorktreeReuseCache
+from orchestrator_cli.runtime.workspace.worktree.cache import WorktreeReuseCache
 
 from .deferred_cleanup import DeferredAsyncCleanupRegistry
-from .generated_file_workspaces import GeneratedFileWorkspaceRegistry
+from .workspace_files.generated import GeneratedFileWorkspaceRegistry
 
 
 @dataclass

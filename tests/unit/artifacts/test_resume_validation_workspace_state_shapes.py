@@ -12,7 +12,7 @@ from orchestrator_cli.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
 from orchestrator_cli.artifacts.naming import build_node_state_filename
-from orchestrator_cli.artifacts.resume_validation import validate_resume_frontier
+from orchestrator_cli.artifacts.resume.validation import validate_resume_frontier
 from orchestrator_cli.artifacts.run_history import RunHistoryRecord
 from orchestrator_cli.core.preflight.models import PreflightExecutionPlan
 from tests.helpers.resume import (

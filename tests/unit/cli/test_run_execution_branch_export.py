@@ -12,7 +12,7 @@ from rich.console import Console
 from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
 from orchestrator_cli.architecture.ports.runtime import RuntimeComponents
 from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.artifacts.resume_decision import ResumeDecision
+from orchestrator_cli.artifacts.resume.decision import ResumeDecision
 from orchestrator_cli.artifacts.run_history import RunHistoryRecord
 from orchestrator_cli.cli.run import execution as execution_module
 from orchestrator_cli.cli.run import execution_helpers as execution_helpers_module

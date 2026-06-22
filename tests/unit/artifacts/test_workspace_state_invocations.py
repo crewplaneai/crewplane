@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from orchestrator_cli.artifacts.workspace_state_invocations import (
+from orchestrator_cli.artifacts.workspace.state.invocations import (
     ExpectedWorkspaceInvocation,
     WorkspaceStateStatus,
     payload_matches_expected_invocation,

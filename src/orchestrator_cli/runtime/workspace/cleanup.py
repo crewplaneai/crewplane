@@ -5,8 +5,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .ref_cleanup import WorkspaceRunRefCleanup
-from .worktree_cleanup import remove_unknown_workspace_path, worktree_disk_usage
+from .worktree.cleanup import remove_unknown_workspace_path, worktree_disk_usage
+from .worktree.ref_cleanup import WorkspaceRunRefCleanup
 
 WorkspaceStatus = str | None
 WorkspaceStatusLookup = Callable[[str, str], WorkspaceStatus]

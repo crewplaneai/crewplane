@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run import workspace_disk_policy
-from orchestrator_cli.cli.run import workspace_source_policy as policy
+from orchestrator_cli.cli.run.workspace import disk_policy as workspace_disk_policy
+from orchestrator_cli.cli.run.workspace import source_policy as policy
 from orchestrator_cli.core.config import Settings
 from tests.helpers.workspace_source_policy import git_source_context
 

@@ -11,9 +11,11 @@ from time import monotonic
 
 import pytest
 
-from orchestrator_cli.artifacts import (
-    workspace_bundle_validation,
-    workspace_git_blob_hash,
+from orchestrator_cli.artifacts.workspace import (
+    bundle_validation as workspace_bundle_validation,
+)
+from orchestrator_cli.artifacts.workspace import (
+    git_blob_hash as workspace_git_blob_hash,
 )
 
 

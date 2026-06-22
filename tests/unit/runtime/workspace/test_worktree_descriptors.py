@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from orchestrator_cli.runtime.workspace.worktree_descriptors import (
+from orchestrator_cli.runtime.workspace.worktree.descriptors import (
     load_source_ref_from_state,
 )
 

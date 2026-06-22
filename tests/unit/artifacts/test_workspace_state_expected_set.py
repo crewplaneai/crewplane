@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from orchestrator_cli.artifacts.workspace_state_expected_set import (
+from orchestrator_cli.artifacts.workspace.state.expected_set import (
     workspace_state_payloads_match_expected_set,
 )
-from orchestrator_cli.artifacts.workspace_state_invocations import (
+from orchestrator_cli.artifacts.workspace.state.invocations import (
     ExpectedWorkspaceInvocation,
 )
 

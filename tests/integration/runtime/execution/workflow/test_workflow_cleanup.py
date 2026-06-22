@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 import orchestrator_cli.runtime.execution.workflow as workflow_module
-import orchestrator_cli.runtime.execution.workflow_cleanup as workflow_cleanup_module
-import orchestrator_cli.runtime.execution.workflow_node as workflow_node_module
+import orchestrator_cli.runtime.execution.workflow.cleanup as workflow_cleanup_module
+import orchestrator_cli.runtime.execution.workflow.node as workflow_node_module
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.core.preflight.models import (
     ArtifactContract,
@@ -19,7 +19,7 @@ from orchestrator_cli.core.preflight.models import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.execution.generated_file_workspaces import (
+from orchestrator_cli.runtime.execution.workspace_files.generated import (
     GeneratedFileWorkspaceRegistry,
 )
 from orchestrator_cli.version import SCHEMA_VERSION

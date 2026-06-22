@@ -6,17 +6,17 @@ import shutil
 import pytest
 
 import orchestrator_cli.artifacts.locks as resume_locks
-import orchestrator_cli.artifacts.process_identity as process_identity
+import orchestrator_cli.artifacts.locks.process_identity as process_identity
 from orchestrator_cli.artifacts.locks import (
     LOCK_OWNER_FILENAME,
     ResumeLockError,
     acquire_same_context_lock,
 )
-from orchestrator_cli.artifacts.naming import build_lock_name
-from orchestrator_cli.artifacts.process_identity import (
+from orchestrator_cli.artifacts.locks.process_identity import (
     ProcessIdentity,
     ProcessInspector,
 )
+from orchestrator_cli.artifacts.naming import build_lock_name
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,

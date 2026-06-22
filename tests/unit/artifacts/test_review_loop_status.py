@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts.review_loop_status import (
+from orchestrator_cli.artifacts.results.review_loop_status import (
     ReviewLoopStatusError,
     resolve_review_loop_status,
 )

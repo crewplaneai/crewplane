@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from orchestrator_cli.artifacts.resume_validation import validate_resume_frontier
+from orchestrator_cli.artifacts.resume.validation import validate_resume_frontier
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,

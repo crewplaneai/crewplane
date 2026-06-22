@@ -10,11 +10,11 @@ import pytest
 
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.artifacts.naming import build_workspace_export_filename
-from orchestrator_cli.runtime.workspace import branch_export_git
 from orchestrator_cli.runtime.workspace.branch_export import (
     fulfill_branch_exports,
 )
-from orchestrator_cli.runtime.workspace.worktree_types import WorktreeSourceRef
+from orchestrator_cli.runtime.workspace.branch_export import git as branch_export_git
+from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     update_state_bundle_metadata,

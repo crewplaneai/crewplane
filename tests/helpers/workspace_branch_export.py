@@ -8,7 +8,7 @@ from pathlib import Path
 
 from orchestrator_cli.artifacts import OutputManager
 from orchestrator_cli.artifacts.run_history import RunHistoryRecord
-from orchestrator_cli.artifacts.workspace_node_state import (
+from orchestrator_cli.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
 )
 from orchestrator_cli.core.execution_state import (
@@ -20,7 +20,7 @@ from orchestrator_cli.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceBranchExportRecord,
 )
-from orchestrator_cli.runtime.workspace.worktree_types import WorktreeSourceRef
+from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
 from orchestrator_cli.version import SCHEMA_VERSION
 from tests.helpers.workspace_service import run_git_text, workspace_plan
 

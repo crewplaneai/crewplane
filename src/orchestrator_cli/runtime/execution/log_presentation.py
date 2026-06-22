@@ -7,8 +7,8 @@ from orchestrator_cli.architecture.contracts import (
 )
 from orchestrator_cli.core.config import AgentConfig
 
-from .execution_activity import ExecutionTelemetry
-from .execution_events import RuntimeEventContext, emit_runtime_log
+from .activity.events import RuntimeEventContext, emit_runtime_log
+from .activity.telemetry import ExecutionTelemetry
 
 _INVALID_DESCRIPTOR_OPERATION = "log_presentation_descriptor_invalid"
 _INVALID_DESCRIPTOR_MESSAGE = (

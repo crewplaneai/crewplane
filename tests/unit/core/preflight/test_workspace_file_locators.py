@@ -10,7 +10,9 @@ from orchestrator_cli.core.preflight import (
     PreflightCompileOptions,
     compile_preflight_preview,
     load_workflow_source_for_preflight,
-    workspace_git_file_reads,
+)
+from orchestrator_cli.core.preflight.workspace.files import (
+    git_reads as workspace_git_file_reads,
 )
 from orchestrator_cli.core.prompt_segments import PromptSegment
 from orchestrator_cli.core.workflow_models import (

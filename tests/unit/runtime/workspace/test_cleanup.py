@@ -12,18 +12,18 @@ from pathlib import Path
 import pytest
 
 import orchestrator_cli.runtime.workspace.git as workspace_git
-from orchestrator_cli.runtime.workspace import worktree_cleanup
 from orchestrator_cli.runtime.workspace.cleanup import (
     WorkspaceCleanupFilter,
     cleanup_workspace_cache,
     parse_duration_seconds,
 )
-from orchestrator_cli.runtime.workspace.ref_cleanup import (
+from orchestrator_cli.runtime.workspace.snapshot import remove_workspace_path
+from orchestrator_cli.runtime.workspace.worktree import cleanup as worktree_cleanup
+from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
+from orchestrator_cli.runtime.workspace.worktree.ref_cleanup import (
     cleanup_plan_workspace_refs,
     delete_run_workspace_refs,
 )
-from orchestrator_cli.runtime.workspace.snapshot import remove_workspace_path
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.workspace_service import workspace_plan
 
 

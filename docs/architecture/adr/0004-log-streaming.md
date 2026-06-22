@@ -173,7 +173,7 @@ continue to receive the same invocation entry point and may ignore diagnostics.
 - `runtime/agent/invoker.py` emits diagnostics for retry scheduling, quota retry
   waits, and stderr fallback without changing invocation success/failure
   semantics.
-- `artifacts/result_writer.py` returns `StageFinalizeResult` instead of relying
+- `artifacts/results/writer.py` returns `StageFinalizeResult` instead of relying
   on ephemeral warnings.
 - `artifacts/directory_manager.py` owns run-level log paths while keeping
   node-local provider log paths unchanged.

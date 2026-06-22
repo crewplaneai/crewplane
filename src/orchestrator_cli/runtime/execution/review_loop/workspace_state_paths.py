@@ -10,7 +10,7 @@ from orchestrator_cli.runtime.workspace.invocation import (
 )
 from orchestrator_cli.runtime.workspace.setup import workspace_setup_artifacts
 from orchestrator_cli.runtime.workspace.state import discard_workspace_lineage
-from orchestrator_cli.runtime.workspace.worktree_refs import safe_file_component
+from orchestrator_cli.runtime.workspace.worktree.refs import safe_file_component
 
 
 def workspace_artifact_allowed_paths(

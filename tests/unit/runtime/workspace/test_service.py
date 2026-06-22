@@ -13,9 +13,9 @@ import pytest
 
 import orchestrator_cli.runtime.workspace.locks as workspace_locks
 import orchestrator_cli.runtime.workspace.service as workspace_service
-import orchestrator_cli.runtime.workspace.service_common as workspace_service_common
-import orchestrator_cli.runtime.workspace.service_snapshot as workspace_service_snapshot
-import orchestrator_cli.runtime.workspace.service_worktree as workspace_service_worktree
+import orchestrator_cli.runtime.workspace.service.common as workspace_service_common
+import orchestrator_cli.runtime.workspace.service.snapshot as workspace_service_snapshot
+import orchestrator_cli.runtime.workspace.service.worktree as workspace_service_worktree
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.core.workspace_git_policy import WORKSPACE_GIT_CONFIG_OVERLAY
 from orchestrator_cli.runtime.agent.workspace_environment import (

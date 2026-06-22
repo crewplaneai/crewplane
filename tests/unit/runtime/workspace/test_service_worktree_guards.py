@@ -5,10 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace import (
-    prepare_invocation_workspace,
-    worktree_policy,
-)
+from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
+from orchestrator_cli.runtime.workspace.worktree import policy as worktree_policy
 from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.workspace_service import (
     create_git_repo,

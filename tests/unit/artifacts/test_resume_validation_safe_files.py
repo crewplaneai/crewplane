@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from orchestrator_cli.artifacts.naming import build_node_state_filename
-from orchestrator_cli.artifacts.resume_validation import (
+from orchestrator_cli.artifacts.resume.validation import (
     contained_regular_file,
     validate_resume_frontier,
 )

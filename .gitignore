@@ -15,6 +15,15 @@ site/
 pip-wheel-metadata/
 .wheels/
 
+# Release/build manifests
+.release/
+.release-manifests/
+release-manifest.json
+release-manifest.*.json
+build-manifest.json
+build-manifest.*.json
+*.build-manifest.json
+
 # Local virtual environments
 .venv/
 venv/

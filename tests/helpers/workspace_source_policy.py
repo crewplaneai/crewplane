@@ -3,8 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from orchestrator_cli.cli.run import workspace_source_policy as policy
-from orchestrator_cli.cli.run.git_source_probe import GitSourceContext
+from orchestrator_cli.cli.run.workspace import source_policy as policy
+from orchestrator_cli.cli.run.workspace.git_source import GitSourceContext
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
 from orchestrator_cli.core.workflow_models import (
     PromptSegment,

@@ -15,7 +15,7 @@ ORIGINAL_OVERSIZED_FILES = (
     "src/orchestrator_cli/observability/events.py",
     "src/orchestrator_cli/observability/persistent.py",
     "src/orchestrator_cli/observability/render.py",
-    "src/orchestrator_cli/artifacts/result_writer.py",
+    "src/orchestrator_cli/artifacts/results/writer.py",
     "src/orchestrator_cli/runtime/agent/quota.py",
     "src/orchestrator_cli/runtime/agent/failures.py",
     "src/orchestrator_cli/runtime/execution/consensus.py",
@@ -64,11 +64,11 @@ SPLIT_MODULES = (
     "src/orchestrator_cli/observability/render/cells.py",
     "src/orchestrator_cli/observability/render/text.py",
     "src/orchestrator_cli/observability/text_layout.py",
-    "src/orchestrator_cli/artifacts/result_selection.py",
-    "src/orchestrator_cli/artifacts/review_loop_status.py",
-    "src/orchestrator_cli/artifacts/stage_result_document.py",
-    "src/orchestrator_cli/artifacts/findings_extraction.py",
-    "src/orchestrator_cli/artifacts/stage_output_aggregation.py",
+    "src/orchestrator_cli/artifacts/results/selection.py",
+    "src/orchestrator_cli/artifacts/results/review_loop_status.py",
+    "src/orchestrator_cli/artifacts/results/stage_document.py",
+    "src/orchestrator_cli/artifacts/results/findings.py",
+    "src/orchestrator_cli/artifacts/results/stage_outputs.py",
     "src/orchestrator_cli/runtime/agent/quota/lexicons.py",
     "src/orchestrator_cli/runtime/agent/quota/parser_resolution.py",
     "src/orchestrator_cli/runtime/agent/quota/evidence.py",
@@ -90,20 +90,20 @@ SPLIT_MODULES = (
     "src/orchestrator_cli/runtime/agent/invocation/state.py",
     "src/orchestrator_cli/runtime/agent/invocation/telemetry.py",
     "src/orchestrator_cli/runtime/agent/invocation/transitions.py",
-    "src/orchestrator_cli/runtime/execution/structured_review.py",
-    "src/orchestrator_cli/runtime/execution/review_fingerprints.py",
-    "src/orchestrator_cli/runtime/execution/plain_language_review.py",
-    "src/orchestrator_cli/runtime/execution/review_consensus.py",
-    "src/orchestrator_cli/runtime/execution/review_types.py",
+    "src/orchestrator_cli/runtime/execution/reviews/structured.py",
+    "src/orchestrator_cli/runtime/execution/reviews/fingerprints.py",
+    "src/orchestrator_cli/runtime/execution/reviews/plain_language.py",
+    "src/orchestrator_cli/runtime/execution/reviews/consensus.py",
+    "src/orchestrator_cli/runtime/execution/reviews/types.py",
     "src/orchestrator_cli/runtime/execution/runtime_context.py",
-    "src/orchestrator_cli/runtime/execution/execution_activity.py",
-    "src/orchestrator_cli/runtime/execution/execution_console.py",
-    "src/orchestrator_cli/runtime/execution/execution_events.py",
+    "src/orchestrator_cli/runtime/execution/activity/telemetry.py",
+    "src/orchestrator_cli/runtime/execution/activity/console.py",
+    "src/orchestrator_cli/runtime/execution/activity/events.py",
     "src/orchestrator_cli/runtime/execution/fragment_assembler.py",
     "src/orchestrator_cli/runtime/execution/prompt_budgeting.py",
     "src/orchestrator_cli/runtime/execution/stage_tasks.py",
-    "src/orchestrator_cli/runtime/execution/provider_invocation.py",
-    "src/orchestrator_cli/runtime/execution/provider_display.py",
+    "src/orchestrator_cli/runtime/execution/provider_call/__init__.py",
+    "src/orchestrator_cli/runtime/execution/provider_call/display.py",
     "src/orchestrator_cli/runtime/execution/review_loop/audit_round.py",
     "src/orchestrator_cli/runtime/execution/review_loop/drift.py",
     "src/orchestrator_cli/runtime/execution/review_loop/drift_detection.py",
@@ -669,14 +669,16 @@ def test_provider_invocation_fallback_usage_does_not_materialize_artifact() -> N
         / "orchestrator_cli"
         / "runtime"
         / "execution"
-        / "provider_invocation.py"
+        / "provider_call"
+        / "__init__.py"
     )
     events_path = (
         SRC_ROOT
         / "orchestrator_cli"
         / "runtime"
         / "execution"
-        / "provider_invocation_events.py"
+        / "provider_call"
+        / "events.py"
     )
     source = path.read_text(encoding="utf-8")
     events_source = events_path.read_text(encoding="utf-8")
@@ -850,7 +852,8 @@ def test_preflight_any_maps_are_limited_to_redaction_traversal() -> None:
         / "orchestrator_cli"
         / "core"
         / "preflight"
-        / "runtime_config_redaction.py"
+        / "runtime_config"
+        / "redaction.py"
     )
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "orchestrator_cli" / "core" / "preflight"):
@@ -868,7 +871,9 @@ def test_preflight_any_maps_are_limited_to_redaction_traversal() -> None:
 
 
 def test_review_loop_status_error_is_public() -> None:
-    from orchestrator_cli.artifacts.review_loop_status import ReviewLoopStatusError
+    from orchestrator_cli.artifacts.results.review_loop_status import (
+        ReviewLoopStatusError,
+    )
 
     assert ReviewLoopStatusError.__name__ == "ReviewLoopStatusError"
 
@@ -876,7 +881,7 @@ def test_review_loop_status_error_is_public() -> None:
 def test_provider_call_request_does_not_carry_display_state() -> None:
     from dataclasses import fields
 
-    from orchestrator_cli.runtime.execution.provider_invocation import (
+    from orchestrator_cli.runtime.execution.provider_call import (
         ProviderCallRequest,
     )
 

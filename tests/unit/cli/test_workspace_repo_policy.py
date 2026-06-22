@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run import (
-    workspace_git_attributes,
-    workspace_repo_policy,
+from orchestrator_cli.cli.run.workspace import (
+    git_attributes as workspace_git_attributes,
 )
-from orchestrator_cli.cli.run import workspace_source_policy as policy
+from orchestrator_cli.cli.run.workspace import repo_policy as workspace_repo_policy
+from orchestrator_cli.cli.run.workspace import source_policy as policy
 from orchestrator_cli.core.config import Settings
 from tests.helpers.workspace_source_policy import git_source_context
 

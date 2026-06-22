@@ -159,7 +159,7 @@ def test_runtime_execution_modules_do_not_consume_workflow_model_shims() -> None
     )
 
     offenders: list[str] = []
-    for path in runtime_dir.glob("*.py"):
+    for path in runtime_dir.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
         for term in forbidden_terms:
             if term in text:
@@ -180,7 +180,7 @@ def test_runtime_execution_modules_do_not_consume_runtime_config() -> None:
     )
 
     offenders: list[str] = []
-    for path in runtime_dir.glob("*.py"):
+    for path in runtime_dir.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
         for term in forbidden_terms:
             if term in text:

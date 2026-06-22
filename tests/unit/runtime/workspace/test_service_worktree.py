@@ -8,8 +8,10 @@ import pytest
 
 import orchestrator_cli.runtime.workspace.prepared_workspace as prepared_workspace_module
 import orchestrator_cli.runtime.workspace.worktree as workspace_worktree
-from orchestrator_cli.artifacts.generated_files import snapshot_generated_file_workspace
-from orchestrator_cli.runtime.execution.provider_invocation_generated_files import (
+from orchestrator_cli.artifacts.generated_files.catalog import (
+    snapshot_generated_file_workspace,
+)
+from orchestrator_cli.runtime.execution.provider_call.generated_files import (
     changed_generated_file_paths,
 )
 from orchestrator_cli.runtime.workspace import (
@@ -18,7 +20,7 @@ from orchestrator_cli.runtime.workspace import (
 )
 from orchestrator_cli.runtime.workspace.snapshot import remove_workspace_path
 from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
-from orchestrator_cli.runtime.workspace.worktree_types import WorktreeSourceRef
+from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,

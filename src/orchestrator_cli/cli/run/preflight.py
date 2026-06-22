@@ -43,8 +43,8 @@ from .context import (
     resolve_project_root,
 )
 from .preflight_success import write_preflight_success_artifacts
-from .workspace_preflight_diagnostics import workspace_preflight_diagnostics
-from .workspace_source_policy import collect_workspace_source_policy
+from .workspace.preflight_diagnostics import workspace_preflight_diagnostics
+from .workspace.source_policy import collect_workspace_source_policy
 
 
 def normalize_object_path(implementation: str) -> str:

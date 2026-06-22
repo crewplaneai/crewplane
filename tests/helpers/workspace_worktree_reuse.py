@@ -11,8 +11,8 @@ from orchestrator_cli.core.preflight.models import (
     WorkspaceSetupRecord,
 )
 from orchestrator_cli.runtime.workspace import WorkspaceInvocationRequest
-from orchestrator_cli.runtime.workspace.reuse import WorktreeReuseCache
 from orchestrator_cli.runtime.workspace.service import MaterializationLimiter
+from orchestrator_cli.runtime.workspace.worktree.cache import WorktreeReuseCache
 from tests.helpers.workspace_service import workspace_plan
 
 

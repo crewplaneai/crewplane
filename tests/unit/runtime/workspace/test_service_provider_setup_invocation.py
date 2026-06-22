@@ -10,8 +10,8 @@ from time import monotonic
 
 import pytest
 
-import orchestrator_cli.runtime.workspace.service_worktree as workspace_service_worktree
-import orchestrator_cli.runtime.workspace.service_worktree_failures as workspace_service_worktree_failures
+import orchestrator_cli.runtime.workspace.service.worktree as workspace_service_worktree
+import orchestrator_cli.runtime.workspace.service.worktree_failures as workspace_service_worktree_failures
 from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
 from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
 from orchestrator_cli.core.config import AgentConfig
@@ -22,7 +22,7 @@ from orchestrator_cli.core.preflight.models import (
 )
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.runtime.agent.invoker import invoke_agent_with_runner
-from orchestrator_cli.runtime.execution.provider_invocation import (
+from orchestrator_cli.runtime.execution.provider_call import (
     ProviderCallDisplay,
     ProviderCallRequest,
     run_provider_call,

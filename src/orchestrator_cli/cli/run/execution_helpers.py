@@ -18,7 +18,7 @@ from orchestrator_cli.core.preflight.diagnostics import (
     PreflightDiagnosticPhase,
 )
 from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
-from orchestrator_cli.core.preflight.workspace_observability import workspace_enabled
+from orchestrator_cli.core.preflight.workspace.observability import workspace_enabled
 from orchestrator_cli.runtime.workspace.branch_export import (
     fulfill_branch_exports_from_history,
 )

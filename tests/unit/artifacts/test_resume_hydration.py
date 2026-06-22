@@ -9,8 +9,8 @@ from orchestrator_cli.artifacts.naming import (
     build_generated_file_result_dir_name,
     build_node_state_filename,
 )
-from orchestrator_cli.artifacts.resume_hydration import hydrate_resume_frontier
-from orchestrator_cli.artifacts.resume_validation import (
+from orchestrator_cli.artifacts.resume.hydration import hydrate_resume_frontier
+from orchestrator_cli.artifacts.resume.validation import (
     ValidatedResumeFrontier,
     validate_resume_frontier,
 )

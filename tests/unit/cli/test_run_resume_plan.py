@@ -8,7 +8,7 @@ import pytest
 from rich.console import Console
 
 from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.artifacts.resume_decision import ResumeDecision
+from orchestrator_cli.artifacts.resume.decision import ResumeDecision
 from orchestrator_cli.artifacts.run_history import RunHistoryRecord
 from orchestrator_cli.cli.run import resume as resume_module
 from orchestrator_cli.cli.run.resume import (

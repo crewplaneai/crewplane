@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.generated_files import (
+from orchestrator_cli.artifacts.generated_files.catalog import (
     generated_file_source_root,
     snapshot_generated_file_workspace,
 )
@@ -371,7 +371,7 @@ class OutputManagerTests(unittest.TestCase):
             )
 
             with patch(
-                "orchestrator_cli.artifacts.generated_files."
+                "orchestrator_cli.artifacts.generated_files.catalog."
                 "MAX_GENERATED_FILE_SNAPSHOT_BYTES",
                 1,
             ):
@@ -428,7 +428,7 @@ class OutputManagerTests(unittest.TestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.artifacts.generated_files."
+                    "orchestrator_cli.artifacts.generated_files.catalog."
                     "MAX_GENERATED_FILE_SNAPSHOT_FILES",
                     1,
                 ),
@@ -458,7 +458,7 @@ class OutputManagerTests(unittest.TestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.artifacts.generated_files.shutil.copyfile",
+                    "orchestrator_cli.artifacts.generated_files.catalog.shutil.copyfile",
                     side_effect=write_expanded_copy,
                 ),
                 self.assertRaisesRegex(RuntimeError, "changed while copying"),

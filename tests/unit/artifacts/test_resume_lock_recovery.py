@@ -5,13 +5,13 @@ import os
 
 import pytest
 
-import orchestrator_cli.artifacts.process_identity as process_identity
+import orchestrator_cli.artifacts.locks.process_identity as process_identity
 from orchestrator_cli.artifacts.locks import (
     LOCK_OWNER_FILENAME,
     ResumeLockError,
     acquire_same_context_lock,
 )
-from orchestrator_cli.artifacts.process_identity import ProcessInspector
+from orchestrator_cli.artifacts.locks.process_identity import ProcessInspector
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,

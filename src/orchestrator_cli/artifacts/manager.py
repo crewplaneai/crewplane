@@ -14,7 +14,7 @@ from orchestrator_cli.core.preflight.serialization import pretty_sorted_json
 from .atomic import atomic_write_bytes, atomic_write_json, atomic_write_text
 from .directory_manager import DirectoryManager, safe_artifact_name
 from .naming import build_node_state_filename, build_workspace_export_filename
-from .result_writer import ResultWriter
+from .results.writer import ResultWriter
 
 
 class OutputManager:

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.artifacts.workspace_node_state import (
+from orchestrator_cli.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
     refresh_node_workspace_descriptor,
 )

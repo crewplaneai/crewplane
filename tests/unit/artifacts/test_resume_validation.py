@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from orchestrator_cli.artifacts.naming import build_generated_file_result_dir_name
-from orchestrator_cli.artifacts.resume_validation import validate_resume_frontier
+from orchestrator_cli.artifacts.resume.validation import validate_resume_frontier
 from orchestrator_cli.core.execution_state import ArtifactDescriptor
 from orchestrator_cli.core.preflight.models import WorkspaceBranchExportRecord
 from orchestrator_cli.version import SCHEMA_VERSION

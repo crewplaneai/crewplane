@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 
 from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.generated_files import generated_file_source_root
+from orchestrator_cli.artifacts.generated_files.catalog import (
+    generated_file_source_root,
+)
 from orchestrator_cli.core.config import AgentConfig
 from orchestrator_cli.core.preflight.models import (
     ArtifactContract,

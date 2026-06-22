@@ -8,7 +8,10 @@ import unittest
 from pathlib import Path
 
 import orchestrator_cli.cli.app as cli
-from orchestrator_cli.cli.run.git_source_probe import GIT_MIN_VERSION, parse_git_version
+from orchestrator_cli.cli.run.workspace.git_source import (
+    GIT_MIN_VERSION,
+    parse_git_version,
+)
 from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orchestrator_cli.artifacts.workspace_state_fields import (
+from orchestrator_cli.artifacts.workspace.state.fields import (
     int_field,
     nullable_int_field,
 )

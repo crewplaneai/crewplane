@@ -25,7 +25,7 @@ from .references import TemplateReference
 from .signatures import signature_for_payload
 from .static_resources import append_static_resource, resolve_static_file
 from .token_catalog import append_token_catalog
-from .workspace_file_locators import (
+from .workspace.files.locators import (
     token_signature_for_workspace_locator,
     workspace_locator_metadata,
     workspace_locator_resolved_payload,

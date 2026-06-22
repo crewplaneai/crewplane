@@ -8,11 +8,11 @@ from rich.console import Console
 
 from orchestrator_cli.architecture.errors import IntegrationResolutionError
 from orchestrator_cli.architecture.loader import resolve_implementation_path
-from orchestrator_cli.artifacts.resume_decision import (
+from orchestrator_cli.artifacts.resume.decision import (
     ResumeDecision,
     decide_same_context_action,
 )
-from orchestrator_cli.artifacts.resume_validation import (
+from orchestrator_cli.artifacts.resume.validation import (
     ValidatedResumeFrontier,
     validate_resume_frontier,
 )
@@ -27,7 +27,7 @@ from orchestrator_cli.core.preflight import (
     PreflightExecutionPlan,
 )
 from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
-from orchestrator_cli.core.preflight.workspace_observability import workspace_enabled
+from orchestrator_cli.core.preflight.workspace.observability import workspace_enabled
 from orchestrator_cli.runtime.workspace.branch_export import (
     preview_branch_exports_from_history,
 )

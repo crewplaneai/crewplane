@@ -14,10 +14,10 @@ from orchestrator_cli.runtime.workspace.branch_export import (
     fulfill_branch_exports_from_history,
     preview_branch_exports_from_history,
 )
-from orchestrator_cli.runtime.workspace.branch_export_records import (
+from orchestrator_cli.runtime.workspace.branch_export.records import (
     checkpoint_from_record,
 )
-from orchestrator_cli.runtime.workspace.worktree_types import WorktreeSourceRef
+from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     history_record_for_output,

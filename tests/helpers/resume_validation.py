@@ -14,7 +14,7 @@ from orchestrator_cli.core.preflight.models import (
     ProviderRecord,
     WorkspaceSourceSnapshot,
 )
-from orchestrator_cli.core.preflight.workspace_observability import (
+from orchestrator_cli.core.preflight.workspace.observability import (
     invoker_workspace_descriptor,
 )
 from orchestrator_cli.core.workspace_git_policy import (

@@ -5,14 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace.protected_refs import ProtectedRefSnapshot
 from orchestrator_cli.runtime.workspace.worktree import (
     WorktreeSourceRef,
     create_worktree_workspace,
     remove_worktree_workspace,
 )
-from orchestrator_cli.runtime.workspace.worktree_lineage import export_bundle
-from orchestrator_cli.runtime.workspace.worktree_types import WorktreeCaptureRequest
+from orchestrator_cli.runtime.workspace.worktree.lineage import export_bundle
+from orchestrator_cli.runtime.workspace.worktree.protected_refs import (
+    ProtectedRefSnapshot,
+)
+from orchestrator_cli.runtime.workspace.worktree.types import WorktreeCaptureRequest
 from tests.helpers.workspace_lineage_bundles import (
     create_prerequisite_bundle_chain,
     create_pruned_result_bundle,

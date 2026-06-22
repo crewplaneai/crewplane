@@ -8,11 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run import git_source_probe, workspace_filesystem_policy
-from orchestrator_cli.cli.run import workspace_source_policy as policy
-from orchestrator_cli.cli.run.git_source_probe import GitSourceContext
-from orchestrator_cli.cli.run.preflight import workspace_preflight_diagnostics
-from orchestrator_cli.cli.run.workspace_cache_policy import paths_overlap
+from orchestrator_cli.cli.run.workspace import (
+    filesystem_policy as workspace_filesystem_policy,
+)
+from orchestrator_cli.cli.run.workspace import git_source as git_source_probe
+from orchestrator_cli.cli.run.workspace import source_policy as policy
+from orchestrator_cli.cli.run.workspace.cache_policy import paths_overlap
+from orchestrator_cli.cli.run.workspace.git_source import GitSourceContext
+from orchestrator_cli.cli.run.workspace.preflight_diagnostics import (
+    workspace_preflight_diagnostics,
+)
 from orchestrator_cli.core.config import AgentConfig, Config, Settings
 from orchestrator_cli.core.workflow_models import (
     WorkflowNode,

@@ -12,8 +12,8 @@ def __getattr__(name: str):
         "FindingsExtractionError",
         "OutputManager",
     }:
-        from .findings_extraction import FindingsExtractionError
         from .manager import OutputManager
+        from .results.findings import FindingsExtractionError
 
         exports = {
             "FindingsExtractionError": FindingsExtractionError,

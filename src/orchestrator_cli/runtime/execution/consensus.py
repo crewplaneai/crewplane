@@ -12,22 +12,22 @@ from orchestrator_cli.core.review_contract import (
     render_review_contract,
 )
 
-from .review_consensus import (
+from .reviews.consensus import (
     APPROVED_VERDICTS,
     check_consensus,
     evaluate_review_output,
     extract_verdict,
     is_approved_verdict,
 )
-from .review_types import (
-    EvaluatedReviewResult,
-    ReviewContractError,
-    StructuredReviewMatch,
-)
-from .structured_review import (
+from .reviews.structured import (
     extract_structured_review,
     normalize_review_result,
     parse_review_result,
+)
+from .reviews.types import (
+    EvaluatedReviewResult,
+    ReviewContractError,
+    StructuredReviewMatch,
 )
 
 __all__ = [

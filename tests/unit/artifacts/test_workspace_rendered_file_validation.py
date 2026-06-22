@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orchestrator_cli.artifacts.workspace_rendered_file_validation import (
+from orchestrator_cli.artifacts.workspace.rendered_file_validation import (
     provider_rendered_workspace_files_match,
 )
 from tests.helpers.resume import make_plan, make_workspace_file_locator

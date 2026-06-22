@@ -17,19 +17,19 @@ from .plan_contract import (
 )
 from .runtime_config import RuntimeConfigSnapshot
 from .secrets import SecretContext
-from .workspace_models import (
+from .workspace.models import (
     WorkspaceBranchExportRecord as WorkspaceBranchExportRecord,
 )
-from .workspace_models import (
+from .workspace.models import (
     WorkspaceSelectionRecord as WorkspaceSelectionRecord,
 )
-from .workspace_models import (
+from .workspace.models import (
     WorkspaceSetupCommandRecord as WorkspaceSetupCommandRecord,
 )
-from .workspace_models import (
+from .workspace.models import (
     WorkspaceSetupRecord as WorkspaceSetupRecord,
 )
-from .workspace_models import (
+from .workspace.models import (
     WorkspaceSourceSnapshot as WorkspaceSourceSnapshot,
 )
 

@@ -16,14 +16,18 @@ from orchestrator_cli.runtime.workspace.cleanup import (
     cleanup_workspace_cache,
     parse_duration_seconds,
 )
-from orchestrator_cli.runtime.workspace.ref_cleanup import (
+from orchestrator_cli.runtime.workspace.worktree.ref_cleanup import (
     workspace_ref_cleanup_for_project,
 )
 
 from .paths import ORCHESTRATOR_DIR, resolve_orchestrator_file
-from .run.git_source_probe import GitSourceContext, discover_git_context, repository_id
-from .run.workspace_cache_policy import paths_overlap
-from .run.workspace_source_types import WorkspacePolicyBuilder
+from .run.workspace.cache_policy import paths_overlap
+from .run.workspace.git_source import (
+    GitSourceContext,
+    discover_git_context,
+    repository_id,
+)
+from .run.workspace.source_types import WorkspacePolicyBuilder
 
 cleanup_app = typer.Typer(help="Remove generated orchestrator runtime state.")
 

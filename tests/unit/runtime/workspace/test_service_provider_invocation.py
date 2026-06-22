@@ -10,9 +10,9 @@ from time import monotonic
 
 import pytest
 
-import orchestrator_cli.runtime.execution.provider_invocation_generated_files as provider_invocation_generated_files_module
-import orchestrator_cli.runtime.execution.provider_invocation_lifecycle as provider_invocation_lifecycle_module
-import orchestrator_cli.runtime.execution.provider_invocation_workspace as provider_invocation_workspace_module
+import orchestrator_cli.runtime.execution.provider_call.generated_files as provider_invocation_generated_files_module
+import orchestrator_cli.runtime.execution.provider_call.lifecycle as provider_invocation_lifecycle_module
+import orchestrator_cli.runtime.execution.provider_call.workspace as provider_invocation_workspace_module
 from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
 from orchestrator_cli.adapters.invokers.mock import MockInvokerAdapter
 from orchestrator_cli.architecture.contracts import (
@@ -24,8 +24,8 @@ from orchestrator_cli.core.config import AgentConfig, Config
 from orchestrator_cli.core.preflight.secrets import SecretContext
 from orchestrator_cli.runtime.agent.failures import InvocationFailureError
 from orchestrator_cli.runtime.agent.invoker import invoke_agent_with_runner
-from orchestrator_cli.runtime.execution.execution_activity import ExecutionTelemetry
-from orchestrator_cli.runtime.execution.provider_invocation import (
+from orchestrator_cli.runtime.execution.activity.telemetry import ExecutionTelemetry
+from orchestrator_cli.runtime.execution.provider_call import (
     ProviderCallDisplay,
     ProviderCallRequest,
     finalize_successful_workspace,
@@ -33,7 +33,7 @@ from orchestrator_cli.runtime.execution.provider_invocation import (
     record_generated_file_workspace,
     run_provider_call,
 )
-from orchestrator_cli.runtime.execution.provider_invocation_workspace import (
+from orchestrator_cli.runtime.execution.provider_call.workspace import (
     prepare_workspace_with_cancellation,
 )
 from orchestrator_cli.runtime.execution.runtime_context import (

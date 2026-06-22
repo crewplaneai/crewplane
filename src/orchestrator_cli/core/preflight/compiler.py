@@ -32,7 +32,7 @@ from .render_plans import (
     compile_render_plan,
 )
 from .runtime_config import RuntimeConfigSnapshot
-from .runtime_config_redaction import config_value_handle
+from .runtime_config.redaction import config_value_handle
 from .secrets import FINGERPRINT_PAYLOAD_VERSION
 from .source import PreflightWorkflowSource
 from .validation import (
@@ -46,8 +46,8 @@ from .value_fingerprints import (
     persisted_value_fingerprints,
 )
 from .variables import build_builtin_template_variables
-from .workspace_records import workspace_policy_records
-from .workspace_snapshot_guard import append_missing_workspace_snapshot_diagnostic
+from .workspace.records import workspace_policy_records
+from .workspace.snapshot_guard import append_missing_workspace_snapshot_diagnostic
 
 
 def compile_preflight_preview(

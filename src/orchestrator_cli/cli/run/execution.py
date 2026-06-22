@@ -11,7 +11,7 @@ from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.architecture.ports.runtime import RuntimeComponents
 from orchestrator_cli.artifacts.locks import acquire_same_context_lock
 from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.artifacts.resume_hydration import hydrate_resume_frontier
+from orchestrator_cli.artifacts.resume.hydration import hydrate_resume_frontier
 from orchestrator_cli.bootstrap import (
     build_runtime_config_snapshot,
 )

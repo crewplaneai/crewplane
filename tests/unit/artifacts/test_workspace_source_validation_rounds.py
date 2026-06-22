@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orchestrator_cli.artifacts.workspace_source_validation import (
+from orchestrator_cli.artifacts.workspace.source_validation import (
     workspace_invocation_source_matches,
 )
 from tests.helpers.resume import make_plan

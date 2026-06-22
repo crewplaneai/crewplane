@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from orchestrator_cli.architecture.ports.artifacts import StageFinalizeResult
 
-from .execution_activity import ExecutionTelemetry
-from .execution_events import RuntimeEventContext, emit_runtime_log
+from .activity.events import RuntimeEventContext, emit_runtime_log
+from .activity.telemetry import ExecutionTelemetry
 
 
 def emit_stage_finalize_logs(

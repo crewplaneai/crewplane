@@ -89,7 +89,7 @@ Keep retry, quota, command-building, prompt transport, output parsing, and usage
 
 ### Runtime execution
 
-- Workflow scheduler: `src/orchestrator_cli/runtime/execution/workflow.py`
+- Workflow scheduler: `src/orchestrator_cli/runtime/execution/workflow/__init__.py`
 - Stage execution: `src/orchestrator_cli/runtime/execution/parallel.py`, `src/orchestrator_cli/runtime/execution/sequential.py`, `src/orchestrator_cli/runtime/execution/consensus.py`
 - Expected tests: `tests/test_executor.py`, `tests/test_workflow_runner.py`
 

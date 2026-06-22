@@ -17,7 +17,10 @@ from rich.console import Console
 from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.cli.run.git_source_probe import GIT_MIN_VERSION, parse_git_version
+from orchestrator_cli.cli.run.workspace.git_source import (
+    GIT_MIN_VERSION,
+    parse_git_version,
+)
 from orchestrator_cli.cli.workflow_runner import (
     execute_workflow_run,
     write_early_preflight_failure_run,

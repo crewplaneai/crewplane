@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from orchestrator_cli.architecture.ports import ArtifactStorePort
 from orchestrator_cli.core.preflight.models import PreflightExecutionNode
 
-from .execution_activity import ExecutionTelemetry
-from .execution_events import RuntimeEventContext, emit_runtime_log
+from .activity.events import RuntimeEventContext, emit_runtime_log
+from .activity.telemetry import ExecutionTelemetry
 from .fragment_assembler import (
     ResolvedPrompt,
     assemble_prompt_details,

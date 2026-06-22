@@ -20,7 +20,7 @@ from orchestrator_cli.runtime.execution.workspace_files import ResolvedWorkspace
 
 from ..common import CompiledRuntimeContext, ExecutionTelemetry
 from ..consensus import EvaluatedReviewResult
-from ..provider_display import ProviderCallDisplay
+from ..provider_call.display import ProviderCallDisplay
 
 DEFAULT_REMEDIATION_DEPTH = 1
 DEFAULT_AUDIT_ROUNDS = 1

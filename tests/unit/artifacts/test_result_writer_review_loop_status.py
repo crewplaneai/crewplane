@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts.result_writer import ResultWriter
-from orchestrator_cli.artifacts.review_loop_status import ReviewLoopStatusError
+from orchestrator_cli.artifacts.results.review_loop_status import ReviewLoopStatusError
+from orchestrator_cli.artifacts.results.writer import ResultWriter
 from tests.unit.artifacts.test_review_loop_status import (
     INVALID_STATUS_CASES,
     StatusMutator,

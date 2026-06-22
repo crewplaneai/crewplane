@@ -30,8 +30,8 @@ from .models import Fragment, RenderPlan, RenderStream, WorkspaceFileTarget
 from .plan_signatures import template_hash
 from .references import TemplateReference, iter_template_references
 from .signatures import signature_for_payload
-from .workspace_file_locators import resolve_workspace_file_reference
-from .workspace_file_selection import (
+from .workspace.files.locators import resolve_workspace_file_reference
+from .workspace.files.selection import (
     is_allowlisted_absolute_path,
     node_selects_managed_workspace,
 )

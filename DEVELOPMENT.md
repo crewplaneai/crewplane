@@ -102,7 +102,7 @@ During the public-alpha `0.x` period, support the current schema unless a migrat
 - `src/orchestrator_cli/core/workflow_markdown/__init__.py`: Frontmatter and Markdown parser
 - `src/orchestrator_cli/core/workflow_validation.py`: Workflow and provider validation
 - `src/orchestrator_cli/runtime/agent/invoker.py`: Provider command invocation and retry logic
-- `src/orchestrator_cli/runtime/execution/workflow.py`: DAG scheduling and node execution
+- `src/orchestrator_cli/runtime/execution/workflow/__init__.py`: DAG scheduling and node execution
 - `src/orchestrator_cli/artifacts/manager.py`: Artifact and output manifest management
 - `src/orchestrator_cli/observability/runtime.py`: Observer lifecycle and snapshot publishing
 

@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run import workspace_source_policy as policy
-from orchestrator_cli.cli.run.git_source_probe import (
+from orchestrator_cli.cli.run.workspace import source_policy as policy
+from orchestrator_cli.cli.run.workspace.git_source import (
     GIT_MIN_VERSION,
     discover_git_context,
     parse_git_version,
 )
-from orchestrator_cli.cli.run.workspace_source_types import WorkspacePolicyBuilder
+from orchestrator_cli.cli.run.workspace.source_types import WorkspacePolicyBuilder
 from orchestrator_cli.core.config import Settings
 from tests.helpers.workspace_source_policy import (
     git_source_context,

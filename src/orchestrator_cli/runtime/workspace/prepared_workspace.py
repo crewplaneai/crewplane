@@ -6,7 +6,6 @@ from typing import Literal
 
 from orchestrator_cli.architecture.contracts import InvocationContext
 
-from .reuse import ReusableWorktreeCheckout, WorktreeReuseCache
 from .snapshot import (
     remove_workspace_path,
     snapshot_drift_summary,
@@ -23,9 +22,10 @@ from .worktree import (
     inspect_disposable_worktree,
     remove_worktree_workspace,
 )
-from .worktree_descriptors import bundle_descriptor
-from .worktree_lineage import cleanup_result_refs_after_failure
-from .worktree_types import WorktreeCaptureResult
+from .worktree.cache import ReusableWorktreeCheckout, WorktreeReuseCache
+from .worktree.descriptors import bundle_descriptor
+from .worktree.lineage import cleanup_result_refs_after_failure
+from .worktree.types import WorktreeCaptureResult
 
 WorkspaceDiagnosticLevel = Literal["error", "warning"]
 

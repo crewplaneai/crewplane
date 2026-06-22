@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace import (
-    prepare_invocation_workspace,
-    worktree_materialization,
-    worktree_reset,
-    worktree_reuse,
+from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
+from orchestrator_cli.runtime.workspace.service import MaterializationLimiter
+from orchestrator_cli.runtime.workspace.worktree import (
+    materialization as worktree_materialization,
 )
-from orchestrator_cli.runtime.workspace.reuse import (
+from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
+from orchestrator_cli.runtime.workspace.worktree import reset as worktree_reset
+from orchestrator_cli.runtime.workspace.worktree import reuse as worktree_reuse
+from orchestrator_cli.runtime.workspace.worktree.cache import (
     ReusableWorktreeCheckout,
     WorktreeReuseCache,
 )
-from orchestrator_cli.runtime.workspace.service import MaterializationLimiter
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
-from orchestrator_cli.runtime.workspace.worktree_types import WorktreeSourceRef
+from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.resume import make_workspace_source_snapshot
 from tests.helpers.workspace_service import (
     create_git_repo,
@@ -281,7 +281,7 @@ def test_reuse_cache_retries_stale_entry_cleanup_after_failure(
         shutil.rmtree(path)
 
     monkeypatch.setattr(
-        "orchestrator_cli.runtime.workspace.reuse.remove_worktree_workspace",
+        "orchestrator_cli.runtime.workspace.worktree.cache.remove_worktree_workspace",
         remove_or_fail,
     )
 

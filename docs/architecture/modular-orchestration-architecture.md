@@ -164,7 +164,7 @@ Sequential executor/reviewer loops rely on runtime-owned integrity checks rather
 - Drift inside the current node stage tree is warning-level.
 - Shared execution results, manifests, and other reserved run-root log artifacts are treated as fatal only when the invocation was isolated enough that the runtime can attribute those changes safely.
 - `logs/summary.md` is always treated as a strict reserved artifact. When an invocation is attributable, `logs/events.ndjson` may only gain event records emitted by that guarded runtime invocation; concurrent node windows fall back to destructive-drift detection to avoid blaming other nodes' legitimate runtime events. Parallel reviewers inside one node share an event capture so their runtime records remain exactly attributable.
-- Review-loop nodes persist `review-state/review-loop-status.json`, and `artifacts/result_writer.py` uses that status artifact to finalize results instead of inferring the winner from lexically latest filenames.
+- Review-loop nodes persist `review-state/review-loop-status.json`, and `artifacts/results/writer.py` uses that status artifact to finalize results instead of inferring the winner from lexically latest filenames.
 
 This keeps the blackboard contract explicit without adding a second config- or adapter-level permission model.
 
