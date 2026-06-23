@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import assert_never, cast
+from typing import assert_never
 
 from markdown_it import MarkdownIt
 
 from crewplane.core.prompt_segments import PromptSegmentPayload, PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 
 from .models import (
     ALLOWED_PROMPT_MARKER_ROLE_SET,
@@ -31,11 +32,13 @@ def validate_marker_role(raw_role: str, source: Path, node_id: str) -> PromptMar
             f"{source} node '{node_id}' declares unknown crewplane role marker "
             f"'{raw_role}'. Allowed roles: {allowed_roles}."
         )
-    return cast(PromptMarkerRole, raw_role)
+    return ProviderRole(raw_role)
 
 
 def segment_role(active_role: PromptMarkerRole | None) -> PromptSegmentRole:
-    return active_role or "shared"
+    if active_role is None:
+        return PromptSegmentRole.SHARED
+    return PromptSegmentRole(active_role.value)
 
 
 def collect_marker_events(

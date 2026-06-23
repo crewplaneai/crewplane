@@ -20,6 +20,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
 from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.service import MaterializationLimiter
@@ -152,7 +153,7 @@ def _node(
         provider_records=[
             ProviderRecord(
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha",
                 agent_config_key="alpha",
                 invoker_alias="mock",
@@ -324,7 +325,7 @@ def workspace_output_manager(
 def workspace_invocation_request(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
-    role_label: str = "executor",
+    role_label: ProviderRole = ProviderRole.EXECUTOR,
     audit_round_num: int | None = None,
     materialization_limiter: MaterializationLimiter | None = None,
 ) -> WorkspaceInvocationRequest:
@@ -342,7 +343,9 @@ def workspace_invocation_request(
     )
 
 
-def workspace_invocation_context(role: str = "executor") -> InvocationContext:
+def workspace_invocation_context(
+    role: ProviderRole = ProviderRole.EXECUTOR,
+) -> InvocationContext:
     return InvocationContext(
         node_id="implement",
         task_id="alpha",

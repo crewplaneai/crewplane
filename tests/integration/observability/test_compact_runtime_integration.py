@@ -11,6 +11,8 @@ from rich.console import Console
 
 from crewplane.bootstrap.container import build_runtime_components
 from crewplane.core.config import Config, load_config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.models import (
     PromptSegment,
@@ -39,7 +41,7 @@ CONFIG_TEMPLATE_PATH = Path(__file__).with_name("fixtures") / "config.yml"
 FAKE_TMUX_BIND_ARG_THRESHOLD = 800
 
 
-def provider(name: str, role: str = "executor") -> ProviderSpec:
+def provider(name: str, role: ProviderRole = ProviderRole.EXECUTOR) -> ProviderSpec:
     return ProviderSpec(provider=name, role=role)
 
 
@@ -54,15 +56,19 @@ def build_compact_linear_workflow(case_root: Path) -> WorkflowPlan:  # noqa: ARG
             WorkflowNode(
                 id="design.discovery",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="Discover")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Discover")
+                ],
                 providers=[provider("claude")],
             ),
             WorkflowNode(
                 id="design.iteration",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Iterate")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Iterate")
+                ],
                 needs=["design.discovery"],
-                providers=[provider("codex", role="executor")],
+                providers=[provider("codex", role=ProviderRole.EXECUTOR)],
             ),
         ],
     )
@@ -132,7 +138,7 @@ def ordered_node_ids(snapshot) -> list[str]:  # type: ignore[no-untyped-def]
     return node_ids
 
 
-def render_compact_dashboard(run_result) -> tuple[str, str]:  # type: ignore[no-untyped-def]
+def render_compact_runtime_dashboard(run_result) -> tuple[str, str]:  # type: ignore[no-untyped-def]
     runtime = SimulatedTmuxRuntime()
     runtime.start(
         RunContext(
@@ -409,7 +415,7 @@ def test_compact_runtime_renders_real_execution_snapshots(
     case_data: dict[str, object],
 ) -> None:
     run_result = run_visualization_case(tmp_path, case_data)
-    left_text, right_text = render_compact_dashboard(run_result)
+    left_text, right_text = render_compact_runtime_dashboard(run_result)
 
     for fragment in case_data["expected_left_fragments"]:
         assert fragment in left_text
@@ -431,7 +437,7 @@ def test_compact_runtime_dashboard_help_mentions_log_inspect_mode(
     }
 
     run_result = run_visualization_case(tmp_path, case_data)
-    left_text, _ = render_compact_dashboard(run_result)
+    left_text, _ = render_compact_runtime_dashboard(run_result)
 
     assert "[Enter] inspect" in left_text
     assert "[r] raw inspect" in left_text

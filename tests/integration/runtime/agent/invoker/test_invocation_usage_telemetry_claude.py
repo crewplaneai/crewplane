@@ -9,6 +9,7 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import (
     InvocationFailureError,
 )
@@ -50,7 +51,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="claude_executor_0",
                 provider="claude",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -115,7 +116,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="claude_executor_0",
                 provider="claude",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -169,7 +170,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="claude_executor_0",
                 provider="claude",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -228,7 +229,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -276,7 +277,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -328,7 +329,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )

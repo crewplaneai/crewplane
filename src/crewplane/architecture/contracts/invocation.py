@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
@@ -14,14 +15,34 @@ from .json import JsonObject
 if TYPE_CHECKING:
     from crewplane.core.config import AgentConfig
 
-ProviderKind = Literal["claude", "codex", "copilot", "gemini", "kilo", "generic"]
+
+class ProviderKind(StrEnum):
+    CLAUDE = "claude"
+    CODEX = "codex"
+    COPILOT = "copilot"
+    GEMINI = "gemini"
+    KILO = "kilo"
+    GENERIC = "generic"
+
+
+SUPPORTED_PROVIDER_KINDS = (
+    ProviderKind.CLAUDE,
+    ProviderKind.CODEX,
+    ProviderKind.COPILOT,
+    ProviderKind.GEMINI,
+    ProviderKind.KILO,
+    ProviderKind.GENERIC,
+)
+SUPPORTED_PROVIDER_KIND_VALUES = tuple(kind.value for kind in SUPPORTED_PROVIDER_KINDS)
+SUPPORTED_PROVIDER_KIND_VALUE_SET = frozenset(SUPPORTED_PROVIDER_KIND_VALUES)
+
 PromptTransport = Literal["stdin", "argv"]
 StructuredOutputMode = Literal["none", "codex_last_message_file", "claude_json"]
 OutputExtractionMode = Literal["visible", "codex_last_message_file", "claude_json"]
 OutputExtractionStatus = Literal["success", "missing", "malformed"]
 QuotaParserProfile = Literal["codex", "copilot", "claude", "kilo", "gemini", "generic"]
 UsageParserProfile = Literal["none", "codex", "claude"]
-FailureClassificationProfile = ProviderKind
+type FailureClassificationProfile = ProviderKind
 ProviderUsageStatus = Literal["full", "partial", "none", "malformed"]
 InvocationCostConfidence = Literal["full", "partial", "none"]
 AggregateCostConfidence = Literal["full", "partial", "none", "mixed"]

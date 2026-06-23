@@ -13,6 +13,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.value_checks import is_strict_int
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.branch_export.fulfillment import (
     BranchExportCheckpoint,
 )
@@ -151,7 +152,7 @@ def _validate_state_header(
         and payload.get("workflow_signature") == plan.workflow_signature
         and payload.get("node_id") == node.id
         and payload.get("status") == "succeeded"
-        and payload.get("role") == "executor"
+        and payload.get("role") == ProviderRole.EXECUTOR
         and payload.get("workspace_kind") == "worktree"
         and payload.get("logical_worktree_name") == policy.logical_worktree_name
         and payload.get("worktree_contract")

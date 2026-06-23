@@ -76,7 +76,7 @@ class RuntimeAgentConfigSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cli_cmd: list[str]
-    provider_kind: ProviderKind = "generic"
+    provider_kind: ProviderKind = ProviderKind.GENERIC
     default_model: str | None = None
     model_arg: str | None = "--model"
     prompt_transport: PromptTransport = "stdin"

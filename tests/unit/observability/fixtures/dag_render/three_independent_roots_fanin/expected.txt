@@ -1,0 +1,5 @@
+▸●     review.business          ⏸  gemini
+ │ ●   review.architecture      ⏸  gemini
+ │ │ ● review.quality           ⏸  gemini
+ ├─┴─┘
+ ●     review.summary           ⏸  gemini

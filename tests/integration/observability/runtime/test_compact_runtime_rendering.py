@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     WorkflowNode,
@@ -80,7 +82,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                     run_id="compact-render",
                     node_id="node.b",
                     provider="beta",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="beta_executor_0",
                     round_num=1,
@@ -180,7 +182,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                     run_id="compact-codex-jsonl",
                     node_id="node.a",
                     provider="codex",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="gpt-5",
                     task_id="codex_executor_0",
                     round_num=1,
@@ -300,7 +302,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                     run_id="compact-fixed-tail",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -366,7 +368,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                     run_id="compact-fixed-wrap",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -397,7 +399,9 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.with.long.identifier",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("alpha")],
                 ),
             ],
@@ -453,7 +457,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                     run_id="compact-wrap-headers",
                     node_id="node.with.long.identifier",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_with_long_name_0",
                     round_num=1,
@@ -532,7 +536,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                     run_id="compact-auto-tail",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -601,7 +605,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
                     run_id="compact-auto-wrap-budget",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,

@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -13,12 +15,18 @@ from crewplane.observability.events import (
 )
 from crewplane.observability.layout import compute_topology_layout
 from tests.helpers.observability import topology_from_workflow
+from tests.helpers.render_fixtures import read_render_fixture
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+FIXTURES = Path(__file__).parents[1] / "fixtures" / "dag_render"
 
 
 def provider(name: str) -> ProviderSpec:
     return ProviderSpec(provider=name)
+
+
+def expected_render(case_id: str) -> str:
+    return read_render_fixture(FIXTURES, case_id, "expected.txt")
 
 
 class DagRenderFaninOverflowTests(unittest.TestCase):
@@ -40,7 +48,9 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
                         )
                     ],
                     needs=["review-input"],
-                    providers=[ProviderSpec(provider="claude", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="claude", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
             ],
         )
@@ -56,10 +66,7 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertTrue(
-            any("review-input" in line and "input" in line for line in lines)
-        )
-        self.assertTrue(any("implement" in line and "claude" in line for line in lines))
+        self.assertEqual("\n".join(lines), expected_render("input_root"))
 
     def test_fanout_side_chain_and_fanin_render_open_and_close_rows(self) -> None:
         workflow = WorkflowPlan(
@@ -68,39 +75,51 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
                 WorkflowNode(
                     id="implement.plan",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("claude")],
                 ),
                 WorkflowNode(
                     id="implement.build",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     needs=["implement.plan"],
                     providers=[provider("codex"), provider("gemini")],
                 ),
                 WorkflowNode(
                     id="implement.review",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["implement.build"],
                     providers=[
-                        ProviderSpec(provider="codex", role="executor"),
-                        ProviderSpec(provider="claude", role="reviewer"),
+                        ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="claude", role=ProviderRole.REVIEWER),
                     ],
                 ),
                 WorkflowNode(
                     id="implement.fixes",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="d")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
                     needs=["implement.review"],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="implement.handoff",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="e")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="e")
+                    ],
                     needs=["implement.plan", "implement.fixes"],
-                    providers=[ProviderSpec(provider="claude", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="claude", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
             ],
         )
@@ -113,13 +132,8 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
             selected_node_id=None,
             width=120,
         )
-        rendered = "\n".join(lines)
 
-        self.assertIn("├─┐", rendered)
-        self.assertIn("├─┘", rendered)
-        self.assertIn("● │ implement.build", rendered)
-        self.assertIn("● │ implement.review", rendered)
-        self.assertIn("● │ implement.fixes", rendered)
+        self.assertEqual("\n".join(lines), expected_render("fanout_side_chain_fanin"))
 
     def test_diamond_prefers_leftmost_branch_as_trunk_when_depth_is_equal(self) -> None:
         workflow = WorkflowPlan(
@@ -128,29 +142,37 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
                 WorkflowNode(
                     id="root",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="r")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="r")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="left",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="l")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="l")
+                    ],
                     needs=["root"],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="right",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="r")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="r")
+                    ],
                     needs=["root"],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="merge",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="m")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="m")
+                    ],
                     needs=["left", "right"],
-                    providers=[ProviderSpec(provider="p", role="executor")],
+                    providers=[ProviderSpec(provider="p", role=ProviderRole.EXECUTOR)],
                 ),
             ],
         )
@@ -165,10 +187,8 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
             selected_node_id=None,
             width=120,
         )
-        rendered = "\n".join(lines)
 
-        self.assertIn("● │ left", rendered)
-        self.assertIn("│ ● right", rendered)
+        self.assertEqual("\n".join(lines), expected_render("diamond"))
 
     def test_interleaved_independent_root_uses_new_column(self) -> None:
         workflow = WorkflowPlan(
@@ -177,33 +197,43 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
                 WorkflowNode(
                     id="a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="x",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="x")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="x")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="b",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     needs=["a"],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="c",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["a"],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="y",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="y")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="y")
+                    ],
                     needs=["x"],
                     providers=[provider("p")],
                 ),
@@ -220,8 +250,10 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
             selected_node_id=None,
             width=120,
         )
-        x_line = next(line for line in lines if " x" in line)
-        self.assertTrue(x_line.startswith(" │ │ ● x"))
+
+        self.assertEqual(
+            "\n".join(lines), expected_render("interleaved_independent_root")
+        )
 
     def test_two_independent_roots_fanin_matches_proposal_shape(self) -> None:
         workflow = WorkflowPlan(
@@ -230,21 +262,27 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
                 WorkflowNode(
                     id="a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="b",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="merge",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="m")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="m")
+                    ],
                     needs=["a", "b"],
-                    providers=[ProviderSpec(provider="p", role="executor")],
+                    providers=[ProviderSpec(provider="p", role=ProviderRole.EXECUTOR)],
                 ),
             ],
         )
@@ -260,13 +298,8 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
             width=120,
         )
         self.assertEqual(
-            lines,
-            [
-                " ●   a                        ⏸  p",
-                " │ ● b                        ⏸  p",
-                " ├─┘",
-                " ●   merge                    ⏸  p",
-            ],
+            "\n".join(lines),
+            expected_render("two_independent_roots_fanin"),
         )
 
     def test_three_independent_roots_fanin_renders_without_spacer_rows(self) -> None:
@@ -276,31 +309,41 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
                 WorkflowNode(
                     id="review.business",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("gemini")],
                 ),
                 WorkflowNode(
                     id="review.architecture",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("gemini")],
                 ),
                 WorkflowNode(
                     id="review.quality",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     providers=[provider("gemini")],
                 ),
                 WorkflowNode(
                     id="review.summary",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="d")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
                     needs=[
                         "review.business",
                         "review.architecture",
                         "review.quality",
                     ],
-                    providers=[ProviderSpec(provider="gemini", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="gemini", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
             ],
         )
@@ -317,14 +360,8 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            lines,
-            [
-                "▸●     review.business          ⏸  gemini",
-                " │ ●   review.architecture      ⏸  gemini",
-                " │ │ ● review.quality           ⏸  gemini",
-                " ├─┴─┘",
-                " ●     review.summary           ⏸  gemini",
-            ],
+            "\n".join(lines),
+            expected_render("three_independent_roots_fanin"),
         )
 
     def test_overflow_cap_adds_hidden_branch_summary(self) -> None:
@@ -332,7 +369,9 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
             WorkflowNode(
                 id=f"child.{index}",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="x")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="x")
+                ],
                 needs=["root"],
                 providers=[provider("codex")],
             )
@@ -344,16 +383,22 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
                 WorkflowNode(
                     id="root",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="r")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="r")
+                    ],
                     providers=[provider("codex")],
                 ),
                 *children,
                 WorkflowNode(
                     id="merge",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="m")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="m")
+                    ],
                     needs=["root", *(child.id for child in children)],
-                    providers=[ProviderSpec(provider="claude", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="claude", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
             ],
         )
@@ -369,5 +414,4 @@ class DagRenderFaninOverflowTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertIn("... +2 more", lines[-1])
-        self.assertTrue(any("├─┬" in line for line in lines))
+        self.assertEqual("\n".join(lines), expected_render("overflow_cap"))

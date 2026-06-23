@@ -15,6 +15,7 @@ from crewplane.artifacts.results.selection import (
 )
 from crewplane.artifacts.safe_files import contained_regular_file
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.workflow.keywords import ProviderRole
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ def same_node_executor_state_path(
     task_ids = {
         provider.task_id
         for provider in node.provider_records
-        if provider.role == "executor"
+        if provider.role == ProviderRole.EXECUTOR
     }
     match = WorkspaceStateInvocation(
         task_id=next(iter(task_ids)) if len(task_ids) == 1 else "",
@@ -214,7 +215,7 @@ def workspace_state_payload_is_lineage_source(payload: dict[str, object]) -> boo
     result = payload.get("result")
     return (
         payload.get("status") == "succeeded"
-        and payload.get("role") == "executor"
+        and payload.get("role") == ProviderRole.EXECUTOR
         and isinstance(workspace, dict)
         and workspace.get("lineage_producer") is True
         and isinstance(result, dict)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,32 +8,8 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.workspace.git_policy import (
-    workspace_git_config_environment,
-)
-
-WORKSPACE_GIT_ENV_UNSET = (
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_COMMON_DIR",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_NAMESPACE",
-    "GIT_CEILING_DIRECTORIES",
-    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-    "GIT_CONFIG_SYSTEM",
-    "GIT_CONFIG_GLOBAL",
-    "GIT_CONFIG_NOSYSTEM",
-    "GIT_CONFIG_COUNT",
-    "GIT_CONFIG_PARAMETERS",
-    "GIT_ATTR_NOSYSTEM",
-    "GIT_ATTR_SOURCE",
-    "GIT_LITERAL_PATHSPECS",
-    "GIT_GLOB_PATHSPECS",
-    "GIT_NOGLOB_PATHSPECS",
-    "GIT_ICASE_PATHSPECS",
-    "GIT_ASKPASS",
-    "SSH_ASKPASS",
+    workspace_git_base_environment,
+    workspace_git_environment_unset_keys,
 )
 
 
@@ -64,21 +39,13 @@ def workspace_child_environment(
     checkout_root: Path | None = None,
 ) -> ChildProcessEnvironment:
     discovery_root = checkout_root or cwd
-    unset = (*WORKSPACE_GIT_ENV_UNSET, *dynamic_git_config_environment_keys())
+    ceiling_directories = discovery_root.resolve(strict=False).parent
     return ChildProcessEnvironment(
-        set={
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_ATTR_NOSYSTEM": "1",
-            "GIT_NO_REPLACE_OBJECTS": "1",
-            "GIT_NO_LAZY_FETCH": "1",
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_CEILING_DIRECTORIES": discovery_root.resolve(
-                strict=False
-            ).parent.as_posix(),
-            **workspace_git_config_environment(),
-        },
-        unset=unset,
+        set=workspace_git_base_environment(
+            ceiling_directories=ceiling_directories,
+            include_config_overlay=True,
+        ),
+        unset=workspace_git_environment_unset_keys(),
     )
 
 
@@ -94,11 +61,3 @@ def record_workspace_child_environment_applied(
     recorder = invocation_context.workspace_environment_applied_recorder
     if recorder is not None:
         recorder()
-
-
-def dynamic_git_config_environment_keys() -> tuple[str, ...]:
-    return tuple(
-        key
-        for key in os.environ
-        if key.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))
-    )

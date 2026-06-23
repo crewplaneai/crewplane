@@ -22,6 +22,10 @@ back to `python -m ...` commands when possible.
 - Keep test-only helpers under `tests/`.
 - Update docs and example templates when CLI flags, config keys, workflow
   syntax, or install behavior changes.
+- For node or DAG rendering issues, reference
+  [the UI compact dashboard](docs/architecture/ui_compact_dashboard.md) for the
+  intended graph behavior and add or update the relevant layout fixture under
+  [tests/unit/observability/fixtures/](tests/unit/observability/fixtures/).
 
 ## Release Surface Checks
 

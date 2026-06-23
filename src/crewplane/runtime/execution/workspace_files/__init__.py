@@ -10,6 +10,8 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceFileLocator,
+    WorkspaceFileSourceClass,
+    WorkspaceFileTarget,
 )
 from crewplane.core.preflight.workspace.files.git_reads import (
     SUPPORTED_FILE_MODES,
@@ -17,6 +19,7 @@ from crewplane.core.preflight.workspace.files.git_reads import (
     git_ls_tree,
     valid_utf8_without_nul,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 from crewplane.runtime.workspace.state_selection import (
     latest_executor_lineage_state_path,
@@ -48,7 +51,7 @@ class ResolvedWorkspaceFile:
 
 @dataclass(frozen=True)
 class WorkspaceCandidateSourceContext:
-    role_label: str
+    role_label: ProviderRole
     round_num: int
     audit_round_num: int | None
 
@@ -58,7 +61,7 @@ def resolve_project_initial_workspace_file(
     locator_id: str,
 ) -> ResolvedWorkspaceFile:
     locator = workspace_file_locator(plan, locator_id)
-    if locator.source_class != "project_initial":
+    if locator.source_class != WorkspaceFileSourceClass.PROJECT_INITIAL:
         raise RuntimeError(
             "Runtime-dynamic workspace file locator resolution is unavailable in "
             f"this build: {locator_id}."
@@ -102,9 +105,12 @@ def resolve_workspace_file(
     workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
 ) -> ResolvedWorkspaceFile:
     locator = workspace_file_locator(plan, locator_id)
-    if locator.source_class == "project_initial" and not _uses_candidate_source(
-        locator,
-        workspace_candidate_source,
+    if (
+        locator.source_class == WorkspaceFileSourceClass.PROJECT_INITIAL
+        and not _uses_candidate_source(
+            locator,
+            workspace_candidate_source,
+        )
     ):
         return resolve_project_initial_workspace_file(plan, locator_id)
     source = dynamic_locator_source(
@@ -222,7 +228,7 @@ def _contextual_candidate_source_state_path(
 ) -> Path | None:
     if context is None:
         return None
-    if context.role_label == "reviewer":
+    if context.role_label == ProviderRole.REVIEWER:
         return same_node_executor_state_path(
             output,
             node,
@@ -230,7 +236,7 @@ def _contextual_candidate_source_state_path(
             context.audit_round_num,
             allow_prior_fallback=_reviewer_allows_prior_fallback(context),
         )
-    if context.role_label == "executor" and context.round_num > 1:
+    if context.role_label == ProviderRole.EXECUTOR and context.round_num > 1:
         return same_node_executor_state_path(
             output,
             node,
@@ -249,8 +255,8 @@ def _uses_candidate_source(
     locator: WorkspaceFileLocator,
     workspace_candidate_source: bool,
 ) -> bool:
-    if locator.target == "reviewer_prompt":
-        return locator.source_class == "runtime_dynamic"
+    if locator.target == WorkspaceFileTarget.REVIEWER_PROMPT:
+        return locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
     return workspace_candidate_source and locator.runtime_dynamic_after_candidate
 
 
@@ -292,7 +298,7 @@ def rendered_workspace_file_descriptor(
     resolved_file: ResolvedWorkspaceFile,
     node_id: str,
     task_id: str,
-    role: str,
+    role: ProviderRole,
     round_num: int,
     audit_round_num: int | None,
 ) -> RenderedWorkspaceFileDescriptor:
@@ -333,7 +339,7 @@ def rendered_workspace_file_descriptor(
 def rendered_workspace_file_invocation_id(
     node_id: str,
     task_id: str,
-    role: str,
+    role: ProviderRole,
     round_num: int,
     audit_round_num: int | None,
 ) -> str:

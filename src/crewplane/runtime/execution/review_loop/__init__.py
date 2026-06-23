@@ -5,6 +5,7 @@ from pathlib import Path
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import (
     CompiledRuntimeContext,
@@ -117,7 +118,7 @@ async def execute_review_loop_stage(
         runtime_context,
         stage,
         output,
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         telemetry=telemetry,
     )
     reviewer_prompt_context = resolve_reviewer_prompt_context(
@@ -256,14 +257,14 @@ def resolve_reviewer_prompt_context(
     if stream_has_runtime_dynamic_workspace_locator(
         runtime_context.plan,
         stage,
-        "reviewer",
+        ProviderRole.REVIEWER,
     ):
         return ResolvedPrompt("")
     return resolve_prompt_with_output_budget_details(
         runtime_context,
         stage,
         output,
-        role="reviewer",
+        role=ProviderRole.REVIEWER,
         telemetry=telemetry,
     )
 

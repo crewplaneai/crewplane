@@ -3,6 +3,7 @@ from pathlib import Path
 from crewplane.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import ProviderSpec
 from crewplane.runtime.execution.review_loop.types import (
     INVALID_CANDIDATE_EMPTY,
@@ -18,7 +19,7 @@ from crewplane.runtime.execution.review_loop.validation import (
 
 def _artifact(task_id: str, content: str) -> ExecutorRoundArtifact:
     return ExecutorRoundArtifact(
-        provider=ProviderSpec(provider="exec", role="executor"),
+        provider=ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
         task_id=task_id,
         content=content,
         output_file=Path(f"{task_id}_round1.md"),

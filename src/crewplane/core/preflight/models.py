@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -217,8 +218,15 @@ class ArtifactContract(BaseModel):
     result_path: str | None = None
 
 
-WorkspaceFileSourceClass = Literal["project_initial", "runtime_dynamic"]
-WorkspaceFileTarget = Literal["input_output", "executor_prompt", "reviewer_prompt"]
+class WorkspaceFileSourceClass(StrEnum):
+    PROJECT_INITIAL = "project_initial"
+    RUNTIME_DYNAMIC = "runtime_dynamic"
+
+
+class WorkspaceFileTarget(StrEnum):
+    INPUT_OUTPUT = "input_output"
+    EXECUTOR_PROMPT = "executor_prompt"
+    REVIEWER_PROMPT = "reviewer_prompt"
 
 
 class WorkspaceFileLocator(BaseModel):

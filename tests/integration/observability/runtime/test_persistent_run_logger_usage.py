@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from crewplane.artifacts import OutputManager
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability import PersistentRunLogger
 from crewplane.observability.persistent import render_run_summary_terminal
 from crewplane.observability.runtime import ObservabilityHub
@@ -54,7 +55,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                         run_id=output.run_id,
                         node_id="node.a",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         model="alpha-model",
                         task_id="alpha_executor_0",
                         round_num=1,
@@ -205,7 +206,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                         run_id=output.run_id,
                         node_id="node.a",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         model="alpha-model",
                         task_id="alpha_executor_0",
                         round_num=1,
@@ -301,7 +302,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                         run_id=output.run_id,
                         node_id="node.a",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         model="alpha-model",
                         task_id="alpha_executor_0",
                         round_num=1,

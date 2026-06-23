@@ -5,6 +5,8 @@ from pathlib import Path
 
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -39,12 +41,14 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.clean.fresh.audit",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=2,
                 audit_rounds=4,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -81,12 +85,14 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.remediation.stop",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=2,
                 audit_rounds=2,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -139,12 +145,14 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.reopen",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 audit_rounds=2,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -190,12 +198,14 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.exhausted.audit",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 audit_rounds=2,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -244,9 +254,11 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="single.provider.no.review.state",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Run this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Run this.")
+                ],
                 depth=2,
-                providers=[ProviderSpec(provider="exec", role="executor")],
+                providers=[ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR)],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
 
@@ -277,11 +289,13 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.state",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=2,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -360,11 +374,13 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.previous.candidate",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -412,11 +428,13 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.previous.candidate.budget",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -479,11 +497,13 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.previous.candidate.fail.budget",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(

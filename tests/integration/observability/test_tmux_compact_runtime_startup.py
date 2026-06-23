@@ -4,6 +4,7 @@ from time import sleep
 
 import pytest
 
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -198,7 +199,9 @@ def workflow_plan() -> WorkflowPlan:
             WorkflowNode(
                 id="node.a",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[ProviderSpec(provider="alpha")],
             )
         ],

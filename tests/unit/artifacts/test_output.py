@@ -401,6 +401,47 @@ class OutputManagerTests(unittest.TestCase):
             self.assertTrue((snapshot / "src" / "created.txt").is_file())
             self.assertFalse((snapshot / "src" / "unchanged.txt").exists())
 
+    def test_workspace_generated_file_snapshot_accepts_missing_output_file_with_candidates(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            workspace = base_dir / "workspace"
+            (workspace / "src").mkdir(parents=True)
+            created_file = workspace / "src" / "created.txt"
+            created_file.write_text("created", encoding="utf-8")
+            stage_dir = output.create_stage_dir("build.node")
+            alpha_output = stage_dir / "alpha_round1.md"
+
+            snapshot = snapshot_generated_file_workspace(
+                alpha_output,
+                workspace,
+                candidate_files=(created_file,),
+            )
+            snapshot_metadata = json.loads(
+                (snapshot / ".crewplane-generated-file-snapshot.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertEqual(
+                snapshot_metadata,
+                {
+                    "files": [
+                        {
+                            "changed": None,
+                            "path": "src/created.txt",
+                            "size_bytes": len("created"),
+                        }
+                    ]
+                },
+            )
+            self.assertEqual(
+                (snapshot / "src" / "created.txt").read_text(encoding="utf-8"),
+                "created",
+            )
+
     def test_workspace_generated_file_snapshot_rejects_too_many_before_copying(
         self,
     ) -> None:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -12,11 +14,12 @@ from crewplane.observability.dag_render import render_dag_summary
 from crewplane.observability.events import build_initial_state
 from crewplane.observability.layout import compute_topology_layout
 from tests.helpers.observability import topology_from_workflow
+from tests.helpers.render_fixtures import read_render_fixture
 
 FIXTURES = Path(__file__).with_name("fixtures")
 
 
-def provider(name: str, role: str = "executor") -> ProviderSpec:
+def provider(name: str, role: ProviderRole = ProviderRole.EXECUTOR) -> ProviderSpec:
     return ProviderSpec(provider=name, role=role)
 
 
@@ -27,23 +30,29 @@ def test_transitive_chain_matches_exact_golden() -> None:
             WorkflowNode(
                 id="design.init",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[provider("copilot")],
             ),
             WorkflowNode(
                 id="design.iteration",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="b")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                ],
                 needs=["design.init"],
                 providers=[
                     provider("codex"),
-                    provider("copilot", role="reviewer"),
+                    provider("copilot", role=ProviderRole.REVIEWER),
                 ],
             ),
             WorkflowNode(
                 id="design.decision",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="c")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                ],
                 needs=["design.init", "design.iteration"],
                 providers=[provider("copilot")],
             ),
@@ -62,10 +71,8 @@ def test_transitive_chain_matches_exact_golden() -> None:
             width=120,
         )
     )
-    expected = (
-        (FIXTURES / "dag_render" / "transitive_chain" / "expected.txt")
-        .read_text(encoding="utf-8")
-        .rstrip("\n")
+    expected = read_render_fixture(
+        FIXTURES / "dag_render", "transitive_chain", "expected.txt"
     )
 
     assert rendered == expected

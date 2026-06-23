@@ -8,6 +8,7 @@ from crewplane.artifacts.workspace.state.invocations import (
     payload_matches_expected_invocation,
     workspace_state_payloads_for_status,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.resume import make_plan
 from tests.helpers.resume_validation import source_record
 
@@ -51,7 +52,7 @@ def test_payload_matches_expected_invocation_rejects_bool_round_num() -> None:
         },
         ExpectedWorkspaceInvocation(
             task_id="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             round_num=1,
             audit_round_num=None,
         ),
@@ -68,7 +69,7 @@ def test_payload_matches_expected_invocation_rejects_bool_audit_round_num() -> N
         },
         ExpectedWorkspaceInvocation(
             task_id="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             round_num=1,
             audit_round_num=0,
         ),

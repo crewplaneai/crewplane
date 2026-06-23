@@ -17,7 +17,7 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
 )
 from crewplane.core.preflight.secrets import FingerprintKeyPolicy
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -82,7 +82,9 @@ def test_preflight_preview_reports_missing_env_before_runtime(tmp_path: Path) ->
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
                 prompt_segments=[
-                    PromptSegment(role="shared", content="{{env:MISSING_KEY}}")
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED, content="{{env:MISSING_KEY}}"
+                    )
                 ],
             )
         ],
@@ -271,7 +273,9 @@ def test_successful_preflight_preview_builds_execution_contract(
                 id="build",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="Build")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Build")
+                ],
             )
         ],
     )
@@ -294,7 +298,9 @@ def test_preflight_preview_warns_on_argv_prompt_transport(
                 id="build",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="build")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="build")
+                ],
             )
         ],
     )

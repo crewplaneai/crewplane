@@ -6,6 +6,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 
 from .types import (
     DEFAULT_AUDIT_ROUNDS,
@@ -54,7 +55,7 @@ def split_sequential_review_loop_providers(
     reviewer_segment_started = False
 
     for provider in providers:
-        if provider.role == "reviewer":
+        if provider.role == ProviderRole.REVIEWER:
             reviewer_segment_started = True
             reviewers.append(provider)
             continue

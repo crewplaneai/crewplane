@@ -16,6 +16,7 @@ from .detection import (
     GENERATED_FILE_SOURCE_METADATA_NAME,
     GeneratedFileLink,
     GeneratedFileReferenceDetector,
+    is_reserved_workspace_path,
 )
 
 MAX_GENERATED_FILE_SNAPSHOT_FILES = 100
@@ -73,13 +74,24 @@ def generated_file_links_for_content(
     stage_name: str,
     materialize: bool = False,
     copy_namespace: str | None = None,
+    candidate_files: Sequence[Path] | None = None,
 ) -> tuple[GeneratedFileLink, ...]:
+    resolved_candidate_files = candidate_files
+    if resolved_candidate_files is None:
+        resolved_candidate_files = _generated_file_snapshot_candidate_files(
+            workspace_root
+        )
     detector = GeneratedFileReferenceDetector(
         workspace_root,
         source_root=_generated_file_snapshot_source_root(workspace_root),
     )
     links: list[GeneratedFileLink] = []
-    for generated_file in detector.detect(content):
+    for generated_file in _ordered_generated_files_for_content(
+        content,
+        detector,
+        workspace_root,
+        resolved_candidate_files,
+    ):
         relative_path = generated_file.relative_to(workspace_root.resolve()).as_posix()
         label = relative_path
         target_path = generated_file
@@ -101,13 +113,20 @@ def snapshot_generated_file_workspace(
     output_file: Path,
     workspace_root: Path,
     changed_paths: set[str] | None = None,
+    candidate_files: Sequence[Path] | None = None,
 ) -> Path:
-    content = output_file.read_text(encoding="utf-8")
+    content = output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
     snapshot_root = generated_file_source_root(output_file)
     resolved_workspace_root = workspace_root.resolve(strict=True)
     detector = GeneratedFileReferenceDetector(resolved_workspace_root)
+    generated_files = _ordered_generated_files_for_content(
+        content,
+        detector,
+        resolved_workspace_root,
+        candidate_files,
+    )
     candidates = _generated_file_snapshot_candidates(
-        detector.detect(content),
+        generated_files,
         resolved_workspace_root,
         changed_paths,
     )
@@ -126,6 +145,65 @@ def snapshot_generated_file_workspace(
         ],
     )
     return snapshot_root
+
+
+def _ordered_generated_files_for_content(
+    content: str,
+    detector: GeneratedFileReferenceDetector,
+    workspace_root: Path,
+    candidate_files: Sequence[Path] | None,
+) -> tuple[Path, ...]:
+    if candidate_files is None:
+        return detector.detect(content)
+
+    resolved_workspace_root = workspace_root.resolve(strict=True)
+    candidates = _safe_unique_candidate_files(candidate_files, resolved_workspace_root)
+    if not candidates:
+        return ()
+    explicit_paths = detector.detect_explicit_section(content)
+    if not explicit_paths:
+        return tuple(candidates.values())
+
+    ordered: list[Path] = []
+    seen_labels: set[str] = set()
+    for explicit_path in explicit_paths:
+        label = explicit_path.relative_to(resolved_workspace_root).as_posix()
+        candidate = candidates.get(label)
+        if candidate is None or label in seen_labels:
+            continue
+        ordered.append(candidate)
+        seen_labels.add(label)
+    ordered.extend(
+        path for label, path in candidates.items() if label not in seen_labels
+    )
+    return tuple(ordered)
+
+
+def _safe_unique_candidate_files(
+    candidate_files: Sequence[Path],
+    resolved_workspace_root: Path,
+) -> dict[str, Path]:
+    candidates: dict[str, Path] = {}
+    for candidate_file in candidate_files:
+        try:
+            relative_path = candidate_file.resolve(strict=False).relative_to(
+                resolved_workspace_root
+            )
+        except (OSError, ValueError):
+            continue
+        if is_reserved_workspace_path(relative_path):
+            continue
+        contained = contained_regular_file(
+            resolved_workspace_root,
+            relative_path.as_posix(),
+        )
+        if contained is None:
+            continue
+        relative_label = contained.relative_to(resolved_workspace_root).as_posix()
+        if is_reserved_workspace_path(Path(relative_label)):
+            continue
+        candidates.setdefault(relative_label, contained)
+    return dict(sorted(candidates.items()))
 
 
 def _generated_file_snapshot_candidates(
@@ -214,6 +292,37 @@ def _generated_file_snapshot_source_root(snapshot_root: Path) -> Path | None:
     return Path(source_root)
 
 
+def _generated_file_snapshot_candidate_files(
+    snapshot_root: Path,
+) -> tuple[Path, ...] | None:
+    metadata_file = contained_regular_file(
+        snapshot_root,
+        GENERATED_FILE_SNAPSHOT_METADATA_NAME,
+    )
+    if metadata_file is None:
+        return None
+    try:
+        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ()
+    if not isinstance(payload, dict):
+        return ()
+    raw_files = payload.get("files")
+    if not isinstance(raw_files, list):
+        return ()
+    candidates: list[Path] = []
+    for item in raw_files:
+        if not isinstance(item, dict):
+            continue
+        raw_path = item.get("path")
+        if not isinstance(raw_path, str):
+            continue
+        candidate = contained_regular_file(snapshot_root, raw_path)
+        if candidate is not None:
+            candidates.append(candidate)
+    return tuple(candidates)
+
+
 def _write_generated_file_source_metadata(
     snapshot_root: Path,
     source_root: Path,
@@ -291,7 +400,10 @@ def _ensure_contained_directory(root: Path, relative_path: Path) -> Path:
         if current.exists() or current.is_symlink():
             _ensure_safe_directory(current)
             continue
-        current.mkdir(exist_ok=False)
+        try:
+            current.mkdir(exist_ok=False)
+        except FileExistsError:
+            _ensure_safe_directory(current)
     return current
 
 

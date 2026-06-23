@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import (
     ExecutionTelemetry,
@@ -101,7 +102,7 @@ def build_reviewer_round_runtime(
             request.output,
             request.node,
             provider.task_id,
-            "reviewer",
+            ProviderRole.REVIEWER,
             request.audit_round_num,
             request.round_num,
         )
@@ -137,7 +138,7 @@ async def invoke_reviewer_with_drift_guard(
                 task_id=task_id,
                 prompt=runtime.reviewer_prompt,
                 output_file=output_file,
-                role_label="reviewer",
+                role_label=ProviderRole.REVIEWER,
                 findings_enabled=False,
                 allowed_paths=runtime.allowed_paths,
                 display=ProviderCallDisplay(

@@ -21,6 +21,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupRecord,
 )
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 from crewplane.runtime.execution.provider_call import (
     ProviderCallDisplay,
@@ -268,7 +269,7 @@ async def _run_provider_invocation_runs_selected_worktree_setup_before_provider(
             round_num=1,
             prompt="setup first",
             output_file=node_dir / "alpha_round1.md",
-            role_label="executor",
+            role_label=ProviderRole.EXECUTOR,
             invoker=invoker,
             telemetry=None,
         ),
@@ -419,7 +420,7 @@ async def _run_provider_invocation_setup_failure_prevents_provider_call(
                 round_num=1,
                 prompt="setup failure",
                 output_file=output_file,
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=invoker,
                 telemetry=None,
             ),
@@ -483,7 +484,7 @@ async def _run_provider_invocation_setup_cancellation_terminates_setup_process_g
                 round_num=1,
                 prompt="cancel setup",
                 output_file=output_file,
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=invoker,
                 telemetry=None,
             ),
@@ -567,7 +568,7 @@ async def _run_provider_invocation_skips_unselected_setup_profile_for_snapshot(
             round_num=1,
             prompt="snapshot setup skip",
             output_file=node_dir / "alpha_round1.md",
-            role_label="executor",
+            role_label=ProviderRole.EXECUTOR,
             invoker=invoker,
             telemetry=None,
         ),

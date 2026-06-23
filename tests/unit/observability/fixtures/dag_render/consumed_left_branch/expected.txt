@@ -1,0 +1,6 @@
+ ●   root.a                   ⏸  codex
+ │ ● root.b                   ⏸  codex
+ ● │ a.terminal               ⏸  codex
+   ● b.chain                  ⏸  codex
+   │
+   ● c.after-b                ⏸  codex

@@ -10,6 +10,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.materialization import MaterializationLimiter
 from crewplane.runtime.workspace.setup import WorkspaceSetupCancellation
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
@@ -28,7 +29,7 @@ class WorkspaceInvocationRequest:
     node_id: str
     task_id: str
     provider: str
-    role_label: str
+    role_label: ProviderRole
     round_num: int
     audit_round_num: int | None
     materialization_limiter: MaterializationLimiter | None = None

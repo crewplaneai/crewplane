@@ -15,6 +15,7 @@ from crewplane.architecture.contracts import (
     InvocationWorktreeContract,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invocation.command import (
     build_invocation_runtime,
     cleanup_structured_output_file,
@@ -231,7 +232,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             node_id="node.a",
             task_id="generic_executor_0",
             provider="generic",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             diagnostics=diagnostics.append,
         )
 
@@ -265,7 +266,7 @@ def _workspace_invocation_context(
         node_id="node.a",
         task_id="generic_executor_0",
         provider="generic",
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         workspace_environment_applied_recorder=recorder,
         workspace=InvocationWorkspaceContext(
             workspace_kind="snapshot",

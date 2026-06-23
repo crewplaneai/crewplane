@@ -11,6 +11,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     EventSink,
     ExecutionEvent,
@@ -32,7 +33,7 @@ INVALID_CANDIDATE_REDIRECTED = "invalid_candidate.redirected"
 class ReviewLoopStatusOutputEntry(TypedDict):
     task_id: str
     provider: str
-    role: str
+    role: ProviderRole
     path: str
 
 
@@ -112,7 +113,7 @@ class DriftGuardCallRequest:
     task_id: str
     prompt: str
     output_file: Path
-    role_label: str
+    role_label: ProviderRole
     findings_enabled: bool
     allowed_paths: set[Path]
     display: ProviderCallDisplay

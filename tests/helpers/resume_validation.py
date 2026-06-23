@@ -17,6 +17,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.workspace.observability import (
     invoker_workspace_descriptor,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.git_policy import (
     deterministic_workspace_commit_environment,
 )
@@ -290,7 +291,9 @@ def provider_workspace_state_payload(
     return _with_invoker(plan, payload)
 
 
-def provider_record(task_id: str, role: str = "executor") -> ProviderRecord:
+def provider_record(
+    task_id: str, role: ProviderRole = ProviderRole.EXECUTOR
+) -> ProviderRecord:
     return ProviderRecord(
         provider=task_id,
         role=role,

@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from crewplane.artifacts import OutputManager, safe_artifact_name
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -74,7 +76,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="parallel.review",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 providers=[
                     ProviderSpec(provider="alpha"),
                     ProviderSpec(provider="beta"),
@@ -109,7 +113,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="parallel.threshold",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 failure_threshold=1,
                 providers=[
                     ProviderSpec(provider="alpha"),
@@ -151,7 +157,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                         id="parallel.threshold",
                         mode="parallel",
                         findings=True,
-                        prompt_segments=[PromptSegment(role="shared", content="run")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                        ],
                         failure_threshold=1,
                         providers=[
                             ProviderSpec(provider="alpha"),
@@ -200,7 +208,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                         mode="parallel",
                         findings=True,
                         continue_on_failure=True,
-                        prompt_segments=[PromptSegment(role="shared", content="run")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                        ],
                         providers=[
                             ProviderSpec(provider="alpha"),
                             ProviderSpec(provider="beta"),
@@ -216,7 +226,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                                 content="Summarize {{parallel.review.findings}}",
                             )
                         ],
-                        providers=[ProviderSpec(provider="summary", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="summary", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -246,7 +258,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="parallel.events",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 failure_threshold=1,
                 providers=[
                     ProviderSpec(provider="alpha"),
@@ -311,7 +325,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="parallel.failure.event.failure",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 failure_threshold=1,
                 providers=[
                     ProviderSpec(provider="alpha"),
@@ -366,7 +382,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="parallel.setup.failure",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 failure_threshold=1,
                 providers=[
                     ProviderSpec(provider="alpha"),
@@ -412,7 +430,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="parallel.event.failure",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 failure_threshold=1,
                 providers=[
                     ProviderSpec(provider="alpha"),
@@ -480,7 +500,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="parallel.queue",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 providers=[
                     ProviderSpec(provider="alpha"),
                     ProviderSpec(provider="beta"),

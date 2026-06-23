@@ -1,0 +1,7 @@
+DAG Summary
+
+... above ...
+▸● node.c                   ⏸  gamma
+... below ...
+
+[↑/↓] select  [Enter] inspect  [r] raw inspect  [q] quit

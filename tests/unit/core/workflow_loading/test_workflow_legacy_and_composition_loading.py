@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.loading import load_tasks, load_tasks_with_sources
 from crewplane.core.workflow.markdown import validate_workflow_markdown
 from crewplane.core.workflow.models import WorkflowNode, render_prompt_for_role
@@ -10,7 +11,7 @@ from crewplane.version import SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:
-    return render_prompt_for_role(node, "executor")
+    return render_prompt_for_role(node, PromptSegmentRole.EXECUTOR)
 
 
 class WorkflowLegacyAndCompositionLoadingTests(unittest.TestCase):

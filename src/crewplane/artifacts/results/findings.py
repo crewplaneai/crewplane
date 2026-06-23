@@ -6,6 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from crewplane.architecture.ports.artifacts import StageTaskSpec
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..failure_artifacts import is_synthetic_invocation_failure
 
@@ -43,7 +44,9 @@ class FindingsSelection:
         return cls(
             mode=FindingsSelectionMode.SELECTED_TASKS,
             selected_task_ids=frozenset(
-                task.task_id for task in task_specs if task.role == "executor"
+                task.task_id
+                for task in task_specs
+                if task.role == ProviderRole.EXECUTOR
             ),
         )
 

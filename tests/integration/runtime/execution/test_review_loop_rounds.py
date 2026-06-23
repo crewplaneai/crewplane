@@ -12,6 +12,7 @@ from crewplane.core.preflight.models import (
     ProviderRecord,
 )
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution import review_loop as review_loop_runtime
 from crewplane.runtime.execution.common import CompiledRuntimeContext
 from crewplane.runtime.execution.consensus import (
@@ -69,7 +70,7 @@ def _runtime_context() -> CompiledRuntimeContext:
     )
 
 
-def provider(provider: str, role: str, task_id: str) -> ProviderRecord:
+def provider(provider: str, role: ProviderRole, task_id: str) -> ProviderRecord:
     return ProviderRecord(
         provider=provider,
         role=role,
@@ -115,7 +116,7 @@ def review_output(verdict: str = "NO_FINDINGS", major: str = "None") -> str:
 
 def _executor_artifact(node_dir: Path, content: str) -> ExecutorRoundArtifact:
     return ExecutorRoundArtifact(
-        provider=provider("exec", "executor", "exec_executor_0"),
+        provider=provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),
         task_id="exec_executor_0",
         content=content,
         output_file=node_dir / "exec_executor_0_round1.md",
@@ -129,7 +130,7 @@ def _reviewer_artifact(node_dir: Path, major: str) -> ReviewerRoundArtifact:
         encoding="utf-8",
     )
     return ReviewerRoundArtifact(
-        provider=provider("review", "reviewer", "review_reviewer_0"),
+        provider=provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),
         task_id="review_reviewer_0",
         evaluation=evaluate_review_output(output_file.read_text(encoding="utf-8")),
         output_file=output_file,
@@ -165,8 +166,8 @@ def test_reviewer_outputs_are_ordered_by_declared_reviewer_index(
         invoker=object(),
         telemetry=None,
         reviewers=(
-            provider("slow", "reviewer", "slow_reviewer_0"),
-            provider("fast", "reviewer", "fast_reviewer_1"),
+            provider("slow", ProviderRole.REVIEWER, "slow_reviewer_0"),
+            provider("fast", ProviderRole.REVIEWER, "fast_reviewer_1"),
         ),
         artifact_dir=node_dir,
         reviewer_prompt_context="Review task.",
@@ -215,7 +216,7 @@ def test_executor_drift_guard_allows_runtime_workspace_state_path(
         node_dir=node_dir,
         invoker=object(),
         telemetry=None,
-        executors=(provider("exec", "executor", "exec_executor_0"),),
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
         artifact_dir=node_dir,
         executor_prompt="Implement.",
         previous_review_packet=None,
@@ -261,7 +262,7 @@ def test_executor_drift_guard_does_not_allow_workspace_paths_without_managed_wor
         node_dir=node_dir,
         invoker=object(),
         telemetry=None,
-        executors=(provider("exec", "executor", "exec_executor_0"),),
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
         artifact_dir=node_dir,
         executor_prompt="Implement.",
         previous_review_packet=None,
@@ -295,7 +296,7 @@ def test_seed_executor_outputs_aliases_generated_file_workspace_roots(
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     artifact = ExecutorRoundArtifact(
-        provider=provider("exec", "executor", "exec_executor_0"),
+        provider=provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),
         task_id="exec_executor_0",
         content="Updated `src/app.txt`.",
         output_file=original_output,
@@ -347,8 +348,8 @@ def test_parallel_reviewer_success_is_persisted_before_peer_failure(
         invoker=object(),
         telemetry=None,
         reviewers=(
-            provider("ok", "reviewer", "ok_reviewer_0"),
-            provider("failed", "reviewer", "failed_reviewer_1"),
+            provider("ok", ProviderRole.REVIEWER, "ok_reviewer_0"),
+            provider("failed", ProviderRole.REVIEWER, "failed_reviewer_1"),
         ),
         artifact_dir=node_dir,
         reviewer_prompt_context="Review task.",
@@ -390,8 +391,8 @@ def test_invalid_candidate_round_skips_reviewers_and_tracks_accounting(
         node_dir=node_dir,
         invoker=object(),
         telemetry=None,
-        executors=(provider("exec", "executor", "exec_executor_0"),),
-        reviewers=(provider("review", "reviewer", "review_reviewer_0"),),
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
+        reviewers=(provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),),
         executor_prompt="Implement.",
         reviewer_prompt_context="Review.",
         audit_dir=node_dir,
@@ -441,8 +442,8 @@ def test_no_progress_candidate_skips_second_review_round_and_tracks_accounting(
         node_dir=node_dir,
         invoker=object(),
         telemetry=None,
-        executors=(provider("exec", "executor", "exec_executor_0"),),
-        reviewers=(provider("review", "reviewer", "review_reviewer_0"),),
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
+        reviewers=(provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),),
         executor_prompt="Implement.",
         reviewer_prompt_context="Review.",
         audit_dir=node_dir,
@@ -509,8 +510,8 @@ def test_no_progress_candidate_discards_executor_workspace_lineage(
         node_dir=node_dir,
         invoker=object(),
         telemetry=None,
-        executors=(provider("exec", "executor", "exec_executor_0"),),
-        reviewers=(provider("review", "reviewer", "review_reviewer_0"),),
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
+        reviewers=(provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),),
         executor_prompt="Implement.",
         reviewer_prompt_context="Review.",
         audit_dir=node_dir,

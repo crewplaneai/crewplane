@@ -11,6 +11,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
 )
@@ -75,7 +76,7 @@ def test_workspace_artifact_allowed_paths_include_setup_outputs(
         output,
         node,
         task_id="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         audit_round_num=None,
         round_num=2,
     )
@@ -139,7 +140,7 @@ def _node(
         provider_records=[
             ProviderRecord(
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha",
                 agent_config_key="alpha",
                 invoker_alias="mock",

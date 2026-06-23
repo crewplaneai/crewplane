@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.core.workflow.keywords import ProviderRole
+
 REVIEW_LOOP_STATUS_RELATIVE_PATH = Path("review-state") / "review-loop-status.json"
 REQUIRED_COUNTER_FIELDS = (
     "executed_audit_rounds",
@@ -26,7 +28,7 @@ class ReviewLoopStatusError(RuntimeError):
 class ReviewLoopStatusEntry:
     task_id: str
     provider: str
-    role: str
+    role: ProviderRole
     relative_path: str
     output_file: Path
 
@@ -58,13 +60,13 @@ def resolve_review_loop_status(
     canonical_outputs = parse_status_entries(
         payload,
         "canonical_executor_outputs",
-        "executor",
+        ProviderRole.EXECUTOR,
         stage_dir,
     )
     reviewer_outputs = parse_status_entries(
         payload,
         "reviewer_outputs",
-        "reviewer",
+        ProviderRole.REVIEWER,
         stage_dir,
     )
     validate_unique_task_ids(canonical_outputs, reviewer_outputs)
@@ -110,7 +112,7 @@ def validate_status_booleans(payload: dict[str, object]) -> None:
 def parse_status_entries(
     payload: dict[str, object],
     field_name: str,
-    expected_role: str,
+    expected_role: ProviderRole,
     stage_dir: Path,
 ) -> tuple[ReviewLoopStatusEntry, ...]:
     raw_entries = payload.get(field_name)
@@ -126,18 +128,19 @@ def parse_status_entry(
     raw_entry: object,
     field_name: str,
     index: int,
-    expected_role: str,
+    expected_role: ProviderRole,
     stage_dir: Path,
 ) -> ReviewLoopStatusEntry:
     if not isinstance(raw_entry, dict):
         raise status_error(f"{field_name}[{index}] must be an object")
     task_id = non_empty_entry_string(raw_entry, field_name, index, "task_id")
     provider = non_empty_entry_string(raw_entry, field_name, index, "provider")
-    role = non_empty_entry_string(raw_entry, field_name, index, "role")
+    raw_role = non_empty_entry_string(raw_entry, field_name, index, "role")
     relative_path = non_empty_entry_string(raw_entry, field_name, index, "path")
-    if role != expected_role:
+    if raw_role != expected_role.value:
         raise status_error(
-            f"{field_name}[{index}].role must be '{expected_role}', got '{role}'"
+            f"{field_name}[{index}].role must be '{expected_role.value}', "
+            f"got '{raw_role}'"
         )
     output_file = resolve_status_output_file(
         stage_dir, relative_path, field_name, index
@@ -145,7 +148,7 @@ def parse_status_entry(
     return ReviewLoopStatusEntry(
         task_id=task_id,
         provider=provider,
-        role=role,
+        role=expected_role,
         relative_path=relative_path,
         output_file=output_file,
     )

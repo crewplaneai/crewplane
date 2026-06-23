@@ -13,6 +13,8 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -50,8 +52,12 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.fail",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="fail")],
-                        providers=[ProviderSpec(provider="codex", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="fail")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR)
+                        ],
                     )
                 ],
             )
@@ -152,8 +158,12 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.fail",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="fail")],
-                        providers=[ProviderSpec(provider="codex", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="fail")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR)
+                        ],
                     )
                 ],
             )
@@ -229,9 +239,13 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                         id="node.long",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="run long")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="run long"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     )
                 ],
             )

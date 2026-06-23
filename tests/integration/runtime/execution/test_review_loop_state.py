@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import ProviderSpec
 from crewplane.runtime.execution.consensus import (
     ParsedReviewResult,
@@ -31,7 +32,7 @@ def _reviewer_artifact(node_dir: Path) -> ReviewerRoundArtifact:
         )
     )
     return ReviewerRoundArtifact(
-        provider=ProviderSpec(provider="review", role="reviewer"),
+        provider=ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
         task_id="review_reviewer_0",
         evaluation=evaluation,
         output_file=output_file,
@@ -44,7 +45,7 @@ def test_status_payload_shape_and_paths_are_relative_to_node_dir(
     node_dir = tmp_path / "node"
     node_dir.mkdir()
     executor = ExecutorRoundArtifact(
-        provider=ProviderSpec(provider="exec", role="executor"),
+        provider=ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
         task_id="exec_executor_0",
         content="Candidate",
         output_file=node_dir / "exec_executor_0_round1.md",

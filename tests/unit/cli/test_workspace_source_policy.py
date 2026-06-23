@@ -23,6 +23,7 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.core.workspace.git_policy import workspace_git_base_environment
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_source_policy import (
     apply_patched_git_policy,
@@ -649,20 +650,22 @@ def test_git_env_applies_sanitized_template_without_mutating_process_env(
     monkeypatch.setenv("CREWPLANE_TEST_KEEP", "kept")
     monkeypatch.setenv("GIT_DIR", "/tmp/wrong-repo")
     monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
+    monkeypatch.setenv("GIT_TEMPLATE_DIR", "/tmp/template")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.fsmonitor")
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
 
     env = git_source_probe.git_env()
+    expected_overlay = workspace_git_base_environment(read_only=True)
 
     assert env["CREWPLANE_TEST_KEEP"] == "kept"
     assert "GIT_DIR" not in env
+    assert "GIT_TEMPLATE_DIR" not in env
     assert "GIT_CONFIG_KEY_0" not in env
     assert "GIT_CONFIG_VALUE_0" not in env
-    assert {
-        key: env[key] for key in git_source_probe.GIT_ENV_TEMPLATE
-    } == git_source_probe.GIT_ENV_TEMPLATE
+    assert {key: env[key] for key in expected_overlay} == expected_overlay
     assert os.environ["GIT_DIR"] == "/tmp/wrong-repo"
     assert os.environ["GIT_OPTIONAL_LOCKS"] == "1"
+    assert os.environ["GIT_TEMPLATE_DIR"] == "/tmp/template"
 
 
 def test_workspace_source_policy_wraps_late_git_probe_failures(

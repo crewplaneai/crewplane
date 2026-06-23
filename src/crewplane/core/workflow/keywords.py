@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Literal, get_args
 
 NodeMode = Literal["parallel", "sequential", "input"]
-ProviderRole = Literal["executor", "reviewer"]
+
+
+class ProviderRole(StrEnum):
+    EXECUTOR = "executor"
+    REVIEWER = "reviewer"
+
+
 SequentialConsensusPolicy = Literal["continue", "fatal"]
 NodeArtifactName = Literal[
     "output",
@@ -17,7 +24,7 @@ NodeArtifactName = Literal[
 ]
 
 ALLOWED_NODE_MODES = get_args(NodeMode)
-ALLOWED_PROVIDER_ROLES = get_args(ProviderRole)
+ALLOWED_PROVIDER_ROLES = tuple(role.value for role in ProviderRole)
 ALLOWED_SEQUENTIAL_CONSENSUS_POLICIES = get_args(SequentialConsensusPolicy)
 ALLOWED_NODE_ARTIFACT_NAMES = get_args(NodeArtifactName)
 

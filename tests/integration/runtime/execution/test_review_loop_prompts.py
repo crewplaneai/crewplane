@@ -3,6 +3,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop.prompts import (
     build_executor_prompt,
     build_review_context,
@@ -12,7 +13,7 @@ from crewplane.runtime.execution.review_loop.prompts import (
 from crewplane.runtime.execution.review_loop.types import ExecutorRoundArtifact
 
 
-def provider(provider: str, role: str, task_id: str) -> ProviderRecord:
+def provider(provider: str, role: ProviderRole, task_id: str) -> ProviderRecord:
     return ProviderRecord(
         provider=provider,
         role=role,
@@ -62,7 +63,7 @@ def test_build_reviewer_prompt_includes_current_context_and_response_contract() 
 def test_resolve_previous_candidate_context_uses_executor_artifacts(tmp_path) -> None:
     output_file = tmp_path / "exec_executor_0_round1.md"
     artifact = ExecutorRoundArtifact(
-        provider=provider("exec", "executor", "exec_executor_0"),
+        provider=provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),
         task_id="exec_executor_0",
         content="Candidate body",
         output_file=output_file,

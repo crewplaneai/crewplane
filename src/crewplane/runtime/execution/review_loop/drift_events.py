@@ -4,6 +4,7 @@ from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ExecutionTelemetry, RuntimeEventContext, emit_runtime_log
 from .types import DriftCheckResult
@@ -36,7 +37,7 @@ def emit_artifact_drift(
     node_id: str,
     task_id: str,
     provider: ProviderRecord,
-    role_label: str,
+    role_label: ProviderRole,
     audit_round_num: int | None,
     round_num: int,
     drift: DriftCheckResult,

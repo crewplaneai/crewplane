@@ -5,6 +5,7 @@ from typing import Literal
 from crewplane.core.config import Config, Settings
 from crewplane.core.workflow.diagnostics import WorkflowValidationDiagnostic
 from crewplane.core.workflow.graph import ancestor_map
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workspace.policy import generated_branch_name
 from crewplane.core.workspace.selection import LogicalWorkspaceSelection
@@ -156,7 +157,7 @@ def _mutable_executor_diagnostics(
             continue
         node = nodes_by_id[selection.node_id]
         executor_count = sum(
-            1 for provider in node.providers if provider.role == "executor"
+            1 for provider in node.providers if provider.role == ProviderRole.EXECUTOR
         )
         if executor_count > 1:
             diagnostics.append(

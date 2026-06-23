@@ -8,6 +8,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..state_selection import (
     required_lineage_state_path,
@@ -22,15 +23,15 @@ def invocation_source_ref(
     node: PreflightExecutionNode,
     policy: WorkspaceSelectionRecord,
     source: WorkspaceSourceSnapshot,
-    role_label: str,
+    role_label: ProviderRole,
     round_num: int,
     audit_round_num: int | None,
 ) -> WorktreeSourceRef:
-    if role_label == "reviewer":
+    if role_label == ProviderRole.REVIEWER:
         state_path = same_node_executor_state(output, node, round_num, audit_round_num)
         if state_path is not None:
             return _candidate_ref_from_state(state_path)
-    if role_label == "executor" and round_num > 1:
+    if role_label == ProviderRole.EXECUTOR and round_num > 1:
         state_path = same_node_executor_state(
             output,
             node,

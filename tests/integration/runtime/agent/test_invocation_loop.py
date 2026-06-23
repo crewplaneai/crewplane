@@ -17,6 +17,7 @@ from crewplane.architecture.contracts import (
     InvocationWorktreeContract,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.agent.invocation.command import run_command_once
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
@@ -58,7 +59,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 workspace=InvocationWorkspaceContext(
                     workspace_kind="snapshot",
                     materialization="snapshot_checkout",
@@ -138,7 +139,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 workspace=InvocationWorkspaceContext(
                     workspace_kind="worktree",
                     materialization="worktree_checkout",
@@ -220,7 +221,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 retry_reset=reset_workspace,
             )
 
@@ -276,7 +277,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 retry_reset=reset_workspace,
             )
             task = asyncio.create_task(
@@ -340,7 +341,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
@@ -444,7 +445,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
@@ -569,7 +570,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 usage_recorder=usages.append,
             )
             await invoke_agent_with_runner(
@@ -619,7 +620,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 usage_recorder=usages.append,
             )
             await invoke_agent_with_runner(
@@ -672,7 +673,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 usage_recorder=usages.append,
             )
             config = AgentConfig(
@@ -729,7 +730,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 usage_recorder=usages.append,
             )
             with self.assertRaises(InvocationFailureError):
@@ -777,7 +778,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="gemini",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 usage_recorder=usages.append,
             )
             with self.assertRaises(InvocationFailureError):

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -102,7 +104,7 @@ def test_refresh_writes_selected_invocation_snapshot() -> None:
                 run_id="refresh-selected-json",
                 node_id="node.a",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha_executor_0",
                 round_num=1,
                 log_file="/tmp/provider.log",
@@ -168,7 +170,9 @@ def workflow_plan() -> WorkflowPlan:
             WorkflowNode(
                 id="node.a",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[ProviderSpec(provider="alpha")],
             )
         ],

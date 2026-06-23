@@ -5,6 +5,8 @@ from pathlib import Path
 
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -40,11 +42,13 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             node = WorkflowNode(
                 id="review.loop.redirect.only",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=2,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -75,7 +79,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             )
 
             self.assertNotIn(
-                ("reviewer", 2),
+                (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
             invalid_events = [
@@ -105,11 +109,13 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             node = WorkflowNode(
                 id="review.loop.redirect.status.note",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=2,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -140,7 +146,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             )
 
             self.assertNotIn(
-                ("reviewer", 2),
+                (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
             invalid_events = [
@@ -170,11 +176,13 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             node = WorkflowNode(
                 id="review.loop.referenced.commentary",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -229,12 +237,14 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             node = WorkflowNode(
                 id="review.loop.no.candidate",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 audit_rounds=2,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(outputs=["   ", "   "])
@@ -255,7 +265,9 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
                 )
 
             self.assertEqual(len(invoker.calls), 2)
-            self.assertTrue(all(call["role"] == "executor" for call in invoker.calls))
+            self.assertTrue(
+                all(call["role"] == ProviderRole.EXECUTOR for call in invoker.calls)
+            )
             node_dir = output.get_stage_dir(node.id)
             if node_dir is None:
                 self.fail("Expected node directory to be created")
@@ -287,11 +299,13 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             node = WorkflowNode(
                 id="review.loop.drift.warning",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)

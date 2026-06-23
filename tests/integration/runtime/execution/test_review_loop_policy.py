@@ -8,6 +8,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop.policy import (
     audit_round_context,
     audit_round_dir,
@@ -35,7 +36,7 @@ def _node(
     )
 
 
-def provider(provider: str, role: str, task_id: str) -> ProviderRecord:
+def provider(provider: str, role: ProviderRole, task_id: str) -> ProviderRecord:
     return ProviderRecord(
         provider=provider,
         role=role,
@@ -49,9 +50,9 @@ def provider(provider: str, role: str, task_id: str) -> ProviderRecord:
 
 def test_split_sequential_review_loop_providers_requires_contiguous_roles() -> None:
     providers = [
-        provider("exec-a", "executor", "exec_a_executor_0"),
-        provider("review", "reviewer", "review_reviewer_0"),
-        provider("exec-b", "executor", "exec_b_executor_1"),
+        provider("exec-a", ProviderRole.EXECUTOR, "exec_a_executor_0"),
+        provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),
+        provider("exec-b", ProviderRole.EXECUTOR, "exec_b_executor_1"),
     ]
 
     with pytest.raises(ValueError, match="contiguous executor segment"):
@@ -62,10 +63,10 @@ def test_split_sequential_review_loop_providers_returns_executor_and_reviewer_se
     None
 ):
     providers = [
-        provider("exec-a", "executor", "exec_a_executor_0"),
-        provider("exec-b", "executor", "exec_b_executor_1"),
-        provider("review-a", "reviewer", "review_a_reviewer_0"),
-        provider("review-b", "reviewer", "review_b_reviewer_1"),
+        provider("exec-a", ProviderRole.EXECUTOR, "exec_a_executor_0"),
+        provider("exec-b", ProviderRole.EXECUTOR, "exec_b_executor_1"),
+        provider("review-a", ProviderRole.REVIEWER, "review_a_reviewer_0"),
+        provider("review-b", ProviderRole.REVIEWER, "review_b_reviewer_1"),
     ]
 
     executors, reviewers = split_sequential_review_loop_providers(

@@ -17,6 +17,8 @@ from crewplane.core.preflight import (
 )
 from crewplane.core.preflight.models import ArtifactContract
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -66,8 +68,8 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                             )
                         ],
                         providers=[
-                            ProviderSpec(provider="exec", role="executor"),
-                            ProviderSpec(provider="review", role="reviewer"),
+                            ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                            ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                         ],
                     ),
                     WorkflowNode(
@@ -79,7 +81,9 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                             )
                         ],
                         needs=["implement.review"],
-                        providers=[ProviderSpec(provider="exec", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -118,17 +122,25 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         id="backend.auth",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="auth work")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="auth work"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="backend.billing",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="billing work")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="billing work"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="beta", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="summary.final",
@@ -140,7 +152,9 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                                 content="summary\n{{backend.auth.output}}\n{{backend.billing.output}}",
                             )
                         ],
-                        providers=[ProviderSpec(provider="gamma", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="gamma", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -172,7 +186,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             }
             provider = ProviderRecord(
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha_executor_0",
                 agent_config_key="alpha",
                 invoker_alias="mock",
@@ -220,12 +234,12 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         render_plan_id="first-render",
                         streams=[
                             RenderStream(
-                                target_role="executor",
+                                target_role=ProviderRole.EXECUTOR,
                                 fragments=[
                                     Fragment(
                                         fragment_index=0,
                                         kind="literal",
-                                        source_role="shared",
+                                        source_role=PromptSegmentRole.SHARED,
                                         text="first",
                                     )
                                 ],
@@ -236,12 +250,12 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         render_plan_id="second-render",
                         streams=[
                             RenderStream(
-                                target_role="executor",
+                                target_role=ProviderRole.EXECUTOR,
                                 fragments=[
                                     Fragment(
                                         fragment_index=0,
                                         kind="literal",
-                                        source_role="shared",
+                                        source_role=PromptSegmentRole.SHARED,
                                         text="second",
                                     )
                                 ],
@@ -301,9 +315,13 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         id="node.source",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="source")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="source"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.parallel",
@@ -380,9 +398,13 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         mode="sequential",
                         findings=True,
                         prompt_segments=[
-                            PromptSegment(role="shared", content="review")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="review"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.summary",
@@ -393,7 +415,9 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                                 role="shared", content="Use {{node.review.findings}}"
                             )
                         ],
-                        providers=[ProviderSpec(provider="beta", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -437,9 +461,13 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         mode="sequential",
                         findings=True,
                         prompt_segments=[
-                            PromptSegment(role="shared", content="review")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="review"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.summary",
@@ -450,7 +478,9 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                                 role="shared", content="Use {{node.review.findings}}"
                             )
                         ],
-                        providers=[ProviderSpec(provider="beta", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -510,9 +540,13 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         mode="sequential",
                         findings=True,
                         prompt_segments=[
-                            PromptSegment(role="shared", content="review")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="review"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     )
                 ],
             )

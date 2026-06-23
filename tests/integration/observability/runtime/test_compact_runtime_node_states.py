@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     apply_event,
     build_initial_state,
@@ -172,7 +173,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
                     run_id="compact-no-output",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -251,7 +252,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
                     run_id="compact-quiet",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -331,7 +332,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
                     run_id="compact-quiet-wrap",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -413,7 +414,7 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
                     run_id="compact-quiet-threshold",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,

@@ -10,6 +10,7 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..activity.console import execution_console, progress_context, should_print_console
 from ..activity.telemetry import ExecutionTelemetry
@@ -24,7 +25,7 @@ class ProviderCallDisplay:
 
 def print_provider_start(
     display: ProviderCallDisplay,
-    role_label: str,
+    role_label: ProviderRole,
     task_id: str,
     provider_name: str,
     model: str | None,

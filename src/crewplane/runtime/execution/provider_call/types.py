@@ -7,6 +7,7 @@ from pathlib import Path
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..activity.telemetry import ExecutionTelemetry
 from ..runtime_context import CompiledRuntimeContext
@@ -24,7 +25,7 @@ class ProviderCallRequest:
     round_num: int
     prompt: str
     output_file: Path
-    role_label: str
+    role_label: ProviderRole
     invoker: AgentInvoker
     telemetry: ExecutionTelemetry | None
     findings_enabled: bool = False

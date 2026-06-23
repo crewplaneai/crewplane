@@ -15,6 +15,7 @@ from crewplane.artifacts.naming import build_node_state_filename
 from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
@@ -343,8 +344,8 @@ def test_validate_frontier_rejects_missing_reviewer_workspace_state(
     node = plan.nodes[0].model_copy(
         update={
             "provider_records": [
-                provider_record("alpha", role="executor"),
-                provider_record("beta", role="reviewer"),
+                provider_record("alpha", role=ProviderRole.EXECUTOR),
+                provider_record("beta", role=ProviderRole.REVIEWER),
             ],
             "workspace_policy": policy,
         }

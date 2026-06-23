@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from crewplane.observability.layout import TopologyLayout
 
 SHORT_TRANSITIVE_PATH_LENGTH = 2
+GraphColumn = str | None
 
 
 @dataclass(frozen=True)
 class NodeGraphState:
     node_id: str
     node_column: int
-    before_columns: tuple[str, ...]
-    after_columns: tuple[str, ...]
+    before_columns: tuple[GraphColumn, ...]
+    after_columns: tuple[GraphColumn, ...]
     dependent_columns: tuple[int, ...]
     dependents: tuple[str, ...]
 
@@ -29,7 +31,7 @@ def build_graph_states(
     ordered_node_ids: list[str],
     layout: TopologyLayout,
 ) -> list[NodeGraphState]:
-    active_columns: list[str] = []
+    active_columns: list[GraphColumn] = []
     graph_states: list[NodeGraphState] = []
     dependencies, dependents = render_dependency_maps(layout)
     for node_id in ordered_node_ids:
@@ -64,44 +66,73 @@ def build_graph_states(
 def render_dependency_maps(
     layout: TopologyLayout,
 ) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
-    dependencies = {
+    dependencies = prune_short_transitive_dependencies(layout)
+    dependencies = prune_post_fanin_transitive_dependencies(dependencies, layout)
+    return dependencies, dependent_map_for(dependencies, layout)
+
+
+def prune_short_transitive_dependencies(
+    layout: TopologyLayout,
+) -> dict[str, tuple[str, ...]]:
+    return {
         node_id: tuple(
             dependency_id
             for dependency_id in dependency_ids
-            if not is_short_transitive_shortcut(dependency_id, node_id, layout)
+            if alternate_path_length(dependency_id, node_id, layout.dependents)
+            != SHORT_TRANSITIVE_PATH_LENGTH
         )
         for node_id, dependency_ids in layout.dependencies.items()
     }
+
+
+def prune_post_fanin_transitive_dependencies(
+    dependencies: dict[str, tuple[str, ...]],
+    layout: TopologyLayout,
+) -> dict[str, tuple[str, ...]]:
+    dependents = dependent_map_for(dependencies, layout)
+    fanin_nodes = {
+        node_id
+        for node_id, dependency_ids in dependencies.items()
+        if len(dependency_ids) > 1
+    }
+    return {
+        node_id: tuple(
+            dependency_id
+            for dependency_id in dependency_ids
+            if not has_alternate_path_through_fanin(
+                dependency_id,
+                node_id,
+                dependents,
+                fanin_nodes,
+            )
+        )
+        for node_id, dependency_ids in dependencies.items()
+    }
+
+
+def dependent_map_for(
+    dependencies: dict[str, tuple[str, ...]],
+    layout: TopologyLayout,
+) -> dict[str, tuple[str, ...]]:
     dependents = {node_id: [] for node_id in layout.node_order}
     for node_id, dependency_ids in dependencies.items():
         for dependency_id in dependency_ids:
             dependents[dependency_id].append(node_id)
 
-    return dependencies, {
+    return {
         node_id: tuple(sorted(node_ids, key=layout.node_order.__getitem__))
         for node_id, node_ids in dependents.items()
     }
 
 
-def is_short_transitive_shortcut(
+def alternate_path_length(
     dependency_id: str,
     node_id: str,
-    layout: TopologyLayout,
-) -> bool:
-    return (
-        max_alternate_path_length(dependency_id, node_id, layout)
-        == SHORT_TRANSITIVE_PATH_LENGTH
-    )
-
-
-def max_alternate_path_length(
-    dependency_id: str,
-    node_id: str,
-    layout: TopologyLayout,
+    dependents: Mapping[str, Sequence[str]],
 ) -> int:
     stack = [
         (dependent_id, 1)
-        for dependent_id in layout.dependents.get(dependency_id, ())
+        for dependent_id in dependents.get(dependency_id, ())
         if dependent_id != node_id
     ]
     best_distance_by_node: dict[str, int] = {}
@@ -116,21 +147,50 @@ def max_alternate_path_length(
             continue
         stack.extend(
             (dependent_id, distance + 1)
-            for dependent_id in layout.dependents.get(current_node_id, ())
+            for dependent_id in dependents.get(current_node_id, ())
         )
     return max_distance
 
 
+def has_alternate_path_through_fanin(
+    dependency_id: str,
+    node_id: str,
+    dependents: dict[str, tuple[str, ...]],
+    fanin_nodes: set[str],
+) -> bool:
+    stack = [
+        (dependent_id, False)
+        for dependent_id in dependents.get(dependency_id, ())
+        if dependent_id != node_id
+    ]
+    visited: set[tuple[str, bool]] = set()
+    while stack:
+        current_node_id, passed_fanin = stack.pop()
+        if current_node_id == node_id:
+            if passed_fanin:
+                return True
+            continue
+        if (current_node_id, passed_fanin) in visited:
+            continue
+        visited.add((current_node_id, passed_fanin))
+        next_passed_fanin = passed_fanin or current_node_id in fanin_nodes
+        stack.extend(
+            (dependent_id, next_passed_fanin)
+            for dependent_id in dependents.get(current_node_id, ())
+        )
+    return False
+
+
 def is_fresh_root(
     node_id: str,
-    active_columns: list[str],
+    active_columns: list[GraphColumn],
     dependencies: dict[str, tuple[str, ...]],
 ) -> bool:
     return not dependencies.get(node_id) and node_id not in active_columns
 
 
 def node_column_for(
-    active_columns: list[str],
+    active_columns: list[GraphColumn],
     node_id: str,
     fresh_root: bool,
 ) -> int:
@@ -143,37 +203,62 @@ def node_column_for(
 
 
 def advance_columns(
-    active_columns: list[str],
+    active_columns: list[GraphColumn],
     node_id: str,
     node_column: int,
     dependents: dict[str, tuple[str, ...]],
     fresh_root: bool,
     layout: TopologyLayout,
-) -> tuple[list[str], list[int]]:
+) -> tuple[list[GraphColumn], list[int]]:
     if fresh_root:
         next_columns = list(active_columns)
         insertion_index = node_column
     else:
-        next_columns = [target for target in active_columns if target != node_id]
+        next_columns = [
+            None if target == node_id else target for target in active_columns
+        ]
         insertion_index = node_column
     node_dependents = list(dependents.get(node_id, ()))
     if not node_dependents:
-        return next_columns, []
+        return trim_trailing_empty_columns(next_columns), []
 
     primary_dependent = primary_dependent_for(
         dependents=node_dependents,
         layout=layout,
     )
-    next_columns.insert(insertion_index, primary_dependent)
-    dependent_columns = [insertion_index]
-    insert_at = insertion_index + 1
-    for dependent_id in node_dependents:
-        if dependent_id == primary_dependent:
-            continue
-        next_columns.insert(insert_at, dependent_id)
+    ordered_dependents = [
+        primary_dependent,
+        *(
+            dependent_id
+            for dependent_id in node_dependents
+            if dependent_id != primary_dependent
+        ),
+    ]
+    dependent_columns: list[int] = []
+    insert_at = insertion_index
+    for dependent_id in ordered_dependents:
+        place_active_column(next_columns, insert_at, dependent_id)
         dependent_columns.append(insert_at)
         insert_at += 1
-    return next_columns, dependent_columns
+    return trim_trailing_empty_columns(next_columns), dependent_columns
+
+
+def place_active_column(
+    columns: list[GraphColumn],
+    column_index: int,
+    target_id: str,
+) -> None:
+    if column_index < len(columns) and columns[column_index] is None:
+        columns[column_index] = target_id
+        return
+    columns.insert(column_index, target_id)
+
+
+def trim_trailing_empty_columns(columns: list[GraphColumn]) -> list[GraphColumn]:
+    trimmed_columns = list(columns)
+    while trimmed_columns and trimmed_columns[-1] is None:
+        trimmed_columns.pop()
+    return trimmed_columns
 
 
 def primary_dependent_for(
@@ -204,6 +289,8 @@ def render_node_graph(
         if column >= len(graph_state.after_columns):
             continue
         target = graph_state.before_columns[column]
+        if target is None:
+            continue
         if target == graph_state.node_id or target not in continuing_targets:
             continue
         chars[column_index(column)] = "│"
@@ -230,7 +317,7 @@ def render_connector_graph(
 
     if len(graph_state.dependent_columns) > 1:
         should_render = True
-        fill_vertical_columns(chars, len(graph_state.after_columns), visible_columns)
+        fill_vertical_columns(chars, graph_state.after_columns, visible_columns)
         if len(incoming_columns) > 1:
             overlay_branch_and_join_span(chars, graph_state, incoming_columns)
         else:
@@ -243,18 +330,14 @@ def render_connector_graph(
     elif next_node_id is not None:
         if len(incoming_columns) > 1:
             should_render = True
-            fill_vertical_columns(
-                chars, len(graph_state.after_columns), visible_columns
-            )
+            fill_vertical_columns(chars, graph_state.after_columns, visible_columns)
             overlay_span(chars, incoming_columns, middle_char="┴", end_char="┘")
         elif (
             len(graph_state.dependents) == 1
             and graph_state.dependents[0] == next_node_id
         ):
             should_render = True
-            fill_vertical_columns(
-                chars, len(graph_state.after_columns), visible_columns
-            )
+            fill_vertical_columns(chars, graph_state.after_columns, visible_columns)
 
     if not should_render:
         return None
@@ -287,10 +370,12 @@ def overlay_branch_and_join_span(
 
 def fill_vertical_columns(
     chars: list[str],
-    column_count: int,
+    columns: tuple[GraphColumn, ...],
     visible_columns: int,
 ) -> None:
-    for column in range(min(visible_columns, column_count)):
+    for column, target in enumerate(columns[:visible_columns]):
+        if target is None:
+            continue
         chars[column_index(column)] = "│"
 
 
@@ -316,6 +401,10 @@ def overlay_span(
     chars[column_index(end_column)] = end_char
     for column in clipped_columns[1:-1]:
         chars[column_index(column)] = middle_char
+    for column in range(start_column + 1, end_column):
+        char_index = column_index(column)
+        if column not in clipped_columns and chars[char_index] == "│":
+            chars[char_index] = "┼"
 
 
 def graph_chars(visible_columns: int) -> list[str]:

@@ -1,4 +1,4 @@
-# UI Layer Improvement Proposal
+# UI Compact Dashboard
 
 > Compact tmux dashboard for single-workflow DAGs now; import grouping later.
 
@@ -254,7 +254,7 @@ Mouse support remains pane-level only (`tmux mouse on`):
 
 ## Log Path Refactor (Node-Local, Per Invocation)
 
-This proposal **keeps logs per invocation** (for correctness and parallel safety), but relocates them under each node directory for better discoverability in compact mode.
+The compact dashboard **keeps logs per invocation** (for correctness and parallel safety), but relocates them under each node directory for better discoverability in compact mode.
 
 ### Current
 
@@ -262,7 +262,7 @@ This proposal **keeps logs per invocation** (for correctness and parallel safety
 execution_stages/<workflow>_<run_id>/logs/<provider>/<stage>_<task_id>_round<r>_<run_id>.log
 ```
 
-### Proposed
+### Node-local layout
 
 ```
 execution-stages/<run_key>/<node_id>/logs/<provider>/<task_id>-round<r>.log
@@ -308,9 +308,109 @@ When grouped import rendering is added later, it should layer on top of this com
 
 ---
 
+## Rendering Test Strategy
+
+The examples above are the source of truth for graph shape. Tests should
+preserve those examples unless this document is intentionally revised.
+
+The UI layer is observer-only. Runtime execution owns workflow semantics, and
+the UI renders topology and status from observability snapshots:
+
+1. Workflow loading, composition, validation, and preflight produce the runtime
+   workflow topology.
+2. `ObservabilityHub` receives runtime events and snapshots the
+   `DashboardSnapshot` state and computed topology layout.
+3. `render_dag_summary()` renders the left-pane DAG summary from that snapshot.
+4. The tmux compact renderer combines the DAG summary with the selected-node
+   output pane.
+
+The renderer must not infer execution semantics from display text. DAG shape is
+driven by node IDs, dependency edges, node mode, provider metadata, runtime
+events, and layout data.
+
+### Fixture Layout
+
+Exact rendering expectations live under
+[tests/unit/observability/fixtures/](../../tests/unit/observability/fixtures/).
+
+Use these fixture groups:
+
+- `dag_render/<case-id>/expected.txt` for the inline DAG summary produced by
+  `render_dag_summary()`.
+- `compact_render/<case-id>/expected-left.txt` for the compact dashboard left
+  pane.
+- `compact_render/<case-id>/expected-right.txt` for the compact dashboard right
+  pane.
+
+Fixture case IDs should describe the rendering behavior, such as
+`interleaved_independent_root` or `transitive_shortcut_fanin_chain`. Avoid names
+that leak a runtime manifest, local run key, branch name, or one-off user task.
+
+Fixtures are plain text golden files. The helper in
+[tests/helpers/render_fixtures.py](../../tests/helpers/render_fixtures.py)
+reads them and trims one trailing newline, so assertions compare the exact
+visible render output.
+
+### Unit Coverage
+
+Unit tests own exact layout regression coverage:
+
+- [tests/unit/observability/dag_render/](../../tests/unit/observability/dag_render/)
+  builds small `WorkflowPlan` graphs and compares the exact DAG summary to
+  `dag_render` fixtures.
+- [tests/unit/observability/test_dag_render_golden.py](../../tests/unit/observability/test_dag_render_golden.py)
+  keeps a direct golden-path render check.
+- [tests/unit/observability/test_tmux_rendering.py](../../tests/unit/observability/test_tmux_rendering.py)
+  covers compact dashboard panes, selected output, log-tail behavior, quiet
+  state, and provider presentation notices with `compact_render` fixtures.
+
+When fixing a node-line, connector-line, lane, fan-in, fan-out, selected-node,
+or compact-pane bug, add the smallest unit case that reproduces it and update
+or add the corresponding fixture.
+
+### Integration Coverage
+
+Integration tests under
+[tests/integration/observability/render/](../../tests/integration/observability/render/)
+exercise rendering through the runtime observability path. They build workflows,
+run them with the deterministic mock invoker, record snapshots through
+`ObservabilityHub`, and render the selected snapshot for fragment-level checks.
+
+Use integration cases when rendering behavior depends on runtime execution,
+composition, imported input pruning, failure propagation, persisted event logs,
+or run summaries. Keep exact graph geometry in unit fixtures; integration tests
+should prove the runtime path selects the right snapshot and surfaces the
+expected status, node, and provider fragments.
+
+### Change Workflow
+
+For a UI rendering fix:
+
+1. Reproduce the issue with a focused unit graph or compact-render case.
+2. Check the expected shape against this document.
+3. Add the expected render shape for the failing case as a fixture under
+   [tests/unit/observability/fixtures/](../../tests/unit/observability/fixtures/),
+   or update the existing fixture for that case.
+4. Add an integration render case only when runtime, composition, status, or log
+   behavior is part of the bug.
+5. Run the focused render suite before broad validation:
+
+```bash
+uv run --extra dev python -m pytest -q \
+  tests/unit/observability/dag_render \
+  tests/unit/observability/test_dag_render_golden.py \
+  tests/unit/observability/test_tmux_rendering.py \
+  tests/integration/observability/render
+```
+
+Before opening a PR, confirm the fixture name is behavior-oriented and the PR
+checklist notes whether a layout fixture was needed.
+
+---
+
 ## Implementation Scope
 
-Compact dashboard is the default tmux UI mode in this proposal. Backward compatibility with grid mode is out of scope.
+Compact dashboard is the default tmux UI mode. Backward compatibility with grid mode is out of scope.
 
 ```
 UIAdapterPort.create_runtime()

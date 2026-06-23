@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 
 from .compile_state import (
@@ -13,6 +15,7 @@ from .compile_state import (
     source_root,
 )
 from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
+from .models import WorkspaceFileTarget
 from .references import TemplateReference, iter_template_references
 from .signatures import signature_for_payload
 from .static_resources import append_static_resource, resolve_static_file
@@ -88,7 +91,7 @@ def resolve_workspace_input_source(
     resolve_workspace_file_reference(
         workflow,
         node,
-        "input_output",
+        WorkspaceFileTarget.INPUT_OUTPUT,
         None,
         reference,
         occurrence_id,
@@ -163,8 +166,8 @@ def append_input_source_token_catalog(
             state=state,
             occurrence_id=occurrence_id,
             node=node,
-            target_role="executor",
-            source_role="shared",
+            target_role=ProviderRole.EXECUTOR,
+            source_role=PromptSegmentRole.SHARED,
             reference=reference,
             token_kind="file",
             fragment_index=0,
@@ -191,8 +194,8 @@ def append_input_source_token_catalog(
         state=state,
         occurrence_id=occurrence_id,
         node=node,
-        target_role="executor",
-        source_role="shared",
+        target_role=ProviderRole.EXECUTOR,
+        source_role=PromptSegmentRole.SHARED,
         reference=reference,
         token_kind="file",
         fragment_index=0,

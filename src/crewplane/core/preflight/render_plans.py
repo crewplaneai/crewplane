@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from enum import StrEnum
 
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 
 from .compile_state import (
@@ -35,11 +35,6 @@ from .workspace.files.selection import (
     is_allowlisted_absolute_path,
     node_selects_managed_workspace,
 )
-
-
-class RenderTargetRole(StrEnum):
-    EXECUTOR = "executor"
-    REVIEWER = "reviewer"
 
 
 def apply_file_policy(
@@ -98,7 +93,7 @@ class RenderTokenOccurrence:
     node: WorkflowNode
     reference: TemplateReference
     occurrence_id: str
-    target_role: RenderTargetRole
+    target_role: ProviderRole
     source_role: PromptSegmentRole
     segment_index: int
 
@@ -150,31 +145,31 @@ def iter_segment_render_token_occurrences(
 
 def target_roles_for_segment(
     segment: PromptSegment,
-) -> tuple[RenderTargetRole, ...]:
+) -> tuple[ProviderRole, ...]:
     match segment.role:
-        case "shared":
-            return (RenderTargetRole.EXECUTOR, RenderTargetRole.REVIEWER)
-        case "executor":
-            return (RenderTargetRole.EXECUTOR,)
-        case "reviewer":
-            return (RenderTargetRole.REVIEWER,)
+        case PromptSegmentRole.SHARED:
+            return (ProviderRole.EXECUTOR, ProviderRole.REVIEWER)
+        case PromptSegmentRole.EXECUTOR:
+            return (ProviderRole.EXECUTOR,)
+        case PromptSegmentRole.REVIEWER:
+            return (ProviderRole.REVIEWER,)
     raise ValueError(f"Unsupported prompt segment role: {segment.role!r}")
 
 
 def workspace_file_target_for_role(
-    target_role: RenderTargetRole,
+    target_role: ProviderRole,
 ) -> WorkspaceFileTarget:
     match target_role:
-        case RenderTargetRole.EXECUTOR:
-            return "executor_prompt"
-        case RenderTargetRole.REVIEWER:
-            return "reviewer_prompt"
+        case ProviderRole.EXECUTOR:
+            return WorkspaceFileTarget.EXECUTOR_PROMPT
+        case ProviderRole.REVIEWER:
+            return WorkspaceFileTarget.REVIEWER_PROMPT
     raise ValueError(f"Unsupported render target role: {target_role!r}")
 
 
 def render_token_occurrence_id(
     node_id: str,
-    target_role: RenderTargetRole,
+    target_role: ProviderRole,
     segment_index: int,
     reference_index: int,
 ) -> str:
@@ -247,15 +242,15 @@ def compile_render_plan(
             {"node_id": node.id, "template_hash": compiled_template_hash}
         ),
         streams=[
-            compile_render_stream(node, RenderTargetRole.EXECUTOR, options, state),
-            compile_render_stream(node, RenderTargetRole.REVIEWER, options, state),
+            compile_render_stream(node, ProviderRole.EXECUTOR, options, state),
+            compile_render_stream(node, ProviderRole.REVIEWER, options, state),
         ],
     )
 
 
 def compile_render_stream(
     node: WorkflowNode,
-    target_role: RenderTargetRole,
+    target_role: ProviderRole,
     options: PreflightCompileOptions,
     state: CompileState,
 ) -> RenderStream:
@@ -272,12 +267,12 @@ def compile_render_stream(
             state=state,
             fragments=fragments,
         )
-    return RenderStream(target_role=target_role.value, fragments=fragments)
+    return RenderStream(target_role=target_role, fragments=fragments)
 
 
 def append_segment_fragments(
     node: WorkflowNode,
-    target_role: RenderTargetRole,
+    target_role: ProviderRole,
     segment_index: int,
     segment: PromptSegment,
     options: PreflightCompileOptions,
@@ -330,7 +325,7 @@ def fragment_for_occurrence(
     fragment_index: int,
 ) -> Fragment | None:
     node = occurrence.node
-    target_role = occurrence.target_role.value
+    target_role = occurrence.target_role
     reference = occurrence.reference
     if reference.kind == "node":
         return node_reference_fragment(

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import crewplane.runtime.workspace.worktree as worktree_module
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,
@@ -78,8 +79,8 @@ def test_worktree_reviewer_workspace_discards_drift_without_lineage(
     output.create_stage_dir("implement")
 
     prepared = prepare_invocation_workspace(
-        workspace_invocation_request(plan, output, role_label="reviewer"),
-        workspace_invocation_context(role="reviewer"),
+        workspace_invocation_request(plan, output, role_label=ProviderRole.REVIEWER),
+        workspace_invocation_context(role=ProviderRole.REVIEWER),
     )
     assert prepared.workspace_path is not None
     workspace_path = prepared.workspace_path
@@ -128,8 +129,8 @@ def test_worktree_reviewer_workspace_reports_branch_attachment_drift(
     output.create_stage_dir("implement")
 
     prepared = prepare_invocation_workspace(
-        workspace_invocation_request(plan, output, role_label="reviewer"),
-        workspace_invocation_context(role="reviewer"),
+        workspace_invocation_request(plan, output, role_label=ProviderRole.REVIEWER),
+        workspace_invocation_context(role=ProviderRole.REVIEWER),
     )
     assert prepared.workspace_path is not None
     workspace_path = prepared.workspace_path

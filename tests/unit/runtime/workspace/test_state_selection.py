@@ -15,6 +15,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
@@ -79,7 +80,7 @@ def test_downstream_invocation_source_uses_review_loop_canonical_state(
             materialization="worktree_checkout",
         ),
         _source_snapshot(tmp_path),
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
     )
@@ -125,7 +126,7 @@ def test_same_node_executor_source_skips_discarded_invalid_candidate(
             materialization="worktree_checkout",
         ),
         _source_snapshot(tmp_path),
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=3,
         audit_round_num=1,
     )
@@ -180,7 +181,7 @@ def test_dynamic_locator_source_context_uses_previous_executor_candidate(
         locator,
         workspace_candidate_source=True,
         workspace_candidate_context=WorkspaceCandidateSourceContext(
-            role_label="executor",
+            role_label=ProviderRole.EXECUTOR,
             round_num=3,
             audit_round_num=1,
         ),
@@ -212,7 +213,7 @@ def test_dynamic_locator_source_context_uses_current_reviewer_candidate(
         locator,
         workspace_candidate_source=False,
         workspace_candidate_context=WorkspaceCandidateSourceContext(
-            role_label="reviewer",
+            role_label=ProviderRole.REVIEWER,
             round_num=2,
             audit_round_num=1,
         ),
@@ -238,7 +239,7 @@ def test_reviewer_dynamic_locator_falls_back_to_prior_seeded_audit_candidate(
         locator,
         workspace_candidate_source=False,
         workspace_candidate_context=WorkspaceCandidateSourceContext(
-            role_label="reviewer",
+            role_label=ProviderRole.REVIEWER,
             round_num=2,
             audit_round_num=2,
         ),
@@ -398,7 +399,7 @@ def _downstream_node() -> PreflightExecutionNode:
         provider_records=[
             ProviderRecord(
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha",
                 agent_config_key="alpha",
                 invoker_alias="mock",
@@ -425,7 +426,7 @@ def _same_node() -> PreflightExecutionNode:
         provider_records=[
             ProviderRecord(
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha",
                 agent_config_key="alpha",
                 invoker_alias="mock",

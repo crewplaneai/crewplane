@@ -15,6 +15,9 @@ from .integration_options import (
     TmuxUiOptions,
 )
 from .invocation import (
+    SUPPORTED_PROVIDER_KIND_VALUE_SET,
+    SUPPORTED_PROVIDER_KIND_VALUES,
+    SUPPORTED_PROVIDER_KINDS,
     AgentInvoker,
     AggregateCostConfidence,
     ChildProcessEnvironment,
@@ -108,6 +111,9 @@ __all__ = [
     "QuotaClassification",
     "QuotaParserProfile",
     "RuntimeLogValue",
+    "SUPPORTED_PROVIDER_KIND_VALUE_SET",
+    "SUPPORTED_PROVIDER_KIND_VALUES",
+    "SUPPORTED_PROVIDER_KINDS",
     "SignatureScope",
     "StructuredOutputMode",
     "TmuxUiOptions",

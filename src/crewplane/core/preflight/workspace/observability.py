@@ -3,12 +3,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..models import (
     PreflightCompilationPreview,
     PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceFileLocator,
+    WorkspaceFileSourceClass,
+    WorkspaceFileTarget,
     WorkspaceSourceSnapshot,
 )
 
@@ -98,7 +101,8 @@ def node_workspace_descriptor(
         "result": node_result_descriptor(node),
         "workspace_file_locator_count": len(node_locators),
         "runtime_dynamic_locator_count": sum(
-            locator.source_class == "runtime_dynamic" for locator in node_locators
+            locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
+            for locator in node_locators
         ),
     }
 
@@ -107,17 +111,23 @@ def rendered_file_summary(locators: list[WorkspaceFileLocator]) -> JsonObject:
     return {
         "locator_count": len(locators),
         "project_initial": sum(
-            locator.source_class == "project_initial" for locator in locators
+            locator.source_class == WorkspaceFileSourceClass.PROJECT_INITIAL
+            for locator in locators
         ),
         "runtime_dynamic": sum(
-            locator.source_class == "runtime_dynamic" for locator in locators
+            locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
+            for locator in locators
         ),
-        "input_output": sum(locator.target == "input_output" for locator in locators),
+        "input_output": sum(
+            locator.target == WorkspaceFileTarget.INPUT_OUTPUT for locator in locators
+        ),
         "executor_prompt": sum(
-            locator.target == "executor_prompt" for locator in locators
+            locator.target == WorkspaceFileTarget.EXECUTOR_PROMPT
+            for locator in locators
         ),
         "reviewer_prompt": sum(
-            locator.target == "reviewer_prompt" for locator in locators
+            locator.target == WorkspaceFileTarget.REVIEWER_PROMPT
+            for locator in locators
         ),
     }
 
@@ -184,7 +194,9 @@ def workspace_lineage_producer(node: PreflightExecutionNode) -> bool:
         and policy.enabled
         and policy.lineage_producer
         and node.mode != "input"
-        and any(provider.role == "executor" for provider in node.provider_records)
+        and any(
+            provider.role == ProviderRole.EXECUTOR for provider in node.provider_records
+        )
     )
 
 

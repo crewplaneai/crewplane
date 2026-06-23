@@ -2,6 +2,7 @@ import unittest
 
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -18,7 +19,7 @@ class MockInvokerAdapterTestCase(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def _context(
-        role: str = "executor",
+        role: ProviderRole = ProviderRole.EXECUTOR,
         task_id: str | None = None,
         audit_round_num: int | None = None,
         round_num: int = 1,

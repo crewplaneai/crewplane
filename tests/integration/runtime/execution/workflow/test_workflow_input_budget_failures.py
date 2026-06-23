@@ -13,6 +13,8 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -55,9 +57,13 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                         id="node.source",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="source")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="source"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.summary",
@@ -68,7 +74,9 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                                 role="shared", content="Use {{node.source.output}}"
                             )
                         ],
-                        providers=[ProviderSpec(provider="beta", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -100,9 +108,13 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                         id="node.source",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="source")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="source"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.summary",
@@ -114,7 +126,9 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                             )
                         ],
                         token_budget={"warn_threshold_chars": None},
-                        providers=[ProviderSpec(provider="beta", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -172,7 +186,9 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                                 role="shared", content="Use {{review-input.output}}"
                             )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -227,7 +243,9 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                                 content="Use {{empty-input.output}}",
                             )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -260,23 +278,35 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.root.fail",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="fail")],
-                        providers=[ProviderSpec(provider="fail", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="fail")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="fail", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.root.ok",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="ok")],
-                        providers=[ProviderSpec(provider="ok", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="ok")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="ok", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.dep",
                         mode="sequential",
                         needs=["node.root.fail"],
                         prompt_segments=[
-                            PromptSegment(role="shared", content="dependent")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="dependent"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="ok", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="ok", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -306,17 +336,25 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.root.fail",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="fail")],
-                        providers=[ProviderSpec(provider="fail", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="fail")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="fail", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.dep",
                         mode="sequential",
                         needs=["node.root.fail"],
                         prompt_segments=[
-                            PromptSegment(role="shared", content="dependent")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="dependent"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="ok", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="ok", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -369,8 +407,12 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.fail",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="fail")],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="fail")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     )
                 ],
             )

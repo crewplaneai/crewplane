@@ -1,0 +1,14 @@
+ ●       source.input             ⏸  input
+ ├─┬─┬─┐
+ ● │ │ │ branch.alpha             ⏸  codex
+ │ ● │ │ branch.beta              ⏸  codex
+ │ │ ● │ branch.gamma             ⏸  codex
+ │ │ │ ● branch.delta             ⏸  codex
+ ├─┴─┴─┘
+ ●       branch.merge             ⏸  codex
+ │
+▸●       apply.fix                ⏸  codex
+ │
+ ●       verify.final             ⏸  codex
+ │
+ ●       handoff.done             ⏸  codex

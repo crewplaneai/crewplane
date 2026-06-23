@@ -34,6 +34,8 @@ from .events import (
     resolve_invocation_usage,
 )
 from .generated_files import (
+    GeneratedFileChangeBaseline,
+    capture_generated_file_change_baseline,
     finalize_successful_workspace,
     rendered_workspace_file_descriptors,
     snapshot_invocation_generated_files_async,
@@ -54,6 +56,7 @@ class _ProviderInvocationLifecycleState:
         default_factory=InvocationEventCapture
     )
     prepared_workspace: PreparedWorkspace | None = None
+    generated_file_change_baseline: GeneratedFileChangeBaseline | None = None
     timer: ElapsedTimer | None = None
     child_environment_applied: bool = False
     workspace_success_finalization_started: bool = False
@@ -201,6 +204,9 @@ async def _prepare_provider_workspace(
         request.runtime_context.deferred_workspace_cleanups,
     )
     state.prepared_workspace = prepared_workspace
+    state.generated_file_change_baseline = capture_generated_file_change_baseline(
+        prepared_workspace
+    )
     state.invocation_metadata = _require_invocation_metadata(state).with_workspace(
         prepared_workspace.invocation_context.workspace
     )
@@ -256,6 +262,7 @@ async def _invoke_provider_and_finalize_workspace(
     generated_file_workspace = await snapshot_invocation_generated_files_async(
         request,
         prepared_workspace,
+        state.generated_file_change_baseline,
     )
     state.workspace_success_finalization_started = True
     await finalize_successful_workspace(

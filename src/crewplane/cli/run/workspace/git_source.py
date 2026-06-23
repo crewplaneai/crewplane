@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.core.workspace.git_policy import workspace_git_config_args
+from crewplane.core.workspace.git_policy import (
+    sanitized_workspace_git_environment,
+    workspace_git_config_args,
+)
 from crewplane.core.workspace.policy import WORKTREE_CONTRACT_MODES
 
 from .source_types import WorkspacePolicyBuilder
@@ -49,40 +51,6 @@ GIT_CAPABILITY_PROBES: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
 )
-GIT_ENV_UNSET = (
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_COMMON_DIR",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_NAMESPACE",
-    "GIT_CEILING_DIRECTORIES",
-    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-    "GIT_CONFIG_SYSTEM",
-    "GIT_CONFIG_GLOBAL",
-    "GIT_CONFIG_NOSYSTEM",
-    "GIT_CONFIG_COUNT",
-    "GIT_CONFIG_PARAMETERS",
-    "GIT_ATTR_NOSYSTEM",
-    "GIT_ATTR_SOURCE",
-    "GIT_LITERAL_PATHSPECS",
-    "GIT_GLOB_PATHSPECS",
-    "GIT_NOGLOB_PATHSPECS",
-    "GIT_ICASE_PATHSPECS",
-    "GIT_ASKPASS",
-    "SSH_ASKPASS",
-)
-GIT_ENV_PREFIXES_UNSET = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
-GIT_ENV_TEMPLATE: Mapping[str, str] = {
-    "GIT_OPTIONAL_LOCKS": "0",
-    "GIT_CONFIG_NOSYSTEM": "1",
-    "GIT_CONFIG_GLOBAL": os.devnull,
-    "GIT_ATTR_NOSYSTEM": "1",
-    "GIT_NO_REPLACE_OBJECTS": "1",
-    "GIT_NO_LAZY_FETCH": "1",
-    "GIT_TERMINAL_PROMPT": "0",
-}
 
 
 @dataclass(frozen=True)
@@ -305,14 +273,7 @@ def worktree_help_text(project_root: Path, subcommand: str) -> str:
 
 
 def git_env() -> dict[str, str]:
-    env = dict(os.environ)
-    for key in GIT_ENV_UNSET:
-        env.pop(key, None)
-    for key in tuple(env):
-        if key.startswith(GIT_ENV_PREFIXES_UNSET):
-            env.pop(key, None)
-    env.update(GIT_ENV_TEMPLATE)
-    return env
+    return sanitized_workspace_git_environment(read_only=True)
 
 
 def git_version(project_root: Path) -> str:

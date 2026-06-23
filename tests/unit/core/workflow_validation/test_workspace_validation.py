@@ -2,6 +2,8 @@ import pytest
 from pydantic import ValidationError
 
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -40,7 +42,9 @@ def _executor_node(
         mode="sequential",
         needs=needs or [],
         providers=providers or [ProviderSpec(provider="alpha")],
-        prompt_segments=[PromptSegment(role="shared", content=f"run {node_id}")],
+        prompt_segments=[
+            PromptSegment(role=PromptSegmentRole.SHARED, content=f"run {node_id}")
+        ],
         worktree=worktree,
     )
 
@@ -339,8 +343,8 @@ def test_mutable_workspace_rejects_multiple_executor_providers() -> None:
             _executor_node(
                 "implement",
                 providers=[
-                    ProviderSpec(provider="alpha", role="executor"),
-                    ProviderSpec(provider="beta", role="executor"),
+                    ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR),
                 ],
             )
         ],

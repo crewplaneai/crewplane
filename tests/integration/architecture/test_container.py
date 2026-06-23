@@ -21,6 +21,8 @@ from crewplane.core.preflight import (
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -128,8 +130,12 @@ class ContainerTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
-                    providers=[ProviderSpec(provider="alpha", role="executor")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
+                    providers=[
+                        ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                    ],
                 )
             ],
         )
@@ -570,7 +576,9 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                             role="shared", content="Generate a deterministic summary."
                         )
                     ],
-                    providers=[ProviderSpec(provider="alpha", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                    ],
                 )
             ],
         )
@@ -642,7 +650,9 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                             content="Review the repository and summarize the result.",
                         )
                     ],
-                    providers=[ProviderSpec(provider="alpha", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                    ],
                 )
             ],
         )

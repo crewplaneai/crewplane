@@ -4,6 +4,8 @@ from pathlib import Path
 
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -44,7 +46,9 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.parallel",
                         mode="parallel",
-                        prompt_segments=[PromptSegment(role="shared", content="run")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                        ],
                         providers=[
                             ProviderSpec(provider="slow"),
                             ProviderSpec(provider="fast"),
@@ -103,14 +107,22 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.z",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="z")],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="z")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.a",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="a")],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )
@@ -160,11 +172,13 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         id="review.node",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="Review this.")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="Review this."
+                            )
                         ],
                         providers=[
-                            ProviderSpec(provider="exec", role="executor"),
-                            ProviderSpec(provider="review", role="reviewer"),
+                            ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                            ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                         ],
                     )
                 ],
@@ -225,20 +239,26 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         id="review.node",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="Review this.")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="Review this."
+                            )
                         ],
                         providers=[
-                            ProviderSpec(provider="exec", role="executor"),
-                            ProviderSpec(provider="review", role="reviewer"),
+                            ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                            ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                         ],
                     ),
                     WorkflowNode(
                         id="aux.node",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="Run aux work.")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="Run aux work."
+                            )
                         ],
-                        providers=[ProviderSpec(provider="aux", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="aux", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )

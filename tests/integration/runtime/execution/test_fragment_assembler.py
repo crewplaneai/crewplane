@@ -22,6 +22,8 @@ from crewplane.core.preflight.models import (
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt
 from crewplane.runtime.execution.workspace_files import resolve_workspace_file
 from crewplane.version import SCHEMA_VERSION
@@ -127,30 +129,30 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
                 render_plan_id="build",
                 streams=[
                     RenderStream(
-                        target_role="executor",
+                        target_role=ProviderRole.EXECUTOR,
                         fragments=[
                             Fragment(
                                 fragment_index=0,
                                 kind="literal",
-                                source_role="shared",
+                                source_role=PromptSegmentRole.SHARED,
                                 text="A ",
                             ),
                             Fragment(
                                 fragment_index=1,
                                 kind="static_file_content",
-                                source_role="shared",
+                                source_role=PromptSegmentRole.SHARED,
                                 content_ref=static_content_ref,
                             ),
                             Fragment(
                                 fragment_index=2,
                                 kind="literal",
-                                source_role="shared",
+                                source_role=PromptSegmentRole.SHARED,
                                 text=" B ",
                             ),
                             Fragment(
                                 fragment_index=3,
                                 kind="runtime_locator_lookup",
-                                source_role="shared",
+                                source_role=PromptSegmentRole.SHARED,
                                 locator={
                                     "node_id": "input",
                                     "artifact_name": "output",
@@ -159,13 +161,13 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
                             Fragment(
                                 fragment_index=4,
                                 kind="literal",
-                                source_role="shared",
+                                source_role=PromptSegmentRole.SHARED,
                                 text=" C ",
                             ),
                             Fragment(
                                 fragment_index=5,
                                 kind="static_env",
-                                source_role="shared",
+                                source_role=PromptSegmentRole.SHARED,
                                 key="API_TOKEN",
                                 value_handle="env:API_TOKEN",
                             ),
@@ -197,7 +199,7 @@ def test_assemble_prompt_preserves_fragment_order(tmp_path: Path) -> None:
     secrets.put("env:API_TOKEN", "secret")
 
     plan = _plan(context_root)
-    prompt = assemble_prompt(plan, plan.nodes[1], "executor", store, secrets)
+    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
 
     assert prompt == "A file B node C secret"
 
@@ -224,7 +226,7 @@ def test_assemble_prompt_does_not_call_legacy_template_parsers(
     secrets.put("env:API_TOKEN", "secret")
     plan = _plan(context_root)
 
-    prompt = assemble_prompt(plan, plan.nodes[1], "executor", store, secrets)
+    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
 
     assert prompt == "A file B node C secret"
 
@@ -260,7 +262,7 @@ def test_assemble_prompt_reads_static_bundle_not_original_source_path(
     secrets = SecretContext()
     secrets.put("env:API_TOKEN", "secret")
 
-    prompt = assemble_prompt(plan, plan.nodes[1], "executor", store, secrets)
+    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
 
     assert prompt == "A bundled B node C secret"
 
@@ -305,12 +307,12 @@ def test_assemble_prompt_reads_project_initial_workspace_file_locator(
                     render_plan_id="build",
                     streams=[
                         RenderStream(
-                            target_role="executor",
+                            target_role=ProviderRole.EXECUTOR,
                             fragments=[
                                 Fragment(
                                     fragment_index=0,
                                     kind="workspace_file_locator",
-                                    source_role="shared",
+                                    source_role=PromptSegmentRole.SHARED,
                                     locator={
                                         "locator_id": "workspace-file-test",
                                         "source_class": "project_initial",
@@ -327,7 +329,7 @@ def test_assemble_prompt_reads_project_initial_workspace_file_locator(
     store = _ArtifactStore(tmp_path)
     secrets = SecretContext()
 
-    prompt = assemble_prompt(plan, plan.nodes[1], "executor", store, secrets)
+    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
 
     assert prompt == "workspace file"
 
@@ -403,12 +405,12 @@ def test_assemble_prompt_rejects_runtime_dynamic_workspace_file_locator(
                     render_plan_id="build",
                     streams=[
                         RenderStream(
-                            target_role="executor",
+                            target_role=ProviderRole.EXECUTOR,
                             fragments=[
                                 Fragment(
                                     fragment_index=0,
                                     kind="workspace_file_locator",
-                                    source_role="shared",
+                                    source_role=PromptSegmentRole.SHARED,
                                     locator={
                                         "locator_id": "workspace-file-dynamic",
                                         "source_class": "runtime_dynamic",
@@ -426,7 +428,7 @@ def test_assemble_prompt_rejects_runtime_dynamic_workspace_file_locator(
     secrets = SecretContext()
 
     with pytest.raises(RuntimeError, match="Runtime-dynamic workspace file locator"):
-        assemble_prompt(plan, plan.nodes[1], "executor", store, secrets)
+        assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
 
 
 def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
@@ -507,12 +509,12 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
                     render_plan_id="build",
                     streams=[
                         RenderStream(
-                            target_role="executor",
+                            target_role=ProviderRole.EXECUTOR,
                             fragments=[
                                 Fragment(
                                     fragment_index=0,
                                     kind="workspace_file_locator",
-                                    source_role="shared",
+                                    source_role=PromptSegmentRole.SHARED,
                                     locator={
                                         "locator_id": "workspace-file-dynamic",
                                         "source_class": "runtime_dynamic",
@@ -527,7 +529,9 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
         }
     )
 
-    prompt = assemble_prompt(plan, plan.nodes[1], "executor", store, SecretContext())
+    prompt = assemble_prompt(
+        plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+    )
 
     assert prompt == "dynamic\n"
 
@@ -649,12 +653,12 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
                     render_plan_id="build",
                     streams=[
                         RenderStream(
-                            target_role="executor",
+                            target_role=ProviderRole.EXECUTOR,
                             fragments=[
                                 Fragment(
                                     fragment_index=0,
                                     kind="workspace_file_locator",
-                                    source_role="shared",
+                                    source_role=PromptSegmentRole.SHARED,
                                     locator={
                                         "locator_id": "workspace-file-dynamic",
                                         "source_class": "runtime_dynamic",
@@ -669,7 +673,9 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
         }
     )
 
-    prompt = assemble_prompt(plan, plan.nodes[1], "executor", store, SecretContext())
+    prompt = assemble_prompt(
+        plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+    )
 
     assert prompt == "bundled dynamic\n"
     assert _git_commit_exists(repo, result_commit)
@@ -764,12 +770,12 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
                     render_plan_id="build",
                     streams=[
                         RenderStream(
-                            target_role="executor",
+                            target_role=ProviderRole.EXECUTOR,
                             fragments=[
                                 Fragment(
                                     fragment_index=0,
                                     kind="workspace_file_locator",
-                                    source_role="shared",
+                                    source_role=PromptSegmentRole.SHARED,
                                     locator={
                                         "locator_id": "workspace-file-after-candidate",
                                         "source_class": "project_initial",
@@ -785,14 +791,16 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
     )
 
     assert (
-        assemble_prompt(plan, plan.nodes[1], "executor", store, SecretContext())
+        assemble_prompt(
+            plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+        )
         == "base\n"
     )
     assert (
         assemble_prompt(
             plan,
             plan.nodes[1],
-            "executor",
+            ProviderRole.EXECUTOR,
             store,
             SecretContext(),
             workspace_candidate_source=True,

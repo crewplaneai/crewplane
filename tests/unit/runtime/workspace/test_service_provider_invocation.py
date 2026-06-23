@@ -22,6 +22,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 from crewplane.runtime.execution.activity.telemetry import ExecutionTelemetry
@@ -209,7 +210,7 @@ def test_generated_file_workspace_cleanup_registered_after_cwd_deleted(
             round_num=1,
             prompt="done",
             output_file=node_dir / "alpha_round1.md",
-            role_label="executor",
+            role_label=ProviderRole.EXECUTOR,
             invoker=object(),
             telemetry=None,
         ),
@@ -219,7 +220,7 @@ def test_generated_file_workspace_cleanup_registered_after_cwd_deleted(
                 node_id="implement",
                 task_id="alpha",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 audit_round_num=None,
                 round_num=1,
                 findings_enabled=False,
@@ -372,7 +373,7 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
             round_num=1,
             prompt="hello workspace",
             output_file=node_dir / "alpha_round1.md",
-            role_label="executor",
+            role_label=ProviderRole.EXECUTOR,
             invoker=invoker,
             telemetry=telemetry,
         ),
@@ -433,8 +434,9 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
     def blocking_snapshot(
         request: ProviderCallRequest,
         prepared_workspace: PreparedWorkspace,
+        change_baseline: object | None = None,
     ) -> None:
-        del request, prepared_workspace
+        del request, prepared_workspace, change_baseline
         started.set()
         assert release.wait(2)
 
@@ -459,7 +461,7 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
                 round_num=1,
                 prompt="done",
                 output_file=node_dir / "alpha_round1.md",
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=SuccessfulRuntimeInvoker(),
                 telemetry=None,
             ),
@@ -518,7 +520,7 @@ async def _run_failed_provider_invocation_preserves_applied_child_environment(
                 round_num=1,
                 prompt="fail after launch",
                 output_file=node_dir / "alpha_round1.md",
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=invoker,
                 telemetry=telemetry,
             ),
@@ -592,7 +594,7 @@ async def _run_failed_provider_invocation_preserves_provider_error_when_mark_fai
                 round_num=1,
                 prompt="fail",
                 output_file=node_dir / "alpha_round1.md",
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=FailingRuntimeInvoker(),
                 telemetry=None,
             ),
@@ -648,7 +650,7 @@ async def _run_provider_invocation_cancellation_preserves_cancel_when_mark_cance
                 round_num=1,
                 prompt="cancel",
                 output_file=node_dir / "alpha_round1.md",
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=CancelledInvoker(),
                 telemetry=None,
             ),
@@ -690,7 +692,7 @@ async def _run_provider_invocation_cancellation_marks_workspace_state(
                 round_num=1,
                 prompt="cancel",
                 output_file=node_dir / "alpha_round1.md",
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=CancelledInvoker(),
                 telemetry=None,
             ),
@@ -753,7 +755,7 @@ async def _run_workspace_success_finalization_records_cleanup_after_cancellation
         round_num=1,
         prompt="done",
         output_file=node_dir / "alpha_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=object(),
         telemetry=None,
     )
@@ -801,7 +803,7 @@ async def _run_workspace_success_finalization_withholds_cleanup_while_pending(
         round_num=1,
         prompt="done",
         output_file=node_dir / "alpha_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=object(),
         telemetry=None,
     )
@@ -857,7 +859,7 @@ async def _run_workspace_success_finalization_cleans_after_drain_timeout(
         round_num=1,
         prompt="done",
         output_file=node_dir / "alpha_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=object(),
         telemetry=None,
     )
@@ -944,7 +946,7 @@ async def _run_lifecycle_cancellation_after_finalization_failure_records_termina
             node_id="implement",
             task_id="alpha",
             provider="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             audit_round_num=None,
             round_num=1,
             findings_enabled=False,
@@ -979,7 +981,7 @@ async def _run_lifecycle_cancellation_after_finalization_failure_records_termina
                 round_num=1,
                 prompt="done",
                 output_file=node_dir / "alpha_round1.md",
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=SuccessfulRuntimeInvoker(),
                 telemetry=None,
             ),
@@ -1047,8 +1049,9 @@ async def _run_generated_file_snapshot_defers_after_cancellation_timeout(
     def slow_snapshot(
         request: ProviderCallRequest,
         prepared_workspace: object,
+        change_baseline: object | None = None,
     ) -> Path:
-        del request, prepared_workspace
+        del request, prepared_workspace, change_baseline
         started.set()
         assert release.wait(2)
         return tmp_path / "snapshot"
@@ -1076,7 +1079,7 @@ async def _run_generated_file_snapshot_defers_after_cancellation_timeout(
         round_num=1,
         prompt="done",
         output_file=node_dir / "alpha_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=object(),
         telemetry=None,
     )
@@ -1160,7 +1163,7 @@ async def _run_workspace_preparation_cancellation_marks_workspace_state(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
     )
@@ -1168,7 +1171,7 @@ async def _run_workspace_preparation_cancellation_marks_workspace_state(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         audit_round_num=None,
         round_num=1,
         findings_enabled=False,
@@ -1230,7 +1233,7 @@ async def _run_workspace_preparation_cancellation_preserves_cancel_when_mark_can
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
     )
@@ -1238,7 +1241,7 @@ async def _run_workspace_preparation_cancellation_preserves_cancel_when_mark_can
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         audit_round_num=None,
         round_num=1,
         findings_enabled=False,
@@ -1297,7 +1300,7 @@ async def _run_workspace_preparation_cancellation_is_bounded(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
     )
@@ -1305,7 +1308,7 @@ async def _run_workspace_preparation_cancellation_is_bounded(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         audit_round_num=None,
         round_num=1,
         findings_enabled=False,
@@ -1408,7 +1411,7 @@ async def _run_workspace_preparation_deferred_cleanup_is_drained(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
     )
@@ -1416,7 +1419,7 @@ async def _run_workspace_preparation_deferred_cleanup_is_drained(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         audit_round_num=None,
         round_num=1,
         findings_enabled=False,
@@ -1492,7 +1495,7 @@ async def _run_workspace_preparation_deferred_cleanup_reports_prepare_failure(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
     )
@@ -1500,7 +1503,7 @@ async def _run_workspace_preparation_deferred_cleanup_reports_prepare_failure(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         audit_round_num=None,
         round_num=1,
         findings_enabled=False,
@@ -1592,7 +1595,7 @@ async def _run_workspace_preparation_slow_mark_cancelled_cleanup_is_drained(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
     )
@@ -1600,7 +1603,7 @@ async def _run_workspace_preparation_slow_mark_cancelled_cleanup_is_drained(
         node_id="implement",
         task_id="alpha",
         provider="alpha",
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         audit_round_num=None,
         round_num=1,
         findings_enabled=False,

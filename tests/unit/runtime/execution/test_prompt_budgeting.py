@@ -4,6 +4,7 @@ import pytest
 
 from crewplane.core.preflight.models import ExecutionPolicy, TokenBudgetPolicy
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution import prompt_budgeting
 from crewplane.runtime.execution.fragment_assembler import ResolvedPrompt
 from crewplane.runtime.execution.runtime_context import CompiledRuntimeContext
@@ -74,6 +75,6 @@ def test_prompt_budget_rejects_resolved_workspace_file(
             CompiledRuntimeContext(plan=plan, secret_context=SecretContext()),
             node,
             object(),
-            "executor",
+            ProviderRole.EXECUTOR,
             None,
         )

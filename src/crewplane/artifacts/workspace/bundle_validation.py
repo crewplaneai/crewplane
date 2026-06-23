@@ -1,41 +1,18 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import tempfile
 from pathlib import Path
 
-from crewplane.core.workspace.git_policy import workspace_git_config_args
+from crewplane.core.workspace.git_policy import (
+    sanitized_workspace_git_environment,
+    workspace_git_config_args,
+)
 
 from .git_blob_hash import git_stdout_sha256
 
 GIT_BUNDLE_VALIDATION_TIMEOUT_SECONDS = 30.0
 _SUPPORTED_OBJECT_FORMATS = frozenset({"sha1", "sha256"})
-_GIT_ENV_UNSET = (
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_COMMON_DIR",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_NAMESPACE",
-    "GIT_CEILING_DIRECTORIES",
-    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-    "GIT_CONFIG_SYSTEM",
-    "GIT_CONFIG_GLOBAL",
-    "GIT_CONFIG_NOSYSTEM",
-    "GIT_CONFIG_COUNT",
-    "GIT_CONFIG_PARAMETERS",
-    "GIT_TEMPLATE_DIR",
-    "GIT_ATTR_NOSYSTEM",
-    "GIT_ATTR_SOURCE",
-    "GIT_LITERAL_PATHSPECS",
-    "GIT_GLOB_PATHSPECS",
-    "GIT_NOGLOB_PATHSPECS",
-    "GIT_ICASE_PATHSPECS",
-    "GIT_ASKPASS",
-    "SSH_ASKPASS",
-)
 
 
 def workspace_bundle_contains_result(
@@ -465,22 +442,9 @@ def _run_git_dir(
     )
 
 
+def sanitized_bundle_git_environment() -> dict[str, str]:
+    return sanitized_workspace_git_environment(read_only=True)
+
+
 def _sanitized_git_env() -> dict[str, str]:
-    env = dict(os.environ)
-    for key in _GIT_ENV_UNSET:
-        env.pop(key, None)
-    for key in tuple(env):
-        if key.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")):
-            env.pop(key, None)
-    env.update(
-        {
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_ATTR_NOSYSTEM": "1",
-            "GIT_OPTIONAL_LOCKS": "0",
-            "GIT_NO_REPLACE_OBJECTS": "1",
-            "GIT_NO_LAZY_FETCH": "1",
-            "GIT_TERMINAL_PROMPT": "0",
-        }
-    )
-    return env
+    return sanitized_bundle_git_environment()

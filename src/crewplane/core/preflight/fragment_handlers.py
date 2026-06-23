@@ -4,7 +4,10 @@ import os
 import re
 
 from crewplane.core.prompt_segments import PromptSegmentRole
-from crewplane.core.workflow.keywords import ALLOWED_NODE_ARTIFACT_NAME_SET
+from crewplane.core.workflow.keywords import (
+    ALLOWED_NODE_ARTIFACT_NAME_SET,
+    ProviderRole,
+)
 from crewplane.core.workflow.models import WorkflowNode
 
 from .compile_state import (
@@ -39,7 +42,7 @@ _SENSITIVE_KEY_PATTERN = re.compile(
 
 def node_reference_fragment(
     node: WorkflowNode,
-    target_role: str,
+    target_role: ProviderRole,
     source_role: PromptSegmentRole,
     segment_index: int,
     reference: TemplateReference,
@@ -117,7 +120,7 @@ def node_reference_fragment(
 
 def file_reference_fragment(
     node: WorkflowNode,
-    target_role: str,
+    target_role: ProviderRole,
     source_role: PromptSegmentRole,
     segment_index: int,
     reference: TemplateReference,
@@ -237,7 +240,7 @@ def resolve_file_reference(
 
 def static_value_fragment(
     node: WorkflowNode,
-    target_role: str,
+    target_role: ProviderRole,
     source_role: PromptSegmentRole,
     segment_index: int,
     reference: TemplateReference,

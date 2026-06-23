@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from crewplane.architecture.contracts import InvocationContext
+from crewplane.core.workflow.keywords import ProviderRole
 
 
 @dataclass(frozen=True)
@@ -40,4 +41,4 @@ def context_display(context: InvocationContext | None) -> ContextDisplay:
 
 
 def is_reviewer_context(context: InvocationContext | None) -> bool:
-    return context is not None and context.role == "reviewer"
+    return context is not None and context.role == ProviderRole.REVIEWER

@@ -30,6 +30,8 @@ from crewplane.core.preflight import (
     PreflightWorkflowSource,
     signature_for_payload,
 )
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -179,8 +181,10 @@ def _workflow(prompt: str = "hello") -> WorkflowPlan:
             WorkflowNode(
                 id="build.node",
                 mode="sequential",
-                providers=[ProviderSpec(provider="alpha", role="executor")],
-                prompt_segments=[PromptSegment(role="shared", content=prompt)],
+                providers=[ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content=prompt)
+                ],
             )
         ],
     )

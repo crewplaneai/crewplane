@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -27,7 +29,9 @@ class NodeLogStreamTrackerTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     providers=[ProviderSpec(provider="alpha")],
                 )
             ],
@@ -58,7 +62,7 @@ class NodeLogStreamTrackerTests(unittest.TestCase):
                     run_id="run-1",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     log_file=str(log_path),
@@ -90,7 +94,9 @@ class NodeLogStreamTrackerTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     providers=[ProviderSpec(provider="alpha")],
                 )
             ],
@@ -107,7 +113,9 @@ class NodeLogStreamTrackerTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     providers=[ProviderSpec(provider="alpha")],
                 )
             ],
@@ -129,7 +137,7 @@ class NodeLogStreamTrackerTests(unittest.TestCase):
                     run_id="run-3",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     log_file=str(log_path),

@@ -1,0 +1,5 @@
+ ● design.discovery         ⏸  claude
+ │
+▸● design.iteration         ⏸  codex -> gemini
+ │
+ ● design.decision          ⏸  claude

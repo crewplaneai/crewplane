@@ -33,10 +33,9 @@ TOKEN_BUCKETS: tuple[TokenBucket, ...] = (
     "total",
 )
 VISIBLE_ESTIMATE_METHOD: VisibleEstimateMethod = "char-count-lower-bound"
-VISIBLE_OUTPUT_PROVIDER_KINDS: frozenset[ProviderKind] = frozenset(
-    {"generic", "copilot", "gemini", "kilo"}
+STRUCTURED_PROVIDER_KINDS: frozenset[ProviderKind] = frozenset(
+    {ProviderKind.CLAUDE, ProviderKind.CODEX}
 )
-STRUCTURED_PROVIDER_KINDS: frozenset[ProviderKind] = frozenset({"claude", "codex"})
 TOKEN_KEY_ALIASES: dict[TokenBucket, tuple[str, ...]] = {
     "input": ("input_tokens", "prompt_tokens", "input"),
     "cached_input": ("cached_input_tokens", "cache_read_input_tokens"),

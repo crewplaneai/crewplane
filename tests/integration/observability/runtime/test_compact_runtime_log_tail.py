@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     apply_event,
     build_initial_state,
@@ -75,7 +76,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
                     run_id="compact-no-started-at",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -132,7 +133,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
                 run_id="compact-missing-log",
                 node_id="node.a",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 model="m",
                 task_id="alpha_executor_0",
                 round_num=1,
@@ -196,7 +197,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
                     run_id="compact-missing-log-wrap",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,

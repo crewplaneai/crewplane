@@ -1,0 +1,8 @@
+Node Output: node.a
+Status: running
+
+alpha/executor/alpha_executor_0 (round1)
+ [running]
+
+Skipped malformed JSON log line.
+formatted provider message

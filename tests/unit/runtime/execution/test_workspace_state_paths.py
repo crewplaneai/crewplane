@@ -11,6 +11,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
@@ -27,7 +28,7 @@ def test_workspace_artifact_allowlist_empty_without_managed_workspace(
         output,
         node,
         "alpha",
-        "executor",
+        ProviderRole.EXECUTOR,
         None,
         1,
     )
@@ -65,7 +66,7 @@ def test_workspace_artifact_allowlist_contains_runtime_owned_workspace_paths(
         output,
         node,
         "alpha",
-        "executor",
+        ProviderRole.EXECUTOR,
         None,
         1,
     )
@@ -89,7 +90,7 @@ def execution_node(
         provider_records=[
             ProviderRecord(
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha",
                 agent_config_key="alpha",
                 invoker_alias="mock",

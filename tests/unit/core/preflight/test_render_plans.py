@@ -20,8 +20,10 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
     render_plans,
 )
+from crewplane.core.preflight.models import WorkspaceFileTarget
 from crewplane.core.preflight.references import TemplateReference
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -106,13 +108,13 @@ def test_render_token_occurrences_scan_each_segment_once(
                 id="build",
                 mode="sequential",
                 providers=[
-                    ProviderSpec(provider="alpha", role="executor"),
-                    ProviderSpec(provider="beta", role="reviewer"),
+                    ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="beta", role=ProviderRole.REVIEWER),
                 ],
                 prompt_segments=[
-                    PromptSegment(role="shared", content="shared"),
-                    PromptSegment(role="executor", content="executor"),
-                    PromptSegment(role="reviewer", content="reviewer"),
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="shared"),
+                    PromptSegment(role=PromptSegmentRole.EXECUTOR, content="executor"),
+                    PromptSegment(role=PromptSegmentRole.REVIEWER, content="reviewer"),
                 ],
             ),
         ],
@@ -125,28 +127,24 @@ def test_render_token_occurrences_scan_each_segment_once(
         (occurrence.target_role, occurrence.segment_index, occurrence.occurrence_id)
         for occurrence in occurrences
     ] == [
-        (render_plans.RenderTargetRole.EXECUTOR, 0, "build:executor:0:0"),
-        (render_plans.RenderTargetRole.REVIEWER, 0, "build:reviewer:0:0"),
-        (render_plans.RenderTargetRole.EXECUTOR, 1, "build:executor:1:0"),
-        (render_plans.RenderTargetRole.REVIEWER, 2, "build:reviewer:2:0"),
+        (ProviderRole.EXECUTOR, 0, "build:executor:0:0"),
+        (ProviderRole.REVIEWER, 0, "build:reviewer:0:0"),
+        (ProviderRole.EXECUTOR, 1, "build:executor:1:0"),
+        (ProviderRole.REVIEWER, 2, "build:reviewer:2:0"),
     ]
 
 
 def test_workspace_file_target_for_role_maps_explicitly() -> None:
     assert (
-        render_plans.workspace_file_target_for_role(
-            render_plans.RenderTargetRole.EXECUTOR
-        )
-        == "executor_prompt"
+        render_plans.workspace_file_target_for_role(ProviderRole.EXECUTOR)
+        == WorkspaceFileTarget.EXECUTOR_PROMPT
     )
     assert (
-        render_plans.workspace_file_target_for_role(
-            render_plans.RenderTargetRole.REVIEWER
-        )
-        == "reviewer_prompt"
+        render_plans.workspace_file_target_for_role(ProviderRole.REVIEWER)
+        == WorkspaceFileTarget.REVIEWER_PROMPT
     )
 
-    invalid_role = cast(render_plans.RenderTargetRole, "author")
+    invalid_role = cast(ProviderRole, "author")
     with pytest.raises(ValueError, match="Unsupported render target role"):
         render_plans.workspace_file_target_for_role(invalid_role)
 
@@ -162,14 +160,20 @@ def test_compiled_token_catalog_uses_segment_scoped_occurrence_ids(
                 id="review",
                 mode="sequential",
                 providers=[
-                    ProviderSpec(provider="alpha", role="executor"),
-                    ProviderSpec(provider="beta", role="reviewer"),
+                    ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="beta", role=ProviderRole.REVIEWER),
                 ],
                 prompt_segments=[
-                    PromptSegment(role="shared", content="Shared {{file:context.md}}"),
-                    PromptSegment(role="executor", content="Exec {{file:context.md}}"),
                     PromptSegment(
-                        role="reviewer", content="Review {{file:context.md}}"
+                        role=PromptSegmentRole.SHARED,
+                        content="Shared {{file:context.md}}",
+                    ),
+                    PromptSegment(
+                        role=PromptSegmentRole.EXECUTOR,
+                        content="Exec {{file:context.md}}",
+                    ),
+                    PromptSegment(
+                        role=ProviderRole.REVIEWER, content="Review {{file:context.md}}"
                     ),
                 ],
             )

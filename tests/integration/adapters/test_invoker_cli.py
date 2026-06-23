@@ -10,6 +10,8 @@ from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
+from crewplane.adapters.invokers.cli_invoker.capabilities import CAPABILITIES
+from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KINDS
 from crewplane.core.config import AgentConfig, Config
 from crewplane.version import SCHEMA_VERSION
 
@@ -54,6 +56,9 @@ class CliInvokerAdapterTests(unittest.TestCase):
         self.assertEqual((claude.format, claude.profile), ("json_object", "claude"))
         self.assertEqual((codex.format, codex.profile), ("json_lines", "codex"))
         self.assertEqual((generic.format, generic.profile), ("plain", "generic"))
+
+    def test_builtin_provider_capabilities_cover_supported_provider_kinds(self) -> None:
+        self.assertEqual(set(CAPABILITIES), set(SUPPORTED_PROVIDER_KINDS))
 
     def test_invocation_plan_resolves_cli_executable_before_workspace_cwd(
         self,

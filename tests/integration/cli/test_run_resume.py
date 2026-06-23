@@ -14,16 +14,19 @@ from crewplane.architecture.ports.artifacts import (
     ArtifactStorePort,
     StageTaskSpec,
 )
-from crewplane.cli.workflow_runner import execute_workflow_run
+from crewplane.cli.workflow_runner import WorkflowCancelledByUser, execute_workflow_run
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight import PreflightExecutionPlan
 from crewplane.core.preflight.source import PreflightWorkflowSource
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
 
@@ -55,15 +58,19 @@ def workflow() -> WorkflowPlan:
             WorkflowNode(
                 id="a",
                 mode="sequential",
-                providers=[ProviderSpec(provider="alpha", role="executor")],
-                prompt_segments=[PromptSegment(role="shared", content="A")],
+                providers=[ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="A")
+                ],
             ),
             WorkflowNode(
                 id="b",
                 mode="sequential",
                 needs=["a"],
-                providers=[ProviderSpec(provider="alpha", role="executor")],
-                prompt_segments=[PromptSegment(role="shared", content="B")],
+                providers=[ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="B")
+                ],
             ),
         ],
     )
@@ -98,7 +105,7 @@ def write_successful_node_output(
     )
     finalize_result = output.finalize_stage(
         node.id,
-        task_specs=(StageTaskSpec("alpha_executor_0", "executor"),),
+        task_specs=(StageTaskSpec("alpha_executor_0", ProviderRole.EXECUTOR),),
     )
     write_successful_node_state(
         node,
@@ -254,6 +261,128 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8"
             )
             self.assertIn("- Status: cancelled", first_summary)
+            second_run = run_dirs[1]
+            self.assertTrue((second_run / "a" / "resume-source.json").exists())
+            second_manifest = json.loads(
+                (second_run / "manifests" / "run.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(second_manifest["status"], "succeeded")
+            self.assertEqual(second_manifest["resumed_nodes"], ["a"])
+
+    async def test_live_dashboard_cancelled_run_resumes_validated_node_boundary(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            console = Console(file=io.StringIO(), force_terminal=False)
+            original_cwd = Path.cwd()
+            calls: list[tuple[str, ...]] = []
+            hub_instances = []
+
+            class StopRequestedHub:
+                def __init__(
+                    self,
+                    workflow_topology,
+                    run_id: str,
+                    observers,
+                    refresh_per_second: int = 4,
+                    warning_sink=None,
+                ) -> None:
+                    self._context = RunContext(
+                        workflow_topology=workflow_topology,
+                        run_id=run_id,
+                        refresh_per_second=refresh_per_second,
+                    )
+                    self._observers = list(observers)
+                    self._terminal_result: RunResult | None = None
+                    self.stop_requested = False
+                    self.active_observer_count = 0
+                    self.warning_sink = warning_sink
+                    hub_instances.append(self)
+
+                def __enter__(self):
+                    for observer in self._observers:
+                        observer.start(self._context)
+                    self.active_observer_count = len(self._observers)
+                    return self
+
+                def __exit__(self, exc_type, _exc, _traceback) -> None:
+                    result = self._terminal_result or RunResult(
+                        status="failed" if exc_type is not None else "succeeded"
+                    )
+                    for observer in reversed(self._observers):
+                        observer.stop(result)
+
+                def emit(self, event) -> None:
+                    del event
+                    return None
+
+                def set_terminal_result(self, result: RunResult) -> None:
+                    self._terminal_result = result
+
+                def request_stop(self) -> None:
+                    self.stop_requested = True
+
+            async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
+                resumed_node_ids = tuple(kwargs.get("resumed_node_ids", ()))
+                calls.append(resumed_node_ids)
+                if len(calls) == 1:
+                    write_successful_node_output(
+                        plan,
+                        output,
+                        kwargs["workflow_identity"],
+                        0,
+                        "A result",
+                    )
+                    hub_instances[-1].request_stop()
+                    await asyncio.sleep(5)
+                    raise AssertionError("Stop request did not cancel workflow.")
+                assert resumed_node_ids == ("a",)
+                assert output.get_stage_output_path("a").exists()
+                assert (output.stages_dir / "a" / "resume-source.json").exists()
+                write_successful_node_output(
+                    plan,
+                    output,
+                    kwargs["workflow_identity"],
+                    1,
+                    "B result",
+                )
+
+            os.chdir(root)
+            try:
+                with self.assertRaises(WorkflowCancelledByUser):
+                    await execute_workflow_run(
+                        config=config(),
+                        source=source(root),
+                        force=False,
+                        no_live=True,
+                        console=console,
+                        execute_workflow_impl=fake_execute_workflow,
+                        observability_hub_cls=StopRequestedHub,
+                        project_root=root,
+                        state_dir=root / ".crewplane",
+                    )
+                await execute_workflow_run(
+                    config=config(),
+                    source=source(root),
+                    force=False,
+                    no_live=True,
+                    console=console,
+                    execute_workflow_impl=fake_execute_workflow,
+                    project_root=root,
+                    state_dir=root / ".crewplane",
+                )
+            finally:
+                os.chdir(original_cwd)
+
+            self.assertEqual(calls, [(), ("a",)])
+            run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
+            self.assertEqual(len(run_dirs), 2)
+            first_manifest = json.loads(
+                (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(first_manifest["status"], "cancelled")
+            self.assertEqual(first_manifest["cancel_reason"], "ui_stop_requested")
             second_run = run_dirs[1]
             self.assertTrue((second_run / "a" / "resume-source.json").exists())
             second_manifest = json.loads(

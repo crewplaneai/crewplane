@@ -6,6 +6,7 @@ from crewplane.artifacts.workspace.state.expected_set import (
 from crewplane.artifacts.workspace.state.invocations import (
     ExpectedWorkspaceInvocation,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 
 
 def test_expected_set_allows_transitive_candidate_source_payloads() -> None:
@@ -28,7 +29,7 @@ def test_expected_set_allows_transitive_candidate_source_payloads() -> None:
         (
             ExpectedWorkspaceInvocation(
                 task_id="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=3,
                 audit_round_num=None,
             ),

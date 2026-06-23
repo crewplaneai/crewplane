@@ -16,6 +16,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     ExecutionEventContext,
     format_execution_event_log_line,
@@ -95,7 +96,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
         round_num=1,
         provider=ProviderRecord(
             provider="exec",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             task_id="exec_executor_0",
             agent_config_key="exec",
             invoker_alias="mock",
@@ -110,7 +111,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
         task_id="exec_executor_0",
         prompt="Prompt",
         output_file=node_dir / "exec_executor_0_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         findings_enabled=False,
         allowed_paths=set(),
         display=ProviderCallDisplay(
@@ -322,7 +323,7 @@ def test_event_log_append_allows_ambient_runtime_warning(
                 run_id="run-1",
                 node_id="review.node",
                 provider="exec",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="exec_executor_0",
             ),
         )
@@ -337,7 +338,7 @@ def test_event_log_append_allows_ambient_runtime_warning(
                 run_id="run-1",
                 node_id="review.node",
                 provider="exec",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="exec_executor_0",
             ),
         )

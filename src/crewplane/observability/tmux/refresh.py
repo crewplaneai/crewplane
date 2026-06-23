@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from threading import Lock
@@ -10,7 +10,6 @@ from typing import Any
 
 from crewplane.observability.events import (
     ExecutionEvent,
-    NodeRuntimeState,
     RunDashboardState,
 )
 from crewplane.observability.events.dashboard_state import (
@@ -28,9 +27,8 @@ from crewplane.observability.tmux.inspect_snapshot import (
 )
 from crewplane.observability.tmux.labels import counts_line, status_line
 from crewplane.observability.tmux.rendering import (
-    SelectedOutputRenderContext,
-    render_left_dashboard,
-    render_selected_output,
+    CompactDashboardRenderContext,
+    render_compact_dashboard,
     right_pane_title,
 )
 from crewplane.observability.tmux.runtime_files import (
@@ -187,23 +185,36 @@ class TmuxCompactRefreshController:
                 pane_geometry,
             )
 
-        left_lines = render_left_dashboard(
-            snapshot=snapshot,
-            selected_node_id=selected_node_id,
-            width=pane_geometry.left_width,
-            height=pane_geometry.left_height,
-            inspect_mode=inspect_mode,
-            now=self._monotonic_now(),
-        )
-        write_atomic(runtime_files.left_content, "\n".join(left_lines))
-
+        current_monotonic_time = self._monotonic_now()
+        prepared_invocation = None
         if not inspect_mode:
-            self.render_selected_output(
-                runtime_files,
-                state.nodes,
-                selected_node_id,
-                pane_geometry,
+            prepared_invocation = prepare_selected_invocation(
+                nodes=state.nodes,
+                selected_node_id=selected_node_id,
+                pane_height=pane_geometry.right_height,
+                log_tail_lines=self._log_tail_lines,
+                wall_time_now=self._wall_time_now(),
             )
+
+        rendered = render_compact_dashboard(
+            CompactDashboardRenderContext(
+                snapshot=snapshot,
+                selected_node_id=selected_node_id,
+                inspect_mode=inspect_mode,
+                left_width=pane_geometry.left_width,
+                left_height=pane_geometry.left_height,
+                right_width=pane_geometry.right_width,
+                right_height=pane_geometry.right_height,
+                monotonic_now=current_monotonic_time,
+                quiet_after_seconds=self._quiet_after_seconds,
+                log_tail_lines=self._log_tail_lines,
+                prepared_invocation=prepared_invocation,
+            )
+        )
+        write_atomic(runtime_files.left_content, "\n".join(rendered.left_lines))
+
+        if rendered.right_lines is not None:
+            write_atomic(runtime_files.right_content, "\n".join(rendered.right_lines))
 
         self._window.set_status_option_if_changed(
             tmux,
@@ -227,34 +238,6 @@ class TmuxCompactRefreshController:
                 inspect_view=inspect_view,
             ),
         )
-
-    def render_selected_output(
-        self,
-        runtime_files: RuntimeFiles,
-        nodes: Mapping[str, NodeRuntimeState],
-        selected_node_id: str | None,
-        pane_geometry: PaneGeometry,
-    ) -> None:
-        prepared_invocation = prepare_selected_invocation(
-            nodes=nodes,
-            selected_node_id=selected_node_id,
-            pane_height=pane_geometry.right_height,
-            log_tail_lines=self._log_tail_lines,
-            wall_time_now=self._wall_time_now(),
-        )
-        right_lines = render_selected_output(
-            SelectedOutputRenderContext(
-                nodes=nodes,
-                selected_node_id=selected_node_id,
-                width=pane_geometry.right_width,
-                pane_height=pane_geometry.right_height,
-                log_tail_lines=self._log_tail_lines,
-                quiet_after_seconds=self._quiet_after_seconds,
-                monotonic_now=self._monotonic_now(),
-                prepared_invocation=prepared_invocation,
-            )
-        )
-        write_atomic(runtime_files.right_content, "\n".join(right_lines))
 
     def _pane_geometry(
         self,

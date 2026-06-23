@@ -6,6 +6,7 @@ from pathlib import Path
 from crewplane.cli.run.workspace import source_policy as policy
 from crewplane.cli.run.workspace.git_source import GitSourceContext
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -32,7 +33,9 @@ def workspace_source_workflow() -> WorkflowPlan:
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
             )
         ],
     )

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.workflow.keywords import ProviderRole
 
 from .types import WorktreeCaptureResult, WorktreeSourceRef
 
@@ -18,7 +19,7 @@ def load_source_ref_from_state(path: Path) -> WorktreeSourceRef:
     if (
         not isinstance(workspace, dict)
         or workspace.get("lineage_producer") is not True
-        or payload.get("role") != "executor"
+        or payload.get("role") != ProviderRole.EXECUTOR
     ):
         raise RuntimeError(
             f"Workspace lineage source is not an executor lineage state: {path.as_posix()}"

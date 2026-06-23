@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.loading import load_tasks
 from crewplane.core.workflow.models import WorkflowNode, render_prompt_for_role
 from crewplane.core.workflow.validation import validate_workflow_plan
@@ -9,7 +10,7 @@ from crewplane.version import SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:
-    return render_prompt_for_role(node, "executor")
+    return render_prompt_for_role(node, PromptSegmentRole.EXECUTOR)
 
 
 class WorkflowMarkdownLoadingTests(unittest.TestCase):
@@ -221,7 +222,8 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         self.assertIn("Shared context.", _executor_prompt(node))
         self.assertIn("Executor instructions.", _executor_prompt(node))
         self.assertIn(
-            "Reviewer instructions.", render_prompt_for_role(node, "reviewer")
+            "Reviewer instructions.",
+            render_prompt_for_role(node, PromptSegmentRole.REVIEWER),
         )
 
     def test_workflow_markdown_rejects_nested_role_markers(self) -> None:

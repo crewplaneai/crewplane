@@ -6,6 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ...results.review_loop_status import (
     ReviewLoopStatusEntry,
@@ -25,7 +26,7 @@ class WorkspaceStateStatus(StrEnum):
 @dataclass(frozen=True)
 class ExpectedWorkspaceInvocation:
     task_id: str
-    role: str
+    role: ProviderRole
     round_num: int
     audit_round_num: int | None
     lineage_source_required: bool = False
@@ -129,12 +130,12 @@ def expected_workspace_invocations(
     if node.mode != "sequential" or len(node.provider_records) != 1:
         return ()
     provider = node.provider_records[0]
-    if provider.role != "executor":
+    if provider.role != ProviderRole.EXECUTOR:
         return ()
     return (
         ExpectedWorkspaceInvocation(
             task_id=provider.task_id,
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             round_num=node.execution_policy.depth or 1,
             audit_round_num=None,
             lineage_source_required=True,
@@ -165,11 +166,11 @@ def _parallel_workspace_invocations_with_status(
     payloads = workspace_state_payloads_for_status(source, node, status)
     expected: list[ExpectedWorkspaceInvocation] = []
     for provider in node.provider_records:
-        if provider.role != "executor":
+        if provider.role != ProviderRole.EXECUTOR:
             continue
         invocation = ExpectedWorkspaceInvocation(
             task_id=provider.task_id,
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             round_num=1,
             audit_round_num=None,
             lineage_source_required=lineage_source_required,
@@ -232,7 +233,7 @@ def expected_seeded_lineage_invocation(
 ) -> bool:
     return (
         expected.lineage_source_required
-        and expected.role == "executor"
+        and expected.role == ProviderRole.EXECUTOR
         and expected.audit_round_num is not None
         and expected.audit_round_num > 1
         and expected.round_num == 1
@@ -262,7 +263,8 @@ def latest_lineage_payload_before(
 def lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
     workspace = _mapping(payload.get("workspace"))
     if not (
-        payload.get("role") == "executor" and workspace.get("lineage_producer") is True
+        payload.get("role") == ProviderRole.EXECUTOR
+        and workspace.get("lineage_producer") is True
     ):
         return (-1, -1)
     round_num = int_field(payload, "round_num")

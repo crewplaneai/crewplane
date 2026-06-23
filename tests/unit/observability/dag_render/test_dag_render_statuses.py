@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -17,12 +19,18 @@ from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
 )
+from tests.helpers.render_fixtures import read_render_fixture
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+FIXTURES = Path(__file__).parents[1] / "fixtures" / "dag_render"
 
 
 def provider(name: str) -> ProviderSpec:
     return ProviderSpec(provider=name)
+
+
+def expected_render(case_id: str) -> str:
+    return read_render_fixture(FIXTURES, case_id, "expected.txt")
 
 
 class DagRenderStatusTests(unittest.TestCase):
@@ -33,7 +41,9 @@ class DagRenderStatusTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     providers=[provider("alpha")],
                 )
             ],
@@ -61,7 +71,7 @@ class DagRenderStatusTests(unittest.TestCase):
             now=40.0,
         )
 
-        self.assertIn("⏳ 30.0s alpha", lines[0])
+        self.assertEqual("\n".join(lines), expected_render("running_node_elapsed"))
 
     def test_parallel_node_elapsed_uses_node_wall_clock_time(self) -> None:
         workflow = WorkflowPlan(
@@ -70,7 +80,9 @@ class DagRenderStatusTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     providers=[provider("alpha"), provider("beta")],
                 )
             ],
@@ -100,7 +112,7 @@ class DagRenderStatusTests(unittest.TestCase):
                     run_id="run-parallel-elapsed",
                     node_id="node.a",
                     provider=provider_name,
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id=task_id,
                     round_num=1,
@@ -115,7 +127,7 @@ class DagRenderStatusTests(unittest.TestCase):
                     run_id="run-parallel-elapsed",
                     node_id="node.a",
                     provider=provider_name,
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id=task_id,
                     round_num=1,
@@ -142,8 +154,7 @@ class DagRenderStatusTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertIn("✅ 5.0s alpha, beta", lines[0])
-        self.assertNotIn("10.0s", lines[0])
+        self.assertEqual("\n".join(lines), expected_render("parallel_node_elapsed"))
 
     def test_topological_order_is_used_over_workflow_declaration_order(self) -> None:
         workflow = WorkflowPlan(
@@ -152,14 +163,18 @@ class DagRenderStatusTests(unittest.TestCase):
                 WorkflowNode(
                     id="merge",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="merge")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="merge")
+                    ],
                     needs=["root"],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="root",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="root")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="root")
+                    ],
                     providers=[provider("p")],
                 ),
             ],
@@ -174,8 +189,8 @@ class DagRenderStatusTests(unittest.TestCase):
             selected_node_id="root",
             width=120,
         )
-        rendered = "\n".join(lines)
-        self.assertLess(rendered.index("root"), rendered.index("merge"))
+
+        self.assertEqual("\n".join(lines), expected_render("topological_order"))
 
     def test_failed_and_blocked_status_icons_are_rendered_with_dependency_edge(
         self,
@@ -186,13 +201,17 @@ class DagRenderStatusTests(unittest.TestCase):
                 WorkflowNode(
                     id="compile.api",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="deploy.api",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     needs=["compile.api"],
                     providers=[provider("codex")],
                 ),
@@ -229,7 +248,4 @@ class DagRenderStatusTests(unittest.TestCase):
             selected_node_id="compile.api",
             width=120,
         )
-        rendered = "\n".join(lines)
-        self.assertIn("❌", rendered)
-        self.assertIn("⛔", rendered)
-        self.assertIn("│", {line.strip() for line in lines})
+        self.assertEqual("\n".join(lines), expected_render("failed_and_blocked"))

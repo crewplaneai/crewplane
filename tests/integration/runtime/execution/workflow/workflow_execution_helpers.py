@@ -18,6 +18,7 @@ from crewplane.core.preflight import (
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
@@ -463,7 +464,7 @@ class TimedTaskOutputInvoker(NoPresentationInvoker):
         if content is None:
             content = (
                 review_output(verdict="NO_FINDINGS")
-                if invocation_context.role == "reviewer"
+                if invocation_context.role == ProviderRole.REVIEWER
                 else f"output for {task_id}"
             )
         output_file.write_text(content, encoding="utf-8")
@@ -486,7 +487,7 @@ class ParallelReviewerTimingInvoker(NoPresentationInvoker):
     ) -> None:
         assert invocation_context is not None
         self.started_at[invocation_context.task_id] = asyncio.get_running_loop().time()
-        if invocation_context.role == "reviewer":
+        if invocation_context.role == ProviderRole.REVIEWER:
             await asyncio.sleep(self.reviewer_delay)
             output_file.write_text(
                 review_output(verdict="NO_FINDINGS"), encoding="utf-8"

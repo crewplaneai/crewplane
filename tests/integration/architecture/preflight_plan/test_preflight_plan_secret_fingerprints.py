@@ -28,7 +28,8 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
     signature_for_payload,
 )
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -68,7 +69,9 @@ def _literal_workflow() -> WorkflowPlan:
                 id="build",
                 mode="sequential",
                 providers=[ProviderSpec(provider="mock")],
-                prompt_segments=[PromptSegment(role="shared", content="hello")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="hello")
+                ],
             )
         ],
     )
@@ -310,7 +313,9 @@ def test_param_tokens_cannot_survive_to_preflight_plan(tmp_path: Path) -> None:
                 mode="sequential",
                 providers=[ProviderSpec(provider="mock")],
                 prompt_segments=[
-                    PromptSegment(role="shared", content="{{param:name}}")
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED, content="{{param:name}}"
+                    )
                 ],
             )
         ],
@@ -353,7 +358,7 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
                 providers=[ProviderSpec(provider="mock")],
                 prompt_segments=[
                     PromptSegment(
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         content="{{env:API_TOKEN}} {{var:private_key}}",
                     )
                 ],
@@ -470,7 +475,9 @@ def test_absent_read_only_fingerprint_key_is_run_scoped_and_artifact_free(
                 mode="sequential",
                 providers=[ProviderSpec(provider="mock")],
                 prompt_segments=[
-                    PromptSegment(role="executor", content="{{env:API_TOKEN}}")
+                    PromptSegment(
+                        role=PromptSegmentRole.EXECUTOR, content="{{env:API_TOKEN}}"
+                    )
                 ],
             )
         ],

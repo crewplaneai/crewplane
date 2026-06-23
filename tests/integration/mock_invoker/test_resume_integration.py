@@ -252,6 +252,70 @@ def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
     ).exists()
 
 
+def test_cli_force_rerun_bypasses_failed_run_resume_frontier(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / ".crewplane" / "config.yml"
+    workflow_path = tmp_path / ".crewplane" / "workflows" / "resume.task.md"
+    fixture_dir = tmp_path / "fixtures"
+    console_stream = io.StringIO()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "Console",
+        ConsoleFactory(
+            file=console_stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        ),
+    )
+    _write_config(config_path, fixture_dir)
+    _write_workflow(workflow_path)
+    _write_fixture(fixture_dir, "a", "A original result\n")
+
+    with pytest.raises(RuntimeError, match="could not resolve fixture"):
+        cli.run(
+            tasks_file=workflow_path,
+            config_file=config_path,
+            dry_run=False,
+            force=False,
+            no_live=True,
+        )
+    first_run = _run_dirs(tmp_path)[0]
+    first_results_dir = tmp_path / ".crewplane" / "execution-results" / first_run.name
+    first_a_result = (first_results_dir / "a-result.md").read_text("utf-8")
+
+    _write_fixture(fixture_dir, "a", "A forced result\n")
+    _write_fixture(fixture_dir, "b", "B forced result\n")
+    cli.run(
+        tasks_file=workflow_path,
+        config_file=config_path,
+        dry_run=False,
+        force=True,
+        no_live=True,
+    )
+
+    _first_run, second_run = _run_dirs(tmp_path)
+    second_results_dir = tmp_path / ".crewplane" / "execution-results" / second_run.name
+    second_manifest = _manifest(second_run)
+
+    assert second_manifest["status"] == "succeeded"
+    assert second_manifest["resumed_nodes"] == []
+    assert not (second_run / "a" / "resume-source.json").exists()
+    assert (second_run / "a" / "alpha_executor_0_round1.md").exists()
+    assert not any(
+        record.get("event_type") == "runtime_log"
+        and record.get("operation") == "node_resumed"
+        for record in _event_records(second_run)
+    )
+    second_a_result = (second_results_dir / "a-result.md").read_text("utf-8")
+    assert "A forced result" in second_a_result
+    assert second_a_result != first_a_result
+    assert "B forced result" in (second_results_dir / "b-result.md").read_text("utf-8")
+
+
 def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

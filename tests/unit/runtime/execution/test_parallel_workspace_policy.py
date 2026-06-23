@@ -9,6 +9,7 @@ from crewplane.core.preflight.models import (
     ProviderRecord,
     WorkspaceSelectionRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.parallel import enforce_parallel_failure_policy
 from crewplane.runtime.execution.stage_tasks import ParallelResultSummary
@@ -59,7 +60,7 @@ def _parallel_node(
 def _provider_record(task_id: str) -> ProviderRecord:
     return ProviderRecord(
         provider=task_id,
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         task_id=task_id,
         agent_config_key=task_id,
         invoker_alias="mock",

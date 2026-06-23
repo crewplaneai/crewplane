@@ -64,6 +64,7 @@ and each run leaves readable artifacts under `.crewplane/`.
 ## Architecture And Contributors
 
 - [Architecture index](architecture/index.md)
+- [UI compact dashboard](architecture/ui_compact_dashboard.md)
 - [Development guide](../DEVELOPMENT.md)
 - [Agent instructions](../AGENTS.md)
 

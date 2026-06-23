@@ -10,6 +10,7 @@ from crewplane.architecture.contracts import (
     InvocationWorktreeContract,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.consensus import (
     VERDICT_NO_FINDINGS,
     parse_review_result,
@@ -47,7 +48,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                     node_id="node.a",
                     task_id="alpha_executor_0",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     round_num=2,
                 ),
             )
@@ -322,7 +323,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=3,
             )
 
@@ -436,7 +437,9 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 prompt="x",
                 output_file=output_file,
                 cwd=(output_file).parent,
-                invocation_context=self._context(role="executor", round_num=4),
+                invocation_context=self._context(
+                    role=ProviderRole.EXECUTOR, round_num=4
+                ),
             )
 
             self.assertEqual(output_file.read_text(encoding="utf-8"), "node-level")
@@ -467,7 +470,9 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 prompt="review",
                 output_file=output_file,
                 cwd=(output_file).parent,
-                invocation_context=self._context(role="reviewer", round_num=4),
+                invocation_context=self._context(
+                    role=ProviderRole.REVIEWER, round_num=4
+                ),
             )
 
             self.assertEqual(
@@ -499,7 +504,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                         node_id="node.a",
                         task_id="alpha_executor_0",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         round_num=1,
                     ),
                 )
@@ -529,7 +534,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                     node_id="node.a",
                     task_id="alpha_executor_0",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     round_num=1,
                 ),
             )
@@ -564,7 +569,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                     node_id="review.context",
                     task_id="alpha_executor_0",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     round_num=1,
                     findings_enabled=True,
                 ),
@@ -597,7 +602,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 output_file=output_file,
                 cwd=(output_file).parent,
                 invocation_context=self._context(
-                    role="reviewer",
+                    role=ProviderRole.REVIEWER,
                     task_id="alpha_reviewer_0",
                     round_num=2,
                 ),
@@ -625,7 +630,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                 prompt="review",
                 output_file=output_file,
                 cwd=(output_file).parent,
-                invocation_context=self._context(role="reviewer"),
+                invocation_context=self._context(role=ProviderRole.REVIEWER),
             )
 
             self.assertEqual(
@@ -660,7 +665,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
                     node_id="review.context",
                     task_id="alpha_executor_0",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     round_num=1,
                     findings_enabled=True,
                 ),
@@ -673,7 +678,7 @@ class MockInvokerFileModeTests(MockInvokerAdapterTestCase):
             node_id="node.a",
             task_id="alpha_executor_0",
             provider="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             round_num=1,
             workspace=InvocationWorkspaceContext(
                 workspace_kind="worktree",

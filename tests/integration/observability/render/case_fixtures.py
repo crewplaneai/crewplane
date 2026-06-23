@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from tests.integration.observability.dag_render_case_builders import (
-    CaseData,
-    build_asymmetric_fanout_workflow,
+from tests.integration.observability.render.case_types import CaseData
+from tests.integration.observability.render.status_case_builders import (
     build_cascading_failure_workflow,
-    build_diamond_workflow,
     build_failure_propagation_workflow,
+    build_partial_failure_workflow,
+    build_pending_running_succeeded_workflow,
+)
+from tests.integration.observability.render.topology_case_builders import (
+    build_asymmetric_fanout_workflow,
+    build_diamond_workflow,
     build_fanout_chain_fanin_workflow,
     build_independent_roots_fanin_workflow,
     build_independent_subgraphs_workflow,
@@ -14,8 +18,6 @@ from tests.integration.observability.dag_render_case_builders import (
     build_overflow_workflow,
     build_parallel_chain_sidecar_workflow,
     build_parallel_roots_workflow,
-    build_partial_failure_workflow,
-    build_pending_running_succeeded_workflow,
     build_single_node_workflow,
 )
 

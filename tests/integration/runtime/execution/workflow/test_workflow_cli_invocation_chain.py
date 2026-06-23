@@ -13,6 +13,8 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -45,9 +47,13 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                         id="node.single",
                         mode="sequential",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="run once")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="run once"
+                            )
                         ],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     )
                 ],
             )
@@ -111,7 +117,9 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                         id="node.single",
                         mode="parallel",
                         prompt_segments=[
-                            PromptSegment(role="shared", content="run once")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="run once"
+                            )
                         ],
                         providers=[ProviderSpec(provider="alpha")],
                     )
@@ -176,21 +184,31 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="node.a",
                         mode="sequential",
-                        prompt_segments=[PromptSegment(role="shared", content="a")],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                     WorkflowNode(
                         id="node.b",
                         mode="parallel",
-                        prompt_segments=[PromptSegment(role="shared", content="b")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                        ],
                         providers=[ProviderSpec(provider="alpha")],
                     ),
                     WorkflowNode(
                         id="node.c",
                         mode="sequential",
                         needs=["node.a", "node.b"],
-                        prompt_segments=[PromptSegment(role="shared", content="c")],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                        ],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
                     ),
                 ],
             )

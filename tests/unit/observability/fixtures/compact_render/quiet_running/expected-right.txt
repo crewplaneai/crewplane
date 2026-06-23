@@ -1,0 +1,12 @@
+Node Output: node.a
+Status: running
+
+alpha/executor/alpha_executor_0 (round1) [running]
+
+Running for 15.0s
+Log file: 2.0 KB (updated 2m10s ago)
+
+No new output for 2m10s.
+Provider still running; waiting for new output.
+
+quiet-tail-line

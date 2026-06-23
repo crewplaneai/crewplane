@@ -7,7 +7,9 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceFileLocator,
+    WorkspaceFileTarget,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..run_history import RunHistoryRecord
 from ..safe_files import contained_regular_file
@@ -56,10 +58,10 @@ def _expected_rendered_locators(
     payload: dict[str, object],
 ) -> tuple[WorkspaceFileLocator, ...]:
     role = payload.get("role")
-    if role == "executor":
-        target = "executor_prompt"
-    elif role == "reviewer":
-        target = "reviewer_prompt"
+    if role == ProviderRole.EXECUTOR:
+        target = WorkspaceFileTarget.EXECUTOR_PROMPT
+    elif role == ProviderRole.REVIEWER:
+        target = WorkspaceFileTarget.REVIEWER_PROMPT
     else:
         return ()
     return tuple(

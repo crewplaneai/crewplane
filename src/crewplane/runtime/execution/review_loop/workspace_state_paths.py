@@ -4,6 +4,7 @@ from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.invocation import (
     invocation_slug,
     workspace_state_path,
@@ -17,7 +18,7 @@ def workspace_artifact_allowed_paths(
     output: ArtifactStorePort,
     node: PreflightExecutionNode,
     task_id: str,
-    role_label: str,
+    role_label: ProviderRole,
     audit_round_num: int | None,
     round_num: int,
 ) -> set[Path]:
@@ -53,7 +54,7 @@ def discard_executor_workspace_lineage(
     round_num: int,
     reason: str,
 ) -> None:
-    if not _can_write_lineage_bundle(node, "executor"):
+    if not _can_write_lineage_bundle(node, ProviderRole.EXECUTOR):
         return
     for task_id in sorted(task_ids):
         slug = invocation_slug(node.id, task_id, audit_round_num, round_num)
@@ -83,11 +84,11 @@ def _can_write_setup_artifacts(node: PreflightExecutionNode) -> bool:
 
 def _can_write_lineage_bundle(
     node: PreflightExecutionNode,
-    role_label: str,
+    role_label: ProviderRole,
 ) -> bool:
     policy = node.workspace_policy
     return (
-        role_label == "executor"
+        role_label == ProviderRole.EXECUTOR
         and policy is not None
         and policy.enabled
         and policy.lineage_producer

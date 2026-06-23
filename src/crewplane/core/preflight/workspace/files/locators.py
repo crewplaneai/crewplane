@@ -63,7 +63,7 @@ def resolve_workspace_file_reference(
         return
     source_class = locator_source_class(workflow, node, target)
     blob_record = None
-    if source_class == "project_initial":
+    if source_class == WorkspaceFileSourceClass.PROJECT_INITIAL:
         blob_record = resolve_project_blob(
             source_snapshot.git_top_level,
             source_snapshot.run_base_commit,
@@ -193,19 +193,19 @@ def locator_source_class(
     node: WorkflowNode,
     target: WorkspaceFileTarget,
 ) -> WorkspaceFileSourceClass:
-    if target == "input_output":
-        return "project_initial"
+    if target == WorkspaceFileTarget.INPUT_OUTPUT:
+        return WorkspaceFileSourceClass.PROJECT_INITIAL
     selector = selected_worktree_name(workflow, node)
     if selector is None:
-        return "project_initial"
+        return WorkspaceFileSourceClass.PROJECT_INITIAL
     declaration = workflow.worktrees[selector]
     if declaration.kind == "snapshot":
-        return "project_initial"
-    if target == "reviewer_prompt":
-        return "runtime_dynamic"
+        return WorkspaceFileSourceClass.PROJECT_INITIAL
+    if target == WorkspaceFileTarget.REVIEWER_PROMPT:
+        return WorkspaceFileSourceClass.RUNTIME_DYNAMIC
     if has_same_worktree_source_ancestor(workflow, node, selector):
-        return "runtime_dynamic"
-    return "project_initial"
+        return WorkspaceFileSourceClass.RUNTIME_DYNAMIC
+    return WorkspaceFileSourceClass.PROJECT_INITIAL
 
 
 def build_workspace_file_locator(
@@ -238,7 +238,7 @@ def build_workspace_file_locator(
     }
     locator_id = f"workspace-file-{signature_for_payload(locator_payload)}"
     runtime_dynamic_after_candidate = (
-        target == "executor_prompt"
+        target == WorkspaceFileTarget.EXECUTOR_PROMPT
         and selected_worktree_kind(workflow, node) == "worktree"
     )
     content_ref = f"workspace-files/{locator_id}.txt" if blob_record else None

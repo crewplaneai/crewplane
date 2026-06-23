@@ -5,6 +5,7 @@ from pathlib import Path
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.workflow.keywords import ProviderRole
 
 from .common import (
     CompiledRuntimeContext,
@@ -44,12 +45,12 @@ async def _execute_single_provider_sequential_node(
             runtime_context,
             node,
             output,
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             telemetry=telemetry,
             workspace_candidate_source=round_num > 1,
             workspace_candidate_context=(
                 WorkspaceCandidateSourceContext(
-                    role_label="executor",
+                    role_label=ProviderRole.EXECUTOR,
                     round_num=round_num,
                     audit_round_num=None,
                 )
@@ -69,7 +70,7 @@ async def _execute_single_provider_sequential_node(
                 round_num=round_num,
                 prompt=resolved_prompt.text,
                 output_file=output_file,
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 invoker=invoker,
                 telemetry=telemetry,
                 findings_enabled=node.findings,

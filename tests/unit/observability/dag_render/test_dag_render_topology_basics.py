@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 
 from crewplane.cli.templates import render_template_content
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.loading import load_tasks
 from crewplane.core.workflow.models import (
     PromptSegment,
@@ -20,12 +22,18 @@ from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
 )
+from tests.helpers.render_fixtures import read_render_fixture
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+FIXTURES = Path(__file__).parents[1] / "fixtures" / "dag_render"
 
 
 def provider(name: str) -> ProviderSpec:
     return ProviderSpec(provider=name)
+
+
+def expected_render(case_id: str) -> str:
+    return read_render_fixture(FIXTURES, case_id, "expected.txt")
 
 
 class DagRenderTopologyBasicTests(unittest.TestCase):
@@ -58,19 +66,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertTrue(
-            any(
-                "review.context" in line and "codex, claude, gemini" in line
-                for line in lines
-            )
-        )
-        self.assertTrue(
-            any("review.summary" in line and "claude" in line for line in lines)
-        )
-        self.assertEqual(
-            [line.strip() for line in lines if line.strip() == "│"],
-            ["│", "│"],
-        )
+        self.assertEqual("\n".join(lines), expected_render("code_review_example"))
 
     def test_parallel_roots_render_without_connector_rows(self) -> None:
         workflow = WorkflowPlan(
@@ -79,19 +75,25 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
                 WorkflowNode(
                     id="backend.auth",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="backend.billing",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("claude")],
                 ),
                 WorkflowNode(
                     id="frontend.ui",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     providers=[provider("gemini")],
                 ),
             ],
@@ -108,13 +110,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertEqual(len(lines), 3)
-        self.assertFalse(
-            any(
-                any(glyph in line for glyph in ("│", "├", "┐", "┘", "┬", "┴"))
-                for line in lines
-            )
-        )
+        self.assertEqual("\n".join(lines), expected_render("parallel_roots"))
 
     def test_linear_chain_renders_connector_rows_between_nodes(self) -> None:
         workflow = WorkflowPlan(
@@ -123,23 +119,29 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
                 WorkflowNode(
                     id="design.discovery",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("claude")],
                 ),
                 WorkflowNode(
                     id="design.iteration",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     needs=["design.discovery"],
                     providers=[
-                        ProviderSpec(provider="codex", role="executor"),
-                        ProviderSpec(provider="gemini", role="reviewer"),
+                        ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="gemini", role=ProviderRole.REVIEWER),
                     ],
                 ),
                 WorkflowNode(
                     id="design.decision",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["design.iteration"],
                     providers=[provider("claude")],
                 ),
@@ -157,19 +159,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertEqual(
-            [line.strip() for line in lines if line.strip() == "│"],
-            ["│", "│"],
-        )
-        self.assertTrue(
-            any(
-                "design.iteration" in line and "codex -> gemini" in line
-                for line in lines
-            )
-        )
-        self.assertTrue(
-            any("design.decision" in line and "claude" in line for line in lines)
-        )
+        self.assertEqual("\n".join(lines), expected_render("linear_chain"))
 
     def test_short_transitive_dependency_renders_as_linear_chain(self) -> None:
         workflow = WorkflowPlan(
@@ -178,25 +168,35 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
                 WorkflowNode(
                     id="design.init",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
-                    providers=[ProviderSpec(provider="copilot", role="executor")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
+                    providers=[
+                        ProviderSpec(provider="copilot", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
                 WorkflowNode(
                     id="design.iteration",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     needs=["design.init"],
                     providers=[
-                        ProviderSpec(provider="codex", role="executor"),
-                        ProviderSpec(provider="copilot", role="reviewer"),
+                        ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="copilot", role=ProviderRole.REVIEWER),
                     ],
                 ),
                 WorkflowNode(
                     id="design.decision",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["design.init", "design.iteration"],
-                    providers=[ProviderSpec(provider="copilot", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="copilot", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
             ],
         )
@@ -212,16 +212,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertEqual(
-            lines,
-            [
-                " ● design.init              ⏸  copilot",
-                " │",
-                "▸● design.iteration         ⏸  codex -> copilot",
-                " │",
-                " ● design.decision          ⏸  copilot",
-            ],
-        )
+        self.assertEqual("\n".join(lines), expected_render("short_transitive_chain"))
 
     def test_shortcut_fanin_with_fanout_does_not_render_consumed_lanes(
         self,
@@ -232,47 +223,59 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
                 WorkflowNode(
                     id="plan.plan.init",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="plan.plan.iteration",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     needs=["plan.plan.init"],
                     providers=[
-                        ProviderSpec(provider="copilot", role="executor"),
-                        ProviderSpec(provider="codex", role="reviewer"),
+                        ProviderSpec(provider="copilot", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="codex", role=ProviderRole.REVIEWER),
                     ],
                 ),
                 WorkflowNode(
                     id="plan.plan.final",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["plan.plan.init", "plan.plan.iteration"],
                     providers=[provider("copilot")],
                 ),
                 WorkflowNode(
                     id="implement.implement.build",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="d")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
                     needs=["plan.plan.final"],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="implement.implement.review",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="e")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="e")
+                    ],
                     needs=["plan.plan.final", "implement.implement.build"],
                     providers=[
-                        ProviderSpec(provider="copilot", role="executor"),
-                        ProviderSpec(provider="codex", role="reviewer"),
+                        ProviderSpec(provider="copilot", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="codex", role=ProviderRole.REVIEWER),
                     ],
                 ),
                 WorkflowNode(
                     id="implement.implement.handoff",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="f")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="f")
+                    ],
                     needs=[
                         "implement.implement.build",
                         "implement.implement.review",
@@ -282,7 +285,9 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
                 WorkflowNode(
                     id="handoff.final",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="g")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="g")
+                    ],
                     needs=["plan.plan.final", "implement.implement.handoff"],
                     providers=[provider("codex")],
                 ),
@@ -301,27 +306,9 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            lines,
-            [
-                "▸●   plan.plan.init           ⏸  codex",
-                " │",
-                " ●   plan.plan.iteration      ⏸  copilot -> codex",
-                " │",
-                " ●   plan.plan.final          ⏸  copilot",
-                " ├─┐",
-                " ● │ implement.implement.build ⏸  codex",
-                " │ │",
-                " ● │ implement.implement.review ⏸  copilot -> codex",
-                " │ │",
-                " ● │ implement.implement.handoff ⏸  codex",
-                " ├─┘",
-                " ●   handoff.final            ⏸  codex",
-            ],
+            "\n".join(lines),
+            expected_render("shortcut_fanin_with_fanout"),
         )
-        rendered = "\n".join(lines)
-        self.assertNotIn("● │     plan.plan.final", rendered)
-        self.assertNotIn("│ ├─┐ │", rendered)
-        self.assertNotIn("│ ● │   implement.implement.build", rendered)
 
     def test_consumed_left_branch_does_not_render_shifted_stale_lane(self) -> None:
         workflow = WorkflowPlan(
@@ -330,33 +317,43 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
                 WorkflowNode(
                     id="root.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="root.b",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="a.terminal",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["root.a"],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="b.chain",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="d")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
                     needs=["root.b"],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="c.after-b",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="e")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="e")
+                    ],
                     needs=["b.chain"],
                     providers=[provider("codex")],
                 ),
@@ -374,18 +371,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             width=120,
         )
 
-        self.assertEqual(
-            lines,
-            [
-                " ●   root.a                   ⏸  codex",
-                " │ ● root.b                   ⏸  codex",
-                " ●   a.terminal               ⏸  codex",
-                " ●   b.chain                  ⏸  codex",
-                " │",
-                " ●   c.after-b                ⏸  codex",
-            ],
-        )
-        self.assertNotIn("● │ a.terminal", "\n".join(lines))
+        self.assertEqual("\n".join(lines), expected_render("consumed_left_branch"))
 
     def test_composed_review_fix_graph_keeps_node_columns_aligned(self) -> None:
         workflow = WorkflowPlan(
@@ -394,37 +380,47 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
                 WorkflowNode(
                     id="quality.review.quality",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="q")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="q")
+                    ],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="fix.implement.execute",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="e")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="e")
+                    ],
                     needs=["quality.review.quality"],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="fix.implement.review",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="r")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="r")
+                    ],
                     needs=["fix.implement.execute"],
                     providers=[
-                        ProviderSpec(provider="codex", role="executor"),
-                        ProviderSpec(provider="codex", role="reviewer"),
+                        ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="codex", role=ProviderRole.REVIEWER),
                     ],
                 ),
                 WorkflowNode(
                     id="fix.implement.summary",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="s")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="s")
+                    ],
                     needs=["fix.implement.execute", "fix.implement.review"],
                     providers=[provider("codex")],
                 ),
                 WorkflowNode(
                     id="handoff.final",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="h")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="h")
+                    ],
                     needs=["fix.implement.summary", "quality.review.quality"],
                     providers=[provider("gemini")],
                 ),
@@ -469,20 +465,4 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             now=7.4,
         )
 
-        self.assertEqual(
-            lines,
-            [
-                "▸●   quality.review.quality   ✅ 5.3s codex",
-                " ├─┐",
-                " ● │ fix.implement.execute    ✅ 5.3s codex",
-                " │ │",
-                " ● │ fix.implement.review     ⏳ 7.4s codex -> codex",
-                " │ │",
-                " ● │ fix.implement.summary    ⏸  codex",
-                " ├─┘",
-                " ●   handoff.final            ⏸  gemini",
-            ],
-        )
-        rendered = "\n".join(lines)
-        self.assertNotIn(" │ ●   fix.implement.execute", rendered)
-        self.assertNotIn(" ├─┐ │", rendered)
+        self.assertEqual("\n".join(lines), expected_render("composed_review_fix"))

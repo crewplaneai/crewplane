@@ -5,6 +5,7 @@ from pathlib import Path
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from tests.integration.adapters.mock_invoker.mock_invoker_test_case import (
     MockInvokerAdapterTestCase,
 )
@@ -25,7 +26,7 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
             )
             await invoker.invoke(
@@ -153,7 +154,7 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                     node_id="node.a",
                     task_id="alpha_executor_0",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     round_num=1,
                 ),
             )

@@ -1,0 +1,3 @@
+ ● backend.auth             ⏸  codex
+▸● backend.billing          ⏸  claude
+ ● frontend.ui              ⏸  gemini

@@ -1,5 +1,7 @@
 from threading import Event
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -19,7 +21,9 @@ def single_node_workflow() -> WorkflowPlan:
             WorkflowNode(
                 id="node.a",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[provider("alpha")],
             ),
         ],
@@ -33,13 +37,17 @@ def two_node_workflow() -> WorkflowPlan:
             WorkflowNode(
                 id="node.a",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[provider("alpha")],
             ),
             WorkflowNode(
                 id="node.b",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="b")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                ],
                 providers=[provider("beta")],
             ),
         ],
@@ -53,15 +61,19 @@ def provider_label_workflow() -> WorkflowPlan:
             WorkflowNode(
                 id="review.context",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[provider("alpha"), provider("beta")],
             ),
             WorkflowNode(
                 id="review.summary",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="b")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                ],
                 needs=["review.context"],
-                providers=[ProviderSpec(provider="gamma", role="executor")],
+                providers=[ProviderSpec(provider="gamma", role=ProviderRole.EXECUTOR)],
             ),
         ],
     )

@@ -10,6 +10,8 @@ from rich.console import Console
 
 from crewplane.bootstrap.container import build_runtime_components
 from crewplane.core.config import Config, load_config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -26,7 +28,7 @@ CONFIG_TEMPLATE_PATH = (
 FIXTURE_OUTPUT_DIR = Path(__file__).with_name("fixtures") / "review-loop"
 
 
-def provider(name: str, role: str) -> ProviderSpec:
+def provider(name: str, role: ProviderRole) -> ProviderSpec:
     return ProviderSpec(provider=name, role=role)
 
 
@@ -72,13 +74,16 @@ def test_mock_invoker_review_loop_integration_groups_multi_audit_round_artifacts
                 id="review.iterate",
                 mode="sequential",
                 prompt_segments=[
-                    PromptSegment(role="shared", content="Review this implementation.")
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED,
+                        content="Review this implementation.",
+                    )
                 ],
                 depth=1,
                 audit_rounds=2,
                 providers=[
-                    provider("codex", "executor"),
-                    provider("claude", "reviewer"),
+                    provider("codex", ProviderRole.EXECUTOR),
+                    provider("claude", ProviderRole.REVIEWER),
                 ],
             )
         ],
@@ -194,13 +199,16 @@ def test_mock_invoker_review_loop_integration_keeps_last_valid_candidate_after_i
                 id="review.drift",
                 mode="sequential",
                 prompt_segments=[
-                    PromptSegment(role="shared", content="Review this implementation.")
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED,
+                        content="Review this implementation.",
+                    )
                 ],
                 depth=1,
                 audit_rounds=2,
                 providers=[
-                    provider("codex", "executor"),
-                    provider("claude", "reviewer"),
+                    provider("codex", ProviderRole.EXECUTOR),
+                    provider("claude", ProviderRole.REVIEWER),
                 ],
             )
         ],

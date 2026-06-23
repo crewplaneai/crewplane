@@ -10,6 +10,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
@@ -153,7 +154,7 @@ def workspace_request(
         node_id=node_id,
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
         materialization_limiter=limiter,

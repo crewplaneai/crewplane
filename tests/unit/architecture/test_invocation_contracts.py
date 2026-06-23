@@ -3,12 +3,14 @@ from __future__ import annotations
 import pytest
 
 from crewplane.architecture.contracts import (
+    SUPPORTED_PROVIDER_KIND_VALUES,
     InvocationSourceContext,
     InvocationWorkspaceContext,
     InvocationWorktreeContract,
     InvokerAdapterCapabilities,
     InvokerWorkspaceSupport,
     LogPresentationDescriptor,
+    ProviderKind,
     normalize_log_presentation_profile,
     validate_log_presentation_descriptor,
 )
@@ -19,6 +21,11 @@ def test_log_presentation_profile_normalizes_safe_unknown_profiles() -> None:
     assert (
         normalize_log_presentation_profile(" Vendor.Profile-1 ") == "vendor.profile-1"
     )
+
+
+def test_provider_kind_values_preserve_serialized_contract() -> None:
+    assert tuple(kind.value for kind in ProviderKind) == SUPPORTED_PROVIDER_KIND_VALUES
+    assert ProviderKind.CODEX.value == "codex"
 
 
 @pytest.mark.parametrize(

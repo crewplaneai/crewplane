@@ -50,7 +50,21 @@ BARE_PATH_PATTERN = re.compile(
 )
 LINE_NUMBER_SUFFIX_PATTERN = re.compile(r":\d+(?:-\d+)?$")
 RESERVED_WORKSPACE_PATH_ROOTS = frozenset(
-    {".crewplane", "execution-stages", "execution-results"}
+    {
+        ".crewplane",
+        ".git",
+        ".hg",
+        ".mypy_cache",
+        ".nox",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".svn",
+        ".tox",
+        "__pycache__",
+        "execution-results",
+        "execution-stages",
+        "node_modules",
+    }
 )
 GENERATED_FILE_SOURCE_METADATA_NAME = ".crewplane-generated-file-source.json"
 GENERATED_FILE_SNAPSHOT_METADATA_NAME = ".crewplane-generated-file-snapshot.json"
@@ -91,6 +105,21 @@ class GeneratedFileReferenceDetector:
             self._add_claimed_line_references(
                 line, generated_files, seen_generated_files
             )
+        return tuple(generated_files)
+
+    def detect_explicit_section(self, content: str) -> tuple[Path, ...]:
+        generated_files: list[Path] = []
+        seen_generated_files: set[Path] = set()
+        in_explicit_section = False
+        for line in content.splitlines():
+            if GENERATED_FILES_HEADING_PATTERN.fullmatch(line):
+                in_explicit_section = True
+                continue
+            if not in_explicit_section:
+                continue
+            if MARKDOWN_HEADING_PATTERN.match(line):
+                break
+            self._add_line_references(line, generated_files, seen_generated_files)
         return tuple(generated_files)
 
     def _add_line_references(

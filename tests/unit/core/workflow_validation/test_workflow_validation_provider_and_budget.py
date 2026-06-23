@@ -5,7 +5,9 @@ from pathlib import Path
 
 from crewplane.adapters.invokers.cli import collect_cli_availability_errors
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.graph import topological_waves
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -29,7 +31,9 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="p")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                    ],
                     providers=[ProviderSpec(provider="missing-provider")],
                 )
             ],
@@ -52,7 +56,9 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="p")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                    ],
                     providers=[
                         ProviderSpec(provider="python-agent"),
                         ProviderSpec(provider="ghost-agent"),
@@ -92,7 +98,9 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                     WorkflowNode(
                         id="node.a",
                         mode="parallel",
-                        prompt_segments=[PromptSegment(role="shared", content="p")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                        ],
                         providers=[ProviderSpec(provider="local-agent")],
                     )
                 ],
@@ -129,7 +137,9 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                     WorkflowNode(
                         id="node.a",
                         mode="parallel",
-                        prompt_segments=[PromptSegment(role="shared", content="p")],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                        ],
                         providers=[ProviderSpec(provider="local-agent")],
                     )
                 ],
@@ -162,7 +172,9 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="p")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                    ],
                     providers=[ProviderSpec(provider="ghost-agent")],
                 )
             ],
@@ -188,7 +200,9 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="p")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                    ],
                     providers=[ProviderSpec(provider="missing-provider")],
                 )
             ],
@@ -222,9 +236,13 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     token_budget={"fail_threshold_chars": 900},
-                    providers=[ProviderSpec(provider="alpha", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                    ],
                 )
             ],
         )
@@ -253,21 +271,29 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.z",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="z")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="z")
+                    ],
                     providers=[ProviderSpec(provider="gpt4")],
                 ),
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[ProviderSpec(provider="gpt4")],
                 ),
                 WorkflowNode(
                     id="node.summary",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="sum")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="sum")
+                    ],
                     needs=["node.z", "node.a"],
-                    providers=[ProviderSpec(provider="gpt4", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="gpt4", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
             ],
         )

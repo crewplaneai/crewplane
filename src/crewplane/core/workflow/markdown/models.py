@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from crewplane.core.token_budget import TokenBudgetOverride
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeDeclaration, validate_worktree_name
 from crewplane.version import SCHEMA_VERSION
 
@@ -19,8 +20,8 @@ from ..models import ProviderSpec, WorkflowPayload
 from ..syntax import NODE_ID_PATTERN
 
 PromptMarkerKind = Literal["open", "close"]
-PromptMarkerRole = Literal["executor", "reviewer"]
-ALLOWED_PROMPT_MARKER_ROLES: tuple[PromptMarkerRole, ...] = ("executor", "reviewer")
+type PromptMarkerRole = ProviderRole
+ALLOWED_PROMPT_MARKER_ROLES = tuple(role.value for role in ProviderRole)
 ALLOWED_PROMPT_MARKER_ROLE_SET = frozenset(ALLOWED_PROMPT_MARKER_ROLES)
 
 

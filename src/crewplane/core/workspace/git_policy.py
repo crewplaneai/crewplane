@@ -33,6 +33,7 @@ WORKSPACE_GIT_ENV_UNSET = (
     "GIT_CONFIG_NOSYSTEM",
     "GIT_CONFIG_COUNT",
     "GIT_CONFIG_PARAMETERS",
+    "GIT_TEMPLATE_DIR",
     "GIT_ATTR_NOSYSTEM",
     "GIT_ATTR_SOURCE",
     "GIT_LITERAL_PATHSPECS",
@@ -47,7 +48,6 @@ WORKSPACE_GIT_BASE_ENVIRONMENT = (
     ("GIT_CONFIG_NOSYSTEM", "1"),
     ("GIT_CONFIG_GLOBAL", os.devnull),
     ("GIT_ATTR_NOSYSTEM", "1"),
-    ("GIT_OPTIONAL_LOCKS", "0"),
     ("GIT_NO_REPLACE_OBJECTS", "1"),
     ("GIT_NO_LAZY_FETCH", "1"),
     ("GIT_TERMINAL_PROMPT", "0"),
@@ -119,16 +119,53 @@ def workspace_git_config_environment() -> dict[str, str]:
     return env
 
 
+def dynamic_workspace_git_environment_keys(
+    environ: dict[str, str] | None = None,
+) -> tuple[str, ...]:
+    source = os.environ if environ is None else environ
+    return tuple(
+        key for key in source if key.startswith(WORKSPACE_GIT_ENV_PREFIXES_UNSET)
+    )
+
+
+def workspace_git_environment_unset_keys(
+    environ: dict[str, str] | None = None,
+) -> tuple[str, ...]:
+    return (
+        *WORKSPACE_GIT_ENV_UNSET,
+        *dynamic_workspace_git_environment_keys(environ),
+    )
+
+
+def workspace_git_base_environment(
+    read_only: bool = False,
+    ceiling_directories: Path | None = None,
+    include_config_overlay: bool = False,
+) -> dict[str, str]:
+    env = dict(WORKSPACE_GIT_BASE_ENVIRONMENT)
+    if read_only:
+        env["GIT_OPTIONAL_LOCKS"] = "0"
+    if ceiling_directories is not None:
+        env["GIT_CEILING_DIRECTORIES"] = ceiling_directories.as_posix()
+    if include_config_overlay:
+        env.update(workspace_git_config_environment())
+    return env
+
+
 def sanitized_workspace_git_environment(
     index_path: Path | None = None,
+    read_only: bool = True,
+    ceiling_directories: Path | None = None,
 ) -> dict[str, str]:
     env = dict(os.environ)
-    for key in WORKSPACE_GIT_ENV_UNSET:
+    for key in workspace_git_environment_unset_keys(env):
         env.pop(key, None)
-    for key in tuple(env):
-        if key.startswith(WORKSPACE_GIT_ENV_PREFIXES_UNSET):
-            env.pop(key, None)
-    env.update(WORKSPACE_GIT_BASE_ENVIRONMENT)
+    env.update(
+        workspace_git_base_environment(
+            read_only=read_only,
+            ceiling_directories=ceiling_directories,
+        )
+    )
     if index_path is not None:
         env["GIT_INDEX_FILE"] = index_path.as_posix()
     return env

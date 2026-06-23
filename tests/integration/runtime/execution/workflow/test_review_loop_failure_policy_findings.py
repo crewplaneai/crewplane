@@ -6,6 +6,8 @@ from pathlib import Path
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -45,13 +47,15 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             node = WorkflowNode(
                 id="review.loop.multi.executor.invalid",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 audit_rounds=2,
                 providers=[
-                    ProviderSpec(provider="exec-1", role="executor"),
-                    ProviderSpec(provider="exec-2", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec-1", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="exec-2", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -71,7 +75,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             first_reviewer_index = next(
                 index
                 for index, call in enumerate(invoker.calls)
-                if call["role"] == "reviewer"
+                if call["role"] == ProviderRole.REVIEWER
             )
             self.assertEqual(first_reviewer_index, 4)
 
@@ -91,11 +95,13 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             node = WorkflowNode(
                 id="no.consensus.fatal",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -126,12 +132,14 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             node = WorkflowNode(
                 id="no.consensus.override",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 continue_on_failure=True,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -171,7 +179,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             ) -> None:
                 self.contexts.append(invocation_context)
                 assert invocation_context is not None
-                if invocation_context.role == "executor":
+                if invocation_context.role == ProviderRole.EXECUTOR:
                     output_file.write_text(
                         "\n".join(
                             [
@@ -202,12 +210,14 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             node = WorkflowNode(
                 id="review.node.findings",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 findings=True,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = CapturingInvoker()
@@ -242,12 +252,14 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
                         mode="sequential",
                         findings=True,
                         prompt_segments=[
-                            PromptSegment(role="shared", content="Review this.")
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED, content="Review this."
+                            )
                         ],
                         providers=[
-                            ProviderSpec(provider="alpha", role="executor"),
-                            ProviderSpec(provider="beta", role="executor"),
-                            ProviderSpec(provider="review", role="reviewer"),
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR),
+                            ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR),
+                            ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                         ],
                     )
                 ],
@@ -310,11 +322,13 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             node = WorkflowNode(
                 id="review.node.invalid",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(

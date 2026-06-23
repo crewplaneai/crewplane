@@ -51,7 +51,7 @@ class GitCommand:
 
 
 def sanitized_git_env(index_path: Path | None = None) -> dict[str, str]:
-    return sanitized_workspace_git_environment(index_path)
+    return sanitized_workspace_git_environment(index_path, read_only=True)
 
 
 def git(

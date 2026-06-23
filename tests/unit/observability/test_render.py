@@ -1,6 +1,8 @@
 import unittest
 from time import monotonic
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -31,27 +33,35 @@ def _build_sample_workflow() -> WorkflowPlan:
             WorkflowNode(
                 id="node1",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[provider("p")],
             ),
             WorkflowNode(
                 id="node2",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="b")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                ],
                 providers=[provider("p")],
             ),
             WorkflowNode(
                 id="node3",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="c")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                ],
                 providers=[provider("p")],
             ),
             WorkflowNode(
                 id="node5",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="merge")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="merge")
+                ],
                 needs=["node2", "node3"],
-                providers=[ProviderSpec(provider="p", role="executor")],
+                providers=[ProviderSpec(provider="p", role=ProviderRole.EXECUTOR)],
             ),
         ],
     )
@@ -147,26 +157,34 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="b",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="c",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["b"],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="d",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="d")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
                     needs=["c"],
                     providers=[provider("p")],
                 ),
@@ -205,13 +223,17 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="emoji🙂",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="漢字",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("p")],
                 ),
             ],
@@ -259,25 +281,33 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="b",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="c",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="d",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="d")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
                     providers=[provider("p")],
                 ),
             ],
@@ -340,26 +370,34 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="backend.pages",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="a")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="backend.workspaces",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="b")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="summary.final",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="c")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
                     needs=["backend.pages", "backend.workspaces"],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
                     id="design.plan",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="d")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
                     providers=[provider("p")],
                 ),
             ],
@@ -388,8 +426,10 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.elapsed",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
-                    providers=[ProviderSpec(provider="p", role="executor")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
+                    providers=[ProviderSpec(provider="p", role=ProviderRole.EXECUTOR)],
                 )
             ],
         )
@@ -414,7 +454,7 @@ class DashboardRenderTests(unittest.TestCase):
                 run_id="run-elapsed",
                 node_id="node.elapsed",
                 provider="p",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 model="m",
                 task_id="p_executor_0",
             ),
@@ -427,7 +467,7 @@ class DashboardRenderTests(unittest.TestCase):
                 run_id="run-elapsed",
                 node_id="node.elapsed",
                 provider="p",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 model="m",
                 task_id="p_executor_0",
                 duration_ms=186878,
@@ -452,7 +492,9 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.stream",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     providers=[provider("p")],
                 )
             ],
@@ -552,8 +594,10 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.seq",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="work")],
-                    providers=[ProviderSpec(provider="p", role="executor")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="work")
+                    ],
+                    providers=[ProviderSpec(provider="p", role=ProviderRole.EXECUTOR)],
                 ),
             ],
         )
@@ -570,7 +614,7 @@ class DashboardRenderTests(unittest.TestCase):
                     run_id="run-rounds",
                     node_id="node.seq",
                     provider="p",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="p_executor_0",
                     round_num=round_num,
@@ -584,7 +628,7 @@ class DashboardRenderTests(unittest.TestCase):
                     run_id="run-rounds",
                     node_id="node.seq",
                     provider="p",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="p_executor_0",
                     round_num=round_num,
@@ -609,10 +653,12 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.seq",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="work")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="work")
+                    ],
                     providers=[
-                        ProviderSpec(provider="p", role="executor"),
-                        ProviderSpec(provider="q", role="reviewer"),
+                        ProviderSpec(provider="p", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="q", role=ProviderRole.REVIEWER),
                     ],
                 ),
             ],
@@ -630,7 +676,7 @@ class DashboardRenderTests(unittest.TestCase):
                     run_id="run-audit-rounds",
                     node_id="node.seq",
                     provider="q",
-                    role="reviewer",
+                    role=ProviderRole.REVIEWER,
                     model="m",
                     task_id="q_reviewer_0",
                     audit_round_num=audit_round_num,
@@ -645,7 +691,7 @@ class DashboardRenderTests(unittest.TestCase):
                     run_id="run-audit-rounds",
                     node_id="node.seq",
                     provider="q",
-                    role="reviewer",
+                    role=ProviderRole.REVIEWER,
                     model="m",
                     task_id="q_reviewer_0",
                     audit_round_num=audit_round_num,
@@ -668,7 +714,9 @@ class DashboardRenderTests(unittest.TestCase):
                 WorkflowNode(
                     id="auth.plan",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="plan")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="plan")
+                    ],
                     providers=[provider("p")],
                 ),
                 WorkflowNode(
@@ -680,7 +728,7 @@ class DashboardRenderTests(unittest.TestCase):
                         )
                     ],
                     needs=["auth.plan"],
-                    providers=[ProviderSpec(provider="p", role="executor")],
+                    providers=[ProviderSpec(provider="p", role=ProviderRole.EXECUTOR)],
                 ),
             ],
         )

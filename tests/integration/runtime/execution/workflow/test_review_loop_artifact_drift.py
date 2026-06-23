@@ -4,6 +4,8 @@ from pathlib import Path
 
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -41,11 +43,13 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.loop.drift.fatal",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -75,11 +79,13 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.loop.summary.drift",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -109,11 +115,13 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.loop.event.log.drift",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -143,11 +151,13 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.loop.event.log.append.drift",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -178,12 +188,14 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.loop.parallel.event.log.creation",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review-a", role="reviewer"),
-                    ProviderSpec(provider="review-b", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review-a", role=ProviderRole.REVIEWER),
+                    ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -215,11 +227,13 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.loop.runtime.event.log",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)

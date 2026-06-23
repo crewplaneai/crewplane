@@ -16,6 +16,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invoker import (
     invoke_agent_with_runner,
 )
@@ -56,7 +57,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
             )
             config = AgentConfig(
@@ -238,7 +239,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             ProviderRecord(
                 provider="alpha",
                 model="workflow-model",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha_executor_0",
                 agent_config_key="alpha",
                 invoker_alias="mock",

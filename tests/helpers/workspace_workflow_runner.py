@@ -17,6 +17,7 @@ from crewplane.cli.run.workspace.git_source import (
 from crewplane.cli.workflow_runner import execute_workflow_run
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight import PreflightWorkflowSource
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -217,7 +218,7 @@ def _workspace_workflow() -> WorkflowPlan:
                 mode="sequential",
                 needs=["requirements"],
                 worktree="scratch",
-                providers=[ProviderSpec(provider="alpha", role="executor")],
+                providers=[ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)],
                 prompt_segments=[
                     PromptSegment(
                         role="shared",
@@ -235,8 +236,8 @@ def _workspace_workflow() -> WorkflowPlan:
                 needs=["snapshot.read"],
                 worktree="implementation",
                 providers=[
-                    ProviderSpec(provider="alpha", role="executor"),
-                    ProviderSpec(provider="alpha", role="reviewer"),
+                    ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="alpha", role=ProviderRole.REVIEWER),
                 ],
                 prompt_segments=[
                     PromptSegment(
@@ -254,7 +255,7 @@ def _workspace_workflow() -> WorkflowPlan:
                 mode="sequential",
                 needs=["implement.review"],
                 worktree="implementation",
-                providers=[ProviderSpec(provider="alpha", role="executor")],
+                providers=[ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)],
                 prompt_segments=[
                     PromptSegment(
                         role="shared",

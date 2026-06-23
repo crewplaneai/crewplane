@@ -218,7 +218,7 @@ def _classify_message(
 
 
 def _quota_patterns(provider_kind: ProviderKind) -> tuple[str, ...]:
-    if provider_kind == "gemini":
+    if provider_kind == ProviderKind.GEMINI:
         return (
             "resource exhausted",
             "resource_exhausted",

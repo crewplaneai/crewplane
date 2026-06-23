@@ -1,0 +1,9 @@
+▸●   quality.review.quality   ✅ 5.3s codex
+ ├─┐
+ ● │ fix.implement.execute    ✅ 5.3s codex
+ │ │
+ ● │ fix.implement.review     ⏳ 7.4s codex -> codex
+ │ │
+ ● │ fix.implement.summary    ⏸  codex
+ ├─┘
+ ●   handoff.final            ⏸  gemini

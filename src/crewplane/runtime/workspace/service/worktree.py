@@ -18,6 +18,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
     invocation_slug,
@@ -140,7 +141,7 @@ def worktree_preparation_plan(
         request.audit_round_num,
         request.round_num,
     )
-    lineage_producer = request.role_label == "executor"
+    lineage_producer = request.role_label == ProviderRole.EXECUTOR
     protected_ref_scopes = worktree_protected_ref_scopes(
         request.plan,
         source_ref,

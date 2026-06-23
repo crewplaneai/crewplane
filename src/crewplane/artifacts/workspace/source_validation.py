@@ -6,6 +6,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..results.review_loop_status import resolve_review_loop_status
 from ..results.selection import parse_audit_round, parse_task_round
@@ -126,9 +127,9 @@ def _candidate_source_matches(
     audit_round_num = nullable_int_field(payload, "audit_round_num")
     if not audit_round_num.valid:
         return False
-    if payload.get("role") == "reviewer":
+    if payload.get("role") == ProviderRole.REVIEWER:
         source_round = round_num
-    elif payload.get("role") == "executor" and round_num > 1:
+    elif payload.get("role") == ProviderRole.EXECUTOR and round_num > 1:
         source_round = round_num - 1
     else:
         return False
@@ -220,7 +221,8 @@ def _lineage_payload_matches(
 ) -> bool:
     workspace = _mapping(payload.get("workspace"))
     if not (
-        payload.get("role") == "executor" and workspace.get("lineage_producer") is True
+        payload.get("role") == ProviderRole.EXECUTOR
+        and workspace.get("lineage_producer") is True
     ):
         return False
     payload_round_num = int_field(payload, "round_num")
@@ -235,7 +237,10 @@ def _lineage_payload_matches(
 
 
 def _initial_executor_payload(payload: dict[str, object]) -> bool:
-    return payload.get("role") == "executor" and int_field(payload, "round_num") == 1
+    return (
+        payload.get("role") == ProviderRole.EXECUTOR
+        and int_field(payload, "round_num") == 1
+    )
 
 
 def _seeded_audit_source_payload(

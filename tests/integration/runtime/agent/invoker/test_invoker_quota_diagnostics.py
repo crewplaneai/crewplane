@@ -12,6 +12,7 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
@@ -162,7 +163,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 diagnostics=diagnostics.append,
             )
@@ -216,7 +217,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 diagnostics=diagnostics.append,
             )
@@ -280,7 +281,7 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 diagnostics=diagnostics.append,
             )

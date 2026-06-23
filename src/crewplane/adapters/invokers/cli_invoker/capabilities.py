@@ -34,8 +34,8 @@ class CliProviderCapability:
 
 
 CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
-    "claude": CliProviderCapability(
-        provider_kind="claude",
+    ProviderKind.CLAUDE: CliProviderCapability(
+        provider_kind=ProviderKind.CLAUDE,
         structured_output_mode="claude_json",
         output_extraction_mode="claude_json",
         quota_parser="claude",
@@ -44,8 +44,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         log_presentation_profile="claude",
         structured_output_args=("--output-format", "json"),
     ),
-    "codex": CliProviderCapability(
-        provider_kind="codex",
+    ProviderKind.CODEX: CliProviderCapability(
+        provider_kind=ProviderKind.CODEX,
         structured_output_mode="codex_last_message_file",
         output_extraction_mode="codex_last_message_file",
         quota_parser="codex",
@@ -53,8 +53,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         log_presentation_format="json_lines",
         log_presentation_profile="codex",
     ),
-    "copilot": CliProviderCapability(
-        provider_kind="copilot",
+    ProviderKind.COPILOT: CliProviderCapability(
+        provider_kind=ProviderKind.COPILOT,
         structured_output_mode="none",
         output_extraction_mode="visible",
         quota_parser="copilot",
@@ -62,8 +62,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         log_presentation_format="plain",
         log_presentation_profile="generic",
     ),
-    "gemini": CliProviderCapability(
-        provider_kind="gemini",
+    ProviderKind.GEMINI: CliProviderCapability(
+        provider_kind=ProviderKind.GEMINI,
         structured_output_mode="none",
         output_extraction_mode="visible",
         quota_parser="gemini",
@@ -71,8 +71,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         log_presentation_format="plain",
         log_presentation_profile="generic",
     ),
-    "kilo": CliProviderCapability(
-        provider_kind="kilo",
+    ProviderKind.KILO: CliProviderCapability(
+        provider_kind=ProviderKind.KILO,
         structured_output_mode="none",
         output_extraction_mode="visible",
         quota_parser="kilo",
@@ -80,8 +80,8 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         log_presentation_format="plain",
         log_presentation_profile="generic",
     ),
-    "generic": CliProviderCapability(
-        provider_kind="generic",
+    ProviderKind.GENERIC: CliProviderCapability(
+        provider_kind=ProviderKind.GENERIC,
         structured_output_mode="none",
         output_extraction_mode="visible",
         quota_parser="generic",
@@ -93,7 +93,7 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
 
 
 def get_cli_provider_capability(provider_kind: ProviderKind) -> CliProviderCapability:
-    return CAPABILITIES[provider_kind]
+    return CAPABILITIES[ProviderKind(provider_kind)]
 
 
 def build_cli_invocation_plan(
@@ -149,7 +149,9 @@ def _build_argv(
     cmd = config.get_command()
     cmd[0] = _resolved_cli_executable(cmd[0])
     model_arg = (
-        config.model_arg if config.provider_kind == "generic" else capability.model_arg
+        config.model_arg
+        if config.provider_kind == ProviderKind.GENERIC
+        else capability.model_arg
     )
     if model_arg is not None and model is not None:
         cmd.extend([model_arg, model])

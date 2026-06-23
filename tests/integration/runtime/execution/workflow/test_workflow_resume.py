@@ -6,6 +6,8 @@ from pathlib import Path
 
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -35,15 +37,23 @@ class WorkflowResumeTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="a",
                         mode="sequential",
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
-                        prompt_segments=[PromptSegment(role="shared", content="A")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="A")
+                        ],
                     ),
                     WorkflowNode(
                         id="b",
                         mode="sequential",
                         needs=["a"],
-                        providers=[ProviderSpec(provider="alpha", role="executor")],
-                        prompt_segments=[PromptSegment(role="shared", content="B")],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
+                        prompt_segments=[
+                            PromptSegment(role=PromptSegmentRole.SHARED, content="B")
+                        ],
                     ),
                 ],
             )

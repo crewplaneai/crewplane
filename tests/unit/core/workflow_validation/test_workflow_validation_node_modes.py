@@ -1,6 +1,8 @@
 import unittest
 
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -22,7 +24,9 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                 WorkflowNode(
                     id="review.parallel",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="review")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="review")
+                    ],
                     audit_rounds=2,
                     providers=[ProviderSpec(provider="gpt4")],
                 )
@@ -39,7 +43,11 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                 WorkflowNode(
                     id="workspace-exports",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="implement")],
+                    prompt_segments=[
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="implement"
+                        )
+                    ],
                     providers=[ProviderSpec(provider="gpt4")],
                 )
             ],
@@ -72,9 +80,13 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                 WorkflowNode(
                     id="review.single",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="review")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="review")
+                    ],
                     audit_rounds=2,
-                    providers=[ProviderSpec(provider="gpt4", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="gpt4", role=ProviderRole.EXECUTOR)
+                    ],
                 )
             ],
         )
@@ -89,11 +101,15 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                 WorkflowNode(
                     id="review.loop",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="review")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="review")
+                    ],
                     audit_rounds=4,
                     providers=[
-                        ProviderSpec(provider="gpt4", role="executor"),
-                        ProviderSpec(provider="gpt4-review", role="reviewer"),
+                        ProviderSpec(provider="gpt4", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(
+                            provider="gpt4-review", role=ProviderRole.REVIEWER
+                        ),
                     ],
                 )
             ],
@@ -119,7 +135,9 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="review-input",
                     mode="input",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="unexpected")
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="unexpected"
+                        )
                     ],
                     source="{{file:.crewplane/inputs/review-findings.md}}",
                     providers=[ProviderSpec(provider="gpt4")],
@@ -169,9 +187,13 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="implement",
                     mode="sequential",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="Use raw findings")
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="Use raw findings"
+                        )
                     ],
-                    providers=[ProviderSpec(provider="gpt4", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="gpt4", role=ProviderRole.EXECUTOR)
+                    ],
                 )
             ],
         )
@@ -186,12 +208,14 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="node.seq",
                     mode="sequential",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="Review this change")
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="Review this change"
+                        )
                     ],
                     continue_on_failure=True,
                     providers=[
-                        ProviderSpec(provider="exec", role="executor"),
-                        ProviderSpec(provider="review", role="reviewer"),
+                        ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                     ],
                 )
             ],
@@ -207,9 +231,13 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="parallel.review",
                     mode="parallel",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="Review this")
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="Review this"
+                        )
                     ],
-                    providers=[ProviderSpec(provider="review", role="reviewer")],
+                    providers=[
+                        ProviderSpec(provider="review", role=ProviderRole.REVIEWER)
+                    ],
                 )
             ],
         )
@@ -225,10 +253,14 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="parallel.prompt.review",
                     mode="parallel",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="Base"),
-                        PromptSegment(role="reviewer", content="Reviewer-only"),
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="Base"),
+                        PromptSegment(
+                            role=PromptSegmentRole.REVIEWER, content="Reviewer-only"
+                        ),
                     ],
-                    providers=[ProviderSpec(provider="exec", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR)
+                    ],
                 )
             ],
         )
@@ -243,12 +275,14 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="review.loop",
                     mode="sequential",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="Review this")
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="Review this"
+                        )
                     ],
                     providers=[
-                        ProviderSpec(provider="exec-1", role="executor"),
-                        ProviderSpec(provider="review-1", role="reviewer"),
-                        ProviderSpec(provider="exec-2", role="executor"),
+                        ProviderSpec(provider="exec-1", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="review-1", role=ProviderRole.REVIEWER),
+                        ProviderSpec(provider="exec-2", role=ProviderRole.EXECUTOR),
                     ],
                 )
             ],
@@ -265,11 +299,13 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="review.loop",
                     mode="sequential",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="Review this")
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="Review this"
+                        )
                     ],
                     providers=[
-                        ProviderSpec(provider="exec-1", role="executor"),
-                        ProviderSpec(provider="exec-2", role="executor"),
+                        ProviderSpec(provider="exec-1", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="exec-2", role=ProviderRole.EXECUTOR),
                     ],
                 )
             ],
@@ -286,11 +322,13 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="review.loop.prompts",
                     mode="sequential",
                     prompt_segments=[
-                        PromptSegment(role="executor", content="Executor only"),
+                        PromptSegment(
+                            role=PromptSegmentRole.EXECUTOR, content="Executor only"
+                        ),
                     ],
                     providers=[
-                        ProviderSpec(provider="exec-1", role="executor"),
-                        ProviderSpec(provider="review-1", role="reviewer"),
+                        ProviderSpec(provider="exec-1", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="review-1", role=ProviderRole.REVIEWER),
                     ],
                 )
             ],
@@ -305,7 +343,9 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
             WorkflowNode(
                 id="node.a",
                 mode="Parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 providers=[ProviderSpec(provider="alpha")],
             )
 
@@ -324,7 +364,9 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                 WorkflowNode(
                     id="node.a",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="run")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                    ],
                     source="{{file:.crewplane/inputs/review-findings.md}}",
                     providers=[ProviderSpec(provider="alpha")],
                 )
@@ -340,16 +382,23 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                 WorkflowNode(
                     id="auth.plan",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="plan")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="plan")
+                    ],
                     providers=[ProviderSpec(provider="gpt4")],
                 ),
                 WorkflowNode(
                     id="summary.final",
                     mode="sequential",
                     prompt_segments=[
-                        PromptSegment(role="shared", content="{{auth.plan.output}}")
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED,
+                            content="{{auth.plan.output}}",
+                        )
                     ],
-                    providers=[ProviderSpec(provider="gpt4", role="executor")],
+                    providers=[
+                        ProviderSpec(provider="gpt4", role=ProviderRole.EXECUTOR)
+                    ],
                 ),
             ],
         )

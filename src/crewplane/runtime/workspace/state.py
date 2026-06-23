@@ -15,6 +15,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
 from .worktree import WorktreeSourceRef
@@ -51,7 +52,7 @@ class WorkspaceStateWriteRequest:
     workflow_signature: str
     task_id: str
     provider: str
-    role_label: str
+    role_label: ProviderRole
     round_num: int
     audit_round_num: int | None
     invoker: JsonObject

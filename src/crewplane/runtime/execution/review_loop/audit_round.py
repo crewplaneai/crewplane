@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crewplane.core.workflow.keywords import ProviderRole
+
 from ..common import (
     execution_console,
     resolve_prompt_with_output_budget_details,
@@ -135,10 +137,10 @@ async def run_review_phase(
             request.runtime_context,
             request.stage,
             request.output,
-            role="reviewer",
+            role=ProviderRole.REVIEWER,
             telemetry=request.telemetry,
             workspace_candidate_context=WorkspaceCandidateSourceContext(
-                role_label="reviewer",
+                role_label=ProviderRole.REVIEWER,
                 round_num=round_num,
                 audit_round_num=request.audit_round_num,
             ),

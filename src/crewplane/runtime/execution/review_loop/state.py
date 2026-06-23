@@ -5,6 +5,7 @@ from pathlib import Path
 
 from crewplane.artifacts import safe_artifact_name
 from crewplane.core.review_contract import REQUIRED_EMPTY_SENTINEL
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..consensus import EvaluatedReviewResult
 from .types import (
@@ -264,7 +265,7 @@ def persist_review_inbox(
 def _status_output_entry(
     node_dir: Path,
     artifact: ExecutorRoundArtifact | ReviewerRoundArtifact,
-    role: str,
+    role: ProviderRole,
 ) -> ReviewLoopStatusOutputEntry:
     return {
         "task_id": artifact.task_id,
@@ -289,11 +290,11 @@ def build_review_loop_status_payload(
         "no_progress_round_count": progress.no_progress_round_count,
         "artifact_drift_warning_count": progress.artifact_drift_warning_count,
         "canonical_executor_outputs": [
-            _status_output_entry(node_dir, artifact, "executor")
+            _status_output_entry(node_dir, artifact, ProviderRole.EXECUTOR)
             for artifact in progress.latest_executor_outputs or []
         ],
         "reviewer_outputs": [
-            _status_output_entry(node_dir, artifact, "reviewer")
+            _status_output_entry(node_dir, artifact, ProviderRole.REVIEWER)
             for artifact in progress.latest_reviewer_outputs
         ],
     }

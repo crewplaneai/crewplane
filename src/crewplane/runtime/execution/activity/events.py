@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from crewplane.architecture.contracts import InvocationWorkspaceContext
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     ExecutionEventContext,
     InvocationEventType,
@@ -35,7 +36,7 @@ INVOCATION_WORKSPACE_STATUSES = {
 class RuntimeEventContext:
     node_id: str | None = None
     provider: str | None = None
-    role: str | None = None
+    role: ProviderRole | None = None
     model: str | None = None
     task_id: str | None = None
     audit_round_num: int | None = None
@@ -131,7 +132,7 @@ class InvocationWorkspaceMetadata:
 class InvocationMetadata:
     node_id: str
     provider: str
-    role: str
+    role: ProviderRole
     model: str | None
     task_id: str
     audit_round_num: int | None
@@ -191,7 +192,7 @@ def emit_workflow_event(
     event_type: WorkflowEventType | NodeEventType | InvocationEventType,
     node_id: str | None = None,
     provider: str | None = None,
-    role: str | None = None,
+    role: ProviderRole | None = None,
     model: str | None = None,
     task_id: str | None = None,
     round_num: int | None = None,

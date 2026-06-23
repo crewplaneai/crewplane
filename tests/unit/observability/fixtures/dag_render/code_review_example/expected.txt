@@ -1,0 +1,5 @@
+▸● review.context           ⏸  codex, claude, gemini
+ │
+ ● review.iterate           ⏸  codex -> claude -> gemini
+ │
+ ● review.summary           ⏸  claude

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import WorkflowNode
 
 from .compile_state import CompileState, PreflightCompileOptions, source_file
@@ -13,7 +14,7 @@ def append_token_catalog(
     state: CompileState,
     occurrence_id: str,
     node: WorkflowNode,
-    target_role: str,
+    target_role: ProviderRole,
     source_role: PromptSegmentRole,
     reference: TemplateReference,
     token_kind: str,

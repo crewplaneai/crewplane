@@ -25,6 +25,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.version import SCHEMA_VERSION
 
@@ -152,7 +153,9 @@ def make_plan(findings_edge: bool = False) -> PreflightExecutionPlan:
     )
 
 
-def make_provider_record(task_id: str, role: str = "executor") -> ProviderRecord:
+def make_provider_record(
+    task_id: str, role: ProviderRole = ProviderRole.EXECUTOR
+) -> ProviderRecord:
     return ProviderRecord(
         provider=task_id,
         role=role,

@@ -10,6 +10,7 @@ from crewplane.artifacts.results.review_loop_status import (
     ReviewLoopStatusError,
     resolve_review_loop_status,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 
 StatusMutator = Callable[[dict[str, object], Path], None]
 
@@ -66,6 +67,8 @@ def test_resolves_valid_status_with_outputs(tmp_path: Path) -> None:
     resolved = resolve_review_loop_status("stage", stage_dir)
 
     assert resolved is not None
+    assert resolved.canonical_executor_outputs[0].role is ProviderRole.EXECUTOR
+    assert resolved.reviewer_outputs[0].role is ProviderRole.REVIEWER
     assert tuple(resolved.selected_output_files) == ("executor", "reviewer")
     assert resolved.selected_output_files["executor"].name == "executor_round2.md"
 

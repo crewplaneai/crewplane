@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     WorkflowNode,
@@ -70,14 +72,18 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
                 WorkflowNode(
                     id="merge",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="merge")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="merge")
+                    ],
                     needs=["root"],
                     providers=[provider("alpha")],
                 ),
                 WorkflowNode(
                     id="root",
                     mode="parallel",
-                    prompt_segments=[PromptSegment(role="shared", content="root")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="root")
+                    ],
                     providers=[provider("alpha")],
                 ),
             ],
@@ -199,7 +205,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
                     run_id="compact-running-preferred",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -214,7 +220,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
                     run_id="compact-running-preferred",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,
@@ -228,7 +234,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
                     run_id="compact-running-preferred",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=2,
@@ -291,7 +297,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
                     run_id="compact-newest-running",
                     node_id="node.a",
                     provider="beta",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="beta_executor_0",
                     round_num=1,
@@ -307,7 +313,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
                     run_id="compact-newest-running",
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     model="m",
                     task_id="alpha_executor_0",
                     round_num=1,

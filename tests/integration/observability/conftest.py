@@ -5,7 +5,7 @@ import io
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import yaml
@@ -24,11 +24,6 @@ from crewplane.observability.types import (
 from crewplane.runtime.execution.workflow import execute_workflow
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
-from tests.integration.observability.dag_render_case_fixtures import (
-    STATUS_CASES,
-    TOPOLOGY_CASES,
-    CaseData,
-)
 
 CONFIG_TEMPLATE_PATH = Path(__file__).with_name("fixtures") / "config.yml"
 
@@ -96,20 +91,6 @@ ALLOWED_CASE_METADATA_KEYS = frozenset(
         "expected_right_fragments",
     }
 )
-
-
-def _case_id(case_data: CaseData) -> str:
-    return str(case_data["case_id"])
-
-
-@pytest.fixture(params=TOPOLOGY_CASES, ids=_case_id)
-def dag_render_topology_case(request: pytest.FixtureRequest) -> CaseData:
-    return cast(CaseData, request.param)
-
-
-@pytest.fixture(params=STATUS_CASES, ids=_case_id)
-def dag_render_status_case(request: pytest.FixtureRequest) -> CaseData:
-    return cast(CaseData, request.param)
 
 
 def _load_case_config(

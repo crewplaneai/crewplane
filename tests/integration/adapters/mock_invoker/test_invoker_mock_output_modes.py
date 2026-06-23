@@ -5,6 +5,7 @@ from pathlib import Path
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.consensus import (
     VERDICT_NO_FINDINGS,
     ParsedReviewResult,
@@ -78,7 +79,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                     node_id="node.echo",
                     task_id="alpha_executor_0",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     round_num=1,
                     findings_enabled=True,
                 ),
@@ -102,7 +103,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 prompt=prompt,
                 output_file=output_file,
                 cwd=(output_file).parent,
-                invocation_context=self._context(role="reviewer"),
+                invocation_context=self._context(role=ProviderRole.REVIEWER),
             )
             text = output_file.read_text(encoding="utf-8")
 
@@ -138,7 +139,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                     node_id="review.context",
                     task_id="alpha_executor_0",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     round_num=1,
                     findings_enabled=True,
                 ),
@@ -166,7 +167,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 prompt="review the repository",
                 output_file=output_file,
                 cwd=(output_file).parent,
-                invocation_context=self._context(role="reviewer"),
+                invocation_context=self._context(role=ProviderRole.REVIEWER),
             )
             text = output_file.read_text(encoding="utf-8")
 
@@ -222,7 +223,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                         node_id="node.fail",
                         task_id="alpha_executor_0",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         round_num=1,
                     ),
                 )
@@ -255,7 +256,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                         node_id="summary.final",
                         task_id="alpha_reviewer_0",
                         provider="alpha",
-                        role="reviewer",
+                        role=ProviderRole.REVIEWER,
                         round_num=2,
                     ),
                 )
@@ -287,7 +288,7 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                         node_id="review.node",
                         task_id="alpha_reviewer_0",
                         provider="alpha",
-                        role="reviewer",
+                        role=ProviderRole.REVIEWER,
                         audit_round_num=2,
                         round_num=1,
                     ),

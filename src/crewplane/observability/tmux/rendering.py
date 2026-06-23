@@ -18,6 +18,29 @@ from crewplane.observability.tmux.selected_invocation import (
 from crewplane.observability.tmux.viewport import viewport_dag_lines
 from crewplane.observability.types import DashboardSnapshot
 
+RIGHT_PANE_TRUNCATION_NOTICE = "... output truncated to fit pane"
+
+
+@dataclass(frozen=True)
+class CompactDashboardRender:
+    left_lines: list[str]
+    right_lines: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class CompactDashboardRenderContext:
+    snapshot: DashboardSnapshot
+    selected_node_id: str | None
+    inspect_mode: bool
+    left_width: int
+    left_height: int
+    right_width: int
+    right_height: int
+    monotonic_now: float
+    quiet_after_seconds: float
+    log_tail_lines: int | None
+    prepared_invocation: PreparedSelectedInvocation | None = None
+
 
 @dataclass(frozen=True)
 class SelectedOutputRenderContext:
@@ -29,6 +52,35 @@ class SelectedOutputRenderContext:
     quiet_after_seconds: float
     monotonic_now: float
     prepared_invocation: PreparedSelectedInvocation | None = None
+
+
+def render_compact_dashboard(
+    context: CompactDashboardRenderContext,
+) -> CompactDashboardRender:
+    left_lines = render_left_dashboard(
+        snapshot=context.snapshot,
+        selected_node_id=context.selected_node_id,
+        width=context.left_width,
+        height=context.left_height,
+        inspect_mode=context.inspect_mode,
+        now=context.monotonic_now,
+    )
+    if context.inspect_mode:
+        return CompactDashboardRender(left_lines=left_lines)
+
+    right_lines = render_selected_output(
+        SelectedOutputRenderContext(
+            nodes=context.snapshot.state.nodes,
+            selected_node_id=context.selected_node_id,
+            width=context.right_width,
+            pane_height=context.right_height,
+            log_tail_lines=context.log_tail_lines,
+            quiet_after_seconds=context.quiet_after_seconds,
+            monotonic_now=context.monotonic_now,
+            prepared_invocation=context.prepared_invocation,
+        )
+    )
+    return CompactDashboardRender(left_lines=left_lines, right_lines=right_lines)
 
 
 def render_left_dashboard(
@@ -93,9 +145,13 @@ def right_pane_title(
 
 def render_selected_output(context: SelectedOutputRenderContext) -> list[str]:
     if context.selected_node_id is None:
-        return _wrap_pane_lines(
-            ["Node Output", "", "No nodes to display."],
+        return _clip_right_pane_lines(
+            _wrap_pane_lines(
+                ["Node Output", "", "No nodes to display."],
+                context.width,
+            ),
             context.width,
+            context.pane_height,
         )
 
     node = context.nodes[context.selected_node_id]
@@ -108,7 +164,7 @@ def render_selected_output(context: SelectedOutputRenderContext) -> list[str]:
     prepared_invocation = context.prepared_invocation
     if prepared_invocation is None:
         lines.extend(_wrap_pane_line(_node_waiting_message(node), context.width))
-        return lines
+        return _clip_right_pane_lines(lines, context.width, context.pane_height)
 
     invocation = prepared_invocation.invocation
     lines.extend(_wrap_pane_lines(_invocation_header_lines(invocation), context.width))
@@ -120,7 +176,7 @@ def render_selected_output(context: SelectedOutputRenderContext) -> list[str]:
                 context.width,
             )
         )
-        return lines
+        return _clip_right_pane_lines(lines, context.width, context.pane_height)
     if prepared_invocation.log_snapshot is None:
         lines.extend(
             _wrap_pane_line(
@@ -128,7 +184,7 @@ def render_selected_output(context: SelectedOutputRenderContext) -> list[str]:
                 context.width,
             )
         )
-        return lines
+        return _clip_right_pane_lines(lines, context.width, context.pane_height)
 
     _append_log_snapshot_lines(
         lines=lines,
@@ -137,7 +193,7 @@ def render_selected_output(context: SelectedOutputRenderContext) -> list[str]:
         presentation_snapshot=prepared_invocation.presentation_snapshot,
         context=context,
     )
-    return lines
+    return _clip_right_pane_lines(lines, context.width, context.pane_height)
 
 
 def _node_waiting_message(node: NodeRuntimeState) -> str:
@@ -325,6 +381,22 @@ def _wrap_pane_line(value: str, width: int) -> list[str]:
 
 def _fit_lines_to_width(lines: list[str], width: int) -> list[str]:
     return [fit_text(line, width) for line in lines]
+
+
+def _clip_right_pane_lines(
+    lines: list[str],
+    width: int,
+    right_height: int,
+) -> list[str]:
+    if right_height <= 0:
+        return []
+    if len(lines) <= right_height:
+        return lines
+
+    notice = fit_text(RIGHT_PANE_TRUNCATION_NOTICE, width)
+    if right_height == 1:
+        return [notice]
+    return [*lines[: right_height - 1], notice]
 
 
 def _selected_dag_row(lines: list[str]) -> int | None:

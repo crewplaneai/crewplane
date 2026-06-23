@@ -8,6 +8,7 @@ from crewplane.artifacts.naming import (
 )
 from crewplane.core.config import Config
 from crewplane.core.token_budget import resolve_token_budget
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import ProviderSpec, WorkflowNode
 
 from .compile_state import (
@@ -111,7 +112,7 @@ def provider_records(
     config: Config,
     runtime_snapshot: RuntimeConfigSnapshot,
 ) -> list[ProviderRecord]:
-    role_indices = {"executor": 0, "reviewer": 0}
+    role_indices = {ProviderRole.EXECUTOR: 0, ProviderRole.REVIEWER: 0}
     records: list[ProviderRecord] = []
     invoker_signature = signature_for_payload(
         runtime_snapshot.invoker.scoped_payload({"execution", "artifact"})
@@ -178,4 +179,4 @@ def resolved_token_budget_payload(
 
 
 def artifact_task_id(provider: ProviderSpec, index: int) -> str:
-    return f"{safe_artifact_name(provider.provider)}_{provider.role}_{index}"
+    return f"{safe_artifact_name(provider.provider)}_{provider.role.value}_{index}"

@@ -1,0 +1,13 @@
+▸●   plan.plan.init           ⏸  codex
+ │
+ ●   plan.plan.iteration      ⏸  copilot -> codex
+ │
+ ●   plan.plan.final          ⏸  copilot
+ ├─┐
+ ● │ implement.implement.build ⏸  codex
+ │ │
+ ● │ implement.implement.review ⏸  copilot -> codex
+ │ │
+ ● │ implement.implement.handoff ⏸  codex
+ ├─┘
+ ●   handoff.final            ⏸  codex

@@ -55,7 +55,7 @@ No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
 - 📁 **Project-Local Config** – Each project gets its own `.crewplane/` directory
 - 📂 **Transparent Artifacts** – Every intermediate step and final result saved to disk for full auditability
 - 📊 **Spend Observability** – Run logs capture CLI capture status, provider token-report status, visible lower-bound estimates, and configured cost confidence summaries
-- ⚡ **Smart Caching** – Workflow-signature idempotency skips identical successful workflow runs automatically
+- ⚡ **Smart Caching** – Workflow-signature idempotency skips identical successes and resumes failed or cancelled runs from validated node boundaries
 - 🧪 **Experimental Workspace Isolation** – Opt-in Git-backed worktrees and writable snapshots can isolate provider source-tree edits in ordinary supported Git repositories
 
 > For a deeper look at the architecture behind these features, see [Documentation index](https://github.com/crewplaneai/crewplane/blob/main/docs/index.md).

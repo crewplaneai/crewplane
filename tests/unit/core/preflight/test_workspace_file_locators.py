@@ -14,7 +14,7 @@ from crewplane.core.preflight import (
 from crewplane.core.preflight.workspace.files import (
     git_reads as workspace_git_file_reads,
 )
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -188,7 +188,9 @@ def test_downstream_worktree_executor_file_locator_can_use_candidate_source(
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="implement")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="implement")
+                ],
             ),
             WorkflowNode(
                 id="fix",
@@ -239,7 +241,9 @@ def test_worktree_executor_file_locator_after_project_root_node_uses_prior_candi
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="implement")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="implement")
+                ],
             ),
             WorkflowNode(
                 id="inspect",
@@ -247,7 +251,9 @@ def test_worktree_executor_file_locator_after_project_root_node_uses_prior_candi
                 needs=["implement"],
                 worktree="none",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="inspect")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="inspect")
+                ],
             ),
             WorkflowNode(
                 id="fix",
@@ -503,7 +509,9 @@ def test_workspace_enabled_input_node_stays_static_when_provider_opts_out(
                 mode="sequential",
                 needs=["requirements"],
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 worktree="none",
             ),
         ],
@@ -543,7 +551,9 @@ def test_workspace_enabled_input_node_uses_workspace_file_locator(
                 mode="sequential",
                 needs=["requirements"],
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
             ),
         ],
     )
@@ -648,7 +658,9 @@ def test_workspace_enabled_allowlisted_absolute_input_source_remains_static(
                 mode="sequential",
                 needs=["requirements"],
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
             ),
         ],
     )
@@ -686,7 +698,9 @@ def test_workspace_dynamic_file_locator_does_not_follow_checkout_symlink(
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
             ),
             WorkflowNode(
                 id="fix",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crewplane.core.workflow.keywords import ProviderRole
+
 from .fields import int_field, nullable_int_field
 from .invocations import (
     ExpectedWorkspaceInvocation,
@@ -130,9 +132,9 @@ def _candidate_source_order(payload: dict[str, object]) -> tuple[int, int] | Non
     audit_round_num = nullable_int_field(payload, "audit_round_num")
     if not audit_round_num.valid:
         return None
-    if payload.get("role") == "reviewer":
+    if payload.get("role") == ProviderRole.REVIEWER:
         return (audit_round_num.value or 0, round_num)
-    if payload.get("role") == "executor" and round_num > 1:
+    if payload.get("role") == ProviderRole.EXECUTOR and round_num > 1:
         return (audit_round_num.value or 0, round_num - 1)
     return None
 

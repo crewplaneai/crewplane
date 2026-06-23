@@ -11,8 +11,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     RenderStream,
+    WorkspaceFileSourceClass,
 )
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.workflow.keywords import ProviderRole
 
 from .workspace_files import (
     ResolvedWorkspaceFile,
@@ -45,7 +47,7 @@ class ResolvedPrompt:
 def assemble_prompt(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
-    target_role: str,
+    target_role: ProviderRole,
     output: ArtifactStorePort,
     secret_context: SecretContext,
     workspace_candidate_source: bool = False,
@@ -65,7 +67,7 @@ def assemble_prompt(
 def assemble_prompt_details(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
-    target_role: str,
+    target_role: ProviderRole,
     output: ArtifactStorePort,
     secret_context: SecretContext,
     workspace_candidate_source: bool = False,
@@ -92,7 +94,7 @@ def assemble_prompt_details(
 def inspect_runtime_locators(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
-    target_role: str,
+    target_role: ProviderRole,
     output: ArtifactStorePort,
 ) -> tuple[RuntimeLocatorInspection, ...]:
     stream = _find_stream(plan, node, target_role)
@@ -119,7 +121,7 @@ def inspect_runtime_locators(
 def stream_has_runtime_dynamic_workspace_locator(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
-    target_role: str,
+    target_role: ProviderRole,
 ) -> bool:
     stream = _find_stream(plan, node, target_role)
     locator_ids = {
@@ -130,7 +132,8 @@ def stream_has_runtime_dynamic_workspace_locator(
         and isinstance(fragment.locator.get("locator_id"), str)
     }
     return any(
-        locator.locator_id in locator_ids and locator.source_class == "runtime_dynamic"
+        locator.locator_id in locator_ids
+        and locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
         for locator in plan.workspace_file_locators
     )
 
@@ -138,7 +141,7 @@ def stream_has_runtime_dynamic_workspace_locator(
 def _find_stream(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
-    target_role: str,
+    target_role: ProviderRole,
 ) -> RenderStream:
     if node.render_plan_id is None:
         raise ValueError(f"Node '{node.id}' does not have a render plan.")

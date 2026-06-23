@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 
 from crewplane.artifacts import OutputManager
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -115,7 +117,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                         run_id=output.run_id,
                         node_id="node.a",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         model="alpha-model",
                         task_id="alpha_executor_0",
                         round_num=1,
@@ -144,7 +146,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                         run_id=output.run_id,
                         node_id="node.a",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         model="alpha-model",
                         task_id="alpha_executor_0",
                         round_num=1,
@@ -427,7 +429,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     run_id=output.run_id,
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     task_id="alpha_executor_0",
                     round_num=1,
                 )
@@ -439,7 +441,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     run_id=output.run_id,
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     task_id="alpha_executor_0",
                     round_num=1,
                     status="succeeded",
@@ -647,7 +649,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     run_id=output.run_id,
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     task_id="alpha_executor_0",
                 )
             )
@@ -658,7 +660,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     run_id=output.run_id,
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     task_id="alpha_executor_0",
                     status="running",
                     workspace_kind="snapshot",
@@ -763,7 +765,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     run_id=output.run_id,
                     node_id="node.a",
                     provider="alpha",
-                    role="executor",
+                    role=ProviderRole.EXECUTOR,
                     task_id="alpha_executor_0",
                     attempt_count=1,
                     cli_captured=True,
@@ -837,7 +839,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                         run_id=output.run_id,
                         node_id="node.a",
                         provider="alpha",
-                        role="executor",
+                        role=ProviderRole.EXECUTOR,
                         task_id=f"alpha_task_{index:04d}",
                         attempt_count=1,
                         cli_captured=True,
@@ -970,10 +972,12 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 WorkflowNode(
                     id="review.iterate",
                     mode="sequential",
-                    prompt_segments=[PromptSegment(role="shared", content="Review")],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="Review")
+                    ],
                     providers=[
-                        ProviderSpec(provider="codex", role="executor"),
-                        ProviderSpec(provider="claude", role="reviewer"),
+                        ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="claude", role=ProviderRole.REVIEWER),
                     ],
                 )
             ],
@@ -1029,7 +1033,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                             run_id=output.run_id,
                             node_id="review.iterate",
                             provider="claude",
-                            role="reviewer",
+                            role=ProviderRole.REVIEWER,
                             model="claude-model",
                             task_id="claude_reviewer_0",
                             audit_round_num=audit_round_num,
@@ -1045,7 +1049,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                             run_id=output.run_id,
                             node_id="review.iterate",
                             provider="claude",
-                            role="reviewer",
+                            role=ProviderRole.REVIEWER,
                             model="claude-model",
                             task_id="claude_reviewer_0",
                             audit_round_num=audit_round_num,

@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -115,7 +117,9 @@ def test_runtime_log_reducer_preserves_status_and_filters_recent_events() -> Non
             WorkflowNode(
                 id="node.a",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 providers=[ProviderSpec(provider="alpha")],
             )
         ],
@@ -178,7 +182,7 @@ def test_invocation_event_records_log_presentation_context() -> None:
             run_id="run-1",
             node_id="node.a",
             provider="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             task_id="alpha_executor_0",
             log_presentation_format="json_lines",
             log_presentation_profile="mock",
@@ -201,7 +205,7 @@ def test_workspace_event_records_workspace_payload() -> None:
             run_id="run-1",
             node_id="node.a",
             provider="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             task_id="alpha_executor_0",
         ),
         payload=WorkspaceEventPayload(
@@ -241,7 +245,7 @@ def test_invocation_event_omits_workspace_payload_fields() -> None:
             run_id="run-1",
             node_id="node.a",
             provider="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             task_id="alpha_executor_0",
         ),
     )
@@ -259,7 +263,9 @@ def test_reducer_does_not_clear_log_presentation_context() -> None:
             WorkflowNode(
                 id="node.a",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 providers=[ProviderSpec(provider="alpha")],
             )
         ],
@@ -277,7 +283,7 @@ def test_reducer_does_not_clear_log_presentation_context() -> None:
                 run_id="run-1",
                 node_id="node.a",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha_executor_0",
                 log_presentation_format="json_lines",
                 log_presentation_profile="mock",
@@ -295,7 +301,7 @@ def test_reducer_does_not_clear_log_presentation_context() -> None:
                 run_id="run-1",
                 node_id="node.a",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 task_id="alpha_executor_0",
             ),
             duration_ms=1,

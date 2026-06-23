@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.state import (
     WorkspaceStateMaterializationRequest,
     WorkspaceStateRetention,
@@ -44,7 +45,7 @@ def test_running_workspace_state_records_node_source_bundle_descriptor(
         workflow_signature=plan.workflow_signature,
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
         invoker={"launch_mode": "mock_no_child_process"},
@@ -124,7 +125,7 @@ def test_running_workspace_state_records_source_chain(
         workflow_signature=plan.workflow_signature,
         task_id="alpha",
         provider="alpha",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         round_num=1,
         audit_round_num=None,
         invoker={"launch_mode": "mock_no_child_process"},

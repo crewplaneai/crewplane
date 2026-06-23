@@ -13,7 +13,7 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
 )
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -86,7 +86,9 @@ def workspace_workflow(prompt: str = "run") -> WorkflowPlan:
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content=prompt)],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content=prompt)
+                ],
             )
         ],
     )

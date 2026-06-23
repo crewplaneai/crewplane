@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import stat
 from pathlib import Path
 from typing import Any
 
@@ -10,12 +9,28 @@ from crewplane.artifacts.generated_files.catalog import (
 )
 from crewplane.runtime.workspace import PreparedWorkspace
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
-from crewplane.runtime.workspace.snapshot import snapshot_entries
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 
 from ..runtime_context import DeferredAsyncCleanupRegistry
 from ..workspace_files import rendered_workspace_file_descriptor
+from .generated_file_changes import (
+    GeneratedFileChangeBaseline,
+    changed_generated_file_paths,
+    resolved_real_directory,
+)
 from .types import ProviderCallRequest
+
+__all__ = (
+    "GeneratedFileChangeBaseline",
+    "capture_generated_file_change_baseline",
+    "changed_generated_file_paths",
+    "finalize_successful_workspace",
+    "record_generated_file_workspace",
+    "rendered_workspace_file_descriptors",
+    "snapshot_invocation_generated_files",
+    "snapshot_invocation_generated_files_async",
+    "validated_generated_file_workspace_root",
+)
 
 WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS = 0.5
 
@@ -41,18 +56,35 @@ def record_generated_file_workspace(
     prepared_workspace: PreparedWorkspace,
     workspace_root: Path | None,
 ) -> None:
-    if prepared_workspace.workspace_path is None:
-        return
     cleanup = (
         prepared_workspace.cleanup_after_success
-        if prepared_workspace.cleanup_on_success
+        if prepared_workspace.workspace_path is not None
+        and prepared_workspace.cleanup_on_success
         else None
     )
+    if workspace_root is None and cleanup is None:
+        return
     request.runtime_context.generated_file_workspaces.record(
         request.node_id,
         request.output_file,
         workspace_root,
         cleanup,
+    )
+
+
+def capture_generated_file_change_baseline(
+    prepared_workspace: PreparedWorkspace,
+) -> GeneratedFileChangeBaseline | None:
+    try:
+        invocation_root = resolved_real_directory(
+            prepared_workspace.cwd,
+            "Invocation root",
+        )
+    except RuntimeError:
+        return None
+    return GeneratedFileChangeBaseline.capture(
+        invocation_root,
+        filesystem_fallback_enabled=prepared_workspace.workspace_path is not None,
     )
 
 
@@ -211,12 +243,17 @@ async def _mark_workspace_cancelled_after_finalization_failure(
 async def snapshot_invocation_generated_files_async(
     request: ProviderCallRequest,
     prepared_workspace: PreparedWorkspace,
+    change_baseline: GeneratedFileChangeBaseline | None = None,
 ) -> Path | None:
+    snapshot_args = (
+        (request, prepared_workspace, change_baseline)
+        if change_baseline is not None
+        else (request, prepared_workspace)
+    )
     snapshot_task = asyncio.create_task(
         asyncio.to_thread(
             snapshot_invocation_generated_files,
-            request,
-            prepared_workspace,
+            *snapshot_args,
         )
     )
     try:
@@ -255,47 +292,23 @@ async def _await_workspace_thread_task(task: asyncio.Task[Any]) -> None:
 def snapshot_invocation_generated_files(
     request: ProviderCallRequest,
     prepared_workspace: PreparedWorkspace,
+    change_baseline: GeneratedFileChangeBaseline | None = None,
 ) -> Path | None:
     workspace_root = validated_generated_file_workspace_root(prepared_workspace)
+    candidate_files = (
+        change_baseline.candidate_files() if change_baseline is not None else None
+    )
     if workspace_root is None:
-        return None
+        try:
+            workspace_root = resolved_real_directory(
+                prepared_workspace.cwd, "Workspace cwd"
+            )
+        except RuntimeError:
+            return None
     return snapshot_generated_file_workspace(
         request.output_file,
         workspace_root,
-        changed_generated_file_paths(prepared_workspace, workspace_root),
-    )
-
-
-def changed_generated_file_paths(
-    prepared_workspace: PreparedWorkspace,
-    workspace_root: Path,
-) -> set[str]:
-    workspace = prepared_workspace.invocation_context.workspace
-    if workspace is None or workspace.checkout_root is None:
-        return set()
-    checkout_root = workspace.checkout_root
-    changed_paths = changed_checkout_paths(prepared_workspace, checkout_root)
-    return _paths_relative_to_workspace_root(
-        changed_paths,
-        checkout_root,
-        workspace_root,
-    )
-
-
-def changed_checkout_paths(
-    prepared_workspace: PreparedWorkspace,
-    checkout_root: Path,
-) -> tuple[str, ...]:
-    if prepared_workspace.workspace_kind not in {"snapshot", "worktree"}:
-        return ()
-    current_entries = snapshot_entries(checkout_root)
-    initial_entries = prepared_workspace.initial_snapshot_entries or {}
-    return tuple(
-        sorted(
-            path
-            for path in set(initial_entries) | set(current_entries)
-            if initial_entries.get(path) != current_entries.get(path)
-        )
+        candidate_files=candidate_files,
     )
 
 
@@ -305,42 +318,11 @@ def validated_generated_file_workspace_root(
     workspace_path = prepared_workspace.workspace_path
     if workspace_path is None:
         return None
-    workspace_root = _resolved_real_directory(workspace_path, "Workspace root")
-    cwd = _resolved_real_directory(prepared_workspace.cwd, "Workspace cwd")
+    workspace_root = resolved_real_directory(workspace_path, "Workspace root")
+    cwd = resolved_real_directory(prepared_workspace.cwd, "Workspace cwd")
     if not cwd.is_relative_to(workspace_root):
         raise RuntimeError(
             "Workspace cwd is outside the managed workspace: "
             f"{prepared_workspace.cwd.as_posix()}"
         )
     return cwd
-
-
-def _paths_relative_to_workspace_root(
-    changed_paths: tuple[str, ...],
-    checkout_root: Path,
-    workspace_root: Path,
-) -> set[str]:
-    relative_paths: set[str] = set()
-    resolved_workspace_root = workspace_root.resolve(strict=True)
-    for changed_path in changed_paths:
-        candidate = checkout_root.joinpath(*Path(changed_path).parts)
-        try:
-            relative_path = candidate.resolve(strict=False).relative_to(
-                resolved_workspace_root
-            )
-        except (OSError, ValueError):
-            continue
-        if not relative_path.parts:
-            continue
-        relative_paths.add(relative_path.as_posix())
-    return relative_paths
-
-
-def _resolved_real_directory(path: Path, label: str) -> Path:
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError as exc:
-        raise RuntimeError(f"{label} is missing: {path.as_posix()}") from exc
-    if not stat.S_ISDIR(mode):
-        raise RuntimeError(f"{label} is not a real directory: {path.as_posix()}")
-    return path.resolve(strict=True)

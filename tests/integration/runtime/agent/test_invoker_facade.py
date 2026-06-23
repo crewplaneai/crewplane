@@ -9,6 +9,7 @@ from crewplane.adapters.invokers.cli_invoker import (
 )
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invocation.command import run_command_once
 from crewplane.runtime.agent.invoker import (
     PlannedAgentInvoker,
@@ -74,7 +75,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
             )
 
             with patch(

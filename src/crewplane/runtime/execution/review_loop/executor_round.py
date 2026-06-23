@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crewplane.core.workflow.keywords import ProviderRole
+
 from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details
 from ..workspace_files import WorkspaceCandidateSourceContext
 from .drift import run_provider_call_with_drift_guard
@@ -33,11 +35,11 @@ async def run_executor_round(
             request.runtime_context,
             request.node,
             request.output,
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             telemetry=request.telemetry,
             workspace_candidate_source=True,
             workspace_candidate_context=WorkspaceCandidateSourceContext(
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 round_num=request.round_num,
                 audit_round_num=request.audit_round_num,
             ),
@@ -58,7 +60,7 @@ async def run_executor_round(
                 request.output,
                 request.node,
                 task_id,
-                "executor",
+                ProviderRole.EXECUTOR,
                 request.audit_round_num,
                 request.round_num,
             )
@@ -77,7 +79,7 @@ async def run_executor_round(
                 task_id=task_id,
                 prompt=executor_prompt,
                 output_file=output_file,
-                role_label="executor",
+                role_label=ProviderRole.EXECUTOR,
                 findings_enabled=request.node.findings,
                 allowed_paths=allowed_paths,
                 display=ProviderCallDisplay(

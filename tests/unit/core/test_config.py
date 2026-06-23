@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KIND_VALUES
 from crewplane.core.config import (
     DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
     DEFAULT_INVOCATION_TIMEOUT_SECONDS,
@@ -83,23 +84,30 @@ class ConfigTests(unittest.TestCase):
         cmd.append("mutated")
         self.assertEqual(config.cli_cmd, ["echo"])
 
-    def test_agent_config_accepts_provider_kind(self) -> None:
-        config = AgentConfig(
-            cli_cmd=["echo"],
-            default_model="test-model",
-            provider_kind="gemini",
-        )
-        self.assertEqual(config.provider_kind, "gemini")
+    def test_agent_config_accepts_every_supported_provider_kind(self) -> None:
+        for provider_kind in SUPPORTED_PROVIDER_KIND_VALUES:
+            with self.subTest(provider_kind=provider_kind):
+                config = AgentConfig(
+                    cli_cmd=["echo"],
+                    default_model="test-model",
+                    provider_kind=provider_kind,
+                )
 
-    def test_agent_config_normalizes_provider_kind_before_literal_validation(
+                self.assertEqual(config.provider_kind, provider_kind)
+                self.assertEqual(
+                    config.model_dump(mode="json")["provider_kind"],
+                    provider_kind,
+                )
+
+    def test_agent_config_rejects_mixed_case_provider_kind(
         self,
     ) -> None:
-        config = AgentConfig(
-            cli_cmd=["echo"],
-            default_model="test-model",
-            provider_kind=" Gemini ",
-        )
-        self.assertEqual(config.provider_kind, "gemini")
+        with self.assertRaisesRegex(ValueError, "provider_kind"):
+            AgentConfig(
+                cli_cmd=["echo"],
+                default_model="test-model",
+                provider_kind=" Gemini ",
+            )
 
     def test_agent_config_rejects_invalid_provider_kind(self) -> None:
         with self.assertRaisesRegex(ValueError, "provider_kind"):

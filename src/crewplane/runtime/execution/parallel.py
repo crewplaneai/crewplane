@@ -9,6 +9,7 @@ from crewplane.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError
 
 from .common import (
@@ -38,7 +39,7 @@ def _build_parallel_invocations(
 ) -> list[ParallelInvocation]:
     invocations: list[ParallelInvocation] = []
     for provider in node.provider_records:
-        if provider.role != "executor":
+        if provider.role != ProviderRole.EXECUTOR:
             raise ValueError(
                 f"Parallel node '{node.id}' does not allow reviewer roles."
             )
@@ -86,7 +87,7 @@ async def _run_parallel_invocations(
             round_num=1,
             prompt=invocation.prompt,
             output_file=invocation.output_file,
-            role_label="executor",
+            role_label=ProviderRole.EXECUTOR,
             invoker=invoker,
             telemetry=telemetry,
             findings_enabled=node.findings,
@@ -240,7 +241,7 @@ async def execute_parallel_stage(
         runtime_context,
         stage,
         output,
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         telemetry=telemetry,
     )
     invocations = _build_parallel_invocations(

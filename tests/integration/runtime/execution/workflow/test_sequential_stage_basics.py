@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 from crewplane.artifacts import OutputManager, safe_artifact_name
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -52,9 +54,13 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="single.provider.node",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 depth=3,
-                providers=[ProviderSpec(provider="solo/provider", role="executor")],
+                providers=[
+                    ProviderSpec(provider="solo/provider", role=ProviderRole.EXECUTOR)
+                ],
             )
             invoker = MockAgentInvoker(outputs=["one", "two", "three"])
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -88,9 +94,11 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="single.provider.rerender",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 depth=3,
-                providers=[ProviderSpec(provider="exec", role="executor")],
+                providers=[ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR)],
             )
             invoker = MockAgentInvoker(outputs=["one", "two", "three"])
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -132,11 +140,13 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -190,14 +200,20 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 id="review.node.role.scoped",
                 mode="sequential",
                 prompt_segments=[
-                    PromptSegment(role="shared", content="Shared context.\n"),
-                    PromptSegment(role="executor", content="Executor delta.\n"),
-                    PromptSegment(role="reviewer", content="Reviewer delta.\n"),
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED, content="Shared context.\n"
+                    ),
+                    PromptSegment(
+                        role=PromptSegmentRole.EXECUTOR, content="Executor delta.\n"
+                    ),
+                    PromptSegment(
+                        role=PromptSegmentRole.REVIEWER, content="Reviewer delta.\n"
+                    ),
                 ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -240,7 +256,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                         role="shared", content="{{env:EMPTY_EXECUTOR_PROMPT}}"
                     )
                 ],
-                providers=[ProviderSpec(provider="exec", role="executor")],
+                providers=[ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR)],
             )
             invoker = MockAgentInvoker(outputs=["unused"])
             output = OutputManager("workflow", base_dir=tmp_path)
@@ -277,15 +293,19 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 id="review.loop.empty.reviewer.prompt",
                 mode="sequential",
                 prompt_segments=[
-                    PromptSegment(role="executor", content="Executor instructions."),
                     PromptSegment(
-                        role="reviewer", content="{{env:EMPTY_REVIEWER_PROMPT}}"
+                        role=PromptSegmentRole.EXECUTOR,
+                        content="Executor instructions.",
+                    ),
+                    PromptSegment(
+                        role=ProviderRole.REVIEWER,
+                        content="{{env:EMPTY_REVIEWER_PROMPT}}",
                     ),
                 ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(outputs=["unused"])
@@ -324,12 +344,14 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.multi.executor",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=1,
                 providers=[
-                    ProviderSpec(provider="exec-1", role="executor"),
-                    ProviderSpec(provider="exec-2", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec-1", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="exec-2", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -384,11 +406,13 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.qualified.lgtm",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 depth=3,
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = MockAgentInvoker(
@@ -445,11 +469,13 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.parallel.reviewers",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review-a", role="reviewer"),
-                    ProviderSpec(provider="review-b", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review-a", role=ProviderRole.REVIEWER),
+                    ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = ParallelReviewerTimingInvoker(reviewer_delay=0.1)
@@ -486,11 +512,13 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.parallel.metadata",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review-a", role="reviewer"),
-                    ProviderSpec(provider="review-b", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review-a", role=ProviderRole.REVIEWER),
+                    ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = TimedTaskOutputInvoker(
@@ -567,11 +595,13 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             node = WorkflowNode(
                 id="review.node.reviewer.log.failure",
                 mode="sequential",
-                prompt_segments=[PromptSegment(role="shared", content="Review this.")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
                 providers=[
-                    ProviderSpec(provider="exec", role="executor"),
-                    ProviderSpec(provider="review-a", role="reviewer"),
-                    ProviderSpec(provider="review-b", role="reviewer"),
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review-a", role=ProviderRole.REVIEWER),
+                    ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
                 ],
             )
             invoker = TimedTaskOutputInvoker(

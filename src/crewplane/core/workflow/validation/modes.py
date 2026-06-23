@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.diagnostics import WorkflowValidationDiagnostic
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     INPUT_NODE_CONTRACT_RULES,
     WorkflowNode,
@@ -66,10 +67,17 @@ def _parallel_node_diagnostics(
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
     diagnostics: list[WorkflowValidationDiagnostic] = []
     diagnostics.extend(_provider_presence_diagnostics(node, "Parallel"))
-    diagnostics.extend(_prompt_segment_role_diagnostics(node, {"shared", "executor"}))
-    diagnostics.extend(_prompt_presence_diagnostics(node, "executor"))
+    diagnostics.extend(
+        _prompt_segment_role_diagnostics(
+            node,
+            {PromptSegmentRole.SHARED, PromptSegmentRole.EXECUTOR},
+        )
+    )
+    diagnostics.extend(_prompt_presence_diagnostics(node, PromptSegmentRole.EXECUTOR))
     reviewer_providers = [
-        provider.provider for provider in node.providers if provider.role == "reviewer"
+        provider.provider
+        for provider in node.providers
+        if provider.role == ProviderRole.REVIEWER
     ]
     if reviewer_providers:
         provider_list = ", ".join(reviewer_providers)
@@ -132,11 +140,15 @@ def _sequential_node_diagnostics(
     diagnostics.extend(_provider_presence_diagnostics(node, "Sequential"))
     allowed_roles: set[PromptSegmentRole]
     if len(node.providers) == 1:
-        allowed_roles = {"shared", "executor"}
+        allowed_roles = {PromptSegmentRole.SHARED, PromptSegmentRole.EXECUTOR}
     else:
-        allowed_roles = {"shared", "executor", "reviewer"}
+        allowed_roles = {
+            PromptSegmentRole.SHARED,
+            PromptSegmentRole.EXECUTOR,
+            PromptSegmentRole.REVIEWER,
+        }
     diagnostics.extend(_prompt_segment_role_diagnostics(node, allowed_roles))
-    diagnostics.extend(_prompt_presence_diagnostics(node, "executor"))
+    diagnostics.extend(_prompt_presence_diagnostics(node, PromptSegmentRole.EXECUTOR))
     if node.audit_rounds is not None and node.audit_rounds <= 0:
         diagnostics.append(
             _structure_diagnostic(
@@ -163,7 +175,9 @@ def _sequential_node_diagnostics(
 
     diagnostics.extend(_sequential_provider_role_diagnostics(node))
     if len(node.providers) > 1:
-        diagnostics.extend(_prompt_presence_diagnostics(node, "reviewer"))
+        diagnostics.extend(
+            _prompt_presence_diagnostics(node, PromptSegmentRole.REVIEWER)
+        )
     return tuple(diagnostics)
 
 
@@ -190,12 +204,13 @@ def _single_sequential_provider_role_diagnostics(
             )
         )
     role = node.providers[0].role
-    if role == "executor":
+    if role == ProviderRole.EXECUTOR:
         return tuple(diagnostics)
     diagnostics.append(
         _structure_diagnostic(
             f"Sequential node '{node.id}' has a single provider but role is "
-            f"'{role}'. Role must be 'executor' for single-provider nodes.",
+            f"'{role}'. Role must be '{ProviderRole.EXECUTOR.value}' for "
+            "single-provider nodes.",
             node.id,
         )
     )
@@ -206,7 +221,7 @@ def _multi_sequential_provider_role_diagnostics(
     node: WorkflowNode,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
     diagnostics: list[WorkflowValidationDiagnostic] = []
-    if node.providers[0].role != "executor":
+    if node.providers[0].role != ProviderRole.EXECUTOR:
         diagnostics.append(
             _structure_diagnostic(
                 f"Sequential node '{node.id}' must start with an executor provider.",
@@ -216,7 +231,7 @@ def _multi_sequential_provider_role_diagnostics(
 
     reviewer_segment_started = False
     for provider in node.providers:
-        if provider.role == "reviewer":
+        if provider.role == ProviderRole.REVIEWER:
             reviewer_segment_started = True
             continue
         if reviewer_segment_started:
@@ -229,7 +244,7 @@ def _multi_sequential_provider_role_diagnostics(
                 )
             )
             break
-    if node.providers[-1].role != "reviewer":
+    if node.providers[-1].role != ProviderRole.REVIEWER:
         diagnostics.append(
             _structure_diagnostic(
                 f"Sequential node '{node.id}' must end with a reviewer provider.",

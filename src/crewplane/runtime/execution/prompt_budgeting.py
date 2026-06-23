@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.workflow.keywords import ProviderRole
 
 from .activity.events import RuntimeEventContext, emit_runtime_log
 from .activity.telemetry import ExecutionTelemetry
@@ -51,7 +52,7 @@ def resolve_prompt_with_output_budget(
     runtime_context: CompiledRuntimeContext,
     node: PreflightExecutionNode,
     output: ArtifactStorePort,
-    role: str,
+    role: ProviderRole,
     telemetry: ExecutionTelemetry | None,
     workspace_candidate_source: bool = False,
     workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
@@ -71,7 +72,7 @@ def resolve_prompt_with_output_budget_details(
     runtime_context: CompiledRuntimeContext,
     node: PreflightExecutionNode,
     output: ArtifactStorePort,
-    role: str,
+    role: ProviderRole,
     telemetry: ExecutionTelemetry | None,
     workspace_candidate_source: bool = False,
     workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,

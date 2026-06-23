@@ -12,6 +12,8 @@ from pydantic import (
 from yaml.constructor import ConstructorError
 
 from crewplane.architecture.contracts import (
+    SUPPORTED_PROVIDER_KIND_VALUE_SET,
+    SUPPORTED_PROVIDER_KIND_VALUES,
     JsonObject,
     PromptTransport,
     ProviderKind,
@@ -29,15 +31,8 @@ from .workflow.keywords import (
 from .workspace.settings import WorkspaceSettings
 from .yaml_loader import load_yaml_unique
 
-ALLOWED_PROVIDER_KINDS: Final = (
-    "claude",
-    "codex",
-    "copilot",
-    "gemini",
-    "kilo",
-    "generic",
-)
-ALLOWED_PROVIDER_KIND_SET: Final = set(ALLOWED_PROVIDER_KINDS)
+ALLOWED_PROVIDER_KINDS: Final = SUPPORTED_PROVIDER_KIND_VALUES
+ALLOWED_PROVIDER_KIND_SET: Final = SUPPORTED_PROVIDER_KIND_VALUE_SET
 ALLOWED_PROMPT_TRANSPORTS: Final = ("stdin", "argv")
 ALLOWED_PROMPT_TRANSPORT_SET: Final = set(ALLOWED_PROMPT_TRANSPORTS)
 DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS: Final = 5.0
@@ -115,7 +110,7 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cli_cmd: list[str]
-    provider_kind: ProviderKind = "generic"
+    provider_kind: ProviderKind = ProviderKind.GENERIC
     default_model: str | None = None
 
     model_arg: str | None = "--model"
@@ -151,12 +146,11 @@ class AgentConfig(BaseModel):
     def _validate_provider_kind(cls, value: object) -> object:
         if not isinstance(value, str):
             return value
-        normalized = value.strip().lower()
-        if normalized not in ALLOWED_PROVIDER_KIND_SET:
+        if value not in ALLOWED_PROVIDER_KIND_SET:
             raise ValueError(
                 f"provider_kind must be one of: {', '.join(ALLOWED_PROVIDER_KINDS)}"
             )
-        return normalized
+        return value
 
     @field_validator("prompt_transport", mode="before")
     @classmethod

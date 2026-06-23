@@ -20,7 +20,7 @@ from crewplane.core.preflight import (
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -60,7 +60,9 @@ def _literal_workflow() -> WorkflowPlan:
                 id="build",
                 mode="sequential",
                 providers=[ProviderSpec(provider="mock")],
-                prompt_segments=[PromptSegment(role="shared", content="hello")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="hello")
+                ],
             )
         ],
     )
@@ -244,7 +246,9 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
                 id="build",
                 mode="sequential",
                 providers=[ProviderSpec(provider="mock")],
-                prompt_segments=[PromptSegment(role="shared", content="build")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="build")
+                ],
             ),
             WorkflowNode(
                 id="review",
@@ -252,7 +256,9 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
                 needs=["build"],
                 providers=[ProviderSpec(provider="mock")],
                 prompt_segments=[
-                    PromptSegment(role="shared", content="Review {{build.output}}")
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED, content="Review {{build.output}}"
+                    )
                 ],
             ),
         ],

@@ -12,6 +12,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import ExecutionEvent
 from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
@@ -39,7 +40,7 @@ def _provider_record(
     )
     return ProviderRecord(
         provider=provider,
-        role="executor",
+        role=ProviderRole.EXECUTOR,
         model=model,
         task_id=f"{provider}_executor_0",
         agent_config_key=selected_key,
@@ -396,7 +397,7 @@ def test_failure_telemetry_error_does_not_mask_provider_error(
         round_num=1,
         prompt="prompt",
         output_file=node_dir / "alpha_executor_0_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=_FailingInvoker(),
         telemetry=ExecutionTelemetry(
             workflow_name="workflow",
@@ -455,7 +456,7 @@ def test_provider_invocation_uses_compiled_provider_record_model(
         round_num=1,
         prompt="prompt",
         output_file=node_dir / "alpha_executor_0_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=invoker,
         telemetry=None,
     )
@@ -490,7 +491,7 @@ def test_provider_invocation_uses_compiled_agent_config_key(
         round_num=1,
         prompt="prompt",
         output_file=node_dir / "display_provider_executor_0_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=invoker,
         telemetry=None,
     )
@@ -520,7 +521,7 @@ def test_provider_invocation_rejects_unsigned_agent_config_drift(
         round_num=1,
         prompt="prompt",
         output_file=node_dir / "alpha_executor_0_round1.md",
-        role_label="executor",
+        role_label=ProviderRole.EXECUTOR,
         invoker=_RecordingInvoker(),
         telemetry=None,
     )

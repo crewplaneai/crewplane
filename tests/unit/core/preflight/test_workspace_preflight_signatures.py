@@ -16,6 +16,7 @@ from crewplane.core.preflight.runtime_config import (
     RuntimeWorkspaceSettingsSnapshot,
     workspace_signature_payload,
 )
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.composition.models import WorkflowSourceRecord
 from crewplane.core.workflow.models import (
     PromptSegment,
@@ -166,7 +167,9 @@ def test_worktree_none_excludes_workspace_settings_from_signature(
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
                 worktree="none",
             )
         ],
@@ -351,7 +354,9 @@ def branch_export_workflow(
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
             )
         ],
     )
@@ -366,7 +371,9 @@ def setup_workflow() -> WorkflowPlan:
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
             )
         ],
     )
@@ -380,7 +387,9 @@ def project_root_workflow() -> WorkflowPlan:
                 id="implement",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content="run")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
             )
         ],
     )

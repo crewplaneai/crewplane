@@ -44,7 +44,7 @@ class ProviderSpec(BaseModel):
 
     provider: str
     model: str | None = None
-    role: ProviderRole = "executor"
+    role: ProviderRole = ProviderRole.EXECUTOR
 
     @field_validator("provider", mode="before")
     @classmethod
@@ -188,7 +188,7 @@ def workflow_provider_payload_dict(provider: ProviderSpec) -> WorkflowProviderPa
     provider_payload: WorkflowProviderPayload = {"provider": provider.provider}
     if provider.model is not None:
         provider_payload["model"] = provider.model
-    if provider.role != "executor":
+    if provider.role != ProviderRole.EXECUTOR:
         provider_payload["role"] = provider.role
     return provider_payload
 

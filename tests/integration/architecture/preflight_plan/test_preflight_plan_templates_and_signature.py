@@ -28,7 +28,7 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -68,7 +68,9 @@ def _literal_workflow() -> WorkflowPlan:
                 id="build",
                 mode="sequential",
                 providers=[ProviderSpec(provider="mock")],
-                prompt_segments=[PromptSegment(role="shared", content="hello")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="hello")
+                ],
             )
         ],
     )
@@ -161,7 +163,9 @@ def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> Non
                 mode="sequential",
                 providers=[ProviderSpec(provider="mock")],
                 prompt_segments=[
-                    PromptSegment(role="shared", content="{{file:payload.bin}}")
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED, content="{{file:payload.bin}}"
+                    )
                 ],
             )
         ],

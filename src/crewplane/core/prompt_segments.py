@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from typing import Literal, TypedDict, get_args
+from enum import StrEnum
+from typing import TypedDict
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from .workflow.keywords import validate_exact_keyword
+from .workflow.keywords import ProviderRole, validate_exact_keyword
 
-PromptSegmentRole = Literal["shared", "executor", "reviewer"]
 
-ALLOWED_PROMPT_SEGMENT_ROLES = get_args(PromptSegmentRole)
+class PromptSegmentRole(StrEnum):
+    SHARED = "shared"
+    EXECUTOR = ProviderRole.EXECUTOR.value
+    REVIEWER = ProviderRole.REVIEWER.value
+
+
+ALLOWED_PROMPT_SEGMENT_ROLES = tuple(role.value for role in PromptSegmentRole)
 ALLOWED_PROMPT_SEGMENT_ROLE_SET = frozenset(ALLOWED_PROMPT_SEGMENT_ROLES)
 
 
@@ -41,6 +47,9 @@ def prompt_segment_payload_dict(segment: PromptSegment) -> PromptSegmentPayload:
 def render_prompt_segments(
     segments: list[PromptSegment], role: PromptSegmentRole
 ) -> str:
+    selected_role = PromptSegmentRole(role)
     return "".join(
-        segment.content for segment in segments if segment.role in ("shared", role)
+        segment.content
+        for segment in segments
+        if segment.role in (PromptSegmentRole.SHARED, selected_role)
     )

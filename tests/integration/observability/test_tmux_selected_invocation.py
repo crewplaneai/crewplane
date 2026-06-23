@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -79,7 +81,9 @@ def state_with_invocation(log_file: str | None):
             WorkflowNode(
                 id="node.a",
                 mode="parallel",
-                prompt_segments=[PromptSegment(role="shared", content="a")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                ],
                 providers=[ProviderSpec(provider="alpha")],
             )
         ],
@@ -95,7 +99,7 @@ def state_with_invocation(log_file: str | None):
             run_id="selected-invocation",
             node_id="node.a",
             provider="alpha",
-            role="executor",
+            role=ProviderRole.EXECUTOR,
             model="m",
             task_id="alpha_executor_0",
             round_num=1,

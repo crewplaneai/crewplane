@@ -9,6 +9,7 @@ from crewplane.core.preflight.workspace.observability import (
     invoker_workspace_descriptor,
 )
 from crewplane.core.value_checks import is_strict_int
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
 from ...run_history import RunHistoryRecord
@@ -102,7 +103,9 @@ def _parallel_workspace_outputs_are_complete(
     if node.mode != "parallel":
         return True
     expected_count = sum(
-        1 for provider in node.provider_records if provider.role == "executor"
+        1
+        for provider in node.provider_records
+        if provider.role == ProviderRole.EXECUTOR
     )
     actual_count = len(expected_invocations) + len(expected_failed_invocations)
     return actual_count == expected_count
@@ -204,7 +207,7 @@ def _provider_workspace_state_is_valid(
     if workspace.get("lineage_producer") is not True:
         return _disposable_worktree_result_matches(payload)
     return (
-        payload.get("role") == "executor"
+        payload.get("role") == ProviderRole.EXECUTOR
         and _workspace_result_matches(payload)
         and _workspace_bundle_matches(
             source,

@@ -15,6 +15,7 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
@@ -46,7 +47,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -109,7 +110,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="alpha_executor_0",
                 provider="alpha",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -177,7 +178,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -261,7 +262,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 diagnostics=diagnostics.append,
             )
@@ -326,7 +327,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 diagnostics=diagnostics.append,
             )
@@ -399,7 +400,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="generic_executor_0",
                 provider="generic",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 diagnostics=diagnostics.append,
             )
@@ -487,7 +488,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 diagnostics=diagnostics.append,
                 usage_recorder=usages.append,
@@ -632,7 +633,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
@@ -692,7 +693,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 node_id="node.a",
                 task_id="codex_executor_0",
                 provider="codex",
-                role="executor",
+                role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )

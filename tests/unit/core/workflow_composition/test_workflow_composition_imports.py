@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from crewplane.core.config import Config
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.models import (
     WorkflowNode,
@@ -24,7 +25,7 @@ def _write_workflow(path: Path, lines: list[str]) -> None:
 
 
 def _executor_prompt(node: WorkflowNode) -> str:
-    return render_prompt_for_role(node, "executor")
+    return render_prompt_for_role(node, PromptSegmentRole.EXECUTOR)
 
 
 def _workspace_config(clean_start: str = "strict") -> Config:

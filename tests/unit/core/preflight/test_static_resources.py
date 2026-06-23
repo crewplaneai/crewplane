@@ -16,7 +16,7 @@ from crewplane.core.preflight import (
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
@@ -53,7 +53,9 @@ def _compile_file_prompt(root: Path, prompt: str):
                 id="build",
                 mode="sequential",
                 providers=[ProviderSpec(provider="alpha")],
-                prompt_segments=[PromptSegment(role="shared", content=prompt)],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content=prompt)
+                ],
             )
         ],
     )
