@@ -21,7 +21,6 @@ from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
 from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
 from orchestrator_cli.core.workflow_validation import validate_workflow_plan
 from orchestrator_cli.core.yaml_loader import load_yaml_unique
-from orchestrator_cli.version import SCHEMA_VERSION
 
 
 def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
@@ -113,15 +112,6 @@ def _run_git(root: Path, *args: str) -> None:
         check=True,
         capture_output=True,
     )
-
-
-def _readme_code_block_after(marker: str) -> str:
-    readme = Path("README.md").read_text(encoding="utf-8")
-    marker_index = readme.index(marker)
-    fence_start = readme.index("```yaml", marker_index)
-    content_start = readme.index("\n", fence_start) + 1
-    content_end = readme.index("```", content_start)
-    return readme[content_start:content_end]
 
 
 class ExampleTemplateTests(unittest.TestCase):
@@ -298,34 +288,22 @@ class ExampleTemplateTests(unittest.TestCase):
             msg="expected a generated workflow demonstrating worktree: none",
         )
 
-    def test_readme_workspace_example_is_valid_workflow_frontmatter(self) -> None:
-        frontmatter = _readme_code_block_after(
-            "Workflow files declare logical worktrees"
-        ).replace('"<schema-version>"', f'"{SCHEMA_VERSION}"')
-        workflow_markdown = (
-            frontmatter
-            + "\n\n## implement\nImplement the requested change.\n"
-            + "\n## review\nReview the implementation in writable scratch space.\n"
-            + "\n## summarize\nSummarize the review result from project root.\n"
+    def test_workspace_docs_link_packaged_workspace_templates(self) -> None:
+        workspace_docs = Path("docs/examples/workspace.md").read_text(encoding="utf-8")
+        guide_docs = Path("docs/guides/workspace-isolation.md").read_text(
+            encoding="utf-8"
         )
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
-            workflow_path = rendered_root / "readme-workspace-example.task.md"
-            workflow_path.write_text(workflow_markdown, encoding="utf-8")
+        expected_links = [
+            "../../src/orchestrator_cli/example_templates/example-templates/worktree/workspace-alternatives-example.task.md",
+            "../../src/orchestrator_cli/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md",
+        ]
+        for expected_link in expected_links:
+            self.assertIn(expected_link, workspace_docs)
 
-            workflow = validate_workflow_plan(
-                load_tasks_with_sources(
-                    workflow_path,
-                    project_root=rendered_root,
-                ).workflow
-            )
-
-        review_node = next(node for node in workflow.nodes if node.id == "review")
-        self.assertEqual(review_node.worktree, "scratch")
-        self.assertEqual(
-            [provider.role for provider in review_node.providers], ["executor"]
-        )
+        self.assertIn("settings.workspace.cache_root", workspace_docs)
+        self.assertIn("worktree: none", guide_docs)
+        self.assertIn("not sandboxing", guide_docs)
 
     def test_workflow_markdown_template_is_valid(self) -> None:
         workflow_templates = sorted(self.template_dir.rglob("*.task.md"))

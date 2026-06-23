@@ -1,7 +1,7 @@
 ---
 schema_version: "__SCHEMA_VERSION__"
-name: Workspace Alternatives Example
-description: Explore separate implementation worktrees and compare them in a snapshot.
+name: Experimental Workspace Alternatives Example
+description: Explore separate Experimental implementation worktrees and compare them in a snapshot.
 worktrees:
   conservative_worktree:
     kind: worktree

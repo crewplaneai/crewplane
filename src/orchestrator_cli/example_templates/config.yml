@@ -127,8 +127,8 @@ agents:
     quota_reached_retry_delay_seconds: 300
 
 settings:
-  # Workspace isolation is disabled by default. With enabled: false, providers
-  # run in the project root and non-Git projects work normally.
+  # Experimental workspace isolation feature is disabled by default. With enabled:
+  # false, providers run in the project root and non-Git projects work normally.
   #
   # Managed workspaces require settings.workspace.enabled: true, workflow-level
   # worktrees declarations, and a supported Git repository. Initial support:

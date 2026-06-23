@@ -4,7 +4,7 @@ This guide is for human contributors. AI-agent project guidance lives in `AGENTS
 
 ## Purpose
 
-Use this document for local setup, repository layout, repeatable development workflows, and architecture references.
+Use this document for local setup, repository layout, repeatable development workflows, and architecture references. Public user documentation starts at [docs/index.md](docs/index.md).
 
 ## Prerequisites
 
@@ -29,6 +29,7 @@ make lint         # project-env ruff check src tests
 make format       # project-env ruff format src tests
 make format-check # project-env ruff format --check src tests
 make check        # lint + format-check + tests
+make help         # list package and release targets
 make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
 ```
@@ -57,18 +58,17 @@ make uninstall
 orchestrator_cli/
 ├── src/
 │   └── orchestrator_cli/
-│       ├── cli/            # CLI command surface and orchestration helpers
-│       ├── core/           # Config/workflow schemas, parsing, validation, DAG graph
+│       ├── cli/            # CLI command surface, run helpers, cleanup, templates
+│       ├── core/           # Config/workflow schemas, parsing, composition, preflight
 │       ├── architecture/   # Stable integration contracts, loader, registry
 │       ├── adapters/       # Built-in integration implementations
 │       ├── bootstrap/      # Composition root for runtime components
 │       ├── runtime/        # Agent invocation and workflow execution
-│       ├── artifacts/      # Output directories, manifests, template resolution
+│       ├── artifacts/      # Output directories, manifests, results, resume, workspace state
 │       ├── observability/  # Runtime event model, layout/rendering, tmux dashboard
 │       └── example_templates/
 ├── tests/
-├── docs/
-│   └── architecture/
+├── docs/                   # Public usage docs plus architecture decision records
 ├── pyproject.toml
 ├── Makefile
 ├── AGENTS.md
@@ -90,6 +90,11 @@ See [ADR 0013](docs/architecture/adr/0013-version-source-of-truth-and-documentat
 
 During the public-alpha `0.x` period, support the current schema unless a migration path is deliberately added and covered by tests. Persisted run artifacts are disposable audit outputs, not migration targets; stale preflight plans may be rejected by explicit shape validation even when they carry the current `SCHEMA_VERSION`.
 
+## Release Workflows
+
+Use `make help` for target details and [CONTRIBUTING.md](CONTRIBUTING.md) for
+the maintainer release flow.
+
 ## Key Modules
 
 - `src/orchestrator_cli/cli/app.py`: Typer app and commands (`init`, `run`, `validate`)
@@ -99,11 +104,16 @@ During the public-alpha `0.x` period, support the current schema unless a migrat
 - `src/orchestrator_cli/bootstrap/container.py`: Runtime composition root
 - `src/orchestrator_cli/core/workflow_models.py`: Workflow model schema
 - `src/orchestrator_cli/core/workflow_loader.py`: Workflow file loading
-- `src/orchestrator_cli/core/workflow_markdown/__init__.py`: Frontmatter and Markdown parser
-- `src/orchestrator_cli/core/workflow_validation.py`: Workflow and provider validation
+- `src/orchestrator_cli/core/workflow_markdown/`: Frontmatter and Markdown parser
+- `src/orchestrator_cli/core/workflow_composition/`: Markdown imports, aliases, params, and input binding
+- `src/orchestrator_cli/core/workflow_validation*.py`: Workflow and provider validation
+- `src/orchestrator_cli/core/preflight/`: Compiled runtime execution-plan previews and bundles
 - `src/orchestrator_cli/runtime/agent/invoker.py`: Provider command invocation and retry logic
 - `src/orchestrator_cli/runtime/execution/workflow/__init__.py`: DAG scheduling and node execution
 - `src/orchestrator_cli/artifacts/manager.py`: Artifact and output manifest management
+- `src/orchestrator_cli/artifacts/results/`: Consolidated result writing
+- `src/orchestrator_cli/artifacts/resume/`: Node-boundary resume validation and hydration
+- `src/orchestrator_cli/artifacts/workspace/`: Workspace artifact validation and descriptors
 - `src/orchestrator_cli/observability/runtime.py`: Observer lifecycle and snapshot publishing
 
 ## Testing Expectations
@@ -111,7 +121,7 @@ During the public-alpha `0.x` period, support the current schema unless a migrat
 - New behavior must include tests.
 - Bug fixes must include regression tests.
 - Keep tests deterministic and filesystem-local.
-- Integration implementations must include contract tests under `tests/architecture/` and `tests/adapters/`.
+- Integration implementations must include contract tests under `tests/integration/architecture/` and adapter tests under `tests/integration/adapters/`.
 
 ## Mock Invoker Local Validation
 
@@ -157,13 +167,14 @@ The orchestrator follows a blackboard architecture: agents operate independently
 
 - [docs/architecture/modular-orchestration-architecture.md](docs/architecture/modular-orchestration-architecture.md)
 - [docs/architecture/adr/0001-ports-adapters-runtime-integrations.md](docs/architecture/adr/0001-ports-adapters-runtime-integrations.md)
+- [docs/architecture/index.md](docs/architecture/index.md)
 
 ## Adapter Authoring
 
 1. Implement the relevant port contract under `src/orchestrator_cli/architecture/ports/`.
 2. Register an alias in `src/orchestrator_cli/architecture/registry.py` or use a dotted path override in config.
-3. Add adapter behavior tests under `tests/adapters/`.
-4. Add architecture wiring tests under `tests/architecture/`.
+3. Add adapter behavior tests under `tests/integration/adapters/`.
+4. Add architecture wiring tests under `tests/integration/architecture/`.
 5. Run quality gates before merge:
    - targeted adapter and architecture tests for changed integrations
    - `make lint`

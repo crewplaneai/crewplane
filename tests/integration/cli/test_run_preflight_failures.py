@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 import orchestrator_cli.cli.app as cli
+from orchestrator_cli.artifacts.locks import ResumeLockError, SameContextLock
 from orchestrator_cli.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
@@ -149,6 +150,50 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             output_text = stream.getvalue()
             self.assertIn("Preflight PREFLIGHT-VALIDATION", output_text)
             self.assertIn("rendered executor prompt cannot be empty", output_text)
+            self.assertNotIn("Traceback", output_text)
+
+    def test_run_reports_resume_lock_failure_without_raw_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            orch_dir = tmp_path / ".orchestrator"
+            workflows_dir = orch_dir / "workflows"
+            workflows_dir.mkdir(parents=True)
+            config_path = orch_dir / "config.yml"
+            workflow_path = workflows_dir / "workflow.task.md"
+            write_basic_config(config_path)
+            write_basic_workflow(workflow_path)
+
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            original_update_run = SameContextLock.update_run
+
+            def fail_update_run(self, run_id: str, run_key_name: str) -> None:
+                del self, run_id, run_key_name
+                raise ResumeLockError("Cannot update a lock owned by another process.")
+
+            cli.Console = ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            )
+            SameContextLock.update_run = fail_update_run
+            try:
+                with self.assertRaises(typer.Exit):
+                    cli.run(
+                        tasks_file=workflow_path,
+                        config_file=config_path,
+                        dry_run=False,
+                        no_live=True,
+                    )
+            finally:
+                SameContextLock.update_run = original_update_run
+                cli.Console = original_console_cls
+
+            output_text = stream.getvalue()
+            self.assertIn("Run lock unavailable", output_text)
+            self.assertIn("Cannot update a lock owned by another process", output_text)
+            self.assertIn(".orchestrator/locks", output_text)
             self.assertNotIn("Traceback", output_text)
 
     def test_run_fails_fast_for_missing_env_template_reference(self) -> None:

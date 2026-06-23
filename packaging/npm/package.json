@@ -1,0 +1,34 @@
+{
+  "name": "crewplane",
+  "version": "0.1.0-alpha.1",
+  "description": "Alpha npm wrapper for the crewplane Python CLI package.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crewplaneai/crewplane.git"
+  },
+  "bugs": {
+    "url": "https://github.com/crewplaneai/crewplane/issues"
+  },
+  "homepage": "https://github.com/crewplaneai/crewplane#readme",
+  "bin": {
+    "crewplane": "bin/crewplane.js",
+    "orchestrator": "bin/crewplane.js"
+  },
+  "files": [
+    "README.md",
+    "bin/crewplane.js",
+    "scripts/postinstall.js"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "crewplane": {
+    "pythonPackage": "crewplane",
+    "pythonPackageVersion": "0.1.0-alpha.1",
+    "pythonConsoleCommand": "orchestrator"
+  }
+}

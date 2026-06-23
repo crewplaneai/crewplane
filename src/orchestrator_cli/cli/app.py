@@ -9,6 +9,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from orchestrator_cli.artifacts.locks import ResumeLockError
 from orchestrator_cli.core.config import Config, load_config
 from orchestrator_cli.core.preflight import (
     PreflightCompilationPreview,
@@ -329,6 +330,13 @@ def run(
     except workflow_runner.WorkflowCancelledByUser as exc:
         console.print(f"[yellow]{exc}[/]")
         raise typer.Exit(code=130) from None
+    except ResumeLockError as exc:
+        console.print(f"[red]✗[/] Run lock unavailable: {exc}")
+        console.print(
+            "[yellow]Stop any matching orchestrator run before retrying. "
+            "If no run is active, remove .orchestrator/locks and retry.[/]"
+        )
+        raise typer.Exit(code=1) from None
 
 
 @app.command()

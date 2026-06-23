@@ -93,7 +93,7 @@ settings:
 
 Workspace behavior:
 - `settings.workspace.enabled: false` preserves project-root execution and does not require Git.
-- `settings.workspace.enabled: true` is only a gate: managed workspaces are allocated only when a workflow declares `worktrees` and provider nodes select them.
+- `settings.workspace.enabled: true` is only an Experimental feature gate: managed workspaces are allocated only when a workflow declares `worktrees` and provider nodes select them.
 - Workflow declarations use `kind: worktree` for lineage-producing mutable checkouts and `kind: snapshot` for writable disposable checkouts.
 - Nodes select with `worktree: <name>` or opt out with `worktree: none`; input nodes never allocate provider workspaces.
 - Managed workspace preflight validates the `blob_exact` source contract, workflow policy, invoker cwd capability metadata, clean-start policy, and repo-relative workspace-file locators.

@@ -186,7 +186,7 @@ def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> Non
     assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-ENCODING"]
 
 
-def test_imported_file_token_resolves_from_project_root(tmp_path: Path) -> None:
+def test_imported_file_token_resolves_from_module_root(tmp_path: Path) -> None:
     root = tmp_path
     child_dir = root / "child"
     root_context = root / "docs" / "context.md"
@@ -255,9 +255,10 @@ def test_imported_file_token_resolves_from_project_root(tmp_path: Path) -> None:
     )
 
     assert not preview.diagnostics
-    assert set(preview.static_file_payloads.values()) == {b"project context"}
+    assert set(preview.static_file_payloads.values()) == {b"child context"}
     assert all(
-        resource.source_root == root.as_posix() for resource in preview.static_resources
+        resource.source_root == child_dir.as_posix()
+        for resource in preview.static_resources
     )
 
 

@@ -1,7 +1,7 @@
 ---
 schema_version: "__SCHEMA_VERSION__"
-name: Workspace Inherited Worktree Example
-description: Use one logical worktree for a sequential implementation source line.
+name: Experimental Workspace Inherited Worktree Example
+description: Use one Experimental logical worktree for a sequential implementation source line.
 worktrees:
   implementation_worktree:
     kind: worktree

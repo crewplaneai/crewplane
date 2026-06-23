@@ -120,6 +120,7 @@ test-results/
 
 # Local runtime artifacts
 .serena/
-docs/deferred_designs/
-docs/internal_docs/
+docs/maintainers/
 scripts/
+!packaging/npm/scripts/
+!packaging/npm/scripts/**

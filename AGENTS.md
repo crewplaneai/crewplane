@@ -17,19 +17,19 @@ When changing behavior, preserve these properties:
 
 ## Read First
 
-- `README.md`: end-user behavior, workflow syntax, configuration reference, artifact layout
+- `README.md`: short package and repository orientation
+- `docs/index.md`: full public user documentation
 - `DEVELOPMENT.md`: human-facing setup, quality gates, repo layout, and local validation workflows
-- `docs/architecture/modular-orchestration-architecture.md`
-- `docs/architecture/adr/0001-ports-adapters-runtime-integrations.md`
+- `docs/architecture/index.md`: architecture entry point and ADR links
 
 ## Repo Map
 
-- `src/orchestrator_cli/cli/`: Typer command surface, task/config path resolution, manifest preflight, scaffold templates
-- `src/orchestrator_cli/core/`: config models, workflow schemas, Markdown parsing, workflow composition/imports, DAG validation, schema version validation
+- `src/orchestrator_cli/cli/`: Typer command surface, task/config path resolution, run orchestration, cleanup commands, scaffold templates
+- `src/orchestrator_cli/core/`: config models, workflow schemas, Markdown parsing, workflow composition/imports, DAG validation, preflight compilation, schema version validation
 - `src/orchestrator_cli/architecture/`: port contracts, integration loader, alias registry, adapter errors
 - `src/orchestrator_cli/bootstrap/`: composition root that wires configured adapters into runtime components
 - `src/orchestrator_cli/runtime/`: provider invocation, retry/quota handling, parallel/sequential workflow execution
-- `src/orchestrator_cli/artifacts/`: stage/result directories, manifests, template resolution, output access
+- `src/orchestrator_cli/artifacts/`: stage/result directories, manifests, generated files, locks, result writing, resume, workspace state, output access
 - `src/orchestrator_cli/observability/`: event model, runtime snapshots, rendering, tmux support
 - `src/orchestrator_cli/adapters/`: built-in invoker, UI, and artifact implementations
 - `src/orchestrator_cli/example_templates/`: files used by `orchestrator init`
@@ -59,16 +59,17 @@ When changing behavior, preserve these properties:
 ### CLI surface
 
 - Main entrypoint: `src/orchestrator_cli/cli/app.py`
-- Supporting orchestration flow: `src/orchestrator_cli/cli/workflow_runner.py`
+- Supporting run flow: `src/orchestrator_cli/cli/run/` plus the `src/orchestrator_cli/cli/workflow_runner.py` facade
+- Cleanup command surface: `src/orchestrator_cli/cli/cleanup.py`
 - Path resolution and scaffold helpers: `src/orchestrator_cli/cli/paths.py`, `src/orchestrator_cli/cli/templates.py`
-- Expected tests: `tests/test_cli.py`, plus any affected workflow or artifact tests
+- Expected tests: `tests/integration/cli/`, plus any affected unit tests under `tests/unit/`
 
 If command output, validation rules, scaffold files, or default behavior changes, update docs and example templates in the same change.
 
 ### Workflow schema, parsing, and composition
 
-- Core files: `src/orchestrator_cli/core/workflow_models.py`, `src/orchestrator_cli/core/workflow_markdown.py`, `src/orchestrator_cli/core/workflow_loader.py`, `src/orchestrator_cli/core/workflow_composition.py`, `src/orchestrator_cli/core/workflow_validation.py`
-- Expected tests: `tests/test_tasks.py`, `tests/test_validator.py`, `tests/test_workflow_composition.py`
+- Core files: `src/orchestrator_cli/core/workflow_models.py`, `src/orchestrator_cli/core/workflow_markdown/`, `src/orchestrator_cli/core/workflow_loader.py`, `src/orchestrator_cli/core/workflow_composition/`, `src/orchestrator_cli/core/workflow_validation*.py`, `src/orchestrator_cli/core/preflight/`
+- Expected tests: `tests/unit/core/workflow_loading/`, `tests/unit/core/workflow_composition/`, `tests/unit/core/workflow_validation/`, `tests/unit/core/preflight/`, and relevant `tests/integration/cli/` coverage
 
 Important invariants:
 
@@ -80,10 +81,10 @@ Important invariants:
 
 ### Config and provider invocation
 
-- Core config: `src/orchestrator_cli/core/config.py`
+- Core config: `src/orchestrator_cli/core/config.py`, `src/orchestrator_cli/core/config_workspace.py`, `src/orchestrator_cli/core/token_budget.py`
 - Runtime invoker path: `src/orchestrator_cli/runtime/agent/`
 - Built-in invokers: `src/orchestrator_cli/adapters/invokers/`
-- Expected tests: `tests/test_config.py`, `tests/test_agents.py`, `tests/test_retry_units.py`, `tests/adapters/test_invoker_cli.py`, `tests/adapters/test_invoker_mock.py`
+- Expected tests: `tests/unit/core/test_config.py`, `tests/integration/runtime/agent/`, `tests/integration/adapters/test_invoker_cli.py`, and `tests/integration/adapters/mock_invoker/`
 
 Keep retry, quota, command-building, prompt transport, output parsing, and usage parsing behavior explicit. Provider-specific rules belong behind the invoker adapter boundary or in shared invoker capability modules owned by that boundary. If you add a provider-specific parsing rule or retry condition, add regression coverage for both positive and failure paths.
 
@@ -91,7 +92,7 @@ Keep retry, quota, command-building, prompt transport, output parsing, and usage
 
 - Workflow scheduler: `src/orchestrator_cli/runtime/execution/workflow/__init__.py`
 - Stage execution: `src/orchestrator_cli/runtime/execution/parallel.py`, `src/orchestrator_cli/runtime/execution/sequential.py`, `src/orchestrator_cli/runtime/execution/consensus.py`
-- Expected tests: `tests/test_executor.py`, `tests/test_workflow_runner.py`
+- Expected tests: `tests/integration/runtime/execution/`, `tests/integration/cli/test_workflow_runner.py`, and affected `tests/unit/runtime/` coverage
 
 Preserve DAG semantics, manifest dedupe behavior, `--force` override behavior, and the distinction between node concurrency and per-invocation concurrency.
 
@@ -101,7 +102,7 @@ Preserve DAG semantics, manifest dedupe behavior, `--force` override behavior, a
 - Alias registry: `src/orchestrator_cli/architecture/registry.py`
 - Loader: `src/orchestrator_cli/architecture/loader.py`
 - Composition root: `src/orchestrator_cli/bootstrap/container.py`
-- Expected tests: `tests/architecture/`, relevant `tests/adapters/`
+- Expected tests: `tests/integration/architecture/`, relevant `tests/integration/adapters/`
 
 For a new integration or adapter change:
 
@@ -114,9 +115,9 @@ Port contracts should remain stable extension boundaries. Avoid importing concre
 
 ### Artifacts, manifests, and templates
 
-- Core files: `src/orchestrator_cli/artifacts/manager.py`, `src/orchestrator_cli/artifacts/directory_manager.py`, `src/orchestrator_cli/artifacts/template_resolver.py`
+- Core files: `src/orchestrator_cli/artifacts/manager.py`, `src/orchestrator_cli/artifacts/directory_manager.py`, `src/orchestrator_cli/artifacts/generated_files/`, `src/orchestrator_cli/artifacts/locks/`, `src/orchestrator_cli/artifacts/results/`, `src/orchestrator_cli/artifacts/resume/`, `src/orchestrator_cli/artifacts/workspace/`, and `src/orchestrator_cli/core/preflight/`
 - Built-in implementation: `src/orchestrator_cli/adapters/artifacts/filesystem.py`
-- Expected tests: `tests/test_output.py`, `tests/adapters/test_artifacts_filesystem.py`
+- Expected tests: `tests/unit/artifacts/`, `tests/integration/adapters/test_artifacts_filesystem.py`, and affected `tests/integration/cli/` coverage
 
 The implementation uses hyphenated output directories:
 
@@ -128,7 +129,7 @@ Keep new docs and code aligned to those paths.
 ### Observability and tmux UI
 
 - Core files: `src/orchestrator_cli/observability/`, `src/orchestrator_cli/adapters/ui/`
-- Expected tests: `tests/integration/observability/`, `tests/adapters/test_ui_tmux.py`, `tests/adapters/test_ui_null.py`
+- Expected tests: `tests/integration/observability/`, `tests/unit/observability/`, `tests/integration/adapters/test_ui_tmux.py`, `tests/integration/adapters/test_ui_null.py`
 
 The live UI must degrade cleanly:
 
@@ -152,9 +153,9 @@ make check
 Useful targeted test runs:
 
 ```bash
-uv run --extra dev python -m pytest -q tests/test_cli.py
-uv run --extra dev python -m pytest -q tests/test_workflow_composition.py tests/test_validator.py
-uv run --extra dev python -m pytest -q tests/adapters/test_invoker_mock.py tests/architecture/test_container.py
+uv run --extra dev python -m pytest -q tests/integration/cli/test_workflow_discovery_and_init.py
+uv run --extra dev python -m pytest -q tests/unit/core/workflow_composition tests/unit/core/workflow_validation
+uv run --extra dev python -m pytest -q tests/integration/adapters/mock_invoker tests/integration/architecture/test_container.py
 ```
 
 If `uv` is unavailable, run the same targeted paths with `python -m pytest -q`
@@ -171,7 +172,7 @@ orchestrator run --dry-run
 orchestrator run --no-live
 ```
 
-When validating behavior manually, inspect artifacts under `.orchestrator/execution-stages/` and `.orchestrator/execution-results/` and confirm the manifest dedupe behavior still matches the intended context hash rules.
+When validating behavior manually, inspect artifacts under `.orchestrator/execution-stages/` and `.orchestrator/execution-results/` and confirm manifest dedupe behavior still matches the intended `workflow_signature` rules.
 
 ## Documentation Expectations
 
