@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run.workspace import source_policy as policy
-from orchestrator_cli.cli.run.workspace.git_source import (
+from crewplane.cli.run.workspace import source_policy as policy
+from crewplane.cli.run.workspace.git_source import (
     GIT_MIN_VERSION,
     discover_git_context,
     parse_git_version,
 )
-from orchestrator_cli.cli.run.workspace.source_types import WorkspacePolicyBuilder
-from orchestrator_cli.core.config import Settings
+from crewplane.cli.run.workspace.source_types import WorkspacePolicyBuilder
+from crewplane.core.config import Settings
 from tests.helpers.workspace_source_policy import (
     git_source_context,
     run_git_text,
@@ -27,8 +27,8 @@ def test_workspace_source_policy_ignores_untracked_attributes_with_tracked_only(
 ) -> None:
     _require_workspace_git()
     run_git_text(tmp_path, "init")
-    run_git_text(tmp_path, "config", "user.name", "Orchestrator Test")
-    run_git_text(tmp_path, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(tmp_path, "config", "user.name", "Crewplane Test")
+    run_git_text(tmp_path, "config", "user.email", "crewplane-test@example.invalid")
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
     (docs_dir / "guide.md").write_text("guide\n", encoding="utf-8")
@@ -47,7 +47,7 @@ def test_workspace_source_policy_ignores_untracked_attributes_with_tracked_only(
         config=config,
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -70,7 +70,7 @@ def test_workspace_source_policy_non_git_error_has_remediation(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -88,10 +88,8 @@ def test_discover_git_context_resolves_common_dir_from_project_root(
     nested_root = project_root / "app"
     nested_root.mkdir(parents=True)
     run_git_text(project_root, "init")
-    run_git_text(project_root, "config", "user.name", "Orchestrator Test")
-    run_git_text(
-        project_root, "config", "user.email", "orchestrator-test@example.invalid"
-    )
+    run_git_text(project_root, "config", "user.name", "Crewplane Test")
+    run_git_text(project_root, "config", "user.email", "crewplane-test@example.invalid")
     (nested_root / "README.md").write_text("ready\n", encoding="utf-8")
     run_git_text(project_root, "add", "app/README.md")
     run_git_text(project_root, "commit", "-m", "initial")
@@ -130,7 +128,7 @@ def test_git_source_checks_reports_filesystem_errors(
     local_config_policy, filesystem_capabilities = policy.collect_git_source_checks(
         Settings(workspace={"enabled": True}),
         tmp_path,
-        tmp_path / ".orchestrator",
+        tmp_path / ".crewplane",
         git_source_context(tmp_path),
         estimate_full_repository=False,
         logical_worktree_names=(),
@@ -162,7 +160,7 @@ def test_workspace_source_policy_rejects_lfs_attributes_with_remediation(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -190,7 +188,7 @@ def test_workspace_source_policy_rejects_custom_filter_attributes_with_remediati
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -215,7 +213,7 @@ def test_workspace_source_policy_rejects_text_normalization_with_remediation(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -238,7 +236,7 @@ def test_workspace_source_policy_clean_start_names_logical_worktree(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -254,8 +252,8 @@ def test_workspace_source_policy_records_snapshot_for_clean_git_repo(
 ) -> None:
     _require_workspace_git()
     run_git_text(tmp_path, "init")
-    run_git_text(tmp_path, "config", "user.name", "Orchestrator Test")
-    run_git_text(tmp_path, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(tmp_path, "config", "user.name", "Crewplane Test")
+    run_git_text(tmp_path, "config", "user.email", "crewplane-test@example.invalid")
     run_git_text(tmp_path, "config", "core.filemode", "false")
     run_git_text(tmp_path, "config", "core.protectHFS", "false")
     run_git_text(tmp_path, "config", "core.protectNTFS", "false")
@@ -268,7 +266,7 @@ def test_workspace_source_policy_records_snapshot_for_clean_git_repo(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=True,
         invoker_capabilities={
             "workspace": {
@@ -305,8 +303,8 @@ def test_workspace_source_policy_overrides_line_ending_local_config(
 ) -> None:
     _require_workspace_git()
     run_git_text(tmp_path, "init")
-    run_git_text(tmp_path, "config", "user.name", "Orchestrator Test")
-    run_git_text(tmp_path, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(tmp_path, "config", "user.name", "Crewplane Test")
+    run_git_text(tmp_path, "config", "user.email", "crewplane-test@example.invalid")
     run_git_text(tmp_path, "config", "core.autocrlf", "true")
     run_git_text(tmp_path, "config", "core.eol", "lf")
     (tmp_path / "README.md").write_text("ready\n", encoding="utf-8")
@@ -317,7 +315,7 @@ def test_workspace_source_policy_overrides_line_ending_local_config(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -333,8 +331,8 @@ def test_workspace_source_policy_rejects_attribute_source_local_config(
 ) -> None:
     _require_workspace_git()
     run_git_text(tmp_path, "init")
-    run_git_text(tmp_path, "config", "user.name", "Orchestrator Test")
-    run_git_text(tmp_path, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(tmp_path, "config", "user.name", "Crewplane Test")
+    run_git_text(tmp_path, "config", "user.email", "crewplane-test@example.invalid")
     run_git_text(tmp_path, "config", "core.attributesFile", "/tmp/attributes")
     (tmp_path / "README.md").write_text("ready\n", encoding="utf-8")
     run_git_text(tmp_path, "add", "README.md")
@@ -344,7 +342,7 @@ def test_workspace_source_policy_rejects_attribute_source_local_config(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -375,7 +373,7 @@ def test_workspace_source_policy_rejects_partial_clone_remote_config(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -404,7 +402,7 @@ def test_workspace_source_policy_allows_disabled_sparse_checkout_config(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -422,7 +420,7 @@ def test_workspace_source_policy_rejects_enabled_sparse_checkout_config(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -471,7 +469,7 @@ def test_workspace_source_policy_rejects_index_extension_state_without_config(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -485,8 +483,8 @@ def test_workspace_source_policy_rejects_index_extension_state_without_config(
 
 def _create_clean_repo(root: Path) -> None:
     run_git_text(root, "init")
-    run_git_text(root, "config", "user.name", "Orchestrator Test")
-    run_git_text(root, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(root, "config", "user.name", "Crewplane Test")
+    run_git_text(root, "config", "user.email", "crewplane-test@example.invalid")
     (root / "README.md").write_text("ready\n", encoding="utf-8")
     run_git_text(root, "add", "README.md")
     run_git_text(root, "commit", "-m", "initial")

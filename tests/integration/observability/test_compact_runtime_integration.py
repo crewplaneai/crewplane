@@ -9,28 +9,28 @@ import pytest
 import yaml
 from rich.console import Console
 
-from orchestrator_cli.bootstrap.container import build_runtime_components
-from orchestrator_cli.core.config import Config, load_config
-from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
-from orchestrator_cli.core.workflow_models import (
+from crewplane.bootstrap.container import build_runtime_components
+from crewplane.core.config import Config, load_config
+from crewplane.core.workflow.loading import load_tasks_with_sources
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.observability.runtime import ObservabilityHub
-from orchestrator_cli.observability.tmux.inspect_snapshot import (
+from crewplane.core.workflow.validation import validate_workflow_plan
+from crewplane.observability.runtime import ObservabilityHub
+from crewplane.observability.tmux.inspect_snapshot import (
     read_snapshot,
     write_inspect_snapshot,
 )
-from orchestrator_cli.observability.tmux.selection_control import (
+from crewplane.observability.tmux.selection_control import (
     SelectionControlState,
     write_selection_control,
 )
-from orchestrator_cli.observability.types import RunContext, RunResult
-from orchestrator_cli.runtime.execution.workflow import execute_workflow
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.observability.types import RunContext, RunResult
+from crewplane.runtime.execution.workflow import execute_workflow
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
 from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
@@ -298,7 +298,7 @@ def load_integration_config(project_root: Path, tmux_executable: Path) -> Config
         raise AssertionError("Config fixture tmux ui options must be a mapping.")
     ui_options["tmux_executable"] = str(tmux_executable)
 
-    config_path = project_root / ".orchestrator" / "config.yml"
+    config_path = project_root / ".crewplane" / "config.yml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return load_config(config_path)
@@ -491,7 +491,7 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
             for args, _, _ in runtime.calls
             if len(args) >= 6
             and args[:3] == ["set-option", "-p", "-t"]
-            and args[4] == "@orchestrator_title"
+            and args[4] == "@crewplane_title"
         ]
 
         assert "[Log Inspect] [r] raw  [f] formatted  [Esc] return" in left_text
@@ -518,7 +518,7 @@ def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(
     components = build_runtime_components(
         config=config,
         workflow_topology=topology_from_workflow(workflow),
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         project_root=tmp_path,
         console=Console(
             file=io.StringIO(),
@@ -583,17 +583,15 @@ def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(
     )
     bind_key_args = [arg for command in bind_key_commands for arg in command]
     assert any(
-        "orchestrator_cli.observability.tmux.inspect_control" in arg
-        and "--view auto" in arg
+        "crewplane.observability.tmux.inspect_control" in arg and "--view auto" in arg
         for arg in bind_key_args
     )
     assert any(
-        "orchestrator_cli.observability.tmux.inspect_control" in arg
-        and "--view raw" in arg
+        "crewplane.observability.tmux.inspect_control" in arg and "--view raw" in arg
         for arg in bind_key_args
     )
     assert any(
-        "orchestrator_cli.observability.tmux.inspect_control" in arg
+        "crewplane.observability.tmux.inspect_control" in arg
         and "--view formatted" in arg
         for arg in bind_key_args
     )

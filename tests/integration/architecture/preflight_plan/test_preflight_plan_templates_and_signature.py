@@ -11,16 +11,16 @@ import pytest
 from pydantic import ValidationError
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import (
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import (
     AgentConfig,
     Config,
     IntegrationsConfig,
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.preflight import (
+from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightCompileOptions,
     PreflightExecutionPlan,
@@ -28,13 +28,13 @@ from orchestrator_cli.core.preflight import (
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
-from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _mock_config() -> Config:
@@ -140,7 +140,7 @@ def _compile_signature(root: Path, no_live: bool) -> str:
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -177,7 +177,7 @@ def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> Non
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=tmp_path,
-            orchestrator_dir=tmp_path / ".orchestrator",
+            state_dir=tmp_path / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -249,7 +249,7 @@ def test_imported_file_token_resolves_from_module_root(tmp_path: Path) -> None:
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -276,7 +276,7 @@ def test_persisted_plan_keeps_preview_workflow_signature(tmp_path: Path) -> None
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=tmp_path,
-            orchestrator_dir=tmp_path / ".orchestrator",
+            state_dir=tmp_path / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -315,7 +315,7 @@ def _persisted_plan_payload(root: Path) -> dict[str, Any]:
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )

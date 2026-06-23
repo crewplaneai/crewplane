@@ -3,13 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.tmux.log_tail import read_log_tail
-from orchestrator_cli.observability.types import (
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.tmux.log_tail import read_log_tail
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,

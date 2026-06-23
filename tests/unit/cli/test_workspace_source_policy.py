@@ -8,22 +8,22 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run.workspace import (
+from crewplane.cli.run.workspace import (
     filesystem_policy as workspace_filesystem_policy,
 )
-from orchestrator_cli.cli.run.workspace import git_source as git_source_probe
-from orchestrator_cli.cli.run.workspace import source_policy as policy
-from orchestrator_cli.cli.run.workspace.cache_policy import paths_overlap
-from orchestrator_cli.cli.run.workspace.git_source import GitSourceContext
-from orchestrator_cli.cli.run.workspace.preflight_diagnostics import (
+from crewplane.cli.run.workspace import git_source as git_source_probe
+from crewplane.cli.run.workspace import source_policy as policy
+from crewplane.cli.run.workspace.cache_policy import paths_overlap
+from crewplane.cli.run.workspace.git_source import GitSourceContext
+from crewplane.cli.run.workspace.preflight_diagnostics import (
     workspace_preflight_diagnostics,
 )
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_source_policy import (
     apply_patched_git_policy,
     git_source_context,
@@ -60,7 +60,7 @@ def test_disabled_workspace_source_policy_does_not_probe_git(
         config=config,
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=True,
     )
 
@@ -88,7 +88,7 @@ def test_workspace_source_policy_fails_native_windows_before_git_probe(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -113,7 +113,7 @@ def test_workspace_source_policy_reports_git_discovery_timeout(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -138,7 +138,7 @@ def test_workspace_source_policy_skips_git_when_workspace_policy_invalid(
         config=workspace_source_config(),
         workflow=workflow,
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -168,7 +168,7 @@ def test_workspace_source_policy_skips_git_when_workflow_graph_is_invalid(
         config=workspace_source_config(),
         workflow=workflow,
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -192,7 +192,7 @@ def test_workspace_source_policy_rejects_real_execution_without_capability(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=True,
         invoker_capabilities=None,
     )
@@ -226,7 +226,7 @@ def test_workspace_source_policy_rejects_relative_cli_path_for_managed_workspace
         config=config,
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=True,
         invoker_capabilities={
             "workspace": {
@@ -256,7 +256,7 @@ def test_workspace_source_policy_records_snapshot_when_checks_pass(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=True,
         invoker_capabilities={
             "workspace": {
@@ -337,7 +337,7 @@ def test_invalid_cache_root_skips_filesystem_capability_probe(
         config=config,
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -359,7 +359,7 @@ def test_dry_run_workspace_source_policy_skips_filesystem_capability_probe(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -377,7 +377,7 @@ def test_workspace_source_policy_skips_git_for_input_only_workflow(
         config=workspace_source_config(),
         workflow=workspace_input_only_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -405,7 +405,7 @@ def test_workspace_source_policy_skips_git_for_external_input_only_workflow(
         config=workspace_source_config(),
         workflow=workflow,
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -435,7 +435,7 @@ def test_workspace_source_policy_stops_after_unsupported_git_version(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -480,7 +480,7 @@ def test_workspace_source_policy_stops_after_failed_git_capability_probe(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -524,7 +524,7 @@ def test_git_capability_probe_reports_failed_named_command_probes(
                 "-z",
                 "--all",
                 "--",
-                "__orchestrator_cli_missing_probe_path__",
+                "__crewplane_missing_probe_path__",
             ),
         ),
     )
@@ -646,7 +646,7 @@ def test_worktree_locking_probe_treats_timeout_as_unsupported(
 def test_git_env_applies_sanitized_template_without_mutating_process_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ORCHESTRATOR_TEST_KEEP", "kept")
+    monkeypatch.setenv("CREWPLANE_TEST_KEEP", "kept")
     monkeypatch.setenv("GIT_DIR", "/tmp/wrong-repo")
     monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.fsmonitor")
@@ -654,7 +654,7 @@ def test_git_env_applies_sanitized_template_without_mutating_process_env(
 
     env = git_source_probe.git_env()
 
-    assert env["ORCHESTRATOR_TEST_KEEP"] == "kept"
+    assert env["CREWPLANE_TEST_KEEP"] == "kept"
     assert "GIT_DIR" not in env
     assert "GIT_CONFIG_KEY_0" not in env
     assert "GIT_CONFIG_VALUE_0" not in env
@@ -685,7 +685,7 @@ def test_workspace_source_policy_wraps_late_git_probe_failures(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 
@@ -712,7 +712,7 @@ def test_workspace_source_policy_wraps_late_git_probe_timeouts(
         config=workspace_source_config(),
         workflow=workspace_source_workflow(),
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         real_execution=False,
     )
 

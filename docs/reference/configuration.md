@@ -1,7 +1,7 @@
 # Configuration Reference
 
-Config lives at `.orchestrator/config.yml` by default. The `version` field must
-match the current `SCHEMA_VERSION` in `src/orchestrator_cli/version.py`.
+Config lives at `.crewplane/config.yml` by default. The `version` field must
+match the current `SCHEMA_VERSION` in `src/crewplane/version.py`.
 
 ## Top Level
 
@@ -18,9 +18,9 @@ match the current `SCHEMA_VERSION` in `src/orchestrator_cli/version.py`.
 | `cli_cmd` | Non-empty argv list for the provider CLI. |
 | `provider_kind` | `claude`, `codex`, `copilot`, `gemini`, `kilo`, or `generic`. Defaults to `generic`. |
 | `default_model` | Optional model name used when a workflow provider does not override `model`. |
-| `model_arg` | CLI flag for model selection. Defaults to `--model`; can be `null`. |
+| `model_arg` | CLI flag for model selection when `provider_kind: generic`. Defaults to `--model`; can be `null`. Built-in provider kinds use adapter-owned model flags. |
 | `prompt_transport` | `stdin` or `argv`. Defaults to `stdin`. |
-| `prompt_transport_arg` | Required for `argv`; optional for `stdin`. |
+| `prompt_transport_arg` | Required for `argv`; optional stdin sentinel for `stdin`. |
 | `extra_args` | Additional argv tokens appended to the provider command. |
 | `max_retries` | Maximum retry attempts. Defaults to `0`. |
 | `retry_delay_seconds` | Delay between generic retries. Defaults to `300.0`. |
@@ -70,9 +70,9 @@ Pricing values are per million tokens.
 ## `settings.workspace`
 
 Experimental workspace isolation is disabled by default. Missing
-`settings.workspace` is equivalent to `settings.workspace.enabled: false`, and
-providers run from the project root unless a workflow declares `worktrees` and a
-provider node selects one. `settings.default_workspace` is not supported.
+`settings.workspace` is equivalent to `settings.workspace.enabled: false`.
+When it is disabled, workflows must not declare `worktrees`, and provider nodes
+run from the project root. `settings.default_workspace` is not supported.
 
 | Field | Description |
 | --- | --- |
@@ -90,10 +90,10 @@ provider node selects one. `settings.default_workspace` is not supported.
 | `settings.workspace.disk.fail_free_bytes` | Optional free-space failure threshold. Must not exceed `warn_free_bytes`. |
 
 Workspace-enabled runs require a supported ordinary Git repository, POSIX or WSL
-filesystem behavior, and an invoker adapter that declares workspace-compatible
-`cwd` handling. The initial `blob_exact` contract rejects Git LFS, custom
-filters, byte-transforming text/eol attributes, submodules, sparse checkout, and
-partial clone.
+filesystem behavior, and an invoker adapter that honors runtime-supplied `cwd`.
+The initial `blob_exact` contract rejects Git LFS, custom filters,
+byte-transforming text/eol attributes, submodules, sparse checkout, and partial
+clone before provider invocation.
 
 ## `settings.integrations`
 

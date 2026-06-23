@@ -1,21 +1,21 @@
 import pytest
 from pydantic import ValidationError
 
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.core.workflow_validation import (
+from crewplane.core.workflow.validation import (
     collect_workflow_policy_diagnostics,
     collect_workflow_validation_diagnostics,
 )
-from orchestrator_cli.core.workflow_validation_workspace import (
+from crewplane.core.workflow.validation.workspace import (
     logical_workspace_selections,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _config(workspace_enabled: bool) -> Config:
@@ -466,7 +466,7 @@ def test_selected_branch_exports_validate_generated_branch_name_collisions() -> 
 
     assert len(messages) == 1
     assert "Selected worktrees 'a..b', 'a.b'" in messages[0]
-    assert "orchestrator/duplicate-generated-branch-export/a.b/run" in messages[0]
+    assert "crewplane/duplicate-generated-branch-export/a.b/run" in messages[0]
     assert "distinct branch names" in messages[0]
 
 

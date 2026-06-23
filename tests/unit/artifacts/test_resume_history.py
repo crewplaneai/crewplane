@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts.run_history import (
+from crewplane.artifacts.run_history import (
     RunHistoryError,
     find_same_context_runs,
 )

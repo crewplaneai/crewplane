@@ -11,19 +11,19 @@ from typing import Any, cast
 
 import pytest
 
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
-from orchestrator_cli.runtime.workspace import setup as workspace_setup
-from orchestrator_cli.runtime.workspace.setup import (
+from crewplane.runtime.workspace import setup as workspace_setup
+from crewplane.runtime.workspace.setup import (
     WorkspaceSetupCancellation,
     WorkspaceSetupError,
     run_workspace_setup,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_records import WORKTREE_CONTRACT
 
 

@@ -1,15 +1,15 @@
 from pathlib import Path
 
-from orchestrator_cli.artifacts.failure_artifacts import (
+from crewplane.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
-from orchestrator_cli.core.workflow_models import ProviderSpec
-from orchestrator_cli.runtime.execution.review_loop.types import (
+from crewplane.core.workflow.models import ProviderSpec
+from crewplane.runtime.execution.review_loop.types import (
     INVALID_CANDIDATE_EMPTY,
     INVALID_CANDIDATE_REDIRECTED,
     ExecutorRoundArtifact,
 )
-from orchestrator_cli.runtime.execution.review_loop.validation import (
+from crewplane.runtime.execution.review_loop.validation import (
     build_executor_output_fingerprint,
     classify_executor_output,
     validate_executor_outputs,

@@ -8,21 +8,21 @@ from types import SimpleNamespace
 
 import pytest
 
-import orchestrator_cli.runtime.execution.workflow as workflow_module
-import orchestrator_cli.runtime.execution.workflow.cleanup as workflow_cleanup_module
-import orchestrator_cli.runtime.execution.workflow.node as workflow_node_module
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.preflight.models import (
+import crewplane.runtime.execution.workflow as workflow_module
+import crewplane.runtime.execution.workflow.cleanup as workflow_cleanup_module
+import crewplane.runtime.execution.workflow.node as workflow_node_module
+from crewplane.artifacts import OutputManager
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.execution.workspace_files.generated import (
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.execution.workspace_files.generated import (
     GeneratedFileWorkspaceRegistry,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_successful_workflow_keeps_success_when_workspace_ref_cleanup_fails(

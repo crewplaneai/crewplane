@@ -1,6 +1,6 @@
 import unittest
 
-from orchestrator_cli.runtime.agent.usage import InvocationUsage
+from crewplane.runtime.agent.usage import InvocationUsage
 
 
 class InvocationUsageModelTests(unittest.IsolatedAsyncioTestCase):

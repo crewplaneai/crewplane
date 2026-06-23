@@ -9,24 +9,24 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.generated_files.catalog import (
+from crewplane.artifacts import OutputManager
+from crewplane.artifacts.generated_files.catalog import (
     generated_file_source_root,
     snapshot_generated_file_workspace,
 )
-from orchestrator_cli.core.execution_state import (
+from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
     NodeState,
     RunManifest,
 )
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     ArtifactContract,
     ExecutionPolicy,
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _workflow_signature(label: str) -> str:
@@ -71,7 +71,7 @@ def _running_manifest(
     return RunManifest(
         run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
         plan_schema_version=SCHEMA_VERSION,
-        workflow_identity=".orchestrator/workflows/workflow.task.md",
+        workflow_identity=".crewplane/workflows/workflow.task.md",
         workflow_name="workflow",
         workflow_signature=workflow_signature or _workflow_signature("workflow"),
         run_id=output.run_id,
@@ -312,7 +312,7 @@ class OutputManagerTests(unittest.TestCase):
                 changed_paths=set(),
             )
             snapshot_metadata = json.loads(
-                (snapshot / ".orchestrator-generated-file-snapshot.json").read_text(
+                (snapshot / ".crewplane-generated-file-snapshot.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -371,7 +371,7 @@ class OutputManagerTests(unittest.TestCase):
             )
 
             with patch(
-                "orchestrator_cli.artifacts.generated_files.catalog."
+                "crewplane.artifacts.generated_files.catalog."
                 "MAX_GENERATED_FILE_SNAPSHOT_BYTES",
                 1,
             ):
@@ -381,7 +381,7 @@ class OutputManagerTests(unittest.TestCase):
                     changed_paths={"src/created.txt"},
                 )
             snapshot_metadata = json.loads(
-                (snapshot / ".orchestrator-generated-file-snapshot.json").read_text(
+                (snapshot / ".crewplane-generated-file-snapshot.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -428,7 +428,7 @@ class OutputManagerTests(unittest.TestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.artifacts.generated_files.catalog."
+                    "crewplane.artifacts.generated_files.catalog."
                     "MAX_GENERATED_FILE_SNAPSHOT_FILES",
                     1,
                 ),
@@ -458,7 +458,7 @@ class OutputManagerTests(unittest.TestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.artifacts.generated_files.catalog.shutil.copyfile",
+                    "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
                     side_effect=write_expanded_copy,
                 ),
                 self.assertRaisesRegex(RuntimeError, "changed while copying"),
@@ -467,7 +467,7 @@ class OutputManagerTests(unittest.TestCase):
 
             self.assertFalse((snapshot_root / "src" / "app.txt").exists())
             self.assertFalse(
-                (snapshot_root / ".orchestrator-generated-file-snapshot.json").exists()
+                (snapshot_root / ".crewplane-generated-file-snapshot.json").exists()
             )
 
     def test_workspace_generated_file_snapshot_ignores_hardlinked_files(self) -> None:
@@ -580,7 +580,7 @@ class OutputManagerTests(unittest.TestCase):
             node_state = NodeState(
                 run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
                 plan_schema_version=SCHEMA_VERSION,
-                workflow_identity=".orchestrator/workflows/workflow.task.md",
+                workflow_identity=".crewplane/workflows/workflow.task.md",
                 workflow_name="workflow",
                 workflow_signature=_workflow_signature("workflow"),
                 run_id=output.run_id,

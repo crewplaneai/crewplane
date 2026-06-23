@@ -3,14 +3,14 @@ import time
 import unittest
 from unittest.mock import patch
 
-from orchestrator_cli.runtime.agent.process.runner import (
+from crewplane.runtime.agent.process.runner import (
     collect_process_output,
     reap_failed_process,
 )
-from orchestrator_cli.runtime.agent.process.stream_capture import (
+from crewplane.runtime.agent.process.stream_capture import (
     CapturedStream as RealCapturedStream,
 )
-from orchestrator_cli.runtime.agent.process.streams import (
+from crewplane.runtime.agent.process.streams import (
     LOG_QUEUE_MAX_ITEMS,
     pipe_stream,
 )
@@ -222,7 +222,7 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "orchestrator_cli.runtime.agent.process.streams.CapturedStream",
+                "crewplane.runtime.agent.process.streams.CapturedStream",
                 TrackingCapturedStream,
             ),
             self.assertRaisesRegex(OSError, "disk full"),

@@ -26,7 +26,7 @@ The previous execution path split template authority across validation, artifact
 - imported workflow file references could resolve against the wrong source root
 - duplicate-run detection could include presentation-only UI state or miss execution-affecting config
 
-The project architecture requires blackboard-style orchestration through readable `.orchestrator/` artifacts, deterministic validation, explicit boundaries, and CLI-first provider execution. A compiled execution plan keeps those properties while removing runtime's token and workflow-shape authority.
+The project architecture requires blackboard-style orchestration through readable `.crewplane/` artifacts, deterministic validation, explicit boundaries, and CLI-first provider execution. A compiled execution plan keeps those properties while removing runtime's token and workflow-shape authority.
 
 ## Non-Goals
 This decision does not introduce:
@@ -177,15 +177,15 @@ bundle descriptors instead of rereading prompt source bytes from live
 workspaces.
 
 ### Secrets And Fingerprints
-Orchestrator-owned diagnostics, summaries, manifests, plans, runtime snapshots, and generated logs must not leak raw sensitive values.
+Crewplane-owned diagnostics, summaries, manifests, plans, runtime snapshots, and generated logs must not leak raw sensitive values.
 
 Sensitive values are represented on disk by redacted metadata, stable HMAC fingerprints, and `value_handle` references. Runtime resolves handles from same-process `SecretContext`. Persisted artifacts alone cannot reconstruct sensitive prompt text, by design.
 
 Environment values are sensitive by default unless explicitly classified non-sensitive. Runtime variable values are non-sensitive by default unless the key matches sensitive naming patterns or explicit metadata marks them sensitive. Non-sensitive values may be stored in the plan for assembly, but diagnostics still redact env and var values.
 
-The stable HMAC key lives at `.orchestrator/preflight/fingerprint.key` and contains 32 random bytes. `orchestrator init` creates it where possible. A real `orchestrator run` may create it only when sensitive fingerprints are needed. `orchestrator validate` and `orchestrator run --dry-run` do not write artifacts or create the key; if no key exists, they use a process-local ephemeral key for preview signatures.
+The stable HMAC key lives at `.crewplane/preflight/fingerprint.key` and contains 32 random bytes. `crewplane init` creates it where possible. A real `crewplane run` may create it only when sensitive fingerprints are needed. `crewplane validate` and `crewplane run --dry-run` do not write artifacts or create the key; if no key exists, they use a process-local ephemeral key for preview signatures.
 
-Corrupt, truncated, symlinked, or permission-unsafe persisted keys are deterministic preflight failures. Provider-emitted node output remains outside the orchestrator redaction boundary and is not rewritten by the orchestrator.
+Corrupt, truncated, symlinked, or permission-unsafe persisted keys are deterministic preflight failures. Provider-emitted node output remains outside Crewplane redaction boundary and is not rewritten by Crewplane.
 
 The 2026-06-07 boundary hardening update scopes ephemeral fingerprint key state
 through preflight compile options/state rather than process-global module state.
@@ -196,19 +196,19 @@ continue to use the persisted key only when sensitive fingerprints are needed.
 Successful runs use the current hyphenated artifact layout:
 
 ```text
-.orchestrator/execution-stages/<run_key>/preflight/
-.orchestrator/execution-stages/<run_key>/preflight/static-files/
-.orchestrator/execution-stages/<run_key>/manifests/
-.orchestrator/execution-results/<run_key>/
+.crewplane/execution-stages/<run_key>/preflight/
+.crewplane/execution-stages/<run_key>/preflight/static-files/
+.crewplane/execution-stages/<run_key>/manifests/
+.crewplane/execution-results/<run_key>/
 ```
 
-`orchestrator run` compiles a no-run preview before duplicate lookup. If compilation succeeds and a duplicate successful manifest exists, the command skips without run allocation. If execution proceeds, one run context is allocated and shared by preflight artifact writing, runtime execution, manifests, logs, and results.
+`crewplane run` compiles a no-run preview before duplicate lookup. If compilation succeeds and a duplicate successful manifest exists, the command skips without run allocation. If execution proceeds, one run context is allocated and shared by preflight artifact writing, runtime execution, manifests, logs, and results.
 
 Early parse, frontmatter, schema, or config failures may not have a workflow name. Failure artifacts use `safe_artifact_name(tasks_file.stem)` when available and otherwise `invalid-workflow`; metadata records both the fallback run key and nullable workflow name.
 
 Preflight failure artifacts do not write a final execution manifest and cannot trigger duplicate skips.
 
-`orchestrator validate` and `orchestrator run --dry-run` remain artifact-free and invoke no providers.
+`crewplane validate` and `crewplane run --dry-run` remain artifact-free and invoke no providers.
 
 Stage, output, findings, log, manifest, and result locators are allocated as
 safe artifact paths. Reserved run-root names stay protected, and node-derived
@@ -233,7 +233,7 @@ Runtime must not create dependency edges outside `dependency_graph`, invent arti
 UI and observability receive a narrow plan-derived topology view. They do not receive the full `WorkflowPlan` or full `PreflightExecutionPlan` as execution authority, and UI adapters are observer-only for this decision.
 
 ## Schema Version Evolution
-The schema version constant lives in `orchestrator_cli.version`.
+The schema version constant lives in `crewplane.version`.
 Config, workflow, and preflight plan models exact-match the current supported
 schema version.
 
@@ -272,7 +272,7 @@ new ADR explicitly changes that policy.
 
 6. Persist raw secrets or plain hashes to support artifact-only prompt replay.
 
-   Rejected because `.orchestrator/` artifacts are intentionally readable. Sensitive env, var, and config values may affect signatures through HMAC fingerprints and may be injected during same-process execution through `SecretContext`, but raw values and plain hashes must not be persisted.
+   Rejected because `.crewplane/` artifacts are intentionally readable. Sensitive env, var, and config values may affect signatures through HMAC fingerprints and may be injected during same-process execution through `SecretContext`, but raw values and plain hashes must not be persisted.
 
 7. Exclude sensitive env, var, and config values from signatures.
 
@@ -309,7 +309,7 @@ Positive consequences:
 - artifact manifests reflect the compiled execution contract
 - imported workflow file-token behavior is deterministic across module roots
 - duplicate detection ignores presentation-only UI changes
-- sensitive values stay out of persisted orchestrator-owned artifacts
+- sensitive values stay out of persisted Crewplane-owned artifacts
 
 Negative consequences:
 
@@ -331,7 +331,7 @@ Negative consequences:
 ## Updates
 - **2026-06-07**: Folded in preflight boundary hardening. Ephemeral fingerprint
   keys are scoped through compile state, the schema version constant is
-  centralized in `src/orchestrator_cli/version.py`, and future schema-breaking
+  centralized in `src/crewplane/version.py`, and future schema-breaking
   changes require coordinated templates, docs, CLI diagnostics, tests, and
   migration notes.
 - **2026-06-12**: ADR 0016 initial build pass added disabled-by-default

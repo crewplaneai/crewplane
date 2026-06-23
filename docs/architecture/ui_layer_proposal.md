@@ -321,17 +321,17 @@ UIAdapterPort.create_runtime()
 
 | Area | Change |
 |---|---|
-| [adapters/ui/tmux.py](../../src/orchestrator_cli/adapters/ui/tmux.py) | Route tmux UI to compact runtime |
-| [observability/tmux/compact.py](../../src/orchestrator_cli/observability/tmux/compact.py) | **[NEW]** 2-pane tmux + Rich Live dashboard |
-| [observability/dag_render.py](../../src/orchestrator_cli/observability/dag_render.py) | **[NEW]** topological inline DAG renderer with overflow cap |
-| [artifacts/directory_manager.py](../../src/orchestrator_cli/artifacts/directory_manager.py) | Refactor log file path to node-local structure |
+| [adapters/ui/tmux.py](../../src/crewplane/adapters/ui/tmux.py) | Route tmux UI to compact runtime |
+| [observability/tmux/compact.py](../../src/crewplane/observability/tmux/compact.py) | **[NEW]** 2-pane tmux + Rich Live dashboard |
+| [observability/dag_render.py](../../src/crewplane/observability/dag_render.py) | **[NEW]** topological inline DAG renderer with overflow cap |
+| [artifacts/directory_manager.py](../../src/crewplane/artifacts/directory_manager.py) | Refactor log file path to node-local structure |
 | Runtime execution paths using `get_log_file(...)` | Continue per-invocation logging, now under node-local path |
-| [observability/tmux/labels.py](../../src/orchestrator_cli/observability/tmux/labels.py) | Include blocked icon and richer status text |
+| [observability/tmux/labels.py](../../src/crewplane/observability/tmux/labels.py) | Include blocked icon and richer status text |
 
 ### What doesn't change
 
-- [render/__init__.py](../../src/orchestrator_cli/observability/render/__init__.py) remains the non-tmux text renderer.
-- [observer.py](../../src/orchestrator_cli/observability/observer.py) and [types.py](../../src/orchestrator_cli/observability/types.py) observer/snapshot contracts remain unchanged.
+- [render/__init__.py](../../src/crewplane/observability/render/__init__.py) remains the non-tmux text renderer.
+- [observer.py](../../src/crewplane/observability/observer.py) and [types.py](../../src/crewplane/observability/types.py) observer/snapshot contracts remain unchanged.
 - No new dependencies (Rich already in use).
 
 ### Visual polish

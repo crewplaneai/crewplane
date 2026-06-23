@@ -6,8 +6,8 @@ from pathlib import Path
 
 import typer
 
-import orchestrator_cli.cli.app as cli
-from orchestrator_cli.version import SCHEMA_VERSION
+import crewplane.cli.app as cli
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -478,10 +478,10 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
     def test_validate_uses_default_config_and_writes_no_run_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            orchestrator_dir = tmp_path / ".orchestrator"
-            workflows_dir = orchestrator_dir / "workflows"
+            state_dir = tmp_path / ".crewplane"
+            workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
-            config_path = orchestrator_dir / "config.yml"
+            config_path = state_dir / "config.yml"
             workflow_path = workflows_dir / "workflow.task.md"
             write_basic_config(config_path)
             write_basic_workflow(workflow_path)
@@ -493,14 +493,14 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
 
-            self.assertFalse((orchestrator_dir / "execution-stages").exists())
-            self.assertFalse((orchestrator_dir / "execution-results").exists())
+            self.assertFalse((state_dir / "execution-stages").exists())
+            self.assertFalse((state_dir / "execution-results").exists())
 
     def test_validate_requires_default_config_when_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            orchestrator_dir = tmp_path / ".orchestrator"
-            workflows_dir = orchestrator_dir / "workflows"
+            state_dir = tmp_path / ".crewplane"
+            workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
             workflow_path = workflows_dir / "workflow.task.md"
             write_basic_workflow(workflow_path)
@@ -523,4 +523,4 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
-            self.assertIn(".orchestrator/config.yml not found", output_text)
+            self.assertIn(".crewplane/config.yml not found", output_text)

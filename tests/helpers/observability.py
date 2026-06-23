@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from orchestrator_cli.core.workflow_models import WorkflowPlan
-from orchestrator_cli.observability.events import (
+from crewplane.core.workflow.models import WorkflowPlan
+from crewplane.observability.events import (
     ExecutionEvent,
     ExecutionEventContext,
     WorkspaceEventPayload,
@@ -13,7 +13,7 @@ from orchestrator_cli.observability.events import (
     workflow_event,
     workspace_event,
 )
-from orchestrator_cli.observability.types import (
+from crewplane.observability.types import (
     TopologyNode,
     TopologyProvider,
     WorkflowTopology,

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from orchestrator_cli.core.preflight.models import ExecutionPolicy, TokenBudgetPolicy
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.runtime.execution import prompt_budgeting
-from orchestrator_cli.runtime.execution.fragment_assembler import ResolvedPrompt
-from orchestrator_cli.runtime.execution.runtime_context import CompiledRuntimeContext
-from orchestrator_cli.runtime.execution.workspace_files import ResolvedWorkspaceFile
+from crewplane.core.preflight.models import ExecutionPolicy, TokenBudgetPolicy
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.execution import prompt_budgeting
+from crewplane.runtime.execution.fragment_assembler import ResolvedPrompt
+from crewplane.runtime.execution.runtime_context import CompiledRuntimeContext
+from crewplane.runtime.execution.workspace_files import ResolvedWorkspaceFile
 from tests.helpers.resume import make_plan, make_workspace_file_locator, sha256_hex
 
 

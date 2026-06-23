@@ -10,7 +10,7 @@ non-lineage workspaces, and `worktree: none` for project-root execution.
 ## Runtime Semantics
 When disabled, runtime uses the existing execution path: provider invocations
 receive project root `cwd`, prompts are assembled from current preflight render
-fragments, artifacts are written under `.orchestrator/`, and no workspace state
+fragments, artifacts are written under `.crewplane/`, and no workspace state
 is created.
 
 For each enabled-mode node:
@@ -21,10 +21,9 @@ For each enabled-mode node:
 3. Resolve node source:
    - `worktree: none` or no managed worktree uses project-root execution
    - `kind: snapshot` uses `run_base_commit`
-   - `kind: worktree` with no ordered same-name direct upstream uses
-     `run_base_commit`
-   - `kind: worktree` with an ordered same-name direct upstream uses that
-     upstream's verified result commit
+   - `kind: worktree` with no ordered same-name ancestor uses `run_base_commit`
+   - `kind: worktree` with an ordered same-name ancestor uses the latest such
+     ancestor's verified result commit
 4. Verify the selected `worktree_contract` mode is still enforceable.
 5. Provision workspace:
    - `kind: snapshot`: disposable writable source workspace from
@@ -33,7 +32,7 @@ For each enabled-mode node:
    - `kind: worktree`: detached mutable Git worktree from source commit
 6. Compute `effective_workspace_root` as workspace checkout root plus the
    recorded project-root-relative path.
-7. For managed provider workspaces, write initial `workspace-state.json` with
+7. For managed provider workspaces, write initial `workspace-state*.json` with
    `status: running`.
 8. For each provider invocation, compute an `InvocationSourceIdentity`.
 9. Resolve workspace-file locators:
@@ -54,7 +53,7 @@ For each enabled-mode node:
 15. For successful mutable executor candidates, reject final `HEAD` movement and
     protected-state drift, reset runtime-owned index state, capture final
     worktree filesystem changes under `blob_exact`, validate the
-    candidate tree, and create an orchestrator-owned candidate commit.
+    candidate tree, and create a Crewplane-owned candidate commit.
 16. For reviewer invocations, provision disposable reviewer workspaces from the
     current candidate commit and resolve reviewer file tokens from that same
     candidate commit.
@@ -65,10 +64,10 @@ For each enabled-mode node:
     source/result identities and protected refs validate.
 19. Record and discard snapshot source drift or verify worktree result identity.
 20. Finalize ordinary node output and findings artifacts.
-21. Write terminal `workspace-state.json` when workspace state exists.
+21. Write terminal `workspace-state*.json` when workspace state exists.
 
 Provider outputs, logs, node manifests, run manifests, summaries, and results
-remain under project `.orchestrator/`. Provider CLIs receive absolute artifact
+remain under project `.crewplane/`. Provider CLIs receive absolute artifact
 paths where the invocation plan requires output paths. The provider process
 `cwd` is the effective node workspace root when enabled and the project root
 when disabled.
@@ -90,7 +89,7 @@ node stage directory and runs setup only for selected `kind: worktree` nodes.
 Users who need additional dependencies inside isolated workspaces can also:
 
 - have the provider run setup commands in the node workspace
-- prepare dependencies outside the orchestrator in locations the provider may
+- prepare dependencies outside Crewplane in locations the provider may
   access
 - commit tracked dependency inputs such as lockfiles
 - use a prebuilt container, VM, or provider-native environment outside this ADR
@@ -110,7 +109,7 @@ permission model. Runtime may set writable temp/cache environment variables at
 the process-launch boundary where practical, but those directories are not
 canonical artifacts.
 
-Provider-side Git commands are not sandboxed by the orchestrator. Runtime
+Provider-side Git commands are not sandboxed by Crewplane. Runtime
 removes caller-shell Git redirection and pathspec environment variables from
 process-based provider environments and applies deterministic Git
 config-injection overrides so provider `git` commands discover the effective
@@ -127,7 +126,7 @@ V1 snapshot directory materialization uses a Git-native tree materialization
 path:
 
 1. Create an owner-private snapshot directory outside the project and
-   `.orchestrator/`.
+   `.crewplane/`.
 2. Create an owner-private temporary index under the system temporary directory.
 3. Use sanitized runtime Git environment with `GIT_INDEX_FILE` set only for this
    operation.
@@ -145,13 +144,13 @@ Rules:
 - Snapshot directory materialization uses selected Git commit content, not the
   user's dirty working tree.
 - Snapshot directories contain no `.git` metadata.
-- Snapshot cache directories are outside the project and `.orchestrator/`.
+- Snapshot cache directories are outside the project and `.crewplane/`.
 - Ignored, untracked, dirty working-tree, and uncommitted source bytes are not
   included.
 - Runtime computes a stable snapshot digest before invocation.
 - The digest includes relative path, type, executable bit, symlink target, file
   content digest, and selected `worktree_contract`, excluding planned
-  orchestrator output/log paths.
+  crewplane output/log paths.
 - Runtime provides writable temp directories through process-launch environment
   where practical.
 - After invocation, runtime summarizes source-looking drift and discards the
@@ -186,7 +185,7 @@ Provisioning sequence:
 
 Rules:
 
-- Worktrees are outside the project root and project `.orchestrator/`.
+- Worktrees are outside the project root and project `.crewplane/`.
 - Worktrees are owner-private where supported.
 - Worktrees are detached from user branches.
 - Worktree administration uses the repository common Git directory.
@@ -227,7 +226,7 @@ Runtime records the attempt baseline:
 - `runtime_parent_commit`: source commit or previous runtime candidate commit
 - `runtime_parent_tree`: corresponding tree
 - `runtime_expected_head`: worktree `HEAD` at attempt start
-- protected orchestrator refs
+- protected crewplane refs
 - absence of active worktree-specific config
 - selected `worktree_contract`
 
@@ -263,7 +262,7 @@ Capture rules:
 13. Validate the candidate tree still satisfies `blob_exact`, including no
     byte-transforming attributes on tracked regular files and no unsafe path
     collisions.
-14. Create an orchestrator-owned candidate commit with `git commit-tree`,
+14. Create a Crewplane-owned candidate commit with `git commit-tree`,
     parented to `runtime_parent_commit`.
 15. Reset or preserve the worktree according to review-loop or finalization
     flow.

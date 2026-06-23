@@ -25,7 +25,7 @@ parts:
    monitor provider-caused artifact drift.
 
 The design preserves the blackboard architecture: providers coordinate through
-auditable files under `.orchestrator/`, not shared memory, hidden summaries,
+auditable files under `.crewplane/`, not shared memory, hidden summaries,
 provider-native chat state, SDK-specific APIs, or adapter-specific permission
 systems.
 
@@ -54,7 +54,7 @@ Markdown section scanning was fragile around `##` lookalikes in code or prose.
 Goals:
 
 - Preserve blackboard orchestration through explicit artifacts under
-  `.orchestrator/`.
+  `.crewplane/`.
 - Improve sequential review-loop robustness without hidden provider memory.
 - Reduce prompt growth by carrying forward only actionable review state.
 - Keep review execution generic across code review, documentation review, design
@@ -131,15 +131,15 @@ section:
 
 Shared instructions before block.
 
-<!-- orchestrator:executor -->
+<!-- crewplane:executor -->
 Executor-only instructions.
-<!-- /orchestrator:executor -->
+<!-- /crewplane:executor -->
 
 Shared instructions between blocks.
 
-<!-- orchestrator:reviewer -->
+<!-- crewplane:reviewer -->
 Reviewer-only instructions.
-<!-- /orchestrator:reviewer -->
+<!-- /crewplane:reviewer -->
 
 Shared instructions after block.
 ```
@@ -147,10 +147,10 @@ Shared instructions after block.
 Supported roles are `executor` and `reviewer`. Markers must be standalone HTML
 comment blocks:
 
-- Open: `<!-- orchestrator:executor -->`,
-  `<!-- orchestrator:reviewer -->`
-- Close: `<!-- /orchestrator:executor -->`,
-  `<!-- /orchestrator:reviewer -->`
+- Open: `<!-- crewplane:executor -->`,
+  `<!-- crewplane:reviewer -->`
+- Close: `<!-- /crewplane:executor -->`,
+  `<!-- /crewplane:reviewer -->`
 
 Parsing is local and programmatic. It must not call a provider, LLM, agent, or
 external service. Parser tokens here mean Markdown syntax units, not LLM tokens.
@@ -252,7 +252,7 @@ concise downstream content
 
 - The consolidated full result remains available through `{{node.output}}`.
 - The concise findings result is written as
-  `.orchestrator/execution-results/<run>/<node-id>-findings.md` and is available
+  `.crewplane/execution-results/<run>/<node-id>-findings.md` and is available
   through `{{node.findings}}`.
 - Result filenames use the node id's stage-safe form, preserving valid node-id
   characters so distinct valid node IDs remain distinct.
@@ -330,7 +330,7 @@ Classification rules:
 - Usage parsing failures are non-fatal telemetry failures and set
   `provider_usage_status = malformed` with `usage_parse_error`.
 - Visible estimates use `ceil(char_count / 4)` and are always lower-bound
-  estimates because orchestrator-visible text excludes provider system prompts,
+  estimates because crewplane-visible text excludes provider system prompts,
   repo instructions, tool schemas and results, cached context, and reasoning
   tokens.
 - For Codex and Claude, required provider buckets are `input` and `output`, plus
@@ -559,7 +559,7 @@ High-confidence invalid candidates are rejected before reviewer invocation:
 
 - missing, empty, whitespace-only, or synthetic-failure outputs
 - redirect-only or status-note outputs that point reviewers at a different
-  `.orchestrator` artifact instead of including the full candidate
+  `.crewplane` artifact instead of including the full candidate
 
 The validator is intentionally conservative. Mixed commentary plus a real
 candidate, short but plausible candidates, and oddly formatted self-contained
@@ -626,8 +626,8 @@ intentionally deferred.
 ## Result And Artifact Layout
 The artifact adapter uses hyphenated run directories:
 
-- `.orchestrator/execution-stages/`
-- `.orchestrator/execution-results/`
+- `.crewplane/execution-stages/`
+- `.crewplane/execution-results/`
 
 For each node:
 
@@ -760,7 +760,7 @@ The implementation requires deterministic coverage for:
   rendering.
 - Mock invoker end-to-end runs for findings and review-loop artifact behavior.
 - Manual multi-round mock runs that inspect
-  `.orchestrator/execution-stages/`, confirm review feedback carry-forward is
+  `.crewplane/execution-stages/`, confirm review feedback carry-forward is
   legible and auditable, and compare prompt size before and after compact
   carry-forward.
 

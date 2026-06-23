@@ -2,10 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.observability import PersistentRunLogger
-from orchestrator_cli.observability.persistent import render_run_summary_terminal
-from orchestrator_cli.observability.runtime import ObservabilityHub
+from crewplane.artifacts import OutputManager
+from crewplane.observability import PersistentRunLogger
+from crewplane.observability.persistent import render_run_summary_terminal
+from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
@@ -97,9 +97,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                     )
                 )
 
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn("`node.a` / `alpha_executor_0`", summary_text)
             self.assertIn("output extraction: missing", summary_text)
             self.assertIn("configured cost: $0.000007", summary_text)
@@ -161,9 +159,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                     )
                 )
 
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn("`node.b`: blocked", summary_text)
             self.assertIn("result: not produced", summary_text)
             self.assertIn("[error] Workflow failed: failed", summary_text)
@@ -249,9 +245,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                     )
                 )
 
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn(
                 "Provider token reports: 0/1 full, 1/1 partial, 0/1 malformed",
                 summary_text,
@@ -347,9 +341,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                     )
                 )
 
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn(
                 "provider tokens: input=n/a, cached_input=n/a, cache_write=n/a, output=45, reasoning=n/a, total=n/a",
                 summary_text,

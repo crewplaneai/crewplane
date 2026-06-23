@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from orchestrator_cli.observability.tmux.session import TmuxSessionTargets
-from orchestrator_cli.observability.tmux.window import TmuxCompactWindowOptions
+from crewplane.observability.tmux.session import TmuxSessionTargets
+from crewplane.observability.tmux.window import TmuxCompactWindowOptions
 from tests.integration.observability.tmux_fakes import FakeTmuxClient
 
 
@@ -12,13 +12,13 @@ def test_status_cache_updates_only_after_successful_option_write() -> None:
 
     window.set_status_option_if_changed(
         client,
-        "orchestrator-test",
+        "crewplane-test",
         "status-left",
         "left",
     )
     window.set_status_option_if_changed(
         client,
-        "orchestrator-test",
+        "crewplane-test",
         "status-left",
         "left",
     )
@@ -28,13 +28,13 @@ def test_status_cache_updates_only_after_successful_option_write() -> None:
     client.fail_status_option = False
     window.set_status_option_if_changed(
         client,
-        "orchestrator-test",
+        "crewplane-test",
         "status-left",
         "left",
     )
     window.set_status_option_if_changed(
         client,
-        "orchestrator-test",
+        "crewplane-test",
         "status-left",
         "left",
     )
@@ -46,9 +46,9 @@ def test_pane_title_cache_resets_per_session() -> None:
     client = FakeTmuxClient()
     window = TmuxCompactWindowOptions()
     session = TmuxSessionTargets(
-        session_name="orchestrator-test",
+        session_name="crewplane-test",
         socket_name="socket",
-        window_target="orchestrator-test:dashboard",
+        window_target="crewplane-test:dashboard",
         left_pane_id="%10",
         right_pane_id="%20",
     )
@@ -79,5 +79,5 @@ def pane_title_write_count(client: FakeTmuxClient) -> int:
         for args, _, _ in client.calls
         if len(args) >= 6
         and args[:3] == ["set-option", "-p", "-t"]
-        and args[4] == "@orchestrator_title"
+        and args[4] == "@crewplane_title"
     )

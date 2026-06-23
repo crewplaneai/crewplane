@@ -5,22 +5,22 @@ from pathlib import Path
 
 from rich.console import Console
 
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.preflight import (
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.preflight.models import WorkspaceSourceSnapshot
-from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.preflight.models import WorkspaceSourceSnapshot
+from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.version import SCHEMA_VERSION
 
 
 def workspace_config(workspace: dict[str, object] | None = None) -> Config:
@@ -56,8 +56,8 @@ def workspace_source_snapshot(
 
 def init_git_repo(root: Path) -> WorkspaceSourceSnapshot:
     git(root, "init")
-    git(root, "config", "user.name", "Orchestrator Test")
-    git(root, "config", "user.email", "orchestrator-test@example.invalid")
+    git(root, "config", "user.name", "Crewplane Test")
+    git(root, "config", "user.email", "crewplane-test@example.invalid")
     git(root, "add", ".")
     git(root, "commit", "-m", "initial")
     return workspace_source_snapshot(
@@ -125,7 +125,7 @@ def compile_workflow_with_source_snapshot(
         runtime_snapshot=runtime_snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             allowed_template_paths=allowed_template_paths,
             fingerprint_key_policy="read_only",
             workspace_source_snapshot=source_snapshot,

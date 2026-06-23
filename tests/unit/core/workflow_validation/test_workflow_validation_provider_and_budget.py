@@ -3,22 +3,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.adapters.invokers.cli import collect_cli_availability_errors
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.workflow_graph import topological_waves
-from orchestrator_cli.core.workflow_models import (
+from crewplane.adapters.invokers.cli import collect_cli_availability_errors
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.workflow.graph import topological_waves
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.core.workflow_validation import (
+from crewplane.core.workflow.validation import (
     collect_provider_validation_errors,
     collect_token_budget_validation_errors,
     validate_token_budget_settings,
     validate_workflow_plan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
@@ -207,7 +207,7 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
                 WorkflowNode(
                     id="review-input",
                     mode="input",
-                    source="{{file:.orchestrator/inputs/review-findings.md}}",
+                    source="{{file:.crewplane/inputs/review-findings.md}}",
                     token_budget={"warn_threshold_chars": 1000},
                 )
             ],

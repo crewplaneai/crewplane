@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.observability.tmux.runtime_files import (
+from crewplane.observability.tmux.runtime_files import (
     RuntimeFiles,
     initial_runtime_file_contents,
     write_atomic,
     write_json_atomic,
 )
-from orchestrator_cli.observability.tmux.selection_control import (
+from crewplane.observability.tmux.selection_control import (
     SelectionControlState,
     move_selection,
     read_selection_control,
@@ -92,7 +92,7 @@ def test_selection_control_module_runs_without_reimport_warning(tmp_path: Path) 
             "-W",
             "error",
             "-m",
-            "orchestrator_cli.observability.tmux.selection_control",
+            "crewplane.observability.tmux.selection_control",
             "--runtime-root",
             str(tmp_path),
             "--direction",

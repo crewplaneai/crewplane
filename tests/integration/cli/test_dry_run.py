@@ -7,12 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import orchestrator_cli.cli.app as cli
-from orchestrator_cli.cli.run.workspace.git_source import (
+import crewplane.cli.app as cli
+from crewplane.cli.run.workspace.git_source import (
     GIT_MIN_VERSION,
     parse_git_version,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     project_pythonpath,
@@ -45,7 +45,7 @@ class CliDryRunTests(unittest.TestCase):
             [
                 sys.executable,
                 "-c",
-                "from orchestrator_cli.cli.app import app; print(type(app).__name__)",
+                "from crewplane.cli.app import app; print(type(app).__name__)",
             ],
             capture_output=True,
             check=False,
@@ -108,7 +108,7 @@ class CliDryRunTests(unittest.TestCase):
                 tmp_path,
                 workflow_writer=_write_input_node_workflow,
             )
-            input_file = tmp_path / ".orchestrator" / "inputs" / "review-findings.md"
+            input_file = tmp_path / ".crewplane" / "inputs" / "review-findings.md"
             input_file.parent.mkdir(parents=True, exist_ok=True)
             input_file.write_text("review findings", encoding="utf-8")
 
@@ -116,7 +116,7 @@ class CliDryRunTests(unittest.TestCase):
 
             self.assertIn("Node: review-input (input)", output_text)
             self.assertIn(
-                "source: {{file:.orchestrator/inputs/review-findings.md}}",
+                "source: {{file:.crewplane/inputs/review-findings.md}}",
                 output_text,
             )
 
@@ -145,7 +145,7 @@ class CliDryRunTests(unittest.TestCase):
             )
             self.assertIn("result=discarded_snapshot_drift", output_text)
             self.assertIn("review.node", output_text)
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), ())
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), ())
 
     def test_workspace_enabled_validate_succeeds_without_artifacts(
         self,
@@ -172,7 +172,7 @@ class CliDryRunTests(unittest.TestCase):
                 cli.Console = original_console_cls
 
             self.assertIn("✓ Valid", stream.getvalue())
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), ())
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), ())
 
     def _skip_without_workspace_git(self) -> None:
         try:
@@ -204,7 +204,7 @@ def _write_input_node_workflow(path: Path) -> None:
                 "nodes:",
                 "  - id: review-input",
                 "    mode: input",
-                '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                 "  - id: fix.apply",
                 "    mode: sequential",
                 "    needs: [review-input]",
@@ -223,13 +223,13 @@ def _write_input_node_workflow(path: Path) -> None:
 
 
 def _write_workspace_enabled_project(root: Path) -> tuple[Path, Path]:
-    orchestrator_dir = root / ".orchestrator"
-    workflow_dir = orchestrator_dir / "workflows"
+    state_dir = root / ".crewplane"
+    workflow_dir = state_dir / "workflows"
     workflow_dir.mkdir(parents=True, exist_ok=True)
     docs_dir = root / "docs"
     docs_dir.mkdir()
     (docs_dir / "requirements.md").write_text("requirements\n", encoding="utf-8")
-    config_path = orchestrator_dir / "config.yml"
+    config_path = state_dir / "config.yml"
     workflow_path = workflow_dir / "workflow.task.md"
     _write_workspace_enabled_config(config_path)
     _write_workspace_file_workflow(workflow_path)
@@ -297,8 +297,8 @@ def _write_workspace_file_workflow(path: Path) -> None:
 
 def _commit_workspace_project(root: Path) -> None:
     _git(root, "init")
-    _git(root, "config", "user.name", "Orchestrator Test")
-    _git(root, "config", "user.email", "orchestrator-test@example.invalid")
+    _git(root, "config", "user.name", "Crewplane Test")
+    _git(root, "config", "user.email", "crewplane-test@example.invalid")
     _git(root, "add", ".")
     _git(root, "commit", "-m", "initial")
 

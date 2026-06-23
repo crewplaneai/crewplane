@@ -12,12 +12,12 @@ If an externally referenced file is missing, blocked, or invalid, or if an envir
 
 File references are bounded by filesystem-safety policy. `{{file:path}}`
 references must remain within the project root unless explicitly allowlisted
-through `allowed_template_paths`; reserved orchestrator directories, symlink
+through `allowed_template_paths`; reserved crewplane directories, symlink
 escapes, binary content, NUL-containing content, and non-UTF-8 text fail during
 preflight before any provider invocation.
 
 ## Context
-Previously, template reference resolution was more lenient or handled during runtime execution. This could lead to partial workflow executions, where downstream nodes might be invoked with raw, unresolved template placeholders (or error placeholders), causing subtle failures, wasted compute, or undefined behaviors in the orchestrator tools. By the time the error was apparent, time and API costs were already expended on earlier nodes. This addresses: "Template Reference Failures During Run" from the architecture review.
+Previously, template reference resolution was more lenient or handled during runtime execution. This could lead to partial workflow executions, where downstream nodes might be invoked with raw, unresolved template placeholders (or error placeholders), causing subtle failures, wasted compute, or undefined behaviors in Crewplane tools. By the time the error was apparent, time and API costs were already expended on earlier nodes. This addresses: "Template Reference Failures During Run" from the architecture review.
 
 ## Rationale
 1. **Predictable Execution:** A workflow execution cannot be considered valid if its declared parameters or file dependencies are missing.

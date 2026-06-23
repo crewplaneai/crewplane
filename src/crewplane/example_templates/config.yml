@@ -1,0 +1,216 @@
+version: "__SCHEMA_VERSION__"
+
+# Spend observability notes:
+# - CLI capture, provider token reports, visible lower-bound estimates, and configured
+#   cost confidence are recorded in events.ndjson and summary.md
+# - Codex and Claude use structured output for extraction and provider usage parsing
+# - Copilot and Kilo remain visible-estimate-only until they expose machine-readable usage
+
+agents:
+  # Optional: omit default_model to use the provider CLI's configured default.
+  claude:
+    cli_cmd: ["claude"]
+    provider_kind: "claude"
+    prompt_transport: "stdin"
+    default_model: "sonnet"
+    # Optional configured pricing per million tokens:
+    # pricing:
+    #   input: 3.0
+    #   output: 15.0
+    #   cached_input: 0.3
+    #   cache_write: 3.75
+    # Wall-clock kill is opt-in. By default, active provider CLIs may run past
+    # 30 minutes; the idle timeout below only kills processes that stop producing
+    # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
+    invocation_timeout_seconds: null
+    invocation_idle_timeout_seconds: 1800
+    extra_args:
+      - "--bare"
+      - "--dangerously-skip-permissions"
+    quota_reset_sleep_floor_seconds: 5
+    quota_reached_on_contains:
+      - "usage limit reached"
+      - "rate limit reached"
+      - "quota reached"
+      - "too many requests"
+    quota_reached_retry_delay_seconds: 300
+
+  codex:
+    cli_cmd: ["codex", "exec"]
+    provider_kind: "codex"
+    prompt_transport: "stdin"
+    prompt_transport_arg: "-"
+    default_model: "gpt-5.4"
+    # pricing:
+    #   input: 1.5
+    #   cached_input: 0.375
+    #   output: 6.0
+    # Wall-clock kill is opt-in. By default, active provider CLIs may run past
+    # 30 minutes; the idle timeout below only kills processes that stop producing
+    # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
+    invocation_timeout_seconds: null
+    invocation_idle_timeout_seconds: 1800
+    extra_args:
+      - "--skip-git-repo-check"
+      - "--dangerously-bypass-approvals-and-sandbox"
+    quota_reset_sleep_floor_seconds: 5
+    quota_reached_on_contains:
+      - "usage limit exceeded"
+      - "rate limit reached"
+      - "too many requests"
+    quota_reached_retry_delay_seconds: 300
+
+  gemini:
+    cli_cmd: ["gemini"]
+    provider_kind: "gemini"
+    prompt_transport: "stdin"
+    default_model: "auto"
+    # pricing:
+    #   input: 0.35
+    #   output: 1.05
+    # Wall-clock kill is opt-in. By default, active provider CLIs may run past
+    # 30 minutes; the idle timeout below only kills processes that stop producing
+    # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
+    invocation_timeout_seconds: null
+    invocation_idle_timeout_seconds: 1800
+    extra_args:
+      - "--approval-mode=yolo"
+    quota_reset_sleep_floor_seconds: 5
+    quota_reached_on_contains:
+      - "exhausted your capacity"
+      - "resource exhausted"
+      - "quota will reset after"
+    quota_reached_retry_delay_seconds: 300
+
+  copilot:
+    cli_cmd: ["copilot"]
+    provider_kind: "copilot"
+    prompt_transport: "stdin"
+    # Pick a model listed by `copilot /model`; availability varies by plan.
+    default_model: "claude-sonnet-4.5"
+    # Visible-estimate-only in spend observability v2.
+    # pricing:
+    #   total: 2.0
+    # Optional hard wall-clock kill for special cases such as CI or disposable runners.
+    invocation_timeout_seconds: null
+    invocation_idle_timeout_seconds: 1800
+    extra_args:
+      - "--silent"
+      - "--no-ask-user"
+      - "--allow-all-tools"
+      # Prefer precise allow/deny rules for unattended runs:
+      # - "--allow-tool=write,shell(git:*)"
+      # - "--deny-tool=shell(git push)"
+    quota_reset_sleep_floor_seconds: 5
+    quota_reached_on_contains:
+      - "rate limit reached"
+      - "quota reached"
+      - "too many requests"
+    quota_reached_retry_delay_seconds: 300
+
+  kilo:
+    cli_cmd: ["kilo"]
+    provider_kind: "kilo"
+    prompt_transport: "stdin"
+    default_model: "auto"
+    # Visible-estimate-only in spend observability v2.
+    # pricing:
+    #   total: 2.0
+    # Optional hard wall-clock kill for special cases such as CI or disposable runners.
+    invocation_timeout_seconds: null
+    invocation_idle_timeout_seconds: 1800
+    quota_reset_sleep_floor_seconds: 5
+    quota_reached_on_contains:
+      - "rate limit reached"
+      - "quota reached"
+      - "too many requests"
+    quota_reached_retry_delay_seconds: 300
+
+settings:
+  # Experimental workspace isolation feature is disabled by default. With enabled:
+  # false, providers run in the project root and non-Git projects work normally.
+  #
+  # Managed workspaces require settings.workspace.enabled: true, workflow-level
+  # worktrees declarations, and a supported Git repository. Initial support:
+  # - Clean ordinary Git repository: yes
+  # - Non-Git project: no; keep enabled: false
+  # - Git LFS or custom filters: no; disable workspace isolation for that run
+  # - text/eol/crlf conversion: no; disable isolation or remove the attribute
+  # - Submodules, sparse clone, partial clone: no; use disabled mode or full clone
+  # - Ordinary ignored caches: yes; use setup profiles or snapshot workspaces
+  workspace:
+    enabled: false
+    cache_root: null
+    cleanup_on_success: true
+    # blob_exact requires provider-visible file bytes to match Git blob bytes.
+    # It rejects Git LFS, custom filters, and text/eol/encoding transforms.
+    worktree_contract: "blob_exact"
+    clean_start: "strict" # strict | tracked_only
+    # Optional audited setup commands selected by workflow worktrees:
+    # setup_profiles:
+    #   node_dependencies:
+    #     run:
+    #       - ["uv", "sync"]
+    setup_profiles: {}
+    setup_timeout_seconds: 600
+    identity:
+      include_cache_root: false
+    max_concurrent_materializations: 1
+    # Disk guardrails compare estimated remaining cache filesystem bytes after
+    # checkout materialization against these optional thresholds.
+    disk:
+      warn_free_bytes: null
+      fail_free_bytes: null
+  log_level: "info"
+  sequential_consensus_on_exhaustion: "continue" # continue | fatal
+  max_audit_rounds: 5 # max allowed value for sequential review nodes using audit_rounds
+  token_budget:
+    warn_threshold_chars: 50000
+    fail_threshold_chars: null # optional fail-fast guard for artifact and review-loop context injections
+  integrations:
+    invoker:
+      implementation: "cli"
+      options: {}
+      # For deterministic local runs without provider CLI calls:
+      # implementation: "mock"
+      # options:
+      #   delay_seconds: 0.25
+      #   observation_delay_seconds: 5
+      #   # Extra mock-only pause after each invocation starts so live runtime
+      #   # transitions are easier to observe during deterministic local runs
+      #   output_mode: "lorem" # lorem | echo | file
+      #   # lorem mode auto-emits a deterministic findings block for
+      #   # non-reviewer findings-enabled nodes; echo is exact for
+      #   # non-reviewers and file fixtures stay exact
+      #   seed: 42
+      #   # output_dir: ".crewplane/mock-outputs" # required for output_mode=file
+      #   # strict_file_mode: false
+      #   # file-mode fixture lookup checks:
+      #   # - {output_dir}/{node_id}/review-audit-round-{audit_round_num}/{task_id}_round{round_num}.md
+      #   # - {output_dir}/{node_id}/review-audit-round-{audit_round_num}/{role}-round-{round_num}.md
+      #   # - {output_dir}/{node_id}/review-audit-round-{audit_round_num}/{task_id}.md
+      #   # - {output_dir}/{node_id}/review-audit-round-{audit_round_num}/{role}.md
+      #   # - {output_dir}/{node_id}/review-audit-round-{audit_round_num}/default-{role}.md
+      #   # - {output_dir}/{node_id}/{task_id}_round{round_num}.md
+      #   # - {output_dir}/{node_id}/{role}-round-{round_num}.md
+      #   # - {output_dir}/{node_id}/{task_id}.md
+      #   # - {output_dir}/{node_id}/{role}.md
+      #   # - {output_dir}/{node_id}.md
+      #   # - {output_dir}/default-{role}.md
+      #   # - {output_dir}/default.md
+      #   # fail_when:
+      #   #   - node_id: "summary.final"
+      #   #     role: "reviewer"
+      #   #     audit_round_num: 1
+      #   #     round_num: 2
+    ui:
+      implementation: "tmux"
+      options:
+        auto_close_session: true
+        quiet_after_seconds: 120.0 # show extra liveness copy after this many quiet seconds
+        # log_tail_lines: 40 # optional fixed cap; omit or set null to fit the right pane height
+    artifacts:
+      implementation: "filesystem"
+      options:
+        log_cli_output: true
+        allowed_template_paths: []

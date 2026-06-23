@@ -5,17 +5,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.failures import (
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.failures import (
     InvocationFailureError,
 )
-from orchestrator_cli.runtime.agent.invoker import (
+from crewplane.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
@@ -115,7 +115,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 output_file = tmp_path / "output.txt"
                 sleep_mock = AsyncMock()
                 with patch(
-                    "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
                     await invoke_agent(
@@ -177,7 +177,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 output_file = tmp_path / "output.txt"
                 sleep_mock = AsyncMock()
                 with patch(
-                    "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
                     await invoke_agent(
@@ -223,7 +223,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             sleep_mock = AsyncMock()
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ),
                 self.assertRaisesRegex(RuntimeError, "exceeds 5 hours") as caught,
@@ -284,7 +284,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -346,7 +346,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -406,7 +406,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -469,7 +469,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -527,7 +527,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                 output_file = tmp_path / "output.txt"
                 sleep_mock = AsyncMock()
                 with patch(
-                    "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
                     await invoke_agent(
@@ -569,15 +569,15 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             sleep_mock = AsyncMock()
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ),
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.retry.quota_retry_guard_exhausted",
+                    "crewplane.runtime.agent.invocation.retry.quota_retry_guard_exhausted",
                     return_value=False,
                 ),
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.retry.quota_retry_guard_will_exhaust",
+                    "crewplane.runtime.agent.invocation.retry.quota_retry_guard_will_exhaust",
                     return_value=True,
                 ),
                 self.assertRaisesRegex(RuntimeError, "would exceed 5 hours"),

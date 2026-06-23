@@ -14,29 +14,29 @@ from typing import Any
 import typer
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.architecture.ports import ArtifactStorePort
-from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.cli.run.workspace.git_source import (
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.manager import OutputManager
+from crewplane.cli.run.workspace.git_source import (
     GIT_MIN_VERSION,
     parse_git_version,
 )
-from orchestrator_cli.cli.workflow_runner import (
+from crewplane.cli.workflow_runner import (
     execute_workflow_run,
     write_early_preflight_failure_run,
 )
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.preflight import (
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight import (
     PreflightWorkflowSource,
     signature_for_payload,
 )
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 DESCRIPTOR_LEAK_TOKENS = (
     "log_presentation_format",
@@ -68,7 +68,7 @@ class DuplicateReportingArtifactsAdapter:
     def create_store(
         self,
         workflow_name: str,
-        orchestrator_dir: Path,
+        state_dir: Path,
         project_root: Path,
         options: Mapping[str, Any] | None = None,
     ) -> ArtifactStorePort:
@@ -76,7 +76,7 @@ class DuplicateReportingArtifactsAdapter:
         resolved_options = dict(options or {})
         return OutputManager(
             workflow_name,
-            base_dir=orchestrator_dir,
+            base_dir=state_dir,
             template_base_dir=project_root,
             log_cli_output=bool(resolved_options.get("log_cli_output", False)),
         )
@@ -127,9 +127,7 @@ class PreflightOrderingInvokerAdapter:
         options: Mapping[str, Any] | None = None,  # noqa: ARG002 - Required by adapter protocol.
     ) -> PreflightOrderingInvoker:
         type(self).preflight_plan_exists_at_create = any(
-            Path(".orchestrator").glob(
-                "execution-stages/*/preflight/execution-plan.json"
-            )
+            Path(".crewplane").glob("execution-stages/*/preflight/execution-plan.json")
         )
         return PreflightOrderingInvoker()
 
@@ -212,14 +210,14 @@ def _workflow_payload(workflow: WorkflowPlan) -> dict[str, object]:
 
 
 def _run_dirs(root: Path) -> list[Path]:
-    stages_root = root / ".orchestrator" / "execution-stages"
+    stages_root = root / ".crewplane" / "execution-stages"
     if not stages_root.exists():
         return []
     return sorted(path for path in stages_root.iterdir() if path.is_dir())
 
 
 def _result_dirs(root: Path) -> list[Path]:
-    results_root = root / ".orchestrator" / "execution-results"
+    results_root = root / ".crewplane" / "execution-results"
     if not results_root.exists():
         return []
     return sorted(path for path in results_root.iterdir() if path.is_dir())
@@ -375,7 +373,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(DuplicateReportingArtifactsAdapter.create_store_calls, 0)
             self.assertEqual(_run_dirs(root), [])
             self.assertEqual(_result_dirs(root), [])
-            self.assertFalse((root / ".orchestrator" / "locks").exists())
+            self.assertFalse((root / ".crewplane" / "locks").exists())
 
     async def test_force_ignores_duplicate_signature(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -509,8 +507,8 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8",
             )
             _git(root, "init")
-            _git(root, "config", "user.name", "Orchestrator Test")
-            _git(root, "config", "user.email", "orchestrator-test@example.invalid")
+            _git(root, "config", "user.name", "Crewplane Test")
+            _git(root, "config", "user.email", "crewplane-test@example.invalid")
             _git(root, "add", "docs/input.md")
             _git(root, "commit", "-m", "initial")
             console = Console(file=io.StringIO(), force_terminal=False)

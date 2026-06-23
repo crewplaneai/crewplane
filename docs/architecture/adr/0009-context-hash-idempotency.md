@@ -7,7 +7,7 @@ Accepted
 2026-04-10
 
 ## Decision
-Utilize a coarse-grained, workflow-level signature strategy for run idempotency instead of implementing a fine-grained, dependency-aware drift detection engine. Each execution attempt that proceeds writes current run state under `.orchestrator/execution-stages/<run_key>/manifests/run.json`, where `<run_key>` is the bounded generated run directory name. Future runs that produce an identical successful workflow signature bypass the whole workflow unless `--force` is provided.
+Utilize a coarse-grained, workflow-level signature strategy for run idempotency instead of implementing a fine-grained, dependency-aware drift detection engine. Each execution attempt that proceeds writes current run state under `.crewplane/execution-stages/<run_key>/manifests/run.json`, where `<run_key>` is the bounded generated run directory name. Future runs that produce an identical successful workflow signature bypass the whole workflow unless `--force` is provided.
 
 The signature is based on the compiled execution contract, not on presentation
 state. It includes composed workflow semantics, static file hashes, env/var and
@@ -19,7 +19,7 @@ Observer-only UI settings are excluded.
 The architecture review identified "Run Idempotency / State" as a feature requirement to evaluate. AI workflows can be expensive and slow, so a mechanism is needed to suppress exact reruns. While enterprise build systems (like Bazel or Make) use dependency-aware incremental dirty-checking, this project uses input-based workflow signatures to provide immediate coarse-grained idempotency at the workflow-run boundary.
 
 ## Rationale
-1. **Simplicity vs. Complexity**: Hashing the explicit execution context covers the vast majority (the 80/20) of use cases where nodes re-run needlessly. Building complex AST-based graph diffing or timestamp-based dependency tracking would heavily bloat the orchestrator core.
+1. **Simplicity vs. Complexity**: Hashing the explicit execution context covers the vast majority (the 80/20) of use cases where nodes re-run needlessly. Building complex AST-based graph diffing or timestamp-based dependency tracking would heavily bloat Crewplane core.
 2. **Deterministic Inputs in a Non-Deterministic Environment**: AI endpoints are inherently non-deterministic. Ensuring idempotency by strictly hashing the complete input prompt, references, and configuration is the most robust way to guarantee the input hasn't mutated.
 3. **Escapability**: This caching approach acts as a baseline that can easily be bypassed by users providing the `--force` flag when explicit re-runs are desired.
 
@@ -39,7 +39,7 @@ The architecture review identified "Run Idempotency / State" as a feature requir
   runtime config snapshots are classified by signature scope, and duplicate
   detection remains whole-workflow rather than node-level.
 - **2026-06-09**: Current-layout per-run `run.json` state under
-  `.orchestrator/execution-stages/<run_key>/manifests/` owns duplicate
+  `.crewplane/execution-stages/<run_key>/manifests/` owns duplicate
   detection. Success-first idempotency remains whole-workflow: any valid
   same-context success skips before failed/cancelled node-boundary resume is
   considered.

@@ -4,8 +4,8 @@ description: >-
   Creates and revises portable declarative AI workflow files using Markdown
   frontmatter, DAG nodes, provider aliases, artifact references, imports,
   reusable inputs, findings artifacts, and review loops. Use when asked to
-  author, improve, modularize, or validate .task.md workflows for a CLI-based
-  multi-agent orchestrator, including parallel fail-safety, prompt-budget
+  author, improve, modularize, or validate .task.md workflows for CLI-based
+  multi-agent workflow orchestration, including parallel fail-safety, prompt-budget
   guards, provider/session resilience, and generated-file handoffs.
 ---
 
@@ -262,14 +262,14 @@ multi-provider sequential node.
 
 Shared task context for both roles.
 
-<!-- orchestrator:executor -->
+<!-- crewplane:executor -->
 Apply required fixes and return the complete revised candidate.
-<!-- /orchestrator:executor -->
+<!-- /crewplane:executor -->
 
-<!-- orchestrator:reviewer -->
-Inspect the revised candidate for correctness, regressions, and missing
-validation. Do not edit files.
-<!-- /orchestrator:reviewer -->
+<!-- crewplane:reviewer -->
+Inspect the revised candidate for domain-specific correctness risks, regressions,
+and missing validation.
+<!-- /crewplane:reviewer -->
 ```
 
 Rules:
@@ -286,44 +286,24 @@ Rules:
   segments only; multi-provider sequential review loops also allow reviewer
   segments.
 
-## Reviewer Contract
+## Reviewer Guidance
 
-For review-loop nodes, instruct reviewers to end with this exact structure:
+Do not paste Crewplane's structured review contract into workflow prompts. The
+runtime appends the reviewer-only behavior, current-candidate context, previous
+unresolved review state, and required verdict format for review-loop reviewer
+invocations.
 
-```text
-## Major Issues
-None
+Reviewer prompt text should focus on task-specific review criteria:
 
-## Minor Issues
-None
+- What correctness, regression, validation, safety, or domain risks to inspect.
+- What evidence reviewers should cite when reporting actionable issues.
+- Which optional polish is worth mentioning, and what should be ignored.
+- Any target-specific acceptance criteria that the generic framework contract
+  cannot infer.
 
-## Nitpicks
-None
-
----
-VERDICT: NO_FINDINGS
-```
-
-Use `CHANGES_REQUESTED` when major or minor issues remain. Use `NITS_ONLY` only
-when the remaining items are optional polish.
-
-Reviewer format rules:
-
-- Include `Major Issues`, `Minor Issues`, and `Nitpicks` in that order.
-- Use `None` for empty sections.
-- End with exactly one verdict token: `CHANGES_REQUESTED`, `NITS_ONLY`, or
-  `NO_FINDINGS`.
-- Treat malformed or missing structured review output as non-approval in the
-  workflow design.
-
-Reviewer prompts should say:
-
-- Review the current candidate, not stale prior artifacts.
-- Report concrete issues with evidence and required fixes.
-- Do not approve while actionable bugs, regressions, missing validation, or
-  other major/minor issues remain.
-- Do not modify the workspace unless the reviewer is also explicitly an
-  executor in a separate node.
+Keep reviewer role blocks short. Avoid duplicating generic instructions such as
+reviewing only the current candidate, not editing the workspace, or ending with a
+specific verdict structure.
 
 ## Prompt Budget Guards
 
@@ -484,16 +464,15 @@ nodes:
 
 Shared context for the current candidate.
 
-<!-- orchestrator:executor -->
+<!-- crewplane:executor -->
 Implement or remediate the candidate. Return the complete current candidate,
 commands run, and a link-only Generated Files section when files changed.
-<!-- /orchestrator:executor -->
+<!-- /crewplane:executor -->
 
-<!-- orchestrator:reviewer -->
-Review only. Inspect correctness, regressions, missing validation, and whether
-the executor returned a complete candidate. End with the structured verdict
-block.
-<!-- /orchestrator:reviewer -->
+<!-- crewplane:reviewer -->
+Inspect correctness, regressions, missing validation, and whether the executor
+returned a complete candidate.
+<!-- /crewplane:reviewer -->
 ```
 
 Use this when the same node should iterate until reviewers approve or configured

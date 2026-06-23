@@ -50,21 +50,46 @@ Reviewer prompts must be present when reviewer providers are configured:
 ## implement
 Implement the requested change.
 
-<!-- orchestrator:reviewer -->
+<!-- crewplane:reviewer -->
 Review the executor output for correctness and regressions.
-<!-- /orchestrator:reviewer -->
+<!-- /crewplane:reviewer -->
 ```
 
 Unmarked Markdown is shared prompt content. Authored role markers are only
 `executor` and `reviewer`; there is no authored `shared` marker.
 
+Reviewers are instructed to end with a normalized review block:
+
+```markdown
+## Major Issues
+None
+
+## Minor Issues
+None
+
+## Nitpicks
+None
+
+---
+VERDICT: CHANGES_REQUESTED | NITS_ONLY | NO_FINDINGS
+```
+
+`NO_FINDINGS` and `NITS_ONLY` approve a candidate. `CHANGES_REQUESTED` blocks
+it. All reviewers must approve for consensus. Malformed or ambiguous reviewer
+output is preserved as unstructured feedback and is not treated as approval.
+
 ## Controls
 
-- `audit_rounds`: maximum review-loop rounds for a sequential node with
-  reviewers. It must not exceed `settings.max_audit_rounds`.
-- `depth`: sequential execution depth; must be positive when supplied.
-- `continue_on_failure`: allow downstream scheduling to continue past this node
-  failure when workflow policy permits.
+- `audit_rounds`: maximum review-loop audit rounds for a sequential node with
+  reviewers. It defaults to `1`, is only valid when the sequential node has
+  multiple providers, and must not exceed `settings.max_audit_rounds`.
+- `depth`: sequential execution depth. It defaults to `1` and must be positive
+  when supplied. For a single-provider sequential node, it is the total executor
+  rounds. For a review loop, it is remediation depth inside each audit round.
+- `continue_on_failure`: converts selected parallel or review-loop failure
+  outcomes into successful node completion. Failed dependencies still block
+  downstream nodes. It applies to parallel failure-threshold excess, reviewer
+  failures, and review-loop consensus exhaustion.
 - `failure_threshold`: parallel-node failure threshold. It is not valid on
   sequential nodes.
 

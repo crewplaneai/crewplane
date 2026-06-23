@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.observability.tmux.bindings import TmuxCompactKeyBindings
-from orchestrator_cli.observability.tmux.runtime_files import (
+from crewplane.observability.tmux.bindings import TmuxCompactKeyBindings
+from crewplane.observability.tmux.runtime_files import (
     MODE_DASHBOARD,
     MODE_INSPECT,
     RuntimeFiles,
@@ -11,7 +11,7 @@ from orchestrator_cli.observability.tmux.runtime_files import (
     write_atomic,
     write_json_atomic,
 )
-from orchestrator_cli.observability.tmux.session import TmuxSessionTargets
+from crewplane.observability.tmux.session import TmuxSessionTargets
 from tests.integration.observability.tmux_fakes import FakeTmuxClient
 
 
@@ -26,17 +26,17 @@ def test_bindings_install_dashboard_inspect_and_copy_mode_tables(
     bindings.install(client, runtime_files, session)
 
     table_keys = binding_keys(client.calls)
-    assert ("orchestrator-dashboard", "Enter") in table_keys
-    assert ("orchestrator-inspect", "Escape") in table_keys
+    assert ("crewplane-dashboard", "Enter") in table_keys
+    assert ("crewplane-inspect", "Escape") in table_keys
     assert ("copy-mode", "Up") in table_keys
     assert ("copy-mode-vi", "WheelDownPane") in table_keys
-    enter_binding = table_keys[("orchestrator-dashboard", "Enter")]
-    assert "orchestrator_cli.observability.tmux.inspect_control" in enter_binding
+    enter_binding = table_keys[("crewplane-dashboard", "Enter")]
+    assert "crewplane.observability.tmux.inspect_control" in enter_binding
     assert "--view auto" in enter_binding
     assert "respawn-pane" not in enter_binding
-    assert ("orchestrator-dashboard", "r") in table_keys
-    assert ("orchestrator-inspect", "r") in table_keys
-    assert ("orchestrator-inspect", "f") in table_keys
+    assert ("crewplane-dashboard", "r") in table_keys
+    assert ("crewplane-inspect", "r") in table_keys
+    assert ("crewplane-inspect", "f") in table_keys
 
 
 def test_bindings_do_not_embed_dynamic_log_or_descriptor_values(
@@ -79,7 +79,7 @@ def test_copy_mode_bindings_switch_between_dashboard_and_inspect(
     inspect_bindings = binding_keys(client.calls)
     assert "send-keys -X cursor-up" in inspect_bindings[("copy-mode", "Up")]
     assert (
-        "switch-client -T orchestrator-dashboard"
+        "switch-client -T crewplane-dashboard"
         not in inspect_bindings[("copy-mode", "Up")]
     )
 
@@ -87,7 +87,7 @@ def test_copy_mode_bindings_switch_between_dashboard_and_inspect(
     bindings.sync_copy_mode_bindings(client, runtime_files, session, MODE_DASHBOARD)
     dashboard_bindings = binding_keys(client.calls)
     assert (
-        "switch-client -T orchestrator-dashboard"
+        "switch-client -T crewplane-dashboard"
         in dashboard_bindings[("copy-mode", "Up")]
     )
 
@@ -101,9 +101,9 @@ def initialized_runtime_files(root: Path) -> RuntimeFiles:
 
 def tmux_targets() -> TmuxSessionTargets:
     return TmuxSessionTargets(
-        session_name="orchestrator-test",
+        session_name="crewplane-test",
         socket_name="socket",
-        window_target="orchestrator-test:dashboard",
+        window_target="crewplane-test:dashboard",
         left_pane_id="%10",
         right_pane_id="%20",
     )

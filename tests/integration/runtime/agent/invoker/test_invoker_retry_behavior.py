@@ -6,17 +6,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.failures import (
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.failures import (
     InvocationFailureError,
 )
-from orchestrator_cli.runtime.agent.invoker import (
+from crewplane.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
@@ -229,7 +229,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
                 with (
                     patch(
-                        "orchestrator_cli.runtime.agent.invocation.command.open_log_handle",
+                        "crewplane.runtime.agent.invocation.command.open_log_handle",
                         side_effect=OSError("cannot open log"),
                     ),
                     self.assertRaisesRegex(RuntimeError, "Execution error"),
@@ -269,7 +269,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.retry.quota_retry_guard_exhausted",
+                    "crewplane.runtime.agent.invocation.retry.quota_retry_guard_exhausted",
                     side_effect=[False, True],
                 ),
                 self.assertRaisesRegex(
@@ -521,7 +521,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -578,7 +578,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -638,7 +638,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(

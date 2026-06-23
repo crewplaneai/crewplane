@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.core.workspace_git_policy import (
+from crewplane.core.workspace.git_policy import (
     WORKSPACE_GIT_BASE_ENVIRONMENT,
     WORKSPACE_GIT_DETERMINISTIC_COMMIT_ENVIRONMENT,
     deterministic_workspace_commit_environment,

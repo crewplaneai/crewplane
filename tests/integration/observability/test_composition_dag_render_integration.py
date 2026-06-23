@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
-from orchestrator_cli.core.workflow_models import WorkflowPlan
-from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workflow.loading import load_tasks_with_sources
+from crewplane.core.workflow.models import WorkflowPlan
+from crewplane.core.workflow.validation import validate_workflow_plan
+from crewplane.version import SCHEMA_VERSION
 
 
 def write_workflow(path: Path, lines: list[str]) -> None:
@@ -66,7 +66,7 @@ def build_namespaced_import_workflow(tmp_path: Path) -> WorkflowPlan:
 
 
 def build_imported_input_workflow(tmp_path: Path) -> WorkflowPlan:
-    inputs_dir = tmp_path / ".orchestrator" / "inputs"
+    inputs_dir = tmp_path / ".crewplane" / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "review-findings.md").write_text("Review findings", encoding="utf-8")
 
@@ -84,7 +84,7 @@ def build_imported_input_workflow(tmp_path: Path) -> WorkflowPlan:
             "nodes:",
             "  - id: review-input",
             "    mode: input",
-            '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+            '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
             "  - id: implement",
             "    mode: sequential",
             "    needs: [review-input]",
@@ -121,7 +121,7 @@ def build_imported_input_workflow(tmp_path: Path) -> WorkflowPlan:
 
 
 def build_bound_input_rewrite_workflow(tmp_path: Path) -> WorkflowPlan:
-    inputs_dir = tmp_path / ".orchestrator" / "inputs"
+    inputs_dir = tmp_path / ".crewplane" / "inputs"
     inputs_dir.mkdir(parents=True, exist_ok=True)
     (inputs_dir / "coding-standards.md").write_text(
         "Coding standards", encoding="utf-8"
@@ -160,10 +160,10 @@ def build_bound_input_rewrite_workflow(tmp_path: Path) -> WorkflowPlan:
             "nodes:",
             "  - id: review-input",
             "    mode: input",
-            '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+            '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
             "  - id: standards-input",
             "    mode: input",
-            '    source: "{{file:.orchestrator/inputs/coding-standards.md}}"',
+            '    source: "{{file:.crewplane/inputs/coding-standards.md}}"',
             "  - id: implement",
             "    mode: sequential",
             "    needs: [review-input, standards-input]",

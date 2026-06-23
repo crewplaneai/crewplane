@@ -3,10 +3,10 @@ import unittest
 
 from rich.console import Console
 
-from orchestrator_cli.adapters.ui.null import NullUIAdapter
-from orchestrator_cli.core.config import Config
-from orchestrator_cli.observability.types import WorkflowTopology
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.adapters.ui.null import NullUIAdapter
+from crewplane.core.config import Config
+from crewplane.observability.types import WorkflowTopology
+from crewplane.version import SCHEMA_VERSION
 
 
 class NullUIAdapterTests(unittest.TestCase):

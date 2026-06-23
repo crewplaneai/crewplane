@@ -40,7 +40,7 @@ deterministic end-to-end execution mechanism.
   screenshots.
 - Strict option validation that fails fast on bad config.
 - Preserve the existing blackboard architecture by writing normal artifacts to
-  `.orchestrator/`.
+  `.crewplane/`.
 
 ## Non-Goals
 - Perfect simulation of provider-specific CLI behavior.
@@ -60,7 +60,7 @@ settings:
         delay_seconds: 1.5
         observation_delay_seconds: 5
         output_mode: "lorem" # "lorem" | "echo" | "file"
-        output_dir: ".orchestrator/mock_outputs" # required when output_mode="file"
+        output_dir: ".crewplane/mock_outputs" # required when output_mode="file"
         strict_file_mode: false
         seed: 42
         fail_when:
@@ -240,8 +240,8 @@ Architecture and CLI tests cover:
 ## Manual Verification
 
 1. Set `settings.integrations.invoker.implementation: "mock"` in
-   `.orchestrator/config.yml`.
-2. Run `orchestrator run` with tmux UI enabled.
+   `.crewplane/config.yml`.
+2. Run `crewplane run` with tmux UI enabled.
 3. Verify state transitions:
    - node: `pending -> running -> succeeded/failed`
    - invocation: `pending -> running -> succeeded/failed`
@@ -283,8 +283,8 @@ Architecture and CLI tests cover:
   - Mitigation: strict option validation and unknown-option rejection.
 - Risk: mock behavior leaks into runtime orchestration semantics.
   - Mitigation: keep mock-specific behavior in
-    `src/orchestrator_cli/adapters/invokers/mock.py` and its
-    `src/orchestrator_cli/adapters/invokers/mock_invoker/` implementation
+    `src/crewplane/adapters/invokers/mock.py` and its
+    `src/crewplane/adapters/invokers/mock_invoker/` implementation
     package.
 - Risk: review-contract helpers pull the mock adapter toward runtime consensus
   internals.
@@ -333,8 +333,8 @@ Architecture and CLI tests cover:
   current implementation details, including reviewer contracts, mutation
   sidecars, audit-round selectors, validation coverage, and deferred work.
 - **2026-06-05**: Moved the mock helper modules into the
-  `src/orchestrator_cli/adapters/invokers/mock_invoker/` package while keeping
-  `orchestrator_cli.adapters.invokers.mock:MockInvokerAdapter` as the stable
+  `src/crewplane/adapters/invokers/mock_invoker/` package while keeping
+  `crewplane.adapters.invokers.mock:MockInvokerAdapter` as the stable
   registry alias target.
 - **2026-06-07**: Folded in the boundary hardening update. The mock adapter
   remains an adapter-owned deterministic transport, uses the core-neutral

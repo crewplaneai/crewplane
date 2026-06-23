@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import orchestrator_cli.cli.app as cli
+import crewplane.cli.app as cli
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,

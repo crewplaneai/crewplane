@@ -4,19 +4,19 @@ Workspace examples show Experimental Git-backed source-tree isolation.
 
 Packaged templates:
 
-- [workspace-alternatives-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/worktree/workspace-alternatives-example.task.md)
-- [workspace-inherited-worktree-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md)
+- [workspace-alternatives-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md)
+- [workspace-inherited-worktree-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md)
 
-After `orchestrator init`, run one explicitly:
+After `crewplane init`, run one explicitly:
 
 ```bash
-orchestrator run --tasks .orchestrator/workflows/example-templates/worktree/workspace-alternatives-example.task.md
-orchestrator run --tasks .orchestrator/workflows/example-templates/worktree/workspace-inherited-worktree-example.task.md
+crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-alternatives-example.task.md
+crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-inherited-worktree-example.task.md
 ```
 
 Before real execution, enable Experimental workspace support in
-`.orchestrator/config.yml` and set an absolute
-`settings.workspace.cache_root`.
+`.crewplane/config.yml`. You may set an absolute `settings.workspace.cache_root`;
+when it is omitted, Crewplane uses the platform cache directory.
 
 The templates demonstrate:
 

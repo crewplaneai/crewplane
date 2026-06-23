@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.dag_render import render_dag_summary
-from orchestrator_cli.observability.events import build_initial_state
-from orchestrator_cli.observability.layout import compute_topology_layout
+from crewplane.observability.dag_render import render_dag_summary
+from crewplane.observability.events import build_initial_state
+from crewplane.observability.layout import compute_topology_layout
 from tests.helpers.observability import topology_from_workflow
 
 FIXTURES = Path(__file__).with_name("fixtures")

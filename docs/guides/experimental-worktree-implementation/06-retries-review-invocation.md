@@ -44,14 +44,14 @@ V1 does not preserve ignored caches across retry attempts. Deterministic retry
 state is more important than build-cache reuse.
 
 A final failed or cancelled node records diagnostics and terminal workspace
-state under `.orchestrator/`. Its mutated checkout is cleaned up best-effort and
+state under `.crewplane/`. Its mutated checkout is cleaned up best-effort and
 is not a source of truth for later runs.
 
 ## Review Loops and Multi-Provider Nodes
 Sequential review-loop remediation is different from transport retry.
 
 Each accepted executor round starts from the current canonical candidate
-workspace for that node. Runtime creates an orchestrator-owned candidate commit
+workspace for that node. Runtime creates a Crewplane-owned candidate commit
 after each successful executor round whose output is eligible for review.
 
 Reviewer invocations inspect the current candidate but must not share the live
@@ -66,7 +66,7 @@ Reviewer rules:
 - Reviewer prompt file tokens resolve from the same current candidate commit
   used to provision the reviewer workspace.
 - No reviewer workspace is provisioned from mutable executor output until result
-  capture and candidate-tree validation have passed and an orchestrator-owned
+  capture and candidate-tree validation have passed and a Crewplane-owned
   candidate commit exists.
 - The default reviewer view is a disposable Git worktree, so reviewer CLIs may
   run tools that write temporary files.
@@ -80,7 +80,7 @@ Reviewer rules:
 - Runtime records a reviewer baseline before invocation and checks source-tree
   drift afterward.
 - Reviewer mutation of executor candidate workspace, current node lineage refs,
-  protected orchestrator refs, local Git config/attribute/ignore sources,
+  protected crewplane refs, local Git config/attribute/ignore sources,
   worktree config, or canonical artifacts fails the node when attribution is
   safe.
 - Concurrent shared-artifact mutation follows existing destructive-drift
@@ -158,7 +158,7 @@ this path is not workspace-compatible in v1.
 The runtime helper expands dynamic Git config-injection variables from the
 current process environment into exact names before invoking the runner. This
 includes `GIT_CONFIG_KEY_*` and `GIT_CONFIG_VALUE_*`. Expansion is recomputed
-for each process launch and is not persisted in `workspace-state.json`.
+for each process launch and is not persisted in `workspace-state*.json`.
 
 Runtime may use `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` that
 it creates itself to apply deterministic provider child-process Git config

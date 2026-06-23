@@ -22,7 +22,10 @@ Fields:
 - `with`: string parameters for `{{param:key}}` substitution.
 - `inputs`: bind declared child workflow inputs to local node IDs.
 
-Imports are Markdown-only and must stay within the project root.
+Import paths resolve relative to the workflow file that declares them. Imports
+are Markdown-only and must stay within the project root. Duplicate aliases fail,
+and unused `with` parameters fail so misspelled parameter names do not silently
+disappear.
 
 ## Namespacing
 
@@ -31,6 +34,9 @@ node `findings`, importing it as `quality.review` produces
 `quality.review.findings`.
 
 Dependencies and node artifact references are rewritten to the composed node IDs.
+Imported worktree declarations and selectors are alias-qualified too.
+`worktree: none` remains the project-root opt-out. Implicit single-worktree
+inheritance is resolved during composition.
 
 ## Parameters
 
@@ -58,6 +64,6 @@ input nodes are pruned from the composed workflow.
 
 Packaged composition templates:
 
-- [review-findings-producer-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/composition/review-findings-producer-example.task.md)
-- [review-fix-consumer-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
-- [review-fix-composed-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/composition/review-fix-composed-example.task.md)
+- [review-findings-producer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-findings-producer-example.task.md)
+- [review-fix-consumer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
+- [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)

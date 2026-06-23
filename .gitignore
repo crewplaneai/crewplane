@@ -51,6 +51,7 @@ dmypy.json
 logs/
 tmp/
 tmp/**
+.crewplane/
 .orchestrator/
 *.pid
 *.sqlite3

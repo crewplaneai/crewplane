@@ -4,34 +4,34 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.preflight.models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.runtime.execution import review_loop as review_loop_runtime
-from orchestrator_cli.runtime.execution.common import CompiledRuntimeContext
-from orchestrator_cli.runtime.execution.consensus import (
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.execution import review_loop as review_loop_runtime
+from crewplane.runtime.execution.common import CompiledRuntimeContext
+from crewplane.runtime.execution.consensus import (
     ParsedReviewResult,
     evaluate_review_output,
     render_review_contract,
 )
-from orchestrator_cli.runtime.execution.review_loop import (
+from crewplane.runtime.execution.review_loop import (
     audit_round as review_loop_audit_round,
 )
-from orchestrator_cli.runtime.execution.review_loop import (
+from crewplane.runtime.execution.review_loop import (
     executor_round as review_loop_executor_round,
 )
-from orchestrator_cli.runtime.execution.review_loop import (
+from crewplane.runtime.execution.review_loop import (
     reviewer_round as review_loop_reviewer_round,
 )
-from orchestrator_cli.runtime.execution.review_loop import (
+from crewplane.runtime.execution.review_loop import (
     rounds as review_loop_rounds,
 )
-from orchestrator_cli.runtime.execution.review_loop.types import (
+from crewplane.runtime.execution.review_loop.types import (
     AuditRoundRequest,
     ExecutorRoundArtifact,
     ExecutorRoundRequest,
@@ -40,7 +40,7 @@ from orchestrator_cli.runtime.execution.review_loop.types import (
     ReviewerRoundRequest,
     ReviewerRoundRunResult,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_records import workspace_selection_record
 
 
@@ -51,7 +51,7 @@ def _runtime_context() -> CompiledRuntimeContext:
             run_key_name="run-1",
             project_root=".",
             context_root=".",
-            manifest_root=".orchestrator",
+            manifest_root=".crewplane",
             created_at="2026-06-03T00:00:00",
             workflow_name="workflow",
             workflow_signature="workflow-signature",
@@ -489,7 +489,7 @@ def test_no_progress_candidate_discards_executor_workspace_lineage(
                         "result_tree": "d" * 40,
                         "changed_path_count": 1,
                     },
-                    "refs": {"result": "refs/orchestrator-cli/result"},
+                    "refs": {"result": "refs/crewplane/result"},
                     "bundle": {"path": "workspace-bundles/candidate.bundle"},
                 }
             ),

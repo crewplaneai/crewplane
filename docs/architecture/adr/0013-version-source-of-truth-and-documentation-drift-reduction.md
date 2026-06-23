@@ -7,7 +7,7 @@ Accepted and implemented
 2026-06-09
 
 ## Decision
-Use `src/orchestrator_cli/version.py` as the canonical Python source for one authored schema version:
+Use `src/crewplane/version.py` as the canonical Python source for one authored schema version:
 
 ```python
 SCHEMA_VERSION = "1.0"
@@ -23,7 +23,7 @@ Documentation should reference the schema version concept and source location in
 The project had several versioned surfaces:
 
 - package/distribution version in `pyproject.toml`
-- config schema version for `.orchestrator/config.yml`
+- config schema version for `.crewplane/config.yml`
 - workflow schema version for `.task.md` frontmatter and node semantics
 - preflight plan schema version for persisted execution-plan artifacts
 - integration API version for adapter metadata
@@ -66,7 +66,7 @@ The integration API version was also removed because it did not enforce compatib
 - External adapter compatibility relies on package versioning and structural validation until a real adapter ecosystem exists.
 
 ## Consequences
-- `src/orchestrator_cli/version.py` exports only `SCHEMA_VERSION`.
+- `src/crewplane/version.py` exports only `SCHEMA_VERSION`.
 - `pyproject.toml` remains the package version source.
 - Config validation, workflow validation, preflight plan serialization, and generated templates use `SCHEMA_VERSION`.
 - Preflight execution plans continue to serialize `plan_schema_version`; the old preflight-specific schema constant is removed.

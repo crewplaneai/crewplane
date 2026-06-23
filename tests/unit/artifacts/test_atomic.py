@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from orchestrator_cli.artifacts.atomic import (
+from crewplane.artifacts.atomic import (
     atomic_write_bytes,
     atomic_write_json,
     atomic_write_json_if_absent,

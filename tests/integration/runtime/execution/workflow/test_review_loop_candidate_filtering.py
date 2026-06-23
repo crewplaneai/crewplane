@@ -3,18 +3,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
 )
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.execution.common import (
+from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     ArtifactDriftInvoker,
     MockAgentInvoker,

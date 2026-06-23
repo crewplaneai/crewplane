@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import orchestrator_cli.cli.app as cli
+import crewplane.cli.app as cli
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -61,10 +61,10 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             self.assertEqual(calls["count"], 1)
             self.assertIn("Identical context detected", stream.getvalue())
             stage_runs = sorted(
-                (tmp_path / ".orchestrator" / "execution-stages").glob("task-*")
+                (tmp_path / ".crewplane" / "execution-stages").glob("task-*")
             )
             result_runs = sorted(
-                (tmp_path / ".orchestrator" / "execution-results").glob("task-*")
+                (tmp_path / ".crewplane" / "execution-results").glob("task-*")
             )
             self.assertEqual(len(stage_runs), 1)
             self.assertEqual(result_runs, [])
@@ -144,8 +144,8 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             output_text = stream.getvalue()
             self.assertIn("Workflow: Review apps", output_text)
             self.assertIn("Artifact key: review-apps", output_text)
-            stages_root = str(tmp_path / ".orchestrator" / "execution-stages")
-            results_root = str(tmp_path / ".orchestrator" / "execution-results")
+            stages_root = str(tmp_path / ".crewplane" / "execution-stages")
+            results_root = str(tmp_path / ".crewplane" / "execution-results")
             self.assertRegex(
                 output_text,
                 re.escape(stages_root)

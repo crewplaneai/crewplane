@@ -5,23 +5,23 @@ import json
 import subprocess
 from pathlib import Path
 
-from orchestrator_cli.artifacts.run_history import (
+from crewplane.artifacts.run_history import (
     RunHistoryRecord,
     find_same_context_runs,
 )
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     ProviderRecord,
     WorkspaceSourceSnapshot,
 )
-from orchestrator_cli.core.preflight.workspace.observability import (
+from crewplane.core.preflight.workspace.observability import (
     invoker_workspace_descriptor,
 )
-from orchestrator_cli.core.workspace_git_policy import (
+from crewplane.core.workspace.git_policy import (
     deterministic_workspace_commit_environment,
 )
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -56,8 +56,8 @@ def attach_git_workspace_source(
         else ("init", f"--object-format={object_format}", "-b", "main")
     )
     run_git_text(repo, *init_args)
-    run_git_text(repo, "config", "user.name", "Orchestrator Test")
-    run_git_text(repo, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(repo, "config", "user.name", "Crewplane Test")
+    run_git_text(repo, "config", "user.email", "crewplane-test@example.invalid")
     (repo / "README.md").write_text("ready\n", encoding="utf-8")
     run_git_text(repo, "add", "README.md")
     run_git_text(repo, "commit", "-m", "initial")
@@ -272,11 +272,11 @@ def provider_workspace_state_payload(
         },
         "refs": {
             "candidate": (
-                "refs/orchestrator-cli/runs/"
+                "refs/crewplane/runs/"
                 f"{record.manifest.run_key_name}/{node_id}/{node_id}/candidate"
             ),
             "result": (
-                "refs/orchestrator-cli/runs/"
+                "refs/crewplane/runs/"
                 f"{record.manifest.run_key_name}/{node_id}/{node_id}/result"
             ),
         },
@@ -317,7 +317,7 @@ def _lineage_ref(
     slug: str,
     kind: str,
 ) -> str:
-    return f"refs/orchestrator-cli/runs/{run_key_name}/{node_id}/{slug}/{kind}"
+    return f"refs/crewplane/runs/{run_key_name}/{node_id}/{slug}/{kind}"
 
 
 def snapshot_workspace_state_payload(

@@ -43,9 +43,10 @@ Validation first decides whether workspace isolation is enabled:
 20. `kind: snapshot` nodes materialize from the recorded project source, allow
     disposable writes, and never produce downstream lineage.
 21. `kind: worktree` nodes start from the recorded project source unless they
-    have an ordered direct upstream selecting the same logical worktree name.
-22. A `kind: worktree` node may inherit mutable source from at most one ordered
-    direct upstream on the same logical worktree line.
+    have an ordered same-logical-worktree ancestor in the DAG.
+22. A `kind: worktree` node inherits mutable source from the latest ordered
+    same-logical-worktree ancestor, even if intermediate dependencies select
+    `worktree: none` or another non-lineage workspace.
 23. Parallel or unordered writer nodes selecting the same `kind: worktree` name
     fail validation.
 24. A `kind: worktree` node cannot implicitly merge source from a direct
@@ -63,8 +64,8 @@ Validation first decides whether workspace isolation is enabled:
     succeeded.
 33. Imported workflow `worktrees` declarations and node `worktree` selectors are
     namespace-rewritten consistently with imported node ids.
-34. Import bindings may not create lineage outside the direct composed `needs`
-    set.
+34. Import bindings may not create implicit merge lineage between different
+    logical worktree names.
 35. Configured workspace cache placement must pass overlap, symlink, ownership,
     and permission checks before any workspace is allocated.
 36. Repo-relative workspace-file locators must resolve to regular-file Git
@@ -75,11 +76,11 @@ Validation first decides whether workspace isolation is enabled:
     locator targeting a symlink, tree, gitlink, or missing path fails.
 38. Workspace-file locator paths are always passed to Git with literal semantics
     or pathspec-free object APIs.
-39. Ignored, untracked, and ordinary ignored `.orchestrator/` files are not
+39. Ignored, untracked, and ordinary ignored `.crewplane/` files are not
     ambiently imported.
 40. Reserved runtime artifact roots are never source roots. Tracked files under
-    `.orchestrator/execution-stages/`, `.orchestrator/execution-results/`, or
-    `.orchestrator/locks/` are unsupported in enabled mode.
+    `.crewplane/execution-stages/`, `.crewplane/execution-results/`, or
+    `.crewplane/locks/` are unsupported in enabled mode.
 41. Native Windows fails validation for workspace-enabled validate, dry-run, and
     real-run paths with clear WSL remediation.
 42. POSIX advisory-lock support is required for workspace-enabled real runs.

@@ -5,37 +5,37 @@ from threading import Event
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import (
+from crewplane.architecture.contracts import (
     AgentInvoker,
     LogPresentationDescriptor,
 )
-from orchestrator_cli.artifacts import OutputManager, safe_artifact_name
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.preflight import (
+from crewplane.artifacts import OutputManager, safe_artifact_name
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightExecutionPlan,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.runtime.execution import (
+from crewplane.runtime.execution import (
     execute_parallel_stage as _execute_compiled_parallel_stage,
 )
-from orchestrator_cli.runtime.execution import (
+from crewplane.runtime.execution import (
     execute_sequential_stage as _execute_compiled_sequential_stage,
 )
-from orchestrator_cli.runtime.execution import (
+from crewplane.runtime.execution import (
     execute_workflow as _execute_compiled_workflow,
 )
-from orchestrator_cli.runtime.execution.common import (
+from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
     ExecutionTelemetry,
 )
-from orchestrator_cli.runtime.execution.consensus import (
+from crewplane.runtime.execution.consensus import (
     ParsedReviewResult,
     render_review_contract,
 )
@@ -152,7 +152,7 @@ def _compile_test_plan(
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=output.base_dir,
-            orchestrator_dir=output.base_dir,
+            state_dir=output.base_dir,
             fingerprint_key_policy="read_only",
         ),
     )

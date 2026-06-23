@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.workspace_service import (
     create_git_repo,
     run_git_text,
@@ -149,13 +149,12 @@ def test_worktree_capture_rejects_sibling_result_ref_updates(
     assert source is not None
     (prepared.cwd / "result.txt").write_text("captured\n", encoding="utf-8")
     sibling_ref = (
-        "refs/orchestrator-cli/runs/workspace-run-001/sibling/"
-        "sibling-alpha-round1/result"
+        "refs/crewplane/runs/workspace-run-001/sibling/sibling-alpha-round1/result"
     )
     run_git_text(prepared.cwd, "update-ref", sibling_ref, source.run_base_commit)
 
     try:
-        with pytest.raises(RuntimeError, match="protected orchestrator Git refs"):
+        with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
             prepared.mark_succeeded()
     finally:
         run_git_text(prepared.cwd, "update-ref", "-d", sibling_ref)

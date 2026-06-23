@@ -1,9 +1,9 @@
 import unittest
 
-from orchestrator_cli.runtime.execution import (
+from crewplane.runtime.execution import (
     check_consensus,
 )
-from orchestrator_cli.runtime.execution.consensus import (
+from crewplane.runtime.execution.consensus import (
     evaluate_review_output,
     extract_verdict,
 )

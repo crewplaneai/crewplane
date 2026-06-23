@@ -27,16 +27,32 @@ one with `worktree: <name>`.
 
 There are two workspace kinds:
 
-- `worktree`: a mutable Git-backed source line. Successful nodes write
-  `workspace-state.json` and `workspace.bundle` so later nodes can continue
-  from the exact verified code state.
+- `worktree`: a mutable Git-backed source line. Successful invocations write
+  `workspace-state*.json` and `workspace-bundles/*.bundle` so later nodes can
+  continue from the exact verified code state.
 - `snapshot`: writable scratch space. Providers can write files there, but
   Crewplane discards those source changes and does not pass them downstream as
   code lineage.
 
-Everything durable still goes through `.orchestrator/` artifacts. Live cache
+Everything durable still goes through `.crewplane/` artifacts. Live cache
 directories and physical Git worktrees are temporary materializations, not the
 source of truth.
+
+Source lineage and ordinary artifacts are separate. Source changes move forward
+only along the latest ordered same-logical-worktree ancestor chain. Text and
+files such as `{{node.output}}` and `{{node.findings}}` move through ordinary
+artifact references.
+
+`blob_exact` means file bytes injected into prompts come from Git blob bytes. If
+local attributes, filters, LFS, or line-ending conversion would change those
+bytes, workspace-enabled validation fails before provider cost.
+
+To inspect a run, start under `.crewplane/execution-stages/<run-key>/`. Runtime
+state is in `workspace-state*.json`; live cache paths, when retained, are under
+`execution.workspace_path` and `execution.effective_cwd`. `create_branch` is
+local branch export: after a successful verified lineage result, Crewplane
+creates or verifies a configured or generated branch name. It does not push,
+merge, open a pull request, or switch the user's checkout.
 
 ## Key Terms
 
@@ -47,8 +63,8 @@ source of truth.
 | Source line | The ordered chain of successful nodes that select the same `kind: worktree` name. |
 | Lineage | Verified code state that can be used by downstream nodes. |
 | `blob_exact` | The initial contract requiring provider-visible bytes to match Git blob bytes exactly. |
-| `workspace-state.json` | The durable record of workspace source, result, setup, invocation, and cleanup facts. |
-| `workspace.bundle` | A Git bundle artifact used to rehydrate verified code state later. |
+| `workspace-state*.json` | The durable record of workspace source, result, setup, invocation, and cleanup facts. |
+| `workspace-bundles/*.bundle` | Git bundle artifacts used to rehydrate verified code state later. |
 | Managed workspace | A runtime-created worktree or snapshot cache directory outside the project root. |
 
 ## Reading Order

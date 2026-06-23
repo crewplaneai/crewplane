@@ -110,7 +110,7 @@ source gate before duplicate lookup and run allocation:
 9. Classify local/worktree Git config into rejected, overridden, and
    ignored-neutral keys.
 10. Probe filesystem support for runtime-required symlink, executable-bit,
-    case, Unicode, permission, and locking behavior.
+    case, Unicode, permission, and locking behavior during real execution.
 11. Validate local Git attribute and ignore sources.
 12. Validate the source tree has no effective byte-transforming attributes on
     tracked regular files.
@@ -125,9 +125,10 @@ source gate before duplicate lookup and run allocation:
 18. Estimate workspace storage pressure.
 19. Pass a neutral `WorkspaceSourceSnapshot` into preflight compilation.
 
-`orchestrator validate` and `orchestrator run --dry-run` may run read-only Git
+`crewplane validate` and `crewplane run --dry-run` may run read-only Git
 probes, Git object reads, `git config --no-includes`, literal-path tree lookups,
-and attribute inspection. They do not allocate run directories, worktrees,
+and attribute inspection. Writable cache filesystem capability probes are
+real-run only. Validate and dry-run do not allocate run directories, worktrees,
 bundles, workspace-state files, cached refs, lock files, workspace cache
 children, or cleanup state.
 
@@ -179,8 +180,8 @@ workspace-state files.
 
 The filesystem artifact backend writes:
 
-- `workspace-state.json`
-- `workspace.bundle`
+- `workspace-state*.json`
+- `workspace-bundles/*.bundle`
 - workspace diagnostics
 - tracked-only excluded-file notes
 - workspace summaries in preflight and run summaries
@@ -255,7 +256,8 @@ Rules:
 - Each mapping key is a logical worktree name for the current workflow run.
   `none` is reserved for explicit node opt-out and cannot be a worktree name.
 - A `kind: worktree` entry is a Git-backed mutable source line that can emit
-  `workspace-state.json`, `workspace.bundle`, and optional local branch export.
+  `workspace-state*.json`, `workspace-bundles/*.bundle`, and optional local
+  branch export.
 - A `kind: snapshot` entry is writable disposable scratch space. It never emits
   source lineage or a branch.
 - Same logical worktree name inside one workflow run means nodes continue the
@@ -300,15 +302,17 @@ Source compilation rules:
    execution and no workspace source lineage is compiled.
 2. A `kind: snapshot` node materializes from the run's recorded project source
    and produces no downstream lineage.
-3. A `kind: worktree` node with no direct upstream dependency selecting the
-   same worktree name starts from the recorded project source.
-4. A `kind: worktree` node with an ordered direct upstream selecting the same
-   worktree name starts from that upstream's verified result commit.
+3. A `kind: worktree` node with no ordered same-worktree ancestor starts from
+   the recorded project source.
+4. A `kind: worktree` node with an ordered same-worktree ancestor starts from
+   the latest such ancestor's verified result commit. For example,
+   `implement -> inspect(worktree: none) -> fix` lets `fix` inherit
+   `implement` when both mutable nodes select the same logical worktree.
 5. Parallel or unordered writers selecting the same worktree name fail
    validation because one mutable source line cannot fork and merge implicitly.
-6. A direct upstream selecting a different `kind: worktree` name cannot be
-   merged implicitly. Cross-worktree information flows through ordinary
-   artifacts, `worktree: none`, or `kind: snapshot`.
+6. A dependency selecting a different `kind: worktree` name cannot be merged
+   implicitly. Cross-worktree information flows through ordinary artifacts,
+   `worktree: none`, or `kind: snapshot`.
 
 Because workspace isolation is disabled by default, non-Git project execution
 remains supported by default. Git is required only when a workflow selects
@@ -319,7 +323,7 @@ Remove the dormant compatibility surface:
 
 ```yaml
 settings:
-  default_workspace: ".orchestrator/workspaces"
+  default_workspace: ".crewplane/workspaces"
 ```
 
 `settings.default_workspace` is not valid in the current schema after this ADR.
@@ -366,21 +370,21 @@ Rules:
 - `max_concurrent_materializations` serializes v1 materialization by default.
 - Disk guardrails can warn or fail using byte thresholds before provider cost.
 - `cache_root: null` resolves to:
-  - macOS: `~/Library/Caches/orchestrator-cli`
-  - Linux/POSIX/WSL: `${XDG_CACHE_HOME:-~/.cache}/orchestrator-cli`
+  - macOS: `~/Library/Caches/crewplane`
+  - Linux/POSIX/WSL: `${XDG_CACHE_HOME:-~/.cache}/crewplane`
 - Native Windows is unsupported for workspace-enabled runs. Users should use
   WSL or another POSIX environment.
 - A configured `cache_root` must be absolute.
 - Project-root-relative cache roots are rejected.
 - The unresolved spelling and canonical real path must both pass overlap checks.
 - The cache root must not equal, contain, or be contained by the project root,
-  project `.orchestrator/`, `.orchestrator/execution-stages/`,
-  `.orchestrator/execution-results/`, `.orchestrator/locks/`, Git common
+  project `.crewplane/`, `.crewplane/execution-stages/`,
+  `.crewplane/execution-results/`, `.crewplane/locks/`, Git common
   directory, or active checkout Git directory.
 - On case-insensitive filesystems, overlap checks also compare normalized
   case-folded paths.
 - The final existing cache root path must not be a symlink.
-- Runtime rejects pre-existing symlinks at orchestrator-created child paths.
+- Runtime rejects pre-existing symlinks at crewplane-created child paths.
 - Cache roots and workspace directories are created owner-private where
   supported.
 - On POSIX, cache roots, run cache roots, workspaces, snapshots, and lock

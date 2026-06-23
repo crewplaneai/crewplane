@@ -54,7 +54,7 @@ non-lineage workspaces, and `worktree: none` for project-root execution.
 
 11. Broad failure on all Git ref/config changes
     - Produces false positives from unrelated user Git activity.
-    - V1 protects orchestrator refs, contract invariants, and expected
+    - V1 protects crewplane refs, contract invariants, and expected
       identities.
 
 12. Preserving or squashing provider-created commits

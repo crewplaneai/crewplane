@@ -15,8 +15,8 @@ ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_NAME = "crewplane"
 AUTHORED_VERSION = "0.1.0-alpha.1"
 NORMALIZED_VERSION = "0.1.0a1"
-CLI_COMMAND = "orchestrator"
-IMPORT_PACKAGE = "orchestrator_cli"
+CLI_COMMAND = "crewplane"
+IMPORT_PACKAGE = "crewplane"
 REPOSITORY_URL = "https://github.com/crewplaneai/crewplane"
 
 
@@ -71,7 +71,7 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
     assert project["license"] == "Apache-2.0"
 
     scripts = project["scripts"]
-    assert scripts == {CLI_COMMAND: "orchestrator_cli.cli.app:app"}
+    assert scripts == {CLI_COMMAND: "crewplane.cli.app:app"}
 
     urls = project["urls"]
     assert urls["Repository"] == REPOSITORY_URL
@@ -125,11 +125,17 @@ def test_uv_lock_tracks_editable_crewplane_package() -> None:
 def test_makefile_exposes_local_release_validation_targets() -> None:
     makefile = read_text("Makefile")
     assert "VERSION ?= 0.1.0-alpha.1" not in makefile
+    assert "PROJECT_NAME_CMD =" in makefile
+    assert 'project["name"]' in makefile
+    assert 'project.get("scripts", {})' in makefile
+    assert "expected one [project.scripts] key matching project.name" in makefile
+    assert "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD))" in makefile
+    assert "PACKAGE_NAME := crewplane" not in makefile
+    assert "CLI_NAME" not in makefile
     assert "PROJECT_VERSION_CMD =" in makefile
     assert "PROJECT_VERSION = $(shell $(PROJECT_VERSION_CMD))" in makefile
     assert "RELEASE_CHECKS = $(RUN_PYTHON) packaging/release_checks.py" in makefile
     assert "CONFIRM_VERSION_MISMATCH" not in makefile
-    assert "PACKAGE_NAME := crewplane" in makefile
     assert "PYPI_REPOSITORY ?= pypi" in makefile
     assert "TWINE_UPLOAD_ARGS ?=" in makefile
     assert "NPM_TAG ?= alpha" in makefile
@@ -140,7 +146,7 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "package-check:" in makefile
     assert "formula_sha" in makefile
     assert "sdist_sha" in makefile
-    assert "packaging/homebrew/Formula/crewplane.rb" in makefile
+    assert "packaging/homebrew/Formula/$(PACKAGE_NAME).rb" in makefile
     assert "uv export --frozen --no-dev --no-emit-project" in makefile
     assert "changelog-check:" in makefile
     assert "release-version-check:" in makefile
@@ -155,14 +161,16 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "brew-smoke:" in makefile
     assert "install-check:" in makefile
     assert (
-        "release-check: release-version-check release-remote-version-check"
-        in makefile
+        "release-check: release-version-check release-remote-version-check" in makefile
     )
     assert "release-prereqs:" in makefile
     assert "release-pypi:" in makefile
     assert "release-npm:" in makefile
     assert ".NOTPARALLEL: release-check release" in makefile
-    assert "release: release-confirm release-check changelog-check release-prereqs" in makefile
+    assert (
+        "release: release-confirm release-check changelog-check release-prereqs"
+        in makefile
+    )
     assert "twine upload --repository" in makefile
     assert "npm publish" in makefile
     assert "npm whoami" in makefile
@@ -175,12 +183,13 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
         "Skipping brew-smoke: Homebrew formula $(PACKAGE_NAME) is already installed."
         in makefile
     )
-    assert "orchestrator-cli" not in makefile
-
     brew_smoke = make_target_body("brew-smoke")
-    assert r"1,/url \"https:.*crewplane.*tar.gz\"/s" in brew_smoke
+    assert r"1,/url \"https:.*$(PACKAGE_NAME).*tar.gz\"/s" in brew_smoke
     assert r"1,/sha256 \".*\"/s" in brew_smoke
     assert "0,/" not in brew_smoke
+
+    npm_pack = make_target_body("npm-pack")
+    assert "$(PACKAGE_NAME)-*.tgz" in npm_pack
 
     npm_smoke = make_target_body("npm-smoke")
     assert 'mkdir -p "$$tmp/home" "$$tmp/npm-cache" "$$tmp/xdg-cache"' in npm_smoke
@@ -191,12 +200,10 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert npm_smoke.index("export HOME") < npm_smoke.index("npm install -g")
     assert 'PATH="$$tmp/prefix/bin:$$PATH"' in npm_smoke
     assert "export PATH" in npm_smoke
-    assert 'command -v "$(CLI_NAME)" >/dev/null' in npm_smoke
-    assert "command -v crewplane >/dev/null" in npm_smoke
-    assert "$(CLI_NAME) --help >/dev/null" in npm_smoke
-    assert "crewplane --help >/dev/null" in npm_smoke
-    assert "( cd \"$$project\" && $(CLI_NAME) init >/dev/null )" in npm_smoke
-    assert "( cd \"$$project\" && $(CLI_NAME) validate >/dev/null )" in npm_smoke
+    assert 'command -v "$(PACKAGE_NAME)" >/dev/null' in npm_smoke
+    assert "$(PACKAGE_NAME) --help >/dev/null" in npm_smoke
+    assert '( cd "$$project" && $(PACKAGE_NAME) init >/dev/null )' in npm_smoke
+    assert '( cd "$$project" && $(PACKAGE_NAME) validate >/dev/null )' in npm_smoke
     assert "$$exe" not in npm_smoke
 
     help_target = make_target_body("help")
@@ -230,7 +237,6 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "[y/N]" in release_confirm
     assert "[Yy])" in release_confirm
 
-    npm_pack = make_target_body("npm-pack")
     assert "node -p 'require(\"./packaging/npm/package.json\").version'" in npm_pack
     assert "differs from pyproject.toml version" in npm_pack
     assert "exit 1" in npm_pack
@@ -287,7 +293,7 @@ def test_release_check_helper_validates_local_packaging_versions(
     (npm_root / "package.json").write_text(
         json.dumps(
             {
-                "version": "0.1.0-alpha.2",
+                "version": "0.1.0-alpha.3",
                 "crewplane": {"pythonPackageVersion": AUTHORED_VERSION},
             }
         ),
@@ -311,7 +317,7 @@ def test_release_check_helper_validates_local_packaging_versions(
 
     assert result.returncode == 1
     assert "Packaging versions differ from pyproject.toml version" in result.stdout
-    assert "packaging/npm/package.json version: 0.1.0-alpha.2" in result.stdout
+    assert "packaging/npm/package.json version: 0.1.0-alpha.3" in result.stdout
 
 
 def test_release_check_helper_detects_remote_duplicate_versions(
@@ -339,7 +345,7 @@ def test_release_check_helper_detects_remote_duplicate_versions(
 def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     installer = read_text("install.sh")
     assert 'PACKAGE_NAME="crewplane"' in installer
-    assert 'CLI_NAME="orchestrator"' in installer
+    assert "CLI_NAME" not in installer
     assert 'CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.0-alpha.1}"' in installer
     assert "CREWPLANE_INSTALL_FIND_LINKS" in installer
     assert "CREWPLANE_INSTALL_NO_INDEX" in installer
@@ -350,6 +356,8 @@ def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     assert "--no-index" in installer
     assert "tool dir --bin" in installer
     assert "export PATH=" in installer
+    assert "${PACKAGE_NAME} --help" in installer
+    assert "uv tool uninstall ${PACKAGE_NAME}" in installer
     assert "native Windows is not supported" in installer
     assert "Provider prerequisites:" in installer
     assert "does not install provider CLIs" in installer
@@ -364,10 +372,7 @@ def test_npm_wrapper_metadata_and_scripts_pin_python_package() -> None:
     assert package["name"] == PACKAGE_NAME
     assert package["version"] == AUTHORED_VERSION
     assert package["repository"]["url"] == f"git+{REPOSITORY_URL}.git"
-    assert package["bin"] == {
-        "crewplane": "bin/crewplane.js",
-        CLI_COMMAND: "bin/crewplane.js",
-    }
+    assert package["bin"] == {CLI_COMMAND: "bin/crewplane.js"}
     assert package["scripts"]["postinstall"] == "node scripts/postinstall.js"
     assert package["crewplane"]["pythonPackage"] == PACKAGE_NAME
     assert package["crewplane"]["pythonPackageVersion"] == AUTHORED_VERSION
@@ -399,7 +404,7 @@ def test_npm_install_docs_explain_global_bin_path() -> None:
     for content in (npm_readme, installation_doc):
         assert "npm config get prefix" in content
         assert "PATH" in content
-        assert "command -v orchestrator" in content
+        assert "command -v crewplane" in content
         assert "node" in content
 
 
@@ -546,7 +551,7 @@ def test_homebrew_formula_uses_normalized_python_artifact_and_virtualenv() -> No
     assert "venv.pip_install build_resources.map" in formula
     assert "venv.pip_install resources.reject" in formula
     assert "venv.pip_install_and_link buildpath, build_isolation: false" in formula
-    assert 'shell_output("#{bin}/orchestrator --help")' in formula
+    assert 'shell_output("#{bin}/crewplane --help")' in formula
     assert "file://" not in formula
     assert "/home/" not in formula
 
@@ -606,22 +611,19 @@ def test_gitignore_contains_release_build_manifest_patterns() -> None:
         assert pattern in gitignore
 
 
-def test_package_surfaces_do_not_add_orchestrator_cli_distribution_alias() -> None:
+def test_package_surfaces_use_crewplane_command() -> None:
     pyproject = load_pyproject()
     project = pyproject["project"]
     assert project["name"] == PACKAGE_NAME
-    assert "orchestrator-cli" not in project["scripts"]
-    assert all("orchestrator-cli" not in value for value in project["urls"].values())
+    assert project["scripts"] == {"crewplane": "crewplane.cli.app:app"}
 
     npm_package = load_npm_package()
-    assert "orchestrator-cli" not in npm_package["bin"]
+    assert npm_package["bin"] == {"crewplane": "bin/crewplane.js"}
 
-    for parts in (
-        ("Makefile",),
-        ("install.sh",),
-        ("packaging", "npm", "package.json"),
-        ("packaging", "npm", "bin", "crewplane.js"),
-        ("packaging", "npm", "scripts", "postinstall.js"),
-        ("packaging", "homebrew", "Formula", "crewplane.rb"),
-    ):
-        assert "orchestrator-cli" not in read_text(*parts)
+    install_script = read_text("install.sh")
+    assert "CLI_NAME" not in install_script
+    assert "${PACKAGE_NAME} --help" in install_script
+    makefile = read_text("Makefile")
+    assert "PROJECT_NAME_CMD =" in makefile
+    assert "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD))" in makefile
+    assert "crewplane" in read_text("packaging", "homebrew", "Formula", "crewplane.rb")

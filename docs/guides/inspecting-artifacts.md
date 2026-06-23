@@ -1,11 +1,11 @@
 # Inspecting Artifacts
 
-Crewplane writes run state under `.orchestrator/`.
+Crewplane writes run state under `.crewplane/`.
 
 ## Main Directories
 
 ```text
-.orchestrator/
+.crewplane/
   config.yml
   workflows/
   preflight/
@@ -21,18 +21,27 @@ node directories, and Experimental workspace state when enabled.
 ## Stage Run Directory
 
 ```text
-.orchestrator/execution-stages/<workflow>-<run-id>/
+.crewplane/execution-stages/<workflow>-<run-id>/
   logs/
     events.ndjson
     summary.md
+  preflight/
+    execution-plan.json
+    manifest.json
+    metadata.json
+    render-plans.json
+    execution-bundle.json
   manifests/
     run.json
     nodes/
   <node-id>/
     logs/
     review-state/
-    workspace-state.json
+    workspace-state*.json
+    workspace-setup/
+    workspace-bundles/
     resume-source.json
+  workspace-exports/
 ```
 
 Exact files depend on node mode, provider count, findings, review loops, and
@@ -41,19 +50,23 @@ Experimental workspace use.
 ## Result Directory
 
 ```text
-.orchestrator/execution-results/<workflow>-<run-id>/
+.crewplane/execution-results/<workflow>-<run-id>/
   <node-id>-result.md
   <node-id>-findings.md
+  generated-files/<stage>/<task>/...
 ```
 
-The artifact reference documents the stable artifact keys available to
-downstream workflow nodes.
+Result filenames use safe, bounded names derived from node IDs. The artifact
+reference documents the stable artifact keys available to downstream workflow
+nodes.
 
 ## Preflight Bundle
 
-A successful real run writes compiled execution-plan artifacts. Runtime consumes
-those compiled artifacts instead of reparsing templates or rereading original
-file-token source paths.
+A successful real run writes compiled execution-plan artifacts under the run's
+`preflight/` directory. Runtime consumes those compiled artifacts instead of
+reparsing templates or rereading original file-token source paths. The root
+`.crewplane/preflight/fingerprint.key` is a persisted fingerprint key, not the
+per-run execution bundle.
 
 ## Resume Evidence
 
@@ -65,9 +78,10 @@ The run manifest records resumed node IDs.
 
 Experimental workspace-enabled runs can write:
 
-- workspace state files
-- workspace setup logs and metadata
-- workspace bundles
+- workspace state files such as `workspace-state.json` or
+  `workspace-state-<slug>.json`
+- workspace setup logs and metadata under `workspace-setup/`
+- workspace bundles under `workspace-bundles/`
 - branch export records
 
 Use the run summary first, then inspect node stage directories for detailed

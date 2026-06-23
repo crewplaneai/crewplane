@@ -3,25 +3,25 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import (
+from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from orchestrator_cli.architecture.contracts import (
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
 )
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.agent.invoker import PlannedAgentInvoker
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     CleanupOnCancelInvoker,
     execute_workflow,
@@ -93,7 +93,7 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.command.run_command_once",
+                    "crewplane.runtime.agent.invocation.command.run_command_once",
                     failing_command_runner,
                 ),
                 self.assertRaisesRegex(
@@ -181,11 +181,11 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.command.run_command_once",
+                    "crewplane.runtime.agent.invocation.command.run_command_once",
                     quota_command_runner,
                 ),
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.retry.quota_retry_guard_exhausted",
+                    "crewplane.runtime.agent.invocation.retry.quota_retry_guard_exhausted",
                     side_effect=[False, True],
                 ),
                 self.assertRaisesRegex(
@@ -244,7 +244,7 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.runtime.execution.workflow.wait_for_completed_nodes",
+                    "crewplane.runtime.execution.workflow.wait_for_completed_nodes",
                     new=_fail_wait_for_completed_nodes,
                 ),
                 self.assertRaisesRegex(RuntimeError, "simulated scheduler failure"),

@@ -1,6 +1,4 @@
 PYTHON ?= python
-PACKAGE_NAME := crewplane
-CLI_NAME := orchestrator
 WHEELHOUSE := $(CURDIR)/.release/wheelhouse
 NPM_PACK_DIR := $(CURDIR)/.release/npm
 PYPI_REPOSITORY ?= pypi
@@ -8,6 +6,11 @@ TWINE_UPLOAD_ARGS ?=
 NPM_TAG ?= alpha
 NPM_PUBLISH_ARGS ?=
 HAVE_UV := $(shell if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2>&1; then echo 1; else echo 0; fi)
+PROJECT_NAME_CMD = $(PYTHON) -c 'import sys, tomllib; project = tomllib.load(open("pyproject.toml", "rb"))["project"]; name = project["name"]; scripts = list(project.get("scripts", {})); sys.exit(f"expected one [project.scripts] key matching project.name {name!r}, got {scripts!r}") if scripts != [name] else print(name)'
+PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD))
+ifneq ($(.SHELLSTATUS),0)
+$(error failed to derive package name from pyproject.toml)
+endif
 
 ifeq ($(HAVE_UV),1)
 INSTALL_CMD = uv sync --extra dev
@@ -111,7 +114,7 @@ package-check: package-build
 	test -f "$$sdist"; \
 	test -f "$$wheel"; \
 	$(RUN_PYTHON) -m twine check "$$sdist" "$$wheel"; \
-	formula_sha="$$(awk '/sha256 "/ { gsub(/"/, "", $$2); print $$2; exit }' packaging/homebrew/Formula/crewplane.rb)"; \
+	formula_sha="$$(awk '/sha256 "/ { gsub(/"/, "", $$2); print $$2; exit }' packaging/homebrew/Formula/$(PACKAGE_NAME).rb)"; \
 	sdist_sha="$$(shasum -a 256 "$$sdist" | awk '{print $$1}')"; \
 	if [ "$$formula_sha" != "$$sdist_sha" ]; then \
 		echo "Homebrew formula source SHA $$formula_sha does not match $$sdist_sha"; \
@@ -167,7 +170,7 @@ install-smoke-pip: package-wheelhouse
 		$(PYTHON) -m venv "$$tmp/venv"; \
 	fi; \
 	"$$tmp/venv/bin/python" -m pip install --no-index --find-links "$(WHEELHOUSE)" "$(PACKAGE_NAME)==$(PROJECT_VERSION)" >/dev/null; \
-	exe="$$tmp/venv/bin/$(CLI_NAME)"; \
+	exe="$$tmp/venv/bin/$(PACKAGE_NAME)"; \
 	"$$exe" --help >/dev/null; \
 	project="$$tmp/project"; \
 	mkdir -p "$$project"; \
@@ -200,7 +203,7 @@ install-smoke-pip: package-wheelhouse
 		'      options:' \
 		'        log_cli_output: true' \
 		'        allowed_template_paths: []' \
-		> "$$project/.orchestrator/config.yml"; \
+		> "$$project/.crewplane/config.yml"; \
 	( cd "$$project" && "$$exe" validate >/dev/null )
 
 install-smoke-uv: package-wheelhouse
@@ -214,7 +217,7 @@ install-smoke-uv: package-wheelhouse
 	trap 'rm -rf "$$tmp"' EXIT; \
 	HOME="$$tmp/home" uv tool install --force --python "$$smoke_python" --find-links "$(WHEELHOUSE)" --no-index "$(PACKAGE_NAME)==$(PROJECT_VERSION)" >/dev/null; \
 	tool_bin="$$(HOME="$$tmp/home" uv tool dir --bin)"; \
-	exe="$$tool_bin/$(CLI_NAME)"; \
+	exe="$$tool_bin/$(PACKAGE_NAME)"; \
 	"$$exe" --help >/dev/null; \
 	project="$$tmp/project"; \
 	mkdir -p "$$project"; \
@@ -247,7 +250,7 @@ install-smoke-uv: package-wheelhouse
 		'      options:' \
 		'        log_cli_output: true' \
 		'        allowed_template_paths: []' \
-		> "$$project/.orchestrator/config.yml"; \
+		> "$$project/.crewplane/config.yml"; \
 	( cd "$$project" && "$$exe" validate >/dev/null )
 
 install-smoke-pipx: package-wheelhouse
@@ -261,7 +264,7 @@ install-smoke-pipx: package-wheelhouse
 	trap 'rm -rf "$$tmp"' EXIT; \
 	PIPX_HOME="$$tmp/pipx-home" PIPX_BIN_DIR="$$tmp/bin" \
 		pipx install --force --python "$$smoke_python" --pip-args="--no-index --find-links $(WHEELHOUSE)" "$(PACKAGE_NAME)==$(PROJECT_VERSION)" >/dev/null; \
-	exe="$$tmp/bin/$(CLI_NAME)"; \
+	exe="$$tmp/bin/$(PACKAGE_NAME)"; \
 	"$$exe" --help >/dev/null; \
 	project="$$tmp/project"; \
 	mkdir -p "$$project"; \
@@ -294,7 +297,7 @@ install-smoke-pipx: package-wheelhouse
 		'      options:' \
 		'        log_cli_output: true' \
 		'        allowed_template_paths: []' \
-		> "$$project/.orchestrator/config.yml"; \
+		> "$$project/.crewplane/config.yml"; \
 	( cd "$$project" && "$$exe" validate >/dev/null )
 
 install-smoke: install-smoke-pip install-smoke-uv install-smoke-pipx
@@ -325,7 +328,7 @@ npm-pack:
 		exit 1; \
 	fi; \
 	mkdir -p "$(NPM_PACK_DIR)"; \
-	rm -f "$(NPM_PACK_DIR)"/crewplane-*.tgz; \
+	rm -f "$(NPM_PACK_DIR)"/$(PACKAGE_NAME)-*.tgz; \
 	npm pack ./packaging/npm --pack-destination "$(NPM_PACK_DIR)" >/dev/null
 
 npm-smoke: package-wheelhouse npm-pack
@@ -335,7 +338,7 @@ npm-smoke: package-wheelhouse npm-pack
 		exit 0; \
 	fi; \
 	smoke_python="$$( $(RUN_PYTHON) -c 'import sys; print(sys.executable)' )"; \
-	package="$$(ls -t "$(NPM_PACK_DIR)"/crewplane-*.tgz 2>/dev/null | head -n 1)"; \
+	package="$$(ls -t "$(NPM_PACK_DIR)"/$(PACKAGE_NAME)-*.tgz 2>/dev/null | head -n 1)"; \
 	test -n "$$package"; \
 	tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp"' EXIT; \
@@ -351,13 +354,11 @@ npm-smoke: package-wheelhouse npm-pack
 		npm install -g "$$package" --prefix "$$tmp/prefix" --foreground-scripts >/dev/null; \
 	PATH="$$tmp/prefix/bin:$$PATH"; \
 	export PATH; \
-	command -v "$(CLI_NAME)" >/dev/null; \
-	command -v crewplane >/dev/null; \
-	$(CLI_NAME) --help >/dev/null; \
-	crewplane --help >/dev/null; \
+	command -v "$(PACKAGE_NAME)" >/dev/null; \
+	$(PACKAGE_NAME) --help >/dev/null; \
 	project="$$tmp/project"; \
 	mkdir -p "$$project"; \
-	( cd "$$project" && $(CLI_NAME) init >/dev/null ); \
+	( cd "$$project" && $(PACKAGE_NAME) init >/dev/null ); \
 	printf '%s\n' \
 		'version: "1.0"' \
 		'agents:' \
@@ -386,8 +387,8 @@ npm-smoke: package-wheelhouse npm-pack
 		'      options:' \
 		'        log_cli_output: true' \
 		'        allowed_template_paths: []' \
-		> "$$project/.orchestrator/config.yml"; \
-	( cd "$$project" && $(CLI_NAME) validate >/dev/null )
+		> "$$project/.crewplane/config.yml"; \
+	( cd "$$project" && $(PACKAGE_NAME) validate >/dev/null )
 
 brew-smoke: package-build
 	@set -eu; \
@@ -405,10 +406,10 @@ brew-smoke: package-build
 	tmp="$$(mktemp -d)"; \
 	trap 'status=$$?; if brew list --formula "$(PACKAGE_NAME)" >/dev/null 2>&1; then brew uninstall "$(PACKAGE_NAME)" >/dev/null 2>&1 || true; fi; rm -rf "$$tmp"; exit $$status' EXIT; \
 	sed \
-		-e "1,/url \"https:.*crewplane.*tar.gz\"/s|url \".*\"|url \"file://$$sdist\"|" \
+		-e "1,/url \"https:.*$(PACKAGE_NAME).*tar.gz\"/s|url \".*\"|url \"file://$$sdist\"|" \
 		-e "1,/sha256 \".*\"/s|sha256 \".*\"|sha256 \"$$sha\"|" \
-		packaging/homebrew/Formula/crewplane.rb > "$$tmp/crewplane.rb"; \
-	brew install --build-from-source "$$tmp/crewplane.rb"; \
+		packaging/homebrew/Formula/$(PACKAGE_NAME).rb > "$$tmp/$(PACKAGE_NAME).rb"; \
+	brew install --build-from-source "$$tmp/$(PACKAGE_NAME).rb"; \
 	brew test "$(PACKAGE_NAME)"
 
 install-check: package-check install-smoke install-script-smoke npm-pack npm-smoke brew-smoke
@@ -441,7 +442,7 @@ release-npm: npm-pack
 		echo "npm is required for release-npm."; \
 		exit 1; \
 	fi; \
-	package="$$(ls -t "$(NPM_PACK_DIR)"/crewplane-*.tgz 2>/dev/null | head -n 1)"; \
+	package="$$(ls -t "$(NPM_PACK_DIR)"/$(PACKAGE_NAME)-*.tgz 2>/dev/null | head -n 1)"; \
 	test -n "$$package"; \
 	npm publish "$$package" --tag "$(NPM_TAG)" $(NPM_PUBLISH_ARGS)
 

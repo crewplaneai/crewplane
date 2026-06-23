@@ -1,7 +1,7 @@
 # Modular Orchestration Architecture
 
 ## Context
-Orchestrator CLI is a DAG orchestration layer for AI tooling. The product goal is stable orchestration semantics with replaceable runtime integrations (CLI today, LLM APIs and web UI later).
+Crewplane is a DAG orchestration layer for AI tooling. The product goal is stable orchestration semantics with replaceable runtime integrations (CLI today, LLM APIs and web UI later).
 
 The architecture in this repo follows a ports-and-adapters model:
 - Core orchestration logic remains fixed.
@@ -23,7 +23,7 @@ The architecture in this repo follows a ports-and-adapters model:
 
 ### Core (Non-Replaceable)
 - `runtime/execution/*`: scheduling, sequential/parallel semantics, failure thresholds, consensus flow.
-- `core/workflow_*`: workflow parsing, import composition, graph validation, schema checks.
+- `core/workflow/`: workflow parsing, import composition, graph validation, schema checks.
 
 ### Replaceable Integrations (Adapters)
 - Invoker adapter: how provider calls are executed.
@@ -39,17 +39,17 @@ display-only provider-log presentation when valid adapter metadata exists,
 explicit raw log inspect, and observer-only behavior (no invoker override).
 
 ### Contracts (Ports)
-Stable contracts are under `orchestrator_cli.architecture.ports`:
+Stable contracts are under `crewplane.architecture.ports`:
 - `ArtifactStorePort`
 - `InvokerAdapterPort`
 - `UIAdapterPort`
 - `UIRuntimePlan`
 - `RuntimeComponents`
 
-`orchestrator_cli.version.SCHEMA_VERSION` is the source of truth for current config, workflow, and preflight artifact shape validation.
+`crewplane.version.SCHEMA_VERSION` is the source of truth for current config, workflow, and preflight artifact shape validation.
 
 ## Configuration Model
-The current config schema version is authored in `orchestrator_cli.version`. Config uses `settings.integrations`:
+The current config schema version is authored in `crewplane.version`. Config uses `settings.integrations`:
 
 ```yaml
 agents:
@@ -98,8 +98,8 @@ Workspace behavior:
 - Nodes select with `worktree: <name>` or opt out with `worktree: none`; input nodes never allocate provider workspaces.
 - Managed workspace preflight validates the `blob_exact` source contract, workflow policy, invoker cwd capability metadata, clean-start policy, and repo-relative workspace-file locators.
 - Disk guardrails estimate checkout size and compare expected remaining cache filesystem capacity with configured thresholds.
-- Real execution records workspace state, checkout size/provisioning metadata, and Git bundles under `.orchestrator/`.
-- Real execution supports runtime-dynamic upstream/reviewer file locators, verified artifact-backed duplicate-skip/resume, setup profiles, post-run local branch export with recorded fulfillment metadata, generated branch names shaped as `orchestrator/<workflow>/<worktree>/<run-key>`, and `orchestrator cleanup workspaces`.
+- Real execution records workspace state, checkout size/provisioning metadata, and Git bundles under `.crewplane/`.
+- Real execution supports runtime-dynamic upstream/reviewer file locators, verified artifact-backed duplicate-skip/resume, setup profiles, post-run local branch export with recorded fulfillment metadata, generated branch names shaped as `crewplane/<workflow>/<worktree>/<run-key>`, and `crewplane cleanup workspaces`.
 - Workspace isolation is source-tree isolation, not a provider sandbox.
 - Allowlisted absolute external files remain static preflight resources.
 
@@ -170,7 +170,7 @@ This keeps the blackboard contract explicit without adding a second config- or a
 
 ## Workflow Composition Boundary
 
-Workflow composition is intentionally implemented in `core/workflow_*` so adapter contracts remain stable:
+Workflow composition is intentionally implemented in `core/workflow/` so adapter contracts remain stable:
 - Imports are resolved before runtime execution and before observer/layout rendering.
 - Core preflight compiles the composed workflow into a `PreflightExecutionPlan` before runtime execution.
 - Runtime execution consumes the compiled plan, an artifact store, runtime services, and same-process secret handles; it does not parse prompt tokens or re-read file-token source paths.
@@ -196,8 +196,8 @@ artifact backend fails before lock/skip/resume/full-run semantics are applied;
 
 ## Compatibility and Migration
 - Schema version policy is documented in `DEVELOPMENT.md` and [ADR 0013](adr/0013-version-source-of-truth-and-documentation-drift-reduction.md).
-- The current schema version is authored in `orchestrator_cli.version`.
-- Users should regenerate config via `orchestrator init` when templates change.
+- The current schema version is authored in `crewplane.version`.
+- Users should regenerate config via `crewplane init` when templates change.
 
 ## Operational Guidance
 - Keep new integration implementations constrained to port contracts.

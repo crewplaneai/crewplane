@@ -3,17 +3,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.types import (
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,

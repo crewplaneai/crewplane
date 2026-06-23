@@ -32,7 +32,7 @@ def create_result_bundle(
         "-m",
         slug,
     )
-    result_ref = f"refs/orchestrator-cli/test/{slug}"
+    result_ref = f"refs/crewplane/test/{slug}"
     bundle_path = tmp_path / f"{slug}.bundle"
     run_git_text(repo, "update-ref", result_ref, result_commit)
     run_git_text(repo, "bundle", "create", bundle_path.as_posix(), result_ref)
@@ -60,7 +60,7 @@ def create_prerequisite_bundle_chain(
 ) -> tuple[BundleCommit, BundleCommit]:
     base_commit = run_git_text(repo, "rev-parse", "HEAD^{commit}")
     first = _commit_file_change(repo, "first chained result\n", "first")
-    first_ref = "refs/orchestrator-cli/test/first-chain"
+    first_ref = "refs/crewplane/test/first-chain"
     run_git_text(repo, "update-ref", first_ref, first.commit)
     first_bundle_path.parent.mkdir(parents=True, exist_ok=True)
     run_git_text(
@@ -72,7 +72,7 @@ def create_prerequisite_bundle_chain(
         f"^{base_commit}",
     )
     second = _commit_file_change(repo, "second chained result\n", "second")
-    second_ref = "refs/orchestrator-cli/test/second-chain"
+    second_ref = "refs/crewplane/test/second-chain"
     run_git_text(repo, "update-ref", second_ref, second.commit)
     second_bundle_path.parent.mkdir(parents=True, exist_ok=True)
     run_git_text(

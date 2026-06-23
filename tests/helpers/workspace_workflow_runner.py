@@ -9,22 +9,22 @@ from typing import Any
 import pytest
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.cli.run.workspace.git_source import (
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.cli.run.workspace.git_source import (
     GIT_MIN_VERSION,
     parse_git_version,
 )
-from orchestrator_cli.cli.workflow_runner import execute_workflow_run
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.preflight import PreflightWorkflowSource
-from orchestrator_cli.core.workflow_models import (
+from crewplane.cli.workflow_runner import execute_workflow_run
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight import PreflightWorkflowSource
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
     workflow_payload_dict,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_cli_cleanup import assert_cleanup_dry_run
 from tests.helpers.workspace_workflow_fixtures import (
     BASE_APP_TEXT,
@@ -55,11 +55,11 @@ class WorkspaceUnavailableArtifactsAdapter:
     def create_store(
         self,
         workflow_name: str,
-        orchestrator_dir: Path,
+        state_dir: Path,
         project_root: Path,
         options: dict[str, Any] | None = None,
     ) -> None:
-        del workflow_name, orchestrator_dir, project_root, options
+        del workflow_name, state_dir, project_root, options
         type(self).create_store_calls += 1
         raise AssertionError("workspace real run must fail before store allocation")
 
@@ -155,8 +155,8 @@ def _workspace_project(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     git_text(project_root, "init")
-    git_text(project_root, "config", "user.name", "Orchestrator Test")
-    git_text(project_root, "config", "user.email", "orchestrator-test@example.invalid")
+    git_text(project_root, "config", "user.name", "Crewplane Test")
+    git_text(project_root, "config", "user.email", "crewplane-test@example.invalid")
     git_text(project_root, "add", "docs/input.md", "src/app.txt", "workflow.task.md")
     git_text(project_root, "commit", "-m", "initial")
     return project_root

@@ -2,7 +2,7 @@ import unittest
 from time import monotonic, sleep
 from unittest.mock import patch
 
-from orchestrator_cli.observability.runtime import ObservabilityHub
+from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
@@ -94,7 +94,7 @@ class ObservabilityHubDeliveryTests(unittest.TestCase):
         healthy = RecordingObserver()
 
         with patch(
-            "orchestrator_cli.observability.runtime.OBSERVER_DELIVERY_JOIN_TIMEOUT_SECONDS",
+            "crewplane.observability.runtime.OBSERVER_DELIVERY_JOIN_TIMEOUT_SECONDS",
             0.01,
         ):
             with ObservabilityHub(
@@ -153,7 +153,7 @@ class ObservabilityHubDeliveryTests(unittest.TestCase):
         warnings: list[str] = []
         with (
             patch(
-                "orchestrator_cli.observability.runtime.OBSERVER_STOP_TIMEOUT_SECONDS",
+                "crewplane.observability.runtime.OBSERVER_STOP_TIMEOUT_SECONDS",
                 0.01,
             ),
             self.assertRaisesRegex(TimeoutError, "stop timed out"),

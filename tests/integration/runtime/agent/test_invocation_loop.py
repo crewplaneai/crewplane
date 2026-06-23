@@ -7,8 +7,8 @@ from pathlib import Path
 from threading import Event
 from unittest.mock import AsyncMock, patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
@@ -16,13 +16,13 @@ from orchestrator_cli.architecture.contracts import (
     InvocationWorkspaceContext,
     InvocationWorktreeContract,
 )
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.failures import InvocationFailureError
-from orchestrator_cli.runtime.agent.invocation.command import run_command_once
-from orchestrator_cli.runtime.agent.invoker import invoke_agent_with_runner
-from orchestrator_cli.runtime.agent.process import stream_capture
-from orchestrator_cli.runtime.agent.usage import InvocationUsage, estimate_token_count
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.failures import InvocationFailureError
+from crewplane.runtime.agent.invocation.command import run_command_once
+from crewplane.runtime.agent.invoker import invoke_agent_with_runner
+from crewplane.runtime.agent.process import stream_capture
+from crewplane.runtime.agent.usage import InvocationUsage, estimate_token_count
+from crewplane.version import SCHEMA_VERSION
 
 
 class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
@@ -383,7 +383,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.process.stream_capture.tempfile.mkstemp",
+                    "crewplane.runtime.agent.process.stream_capture.tempfile.mkstemp",
                     side_effect=recording_mkstemp,
                 ),
                 self.assertRaises(InvocationFailureError),
@@ -460,7 +460,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                     new=cancel_sleep,
                 ),
                 self.assertRaises(asyncio.CancelledError),
@@ -528,7 +528,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(

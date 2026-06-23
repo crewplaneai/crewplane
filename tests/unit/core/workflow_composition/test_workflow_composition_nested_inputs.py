@@ -2,10 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
-from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
-from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workflow.loading import load_tasks_with_sources
+from crewplane.core.workflow.models import WorkflowNode, render_prompt_for_role
+from crewplane.core.workflow.validation import validate_workflow_plan
+from crewplane.version import SCHEMA_VERSION
 
 
 def _write_workflow(path: Path, lines: list[str]) -> None:
@@ -53,7 +53,7 @@ class WorkflowCompositionNestedInputTests(unittest.TestCase):
                     "nodes:",
                     "  - id: review-input",
                     "    mode: input",
-                    '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                    '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                     "  - id: implement",
                     "    mode: sequential",
                     "    needs: [review-input]",
@@ -81,7 +81,7 @@ class WorkflowCompositionNestedInputTests(unittest.TestCase):
                     "nodes:",
                     "  - id: review-input",
                     "    mode: input",
-                    '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                    '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                     "  - id: handoff",
                     "    mode: sequential",
                     "    needs: [fix.implement]",
@@ -207,7 +207,7 @@ class WorkflowCompositionNestedInputTests(unittest.TestCase):
                     "nodes:",
                     "  - id: review-input",
                     "    mode: input",
-                    '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                    '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                     "    needs: [prepare]",
                     "  - id: prepare",
                     "    mode: sequential",
@@ -271,7 +271,7 @@ class WorkflowCompositionNestedInputTests(unittest.TestCase):
                     "  - id: review-input",
                     "    mode: input",
                     "    findings: true",
-                    '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                    '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                     "  - id: implement",
                     "    mode: sequential",
                     "    needs: [review-input]",
@@ -326,7 +326,7 @@ class WorkflowCompositionNestedInputTests(unittest.TestCase):
                     "nodes:",
                     "  - id: review-input",
                     "    mode: input",
-                    '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                    '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                     "    token_budget:",
                     "      warn_threshold_chars: 100",
                     "  - id: implement",

@@ -7,29 +7,29 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.artifacts.resume.decision import ResumeDecision
-from orchestrator_cli.artifacts.run_history import RunHistoryRecord
-from orchestrator_cli.cli.run import resume as resume_module
-from orchestrator_cli.cli.run.resume import (
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.artifacts.resume.decision import ResumeDecision
+from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.cli.run import resume as resume_module
+from crewplane.cli.run.resume import (
     ResumePlan,
     build_resume_plan,
     print_dry_run_resume_advisory,
 )
-from orchestrator_cli.core.config import Config, Settings
-from orchestrator_cli.core.execution_state import RunManifest
-from orchestrator_cli.core.preflight import (
+from crewplane.core.config import Config, Settings
+from crewplane.core.execution_state import RunManifest
+from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightExecutionPlan,
 )
-from orchestrator_cli.core.preflight.models import WorkspaceBranchExportRecord
-from orchestrator_cli.core.preflight.runtime_config import (
+from crewplane.core.preflight.models import WorkspaceBranchExportRecord
+from crewplane.core.preflight.runtime_config import (
     RuntimeConfigSnapshot,
     RuntimeConfigSnapshotOptions,
 )
-from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
-from orchestrator_cli.core.workflow_models import WorkflowPlan
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.preflight.source import PreflightWorkflowSource
+from crewplane.core.workflow.models import WorkflowPlan
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -54,8 +54,8 @@ def test_force_resume_plan_does_not_scan_unsafe_history(
     tmp_path,
     monkeypatch,
 ) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
-    stages_root = orchestrator_dir / "execution-stages"
+    state_dir = tmp_path / ".crewplane"
+    stages_root = state_dir / "execution-stages"
     original_lstat = Path.lstat
 
     def blocked_history_lstat(self):
@@ -73,7 +73,7 @@ def test_force_resume_plan_does_not_scan_unsafe_history(
             workflow_signature=WORKFLOW_SIGNATURE,
         ),
         tmp_path,
-        orchestrator_dir,
+        state_dir,
         force=True,
     )
 
@@ -84,8 +84,8 @@ def test_provider_workspace_resume_plan_fails_closed_on_unsafe_history(
     tmp_path,
     monkeypatch,
 ) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
-    stages_root = orchestrator_dir / "execution-stages"
+    state_dir = tmp_path / ".crewplane"
+    stages_root = state_dir / "execution-stages"
     original_lstat = Path.lstat
 
     def blocked_history_lstat(self):
@@ -101,7 +101,7 @@ def test_provider_workspace_resume_plan_fails_closed_on_unsafe_history(
             _workflow_source(tmp_path),
             _provider_workspace_preview(),
             tmp_path,
-            orchestrator_dir,
+            state_dir,
             force=False,
         )
 
@@ -110,8 +110,8 @@ def test_dry_run_resume_advisory_reports_unsafe_history_as_unavailable(
     tmp_path,
     monkeypatch,
 ) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
-    stages_root = orchestrator_dir / "execution-stages"
+    state_dir = tmp_path / ".crewplane"
+    stages_root = state_dir / "execution-stages"
     original_lstat = Path.lstat
 
     def blocked_history_lstat(self):
@@ -128,7 +128,7 @@ def test_dry_run_resume_advisory_reports_unsafe_history_as_unavailable(
         _workflow_source(tmp_path),
         _provider_workspace_preview(),
         tmp_path,
-        orchestrator_dir,
+        state_dir,
         force=False,
         console=console,
     )
@@ -137,7 +137,7 @@ def test_dry_run_resume_advisory_reports_unsafe_history_as_unavailable(
 
 
 def test_resume_plan_rejects_non_filesystem_artifacts_for_real_run(tmp_path) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
+    state_dir = tmp_path / ".crewplane"
 
     with pytest.raises(
         RuntimeError,
@@ -151,21 +151,21 @@ def test_resume_plan_rejects_non_filesystem_artifacts_for_real_run(tmp_path) -> 
                 workflow_signature=WORKFLOW_SIGNATURE,
             ),
             tmp_path,
-            orchestrator_dir,
+            state_dir,
             force=False,
         )
 
-    assert not (orchestrator_dir / "locks").exists()
+    assert not (state_dir / "locks").exists()
 
 
 def test_workspace_enabled_resume_plan_skips_valid_success(tmp_path) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
+    state_dir = tmp_path / ".crewplane"
     plan = make_plan()
     preview = _preview_from_plan(plan)
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
-    write_run_manifest(orchestrator_dir, manifest)
-    source_run_dir = orchestrator_dir / "execution-stages" / manifest.run_key_name
-    source_results_dir = orchestrator_dir / "execution-results" / manifest.run_key_name
+    write_run_manifest(state_dir, manifest)
+    source_run_dir = state_dir / "execution-stages" / manifest.run_key_name
+    source_results_dir = state_dir / "execution-results" / manifest.run_key_name
     for node in plan.nodes:
         descriptor = write_result(
             source_results_dir,
@@ -181,7 +181,7 @@ def test_workspace_enabled_resume_plan_skips_valid_success(tmp_path) -> None:
         _workflow_source(tmp_path),
         preview,
         tmp_path,
-        orchestrator_dir,
+        state_dir,
         force=False,
     )
 
@@ -194,11 +194,11 @@ def test_workspace_enabled_project_root_preview_keeps_manifest_only_skip(
     tmp_path,
     monkeypatch,
 ) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
+    state_dir = tmp_path / ".crewplane"
     plan = make_plan()
     preview = _preview_from_plan(plan)
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
-    write_run_manifest(orchestrator_dir, manifest)
+    write_run_manifest(state_dir, manifest)
 
     def reject_workspace_frontier_validation(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -217,7 +217,7 @@ def test_workspace_enabled_project_root_preview_keeps_manifest_only_skip(
         _workflow_source(tmp_path),
         preview,
         tmp_path,
-        orchestrator_dir,
+        state_dir,
         force=False,
     )
 
@@ -227,7 +227,7 @@ def test_workspace_enabled_project_root_preview_keeps_manifest_only_skip(
 
 
 def test_workspace_enabled_resume_plan_skips_branch_only_change(tmp_path) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
+    state_dir = tmp_path / ".crewplane"
     plan = make_plan()
     policy = workspace_selection_record(
         enabled=True,
@@ -255,9 +255,9 @@ def test_workspace_enabled_resume_plan_skips_branch_only_change(tmp_path) -> Non
         }
     )
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
-    write_run_manifest(orchestrator_dir, manifest)
-    source_run_dir = orchestrator_dir / "execution-stages" / manifest.run_key_name
-    source_results_dir = orchestrator_dir / "execution-results" / manifest.run_key_name
+    write_run_manifest(state_dir, manifest)
+    source_run_dir = state_dir / "execution-stages" / manifest.run_key_name
+    source_results_dir = state_dir / "execution-results" / manifest.run_key_name
     a_descriptor = write_result(source_results_dir, "a-result.md", "a output")
     b_descriptor = write_result(source_results_dir, "b-result.md", "b output")
     write_node_state(
@@ -269,7 +269,7 @@ def test_workspace_enabled_resume_plan_skips_branch_only_change(tmp_path) -> Non
         make_node_state(manifest, "b", [b_descriptor]),
     )
     assert plan.workspace_source is not None
-    history = _history_record(manifest, orchestrator_dir)
+    history = _history_record(manifest, state_dir)
     payload = provider_workspace_state_payload(
         history,
         plan,
@@ -298,7 +298,7 @@ def test_workspace_enabled_resume_plan_skips_branch_only_change(tmp_path) -> Non
         _workflow_source(tmp_path),
         _workspace_preview_from_plan(current_plan),
         tmp_path,
-        orchestrator_dir,
+        state_dir,
         force=False,
     )
 
@@ -308,7 +308,7 @@ def test_workspace_enabled_resume_plan_skips_branch_only_change(tmp_path) -> Non
 def test_workspace_enabled_resume_plan_reexecutes_missing_result_artifact(
     tmp_path,
 ) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
+    state_dir = tmp_path / ".crewplane"
     plan = make_plan()
     policy = workspace_selection_record(
         enabled=True,
@@ -321,9 +321,9 @@ def test_workspace_enabled_resume_plan_reexecutes_missing_result_artifact(
     plan, _repo = attach_git_workspace_source(tmp_path, plan)
     preview = _workspace_preview_from_plan(plan)
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
-    write_run_manifest(orchestrator_dir, manifest)
-    source_run_dir = orchestrator_dir / "execution-stages" / manifest.run_key_name
-    source_results_dir = orchestrator_dir / "execution-results" / manifest.run_key_name
+    write_run_manifest(state_dir, manifest)
+    source_run_dir = state_dir / "execution-stages" / manifest.run_key_name
+    source_results_dir = state_dir / "execution-results" / manifest.run_key_name
     first_node = plan.nodes[0]
     descriptor = write_result(
         source_results_dir,
@@ -340,7 +340,7 @@ def test_workspace_enabled_resume_plan_reexecutes_missing_result_artifact(
         _workflow_source(tmp_path),
         preview,
         tmp_path,
-        orchestrator_dir,
+        state_dir,
         force=False,
     )
 
@@ -352,10 +352,8 @@ def test_dry_run_resume_advisory_prints_branch_export_verification(
     monkeypatch,
 ) -> None:
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
-    run_dir = tmp_path / ".orchestrator" / "execution-stages" / manifest.run_key_name
-    results_dir = (
-        tmp_path / ".orchestrator" / "execution-results" / manifest.run_key_name
-    )
+    run_dir = tmp_path / ".crewplane" / "execution-stages" / manifest.run_key_name
+    results_dir = tmp_path / ".crewplane" / "execution-results" / manifest.run_key_name
     record = RunHistoryRecord(
         manifest=manifest,
         manifest_path=run_dir / "manifests" / "run.json",
@@ -398,7 +396,7 @@ def test_dry_run_resume_advisory_prints_branch_export_verification(
         _workflow_source(tmp_path),
         _provider_workspace_preview(),
         tmp_path,
-        tmp_path / ".orchestrator",
+        tmp_path / ".crewplane",
         force=False,
         console=console,
     )
@@ -415,10 +413,8 @@ def test_dry_run_resume_advisory_does_not_skip_failed_branch_export(
     monkeypatch,
 ) -> None:
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
-    run_dir = tmp_path / ".orchestrator" / "execution-stages" / manifest.run_key_name
-    results_dir = (
-        tmp_path / ".orchestrator" / "execution-results" / manifest.run_key_name
-    )
+    run_dir = tmp_path / ".crewplane" / "execution-stages" / manifest.run_key_name
+    results_dir = tmp_path / ".crewplane" / "execution-results" / manifest.run_key_name
     record = RunHistoryRecord(
         manifest=manifest,
         manifest_path=run_dir / "manifests" / "run.json",
@@ -462,7 +458,7 @@ def test_dry_run_resume_advisory_does_not_skip_failed_branch_export(
         _workflow_source(tmp_path),
         _provider_workspace_preview(),
         tmp_path,
-        tmp_path / ".orchestrator",
+        tmp_path / ".crewplane",
         force=False,
         console=console,
     )
@@ -481,7 +477,7 @@ def _workflow_source(root: Path) -> PreflightWorkflowSource:
     )
     return PreflightWorkflowSource.from_workflow(
         workflow,
-        root_workflow_path=root / ".orchestrator" / "workflows" / "workflow.task.md",
+        root_workflow_path=root / ".crewplane" / "workflows" / "workflow.task.md",
     )
 
 
@@ -549,14 +545,14 @@ def _workspace_preview_from_plan(
 
 def _history_record(
     manifest: RunManifest,
-    orchestrator_dir: Path,
+    state_dir: Path,
 ) -> RunHistoryRecord:
-    run_dir = orchestrator_dir / "execution-stages" / manifest.run_key_name
+    run_dir = state_dir / "execution-stages" / manifest.run_key_name
     return RunHistoryRecord(
         manifest=manifest,
         manifest_path=run_dir / "manifests" / "run.json",
         run_dir=run_dir,
-        results_dir=orchestrator_dir / "execution-results" / manifest.run_key_name,
+        results_dir=state_dir / "execution-results" / manifest.run_key_name,
     )
 
 

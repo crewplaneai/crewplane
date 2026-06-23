@@ -24,14 +24,14 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config_path, workflow_path = write_standard_project(tmp_path)
-            before = artifact_tree(tmp_path / ".orchestrator")
+            before = artifact_tree(tmp_path / ".crewplane")
 
             output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
             self.assertIn("Resume advisory: would_execute_full_run", output_text)
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), before)
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
             self.assertFalse(
-                (tmp_path / ".orchestrator" / "preflight" / "fingerprint.key").exists()
+                (tmp_path / ".crewplane" / "preflight" / "fingerprint.key").exists()
             )
 
     def test_dry_run_advises_skip_for_valid_success_history(self) -> None:
@@ -46,12 +46,12 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 run_id="success-run",
                 status="succeeded",
             )
-            before = artifact_tree(tmp_path / ".orchestrator")
+            before = artifact_tree(tmp_path / ".crewplane")
 
             output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
             self.assertIn("Resume advisory: would_skip", output_text)
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), before)
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
 
     def test_dry_run_force_advises_full_run_despite_success_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -65,7 +65,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 run_id="success-run",
                 status="succeeded",
             )
-            before = artifact_tree(tmp_path / ".orchestrator")
+            before = artifact_tree(tmp_path / ".crewplane")
 
             output_text = run_dry_run(
                 tmp_path,
@@ -76,7 +76,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
 
             self.assertIn("Resume advisory: would_execute_full_run", output_text)
             self.assertNotIn("Resume advisory: would_skip", output_text)
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), before)
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
 
     def test_dry_run_advises_resume_for_valid_failed_frontier(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -92,18 +92,15 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
             )
             node = preview.nodes[0]
             result_descriptor = write_result(
-                tmp_path
-                / ".orchestrator"
-                / "execution-results"
-                / manifest.run_key_name,
+                tmp_path / ".crewplane" / "execution-results" / manifest.run_key_name,
                 node.artifact_contract.output_path,
                 "completed node output",
             )
             write_node_state(
-                tmp_path / ".orchestrator" / "execution-stages" / manifest.run_key_name,
+                tmp_path / ".crewplane" / "execution-stages" / manifest.run_key_name,
                 make_node_state(manifest, node.id, [result_descriptor]),
             )
-            before = artifact_tree(tmp_path / ".orchestrator")
+            before = artifact_tree(tmp_path / ".crewplane")
 
             output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
@@ -111,7 +108,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 "Resume advisory: would_resume 1 node(s) from failed-run",
                 output_text,
             )
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), before)
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
 
     def test_dry_run_reports_resume_unavailable_for_non_filesystem_backend(
         self,
@@ -123,7 +120,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 config_writer=write_nonfilesystem_config,
             )
             DryRunUnavailableArtifactsAdapter.create_store_calls = 0
-            before = artifact_tree(tmp_path / ".orchestrator")
+            before = artifact_tree(tmp_path / ".crewplane")
 
             output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
@@ -132,7 +129,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 output_text,
             )
             self.assertEqual(DryRunUnavailableArtifactsAdapter.create_store_calls, 0)
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), before)
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
 
     def test_dry_run_labels_ephemeral_fingerprint_decision_non_binding(
         self,
@@ -143,7 +140,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 tmp_path,
                 workflow_writer=write_sensitive_env_workflow,
             )
-            before = artifact_tree(tmp_path / ".orchestrator")
+            before = artifact_tree(tmp_path / ".crewplane")
 
             with patch.dict(os.environ, {"API_TOKEN": "super-secret"}):
                 output_text = run_dry_run(tmp_path, config_path, workflow_path)
@@ -154,7 +151,7 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 "ephemeral.",
                 output_text,
             )
-            self.assertEqual(artifact_tree(tmp_path / ".orchestrator"), before)
+            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), before)
             self.assertFalse(
-                (tmp_path / ".orchestrator" / "preflight" / "fingerprint.key").exists()
+                (tmp_path / ".crewplane" / "preflight" / "fingerprint.key").exists()
             )

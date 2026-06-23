@@ -3,11 +3,11 @@ import unittest
 
 from rich.console import Console
 
-import orchestrator_cli.adapters.ui.tmux as tmux_adapter_module
-from orchestrator_cli.adapters.ui.tmux import TmuxUIAdapter
-from orchestrator_cli.core.config import Config
-from orchestrator_cli.observability.types import WorkflowTopology
-from orchestrator_cli.version import SCHEMA_VERSION
+import crewplane.adapters.ui.tmux as tmux_adapter_module
+from crewplane.adapters.ui.tmux import TmuxUIAdapter
+from crewplane.core.config import Config
+from crewplane.observability.types import WorkflowTopology
+from crewplane.version import SCHEMA_VERSION
 
 
 class TmuxUIAdapterTests(unittest.TestCase):
@@ -70,7 +70,7 @@ class TmuxUIAdapterTests(unittest.TestCase):
         adapter = TmuxUIAdapter()
         config = adapter.canonicalize_options(
             implementation="tmux",
-            resolved_identity="orchestrator_cli.adapters.ui.tmux:TmuxUIAdapter",
+            resolved_identity="crewplane.adapters.ui.tmux:TmuxUIAdapter",
             options={"quiet_after_seconds": 180},
         )
         self.assertEqual(config.option_scopes["quiet_after_seconds"], "observer")

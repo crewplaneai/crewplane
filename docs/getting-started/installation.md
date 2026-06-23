@@ -1,7 +1,7 @@
 # Installation
 
 The public package name is `crewplane`. The installed console command is
-`orchestrator`.
+`crewplane`.
 
 Crewplane requires Python 3.13 or newer. Provider CLIs are separate tools; install
 and authenticate them outside Crewplane.
@@ -12,7 +12,7 @@ Use `uv tool` for an isolated command-line install:
 
 ```bash
 uv tool install crewplane
-orchestrator --help
+crewplane --help
 ```
 
 ## Other Install Methods
@@ -25,16 +25,20 @@ brew tap crewplaneai/crewplane && brew install crewplane
 npm install -g crewplane@alpha
 ```
 
+The install script targets macOS, WSL, and Ubuntu/Debian-like Linux
+environments. The npm wrapper requires Node.js 18 or newer and does not support
+native Windows; use WSL on Windows.
+
 For npm installs, the executable shims are written under
 `$(npm config get prefix)/bin`. If npm reports a successful install but your
-shell cannot find `orchestrator`, add that directory to `PATH` and confirm the
+shell cannot find `crewplane`, add that directory to `PATH` and confirm the
 Node runtime is still available:
 
 ```bash
 npm_prefix="$(npm config get prefix)"
 export PATH="$npm_prefix/bin:$PATH"
 command -v node
-command -v orchestrator
+command -v crewplane
 ```
 
 For a local checkout:
@@ -77,8 +81,9 @@ brew uninstall crewplane
 ## Provider CLIs
 
 Crewplane does not install provider CLIs, does not manage provider credentials,
-and does not sandbox provider CLI execution. Install the tools you plan to reference in
-`.orchestrator/config.yml`, then confirm they work directly from your shell.
+and does not sandbox provider CLI execution. Install the tools you plan to
+reference in `.crewplane/config.yml`, then confirm they work directly from your
+shell.
 
 Common examples:
 

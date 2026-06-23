@@ -10,22 +10,22 @@ from time import monotonic
 
 import pytest
 
-import orchestrator_cli.runtime.execution.provider_call.generated_files as provider_invocation_generated_files_module
-import orchestrator_cli.runtime.execution.provider_call.lifecycle as provider_invocation_lifecycle_module
-import orchestrator_cli.runtime.execution.provider_call.workspace as provider_invocation_workspace_module
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.adapters.invokers.mock import MockInvokerAdapter
-from orchestrator_cli.architecture.contracts import (
+import crewplane.runtime.execution.provider_call.generated_files as provider_invocation_generated_files_module
+import crewplane.runtime.execution.provider_call.lifecycle as provider_invocation_lifecycle_module
+import crewplane.runtime.execution.provider_call.workspace as provider_invocation_workspace_module
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.adapters.invokers.mock import MockInvokerAdapter
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.runtime.agent.failures import InvocationFailureError
-from orchestrator_cli.runtime.agent.invoker import invoke_agent_with_runner
-from orchestrator_cli.runtime.execution.activity.telemetry import ExecutionTelemetry
-from orchestrator_cli.runtime.execution.provider_call import (
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.agent.failures import InvocationFailureError
+from crewplane.runtime.agent.invoker import invoke_agent_with_runner
+from crewplane.runtime.execution.activity.telemetry import ExecutionTelemetry
+from crewplane.runtime.execution.provider_call import (
     ProviderCallDisplay,
     ProviderCallRequest,
     finalize_successful_workspace,
@@ -33,16 +33,16 @@ from orchestrator_cli.runtime.execution.provider_call import (
     record_generated_file_workspace,
     run_provider_call,
 )
-from orchestrator_cli.runtime.execution.provider_call.workspace import (
+from crewplane.runtime.execution.provider_call.workspace import (
     prepare_workspace_with_cancellation,
 )
-from orchestrator_cli.runtime.execution.runtime_context import (
+from crewplane.runtime.execution.runtime_context import (
     CompiledRuntimeContext,
     DeferredAsyncCleanupRegistry,
 )
-from orchestrator_cli.runtime.workspace import WorkspaceInvocationRequest
-from orchestrator_cli.runtime.workspace.prepared_workspace import PreparedWorkspace
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.runtime.workspace import WorkspaceInvocationRequest
+from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_service import (
     create_git_repo,
     disabled_workspace_plan,

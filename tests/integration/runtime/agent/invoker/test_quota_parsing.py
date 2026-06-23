@@ -6,16 +6,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.failures import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.failures import (
     InvocationFailureError,
 )
-from orchestrator_cli.runtime.agent.invoker import (
+from crewplane.runtime.agent.invoker import (
     invoke_agent,
 )
-from orchestrator_cli.runtime.agent.quota.waits import extract_wait_candidates_from_line
-from orchestrator_cli.runtime.agent.retry_units import (
+from crewplane.runtime.agent.quota.waits import extract_wait_candidates_from_line
+from crewplane.runtime.agent.retry_units import (
     normalize_retry_wait_units_in_text,
 )
 
@@ -61,7 +61,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                 output_file = tmp_path / "output.txt"
                 sleep_mock = AsyncMock()
                 with patch(
-                    "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                     sleep_mock,
                 ):
                     await invoke_agent(
@@ -156,7 +156,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                     output_file = tmp_path / f"{parser_name}_output.txt"
                     sleep_mock = AsyncMock()
                     with patch(
-                        "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                        "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                         sleep_mock,
                     ):
                         await invoke_agent(

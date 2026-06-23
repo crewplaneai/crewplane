@@ -1,12 +1,12 @@
 import unittest
 
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.tmux.commands import tmux_command_string
-from orchestrator_cli.observability.tmux.compact import build_attach_command
-from orchestrator_cli.observability.types import (
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.tmux.commands import tmux_command_string
+from crewplane.observability.tmux.compact import build_attach_command
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,
@@ -42,11 +42,11 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             session_name="run-x",
             env={"TERM_PROGRAM": "Apple_Terminal"},
             platform_name="linux",
-            socket_name="orchestrator-test-socket",
+            socket_name="crewplane-test-socket",
         )
         self.assertEqual(
             command,
-            ["tmux", "-L", "orchestrator-test-socket", "attach", "-t", "run-x"],
+            ["tmux", "-L", "crewplane-test-socket", "attach", "-t", "run-x"],
         )
 
     def test_tmux_command_string_uses_if_shell_command_separators(self) -> None:
@@ -74,10 +74,9 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             args
             for args, _, _ in runtime.calls
             if len(args) >= 5
-            and args[:4]
-            == ["set-option", "-t", "orchestrator-compact-run", "key-table"]
+            and args[:4] == ["set-option", "-t", "crewplane-compact-run", "key-table"]
         ]
-        self.assertEqual(key_table_writes[-1][4], "orchestrator-dashboard")
+        self.assertEqual(key_table_writes[-1][4], "crewplane-dashboard")
 
         bindings = binding_map(runtime.calls)
         self.assertNotIn(("root", "Up"), bindings)
@@ -92,15 +91,15 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             "Escape",
             "q",
         }:
-            self.assertIn(("orchestrator-inspect", key), bindings)
-        for table in {"orchestrator-dashboard", "copy-mode", "copy-mode-vi"}:
+            self.assertIn(("crewplane-inspect", key), bindings)
+        for table in {"crewplane-dashboard", "copy-mode", "copy-mode-vi"}:
             self.assertIn((table, "Up"), bindings)
             self.assertIn((table, "Down"), bindings)
             self.assertIn((table, "Enter"), bindings)
             self.assertIn((table, "Escape"), bindings)
             self.assertIn((table, "q"), bindings)
 
-        dashboard_up_binding = bindings[("orchestrator-dashboard", "Up")]
+        dashboard_up_binding = bindings[("crewplane-dashboard", "Up")]
         self.assertIn("run-shell", dashboard_up_binding)
         self.assertNotIn("run-shell -b", dashboard_up_binding)
         self.assertIn("select-pane -t %10", dashboard_up_binding)
@@ -108,16 +107,16 @@ class CompactRuntimeSetupTests(unittest.TestCase):
 
         up_binding = bindings[("copy-mode", "Up")]
         self.assertIn("send-keys -X cancel", up_binding)
-        self.assertIn("switch-client -T orchestrator-dashboard", up_binding)
+        self.assertIn("switch-client -T crewplane-dashboard", up_binding)
         self.assertIn("run-shell", up_binding)
         self.assertNotIn("run-shell -b", up_binding)
         self.assertIn("select-pane -t %10", up_binding)
         self.assertNotIn("copy-mode -q -t", up_binding)
 
-        dashboard_enter_binding = bindings[("orchestrator-dashboard", "Enter")]
+        dashboard_enter_binding = bindings[("crewplane-dashboard", "Enter")]
         self.assertIn("run-shell", dashboard_enter_binding)
         self.assertIn(
-            "orchestrator_cli.observability.tmux.inspect_control",
+            "crewplane.observability.tmux.inspect_control",
             dashboard_enter_binding,
         )
         self.assertIn("--view auto", dashboard_enter_binding)
@@ -128,37 +127,37 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             dashboard_enter_binding,
         )
         self.assertNotIn(
-            'set-option -t "$session_name" key-table orchestrator-inspect',
+            'set-option -t "$session_name" key-table crewplane-inspect',
             dashboard_enter_binding,
         )
         self.assertNotIn("select-pane -t %20", dashboard_enter_binding)
 
         enter_binding = bindings[("copy-mode-vi", "Enter")]
         self.assertIn("send-keys -X cancel", enter_binding)
-        self.assertIn("switch-client -T orchestrator-dashboard", enter_binding)
+        self.assertIn("switch-client -T crewplane-dashboard", enter_binding)
         self.assertIn("run-shell", enter_binding)
         self.assertIn(
-            "orchestrator_cli.observability.tmux.inspect_control",
+            "crewplane.observability.tmux.inspect_control",
             enter_binding,
         )
         self.assertIn("--view auto", enter_binding)
         self.assertNotIn("select-pane -t %20", enter_binding)
 
-        escape_binding = bindings[("orchestrator-dashboard", "Escape")]
+        escape_binding = bindings[("crewplane-dashboard", "Escape")]
         self.assertIn("select-pane -t %10", escape_binding)
 
-        inspect_up_binding = bindings[("orchestrator-inspect", "Up")]
+        inspect_up_binding = bindings[("crewplane-inspect", "Up")]
         self.assertIn("copy-mode -e -t %20", inspect_up_binding)
         self.assertIn("send-keys -X -t %20 cursor-up", inspect_up_binding)
 
-        inspect_page_up_binding = bindings[("orchestrator-inspect", "PageUp")]
+        inspect_page_up_binding = bindings[("crewplane-inspect", "PageUp")]
         self.assertIn("copy-mode -e -u -t %20", inspect_page_up_binding)
 
-        inspect_wheel_binding = bindings[("orchestrator-inspect", "WheelUpPane")]
+        inspect_wheel_binding = bindings[("crewplane-inspect", "WheelUpPane")]
         self.assertIn("copy-mode -e -t %20", inspect_wheel_binding)
         self.assertIn("send-keys -X -N 5 -t %20 scroll-up", inspect_wheel_binding)
 
-        inspect_escape_binding = bindings[("orchestrator-inspect", "Escape")]
+        inspect_escape_binding = bindings[("crewplane-inspect", "Escape")]
         self.assertIn("run-shell", inspect_escape_binding)
         self.assertIn("inspect-exit.sh", inspect_escape_binding)
         self.assertLess(len(inspect_escape_binding), 300)
@@ -166,7 +165,7 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             'respawn-pane -k -t "$right_pane" bash -lc', inspect_escape_binding
         )
         self.assertNotIn(
-            'set-option -t "$session_name" key-table orchestrator-dashboard',
+            'set-option -t "$session_name" key-table crewplane-dashboard',
             inspect_escape_binding,
         )
         self.assertNotIn(
@@ -176,18 +175,18 @@ class CompactRuntimeSetupTests(unittest.TestCase):
 
         quit_binding = bindings[("copy-mode", "q")]
         self.assertIn("send-keys -X cancel", quit_binding)
-        self.assertIn("switch-client -T orchestrator-dashboard", quit_binding)
+        self.assertIn("switch-client -T crewplane-dashboard", quit_binding)
         self.assertIn("quit-requested.txt", quit_binding)
-        self.assertIn("kill-session -t orchestrator-compact-run", quit_binding)
+        self.assertIn("kill-session -t crewplane-compact-run", quit_binding)
 
         root_quit_binding = bindings[("root", "q")]
         self.assertIn("quit-requested.txt", root_quit_binding)
-        self.assertIn("kill-session -t orchestrator-compact-run", root_quit_binding)
-        self.assertNotIn("switch-client -T orchestrator-dashboard", root_quit_binding)
+        self.assertIn("kill-session -t crewplane-compact-run", root_quit_binding)
+        self.assertNotIn("switch-client -T crewplane-dashboard", root_quit_binding)
 
-        inspect_quit_binding = bindings[("orchestrator-inspect", "q")]
+        inspect_quit_binding = bindings[("crewplane-inspect", "q")]
         self.assertIn("quit-requested.txt", inspect_quit_binding)
-        self.assertIn("kill-session -t orchestrator-compact-run", inspect_quit_binding)
+        self.assertIn("kill-session -t crewplane-compact-run", inspect_quit_binding)
 
         runtime.stop(RunResult(status="succeeded"))
 
@@ -215,7 +214,7 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             "WheelDownPane",
         }
         for key in mouse_keys:
-            dashboard_binding = bindings[("orchestrator-dashboard", key)]
+            dashboard_binding = bindings[("crewplane-dashboard", key)]
             self.assertIn("select-pane -t =", dashboard_binding)
             self.assertNotIn("send-keys -X cancel", dashboard_binding)
 
@@ -223,7 +222,7 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             for key in mouse_keys:
                 binding = bindings[(table, key)]
                 self.assertIn("send-keys -X cancel", binding)
-                self.assertIn("switch-client -T orchestrator-dashboard", binding)
+                self.assertIn("switch-client -T crewplane-dashboard", binding)
                 self.assertIn("select-pane -t =", binding)
                 self.assertNotIn("copy-mode -q -t", binding)
 
@@ -260,12 +259,12 @@ class CompactRuntimeSetupTests(unittest.TestCase):
             == [
                 "set-window-option",
                 "-t",
-                "orchestrator-compact-pane-titles:dashboard",
+                "crewplane-compact-pane-titles:dashboard",
                 "pane-border-format",
             ]
         ]
-        self.assertEqual(pane_border_format_writes[-1][4], "#{@orchestrator_title}")
-        pane_title_writes = pane_option_writes(runtime.calls, "@orchestrator_title")
+        self.assertEqual(pane_border_format_writes[-1][4], "#{@crewplane_title}")
+        pane_title_writes = pane_option_writes(runtime.calls, "@crewplane_title")
         self.assertIn(
             ("%10", "DAG Summary"), {(args[3], args[5]) for args in pane_title_writes}
         )

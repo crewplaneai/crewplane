@@ -14,12 +14,15 @@ Preflight resolves the composed workflow into:
 - execution nodes
 - render plans
 - static file resources
-- Experimental workspace file locators
+- workspace source metadata
+- workspace file locators
 - token catalog entries
 - dependency edges
 - provider records
 - redacted runtime config snapshot
+- effective runtime config signature
 - value fingerprints
+- fingerprint metadata
 - `workflow_signature`
 
 Preflight diagnostics are emitted before runtime execution. A failed real-run
@@ -29,10 +32,14 @@ preflight writes failure artifacts so the run is auditable.
 
 Duplicate detection uses `workflow_signature`. The signature includes the
 composed workflow, referenced workflow files, dependency graph, static file
-content hashes, relevant env/var/config fingerprints, provider execution
-settings, artifact-scoped integration options, and execution policy.
+content hashes, workspace file locator facts, relevant env/var/config
+fingerprints, provider execution settings, artifact-scoped integration options,
+and execution policy.
 
-Observer-only UI settings do not determine the workflow signature.
+Observer-only UI settings do not determine the workflow signature. Branch-export
+fields are intentionally excluded because they affect how verified workspace
+results are exposed, not what providers run. The default workspace cache root is
+excluded unless `settings.workspace.identity.include_cache_root` is `true`.
 
 ## Duplicate Skip
 

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.runtime.execution.runtime_context import (
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.execution.runtime_context import (
     CompiledRuntimeContext,
     DeferredAsyncCleanupRegistry,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_plan
 
 

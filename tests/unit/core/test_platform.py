@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from orchestrator_cli.core import platform as platform_policy
+from crewplane.core import platform as platform_policy
 
 
 def test_is_native_windows_uses_platform_system(monkeypatch) -> None:

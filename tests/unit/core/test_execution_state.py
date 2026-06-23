@@ -3,13 +3,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from orchestrator_cli.core.execution_state import (
+from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
     NodeState,
     RunManifest,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_run_manifest, sha256_hex
 
 
@@ -53,7 +53,7 @@ def test_node_state_is_successful_boundary_only() -> None:
     state = NodeState(
         run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
         plan_schema_version=SCHEMA_VERSION,
-        workflow_identity=".orchestrator/workflows/workflow.task.md",
+        workflow_identity=".crewplane/workflows/workflow.task.md",
         workflow_name="Workflow",
         workflow_signature=sha256_hex("workflow"),
         run_id="run",
@@ -90,7 +90,7 @@ def test_node_state_is_successful_boundary_only() -> None:
 def test_node_state_requires_schema_marker() -> None:
     payload = {
         "plan_schema_version": SCHEMA_VERSION,
-        "workflow_identity": ".orchestrator/workflows/workflow.task.md",
+        "workflow_identity": ".crewplane/workflows/workflow.task.md",
         "workflow_name": "Workflow",
         "workflow_signature": sha256_hex("workflow"),
         "run_id": "run",

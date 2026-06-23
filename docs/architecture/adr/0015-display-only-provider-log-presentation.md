@@ -29,7 +29,7 @@ The missing layer is display-only formatting that can make structured logs
 readable without turning provider internals into orchestration state.
 
 ## Contract
-`src/orchestrator_cli/architecture/contracts/invocation.py` owns the descriptor
+`src/crewplane/architecture/contracts/invocation.py` owns the descriptor
 contract:
 
 ```python
@@ -89,7 +89,7 @@ not clear them. Descriptor fields are not passed into `InvocationContext`, so
 invokers do not receive observer-only presentation metadata during execution.
 
 ## Presentation Package
-`src/orchestrator_cli/observability/log_presentation/` owns formatting. It
+`src/crewplane/observability/log_presentation/` owns formatting. It
 imports the descriptor contract from `architecture/contracts` and does not
 import runtime output-extraction modules.
 
@@ -118,14 +118,14 @@ intentionally not supported. Compatibility with stale tmux runtime directories
 is not required.
 
 Formatted inspect is launched with `sys.executable -m
-orchestrator_cli.observability.log_presentation.follow`; raw inspect launches
+crewplane.observability.log_presentation.follow`; raw inspect launches
 `tail -n +1 -F -- <log_path>` through an argv-safe launcher after reading the
 validated JSON snapshot. Dynamic log paths and descriptor values stay in JSON
 snapshots, not shell command strings.
 
 ## Raw Log Exactness
 Raw inspect shows the exact persisted provider `.log` file. That file is not
-guaranteed to be byte-for-byte provider stdout/stderr, because orchestrator log
+guaranteed to be byte-for-byte provider stdout/stderr, because crewplane log
 capture can add an initial header, prefix stderr lines, and normalize retry wait
 text. A future byte-exact stdout/stderr archive would be a separate
 invoker/process-boundary design.

@@ -1,57 +1,57 @@
 # Command Reference
 
-## `orchestrator init`
+## `crewplane init`
 
 Initialize project-local config and example workflows.
 
 ```bash
-orchestrator init
+crewplane init
 ```
 
 Creates:
 
-- `.orchestrator/config.yml`
-- `.orchestrator/workflows/code-review-example.task.md`
-- `.orchestrator/workflows/example-templates/**`
-- `.orchestrator/workflows/example-templates/sample-inputs/*.md`
-- `.orchestrator/preflight/fingerprint.key`, when possible
+- `.crewplane/config.yml`
+- `.crewplane/workflows/code-review-example.task.md`
+- `.crewplane/workflows/example-templates/**`
+- `.crewplane/workflows/example-templates/sample-inputs/*.md`
+- `.crewplane/preflight/fingerprint.key`, when possible
 
 Existing files are not overwritten by template creation.
 
-## `orchestrator validate`
+## `crewplane validate`
 
 Validate a workflow definition.
 
 ```bash
-orchestrator validate [TASKS_FILE] --config .orchestrator/config.yml
-orchestrator validate [TASKS_FILE] -c .orchestrator/config.yml
+crewplane validate [TASKS_FILE] --config .crewplane/config.yml
+crewplane validate [TASKS_FILE] -c .crewplane/config.yml
 ```
 
 Arguments and options:
 
 | Name | Description |
 | --- | --- |
-| `TASKS_FILE` | Workflow file to validate. Defaults to a single top-level `.orchestrator/workflows/*.task.md`. |
-| `--config`, `-c` | Config file. Defaults to `.orchestrator/config.yml`. |
+| `TASKS_FILE` | Workflow file to validate. Defaults to a single top-level `.crewplane/workflows/*.task.md`. |
+| `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
 
 `validate` invokes no providers and writes no run artifacts. For the built-in
 `cli` invoker, it checks configured provider CLI availability.
 
-## `orchestrator run`
+## `crewplane run`
 
 Execute a workflow DAG.
 
 ```bash
-orchestrator run --tasks .orchestrator/workflows/code-review-example.task.md
-orchestrator run -t .orchestrator/workflows/code-review-example.task.md
+crewplane run --tasks .crewplane/workflows/code-review-example.task.md
+crewplane run -t .crewplane/workflows/code-review-example.task.md
 ```
 
 Options:
 
 | Name | Description |
 | --- | --- |
-| `--tasks`, `-t` | Workflow file. Defaults to a single top-level `.orchestrator/workflows/*.task.md`. |
-| `--config`, `-c` | Config file. Defaults to `.orchestrator/config.yml`. |
+| `--tasks`, `-t` | Workflow file. Defaults to a single top-level `.crewplane/workflows/*.task.md`. |
+| `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
 | `--dry-run`, `-n` | Show the execution plan without invoking providers or writing run artifacts. |
 | `--force` | Run even if a matching successful `workflow_signature` exists; also bypasses resume hydration. |
 | `--no-live` | Disable live topology dashboard output. |
@@ -59,20 +59,23 @@ Options:
 `run --dry-run` skips provider executable availability checks and may read
 existing manifests for an advisory skip/resume message.
 
-## `orchestrator cleanup workspaces`
+## `crewplane cleanup workspaces`
 
 Remove generated Experimental workspace isolation cache entries.
 
 ```bash
-orchestrator cleanup workspaces --dry-run
-orchestrator cleanup workspaces --yes
+crewplane cleanup workspaces --dry-run
+crewplane cleanup workspaces --yes
 ```
+
+The command is advisory by default. Destructive cleanup happens only when
+`--yes` is set and `--dry-run` is not set.
 
 Options:
 
 | Name | Description |
 | --- | --- |
-| `--config`, `-c` | Config file. Defaults to `.orchestrator/config.yml`. |
+| `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
 | `--dry-run` | Show workspaces that would be removed. |
 | `--run` | Only clean workspaces for this run key. |
 | `--older-than` | Only clean entries older than a duration such as `30m`, `12h`, or `7d`. |
@@ -82,3 +85,12 @@ Options:
 | `--cancelled` | Only clean cancelled workspace states. |
 | `--orphans` | Only clean cache paths without workspace state. |
 | `--all-projects` | Clean every repository bucket under the workspace cache. |
+
+By default, cleanup is scoped to the current Git repository. Non-Git projects
+must use `--all-projects`. `--all-projects` cannot be combined with
+`--orphans`, `--successful`, `--failed`, or `--cancelled` because those filters
+depend on current-project workspace-state artifacts.
+
+Cleanup rejects workspace cache roots that are relative, symlinks, overlap the
+project, overlap `.crewplane/`, overlap run artifact directories, or overlap Git
+metadata paths.

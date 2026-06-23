@@ -8,15 +8,15 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
-from orchestrator_cli.bootstrap.container import build_runtime_components
-from orchestrator_cli.core.config import Config, load_config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.bootstrap.container import build_runtime_components
+from crewplane.core.config import Config, load_config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.runtime.execution.workflow import execute_workflow
+from crewplane.runtime.execution.workflow import execute_workflow
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
 
@@ -55,7 +55,7 @@ def _load_mock_review_config(project_root: Path, fixture_output_dir: Path) -> Co
         }
     )
 
-    config_path = project_root / ".orchestrator" / "config.yml"
+    config_path = project_root / ".crewplane" / "config.yml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return load_config(config_path)
@@ -86,7 +86,7 @@ def test_mock_invoker_review_loop_integration_groups_multi_audit_round_artifacts
     components = build_runtime_components(
         config=config,
         workflow_topology=topology_from_workflow(workflow),
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         project_root=tmp_path,
         console=Console(
             file=io.StringIO(),
@@ -208,7 +208,7 @@ def test_mock_invoker_review_loop_integration_keeps_last_valid_candidate_after_i
     components = build_runtime_components(
         config=config,
         workflow_topology=topology_from_workflow(workflow),
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         project_root=tmp_path,
         console=Console(
             file=io.StringIO(),

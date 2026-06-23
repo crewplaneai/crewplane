@@ -1,33 +1,45 @@
 # Quickstart
 
-Run these commands from the project you want providers to inspect or modify:
+Run these commands from the project you want provider CLIs to inspect or modify:
 
 ```bash
-orchestrator init
-orchestrator validate
-orchestrator run --dry-run
-orchestrator run
+crewplane init
+crewplane validate
+crewplane run --dry-run
+crewplane run
 ```
+
+After `crewplane init`, choose one first-run path:
+
+- Use real providers: install and authenticate the CLIs referenced in
+  `.crewplane/config.yml`, then edit the workflow providers if you only want a
+  subset.
+- Use mock execution: switch `settings.integrations.invoker.implementation` to
+  `mock` before `crewplane validate`.
+
+Before a real run, review `.crewplane/config.yml`. The generated provider
+examples may include provider-specific unattended approval or sandbox-bypass
+flags so the default templates can run without interactive prompts.
 
 ## Initialize
 
-`orchestrator init` creates project-local files under `.orchestrator/`:
+`crewplane init` creates project-local Crewplane files under `.crewplane/`:
 
-- `.orchestrator/config.yml`
-- `.orchestrator/workflows/code-review-example.task.md`
-- `.orchestrator/workflows/example-templates/**`
-- `.orchestrator/workflows/example-templates/sample-inputs/*.md`
-- `.orchestrator/preflight/fingerprint.key`, when a key can be persisted
+- `.crewplane/config.yml`
+- `.crewplane/workflows/code-review-example.task.md`
+- `.crewplane/workflows/example-templates/**`
+- `.crewplane/workflows/example-templates/sample-inputs/*.md`
+- `.crewplane/preflight/fingerprint.key`, when a key can be persisted
 
-Generated config and workflow schema values are rendered from the current
-`src/orchestrator_cli/version.py` `SCHEMA_VERSION`.
+Generated config and workflow schema values come from the current
+`SCHEMA_VERSION` in `src/crewplane/version.py`.
 
 ## Validate
 
 ```bash
-orchestrator validate
-orchestrator validate .orchestrator/workflows/code-review-example.task.md
-orchestrator validate .orchestrator/workflows/code-review-example.task.md --config .orchestrator/config.yml
+crewplane validate
+crewplane validate .crewplane/workflows/code-review-example.task.md
+crewplane validate .crewplane/workflows/code-review-example.task.md --config .crewplane/config.yml
 ```
 
 `validate` parses and composes the workflow, validates providers and policies,
@@ -38,8 +50,8 @@ does not write run artifacts.
 ## Dry Run
 
 ```bash
-orchestrator run --dry-run
-orchestrator run -n --tasks .orchestrator/workflows/code-review-example.task.md
+crewplane run --dry-run
+crewplane run -n --tasks .crewplane/workflows/code-review-example.task.md
 ```
 
 `run --dry-run` compiles and prints the execution plan without invoking
@@ -50,14 +62,14 @@ non-binding skip or resume advisory.
 ## Real Run
 
 ```bash
-orchestrator run
-orchestrator run --no-live
-orchestrator run --force
+crewplane run
+crewplane run --no-live
+crewplane run --force
 ```
 
 A real run compiles preflight, writes a run directory under
-`.orchestrator/execution-stages/`, invokes providers, writes final node artifacts
-under `.orchestrator/execution-results/`, and records manifests and logs.
+`.crewplane/execution-stages/`, invokes providers, writes final node artifacts
+under `.crewplane/execution-results/`, and records manifests and logs.
 
 Use `--no-live` to disable the live dashboard while keeping execution fully
 functional. Use `--force` to bypass duplicate-skip and resume behavior for the
@@ -65,14 +77,14 @@ same workflow signature.
 
 ## Selecting A Workflow
 
-By default, `orchestrator run` and `orchestrator validate` expect exactly one
-`.task.md` file directly in `.orchestrator/workflows/`. If there are zero or
+By default, `crewplane run` and `crewplane validate` expect exactly one
+`.task.md` file directly in `.crewplane/workflows/`. If there are zero or
 multiple top-level workflow files, pass one explicitly:
 
 ```bash
-orchestrator run --tasks .orchestrator/workflows/code-review-example.task.md
-orchestrator run -t .orchestrator/workflows/example-templates/feature-implement-example.task.md
+crewplane run --tasks .crewplane/workflows/code-review-example.task.md
+crewplane run -t .crewplane/workflows/example-templates/feature-implement-example.task.md
 ```
 
-The example library under `.orchestrator/workflows/example-templates/` is not
+The example library under `.crewplane/workflows/example-templates/` is not
 selected by default unless you pass `--tasks`.

@@ -35,7 +35,7 @@ function commandWorks(command, args) {
 
 function ensureSupportedPlatform() {
   if (process.platform === "win32") {
-    throw new Error("native Windows is not supported by the crewplane npm wrapper; use WSL");
+    throw new Error("native Windows is not supported by Crewplane npm wrapper; use WSL");
   }
 }
 

@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace.service import MaterializationLimiter
-from orchestrator_cli.runtime.workspace.worktree.cache import WorktreeReuseCache
+from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.service import MaterializationLimiter
+from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,

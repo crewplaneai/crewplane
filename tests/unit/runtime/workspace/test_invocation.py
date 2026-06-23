@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     ProviderRecord,
@@ -11,13 +11,13 @@ from orchestrator_cli.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
-from orchestrator_cli.runtime.execution.review_loop.workspace_state_paths import (
+from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
 )
-from orchestrator_cli.runtime.execution.workspace_files import (
+from crewplane.runtime.execution.workspace_files import (
     dynamic_locator_source_state_path,
 )
-from orchestrator_cli.runtime.workspace.invocation import (
+from crewplane.runtime.workspace.invocation import (
     invocation_slug,
     workspace_state_path,
 )

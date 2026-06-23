@@ -3,9 +3,9 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from orchestrator_cli.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
-from orchestrator_cli.core.execution_state import RUN_STATE_SCHEMA_VERSION, RunManifest
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
+from crewplane.core.execution_state import RUN_STATE_SCHEMA_VERSION, RunManifest
+from crewplane.version import SCHEMA_VERSION
 
 
 class FilesystemArtifactsAdapterTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class FilesystemArtifactsAdapterTests(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             store = adapter.create_store(
                 workflow_name="Workflow",
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 options={
                     "log_cli_output": True,
@@ -38,7 +38,7 @@ class FilesystemArtifactsAdapterTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "allowed_template_paths"):
                 adapter.create_store(
                     workflow_name="Workflow",
-                    orchestrator_dir=tmp_path,
+                    state_dir=tmp_path,
                     project_root=tmp_path,
                     options={"allowed_template_paths": "bad"},
                 )
@@ -49,7 +49,7 @@ class FilesystemArtifactsAdapterTests(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             config = adapter.canonicalize_options(
                 implementation="filesystem",
-                resolved_identity="orchestrator_cli.adapters.artifacts.filesystem:FilesystemArtifactsAdapter",
+                resolved_identity="crewplane.adapters.artifacts.filesystem:FilesystemArtifactsAdapter",
                 options={"allowed_template_paths": [], "log_cli_output": True},
             )
 
@@ -64,14 +64,14 @@ class FilesystemArtifactsAdapterTests(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             store = adapter.create_store(
                 workflow_name="Workflow",
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 options={"allowed_template_paths": [], "log_cli_output": True},
             )
             manifest = RunManifest(
                 run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
                 plan_schema_version=SCHEMA_VERSION,
-                workflow_identity=".orchestrator/workflows/workflow.task.md",
+                workflow_identity=".crewplane/workflows/workflow.task.md",
                 workflow_name="Workflow",
                 workflow_signature="0" * 64,
                 run_id=store.run_id,

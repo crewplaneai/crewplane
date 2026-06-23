@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.observability.tmux import inspect_control
-from orchestrator_cli.observability.tmux.runtime_files import (
+from crewplane.observability.tmux import inspect_control
+from crewplane.observability.tmux.runtime_files import (
     MODE_DASHBOARD,
     MODE_INSPECT,
     RuntimeFiles,
@@ -44,7 +44,7 @@ def test_inspect_control_rolls_back_runtime_state_when_respawn_fails(
     assert len(calls) == 1
     command, check = calls[0]
     assert command[:5] == ["tmux", "respawn-pane", "-k", "-t", "%20"]
-    assert "orchestrator_cli.observability.tmux.inspect_launcher" in command[-1]
+    assert "crewplane.observability.tmux.inspect_launcher" in command[-1]
     assert str(runtime_files.inspect_invocation) in command[-1]
     assert check is True
     assert runtime_files.mode.read_text(encoding="utf-8") == MODE_DASHBOARD

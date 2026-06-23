@@ -9,17 +9,17 @@ from typing import Any
 
 from rich.console import Console
 
-import orchestrator_cli.core.preflight.secrets as preflight_secrets
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import (
+import crewplane.core.preflight.secrets as preflight_secrets
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import (
     AgentConfig,
     Config,
     IntegrationsConfig,
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.preflight import (
+from crewplane.core.preflight import (
     FingerprintKeyCache,
     FingerprintKeyProvider,
     PreflightCompileOptions,
@@ -28,13 +28,13 @@ from orchestrator_cli.core.preflight import (
     compile_preflight_preview,
     signature_for_payload,
 )
-from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _mock_config() -> Config:
@@ -140,7 +140,7 @@ def _compile_signature(root: Path, no_live: bool) -> str:
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -178,7 +178,7 @@ def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
             runtime_snapshot=snapshot.snapshot,
             options=PreflightCompileOptions(
                 project_root=tmp_path,
-                orchestrator_dir=tmp_path / ".orchestrator",
+                state_dir=tmp_path / ".crewplane",
                 fingerprint_key_policy="persist_if_needed",
             ),
         )
@@ -229,7 +229,7 @@ def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
         "split-second",
         split_arg=True,
     )
-    key_path = tmp_path / ".orchestrator" / "preflight" / "fingerprint.key"
+    key_path = tmp_path / ".crewplane" / "preflight" / "fingerprint.key"
     assert key_path.exists()
     assert key_path.stat().st_size == 32
 
@@ -261,7 +261,7 @@ def test_sensitive_adapter_options_are_hmac_fingerprinted_and_redacted(
             runtime_snapshot=snapshot.snapshot,
             options=PreflightCompileOptions(
                 project_root=tmp_path,
-                orchestrator_dir=tmp_path / ".orchestrator",
+                state_dir=tmp_path / ".crewplane",
                 fingerprint_key_policy="persist_if_needed",
             ),
         )
@@ -326,7 +326,7 @@ def test_param_tokens_cannot_survive_to_preflight_plan(tmp_path: Path) -> None:
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=tmp_path,
-            orchestrator_dir=tmp_path / ".orchestrator",
+            state_dir=tmp_path / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -373,7 +373,7 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
             runtime_snapshot=snapshot.snapshot,
             options=PreflightCompileOptions(
                 project_root=tmp_path,
-                orchestrator_dir=tmp_path / ".orchestrator",
+                state_dir=tmp_path / ".crewplane",
                 environment={"API_TOKEN": "super-secret"},
                 runtime_variables={"private_key": "var-secret"},
                 fingerprint_key_policy="persist_if_needed",
@@ -453,7 +453,7 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
         return preview.workflow_signature
 
     assert compile_once() == compile_once()
-    key_path = tmp_path / ".orchestrator" / "preflight" / "fingerprint.key"
+    key_path = tmp_path / ".crewplane" / "preflight" / "fingerprint.key"
     assert key_path.exists()
     assert key_path.stat().st_size == 32
 
@@ -496,36 +496,36 @@ def test_absent_read_only_fingerprint_key_is_run_scoped_and_artifact_free(
 
     first_run_options = PreflightCompileOptions(
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         environment={"API_TOKEN": "super-secret"},
         fingerprint_key_policy="read_only",
     )
     second_run_options = PreflightCompileOptions(
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
         environment={"API_TOKEN": "super-secret"},
         fingerprint_key_policy="read_only",
     )
 
     assert compile_once(first_run_options) == compile_once(first_run_options)
     assert compile_once(first_run_options) != compile_once(second_run_options)
-    assert not (tmp_path / ".orchestrator" / "preflight" / "fingerprint.key").exists()
+    assert not (tmp_path / ".crewplane" / "preflight" / "fingerprint.key").exists()
 
 
 def test_ephemeral_fingerprint_key_cache_is_explicitly_scoped(tmp_path: Path) -> None:
-    orchestrator_dir = tmp_path / ".orchestrator"
+    state_dir = tmp_path / ".crewplane"
     cache = FingerprintKeyCache()
 
-    first = FingerprintKeyProvider(orchestrator_dir, cache=cache).load_key("ephemeral")
-    second = FingerprintKeyProvider(orchestrator_dir, cache=cache).load_key("ephemeral")
+    first = FingerprintKeyProvider(state_dir, cache=cache).load_key("ephemeral")
+    second = FingerprintKeyProvider(state_dir, cache=cache).load_key("ephemeral")
     independent = FingerprintKeyProvider(
-        orchestrator_dir,
+        state_dir,
         cache=FingerprintKeyCache(),
     ).load_key("ephemeral")
 
     assert first.key == second.key
     assert first.key != independent.key
-    assert not (orchestrator_dir / "preflight" / "fingerprint.key").exists()
+    assert not (state_dir / "preflight" / "fingerprint.key").exists()
 
 
 def test_concurrent_first_fingerprint_key_publish_converges(
@@ -549,7 +549,7 @@ def test_concurrent_first_fingerprint_key_publish_converges(
 
     def load_key() -> bytes:
         start_barrier.wait(timeout=5)
-        result = FingerprintKeyProvider(tmp_path / ".orchestrator").load_key(
+        result = FingerprintKeyProvider(tmp_path / ".crewplane").load_key(
             "persist_if_needed"
         )
         assert not result.diagnostics
@@ -560,7 +560,7 @@ def test_concurrent_first_fingerprint_key_publish_converges(
         futures = [executor.submit(load_key) for _ in range(worker_count)]
         keys = [future.result() for future in futures]
 
-    key_path = tmp_path / ".orchestrator" / "preflight" / "fingerprint.key"
+    key_path = tmp_path / ".crewplane" / "preflight" / "fingerprint.key"
     assert key_path.exists()
     assert key_path.stat().st_size == 32
     assert set(keys) == {key_path.read_bytes()}

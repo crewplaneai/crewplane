@@ -2,28 +2,28 @@ from pathlib import Path
 
 from rich.console import Console
 
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import (
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import (
     AgentConfig,
     Config,
     IntegrationsConfig,
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.preflight import (
+from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightCompileOptions,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.preflight.secrets import FingerprintKeyPolicy
-from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.preflight.secrets import FingerprintKeyPolicy
+from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _config() -> Config:
@@ -65,7 +65,7 @@ def _preview(
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy=fingerprint_key_policy,
             environment=environment,
             runtime_variables=runtime_variables or {},
@@ -222,7 +222,7 @@ def test_env_policy_failure_does_not_publish_fingerprint_key(
     assert preview.workflow_signature is None
     assert preview.value_fingerprints == []
     assert preview.fingerprint_metadata["fingerprint_key_persisted"] is False
-    assert not (tmp_path / ".orchestrator" / "preflight" / "fingerprint.key").exists()
+    assert not (tmp_path / ".crewplane" / "preflight" / "fingerprint.key").exists()
 
 
 def test_var_policy_failure_does_not_publish_fingerprint_key(
@@ -258,7 +258,7 @@ def test_var_policy_failure_does_not_publish_fingerprint_key(
     assert preview.workflow_signature is None
     assert preview.value_fingerprints == []
     assert preview.fingerprint_metadata["fingerprint_key_persisted"] is False
-    assert not (tmp_path / ".orchestrator" / "preflight" / "fingerprint.key").exists()
+    assert not (tmp_path / ".crewplane" / "preflight" / "fingerprint.key").exists()
 
 
 def test_successful_preflight_preview_builds_execution_contract(
@@ -312,7 +312,7 @@ def test_preflight_preview_warns_on_argv_prompt_transport(
         runtime_snapshot=config_snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=tmp_path,
-            orchestrator_dir=tmp_path / ".orchestrator",
+            state_dir=tmp_path / ".crewplane",
             fingerprint_key_policy="read_only",
             environment=None,
             runtime_variables={},

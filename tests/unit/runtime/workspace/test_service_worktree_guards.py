@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace.worktree import policy as worktree_policy
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.worktree import policy as worktree_policy
+from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.workspace_service import (
     create_git_repo,
     run_git_text,
@@ -47,13 +47,13 @@ def test_worktree_retry_reset_rejects_own_protected_ref_drift(
         prepared.cwd,
         "update-ref",
         (
-            "refs/orchestrator-cli/runs/workspace-run-001/implement/"
+            "refs/crewplane/runs/workspace-run-001/implement/"
             f"{prepared.worktree_capture.slug}/candidate"
         ),
         source.run_base_commit,
     )
 
-    with pytest.raises(RuntimeError, match="protected orchestrator Git refs"):
+    with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
         prepared.invocation_context.retry_reset()
 
     run_git_text(
@@ -61,7 +61,7 @@ def test_worktree_retry_reset_rejects_own_protected_ref_drift(
         "update-ref",
         "-d",
         (
-            "refs/orchestrator-cli/runs/workspace-run-001/implement/"
+            "refs/crewplane/runs/workspace-run-001/implement/"
             f"{prepared.worktree_capture.slug}/candidate"
         ),
     )
@@ -92,13 +92,11 @@ def test_worktree_retry_reset_rejects_sibling_protected_ref_drift(
     assert prepared.invocation_context.retry_reset is not None
     source = plan.workspace_source
     assert source is not None
-    sibling_ref = (
-        "refs/orchestrator-cli/runs/workspace-run-001/other-node/other-slug/result"
-    )
+    sibling_ref = "refs/crewplane/runs/workspace-run-001/other-node/other-slug/result"
     run_git_text(prepared.cwd, "update-ref", sibling_ref, source.run_base_commit)
 
     try:
-        with pytest.raises(RuntimeError, match="protected orchestrator Git refs"):
+        with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
             prepared.invocation_context.retry_reset()
     finally:
         run_git_text(prepared.cwd, "update-ref", "-d", sibling_ref)
@@ -128,14 +126,12 @@ def test_worktree_capture_rejects_sibling_protected_ref_drift(
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
-    sibling_ref = (
-        "refs/orchestrator-cli/runs/workspace-run-001/other-node/other-slug/result"
-    )
+    sibling_ref = "refs/crewplane/runs/workspace-run-001/other-node/other-slug/result"
     (prepared.cwd / "result.txt").write_text("captured\n", encoding="utf-8")
     run_git_text(prepared.cwd, "update-ref", sibling_ref, source.run_base_commit)
 
     try:
-        with pytest.raises(RuntimeError, match="protected orchestrator Git refs"):
+        with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
             prepared.mark_succeeded()
     finally:
         run_git_text(prepared.cwd, "update-ref", "-d", sibling_ref)
@@ -265,13 +261,13 @@ def test_worktree_capture_rejects_own_protected_ref_drift(
         prepared.cwd,
         "update-ref",
         (
-            "refs/orchestrator-cli/runs/workspace-run-001/implement/"
+            "refs/crewplane/runs/workspace-run-001/implement/"
             f"{prepared.worktree_capture.slug}/candidate"
         ),
         source.run_base_commit,
     )
 
-    with pytest.raises(RuntimeError, match="protected orchestrator Git refs"):
+    with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
         prepared.mark_succeeded()
 
     assert prepared.workspace_path.exists()
@@ -280,7 +276,7 @@ def test_worktree_capture_rejects_own_protected_ref_drift(
         "update-ref",
         "-d",
         (
-            "refs/orchestrator-cli/runs/workspace-run-001/implement/"
+            "refs/crewplane/runs/workspace-run-001/implement/"
             f"{prepared.worktree_capture.slug}/candidate"
         ),
     )

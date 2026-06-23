@@ -3,14 +3,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import (
+from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from orchestrator_cli.architecture.contracts import InvocationContext
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.invocation.command import run_command_once
-from orchestrator_cli.runtime.agent.invoker import (
+from crewplane.architecture.contracts import InvocationContext
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.invocation.command import run_command_once
+from crewplane.runtime.agent.invoker import (
     PlannedAgentInvoker,
     invoke_agent,
     invoke_agent_with_runner,
@@ -24,7 +24,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
             delegated = AsyncMock()
 
             with patch(
-                "orchestrator_cli.runtime.agent.invoker.invoke_agent_with_runner",
+                "crewplane.runtime.agent.invoker.invoke_agent_with_runner",
                 delegated,
             ):
                 await invoke_agent(
@@ -47,7 +47,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
             delegated = AsyncMock()
 
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.run_invocation_loop",
+                "crewplane.runtime.agent.invocation.loop.run_invocation_loop",
                 delegated,
             ):
                 await invoke_agent_with_runner(
@@ -78,7 +78,7 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
             )
 
             with patch(
-                "orchestrator_cli.runtime.agent.invoker.invoke_agent",
+                "crewplane.runtime.agent.invoker.invoke_agent",
                 delegated,
             ):
                 await PlannedAgentInvoker(

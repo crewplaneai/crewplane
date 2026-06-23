@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run.workspace import (
+from crewplane.cli.run.workspace import (
     git_attributes as workspace_git_attributes,
 )
-from orchestrator_cli.cli.run.workspace import repo_policy as workspace_repo_policy
-from orchestrator_cli.cli.run.workspace import source_policy as policy
-from orchestrator_cli.core.config import Settings
+from crewplane.cli.run.workspace import repo_policy as workspace_repo_policy
+from crewplane.cli.run.workspace import source_policy as policy
+from crewplane.core.config import Settings
 from tests.helpers.workspace_source_policy import git_source_context
 
 
@@ -343,7 +343,7 @@ def test_clean_start_reserved_paths_are_project_root_relative(
         assert project_root == tmp_path / "app"
         assert "status" in args
         return (
-            "? app/.orchestrator/execution-stages/log.txt",
+            "? app/.crewplane/execution-stages/log.txt",
             "? app/src/new.py",
             "? root.txt",
         )
@@ -366,7 +366,7 @@ def test_clean_start_reserved_paths_are_project_root_relative(
     assert len(builder.errors) == 1
     assert "app/src/new.py" in builder.errors[0]
     assert "root.txt" not in builder.errors[0]
-    assert ".orchestrator/execution-stages" not in builder.errors[0]
+    assert ".crewplane/execution-stages" not in builder.errors[0]
 
 
 def test_workspace_source_policy_rejects_gitlinks_and_gitmodules(
@@ -435,8 +435,8 @@ def test_source_tree_reserved_paths_are_project_root_relative(
         assert "--full-tree" in args
         assert "--full-name" in args
         return (
-            "100644 blob a\t.orchestrator/execution-stages/root.txt",
-            "100644 blob b\tapp/.orchestrator/execution-stages/stage.txt",
+            "100644 blob a\t.crewplane/execution-stages/root.txt",
+            "100644 blob b\tapp/.crewplane/execution-stages/stage.txt",
             "100644 blob c\tapp/src/app.py",
         )
 
@@ -467,8 +467,8 @@ def test_source_tree_reserved_paths_are_project_root_relative(
     workspace_repo_policy.validate_source_tree(git_context, builder)
 
     assert len(builder.errors) == 1
-    assert "app/.orchestrator/execution-stages/stage.txt" in builder.errors[0]
-    assert ".orchestrator/execution-stages/root.txt" not in builder.errors[0]
+    assert "app/.crewplane/execution-stages/stage.txt" in builder.errors[0]
+    assert ".crewplane/execution-stages/root.txt" not in builder.errors[0]
 
 
 def test_workspace_source_policy_allows_harmless_tracked_attributes(

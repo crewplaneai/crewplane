@@ -1,10 +1,11 @@
 # Workflow Syntax Reference
 
-Markdown workflows use YAML frontmatter followed by Markdown node sections.
+Markdown workflows have two parts: YAML frontmatter that declares the DAG, and
+Markdown sections that provide the prompts for non-input nodes.
 
 ```yaml
 ---
-schema_version: "<current>"
+schema_version: "1.0"
 name: "Example"
 description: "Optional description"
 nodes:
@@ -38,8 +39,10 @@ Inspect the project.
 | `with` | String parameter bindings for `{{param:key}}`. |
 | `inputs` | Bind child workflow input names to local node IDs. |
 
-Imports are Markdown-only, alias-namespaced, cycle-checked, and bounded to the
-project root.
+Import paths resolve relative to the workflow file that declares them. Imports
+are Markdown-only, alias-namespaced, cycle-checked, and bounded to the project
+root. Duplicate aliases fail. Unused `with` parameters fail so misspelled
+parameter names do not silently disappear.
 
 ## Experimental Worktrees
 
@@ -60,7 +63,8 @@ Worktree names must match `[a-z0-9._-]+`; `none` is reserved.
 Kinds:
 
 - `worktree`: mutable Git-backed source line that can emit
-  `workspace-state.json`, `workspace.bundle`, and optional local branch export.
+  `workspace-state*.json`, `workspace-bundles/*.bundle`, and optional local
+  branch export.
 - `snapshot`: writable disposable scratch space. It never emits source lineage
   or a branch.
 
@@ -86,14 +90,17 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 | `mode` | `parallel`, `sequential`, or `input`. |
 | `providers` | Provider shorthand strings or provider objects. |
 | `needs` | Upstream node IDs. |
-| `continue_on_failure` | Allow downstream scheduling past failure when policy permits. |
+| `continue_on_failure` | Treat selected parallel or review-loop failure policies as successful node completion. |
 | `findings` | Write a findings artifact for this node. Defaults to `false`. |
 | `source` | Input node file source. Only valid for `mode: input`. |
-| `depth` | Positive sequential execution depth. |
-| `audit_rounds` | Positive sequential review-loop round count. |
+| `depth` | Positive sequential execution depth. Defaults to `1`. |
+| `audit_rounds` | Positive sequential review-loop audit round count. Defaults to `1` when reviewers are present. |
 | `failure_threshold` | Parallel-node failure threshold. Must be less than provider count. |
 | `token_budget` | Node token budget override. |
 | `worktree` | Experimental node worktree selector. Not valid for input nodes. |
+
+Node IDs must match `[a-z0-9._-]+`, cannot be `.` or `..`, and cannot use the
+reserved run-root names `logs`, `manifests`, or `workspace-exports`.
 
 ## Provider Objects
 
@@ -111,8 +118,11 @@ Provider object fields:
 - `role`
 
 Roles are `executor` and `reviewer`. Parallel nodes do not allow reviewers.
-Sequential multi-provider review loops must start with executor providers and
-end with reviewer providers.
+Sequential single-provider nodes must use one executor provider and cannot set
+`audit_rounds`; `depth` is the total number of executor rounds. Sequential
+multi-provider review loops must start with a contiguous executor segment and
+end with a contiguous reviewer segment. For review loops, `depth` is remediation
+depth inside each audit round.
 
 ## Input Nodes
 
@@ -140,16 +150,19 @@ Every non-input node requires one `## <node-id>` section.
 Unmarked Markdown is shared prompt content. Authored role markers are only:
 
 ```markdown
-<!-- orchestrator:executor -->
+<!-- crewplane:executor -->
 Executor-only prompt.
-<!-- /orchestrator:executor -->
+<!-- /crewplane:executor -->
 
-<!-- orchestrator:reviewer -->
+<!-- crewplane:reviewer -->
 Reviewer-only prompt.
-<!-- /orchestrator:reviewer -->
+<!-- /crewplane:reviewer -->
 ```
 
 There is no authored `shared` marker.
+
+Role markers must be standalone root-level HTML comments. Markers inside code
+fences, blockquotes, or lists are treated as literal prompt text.
 
 ## Templates
 

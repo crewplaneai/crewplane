@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from orchestrator_cli.cli.run.manifest import build_run_manifest_from_plan
-from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
-from orchestrator_cli.core.workflow_models import WorkflowPlan
+from crewplane.cli.run.manifest import build_run_manifest_from_plan
+from crewplane.core.preflight.source import PreflightWorkflowSource
+from crewplane.core.workflow.models import WorkflowPlan
 from tests.helpers.resume import make_snapshot_workspace_plan
 
 
@@ -14,7 +14,7 @@ def test_run_manifest_records_workspace_descriptor() -> None:
                 **plan.runtime_config_snapshot,
                 "workspace": {
                     "enabled": True,
-                    "cache_root": "/tmp/orchestrator-workspace-cache",
+                    "cache_root": "/tmp/crewplane-workspace-cache",
                     "cleanup_on_success": True,
                 },
             }
@@ -27,7 +27,7 @@ def test_run_manifest_records_workspace_descriptor() -> None:
     manifest = build_run_manifest_from_plan(
         plan,
         source,
-        workflow_identity=".orchestrator/workflows/workflow.task.md",
+        workflow_identity=".crewplane/workflows/workflow.task.md",
     )
 
     assert manifest.workspace is not None

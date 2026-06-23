@@ -5,8 +5,9 @@ The default UI integration is the tmux live dashboard.
 
 ## Live Dashboard
 
-By default, `settings.integrations.ui.implementation` is `tmux`. When tmux is
-available, real runs open or switch to a compact live dashboard.
+By default, `settings.integrations.ui.implementation` is `tmux`. Real runs open
+or switch to a compact live dashboard only when output is attached to a terminal,
+`--no-live` is not set, tmux is available, and provider log capture is enabled.
 
 ```yaml
 settings:
@@ -20,8 +21,10 @@ settings:
         log_tail_lines: null
 ```
 
-If tmux is missing, Crewplane warns and continues without the dashboard. Use
-`orchestrator run --no-live` to disable live dashboard output explicitly.
+If tmux is missing, Crewplane warns and continues without the dashboard. CI and
+other non-TTY runs still write `logs/events.ndjson` and `logs/summary.md`, but
+do not start the live dashboard. Use `crewplane run --no-live` to disable live
+dashboard output explicitly.
 
 ## Log Capture Dependency
 
@@ -48,8 +51,8 @@ for the exact persisted `.log` file.
 Run summaries are written to:
 
 ```text
-.orchestrator/execution-stages/<run-key>/logs/summary.md
-.orchestrator/execution-stages/<run-key>/logs/events.ndjson
+.crewplane/execution-stages/<run-key>/logs/summary.md
+.crewplane/execution-stages/<run-key>/logs/events.ndjson
 ```
 
 Summaries include run status and visible-text usage/spend estimates when the

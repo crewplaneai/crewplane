@@ -2,10 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.adapters.invokers.mock import MockInvokerAdapter
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.preflight import (
+from crewplane.adapters.invokers.mock import MockInvokerAdapter
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight import (
     DependencyEdge,
     Fragment,
     PreflightExecutionNode,
@@ -15,22 +15,22 @@ from orchestrator_cli.core.preflight import (
     RenderStream,
     signature_for_payload,
 )
-from orchestrator_cli.core.preflight.models import ArtifactContract
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.preflight.models import ArtifactContract
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.execution import (
+from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.execution import (
     execute_workflow as _execute_compiled_workflow,
 )
-from orchestrator_cli.runtime.execution.consensus import (
+from crewplane.runtime.execution.consensus import (
     extract_verdict,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     GraphDependencyOrderInvoker,
     MockAgentInvoker,

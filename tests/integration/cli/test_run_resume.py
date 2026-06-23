@@ -10,22 +10,22 @@ from pathlib import Path
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.ports.artifacts import (
+from crewplane.architecture.ports.artifacts import (
     ArtifactStorePort,
     StageTaskSpec,
 )
-from orchestrator_cli.cli.workflow_runner import execute_workflow_run
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.preflight import PreflightExecutionPlan
-from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
-from orchestrator_cli.core.workflow_models import (
+from crewplane.cli.workflow_runner import execute_workflow_run
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight import PreflightExecutionPlan
+from crewplane.core.preflight.source import PreflightWorkflowSource
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.runtime.execution.resume import write_successful_node_state
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.runtime.execution.resume import write_successful_node_state
+from crewplane.version import SCHEMA_VERSION
 
 
 def config() -> Config:
@@ -79,7 +79,7 @@ def source(root: Path) -> PreflightWorkflowSource:
             "name": selected_workflow.name,
             "nodes": [],
         },
-        root_workflow_path=root / ".orchestrator" / "workflows" / "resume.task.md",
+        root_workflow_path=root / ".crewplane" / "workflows" / "resume.task.md",
     )
 
 
@@ -153,7 +153,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                         console=console,
                         execute_workflow_impl=fake_execute_workflow,
                         project_root=root,
-                        orchestrator_dir=root / ".orchestrator",
+                        state_dir=root / ".crewplane",
                     )
                 await execute_workflow_run(
                     config=config(),
@@ -163,13 +163,13 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     console=console,
                     execute_workflow_impl=fake_execute_workflow,
                     project_root=root,
-                    orchestrator_dir=root / ".orchestrator",
+                    state_dir=root / ".crewplane",
                 )
             finally:
                 os.chdir(original_cwd)
 
             self.assertEqual(calls, [(), ("a",)])
-            run_dirs = sorted((root / ".orchestrator" / "execution-stages").iterdir())
+            run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
             self.assertEqual(len(run_dirs), 2)
             second_run = run_dirs[1]
             self.assertTrue((second_run / "a" / "resume-source.json").exists())
@@ -223,7 +223,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                         console=console,
                         execute_workflow_impl=fake_execute_workflow,
                         project_root=root,
-                        orchestrator_dir=root / ".orchestrator",
+                        state_dir=root / ".crewplane",
                     )
                 await execute_workflow_run(
                     config=config(),
@@ -233,13 +233,13 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     console=console,
                     execute_workflow_impl=fake_execute_workflow,
                     project_root=root,
-                    orchestrator_dir=root / ".orchestrator",
+                    state_dir=root / ".crewplane",
                 )
             finally:
                 os.chdir(original_cwd)
 
             self.assertEqual(calls, [(), ("a",)])
-            run_dirs = sorted((root / ".orchestrator" / "execution-stages").iterdir())
+            run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
             self.assertEqual(len(run_dirs), 2)
             first_manifest = json.loads(
                 (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")

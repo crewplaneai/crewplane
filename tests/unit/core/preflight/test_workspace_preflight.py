@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from orchestrator_cli.core.preflight.models import WorkspaceSelectionRecord
+from crewplane.core.preflight.models import WorkspaceSelectionRecord
 from tests.helpers.workspace_preflight import (
     compile_with_source_snapshot,
     compile_workflow_with_source_snapshot,

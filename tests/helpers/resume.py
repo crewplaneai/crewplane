@@ -5,16 +5,16 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from orchestrator_cli.artifacts.workspace.node_state import (
+from crewplane.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
 )
-from orchestrator_cli.core.execution_state import (
+from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
     NodeState,
     RunManifest,
 )
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     ArtifactContract,
     DependencyEdge,
     ExecutionPolicy,
@@ -25,10 +25,10 @@ from orchestrator_cli.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.version import SCHEMA_VERSION
 
-WORKFLOW_IDENTITY = ".orchestrator/workflows/workflow.task.md"
+WORKFLOW_IDENTITY = ".crewplane/workflows/workflow.task.md"
 WORKFLOW_NAME = "Workflow"
 WORKFLOW_SIGNATURE = hashlib.sha256(b"workflow").hexdigest()
 RUNTIME_SIGNATURE = hashlib.sha256(b"runtime").hexdigest()
@@ -84,9 +84,9 @@ def make_run_manifest(
     )
 
 
-def write_run_manifest(orchestrator_dir: Path, manifest: RunManifest) -> Path:
+def write_run_manifest(state_dir: Path, manifest: RunManifest) -> Path:
     path = (
-        orchestrator_dir
+        state_dir
         / "execution-stages"
         / manifest.run_key_name
         / "manifests"
@@ -118,8 +118,8 @@ def make_plan(findings_edge: bool = False) -> PreflightExecutionPlan:
         run_id="current-run",
         run_key_name="workflow--current-run",
         project_root=".",
-        context_root=".orchestrator/execution-stages/workflow--current-run",
-        manifest_root=".orchestrator/execution-stages/workflow--current-run/manifests",
+        context_root=".crewplane/execution-stages/workflow--current-run",
+        manifest_root=".crewplane/execution-stages/workflow--current-run/manifests",
         created_at=iso_datetime(),
         workflow_name=WORKFLOW_NAME,
         workflow_signature=WORKFLOW_SIGNATURE,
@@ -378,7 +378,7 @@ def make_node_state(
 
 
 def write_node_state(run_dir: Path, node_state: NodeState) -> Path:
-    from orchestrator_cli.artifacts.naming import build_node_state_filename
+    from crewplane.artifacts.naming import build_node_state_filename
 
     path = (
         run_dir / "manifests" / "nodes" / build_node_state_filename(node_state.node_id)
@@ -416,7 +416,7 @@ def attach_workspace_descriptor(
 
 
 def _node_state_path(run_dir: Path, node_id: str) -> Path:
-    from orchestrator_cli.artifacts.naming import build_node_state_filename
+    from crewplane.artifacts.naming import build_node_state_filename
 
     return run_dir / "manifests" / "nodes" / build_node_state_filename(node_id)
 

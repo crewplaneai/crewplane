@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.tmux.selected_invocation import (
+from crewplane.observability.tmux.selected_invocation import (
     prepare_selected_invocation,
 )
 from tests.helpers.observability import (

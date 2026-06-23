@@ -3,15 +3,15 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from orchestrator_cli.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
-from orchestrator_cli.architecture.ports.artifacts import ArtifactAdapterPort
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.preflight.models import (
+from crewplane.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
+from crewplane.architecture.ports.artifacts import ArtifactAdapterPort
+from crewplane.artifacts import OutputManager
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _plan(context_root: Path) -> PreflightExecutionPlan:
@@ -51,7 +51,7 @@ def test_filesystem_artifact_store_writes_preflight_success_contract(
     adapter = FilesystemArtifactsAdapter()
     store = adapter.create_store(
         workflow_name="Workflow",
-        orchestrator_dir=tmp_path,
+        state_dir=tmp_path,
         project_root=tmp_path,
         options={"allowed_template_paths": [], "log_cli_output": True},
     )

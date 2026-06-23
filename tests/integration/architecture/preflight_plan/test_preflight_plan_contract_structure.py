@@ -6,27 +6,27 @@ from typing import Any
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import (
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import (
     AgentConfig,
     Config,
     IntegrationsConfig,
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.preflight import (
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _mock_config() -> Config:
@@ -132,7 +132,7 @@ def _compile_signature(root: Path, no_live: bool) -> str:
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -149,9 +149,9 @@ def test_no_live_is_excluded_from_workflow_signature(tmp_path: Path) -> None:
 
 
 def test_runtime_execution_modules_do_not_consume_workflow_model_shims() -> None:
-    runtime_dir = Path("src/orchestrator_cli/runtime/execution")
+    runtime_dir = Path("src/crewplane/runtime/execution")
     forbidden_terms = (
-        "orchestrator_cli.core.workflow_models",
+        "crewplane.core.workflow.models",
         "WorkflowNode",
         "ProviderSpec",
         "workflow_node_from_plan_node",
@@ -169,9 +169,9 @@ def test_runtime_execution_modules_do_not_consume_workflow_model_shims() -> None
 
 
 def test_runtime_execution_modules_do_not_consume_runtime_config() -> None:
-    runtime_dir = Path("src/orchestrator_cli/runtime/execution")
+    runtime_dir = Path("src/crewplane/runtime/execution")
     forbidden_terms = (
-        "from orchestrator_cli.core.config import Config",
+        "from crewplane.core.config import Config",
         "config: Config",
         "config.settings",
         "config.agents",
@@ -190,11 +190,11 @@ def test_runtime_execution_modules_do_not_consume_runtime_config() -> None:
 
 
 def test_cli_uses_preflight_runner_for_workflow_source_loading() -> None:
-    app_source = Path("src/orchestrator_cli/cli/app.py").read_text(encoding="utf-8")
-    runner_source = Path("src/orchestrator_cli/core/preflight/runner.py").read_text(
+    app_source = Path("src/crewplane/cli/app.py").read_text(encoding="utf-8")
+    runner_source = Path("src/crewplane/core/preflight/runner.py").read_text(
         encoding="utf-8"
     )
-    compiler_source = Path("src/orchestrator_cli/core/preflight/compiler.py").read_text(
+    compiler_source = Path("src/crewplane/core/preflight/compiler.py").read_text(
         encoding="utf-8"
     )
 
@@ -233,7 +233,7 @@ def test_mock_execution_options_change_runtime_signature() -> None:
 
 
 def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> None:
-    workflow_file = tmp_path / ".orchestrator" / "workflows" / "demo.task.md"
+    workflow_file = tmp_path / ".crewplane" / "workflows" / "demo.task.md"
     workflow_file.parent.mkdir(parents=True)
     workflow_file.write_text("workflow source", encoding="utf-8")
     config = _mock_config()
@@ -275,7 +275,7 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=tmp_path,
-            orchestrator_dir=tmp_path / ".orchestrator",
+            state_dir=tmp_path / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -288,7 +288,7 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
     token = next(entry for entry in preview.token_catalog if entry.token_kind == "node")
     token_edge = next(edge for edge in preview.dependency_graph if edge.artifact_key)
 
-    assert review_node.module_id == ".orchestrator/workflows/demo.task.md"
+    assert review_node.module_id == ".crewplane/workflows/demo.task.md"
     assert review_node.artifact_contract.output_path == "review-result.md"
     assert render_plan.node_id == "review"
     assert render_plan.source_file == workflow_file.as_posix()

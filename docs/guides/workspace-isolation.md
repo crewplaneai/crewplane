@@ -22,13 +22,17 @@ settings:
     enabled: false
 ```
 
-To use managed workspaces, enable the feature and use an absolute cache root:
+To use managed workspaces, enable the feature. Set `cache_root` when you want to
+control the location; if it is omitted, Crewplane uses the platform cache
+default (`~/Library/Caches/crewplane` on macOS or
+`${XDG_CACHE_HOME:-~/.cache}/crewplane` elsewhere). When provided,
+`cache_root` must be absolute.
 
 ```yaml
 settings:
   workspace:
     enabled: true
-    cache_root: /absolute/path/to/orchestrator-workspaces
+    cache_root: /absolute/path/to/crewplane-workspaces
     cleanup_on_success: true
     worktree_contract: "blob_exact"
     clean_start: "strict"
@@ -85,7 +89,8 @@ worktrees:
 Kinds:
 
 - `worktree`: mutable Git-backed source line that can produce
-  `workspace-state.json`, `workspace.bundle`, and optional local branch export.
+  `workspace-state*.json`, `workspace-bundles/*.bundle`, and optional local
+  branch export.
 - `snapshot`: writable disposable checkout for review, audit, test discovery,
   or scratch work. It never produces source lineage or a branch.
 
@@ -118,9 +123,19 @@ explicit selector inherit that logical worktree. If a workflow declares multiple
 worktrees, provider nodes must select one explicitly or set `worktree: none`.
 
 Same-name `kind: worktree` nodes continue one mutable source line only when the
-DAG orders them. Parallel writers to the same logical worktree fail validation.
-Different logical worktree names represent independent source lines; Crewplane
-does not merge them automatically.
+DAG orders them. A mutable worktree node can have only one executor provider;
+reviewer providers remain allowed in sequential review loops. Parallel writers
+to the same logical worktree fail validation. Different logical worktree names
+represent independent source lines; Crewplane does not merge them automatically.
+
+Common validation failures:
+
+- `snapshot` worktrees cannot use `setup_profile`, `create_branch`, or
+  `branch_name`.
+- `branch_name` requires `create_branch: true`.
+- `clean_start` must be `strict` or `tracked_only`.
+- Worktree names cannot be `none`.
+- Mutable `kind: worktree` nodes cannot use multiple executor providers.
 
 ## Setup Profiles
 
@@ -188,8 +203,8 @@ checkout, or updates the user's current branch.
 Successful `kind: worktree` nodes write source-lineage artifacts under the node
 stage directory:
 
-- `workspace-state.json`
-- `workspace.bundle`
+- `workspace-state*.json`
+- Git bundles under `workspace-bundles/`
 
 Snapshots are disposable. If a snapshot node writes source-looking files,
 Crewplane records drift diagnostics and discards those changes according to the
@@ -198,14 +213,14 @@ cleanup policy.
 Use [workspace cleanup](cleanup.md) to remove generated cache entries:
 
 ```bash
-orchestrator cleanup workspaces --dry-run
-orchestrator cleanup workspaces --yes
+crewplane cleanup workspaces --dry-run
+crewplane cleanup workspaces --yes
 ```
 
 Cleanup removes managed cache directories, worktree registrations, reviewer
 workspaces, temporary indexes, and run-owned cached refs. It does not remove
 canonical lineage artifacts, provider outputs, findings, manifests, or final
-result artifacts under `.orchestrator/`.
+result artifacts under `.crewplane/`.
 
 ## Implementation Reference
 

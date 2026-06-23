@@ -4,22 +4,22 @@ import json
 
 import pytest
 
-from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.artifacts.naming import (
+from crewplane.artifacts.manager import OutputManager
+from crewplane.artifacts.naming import (
     build_generated_file_result_dir_name,
     build_node_state_filename,
 )
-from orchestrator_cli.artifacts.resume.hydration import hydrate_resume_frontier
-from orchestrator_cli.artifacts.resume.validation import (
+from crewplane.artifacts.resume.hydration import hydrate_resume_frontier
+from crewplane.artifacts.resume.validation import (
     ValidatedResumeFrontier,
     validate_resume_frontier,
 )
-from orchestrator_cli.artifacts.run_history import find_same_context_runs
-from orchestrator_cli.core.execution_state import ArtifactDescriptor, NodeState
-from orchestrator_cli.runtime.workspace.state_selection import (
+from crewplane.artifacts.run_history import find_same_context_runs
+from crewplane.core.execution_state import ArtifactDescriptor, NodeState
+from crewplane.runtime.workspace.state_selection import (
     required_lineage_state_path,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -296,7 +296,7 @@ def test_hydrate_resume_frontier_strips_source_branch_export(
     payload["branch_export"] = {
         "status": "fulfilled",
         "operation": "created",
-        "branch_name": "orchestrator/workflow/primary/source",
+        "branch_name": "crewplane/workflow/primary/source",
     }
     state_path.write_text(json.dumps(payload), encoding="utf-8")
     frontier = validate_resume_frontier(source, plan)

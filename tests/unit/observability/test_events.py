@@ -2,13 +2,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     ExecutionEvent,
     ExecutionEventContext,
     InvocationEventPayload,
@@ -23,10 +23,10 @@ from orchestrator_cli.observability.events import (
     workflow_event,
     workspace_event,
 )
-from orchestrator_cli.observability.run_summary.builder import workflow_status
-from orchestrator_cli.observability.run_summary.issues import issue_summaries
-from orchestrator_cli.observability.types import RunResult
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.observability.run_summary.builder import workflow_status
+from crewplane.observability.run_summary.issues import issue_summaries
+from crewplane.observability.types import RunResult
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 
 

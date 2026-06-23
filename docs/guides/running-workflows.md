@@ -2,32 +2,32 @@
 
 ## Default Discovery
 
-`orchestrator validate` and `orchestrator run` look for exactly one top-level
-`.task.md` file in `.orchestrator/workflows/` when no workflow path is supplied.
+`crewplane validate` and `crewplane run` look for exactly one top-level
+`.task.md` file in `.crewplane/workflows/` when no workflow path is supplied.
 
 If there are zero or multiple top-level workflow files, select one explicitly:
 
 ```bash
-orchestrator validate .orchestrator/workflows/code-review-example.task.md
-orchestrator run --tasks .orchestrator/workflows/code-review-example.task.md
+crewplane validate .crewplane/workflows/code-review-example.task.md
+crewplane run --tasks .crewplane/workflows/code-review-example.task.md
 ```
 
-Nested example templates are available after `orchestrator init`, but they are
+Nested example templates are available after `crewplane init`, but they are
 not selected by default.
 
 ## Config Selection
 
-By default, commands use `.orchestrator/config.yml`. Override it with:
+By default, commands use `.crewplane/config.yml`. Override it with:
 
 ```bash
-orchestrator validate --config .orchestrator/config.yml
-orchestrator run --config .orchestrator/config.yml
+crewplane validate --config .crewplane/config.yml
+crewplane run --config .crewplane/config.yml
 ```
 
 ## Validate
 
 ```bash
-orchestrator validate [TASKS_FILE] --config .orchestrator/config.yml
+crewplane validate [TASKS_FILE] --config .crewplane/config.yml
 ```
 
 `validate` checks workflow parsing, composition, schema, providers, policies, DAG
@@ -38,7 +38,7 @@ artifacts.
 ## Dry Run
 
 ```bash
-orchestrator run --dry-run --tasks .orchestrator/workflows/code-review-example.task.md
+crewplane run --dry-run --tasks .crewplane/workflows/code-review-example.task.md
 ```
 
 Dry-run prints the compiled execution plan and, with the filesystem artifact
@@ -49,7 +49,7 @@ checks.
 ## Real Execution
 
 ```bash
-orchestrator run --tasks .orchestrator/workflows/code-review-example.task.md
+crewplane run --tasks .crewplane/workflows/code-review-example.task.md
 ```
 
 Real execution writes preflight/run artifacts, invokes providers, records logs
@@ -62,5 +62,7 @@ Use:
 - `--tasks` or `-t` to select a workflow.
 - `--config` or `-c` to select config.
 
-Real execution currently requires the built-in filesystem artifact backend for
-lock, skip, resume, full-run, and workspace-lineage behavior.
+The built-in filesystem artifact backend is the supported backend for normal
+real runs. A custom artifact backend must implement the same port capabilities
+for locks, skip/resume history, full-run output, and workspace lineage before it
+can replace it.

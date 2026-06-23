@@ -13,7 +13,7 @@ Start here:
 
 Key architectural constraints:
 
-- Providers communicate through artifacts under `.orchestrator/`, not hidden
+- Providers communicate through artifacts under `.crewplane/`, not hidden
   shared in-memory state.
 - Provider integration is CLI-first.
 - Runtime execution consumes compiled preflight plans.

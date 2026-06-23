@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from orchestrator_cli.core.preflight import (
+from crewplane.core.preflight import (
     PreflightDiagnostic,
     PreflightDiagnosticCode,
     PreflightDiagnosticPhase,
 )
-from orchestrator_cli.core.preflight.fragment_handlers import static_value_phase
+from crewplane.core.preflight.fragment_handlers import static_value_phase
 
 
 def test_preflight_diagnostic_code_serializes_as_stable_string() -> None:

@@ -15,7 +15,7 @@ Use this document for local setup, repository layout, repeatable development wor
 ## Setup
 
 ```bash
-cd orchestrator_cli
+cd crewplane
 make setup
 ```
 
@@ -43,10 +43,10 @@ Use these commands when you need to remove generated files or reset local state:
 make clean
 
 # Remove generated run outputs only
-rm -rf .orchestrator/execution-stages .orchestrator/execution-results
+rm -rf .crewplane/execution-stages .crewplane/execution-results
 
 # Full local reset (config + workflows + outputs)
-rm -rf .orchestrator
+rm -rf .crewplane
 
 # Uninstall package from current environment
 make uninstall
@@ -55,9 +55,9 @@ make uninstall
 ## Project Structure
 
 ```text
-orchestrator_cli/
+crewplane/
 ├── src/
-│   └── orchestrator_cli/
+│   └── crewplane/
 │       ├── cli/            # CLI command surface, run helpers, cleanup, templates
 │       ├── core/           # Config/workflow schemas, parsing, composition, preflight
 │       ├── architecture/   # Stable integration contracts, loader, registry
@@ -79,7 +79,7 @@ orchestrator_cli/
 
 `pyproject.toml` owns the package distribution version. That version identifies installable releases and should change for every published release.
 
-The authored Python schema version lives in `src/orchestrator_cli/version.py`. Generated templates render schema values from that constant. Bump it when supported user-authored config or workflow files change incompatibly. Backward-compatible additions, bug fixes, documentation updates, ordinary package releases, and public-alpha persisted run-artifact hard breaks do not require a schema version bump.
+The authored Python schema version lives in `src/crewplane/version.py`. Generated templates render schema values from that constant. Bump it when supported user-authored config or workflow files change incompatibly. Backward-compatible additions, bug fixes, documentation updates, ordinary package releases, and public-alpha persisted run-artifact hard breaks do not require a schema version bump.
 
 See [ADR 0013](docs/architecture/adr/0013-version-source-of-truth-and-documentation-drift-reduction.md) for the version source-of-truth decision.
 
@@ -88,7 +88,7 @@ See [ADR 0013](docs/architecture/adr/0013-version-source-of-truth-and-documentat
 | `pyproject.toml` `project.version` | installable package release | every published release |
 | `SCHEMA_VERSION` | current config files, workflow files, and preflight execution-plan artifacts | supported user-authored schema changes incompatibly |
 
-During the public-alpha `0.x` period, support the current schema unless a migration path is deliberately added and covered by tests. Persisted run artifacts are disposable audit outputs, not migration targets; stale preflight plans may be rejected by explicit shape validation even when they carry the current `SCHEMA_VERSION`.
+During the public-alpha `0.x` period, support the current schema only. Persisted run artifacts are disposable audit outputs, not migration targets; stale preflight plans may be rejected by explicit shape validation even when they carry the current `SCHEMA_VERSION`.
 
 ## Release Workflows
 
@@ -97,24 +97,24 @@ the maintainer release flow.
 
 ## Key Modules
 
-- `src/orchestrator_cli/cli/app.py`: Typer app and commands (`init`, `run`, `validate`)
-- `src/orchestrator_cli/core/config.py`: Pydantic config models and loader
-- `src/orchestrator_cli/architecture/ports/`: Runtime integration port contracts
-- `src/orchestrator_cli/architecture/loader.py`: Alias and dotted implementation loader
-- `src/orchestrator_cli/bootstrap/container.py`: Runtime composition root
-- `src/orchestrator_cli/core/workflow_models.py`: Workflow model schema
-- `src/orchestrator_cli/core/workflow_loader.py`: Workflow file loading
-- `src/orchestrator_cli/core/workflow_markdown/`: Frontmatter and Markdown parser
-- `src/orchestrator_cli/core/workflow_composition/`: Markdown imports, aliases, params, and input binding
-- `src/orchestrator_cli/core/workflow_validation*.py`: Workflow and provider validation
-- `src/orchestrator_cli/core/preflight/`: Compiled runtime execution-plan previews and bundles
-- `src/orchestrator_cli/runtime/agent/invoker.py`: Provider command invocation and retry logic
-- `src/orchestrator_cli/runtime/execution/workflow/__init__.py`: DAG scheduling and node execution
-- `src/orchestrator_cli/artifacts/manager.py`: Artifact and output manifest management
-- `src/orchestrator_cli/artifacts/results/`: Consolidated result writing
-- `src/orchestrator_cli/artifacts/resume/`: Node-boundary resume validation and hydration
-- `src/orchestrator_cli/artifacts/workspace/`: Workspace artifact validation and descriptors
-- `src/orchestrator_cli/observability/runtime.py`: Observer lifecycle and snapshot publishing
+- `src/crewplane/cli/app.py`: Typer app and commands (`init`, `run`, `validate`)
+- `src/crewplane/core/config.py`: Pydantic config models and loader
+- `src/crewplane/architecture/ports/`: Runtime integration port contracts
+- `src/crewplane/architecture/loader.py`: Alias and dotted implementation loader
+- `src/crewplane/bootstrap/container.py`: Runtime composition root
+- `src/crewplane/core/workflow/models.py`: Workflow model schema
+- `src/crewplane/core/workflow/loading.py`: Workflow file loading
+- `src/crewplane/core/workflow/markdown/`: Frontmatter and Markdown parser
+- `src/crewplane/core/workflow/composition/`: Markdown imports, aliases, params, and input binding
+- `src/crewplane/core/workflow/validation/`: Workflow and provider validation
+- `src/crewplane/core/preflight/`: Compiled runtime execution-plan previews and bundles
+- `src/crewplane/runtime/agent/invoker.py`: Provider command invocation and retry logic
+- `src/crewplane/runtime/execution/workflow/__init__.py`: DAG scheduling and node execution
+- `src/crewplane/artifacts/manager.py`: Artifact and output manifest management
+- `src/crewplane/artifacts/results/`: Consolidated result writing
+- `src/crewplane/artifacts/resume/`: Node-boundary resume validation and hydration
+- `src/crewplane/artifacts/workspace/`: Workspace artifact validation and descriptors
+- `src/crewplane/observability/runtime.py`: Observer lifecycle and snapshot publishing
 
 ## Testing Expectations
 
@@ -145,9 +145,9 @@ settings:
 
 Manual validation flow:
 
-1. Run `orchestrator run` with the mock invoker.
+1. Run `crewplane run` with the mock invoker.
 2. Confirm node transitions (`pending -> running -> succeeded/failed`) in the CLI or tmux UI.
-3. Validate generated artifacts under `.orchestrator/execution-stages/` and `.orchestrator/execution-results/`, including findings artifacts for findings-enabled nodes, run-root logs in `.orchestrator/execution-stages/<workflow>-<run_id>/logs/`, and review-loop status artifacts in `<node>/review-state/review-loop-status.json` when a node uses sequential executor/reviewer review rounds.
+3. Validate generated artifacts under `.crewplane/execution-stages/` and `.crewplane/execution-results/`, including findings artifacts for findings-enabled nodes, run-root logs in `.crewplane/execution-stages/<workflow>-<run_id>/logs/`, and review-loop status artifacts in `<node>/review-state/review-loop-status.json` when a node uses sequential executor/reviewer review rounds.
 4. If using `output_mode: "file"`, verify fixture fallback order, `strict_file_mode` behavior, and optional `<fixture>.mutations.json` sidecars when testing artifact-drift handling, workspace checkout mutations, or prompt sentinel requirements.
 
 ## Coding Standards
@@ -163,7 +163,7 @@ Follow these project standards:
 
 ## Architecture References
 
-The orchestrator follows a blackboard architecture: agents operate independently and communicate exclusively through structured Markdown artifacts in a shared workspace. That design drives the main engineering constraints in the runtime and artifact system.
+Crewplane follows a blackboard architecture: agents operate independently and communicate exclusively through structured Markdown artifacts in a shared workspace. That design drives the main engineering constraints in the runtime and artifact system.
 
 - [docs/architecture/modular-orchestration-architecture.md](docs/architecture/modular-orchestration-architecture.md)
 - [docs/architecture/adr/0001-ports-adapters-runtime-integrations.md](docs/architecture/adr/0001-ports-adapters-runtime-integrations.md)
@@ -171,8 +171,8 @@ The orchestrator follows a blackboard architecture: agents operate independently
 
 ## Adapter Authoring
 
-1. Implement the relevant port contract under `src/orchestrator_cli/architecture/ports/`.
-2. Register an alias in `src/orchestrator_cli/architecture/registry.py` or use a dotted path override in config.
+1. Implement the relevant port contract under `src/crewplane/architecture/ports/`.
+2. Register an alias in `src/crewplane/architecture/registry.py` or use a dotted path override in config.
 3. Add adapter behavior tests under `tests/integration/adapters/`.
 4. Add architecture wiring tests under `tests/integration/architecture/`.
 5. Run quality gates before merge:

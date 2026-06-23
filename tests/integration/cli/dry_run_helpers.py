@@ -8,18 +8,18 @@ from typing import Any
 
 from rich.console import Console
 
-import orchestrator_cli.cli.app as cli
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.artifacts.naming import build_run_key_name
-from orchestrator_cli.cli.run.preflight import (
+import crewplane.cli.app as cli
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.artifacts.naming import build_run_key_name
+from crewplane.cli.run.preflight import (
     compile_workflow_preview,
     raise_for_preflight_preview_errors,
 )
-from orchestrator_cli.core.config import load_config
-from orchestrator_cli.core.execution_state import RunManifest
-from orchestrator_cli.core.preflight import PreflightCompilationPreview
-from orchestrator_cli.core.preflight.source import load_workflow_source_for_preflight
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.config import load_config
+from crewplane.core.execution_state import RunManifest
+from crewplane.core.preflight import PreflightCompilationPreview
+from crewplane.core.preflight.source import load_workflow_source_for_preflight
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_run_manifest, write_run_manifest
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
@@ -46,14 +46,14 @@ class DryRunUnavailableArtifactsAdapter:
     def create_store(
         self,
         workflow_name: str,
-        orchestrator_dir: Path,
+        state_dir: Path,
         project_root: Path,
         options: dict[str, Any] | None = None,
     ) -> None:
         type(self).create_store_calls += 1
         raise AssertionError(
             "dry-run must not create an artifact store: "
-            f"{workflow_name}, {orchestrator_dir}, {project_root}, {options}"
+            f"{workflow_name}, {state_dir}, {project_root}, {options}"
         )
 
 
@@ -62,10 +62,10 @@ def write_standard_project(
     config_writer: Callable[[Path], None] = write_basic_config,
     workflow_writer: Callable[[Path], None] = write_basic_workflow,
 ) -> tuple[Path, Path]:
-    orchestrator_dir = root / ".orchestrator"
-    workflow_dir = orchestrator_dir / "workflows"
+    state_dir = root / ".crewplane"
+    workflow_dir = state_dir / "workflows"
     workflow_dir.mkdir(parents=True, exist_ok=True)
-    config_path = orchestrator_dir / "config.yml"
+    config_path = state_dir / "config.yml"
     workflow_path = workflow_dir / "workflow.task.md"
     config_writer(config_path)
     workflow_writer(workflow_path)
@@ -169,7 +169,7 @@ def compile_preview(
         no_live=True,
         fingerprint_key_policy="read_only",
         project_root=root,
-        orchestrator_dir=root / ".orchestrator",
+        state_dir=root / ".crewplane",
     )
     raise_for_preflight_preview_errors(preview, console)
     if preview.workflow_signature is None:
@@ -197,18 +197,18 @@ def write_run_history(
         workflow_name=workflow_name,
         workflow_signature=workflow_signature,
     )
-    write_run_manifest(root / ".orchestrator", manifest)
+    write_run_manifest(root / ".crewplane", manifest)
     return manifest
 
 
-def artifact_tree(orchestrator_dir: Path) -> tuple[tuple[str, bytes], ...]:
+def artifact_tree(state_dir: Path) -> tuple[tuple[str, bytes], ...]:
     entries: list[tuple[str, bytes]] = []
     for root_name in ("locks", "execution-stages", "execution-results", "preflight"):
-        root = orchestrator_dir / root_name
+        root = state_dir / root_name
         if not root.exists():
             continue
         for path in sorted(root.rglob("*")):
-            relative_path = path.relative_to(orchestrator_dir).as_posix()
+            relative_path = path.relative_to(state_dir).as_posix()
             if path.is_dir():
                 entries.append((f"{relative_path}/", b""))
             elif path.is_file():

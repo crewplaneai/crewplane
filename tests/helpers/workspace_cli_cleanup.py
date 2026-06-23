@@ -4,12 +4,12 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from orchestrator_cli.cli.app import app
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.cli.app import app
+from crewplane.version import SCHEMA_VERSION
 
 
 def assert_cleanup_dry_run(project_root: Path, cache_root: Path) -> None:
-    config_path = project_root / ".orchestrator" / "cleanup-config.yml"
+    config_path = project_root / ".crewplane" / "cleanup-config.yml"
     config_path.write_text(
         "\n".join(
             [

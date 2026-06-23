@@ -11,17 +11,17 @@ import pytest
 import yaml
 from rich.console import Console
 
-from orchestrator_cli.bootstrap.container import build_runtime_components
-from orchestrator_cli.core.config import Config, load_config
-from orchestrator_cli.core.workflow_models import WorkflowPlan
-from orchestrator_cli.observability import PersistentRunLogger, render_dag_summary
-from orchestrator_cli.observability.runtime import ObservabilityHub
-from orchestrator_cli.observability.types import (
+from crewplane.bootstrap.container import build_runtime_components
+from crewplane.core.config import Config, load_config
+from crewplane.core.workflow.models import WorkflowPlan
+from crewplane.observability import PersistentRunLogger, render_dag_summary
+from crewplane.observability.runtime import ObservabilityHub
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,
 )
-from orchestrator_cli.runtime.execution.workflow import execute_workflow
+from crewplane.runtime.execution.workflow import execute_workflow
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
 from tests.integration.observability.dag_render_case_fixtures import (
@@ -131,7 +131,7 @@ def _load_case_config(
         raise AssertionError("Config fixture mock invoker options must be a mapping.")
     invoker_options.update(dict(mock_options))
 
-    config_path = project_root / ".orchestrator" / "config.yml"
+    config_path = project_root / ".crewplane" / "config.yml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         yaml.safe_dump(data, sort_keys=False),
@@ -219,7 +219,7 @@ def run_visualization_case() -> Callable[
         components = build_runtime_components(
             config=config,
             workflow_topology=topology_from_workflow(workflow),
-            orchestrator_dir=tmp_path / ".orchestrator",
+            state_dir=tmp_path / ".crewplane",
             project_root=tmp_path,
             console=Console(
                 file=io.StringIO(),
@@ -263,8 +263,8 @@ def run_visualization_case() -> Callable[
         _assert_expected_outcome(case, error)
 
         snapshots = tuple(recorder.snapshots)
-        event_log_path = components.artifact_store.get_orchestrator_event_log_path()
-        summary_path = components.artifact_store.get_orchestrator_summary_path()
+        event_log_path = components.artifact_store.get_run_event_log_path()
+        summary_path = components.artifact_store.get_run_summary_path()
         assert event_log_path.exists()
         assert summary_path.exists()
 

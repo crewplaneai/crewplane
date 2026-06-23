@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import json
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import apply_event, build_initial_state
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.tmux.refresh import StopReason
-from orchestrator_cli.observability.types import (
+from crewplane.observability.events import apply_event, build_initial_state
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.tmux.refresh import StopReason
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,

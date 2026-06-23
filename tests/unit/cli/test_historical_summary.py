@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 from typing import get_args
 
-from orchestrator_cli.artifacts.run_history import RunHistoryRecord
-from orchestrator_cli.cli.run import historical_summary
-from orchestrator_cli.observability.events.types import EventType, LogLevel
+from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.cli.run import historical_summary
+from crewplane.observability.events.types import EventType, LogLevel
 from tests.helpers.resume import make_plan, make_run_manifest
 
 

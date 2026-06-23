@@ -1,11 +1,12 @@
 # Workflows
 
-Workflows are Markdown files with YAML frontmatter and one Markdown section per
-non-input node.
+The primary authored workflow format is Markdown: YAML frontmatter plus one
+Markdown section per non-input node. YAML workflow files can be loaded directly,
+but imports and composition are Markdown-only.
 
 ```yaml
 ---
-schema_version: "<current>"
+schema_version: "1.0"
 name: "Review"
 description: "Review the repository"
 nodes:
@@ -21,11 +22,13 @@ Review the current repository and report high-risk issues.
 ## Frontmatter
 
 Frontmatter declares workflow metadata, optional inputs and imports, optional
-Experimental worktrees, and executable nodes.
+Experimental worktrees, and executable nodes. The generated templates use the
+current schema version from `src/crewplane/version.py`.
 
-Node IDs use lower-case letters, digits, `.`, `_`, and `-`. A non-input node
-must have exactly one `## <node-id>` Markdown section. An input node has no
-authored body section and uses `source` instead.
+Node IDs use lower-case letters, digits, `.`, `_`, and `-`. They cannot be `.`,
+`..`, `logs`, `manifests`, or `workspace-exports`. A non-input node must have
+exactly one `## <node-id>` Markdown section. An input node has no authored body
+section and uses `source` instead.
 
 ## Dependencies
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-import orchestrator_cli.cli.app as cli
+import crewplane.cli.app as cli
 from tests.integration.cli.cli_workflow_helpers import (
     write_basic_config,
     write_basic_workflow,
@@ -13,13 +13,26 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 
 class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
+    def test_init_creates_crewplane_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            original_cwd = Path.cwd()
+            os.chdir(tmp_path)
+            try:
+                cli.init()
+            finally:
+                os.chdir(original_cwd)
+
+            self.assertTrue((tmp_path / ".crewplane" / "config.yml").is_file())
+            self.assertTrue((tmp_path / ".crewplane" / "workflows").is_dir())
+
     def test_run_discovers_single_workflow_markdown_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            orch_dir = tmp_path / ".orchestrator"
-            workflows_dir = orch_dir / "workflows"
+            state_dir = tmp_path / ".crewplane"
+            workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
-            config_path = orch_dir / "config.yml"
+            config_path = state_dir / "config.yml"
             workflow_path = workflows_dir / "code-review-example.task.md"
             nested_workflow_path = (
                 workflows_dir / "example-templates" / "design-review-example.task.md"
@@ -51,10 +64,10 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            orch_dir = tmp_path / ".orchestrator"
-            workflows_dir = orch_dir / "workflows"
+            state_dir = tmp_path / ".crewplane"
+            workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
-            config_path = orch_dir / "config.yml"
+            config_path = state_dir / "config.yml"
             write_basic_config(config_path)
             write_basic_workflow(workflows_dir / "one.task.md")
             write_basic_workflow(workflows_dir / "two.task.md")
@@ -72,10 +85,10 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
     def test_run_requires_workflow_file_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            orch_dir = tmp_path / ".orchestrator"
-            orch_dir.mkdir(parents=True)
-            config_path = orch_dir / "config.yml"
-            legacy_tasks_path = orch_dir / "tasks.yaml"
+            state_dir = tmp_path / ".crewplane"
+            state_dir.mkdir(parents=True)
+            config_path = state_dir / "config.yml"
+            legacy_tasks_path = state_dir / "tasks.yaml"
             write_basic_config(config_path)
             legacy_tasks_path.write_text("name: legacy", encoding="utf-8")
 

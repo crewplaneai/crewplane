@@ -1,4 +1,4 @@
-from orchestrator_cli.artifacts.naming import (
+from crewplane.artifacts.naming import (
     MAX_GENERATED_PATH_COMPONENT_CHARS,
     build_findings_filename,
     build_lock_name,
@@ -15,7 +15,7 @@ def test_generated_names_budget_final_component_length() -> None:
     long_workflow = "Workflow " + ("Alpha Beta " * 80)
     long_node = "node." + ("segment-" * 90)
     long_task = "task " + ("executor " * 90)
-    workflow_identity = "/repo/.orchestrator/workflows/" + ("deep/" * 40) + "task.md"
+    workflow_identity = "/repo/.crewplane/workflows/" + ("deep/" * 40) + "task.md"
     workflow_signature = "a" * 64
 
     generated = [

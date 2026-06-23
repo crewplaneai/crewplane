@@ -10,27 +10,27 @@ from time import monotonic
 
 import pytest
 
-import orchestrator_cli.runtime.workspace.service.worktree as workspace_service_worktree
-import orchestrator_cli.runtime.workspace.service.worktree_failures as workspace_service_worktree_failures
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import CommandResult, InvocationContext
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.core.preflight.models import (
+import crewplane.runtime.workspace.service.worktree as workspace_service_worktree
+import crewplane.runtime.workspace.service.worktree_failures as workspace_service_worktree_failures
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import CommandResult, InvocationContext
+from crewplane.core.config import AgentConfig
+from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.runtime.agent.invoker import invoke_agent_with_runner
-from orchestrator_cli.runtime.execution.provider_call import (
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.agent.invoker import invoke_agent_with_runner
+from crewplane.runtime.execution.provider_call import (
     ProviderCallDisplay,
     ProviderCallRequest,
     run_provider_call,
 )
-from orchestrator_cli.runtime.execution.runtime_context import CompiledRuntimeContext
-from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace.setup import WorkspaceSetupError
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.execution.runtime_context import CompiledRuntimeContext
+from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.setup import WorkspaceSetupError
+from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,

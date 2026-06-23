@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.naming import build_workspace_export_filename
-from orchestrator_cli.runtime.workspace.branch_export import (
+from crewplane.artifacts import OutputManager
+from crewplane.artifacts.naming import build_workspace_export_filename
+from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
     fulfill_branch_exports_from_history,
     preview_branch_exports_from_history,
 )
-from orchestrator_cli.runtime.workspace.branch_export.records import (
+from crewplane.runtime.workspace.branch_export.records import (
     checkpoint_from_record,
 )
-from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
+from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     history_record_for_output,
@@ -75,7 +75,7 @@ def test_checkpoint_from_record_rejects_malformed_required_fields(
         "task_id": "alpha",
         "result_commit": "a" * 40,
         "result_tree": "b" * 40,
-        "result_ref": "refs/orchestrator-cli/run/implement/result",
+        "result_ref": "refs/crewplane/run/implement/result",
         "bundle": {
             "path": "implement/workspace-bundles/result.bundle",
             "sha256": "c" * 64,
@@ -96,7 +96,7 @@ def test_checkpoint_from_record_accepts_valid_required_fields(
         "task_id": "alpha",
         "result_commit": "a" * 40,
         "result_tree": "b" * 40,
-        "result_ref": "refs/orchestrator-cli/run/implement/result",
+        "result_ref": "refs/crewplane/run/implement/result",
         "bundle": {
             "path": "implement/workspace-bundles/result.bundle",
             "sha256": "c" * 64,

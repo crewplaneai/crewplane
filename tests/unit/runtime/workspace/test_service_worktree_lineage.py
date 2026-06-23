@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-import orchestrator_cli.runtime.workspace.worktree as worktree_module
-from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace.worktree import (
+import crewplane.runtime.workspace.worktree as worktree_module
+from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,
     create_worktree_workspace,
     remove_worktree_workspace,
 )
-from orchestrator_cli.runtime.workspace.worktree.lineage import (
+from crewplane.runtime.workspace.worktree.lineage import (
     worktree_protected_ref_scopes,
 )
-from orchestrator_cli.runtime.workspace.worktree.source_refs import (
+from crewplane.runtime.workspace.worktree.source_refs import (
     required_lineage_state,
 )
 from tests.helpers.workspace_service import (
@@ -31,7 +31,7 @@ from tests.helpers.workspace_service import (
 )
 
 
-def test_worktree_protected_ref_scope_covers_orchestrator_namespace(
+def test_worktree_protected_ref_scope_covers_crewplane_namespace(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -58,7 +58,7 @@ def test_worktree_protected_ref_scope_covers_orchestrator_namespace(
         "implement-alpha-round1",
     )
 
-    assert scopes == ("refs/orchestrator-cli",)
+    assert scopes == ("refs/crewplane",)
 
 
 def test_worktree_reviewer_workspace_discards_drift_without_lineage(
@@ -297,7 +297,7 @@ def test_worktree_workspace_falls_back_to_explicit_lock(
         )
         assert any(
             call[:3] == ("worktree", "lock", "--reason")
-            and call[3].startswith("orchestrator-cli ")
+            and call[3].startswith("crewplane ")
             for call in calls
         )
     finally:

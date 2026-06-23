@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.naming import build_workspace_export_filename
-from orchestrator_cli.runtime.workspace.branch_export import (
+from crewplane.artifacts import OutputManager
+from crewplane.artifacts.naming import build_workspace_export_filename
+from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
 )
-from orchestrator_cli.runtime.workspace.branch_export import git as branch_export_git
-from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
+from crewplane.runtime.workspace.branch_export import git as branch_export_git
+from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     update_state_bundle_metadata,
@@ -278,7 +278,7 @@ def test_fulfill_branch_exports_validates_generated_branch_name(
 
     record = json.loads(records[0].read_text(encoding="utf-8"))
     assert record["branch_name"].startswith(
-        "orchestrator/Workspace-Feature-thing/primary/"
+        "crewplane/Workspace-Feature-thing/primary/"
     )
     assert run_git_text(repo, "rev-parse", record["branch_ref"]) == result_commit
 

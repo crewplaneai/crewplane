@@ -4,26 +4,26 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.core.preflight.models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig
+from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     ProviderRecord,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.core.preflight.signatures import signature_for_payload
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.execution.common import (
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
     ExecutionTelemetry,
     ProviderCallRequest,
     run_provider_call,
 )
-from orchestrator_cli.runtime.execution.runtime_context import (
+from crewplane.runtime.execution.runtime_context import (
     DeferredAsyncCleanupRegistry,
     GeneratedFileWorkspaceRegistry,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _provider_record(

@@ -1,15 +1,15 @@
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     ProviderRecord,
 )
-from orchestrator_cli.runtime.execution.review_loop.prompts import (
+from crewplane.runtime.execution.review_loop.prompts import (
     build_executor_prompt,
     build_review_context,
     build_reviewer_prompt,
     resolve_previous_candidate_context,
 )
-from orchestrator_cli.runtime.execution.review_loop.types import ExecutorRoundArtifact
+from crewplane.runtime.execution.review_loop.types import ExecutorRoundArtifact
 
 
 def provider(provider: str, role: str, task_id: str) -> ProviderRecord:

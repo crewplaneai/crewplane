@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
@@ -14,15 +14,15 @@ from orchestrator_cli.architecture.contracts import (
     InvocationWorkspaceContext,
     InvocationWorktreeContract,
 )
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.invocation.command import (
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.invocation.command import (
     build_invocation_runtime,
     cleanup_structured_output_file,
     prepare_runtime_for_attempt,
     run_command_once,
     run_invocation_attempt,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:
@@ -61,7 +61,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             return pid
 
         with patch(
-            "orchestrator_cli.runtime.agent.invocation.command.os.getpgid",
+            "crewplane.runtime.agent.invocation.command.os.getpgid",
             side_effect=fake_getpgid,
         ):
             result = await run_command_once(

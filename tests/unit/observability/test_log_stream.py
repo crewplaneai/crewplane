@@ -2,17 +2,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.log_stream import NodeLogStreamTracker
+from crewplane.observability.log_stream import NodeLogStreamTracker
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,

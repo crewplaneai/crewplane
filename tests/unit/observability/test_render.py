@@ -1,19 +1,19 @@
 import unittest
 from time import monotonic
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.render import RenderConfig, render_dashboard_text
-from orchestrator_cli.observability.text_layout import display_width
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.render import RenderConfig, render_dashboard_text
+from crewplane.observability.text_layout import display_width
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,

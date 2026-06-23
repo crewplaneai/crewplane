@@ -24,7 +24,7 @@ Node-scoped workspaces keep the rules explicit:
 - Each logical `kind: worktree` source line advances through explicit node
   selectors and DAG ordering.
 - A downstream mutable node inherits source by selecting the same logical
-  worktree name as an ordered direct upstream.
+  worktree name as the latest ordered same-worktree ancestor in the DAG.
 - Other upstream information flows through artifacts.
 - Runtime records source and result identities at node boundaries.
 

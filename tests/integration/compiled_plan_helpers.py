@@ -6,17 +6,17 @@ from typing import Any
 
 from rich.console import Console
 
-from orchestrator_cli.architecture.ports.runtime import RuntimeComponents
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight import (
+from crewplane.architecture.ports.runtime import RuntimeComponents
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import Config
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightExecutionPlan,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.core.workflow_models import WorkflowPlan
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.workflow.models import WorkflowPlan
 
 
 def compile_plan_for_components(
@@ -49,7 +49,7 @@ def compile_plan_for_components(
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=project_root,
-            orchestrator_dir=output.base_dir,
+            state_dir=output.base_dir,
             fingerprint_key_policy="read_only",
         ),
     )

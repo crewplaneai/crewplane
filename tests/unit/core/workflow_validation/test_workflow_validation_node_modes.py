@@ -1,17 +1,17 @@
 import unittest
 
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.core.workflow_validation import (
+from crewplane.core.workflow.validation import (
     validate_audit_rounds_settings,
     validate_workflow_plan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 class WorkflowValidationNodeModeTests(unittest.TestCase):
@@ -121,7 +121,7 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     prompt_segments=[
                         PromptSegment(role="shared", content="unexpected")
                     ],
-                    source="{{file:.orchestrator/inputs/review-findings.md}}",
+                    source="{{file:.crewplane/inputs/review-findings.md}}",
                     providers=[ProviderSpec(provider="gpt4")],
                 )
             ],
@@ -137,7 +137,7 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                 WorkflowNode(
                     id="review-input",
                     mode="input",
-                    source="Review this {{file:.orchestrator/inputs/review-findings.md}}",
+                    source="Review this {{file:.crewplane/inputs/review-findings.md}}",
                 )
             ],
         )
@@ -153,7 +153,7 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="review-input",
                     mode="input",
                     findings=True,
-                    source="{{file:.orchestrator/inputs/review-findings.md}}",
+                    source="{{file:.crewplane/inputs/review-findings.md}}",
                 )
             ],
         )
@@ -325,7 +325,7 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
                     id="node.a",
                     mode="parallel",
                     prompt_segments=[PromptSegment(role="shared", content="run")],
-                    source="{{file:.orchestrator/inputs/review-findings.md}}",
+                    source="{{file:.crewplane/inputs/review-findings.md}}",
                     providers=[ProviderSpec(provider="alpha")],
                 )
             ],

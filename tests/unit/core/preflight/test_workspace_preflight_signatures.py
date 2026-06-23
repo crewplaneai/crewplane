@@ -4,27 +4,27 @@ from pathlib import Path
 
 from rich.console import Console
 
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.preflight import (
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.preflight.models import WorkspaceSourceSnapshot
-from orchestrator_cli.core.preflight.runtime_config import (
+from crewplane.core.preflight.models import WorkspaceSourceSnapshot
+from crewplane.core.preflight.runtime_config import (
     RuntimeWorkspaceSettingsSnapshot,
     workspace_signature_payload,
 )
-from orchestrator_cli.core.workflow_composition.models import WorkflowSourceRecord
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.composition.models import WorkflowSourceRecord
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_branch_export_fields_do_not_change_workflow_signature(
@@ -265,13 +265,13 @@ def test_cache_root_does_not_change_default_workflow_signature(
     first = _compile_workflow(
         tmp_path,
         workflow,
-        setup_config(cache_root="/tmp/orchestrator-cache-a"),
+        setup_config(cache_root="/tmp/crewplane-cache-a"),
         source_snapshot,
     )
     second = _compile_workflow(
         tmp_path,
         workflow,
-        setup_config(cache_root="/tmp/orchestrator-cache-b"),
+        setup_config(cache_root="/tmp/crewplane-cache-b"),
         source_snapshot,
     )
 
@@ -293,7 +293,7 @@ def test_strict_identity_includes_cache_root_in_workflow_signature(
         tmp_path,
         workflow,
         setup_config(
-            cache_root="/tmp/orchestrator-cache-a",
+            cache_root="/tmp/crewplane-cache-a",
             identity={"include_cache_root": True},
         ),
         source_snapshot,
@@ -302,7 +302,7 @@ def test_strict_identity_includes_cache_root_in_workflow_signature(
         tmp_path,
         workflow,
         setup_config(
-            cache_root="/tmp/orchestrator-cache-b",
+            cache_root="/tmp/crewplane-cache-b",
             identity={"include_cache_root": True},
         ),
         source_snapshot,
@@ -325,12 +325,12 @@ def test_strict_identity_signs_effective_cache_root(
     payload = workspace_signature_payload(
         RuntimeWorkspaceSettingsSnapshot(
             enabled=True,
-            cache_root="~/orchestrator-cache",
+            cache_root="~/crewplane-cache",
             identity={"include_cache_root": True},
         )
     )
 
-    assert payload["cache_root"] == (tmp_path / "orchestrator-cache").as_posix()
+    assert payload["cache_root"] == (tmp_path / "crewplane-cache").as_posix()
 
 
 def branch_export_workflow(
@@ -462,7 +462,7 @@ def compile_source_with_source_snapshot(
         runtime_snapshot=runtime_snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
             workspace_source_snapshot=source_snapshot,
         ),

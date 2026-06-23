@@ -6,19 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace.service import MaterializationLimiter
-from orchestrator_cli.runtime.workspace.worktree import (
+from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.service import MaterializationLimiter
+from crewplane.runtime.workspace.worktree import (
     materialization as worktree_materialization,
 )
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
-from orchestrator_cli.runtime.workspace.worktree import reset as worktree_reset
-from orchestrator_cli.runtime.workspace.worktree import reuse as worktree_reuse
-from orchestrator_cli.runtime.workspace.worktree.cache import (
+from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.workspace.worktree import reset as worktree_reset
+from crewplane.runtime.workspace.worktree import reuse as worktree_reuse
+from crewplane.runtime.workspace.worktree.cache import (
     ReusableWorktreeCheckout,
     WorktreeReuseCache,
 )
-from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
+from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.resume import make_workspace_source_snapshot
 from tests.helpers.workspace_service import (
     create_git_repo,
@@ -281,7 +281,7 @@ def test_reuse_cache_retries_stale_entry_cleanup_after_failure(
         shutil.rmtree(path)
 
     monkeypatch.setattr(
-        "orchestrator_cli.runtime.workspace.worktree.cache.remove_worktree_workspace",
+        "crewplane.runtime.workspace.worktree.cache.remove_worktree_workspace",
         remove_or_fail,
     )
 
@@ -791,7 +791,7 @@ def test_reused_worktree_rejects_missing_local_source_bundle_before_reset(
                 bundle_path=tmp_path / "missing.bundle",
                 bundle_sha256="0" * 64,
                 bundle_size_bytes=1,
-                bundle_ref="refs/orchestrator-cli/test/missing",
+                bundle_ref="refs/crewplane/test/missing",
             ),
             tmp_path / "gitdir",
         )

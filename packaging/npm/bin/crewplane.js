@@ -8,11 +8,11 @@ const { spawnSync } = require("node:child_process");
 const packageRoot = path.resolve(__dirname, "..");
 
 if (process.platform === "win32") {
-  console.error("native Windows is not supported by the crewplane npm wrapper; use WSL.");
+  console.error("native Windows is not supported by Crewplane npm wrapper; use WSL.");
   process.exit(1);
 }
 
-const commandPath = path.join(packageRoot, ".venv", "bin", "orchestrator");
+const commandPath = path.join(packageRoot, ".venv", "bin", "crewplane");
 
 if (!fs.existsSync(commandPath)) {
   console.error("crewplane is installed, but its private Python environment is missing.");

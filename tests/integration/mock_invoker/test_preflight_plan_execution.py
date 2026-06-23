@@ -8,16 +8,16 @@ from pathlib import Path
 
 from rich.console import Console
 
-from orchestrator_cli.cli.workflow_runner import execute_workflow_run
-from orchestrator_cli.core.config import (
+from crewplane.cli.workflow_runner import execute_workflow_run
+from crewplane.core.config import (
     AgentConfig,
     Config,
     IntegrationsConfig,
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.preflight import load_workflow_source_for_preflight
+from crewplane.version import SCHEMA_VERSION
 
 
 def _config() -> Config:
@@ -114,7 +114,7 @@ def _root_import_workflow_text() -> str:
 
 
 def _run_dirs(root: Path) -> list[Path]:
-    stages_root = root / ".orchestrator" / "execution-stages"
+    stages_root = root / ".crewplane" / "execution-stages"
     return sorted(path for path in stages_root.iterdir() if path.is_dir())
 
 
@@ -122,7 +122,7 @@ def test_mock_invoker_executes_preflight_plan_with_static_and_node_refs(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    workflow_path = tmp_path / ".orchestrator" / "workflows" / "workflow.task.md"
+    workflow_path = tmp_path / ".crewplane" / "workflows" / "workflow.task.md"
     workflow_path.parent.mkdir(parents=True)
     workflow_path.write_text(_workflow_text(), encoding="utf-8")
     (tmp_path / "context.md").write_text("module context", encoding="utf-8")
@@ -146,7 +146,7 @@ def test_mock_invoker_executes_preflight_plan_with_static_and_node_refs(
     token_catalog = json.loads(
         (preflight_dir / "token-catalog.json").read_text("utf-8")
     )
-    result_dir = tmp_path / ".orchestrator" / "execution-results" / run_dir.name
+    result_dir = tmp_path / ".crewplane" / "execution-results" / run_dir.name
     review_result = (result_dir / "review-result.md").read_text(encoding="utf-8")
 
     assert plan["plan_schema_version"] == SCHEMA_VERSION
@@ -164,7 +164,7 @@ def test_mock_invoker_executes_imported_preflight_plan_with_module_file_root(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    workflow_root = tmp_path / ".orchestrator" / "workflows"
+    workflow_root = tmp_path / ".crewplane" / "workflows"
     workflow_path = workflow_root / "root.task.md"
     imported_workflow_path = workflow_root / "modules" / "child.task.md"
     imported_context_path = workflow_root / "modules" / "context.md"
@@ -189,7 +189,7 @@ def test_mock_invoker_executes_imported_preflight_plan_with_module_file_root(
     run_dir = _run_dirs(tmp_path)[0]
     preflight_dir = run_dir / "preflight"
     plan = json.loads((preflight_dir / "execution-plan.json").read_text("utf-8"))
-    result_dir = tmp_path / ".orchestrator" / "execution-results" / run_dir.name
+    result_dir = tmp_path / ".crewplane" / "execution-results" / run_dir.name
     summarize_result = (result_dir / "summarize-result.md").read_text(encoding="utf-8")
 
     static_resources = plan["static_resources"]

@@ -4,18 +4,18 @@ import subprocess
 from collections.abc import Callable
 from time import monotonic, time
 
-from orchestrator_cli.observability.tmux.client import tmux_result_timed_out
-from orchestrator_cli.observability.tmux.compact import TmuxCompactRuntime
-from orchestrator_cli.observability.tmux.refresh import RefreshOutcome
-from orchestrator_cli.observability.tmux.runtime_files import (
+from crewplane.observability.tmux.client import tmux_result_timed_out
+from crewplane.observability.tmux.compact import TmuxCompactRuntime
+from crewplane.observability.tmux.refresh import RefreshOutcome
+from crewplane.observability.tmux.runtime_files import (
     RuntimeFiles,
     write_atomic,
 )
-from orchestrator_cli.observability.tmux.session_lifecycle import (
+from crewplane.observability.tmux.session_lifecycle import (
     StartedCompactSession,
     TmuxCompactSessionLifecycle,
 )
-from orchestrator_cli.observability.types import (
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,
@@ -156,7 +156,7 @@ class FakeTmuxClient:
             self.fail_pane_title
             and len(args) >= 6
             and args[:3] == ["set-option", "-p", "-t"]
-            and args[4] == "@orchestrator_title"
+            and args[4] == "@crewplane_title"
         )
 
     def _is_dimension_query(

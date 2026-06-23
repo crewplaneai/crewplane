@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from orchestrator_cli.architecture.contracts import (
+from crewplane.architecture.contracts import (
     InvocationSourceContext,
     InvocationWorkspaceContext,
     InvocationWorktreeContract,
@@ -12,7 +12,7 @@ from orchestrator_cli.architecture.contracts import (
     normalize_log_presentation_profile,
     validate_log_presentation_descriptor,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_log_presentation_profile_normalizes_safe_unknown_profiles() -> None:

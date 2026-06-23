@@ -8,9 +8,9 @@ from pathlib import Path
 
 import typer
 
-import orchestrator_cli.cli.app as cli
-from orchestrator_cli.observability.types import RunContext, RunResult
-from orchestrator_cli.version import SCHEMA_VERSION
+import crewplane.cli.app as cli
+from crewplane.observability.types import RunContext, RunResult
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -29,11 +29,11 @@ class CliLiveDashboardTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
 
-            orch_dir = tmp_path / ".orchestrator"
-            workflows_dir = orch_dir / "workflows"
+            state_dir = tmp_path / ".crewplane"
+            workflows_dir = state_dir / "workflows"
             library_dir = workflows_dir / "example-templates"
             composition_dir = library_dir / "composition"
-            self.assertTrue((orch_dir / "config.yml").exists())
+            self.assertTrue((state_dir / "config.yml").exists())
             self.assertTrue((workflows_dir / "code-review-example.task.md").exists())
             self.assertFalse((workflows_dir / "example.task.md").exists())
             self.assertTrue((library_dir / "design-review-example.task.md").exists())
@@ -51,13 +51,13 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertTrue(
                 (composition_dir / "review-fix-composed-example.task.md").exists()
             )
-            self.assertFalse((orch_dir / "inputs").exists())
+            self.assertFalse((state_dir / "inputs").exists())
             sample_input_dir = library_dir / "sample-inputs"
             self.assertTrue((sample_input_dir / "feature-brief.md").exists())
             self.assertTrue((sample_input_dir / "review-findings.md").exists())
             self.assertTrue((sample_input_dir / "coding-standards.md").exists())
-            self.assertFalse((orch_dir / "tasks.yaml").exists())
-            config_text = (orch_dir / "config.yml").read_text(encoding="utf-8")
+            self.assertFalse((state_dir / "tasks.yaml").exists())
+            config_text = (state_dir / "config.yml").read_text(encoding="utf-8")
             workflow_text = (workflows_dir / "code-review-example.task.md").read_text(
                 encoding="utf-8"
             )
@@ -136,7 +136,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
             captured_live_config: dict[str, object] = {}
-            import orchestrator_cli.adapters.ui.tmux as tmux_adapter_module
+            import crewplane.adapters.ui.tmux as tmux_adapter_module
 
             original_runtime_class = tmux_adapter_module.TmuxCompactRuntime
 
@@ -332,7 +332,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertEqual(raised.exception.exit_code, 130)
             run_dirs = sorted(
                 path
-                for path in (tmp_path / ".orchestrator" / "execution-stages").iterdir()
+                for path in (tmp_path / ".crewplane" / "execution-stages").iterdir()
                 if path.is_dir()
             )
             self.assertEqual(len(run_dirs), 1)
@@ -389,7 +389,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_execute_workflow = cli.execute_workflow
             original_cwd = Path.cwd()
             captured_live_config: dict[str, object] = {}
-            import orchestrator_cli.adapters.ui.tmux as tmux_adapter_module
+            import crewplane.adapters.ui.tmux as tmux_adapter_module
 
             original_runtime_class = tmux_adapter_module.TmuxCompactRuntime
 
@@ -574,7 +574,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_which = cli.shutil.which
             original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
-            import orchestrator_cli.adapters.ui.tmux as tmux_adapter_module
+            import crewplane.adapters.ui.tmux as tmux_adapter_module
 
             original_runtime_class = tmux_adapter_module.TmuxCompactRuntime
 

@@ -3,30 +3,30 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     ProviderRecord,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.core.preflight.signatures import signature_for_payload
-from orchestrator_cli.runtime.agent.invoker import (
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.runtime.agent.invoker import (
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.quota import (
+from crewplane.runtime.agent.quota import (
     classify_quota,
 )
-from orchestrator_cli.runtime.execution.common import (
+from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
     resolve_provider_model,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):

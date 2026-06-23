@@ -7,28 +7,28 @@ from pathlib import Path
 
 from rich.console import Console
 
-import orchestrator_cli.adapters.ui.tmux as tmux_adapter_module
-from orchestrator_cli.architecture.errors import AdapterLoadError
-from orchestrator_cli.architecture.ports.runtime import UIRuntimePlan
-from orchestrator_cli.bootstrap import (
+import crewplane.adapters.ui.tmux as tmux_adapter_module
+from crewplane.architecture.errors import AdapterLoadError
+from crewplane.architecture.ports.runtime import UIRuntimePlan
+from crewplane.bootstrap import (
     build_runtime_components,
     build_runtime_config_snapshot,
 )
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.preflight import (
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightExecutionPlan,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.runtime.execution import execute_workflow
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.runtime.execution import execute_workflow
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 
 
@@ -59,7 +59,7 @@ def _compiled_test_plan(
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=output.base_dir,
-            orchestrator_dir=output.base_dir,
+            state_dir=output.base_dir,
             fingerprint_key_policy="read_only",
         ),
     )
@@ -142,7 +142,7 @@ class ContainerTests(unittest.TestCase):
             components = build_runtime_components(
                 config=config,
                 workflow_topology=topology_from_workflow(workflow),
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 console=Console(file=io.StringIO(), force_terminal=False),
                 no_live=False,
@@ -185,7 +185,7 @@ class ContainerTests(unittest.TestCase):
             components = build_runtime_components(
                 config=config,
                 workflow_topology=topology_from_workflow(workflow),
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 console=Console(file=io.StringIO(), force_terminal=True),
                 no_live=False,
@@ -217,7 +217,7 @@ class ContainerTests(unittest.TestCase):
                 build_runtime_components(
                     config=config,
                     workflow_topology=topology_from_workflow(workflow),
-                    orchestrator_dir=tmp_path,
+                    state_dir=tmp_path,
                     project_root=tmp_path,
                     console=Console(file=io.StringIO(), force_terminal=False),
                     no_live=True,
@@ -230,7 +230,7 @@ class ContainerTests(unittest.TestCase):
                 integrations={
                     "invoker": {"implementation": "cli", "options": {}},
                     "ui": {
-                        "implementation": "orchestrator_cli.adapters.ui.null:NullUIAdapter",
+                        "implementation": "crewplane.adapters.ui.null:NullUIAdapter",
                         "options": {},
                     },
                     "artifacts": {
@@ -248,7 +248,7 @@ class ContainerTests(unittest.TestCase):
             components = build_runtime_components(
                 config=config,
                 workflow_topology=topology_from_workflow(workflow),
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 console=Console(file=io.StringIO(), force_terminal=True),
                 no_live=False,
@@ -295,7 +295,7 @@ class ContainerTests(unittest.TestCase):
                 components = build_runtime_components(
                     config=config,
                     workflow_topology=topology_from_workflow(workflow),
-                    orchestrator_dir=tmp_path,
+                    state_dir=tmp_path,
                     project_root=tmp_path,
                     console=console,
                     no_live=no_live,
@@ -331,7 +331,7 @@ class ContainerTests(unittest.TestCase):
                 build_runtime_components(
                     config=config,
                     workflow_topology=topology_from_workflow(workflow),
-                    orchestrator_dir=tmp_path,
+                    state_dir=tmp_path,
                     project_root=tmp_path,
                     console=Console(file=io.StringIO(), force_terminal=True),
                     no_live=False,
@@ -363,7 +363,7 @@ class ContainerTests(unittest.TestCase):
                 build_runtime_components(
                     config=config,
                     workflow_topology=topology_from_workflow(workflow),
-                    orchestrator_dir=tmp_path,
+                    state_dir=tmp_path,
                     project_root=tmp_path,
                     console=Console(file=io.StringIO(), force_terminal=False),
                     no_live=False,
@@ -400,7 +400,7 @@ class ContainerTests(unittest.TestCase):
                 components = build_runtime_components(
                     config=config,
                     workflow_topology=topology_from_workflow(workflow),
-                    orchestrator_dir=tmp_path,
+                    state_dir=tmp_path,
                     project_root=tmp_path,
                     console=Console(file=io.StringIO(), force_terminal=True),
                     no_live=False,
@@ -439,7 +439,7 @@ class ContainerTests(unittest.TestCase):
             components = build_runtime_components(
                 config=config,
                 workflow_topology=topology_from_workflow(workflow),
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 console=Console(file=io.StringIO(), force_terminal=True),
                 no_live=False,
@@ -461,9 +461,7 @@ class ContainerTests(unittest.TestCase):
                 integrations={
                     "invoker": {"implementation": "cli", "options": {}},
                     "ui": {
-                        "implementation": (
-                            "orchestrator_cli.adapters.ui.tmux:TmuxUIAdapter"
-                        ),
+                        "implementation": ("crewplane.adapters.ui.tmux:TmuxUIAdapter"),
                         "options": {},
                     },
                     "artifacts": {
@@ -501,7 +499,7 @@ class ContainerTests(unittest.TestCase):
                 components = build_runtime_components(
                     config=config,
                     workflow_topology=topology_from_workflow(workflow),
-                    orchestrator_dir=tmp_path,
+                    state_dir=tmp_path,
                     project_root=tmp_path,
                     console=Console(file=io.StringIO(), force_terminal=True),
                     no_live=False,
@@ -526,9 +524,7 @@ class ContainerTests(unittest.TestCase):
                 integrations={
                     "invoker": {"implementation": "cli", "options": {}},
                     "ui": {
-                        "implementation": (
-                            "orchestrator_cli.adapters.ui.tmux:TmuxUIAdapter"
-                        ),
+                        "implementation": ("crewplane.adapters.ui.tmux:TmuxUIAdapter"),
                         "options": {},
                     },
                     "artifacts": {
@@ -547,7 +543,7 @@ class ContainerTests(unittest.TestCase):
             components = build_runtime_components(
                 config=config,
                 workflow_topology=topology_from_workflow(workflow),
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 console=Console(file=io.StringIO(), force_terminal=True),
                 no_live=False,
@@ -607,7 +603,7 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             components = build_runtime_components(
                 config=config,
                 workflow_topology=topology_from_workflow(workflow),
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 console=Console(file=io.StringIO(), force_terminal=False),
                 no_live=True,
@@ -679,7 +675,7 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             components = build_runtime_components(
                 config=config,
                 workflow_topology=topology_from_workflow(workflow),
-                orchestrator_dir=tmp_path,
+                state_dir=tmp_path,
                 project_root=tmp_path,
                 console=Console(file=io.StringIO(), force_terminal=False),
                 no_live=True,

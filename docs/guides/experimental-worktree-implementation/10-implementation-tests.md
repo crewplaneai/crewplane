@@ -120,7 +120,7 @@ project-root execution.
 - Resolve reviewer/remediation file tokens from current candidate commits.
 - Detect reviewer drift, including reviewer `HEAD` movement as discarded
   non-lineage drift.
-- Add `orchestrator cleanup workspaces`.
+- Add `crewplane cleanup workspaces`.
 - Add cleanup dry-run and destructive `--yes`.
 
 ### Slice 8: Observability, Docs, and Hardening
@@ -211,7 +211,7 @@ Required deterministic coverage includes these categories:
   contents, runtime-owned Git commands sanitize environment and use literal
   pathspecs, process providers receive controlled Git discovery/config/pathspec
   environment, unrelated user ref changes do not fail by themselves, protected
-  orchestrator ref mutation is detected, run summaries include workspace
+  crewplane ref mutation is detected, run summaries include workspace
   logical-worktree/kind/source/result/contract/materialization/invoker/child-environment and
   rendered-file summaries, diagnostics include concrete remediation, disk
   pressure warnings occur before provider invocation, and non-filesystem

@@ -1,8 +1,8 @@
 import unittest
 
-from orchestrator_cli.architecture.contracts import InvocationContext
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.architecture.contracts import InvocationContext
+from crewplane.core.config import AgentConfig, Config
+from crewplane.version import SCHEMA_VERSION
 
 
 class MockInvokerAdapterTestCase(unittest.IsolatedAsyncioTestCase):

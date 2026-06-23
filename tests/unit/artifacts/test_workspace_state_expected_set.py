@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from orchestrator_cli.artifacts.workspace.state.expected_set import (
+from crewplane.artifacts.workspace.state.expected_set import (
     workspace_state_payloads_match_expected_set,
 )
-from orchestrator_cli.artifacts.workspace.state.invocations import (
+from crewplane.artifacts.workspace.state.invocations import (
     ExpectedWorkspaceInvocation,
 )
 
@@ -58,7 +58,7 @@ def _lineage_payload(
             "sha256": str(round_num) * 64,
             "size_bytes": round_num,
         },
-        "refs": {"result": f"refs/orchestrator/result/{round_num}"},
+        "refs": {"result": f"refs/crewplane/result/{round_num}"},
     }
     if source is not None:
         payload["source"] = source

@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.architecture.contracts import CommandResult
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.invocation.retry import (
+from crewplane.architecture.contracts import CommandResult
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.invocation.retry import (
     NoFailureRetry,
     QuotaRetryFailure,
     ScheduleFailureRetry,
@@ -170,7 +170,7 @@ def test_evaluate_failure_retry_reads_retried_output_from_persisted_stream() -> 
 def test_codex_usage_limit_with_local_reset_schedules_quota_retry() -> None:
     with (
         patch(
-            "orchestrator_cli.runtime.agent.quota.classifier.datetime",
+            "crewplane.runtime.agent.quota.classifier.datetime",
             FixedQuotaRetryDateTime,
         ),
         local_timezone("America/Vancouver"),

@@ -1,19 +1,19 @@
 import json
 from pathlib import Path
 
-from orchestrator_cli.observability.run_summary.models import (
+from crewplane.observability.run_summary.models import (
     WorkspaceInvocationSummary,
     WorkspacePlanSummary,
 )
-from orchestrator_cli.observability.run_summary.workspace import (
+from crewplane.observability.run_summary.workspace import (
     merge_workspace_invocations,
     workspace_plan_summary,
     workspace_state_summary,
 )
-from orchestrator_cli.observability.run_summary.workspace_readers import (
+from crewplane.observability.run_summary.workspace_readers import (
     workspace_source_summary,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_workspace_plan_summary_reads_descriptor_sections(tmp_path: Path) -> None:
@@ -163,10 +163,10 @@ def test_workspace_state_summary_reads_workspace_state_sections(
             "rendered_workspace_files": [{"path": "README.md"}],
             "diagnostics": [{"level": "warning"}],
             "execution": {
-                "cache_root": "/tmp/orchestrator-cache",
-                "workspace_path": "/tmp/orchestrator-cache/workspace",
-                "checkout_root": "/tmp/orchestrator-cache/workspace/checkout",
-                "effective_cwd": "/tmp/orchestrator-cache/workspace/checkout",
+                "cache_root": "/tmp/crewplane-cache",
+                "workspace_path": "/tmp/crewplane-cache/workspace",
+                "checkout_root": "/tmp/crewplane-cache/workspace/checkout",
+                "effective_cwd": "/tmp/crewplane-cache/workspace/checkout",
                 "checkout_size_bytes": 4096,
                 "provisioning_duration_seconds": 1.5,
             },

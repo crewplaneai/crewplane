@@ -11,16 +11,16 @@ from pathlib import Path
 
 import pytest
 
-import orchestrator_cli.runtime.workspace.git as workspace_git
-from orchestrator_cli.runtime.workspace.cleanup import (
+import crewplane.runtime.workspace.git as workspace_git
+from crewplane.runtime.workspace.cleanup import (
     WorkspaceCleanupFilter,
     cleanup_workspace_cache,
     parse_duration_seconds,
 )
-from orchestrator_cli.runtime.workspace.snapshot import remove_workspace_path
-from orchestrator_cli.runtime.workspace.worktree import cleanup as worktree_cleanup
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
-from orchestrator_cli.runtime.workspace.worktree.ref_cleanup import (
+from crewplane.runtime.workspace.snapshot import remove_workspace_path
+from crewplane.runtime.workspace.worktree import cleanup as worktree_cleanup
+from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.workspace.worktree.ref_cleanup import (
     cleanup_plan_workspace_refs,
     delete_run_workspace_refs,
 )
@@ -559,19 +559,19 @@ def test_delete_run_workspace_refs_removes_only_selected_run_refs(
         pytest.skip("git is unavailable")
     repo = _git_repo(tmp_path)
     common_git_dir = repo / ".git"
-    _git(repo, "update-ref", "refs/orchestrator-cli/runs/run-1/node/a", "HEAD")
-    _git(repo, "update-ref", "refs/orchestrator-cli/runs/run-1/node/b", "HEAD")
-    _git(repo, "update-ref", "refs/orchestrator-cli/runs/run-2/node/a", "HEAD")
+    _git(repo, "update-ref", "refs/crewplane/runs/run-1/node/a", "HEAD")
+    _git(repo, "update-ref", "refs/crewplane/runs/run-1/node/b", "HEAD")
+    _git(repo, "update-ref", "refs/crewplane/runs/run-2/node/a", "HEAD")
 
     removed = delete_run_workspace_refs(repo, common_git_dir, "run-1")
 
     assert removed == 2
-    assert _git(repo, "for-each-ref", "refs/orchestrator-cli/runs/run-1") == ""
-    assert "refs/orchestrator-cli/runs/run-2/node/a" in _git(
+    assert _git(repo, "for-each-ref", "refs/crewplane/runs/run-1") == ""
+    assert "refs/crewplane/runs/run-2/node/a" in _git(
         repo,
         "for-each-ref",
         "--format=%(refname)",
-        "refs/orchestrator-cli/runs/run-2",
+        "refs/crewplane/runs/run-2",
     )
 
 
@@ -584,7 +584,7 @@ def test_cleanup_plan_workspace_refs_respects_cleanup_on_success(
     _git(
         repo,
         "update-ref",
-        "refs/orchestrator-cli/runs/workspace-run-001/node/a",
+        "refs/crewplane/runs/workspace-run-001/node/a",
         "HEAD",
     )
     retained_plan = workspace_plan(
@@ -595,11 +595,11 @@ def test_cleanup_plan_workspace_refs_respects_cleanup_on_success(
     )
 
     assert cleanup_plan_workspace_refs(retained_plan) == 0
-    assert "refs/orchestrator-cli/runs/workspace-run-001/node/a" in _git(
+    assert "refs/crewplane/runs/workspace-run-001/node/a" in _git(
         repo,
         "for-each-ref",
         "--format=%(refname)",
-        "refs/orchestrator-cli/runs/workspace-run-001",
+        "refs/crewplane/runs/workspace-run-001",
     )
 
     cleanup_plan = workspace_plan(
@@ -610,9 +610,7 @@ def test_cleanup_plan_workspace_refs_respects_cleanup_on_success(
     )
 
     assert cleanup_plan_workspace_refs(cleanup_plan) == 1
-    assert (
-        _git(repo, "for-each-ref", "refs/orchestrator-cli/runs/workspace-run-001") == ""
-    )
+    assert _git(repo, "for-each-ref", "refs/crewplane/runs/workspace-run-001") == ""
 
 
 @pytest.mark.parametrize(
@@ -645,8 +643,8 @@ def _git_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init")
-    _git(repo, "config", "user.name", "Orchestrator Test")
-    _git(repo, "config", "user.email", "orchestrator-test@example.invalid")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
     (repo / "README.md").write_text("ready\n", encoding="utf-8")
     _git(repo, "add", "README.md")
     _git(repo, "commit", "-m", "initial")

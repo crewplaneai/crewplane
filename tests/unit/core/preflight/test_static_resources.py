@@ -3,26 +3,26 @@ from pathlib import Path
 
 from rich.console import Console
 
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.config import (
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.config import (
     AgentConfig,
     Config,
     IntegrationsConfig,
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.preflight import (
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
-from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _config() -> Config:
@@ -69,7 +69,7 @@ def _compile_file_prompt(root: Path, prompt: str):
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
         ),
     )
@@ -120,3 +120,77 @@ def test_non_utf8_file_token_fails_in_preflight(tmp_path: Path) -> None:
 
     assert preview.workflow_signature is None
     assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-ENCODING"]
+
+
+def test_file_token_allows_allowlisted_external_path(
+    tmp_path: Path,
+) -> None:
+    external_root = tmp_path / "external" / "shared-inputs"
+    external_file = external_root / "context.md"
+    external_file.parent.mkdir(parents=True)
+    external_file.write_text("external context", encoding="utf-8")
+
+    workflow = WorkflowPlan(
+        name="demo",
+        nodes=[
+            WorkflowNode(
+                id="build",
+                mode="sequential",
+                providers=[ProviderSpec(provider="alpha")],
+                prompt_segments=[
+                    PromptSegment(
+                        role="shared",
+                        content=f"{{{{file:{external_file.as_posix()}}}}}",
+                    )
+                ],
+            )
+        ],
+    )
+    config = _config()
+    snapshot = build_runtime_config_snapshot(
+        config=config,
+        console=Console(file=None),
+        no_live=True,
+    )
+
+    preview = compile_preflight_preview(
+        source=PreflightWorkflowSource.from_workflow(workflow),
+        config=config,
+        runtime_snapshot=snapshot.snapshot,
+        options=PreflightCompileOptions(
+            project_root=tmp_path / "project",
+            state_dir=tmp_path / "project" / ".crewplane",
+            fingerprint_key_policy="read_only",
+            allowed_template_paths=(external_root,),
+        ),
+    )
+
+    assert preview.diagnostics == []
+    assert set(preview.static_file_payloads.values()) == {b"external context"}
+
+
+def test_file_token_rejects_runtime_owned_crewplane_root(tmp_path: Path) -> None:
+    runtime_file = tmp_path / ".crewplane" / "execution-stages" / "run" / "log.md"
+    runtime_file.parent.mkdir(parents=True)
+    runtime_file.write_text("runtime", encoding="utf-8")
+
+    preview = _compile_file_prompt(
+        tmp_path,
+        "{{file:.crewplane/execution-stages/run/log.md}}",
+    )
+
+    assert preview.workflow_signature is None
+    assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-POLICY"]
+    assert "runtime-owned path" in preview.diagnostics[0].message
+
+
+def test_file_token_allows_user_authored_crewplane_inputs(tmp_path: Path) -> None:
+    input_file = tmp_path / ".crewplane" / "inputs" / "context.md"
+    input_file.parent.mkdir(parents=True)
+    input_file.write_text("input context", encoding="utf-8")
+
+    preview = _compile_file_prompt(tmp_path, "{{file:.crewplane/inputs/context.md}}")
+
+    assert preview.diagnostics == []
+    assert len(preview.static_resources) == 1
+    assert set(preview.static_file_payloads.values()) == {b"input context"}

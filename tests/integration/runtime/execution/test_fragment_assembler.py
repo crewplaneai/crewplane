@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-import orchestrator_cli.core.preflight.references as preflight_references
-import orchestrator_cli.core.workflow_models as workflow_models
-import orchestrator_cli.core.workflow_validation as workflow_validation
-from orchestrator_cli.core.preflight.models import (
+import crewplane.core.preflight.references as preflight_references
+import crewplane.core.workflow.models as workflow_models
+import crewplane.core.workflow.validation as workflow_validation
+from crewplane.core.preflight.models import (
     ArtifactContract,
     ExecutionPolicy,
     Fragment,
@@ -21,10 +21,10 @@ from orchestrator_cli.core.preflight.models import (
     WorkspaceFileLocator,
     WorkspaceSourceSnapshot,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.runtime.execution.fragment_assembler import assemble_prompt
-from orchestrator_cli.runtime.execution.workspace_files import resolve_workspace_file
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.execution.fragment_assembler import assemble_prompt
+from crewplane.runtime.execution.workspace_files import resolve_workspace_file
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
     workspace_selection_record,
@@ -435,8 +435,8 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init")
-    _git(repo, "config", "user.name", "Orchestrator Test")
-    _git(repo, "config", "user.email", "orchestrator-test@example.invalid")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
     (repo / "future.md").write_text("dynamic\n", encoding="utf-8")
     _git(repo, "add", "future.md")
     _git(repo, "commit", "-m", "candidate")
@@ -451,7 +451,7 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
         stage_dir=upstream_stage,
         result_commit=result_commit,
         result_tree=result_tree,
-        result_ref="refs/orchestrator-cli/tests/input/result",
+        result_ref="refs/crewplane/tests/input/result",
         bundle_name="input.bundle",
         extra_payload={"node_id": "input"},
     )
@@ -538,8 +538,8 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init")
-    _git(repo, "config", "user.name", "Orchestrator Test")
-    _git(repo, "config", "user.email", "orchestrator-test@example.invalid")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
     (repo / "README.md").write_text("base\n", encoding="utf-8")
     _git(repo, "add", "README.md")
     _git(repo, "commit", "-m", "base")
@@ -564,7 +564,7 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
     upstream_stage = store.stages_dir / "input"
     bundle_dir = upstream_stage / "workspace-bundles"
     bundle_dir.mkdir(parents=True)
-    result_ref = "refs/orchestrator-cli/tests/input/result"
+    result_ref = "refs/crewplane/tests/input/result"
     bundle_path = bundle_dir / "input.bundle"
     _git(repo, "update-ref", result_ref, result_commit)
     _git(repo, "bundle", "create", bundle_path.as_posix(), result_ref)
@@ -681,8 +681,8 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init")
-    _git(repo, "config", "user.name", "Orchestrator Test")
-    _git(repo, "config", "user.email", "orchestrator-test@example.invalid")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
     (repo / "future.md").write_text("candidate\n", encoding="utf-8")
     _git(repo, "add", "future.md")
     _git(repo, "commit", "-m", "candidate")
@@ -701,7 +701,7 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
         stage_dir=build_stage,
         result_commit=result_commit,
         result_tree=result_tree,
-        result_ref="refs/orchestrator-cli/tests/build/result",
+        result_ref="refs/crewplane/tests/build/result",
         bundle_name="build.bundle",
         extra_payload={
             "node_id": "build",

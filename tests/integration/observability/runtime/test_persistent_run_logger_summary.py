@@ -3,39 +3,39 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability import PersistentRunLogger
-from orchestrator_cli.observability.events import (
+from crewplane.observability import PersistentRunLogger
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.persistent import render_run_summary_terminal
-from orchestrator_cli.observability.run_summary.accumulator import (
+from crewplane.observability.persistent import render_run_summary_terminal
+from crewplane.observability.run_summary.accumulator import (
     MAX_RETAINED_INVOCATION_USAGE_DETAILS,
 )
-from orchestrator_cli.observability.run_summary.logger import (
+from crewplane.observability.run_summary.logger import (
     MAX_RETAINED_SUMMARY_EVENTS,
 )
-from orchestrator_cli.observability.run_summary.models import (
+from crewplane.observability.run_summary.models import (
     WorkspaceInvocationExecutionSummary,
     WorkspaceInvocationSummary,
 )
-from orchestrator_cli.observability.run_summary.workspace import (
+from crewplane.observability.run_summary.workspace import (
     merge_workspace_invocations,
     workspace_state_summaries,
 )
-from orchestrator_cli.observability.runtime import ObservabilityHub
-from orchestrator_cli.observability.types import (
+from crewplane.observability.runtime import ObservabilityHub
+from crewplane.observability.types import (
     RunContext,
     RunResult,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
@@ -184,8 +184,8 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     )
                 )
 
-            event_log = output.get_orchestrator_event_log_path()
-            summary_log = output.get_orchestrator_summary_path()
+            event_log = output.get_run_event_log_path()
+            summary_log = output.get_run_summary_path()
             self.assertTrue(event_log.exists())
             self.assertTrue(summary_log.exists())
 
@@ -493,9 +493,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             self.assertEqual(worktree_invocation.checkpoint_count, 1)
             self.assertTrue(snapshot_invocation.snapshot_drift_discarded)
             self.assertEqual(snapshot_invocation.snapshot_changed_paths_reported, 2)
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn("## Workspace Observability", summary_text)
             self.assertIn(f"contract=blob_exact:{SCHEMA_VERSION}", summary_text)
             self.assertIn("rendered workspace files=2", summary_text)
@@ -535,7 +533,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 status="running",
                 state_path="node.a/workspace-state.json",
                 execution=WorkspaceInvocationExecutionSummary(
-                    cache_root="/tmp/orchestrator-cache",
+                    cache_root="/tmp/crewplane-cache",
                 ),
             )
             event_invocation = _workspace_summary(
@@ -558,7 +556,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             self.assertTrue(merged[0].lineage_producer)
             self.assertEqual(
                 merged[0].execution.cache_root,
-                "/tmp/orchestrator-cache",
+                "/tmp/crewplane-cache",
             )
 
     def test_workspace_summary_terminal_state_status_wins_over_running_event(
@@ -573,7 +571,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 status="cancelled",
                 state_path="node.a/workspace-state.json",
                 execution=WorkspaceInvocationExecutionSummary(
-                    cache_root="/tmp/orchestrator-cache",
+                    cache_root="/tmp/crewplane-cache",
                 ),
             )
             event_invocation = _workspace_summary(
@@ -596,7 +594,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             self.assertTrue(merged[0].lineage_producer)
             self.assertEqual(
                 merged[0].execution.cache_root,
-                "/tmp/orchestrator-cache",
+                "/tmp/crewplane-cache",
             )
 
     def test_workspace_summary_skips_non_utf8_workspace_state(self) -> None:
@@ -732,17 +730,13 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             self.assertEqual(persistent_logger.dropped_event_count, overflow_count)
 
             event_log_lines = (
-                output.get_orchestrator_event_log_path()
-                .read_text(encoding="utf-8")
-                .splitlines()
+                output.get_run_event_log_path().read_text(encoding="utf-8").splitlines()
             )
             self.assertEqual(
                 len(event_log_lines),
                 MAX_RETAINED_SUMMARY_EVENTS + overflow_count,
             )
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn("were omitted from in-memory summary detail", summary_text)
             self.assertIn(
                 f"summary warning {MAX_RETAINED_SUMMARY_EVENTS + overflow_count - 1}",
@@ -892,9 +886,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 f"alpha_task_{overflow_count:04d}",
             )
 
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn(f"- Terminal invocations: {invocation_count}", summary_text)
             self.assertIn(
                 "Invocation detail: retained latest "
@@ -905,9 +897,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             self.assertNotIn("alpha_task_0000", summary_text)
             self.assertIn(f"alpha_task_{invocation_count - 1:04d}", summary_text)
             event_log_lines = (
-                output.get_orchestrator_event_log_path()
-                .read_text(encoding="utf-8")
-                .splitlines()
+                output.get_run_event_log_path().read_text(encoding="utf-8").splitlines()
             )
             self.assertEqual(len(event_log_lines), invocation_count)
 
@@ -1108,9 +1098,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     )
                 )
 
-            summary_text = output.get_orchestrator_summary_path().read_text(
-                encoding="utf-8"
-            )
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn(
                 "`review.iterate` / `claude_reviewer_0` / `audit1/round1`",
                 summary_text,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from orchestrator_cli.observability.text_layout import (
+from crewplane.observability.text_layout import (
     display_width,
     fit_text,
     wrap_text,

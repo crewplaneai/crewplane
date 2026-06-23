@@ -2,20 +2,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.cli.templates import render_template_content
-from orchestrator_cli.core.workflow_loader import load_tasks
-from orchestrator_cli.core.workflow_models import (
+from crewplane.cli.templates import render_template_content
+from crewplane.core.workflow.loading import load_tasks
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.dag_render import render_dag_summary
-from orchestrator_cli.observability.events import (
+from crewplane.observability.dag_render import render_dag_summary
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
+from crewplane.observability.layout import compute_topology_layout
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
@@ -35,7 +35,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
         template_path = (
             PROJECT_ROOT
             / "src"
-            / "orchestrator_cli"
+            / "crewplane"
             / "example_templates"
             / "code-review-example.task.md"
         )

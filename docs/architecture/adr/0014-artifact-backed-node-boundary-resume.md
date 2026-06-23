@@ -15,9 +15,9 @@ runs by reusing only validated successful node-boundary artifacts. Preserve ADR
 Each execution attempt that proceeds receives a fresh `run_id` and fresh run
 directories. Current run state is written under:
 
-- `.orchestrator/execution-stages/<run_key>/manifests/run.json`
-- `.orchestrator/execution-stages/<run_key>/manifests/nodes/`
-- `.orchestrator/locks/`
+- `.crewplane/execution-stages/<run_key>/manifests/run.json`
+- `.crewplane/execution-stages/<run_key>/manifests/nodes/`
+- `.crewplane/locks/`
 
 `run_key` is a bounded generated path component composed as:
 

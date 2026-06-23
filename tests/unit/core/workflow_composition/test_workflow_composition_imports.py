@@ -2,21 +2,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.config import Config
+from crewplane.core.workflow.loading import load_tasks_with_sources
+from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
     render_prompt_for_role,
 )
-from orchestrator_cli.core.workflow_validation import (
+from crewplane.core.workflow.validation import (
     collect_workflow_policy_diagnostics,
     validate_workflow_plan,
 )
-from orchestrator_cli.core.workflow_validation_workspace import (
+from crewplane.core.workflow.validation.workspace import (
     logical_workspace_selections,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _write_workflow(path: Path, lines: list[str]) -> None:
@@ -1061,7 +1061,7 @@ class WorkflowCompositionImportTests(unittest.TestCase):
                     "nodes:",
                     "  - id: requirements",
                     "    mode: input",
-                    '    source: "{{file:.orchestrator/inputs/requirements.md}}"',
+                    '    source: "{{file:.crewplane/inputs/requirements.md}}"',
                     "  - id: inspect",
                     "    mode: sequential",
                     "    needs: [requirements]",

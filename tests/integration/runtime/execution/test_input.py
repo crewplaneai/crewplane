@@ -4,17 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.preflight.models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceFileLocator,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.runtime.execution.common import CompiledRuntimeContext
-from orchestrator_cli.runtime.execution.input import execute_input_stage
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.execution.common import CompiledRuntimeContext
+from crewplane.runtime.execution.input import execute_input_stage
+from crewplane.version import SCHEMA_VERSION
 
 
 def _plan(

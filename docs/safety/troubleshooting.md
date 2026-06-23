@@ -2,20 +2,20 @@
 
 ## `No workflow file found`
 
-Run `orchestrator init`, or pass a workflow explicitly:
+Run `crewplane init`, or pass a workflow explicitly:
 
 ```bash
-orchestrator run --tasks .orchestrator/workflows/code-review-example.task.md
+crewplane run --tasks .crewplane/workflows/code-review-example.task.md
 ```
 
 ## `Multiple workflow files found`
 
 Select one workflow with `--tasks` or move extra top-level `.task.md` files out
-of `.orchestrator/workflows/`.
+of `.crewplane/workflows/`.
 
 ## Provider Not Found During Validate
 
-`orchestrator validate` checks provider CLI availability for the built-in `cli`
+`crewplane validate` checks provider CLI availability for the built-in `cli`
 invoker. Confirm the command in `agents.<name>.cli_cmd` exists on `PATH`, or use
 the `mock` invoker for provider-free validation.
 
@@ -49,6 +49,17 @@ the live dashboard. Install tmux, set
 `settings.integrations.ui.options.tmux_executable`, use
 `settings.integrations.ui.implementation: "none"`, or pass `--no-live`.
 
+## No Live Dashboard In CI
+
+The live dashboard only starts for real runs attached to a terminal. CI and
+other non-TTY runs still write `.crewplane/execution-stages/<run-key>/logs/`.
+
+## Mock File Mode Did Not Find My Fixture
+
+Mock file mode searches from node/task/round-specific fixtures down to
+`default-<role>.md` and `default.md`. Use `strict_file_mode: true` when you want
+missing fixtures to fail instead of falling back to generated mock output.
+
 ## Experimental Workspace Unsupported Repository
 
 Experimental workspace isolation requires an ordinary Git repository compatible
@@ -58,6 +69,20 @@ clone, or partial clone unless support has been verified locally.
 
 ## Cleanup Requires Git Scope
 
-`orchestrator cleanup workspaces` is scoped to the current Git repository by
+`crewplane cleanup workspaces` is scoped to the current Git repository by
 default. Use `--all-projects` to clean every repository bucket under the
 workspace cache root.
+
+## Workspace Node Did Not Produce A Bundle Or Branch
+
+Only successful `kind: worktree` lineage nodes produce bundles. `snapshot`
+nodes, `worktree: none` nodes, failed nodes, and nodes with invalid final Git
+state do not. Branch export also requires `create_branch: true` and a verified
+final lineage checkpoint.
+
+## Cleanup Found Zero Paths
+
+Cleanup is scoped to the current Git repository by default. Check that the
+workflow used workspace isolation, confirm the configured cache root, and use
+`--all-projects` only when you intentionally want every repository bucket under
+that cache root.

@@ -5,14 +5,14 @@ parameters, and bound inputs.
 
 Packaged templates:
 
-- [review-findings-producer-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/composition/review-findings-producer-example.task.md)
-- [review-fix-consumer-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
-- [review-fix-composed-example.task.md](../../src/orchestrator_cli/example_templates/example-templates/composition/review-fix-composed-example.task.md)
+- [review-findings-producer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-findings-producer-example.task.md)
+- [review-fix-consumer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
+- [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)
 
-After `orchestrator init`, run the composed example with:
+After `crewplane init`, run the composed example with:
 
 ```bash
-orchestrator run --tasks .orchestrator/workflows/example-templates/composition/review-fix-composed-example.task.md
+crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md
 ```
 
 Adapt the examples by changing:

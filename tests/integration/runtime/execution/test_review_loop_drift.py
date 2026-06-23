@@ -3,41 +3,41 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.generated_files.catalog import (
+from crewplane.artifacts import OutputManager
+from crewplane.artifacts.generated_files.catalog import (
     generated_file_source_root,
 )
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.config import AgentConfig
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.core.preflight.signatures import signature_for_payload
-from orchestrator_cli.observability.events import (
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.observability.events import (
     ExecutionEventContext,
     format_execution_event_log_line,
     invocation_event,
     runtime_log_event,
 )
-from orchestrator_cli.runtime.execution.common import (
+from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
     ProviderCallDisplay,
 )
-from orchestrator_cli.runtime.execution.review_loop import (
+from crewplane.runtime.execution.review_loop import (
     drift as review_loop_drift,
 )
-from orchestrator_cli.runtime.execution.review_loop import (
+from crewplane.runtime.execution.review_loop import (
     drift_detection as review_loop_drift_detection,
 )
-from orchestrator_cli.runtime.execution.review_loop.types import (
+from crewplane.runtime.execution.review_loop.types import (
     ActivityWindow,
     DriftGuardCallRequest,
     DriftMonitoringWindow,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path]:
@@ -65,7 +65,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
                 run_key_name="run-1",
                 project_root=".",
                 context_root=".",
-                manifest_root=".orchestrator",
+                manifest_root=".crewplane",
                 created_at="2026-06-03T00:00:00",
                 workflow_name="workflow",
                 workflow_signature="workflow-signature",
@@ -164,7 +164,7 @@ def test_shared_reserved_drift_is_ignored_when_not_exclusive(tmp_path: Path) -> 
 @pytest.mark.parametrize("is_exclusive", [True, False])
 def test_summary_drift_is_always_fatal(tmp_path: Path, is_exclusive: bool) -> None:
     request, output, _node_dir = _request(tmp_path)
-    summary_path = output.get_orchestrator_summary_path()
+    summary_path = output.get_run_summary_path()
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_bytes(b"after")
     window = DriftMonitoringWindow(

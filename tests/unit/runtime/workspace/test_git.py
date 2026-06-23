@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from orchestrator_cli.runtime.workspace.git import (
+from crewplane.runtime.workspace.git import (
     RUNTIME_GIT_COMMAND_TIMEOUT_SECONDS,
     GitCommand,
     git,

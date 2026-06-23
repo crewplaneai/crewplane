@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.tmux.session_lifecycle import (
+from crewplane.observability.tmux.session_lifecycle import (
     TmuxCompactSessionLifecycle,
 )
-from orchestrator_cli.observability.types import RunContext
+from crewplane.observability.types import RunContext
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.observability.tmux_fakes import FakeTmuxClient
 
@@ -70,7 +70,7 @@ def test_failed_session_creation_forces_runtime_file_cleanup() -> None:
     assert client.socket_name is not None
     leaked_roots = [
         path
-        for path in Path("/tmp").glob("orchestrator-tmux-compact-failed-create-*")
+        for path in Path("/tmp").glob("crewplane-tmux-compact-failed-create-*")
         if path.name == client.socket_name
     ]
     assert leaked_roots == []

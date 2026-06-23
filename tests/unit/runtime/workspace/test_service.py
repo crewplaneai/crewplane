@@ -11,19 +11,19 @@ from typing import NoReturn, cast
 
 import pytest
 
-import orchestrator_cli.runtime.workspace.locks as workspace_locks
-import orchestrator_cli.runtime.workspace.service as workspace_service
-import orchestrator_cli.runtime.workspace.service.common as workspace_service_common
-import orchestrator_cli.runtime.workspace.service.snapshot as workspace_service_snapshot
-import orchestrator_cli.runtime.workspace.service.worktree as workspace_service_worktree
-from orchestrator_cli.architecture.ports import ArtifactStorePort
-from orchestrator_cli.core.workspace_git_policy import WORKSPACE_GIT_CONFIG_OVERLAY
-from orchestrator_cli.runtime.agent.workspace_environment import (
+import crewplane.runtime.workspace.locks as workspace_locks
+import crewplane.runtime.workspace.service as workspace_service
+import crewplane.runtime.workspace.service.common as workspace_service_common
+import crewplane.runtime.workspace.service.snapshot as workspace_service_snapshot
+import crewplane.runtime.workspace.service.worktree as workspace_service_worktree
+from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.core.workspace.git_policy import WORKSPACE_GIT_CONFIG_OVERLAY
+from crewplane.runtime.agent.workspace_environment import (
     workspace_child_environment,
 )
-from orchestrator_cli.runtime.workspace import prepare_invocation_workspace
-from orchestrator_cli.runtime.workspace.git import git
-from orchestrator_cli.runtime.workspace.snapshot import (
+from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.git import git
+from crewplane.runtime.workspace.snapshot import (
     remove_workspace_path,
     runtime_git_env,
 )
@@ -468,7 +468,7 @@ def test_disabled_workspace_uses_project_root(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     plan = disabled_workspace_plan(repo).model_copy(
-        update={"context_root": (tmp_path / ".orchestrator" / "stages").as_posix()}
+        update={"context_root": (tmp_path / ".crewplane" / "stages").as_posix()}
     )
     context = workspace_invocation_context()
 
@@ -509,7 +509,7 @@ def test_project_root_workspace_policy_uses_plan_project_root(
     )
     plan = plan.model_copy(
         update={
-            "context_root": (tmp_path / ".orchestrator" / "stages").as_posix(),
+            "context_root": (tmp_path / ".crewplane" / "stages").as_posix(),
             "nodes": [project_root_node],
         }
     )
@@ -613,7 +613,7 @@ def test_git_metadata_lock_fails_explicitly_without_posix_fcntl(
     ):
         pass
 
-    assert not (tmp_path / "orchestrator-cli").exists()
+    assert not (tmp_path / "crewplane").exists()
 
 
 def test_git_metadata_lock_is_reentrant_for_same_repository(tmp_path: Path) -> None:
@@ -621,7 +621,7 @@ def test_git_metadata_lock_is_reentrant_for_same_repository(tmp_path: Path) -> N
         workspace_locks.git_metadata_lock(tmp_path),
         workspace_locks.git_metadata_lock(tmp_path),
     ):
-        assert (tmp_path / "orchestrator-cli" / "workspace.lock").exists()
+        assert (tmp_path / "crewplane" / "workspace.lock").exists()
 
 
 def test_snapshot_runtime_git_env_uses_full_sanitizer(

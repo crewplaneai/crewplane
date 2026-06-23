@@ -2,7 +2,7 @@ import unittest
 from time import monotonic
 from unittest.mock import patch
 
-from orchestrator_cli.observability.runtime import ObservabilityHub
+from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
@@ -139,7 +139,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         warnings: list[str] = []
 
         with patch(
-            "orchestrator_cli.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+            "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
             0.01,
         ):
             started_at = monotonic()
@@ -164,7 +164,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
 
         with (
             patch(
-                "orchestrator_cli.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+                "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
                 0.01,
             ),
             ObservabilityHub(
@@ -186,7 +186,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
 
         with (
             patch(
-                "orchestrator_cli.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+                "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
                 0.01,
             ),
             ObservabilityHub(
@@ -217,7 +217,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 self.name = name
 
             def start(self) -> None:
-                if str(self.name).startswith("orchestrator-observer-start"):
+                if str(self.name).startswith("crewplane-observer-start"):
                     raise RuntimeError("thread unavailable")
 
             def join(self, timeout=None) -> None:  # noqa: ARG002 - Thread test double.
@@ -227,7 +227,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 return False
 
         with (
-            patch("orchestrator_cli.observability.runtime.Thread", StartFailureThread),
+            patch("crewplane.observability.runtime.Thread", StartFailureThread),
             ObservabilityHub(
                 workflow_topology=topology_from_workflow(workflow),
                 run_id="run-start-thread-fail",
@@ -257,7 +257,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 self.name = name
 
             def start(self) -> None:
-                if str(self.name).startswith("orchestrator-observer-start"):
+                if str(self.name).startswith("crewplane-observer-start"):
                     raise RuntimeError("thread unavailable")
 
             def join(self, timeout=None) -> None:  # noqa: ARG002 - Thread test double.
@@ -267,7 +267,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 return False
 
         with (
-            patch("orchestrator_cli.observability.runtime.Thread", StartFailureThread),
+            patch("crewplane.observability.runtime.Thread", StartFailureThread),
             self.assertRaisesRegex(RuntimeError, "thread unavailable"),
             ObservabilityHub(
                 workflow_topology=topology_from_workflow(workflow),
@@ -299,7 +299,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 self.name = name
 
             def start(self) -> None:
-                if self.name == "orchestrator-observability-delivery":
+                if self.name == "crewplane-observability-delivery":
                     raise RuntimeError("thread unavailable")
 
             def join(self, timeout=None) -> None:  # noqa: ARG002 - Thread test double.
@@ -310,7 +310,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
 
         with (
             patch(
-                "orchestrator_cli.observability.runtime.Thread",
+                "crewplane.observability.runtime.Thread",
                 DeliveryStartFailureThread,
             ),
             ObservabilityHub(
@@ -349,7 +349,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 self.name = name
 
             def start(self) -> None:
-                if self.name == "orchestrator-observability-ticker":
+                if self.name == "crewplane-observability-ticker":
                     raise RuntimeError("thread unavailable")
 
             def join(self, timeout=None) -> None:  # noqa: ARG002 - Thread test double.
@@ -360,7 +360,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
 
         with (
             patch(
-                "orchestrator_cli.observability.runtime.Thread",
+                "crewplane.observability.runtime.Thread",
                 TickerStartFailureThread,
             ),
             ObservabilityHub(
@@ -400,9 +400,9 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 self.name = name
 
             def start(self) -> None:
-                if str(self.name).startswith("orchestrator-observer-stop"):
+                if str(self.name).startswith("crewplane-observer-stop"):
                     raise RuntimeError("thread unavailable")
-                if str(self.name).startswith("orchestrator-observer-start"):
+                if str(self.name).startswith("crewplane-observer-start"):
                     self._target(*self._args)
 
             def join(self, timeout=None) -> None:  # noqa: ARG002 - Thread test double.
@@ -412,7 +412,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 return False
 
         with (
-            patch("orchestrator_cli.observability.runtime.Thread", StopFailureThread),
+            patch("crewplane.observability.runtime.Thread", StopFailureThread),
             ObservabilityHub(
                 workflow_topology=topology_from_workflow(workflow),
                 run_id="run-stop-thread-fail",
@@ -444,9 +444,9 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 self.name = name
 
             def start(self) -> None:
-                if str(self.name).startswith("orchestrator-observer-stop"):
+                if str(self.name).startswith("crewplane-observer-stop"):
                     raise RuntimeError("thread unavailable")
-                if str(self.name).startswith("orchestrator-observer-start"):
+                if str(self.name).startswith("crewplane-observer-start"):
                     self._target(*self._args)
 
             def join(self, timeout=None) -> None:  # noqa: ARG002 - Thread test double.
@@ -456,7 +456,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
                 return False
 
         with (
-            patch("orchestrator_cli.observability.runtime.Thread", StopFailureThread),
+            patch("crewplane.observability.runtime.Thread", StopFailureThread),
             self.assertRaisesRegex(RuntimeError, "thread unavailable"),
             ObservabilityHub(
                 workflow_topology=topology_from_workflow(workflow),

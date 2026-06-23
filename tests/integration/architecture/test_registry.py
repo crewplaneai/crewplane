@@ -1,6 +1,6 @@
 import unittest
 
-from orchestrator_cli.architecture.registry import (
+from crewplane.architecture.registry import (
     INTEGRATION_ALIAS_REGISTRY,
     allowed_implementations,
 )

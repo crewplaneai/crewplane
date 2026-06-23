@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.cli.run.workspace import disk_policy as workspace_disk_policy
-from orchestrator_cli.cli.run.workspace import source_policy as policy
-from orchestrator_cli.core.config import Settings
+from crewplane.cli.run.workspace import disk_policy as workspace_disk_policy
+from crewplane.cli.run.workspace import source_policy as policy
+from crewplane.core.config import Settings
 from tests.helpers.workspace_source_policy import git_source_context
 
 
@@ -158,8 +158,8 @@ def test_estimated_checkout_size_falls_back_to_working_tree(
     monkeypatch.setattr(workspace_disk_policy, "git_zero_records", git_zero_records)
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text("ignored\n", encoding="utf-8")
-    (tmp_path / ".orchestrator" / "execution-stages").mkdir(parents=True)
-    (tmp_path / ".orchestrator" / "execution-stages" / "run.json").write_text(
+    (tmp_path / ".crewplane" / "execution-stages").mkdir(parents=True)
+    (tmp_path / ".crewplane" / "execution-stages" / "run.json").write_text(
         "ignored\n",
         encoding="utf-8",
     )
@@ -185,13 +185,13 @@ def test_estimated_checkout_size_fallback_counts_full_repo_for_worktrees(
     sibling_root.mkdir()
     (project_root / "app.py").write_text("app\n", encoding="utf-8")
     (sibling_root / "tool.py").write_text("tool\n", encoding="utf-8")
-    (project_root / ".orchestrator" / "execution-stages").mkdir(parents=True)
-    (project_root / ".orchestrator" / "execution-stages" / "run.json").write_text(
+    (project_root / ".crewplane" / "execution-stages").mkdir(parents=True)
+    (project_root / ".crewplane" / "execution-stages" / "run.json").write_text(
         "ignored\n",
         encoding="utf-8",
     )
-    (tmp_path / ".orchestrator" / "execution-results").mkdir(parents=True)
-    (tmp_path / ".orchestrator" / "execution-results" / "run.json").write_text(
+    (tmp_path / ".crewplane" / "execution-results").mkdir(parents=True)
+    (tmp_path / ".crewplane" / "execution-results" / "run.json").write_text(
         "ignored\n",
         encoding="utf-8",
     )

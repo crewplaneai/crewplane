@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-import orchestrator_cli.cli.app as cli
-from orchestrator_cli.version import SCHEMA_VERSION
+import crewplane.cli.app as cli
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import ConsoleFactory
 
 
@@ -158,7 +158,7 @@ def _write_review_loop_fixtures(fixture_dir: Path) -> None:
 
 
 def _run_dirs(root: Path) -> list[Path]:
-    stages_root = root / ".orchestrator" / "execution-stages"
+    stages_root = root / ".crewplane" / "execution-stages"
     return sorted(path for path in stages_root.iterdir() if path.is_dir())
 
 
@@ -179,8 +179,8 @@ def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_path = tmp_path / ".orchestrator" / "config.yml"
-    workflow_path = tmp_path / ".orchestrator" / "workflows" / "resume.task.md"
+    config_path = tmp_path / ".crewplane" / "config.yml"
+    workflow_path = tmp_path / ".crewplane" / "workflows" / "resume.task.md"
     fixture_dir = tmp_path / "fixtures"
     console_stream = io.StringIO()
     monkeypatch.chdir(tmp_path)
@@ -221,12 +221,8 @@ def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
     first_run, second_run = _run_dirs(tmp_path)
     first_manifest = _manifest(first_run)
     second_manifest = _manifest(second_run)
-    first_results_dir = (
-        tmp_path / ".orchestrator" / "execution-results" / first_run.name
-    )
-    second_results_dir = (
-        tmp_path / ".orchestrator" / "execution-results" / second_run.name
-    )
+    first_results_dir = tmp_path / ".crewplane" / "execution-results" / first_run.name
+    second_results_dir = tmp_path / ".crewplane" / "execution-results" / second_run.name
 
     assert second_run.name != first_run.name
     assert second_manifest["status"] == "succeeded"
@@ -260,8 +256,8 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_path = tmp_path / ".orchestrator" / "config.yml"
-    workflow_path = tmp_path / ".orchestrator" / "workflows" / "review-resume.task.md"
+    config_path = tmp_path / ".crewplane" / "config.yml"
+    workflow_path = tmp_path / ".crewplane" / "workflows" / "review-resume.task.md"
     fixture_dir = tmp_path / "fixtures"
     console_stream = io.StringIO()
     monkeypatch.chdir(tmp_path)
@@ -288,9 +284,7 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
             no_live=True,
         )
     first_run = _run_dirs(tmp_path)[0]
-    first_results_dir = (
-        tmp_path / ".orchestrator" / "execution-results" / first_run.name
-    )
+    first_results_dir = tmp_path / ".crewplane" / "execution-results" / first_run.name
     assert _manifest(first_run)["status"] == "failed"
     assert (
         first_run / "review.iterate" / "review-state" / "review-loop-status.json"
@@ -310,9 +304,7 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
     )
 
     first_run, second_run = _run_dirs(tmp_path)
-    second_results_dir = (
-        tmp_path / ".orchestrator" / "execution-results" / second_run.name
-    )
+    second_results_dir = tmp_path / ".crewplane" / "execution-results" / second_run.name
     second_manifest = _manifest(second_run)
     resumed_review_stage = second_run / "review.iterate"
 

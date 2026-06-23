@@ -41,23 +41,23 @@ validation.
 
 ## Workspace Placement and Lifecycle
 Workspace directories live outside the project checkout and outside project
-`.orchestrator/`.
+`.crewplane/`.
 
 Placement is split:
 
 - Live materializations: `settings.workspace.cache_root`
 - Canonical lineage and audit artifacts: project
-  `.orchestrator/execution-stages/` and `.orchestrator/execution-results/`
-- Planned provider outputs/logs: orchestrator-owned artifact paths under
-  `.orchestrator/`
+  `.crewplane/execution-stages/` and `.crewplane/execution-results/`
+- Planned provider outputs/logs: Crewplane-owned artifact paths under
+  `.crewplane/`
 - Operation-scoped temporary Git indexes: owner-private system temporary
   directories
 
 Default cache root:
 
 ```text
-macOS: ~/Library/Caches/orchestrator-cli/
-Linux/POSIX/WSL: ${XDG_CACHE_HOME:-~/.cache}/orchestrator-cli/
+macOS: ~/Library/Caches/crewplane/
+Linux/POSIX/WSL: ${XDG_CACHE_HOME:-~/.cache}/crewplane/
 ```
 
 Mutable worktrees:
@@ -81,8 +81,8 @@ Disposable reviewer workspaces:
 Canonical artifacts:
 
 ```text
-.orchestrator/execution-stages/<run-key-name>/
-.orchestrator/execution-results/<run-key-name>/
+.crewplane/execution-stages/<run-key-name>/
+.crewplane/execution-results/<run-key-name>/
 ```
 
 Path and ref safety:
@@ -123,7 +123,7 @@ The workspace manager serializes shared metadata operations with both:
 The interprocess lock path is:
 
 ```text
-<git-common-dir>/orchestrator-cli/workspace.lock
+<git-common-dir>/crewplane/workspace.lock
 ```
 
 V1 uses `fcntl.flock`. Platforms without compatible POSIX advisory locking fail
@@ -138,10 +138,9 @@ The lock protects:
 - object database mutation from bundle import and runtime-owned result object
   writes
 - cleanup
-- opportunistic `git gc --auto`
 - protected ref and identity verification windows where needed
 
-The lock coordinates cooperating orchestrator processes only. It does not
+The lock coordinates cooperating crewplane processes only. It does not
 prevent user Git commands, provider Git commands, IDEs, hooks, or other external
 processes from mutating repository metadata. Runtime must re-read and verify
 expected protected refs, commits, trees, active worktree-config absence,
@@ -167,9 +166,9 @@ Runtime must fail when protected execution invariants change:
 - expected source commit or tree cannot be verified
 - expected candidate/result commit or tree cannot be verified
 - selected `worktree_contract` cannot be verified
-- orchestrator-owned refs under the current run namespace are missing, moved, or
+- Crewplane-owned refs under the current run namespace are missing, moved, or
   unexpectedly created
-- provider mutates another node's orchestrator-owned refs
+- provider mutates another node's Crewplane-owned refs
 - provider creates nonempty Git `info/attributes`
 - provider creates effective non-comment, non-blank patterns in
   Git `info/exclude`
@@ -178,7 +177,7 @@ Runtime must fail when protected execution invariants change:
 - provider leaves `HEAD` different from the runtime baseline
 - provider creates active worktree-specific config
 - provider introduces object alternates, grafts, or replacement behavior
-- bundle import/export verification does not match `workspace-state.json`
+- bundle import/export verification does not match `workspace-state*.json`
 - replacement refs, grafts, alternates, pathspec environment variables, or
   config affect runtime-owned identity-sensitive Git operations
 
@@ -259,7 +258,7 @@ Terminal cleanup order:
 3. Terminate or drain active provider invocations.
 4. Wait for in-flight artifact and workspace-state writes where possible.
 5. Unlock worktrees selected for cleanup.
-6. Remove orchestrator-owned registered worktrees with
+6. Remove Crewplane-owned registered worktrees with
    `git worktree remove --force <path>`.
 7. Remove snapshot directories and unregistered residual cache directories.
 8. Remove operation-scoped temporary indexes if any remain.
@@ -267,8 +266,6 @@ Terminal cleanup order:
 10. Remove disposable reviewer workspaces.
 11. Preserve or remove canonical artifacts according to artifact retention
     behavior.
-12. Optionally run `git gc --auto` under repository lock as a best-effort tail
-    step.
 
 Cleanup must never use raw directory deletion as the normal path for registered
 worktrees. Raw deletion is limited to snapshots, temporary indexes,
@@ -277,12 +274,11 @@ unregistered residual cache directories, and recovery paths where
 directory.
 
 Input nodes have no live workspace directory and no workspace-cache cleanup
-step. Their canonical node artifacts remain under `.orchestrator/` according to
+step. Their canonical node artifacts remain under `.crewplane/` according to
 ordinary artifact retention.
 
-`git gc --auto` is never run during provisioning, result capture, candidate
-commit creation, or lineage export. It is best-effort after cleanup and must not
-be required for run success.
+Cleanup does not run `git gc --auto`; it removes selected paths and run-owned
+refs, then returns.
 
 Retention defaults:
 
@@ -292,13 +288,13 @@ Retention defaults:
   recorded
 - cancelled active workspaces are removed best-effort after terminal state is
   recorded
-- canonical `workspace-state.json` and `workspace.bundle` remain under
-  `.orchestrator/`
+- canonical `workspace-state*.json` and `workspace-bundles/*.bundle` remain
+  under `.crewplane/`
 
 V1 CLI cleanup surface:
 
 ```text
-orchestrator cleanup workspaces [--dry-run] [--run <run-key>] [--older-than <duration>] [--successful] [--failed] [--cancelled] [--orphans] [--all-projects] [--yes]
+crewplane cleanup workspaces [--dry-run] [--run <run-key>] [--older-than <duration>] [--successful] [--failed] [--cancelled] [--orphans] [--all-projects] [--yes]
 ```
 
 Default mode is advisory. Destructive cleanup requires `--yes`. Status and

@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import orchestrator_cli.cli.app as cli
-from orchestrator_cli.version import SCHEMA_VERSION
+import crewplane.cli.app as cli
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -51,7 +51,7 @@ class CliRunContextHashingTests(unittest.TestCase):
                     )
 
                 stage_runs = sorted(
-                    (tmp_path / ".orchestrator" / "execution-stages").glob("task-*")
+                    (tmp_path / ".crewplane" / "execution-stages").glob("task-*")
                 )
                 self.assertEqual(len(stage_runs), 1)
                 manifests_dir = stage_runs[0] / "manifests"
@@ -133,7 +133,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             self.assertEqual(calls["count"], 2)
             self.assertIn("Identical context detected", stream.getvalue())
             stage_runs = sorted(
-                (tmp_path / ".orchestrator" / "execution-stages").glob("task-*")
+                (tmp_path / ".crewplane" / "execution-stages").glob("task-*")
             )
             self.assertGreaterEqual(len(stage_runs), 2)
 

@@ -15,8 +15,8 @@ A `.task.md` file is both the workflow map and the instructions: the YAML
 frontmatter lists the steps, providers, and dependencies, while each Markdown
 section gives a step its detailed prompt. Assign steps to providers such as
 Claude, Codex, Gemini, Copilot, Kilo, or any generic CLI, and let
-`orchestrator` run the graph while preserving inputs, intermediate outputs,
-logs, manifests, and final results under `.orchestrator/`.
+`crewplane` run the graph while preserving inputs, intermediate outputs,
+logs, manifests, and final results under `.crewplane/`.
 
 Crewplane is built around four ideas:
 
@@ -31,17 +31,17 @@ Crewplane is built around four ideas:
 
 You already have AI coding tools you love. But they can't talk to each other. Claude doesn't know what Codex just wrote. Gemini can't review Claude's output.
 
-**Crewplane connects them.** Define tasks in a Markdown file, assign each to an AI provider, and the orchestrator runs them — in parallel when possible, in sequence when needed. Each tool reads and writes to a shared folder, so downstream tasks can build on upstream results.
+**Crewplane connects them.** Define tasks in a Markdown file, assign each to an AI provider, and Crewplane runs them — in parallel when possible, in sequence when needed. Each tool reads and writes to a shared folder, so downstream tasks can build on upstream results.
 
 No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
 
-**Every step is a Markdown file.** Inputs, outputs, reviews — all saved to `.orchestrator/execution-stages/` as readable Markdown. Inspect any step in your editor, diff it in git, or debug with `cat`. Nothing is a black box.
+**Every step is a Markdown file.** Inputs, outputs, reviews — all saved to `.crewplane/execution-stages/` as readable Markdown. Inspect any step in your editor, diff it in git, or debug with `cat`. Nothing is a black box.
 
 | vs. Other Frameworks | Crewplane |
 |---------------------|------------------|
 | **Hidden state** | Externalized to markdown — fully auditable |
 | **Tight SDK coupling** | CLI-first — zero provider lock-in |
-| **Black box debugging** | Inspect `.orchestrator/execution-stages/` at any step |
+| **Black box debugging** | Inspect `.crewplane/execution-stages/` at any step |
 | **Adapter boilerplate** | Works with any CLI that reads/writes files |
 
 > ⚠️ **Security Note:** `{{file:path}}` templates are restricted to the project root by default. Use `settings.integrations.artifacts.options.allowed_template_paths` for explicit external-file allowlisting.
@@ -51,8 +51,8 @@ No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
 - 🔄 **DAG Execution** – Run independent nodes in parallel and dependency nodes in sequence
 - 🔍 **Cross-Review** – Agents review each other's outputs with structured verdict detection
 - 📝 **Task Files** – Frontmatter+Markdown (`.task.md`) workflows by default
-- 🔌 **Pluggable Providers** – Works with any CLI-based AI tool; no API keys or auth managed by the orchestrator
-- 📁 **Project-Local Config** – Each project gets its own `.orchestrator/` directory
+- 🔌 **Pluggable Providers** – Works with any CLI-based AI tool; no API keys or auth managed by Crewplane
+- 📁 **Project-Local Config** – Each project gets its own `.crewplane/` directory
 - 📂 **Transparent Artifacts** – Every intermediate step and final result saved to disk for full auditability
 - 📊 **Spend Observability** – Run logs capture CLI capture status, provider token-report status, visible lower-bound estimates, and configured cost confidence summaries
 - ⚡ **Smart Caching** – Workflow-signature idempotency skips identical successful workflow runs automatically
@@ -62,7 +62,7 @@ No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
 
 ## Prerequisites
 
-Before using the orchestrator, you must have at least one AI CLI tool installed and authenticated.
+Before using Crewplane, you must have at least one AI CLI tool installed and authenticated.
 
 Verify your providers are working:
 ```bash
@@ -74,13 +74,13 @@ copilot version                     # Verify Copilot CLI is installed
 ## Installation
 
 The public package name is `crewplane`. The installed command is
-`orchestrator`.
+`crewplane`.
 
 Recommended isolated install:
 
 ```bash
 uv tool install crewplane
-orchestrator --help
+crewplane --help
 ```
 
 Crewplane can also be installed with the following supported methods:
@@ -117,14 +117,14 @@ See the [installation guide](https://github.com/crewplaneai/crewplane/blob/main/
 ## First Run
 
 ```bash
-orchestrator init
-orchestrator validate
-orchestrator run --dry-run
-orchestrator run
+crewplane init
+crewplane validate
+crewplane run --dry-run
+crewplane run
 ```
 
-`orchestrator init` creates `.orchestrator/config.yml`, a default workflow, and
-additional example templates under `.orchestrator/workflows/example-templates/`.
+`crewplane init` creates `.crewplane/config.yml`, a default workflow, and
+additional example templates under `.crewplane/workflows/example-templates/`.
 
 ## Workflow Shape
 

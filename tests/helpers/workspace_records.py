@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from orchestrator_cli.core.preflight.models import WorkspaceSelectionRecord
-from orchestrator_cli.core.workspace_policy import WorktreeContract
+from crewplane.core.preflight.models import WorkspaceSelectionRecord
+from crewplane.core.workspace.policy import WorktreeContract
 
 WORKTREE_CONTRACT = WorktreeContract()
 WORKTREE_CONTRACT_PAYLOAD = WORKTREE_CONTRACT.model_dump(mode="json")

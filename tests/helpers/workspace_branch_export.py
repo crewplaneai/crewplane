@@ -6,22 +6,22 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.artifacts.run_history import RunHistoryRecord
-from orchestrator_cli.artifacts.workspace.node_state import (
+from crewplane.artifacts import OutputManager
+from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
 )
-from orchestrator_cli.core.execution_state import (
+from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     NodeState,
     RunManifest,
 )
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceBranchExportRecord,
 )
-from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_service import run_git_text, workspace_plan
 
 
@@ -73,7 +73,7 @@ def write_result_bundle(
         "-m",
         "workspace result",
     )
-    result_ref = "refs/orchestrator-cli/tests/branch-export/result"
+    result_ref = "refs/crewplane/tests/branch-export/result"
     run_git_text(repo, "update-ref", result_ref, result_commit)
     bundle_dir = stage_dir / "workspace-bundles"
     bundle_dir.mkdir()
@@ -94,14 +94,14 @@ def write_result_bundle_from_clone(
         check=True,
         capture_output=True,
     )
-    run_git_text(producer, "config", "user.name", "Orchestrator Test")
-    run_git_text(producer, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(producer, "config", "user.name", "Crewplane Test")
+    run_git_text(producer, "config", "user.email", "crewplane-test@example.invalid")
     (producer / "README.md").write_text(content, encoding="utf-8")
     run_git_text(producer, "add", "README.md")
     run_git_text(producer, "commit", "-m", "workspace result")
     result_commit = run_git_text(producer, "rev-parse", "HEAD^{commit}")
     result_tree = run_git_text(producer, "rev-parse", "HEAD^{tree}")
-    result_ref = "refs/orchestrator-cli/tests/branch-export/result"
+    result_ref = "refs/crewplane/tests/branch-export/result"
     run_git_text(producer, "update-ref", result_ref, result_commit)
     bundle_dir = stage_dir / "workspace-bundles"
     bundle_dir.mkdir()
@@ -115,7 +115,7 @@ def write_tree_bundle(
     stage_dir: Path,
 ) -> tuple[str, str, Path]:
     result_tree = run_git_text(repo, "rev-parse", "HEAD^{tree}")
-    result_ref = "refs/orchestrator-cli/tests/branch-export/tree-result"
+    result_ref = "refs/crewplane/tests/branch-export/tree-result"
     run_git_text(repo, "update-ref", result_ref, result_tree)
     bundle_dir = stage_dir / "workspace-bundles"
     bundle_dir.mkdir()
@@ -181,7 +181,7 @@ def write_node_manifest(output: OutputManager, plan: PreflightExecutionPlan) -> 
         NodeState(
             run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
             plan_schema_version=SCHEMA_VERSION,
-            workflow_identity=".orchestrator/workflows/workspace.task.md",
+            workflow_identity=".crewplane/workflows/workspace.task.md",
             workflow_name=plan.workflow_name,
             workflow_signature="a" * 64,
             run_id=output.run_id,
@@ -256,7 +256,7 @@ def history_record_for_output(output: OutputManager) -> RunHistoryRecord:
     manifest = RunManifest(
         run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
         plan_schema_version=SCHEMA_VERSION,
-        workflow_identity=".orchestrator/workflows/workspace.task.md",
+        workflow_identity=".crewplane/workflows/workspace.task.md",
         workflow_name="workspace",
         workflow_signature="a" * 64,
         run_id=output.run_id,

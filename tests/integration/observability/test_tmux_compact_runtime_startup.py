@@ -4,17 +4,17 @@ from time import sleep
 
 import pytest
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.runtime import ObservabilityHub
-from orchestrator_cli.observability.tmux.compact import TmuxCompactRuntime
-from orchestrator_cli.observability.tmux.refresh import RefreshOutcome
-from orchestrator_cli.observability.tmux.window import TmuxCompactWindowOptions
-from orchestrator_cli.observability.types import RunContext, RunResult
+from crewplane.observability.runtime import ObservabilityHub
+from crewplane.observability.tmux.compact import TmuxCompactRuntime
+from crewplane.observability.tmux.refresh import RefreshOutcome
+from crewplane.observability.tmux.window import TmuxCompactWindowOptions
+from crewplane.observability.types import RunContext, RunResult
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.observability.tmux_fakes import (
     FakeCompactSessionLifecycle,

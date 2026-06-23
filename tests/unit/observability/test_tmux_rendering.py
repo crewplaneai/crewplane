@@ -2,27 +2,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.text_layout import display_width
-from orchestrator_cli.observability.tmux.log_tail import LogSnapshot
-from orchestrator_cli.observability.tmux.rendering import (
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.text_layout import display_width
+from crewplane.observability.tmux.log_tail import LogSnapshot
+from crewplane.observability.tmux.rendering import (
     PreparedSelectedInvocation,
     SelectedOutputRenderContext,
     render_left_dashboard,
     render_selected_output,
     viewport_dag_lines,
 )
-from orchestrator_cli.observability.types import DashboardSnapshot
+from crewplane.observability.types import DashboardSnapshot
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,

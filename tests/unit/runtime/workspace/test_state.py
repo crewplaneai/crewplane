@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from orchestrator_cli.runtime.workspace.state import (
+from crewplane.runtime.workspace.state import (
     WorkspaceStateMaterializationRequest,
     WorkspaceStateRetention,
     WorkspaceStateUpdateRequest,
@@ -12,7 +12,7 @@ from orchestrator_cli.runtime.workspace.state import (
     update_workspace_state,
     write_running_workspace_state,
 )
-from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
+from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
 
 
@@ -68,7 +68,7 @@ def test_running_workspace_state_records_node_source_bundle_descriptor(
                 bundle_path=bundle_path,
                 bundle_sha256="3" * 64,
                 bundle_size_bytes=123,
-                bundle_ref="refs/orchestrator-cli/runs/run/implement/result",
+                bundle_ref="refs/crewplane/runs/run/implement/result",
             ),
             materialization="worktree_checkout",
             lineage_producer=True,
@@ -86,7 +86,7 @@ def test_running_workspace_state_records_node_source_bundle_descriptor(
         "bundle_path": "implement/workspace-bundles/result.bundle",
         "bundle_sha256": "3" * 64,
         "bundle_size_bytes": 123,
-        "bundle_ref": "refs/orchestrator-cli/runs/run/implement/result",
+        "bundle_ref": "refs/crewplane/runs/run/implement/result",
     }
     assert (
         payload["invocation_source"]["source_bundle_path"]
@@ -96,7 +96,7 @@ def test_running_workspace_state_records_node_source_bundle_descriptor(
     assert payload["invocation_source"]["source_bundle_size_bytes"] == 123
     assert (
         payload["invocation_source"]["source_bundle_ref"]
-        == "refs/orchestrator-cli/runs/run/implement/result"
+        == "refs/crewplane/runs/run/implement/result"
     )
 
 
@@ -152,7 +152,7 @@ def test_running_workspace_state_records_source_chain(
                 / "b.bundle",
                 bundle_sha256="6" * 64,
                 bundle_size_bytes=456,
-                bundle_ref="refs/orchestrator-cli/runs/run/verify/result",
+                bundle_ref="refs/crewplane/runs/run/verify/result",
                 upstream_sources=(
                     WorktreeSourceRef(
                         source_kind="node",
@@ -167,7 +167,7 @@ def test_running_workspace_state_records_source_chain(
                         / "a.bundle",
                         bundle_sha256="3" * 64,
                         bundle_size_bytes=123,
-                        bundle_ref="refs/orchestrator-cli/runs/run/implement/result",
+                        bundle_ref="refs/crewplane/runs/run/implement/result",
                     ),
                 ),
             ),

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.core.preflight.models import (
+from crewplane.artifacts.manager import OutputManager
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     ProviderRecord,
@@ -11,8 +11,8 @@ from orchestrator_cli.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.runtime.execution.review_loop.workspace_state_paths import (
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
 )
 

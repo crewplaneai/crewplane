@@ -1,20 +1,21 @@
 # Crewplane Documentation
 
-Crewplane is a CLI-first orchestrator for AI coding agents. It runs declarative
-Markdown workflows, invokes provider CLIs, and writes auditable execution
-artifacts under `.orchestrator/`.
+Crewplane is a local workflow runner for AI coding CLIs. You describe the work
+in a Markdown `.task.md` file, Crewplane runs the configured provider commands,
+and each run leaves readable artifacts under `.crewplane/`.
 
 ## What Crewplane Provides
 
-- Markdown workflow DAGs with parallel, sequential, and input nodes.
-- CLI-first provider execution through configured external commands.
-- Auditable filesystem artifacts under `.orchestrator/execution-stages/` and
-  `.orchestrator/execution-results/`.
+- Markdown workflow DAGs with parallel, sequential, and file-backed input nodes.
+- CLI-first provider execution through configured external commands; Crewplane
+  does not install or authenticate those provider tools.
+- Auditable filesystem artifacts under `.crewplane/execution-stages/` and
+  `.crewplane/execution-results/`.
 - Workflow composition with imports, aliases, parameters, and input binding.
 - Preflight compilation, idempotency, and filesystem-backed resume.
 - Provider-free validation through the deterministic `mock` invoker.
 - Optional tmux live dashboard with graceful fallback.
-- Experimental Git-backed workspace isolation.
+- Opt-in Experimental Git-backed source-tree isolation, not sandboxing.
 - Replaceable invoker, UI, and artifact adapters.
 
 ## Getting Started
@@ -65,3 +66,10 @@ artifacts under `.orchestrator/`.
 - [Architecture index](architecture/index.md)
 - [Development guide](../DEVELOPMENT.md)
 - [Agent instructions](../AGENTS.md)
+
+## Maintainer Notes
+
+Documents under `docs/maintainers/` are maintainer-facing records and design
+notes. Some preserve historical context from before the clean-break rename to
+Crewplane. For current user behavior, start with the guides and reference pages
+listed above.

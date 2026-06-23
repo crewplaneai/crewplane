@@ -1,12 +1,12 @@
 import unittest
 
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.core.workflow_validation import (
+from crewplane.core.workflow.validation import (
     collect_workflow_validation_diagnostics,
     validate_workflow_plan,
 )
@@ -144,7 +144,7 @@ class WorkflowValidationDependencyTests(unittest.TestCase):
                     prompt_segments=[
                         PromptSegment(
                             role="shared",
-                            content="Summarize {{src/orchestrator_cli/runtime}}",
+                            content="Summarize {{src/crewplane/runtime}}",
                         )
                     ],
                     needs=["missing.node"],
@@ -423,7 +423,7 @@ class WorkflowValidationDependencyTests(unittest.TestCase):
                     prompt_segments=[
                         PromptSegment(
                             role="shared",
-                            content="Review {{src/orchestrator_cli/runtime}}",
+                            content="Review {{src/crewplane/runtime}}",
                         )
                     ],
                     providers=[ProviderSpec(provider="gpt4")],

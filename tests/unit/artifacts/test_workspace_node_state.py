@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.artifacts.workspace.node_state import (
+from crewplane.artifacts.manager import OutputManager
+from crewplane.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
     refresh_node_workspace_descriptor,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import (
     WORKTREE_CONTRACT_PAYLOAD,
     make_node_state,
@@ -265,7 +265,7 @@ def _workspace_state_payload(plan, bundle_payload: bytes) -> dict[str, object]:
             "project_root_relative_path": ".",
         },
         "execution": {
-            "cache_root": "/tmp/orchestrator-cache",
+            "cache_root": "/tmp/crewplane-cache",
             "workspace_path": "/tmp/workspace-a",
             "checkout_root": "/tmp/workspace-a/checkout",
             "effective_cwd": "/tmp/workspace-a/checkout",
@@ -282,8 +282,8 @@ def _workspace_state_payload(plan, bundle_payload: bytes) -> dict[str, object]:
             "unreachable_provider_objects_scanned": False,
         },
         "refs": {
-            "candidate": "refs/orchestrator-cli/runs/run/a/a/candidate",
-            "result": "refs/orchestrator-cli/runs/run/a/a/result",
+            "candidate": "refs/crewplane/runs/run/a/a/candidate",
+            "result": "refs/crewplane/runs/run/a/a/result",
         },
         "bundle": {
             "path": "a/workspace-bundles/a.bundle",

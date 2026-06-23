@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from orchestrator_cli.cli.app import app
-from orchestrator_cli.cli.cleanup import cleanup_repository_id
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.cli.app import app
+from crewplane.cli.cleanup import cleanup_repository_id
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_cleanup_workspaces_defaults_to_advisory_dry_run(tmp_path: Path) -> None:
@@ -51,7 +51,7 @@ def test_cleanup_workspaces_yes_removes_run_owned_refs(tmp_path: Path) -> None:
         tmp_path,
         initialize_git=True,
     )
-    _git(project_root, "update-ref", "refs/orchestrator-cli/runs/run-1/node/a", "HEAD")
+    _git(project_root, "update-ref", "refs/crewplane/runs/run-1/node/a", "HEAD")
 
     result = CliRunner().invoke(
         app,
@@ -63,7 +63,7 @@ def test_cleanup_workspaces_yes_removes_run_owned_refs(tmp_path: Path) -> None:
     assert "Removed 1 workspace path(s)" in result.output
     assert "Removed 1 run-owned Git ref(s)" in result.output
     assert not workspace_path.exists()
-    assert _git(project_root, "for-each-ref", "refs/orchestrator-cli/runs/run-1") == ""
+    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") == ""
 
 
 def test_cleanup_workspaces_yes_ignores_symlink_workspace_candidates(
@@ -205,13 +205,13 @@ def _cleanup_project(
     create_workspace: bool = True,
 ) -> tuple[Path, Path, Path]:
     project_root = tmp_path / "project"
-    orchestrator_dir = project_root / ".orchestrator"
+    state_dir = project_root / ".crewplane"
     cache_root = tmp_path / "workspace-cache"
     project_root.mkdir()
     if initialize_git:
         _git(project_root, "init")
-        _git(project_root, "config", "user.name", "Orchestrator Test")
-        _git(project_root, "config", "user.email", "orchestrator-test@example.invalid")
+        _git(project_root, "config", "user.name", "Crewplane Test")
+        _git(project_root, "config", "user.email", "crewplane-test@example.invalid")
         (project_root / "README.md").write_text("ready\n", encoding="utf-8")
         _git(project_root, "add", ".")
         _git(project_root, "commit", "-m", "initial")
@@ -224,8 +224,8 @@ def _cleanup_project(
     if create_workspace:
         workspace_path.mkdir(parents=True)
         (workspace_path / "file.txt").write_text("payload", encoding="utf-8")
-    orchestrator_dir.mkdir(parents=True)
-    config_path = orchestrator_dir / "config.yml"
+    state_dir.mkdir(parents=True)
+    config_path = state_dir / "config.yml"
     config_path.write_text(
         "\n".join(
             [

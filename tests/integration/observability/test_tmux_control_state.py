@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from orchestrator_cli.observability.tmux.control_state import (
+from crewplane.observability.tmux.control_state import (
     PaneGeometry,
     TmuxCompactControlState,
 )
-from orchestrator_cli.observability.tmux.runtime_files import (
+from crewplane.observability.tmux.runtime_files import (
     MODE_DASHBOARD,
     MODE_INSPECT,
 )
-from orchestrator_cli.observability.tmux.session import TmuxSessionTargets
+from crewplane.observability.tmux.session import TmuxSessionTargets
 from tests.integration.observability.tmux_fakes import FakeTmuxClient
 
 
@@ -29,9 +29,9 @@ def test_dashboard_resize_restores_key_table_and_left_focus() -> None:
     assert [
         "set-option",
         "-t",
-        "orchestrator-test",
+        "crewplane-test",
         "key-table",
-        "orchestrator-dashboard",
+        "crewplane-dashboard",
     ] in commands
     assert ["select-pane", "-t", "%10"] in commands
 
@@ -51,9 +51,9 @@ def test_inspect_resize_restores_inspect_table_and_right_focus() -> None:
     assert [
         "set-option",
         "-t",
-        "orchestrator-test",
+        "crewplane-test",
         "key-table",
-        "orchestrator-inspect",
+        "crewplane-inspect",
     ] in commands
     assert ["select-pane", "-t", "%20"] in commands
 
@@ -83,9 +83,9 @@ def test_failed_resize_restore_is_retried() -> None:
 
 def tmux_targets() -> TmuxSessionTargets:
     return TmuxSessionTargets(
-        session_name="orchestrator-test",
+        session_name="crewplane-test",
         socket_name="socket",
-        window_target="orchestrator-test:dashboard",
+        window_target="crewplane-test:dashboard",
         left_pane_id="%10",
         right_pane_id="%20",
     )

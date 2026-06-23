@@ -11,10 +11,10 @@ from time import monotonic
 
 import pytest
 
-from orchestrator_cli.artifacts.workspace import (
+from crewplane.artifacts.workspace import (
     bundle_validation as workspace_bundle_validation,
 )
-from orchestrator_cli.artifacts.workspace import (
+from crewplane.artifacts.workspace import (
     git_blob_hash as workspace_git_blob_hash,
 )
 
@@ -195,8 +195,8 @@ def _blob_descriptor(tmp_path: Path, git_path: str = "file.txt") -> BlobDescript
     payload = b"workspace-payload"
     repo.mkdir()
     _git(repo, "init")
-    _git(repo, "config", "user.name", "Orchestrator Test")
-    _git(repo, "config", "user.email", "orchestrator-test@example.invalid")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
     (repo / git_path).write_bytes(payload)
     _git(repo, "--literal-pathspecs", "add", git_path)
     _git(repo, "commit", "-m", "initial")

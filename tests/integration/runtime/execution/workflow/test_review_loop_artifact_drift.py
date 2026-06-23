@@ -2,20 +2,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.persistent import PersistentRunLogger
-from orchestrator_cli.observability.types import RunContext
-from orchestrator_cli.runtime.execution.common import (
+from crewplane.observability.persistent import PersistentRunLogger
+from crewplane.observability.types import RunContext
+from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     ArtifactDriftInvoker,
@@ -83,7 +83,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
-            summary_path = output.get_orchestrator_summary_path()
+            summary_path = output.get_run_summary_path()
             summary_path.parent.mkdir(parents=True, exist_ok=True)
             summary_path.write_text("baseline summary", encoding="utf-8")
             invoker = ArtifactDriftInvoker(
@@ -117,7 +117,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
-            event_log_path = output.get_orchestrator_event_log_path()
+            event_log_path = output.get_run_event_log_path()
             event_log_path.parent.mkdir(parents=True, exist_ok=True)
             event_log_path.write_text('{"event":"baseline"}\n', encoding="utf-8")
             invoker = ArtifactDriftInvoker(
@@ -151,7 +151,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
-            event_log_path = output.get_orchestrator_event_log_path()
+            event_log_path = output.get_run_event_log_path()
             event_log_path.parent.mkdir(parents=True, exist_ok=True)
             event_log_path.write_text('{"event":"baseline"}\n', encoding="utf-8")
             invoker = ArtifactDriftInvoker(
@@ -187,7 +187,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
-            event_log_path = output.get_orchestrator_event_log_path()
+            event_log_path = output.get_run_event_log_path()
             invoker = ArtifactDriftInvoker(
                 outputs=[
                     "executor output round 1",
@@ -252,8 +252,6 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            event_log = output.get_orchestrator_event_log_path().read_text(
-                encoding="utf-8"
-            )
+            event_log = output.get_run_event_log_path().read_text(encoding="utf-8")
             self.assertIn('"event_type": "invocation_started"', event_log)
             self.assertIn('"event_type": "invocation_finished"', event_log)

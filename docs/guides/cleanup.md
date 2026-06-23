@@ -1,11 +1,11 @@
 # Cleanup
 
-`orchestrator cleanup workspaces` removes generated Experimental workspace
+`crewplane cleanup workspaces` removes generated Experimental workspace
 isolation cache entries.
 
 ```bash
-orchestrator cleanup workspaces --dry-run
-orchestrator cleanup workspaces --yes
+crewplane cleanup workspaces --dry-run
+crewplane cleanup workspaces --yes
 ```
 
 By default, cleanup is scoped to the current Git repository. Use `--all-projects`
@@ -14,8 +14,8 @@ to clean every repository bucket under the configured workspace cache root.
 ## Options
 
 ```bash
-orchestrator cleanup workspaces \
-  --config .orchestrator/config.yml \
+crewplane cleanup workspaces \
+  --config .crewplane/config.yml \
   --dry-run \
   --run <run-key> \
   --older-than 7d \
@@ -25,10 +25,11 @@ orchestrator cleanup workspaces \
   --orphans
 ```
 
-`--dry-run` prints paths that would be removed. Destructive cleanup requires
-`--yes`.
+Cleanup is non-destructive unless `--yes` is set. `--dry-run` prints paths that
+would be removed and wins over `--yes` if both are present.
 
-Duration strings for `--older-than` use forms such as `30m`, `12h`, or `7d`.
+Duration strings for `--older-than` accept integer seconds or suffixes such as
+`30s`, `30m`, `12h`, or `7d`.
 
 Status filters are:
 
@@ -44,8 +45,12 @@ those filters require current-project workspace-state artifacts.
 ## Guardrails
 
 Cleanup rejects cache roots that are relative, symlinks, overlap the project,
-overlap `.orchestrator/`, overlap run artifact directories, or overlap Git
+overlap `.crewplane/`, overlap run artifact directories, or overlap Git
 metadata paths.
 
 Cleanup does not remove canonical workspace lineage, provider outputs, findings,
-run manifests, or result artifacts under `.orchestrator/`.
+run manifests, or result artifacts under `.crewplane/`.
+
+Cleanup scans generated cache families named `workspace-runs`, `workspaces`,
+`snapshots`, and `review-workspaces`. Destructive cleanup can also remove
+run-owned cached Git refs, but it does not remove canonical run artifacts.

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import typer
 
-import orchestrator_cli.cli.app as cli
-from orchestrator_cli.artifacts.locks import ResumeLockError, SameContextLock
-from orchestrator_cli.version import SCHEMA_VERSION
+import crewplane.cli.app as cli
+from crewplane.artifacts.locks import ResumeLockError, SameContextLock
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     repo_task_workflow_stage_names,
@@ -155,10 +155,10 @@ class CliRunPreflightFailureTests(unittest.TestCase):
     def test_run_reports_resume_lock_failure_without_raw_traceback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            orch_dir = tmp_path / ".orchestrator"
-            workflows_dir = orch_dir / "workflows"
+            state_dir = tmp_path / ".crewplane"
+            workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
-            config_path = orch_dir / "config.yml"
+            config_path = state_dir / "config.yml"
             workflow_path = workflows_dir / "workflow.task.md"
             write_basic_config(config_path)
             write_basic_workflow(workflow_path)
@@ -193,7 +193,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             output_text = stream.getvalue()
             self.assertIn("Run lock unavailable", output_text)
             self.assertIn("Cannot update a lock owned by another process", output_text)
-            self.assertIn(".orchestrator/locks", output_text)
+            self.assertIn(".crewplane/locks", output_text)
             self.assertNotIn("Traceback", output_text)
 
     def test_run_fails_fast_for_missing_env_template_reference(self) -> None:
@@ -256,7 +256,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 repo_task_workflow_stage_names(),
                 original_repo_stage_names,
             )
-            self.assertTrue((tmp_path / ".orchestrator" / "execution-stages").exists())
+            self.assertTrue((tmp_path / ".crewplane" / "execution-stages").exists())
 
     def test_dry_run_skips_cli_executable_validation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

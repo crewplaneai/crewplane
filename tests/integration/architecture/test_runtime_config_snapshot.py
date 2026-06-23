@@ -3,25 +3,25 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import (
+from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     InvokerAdapterCapabilities,
     InvokerWorkspaceSupport,
 )
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.bootstrap.runtime_config import normalize_invoker_capabilities
-from orchestrator_cli.core.config import (
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.bootstrap.runtime_config import normalize_invoker_capabilities
+from crewplane.core.config import (
     AgentConfig,
     Config,
     IntegrationsConfig,
     IntegrationSpec,
     Settings,
 )
-from orchestrator_cli.core.preflight.runtime_config import (
+from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
     RuntimeConfigSnapshot,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def _config(
@@ -97,7 +97,7 @@ def test_disabled_workspace_settings_are_runtime_snapshot_equivalent() -> None:
         config=_config(
             workspace={
                 "enabled": False,
-                "cache_root": "/tmp/ignored-orchestrator-cache",
+                "cache_root": "/tmp/ignored-crewplane-cache",
                 "cleanup_on_success": False,
             }
         ),
@@ -181,7 +181,7 @@ def test_snapshot_invalid_options_fail_before_artifact_allocation(
             no_live=True,
         )
 
-    assert not (tmp_path / ".orchestrator").exists()
+    assert not (tmp_path / ".crewplane").exists()
     assert not (tmp_path / "execution-stages").exists()
     assert not (tmp_path / "execution-results").exists()
 

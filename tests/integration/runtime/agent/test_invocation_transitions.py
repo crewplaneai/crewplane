@@ -1,11 +1,11 @@
-from orchestrator_cli.architecture.contracts import CommandResult
-from orchestrator_cli.runtime.agent.invocation.retry import (
+from crewplane.architecture.contracts import CommandResult
+from crewplane.runtime.agent.invocation.retry import (
     NoFailureRetry,
     QuotaRetryFailure,
     ScheduleFailureRetry,
     ScheduleQuotaRetry,
 )
-from orchestrator_cli.runtime.agent.invocation.state import (
+from crewplane.runtime.agent.invocation.state import (
     ExtractedInvocationOutput,
     InvocationAttemptResult,
     InvocationDiagnosticNotice,
@@ -15,12 +15,12 @@ from orchestrator_cli.runtime.agent.invocation.state import (
     RaiseRetryExhaustedAttemptTransition,
     SleepAndRetryAttemptTransition,
 )
-from orchestrator_cli.runtime.agent.invocation.transitions import (
+from crewplane.runtime.agent.invocation.transitions import (
     transition_from_quota_retry,
     transition_from_structured_output,
     transition_from_terminal_failure,
 )
-from orchestrator_cli.runtime.agent.usage import ParsedProviderUsage
+from crewplane.runtime.agent.usage import ParsedProviderUsage
 
 
 def test_structured_output_retry_maps_to_sleep_action() -> None:

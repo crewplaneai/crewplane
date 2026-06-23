@@ -5,7 +5,9 @@ accounts, API keys, approvals, or sandbox settings.
 
 ## Agent Config
 
-Agents are configured in `.orchestrator/config.yml`:
+In Crewplane, an `agent` is a named provider CLI configuration. It is not a
+Python object or a long-running service. Agents are configured in
+`.crewplane/config.yml`:
 
 ```yaml
 agents:
@@ -19,7 +21,7 @@ agents:
       - "--skip-git-repo-check"
 ```
 
-Workflow nodes reference agents by name:
+Workflow nodes reference those agent names:
 
 ```yaml
 nodes:
@@ -41,8 +43,9 @@ The provider name in a workflow must exist under `agents`.
 - `kilo`
 - `generic`
 
-Provider kind lets Crewplane apply provider-aware output and usage handling at
-the invoker boundary. It does not install or authenticate the provider tool.
+Provider kind lets the built-in CLI invoker choose provider-aware output
+extraction, quota parsing, log formatting, and usage parsing at the invoker
+boundary. It does not install or authenticate the provider tool.
 
 ## Models
 
@@ -55,9 +58,10 @@ providers:
     model: gpt-5.4
 ```
 
-When a model is supplied, `model_arg` controls the CLI flag used to pass it. The
-default is `--model`; set `model_arg: null` for a CLI that does not accept a
-model flag through this path.
+When a model is supplied, `model_arg` controls the CLI flag used to pass it for
+`provider_kind: generic`. Built-in provider kinds use their adapter-owned model
+flag. The default is `--model`; set `model_arg: null` for a generic CLI that
+does not accept a model flag through this path.
 
 ## Prompt Transport
 
@@ -80,9 +84,13 @@ agents:
     prompt_transport_arg: "--prompt"
 ```
 
-When `prompt_transport: "argv"` is used, `prompt_transport_arg` is required.
-Preflight emits a warning because argv prompts can be visible in process lists
-or shell histories depending on the platform and tooling.
+In `stdin` mode, Crewplane sends the prompt on standard input. If
+`prompt_transport_arg` is set, that token is appended by itself; this is useful
+for CLIs that require a stdin sentinel such as `-`. When `prompt_transport:
+"argv"` is used, `prompt_transport_arg` is required and Crewplane appends both
+the flag and the rendered prompt. Preflight emits a warning because argv prompts
+can be visible in process lists or shell histories depending on the platform and
+tooling.
 
 ## Retries, Quota, And Timeouts
 

@@ -7,10 +7,10 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from orchestrator_cli.architecture.contracts import InvocationContext
-from orchestrator_cli.architecture.ports import ArtifactStorePort
-from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.core.preflight.models import (
+from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.manager import OutputManager
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -18,12 +18,12 @@ from orchestrator_cli.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
-from orchestrator_cli.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
-from orchestrator_cli.core.preflight.signatures import signature_for_payload
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.runtime.workspace import WorkspaceInvocationRequest
-from orchestrator_cli.runtime.workspace.service import MaterializationLimiter
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
+from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.runtime.workspace import WorkspaceInvocationRequest
+from crewplane.runtime.workspace.service import MaterializationLimiter
+from crewplane.version import SCHEMA_VERSION
 
 
 def create_git_repo(tmp_path: Path, object_format: str = "sha1") -> Path:
@@ -35,8 +35,8 @@ def create_git_repo(tmp_path: Path, object_format: str = "sha1") -> Path:
         else ("init", f"--object-format={object_format}")
     )
     run_git_text(repo, *init_args)
-    run_git_text(repo, "config", "user.name", "Orchestrator Test")
-    run_git_text(repo, "config", "user.email", "orchestrator-test@example.invalid")
+    run_git_text(repo, "config", "user.name", "Crewplane Test")
+    run_git_text(repo, "config", "user.email", "crewplane-test@example.invalid")
     (repo / "README.md").write_text("ready\n", encoding="utf-8")
     run_git_text(repo, "add", "README.md")
     run_git_text(repo, "commit", "-m", "initial")
@@ -84,7 +84,7 @@ def workspace_plan(
         run_key_name="workspace-run-001",
         project_root=repo.as_posix(),
         context_root=repo.as_posix(),
-        manifest_root=(repo / ".orchestrator").as_posix(),
+        manifest_root=(repo / ".crewplane").as_posix(),
         created_at=datetime.now(UTC).isoformat(),
         workflow_name="workspace",
         workflow_signature="workflow-signature",
@@ -119,7 +119,7 @@ def disabled_workspace_plan(repo: Path) -> PreflightExecutionPlan:
         run_key_name="workspace-run-001",
         project_root=repo.as_posix(),
         context_root=repo.as_posix(),
-        manifest_root=(repo / ".orchestrator").as_posix(),
+        manifest_root=(repo / ".crewplane").as_posix(),
         created_at=datetime.now(UTC).isoformat(),
         workflow_name="workspace",
         workflow_signature="workflow-signature",
@@ -251,7 +251,7 @@ def _runtime_snapshot(
         },
         "invoker": {
             "implementation": "mock",
-            "resolved_identity": "orchestrator_cli.adapters.invokers.mock:MockInvokerAdapter",
+            "resolved_identity": "crewplane.adapters.invokers.mock:MockInvokerAdapter",
             "options": {},
             "option_scopes": {},
             "capabilities": {
@@ -265,14 +265,14 @@ def _runtime_snapshot(
         },
         "artifacts": {
             "implementation": "filesystem",
-            "resolved_identity": "orchestrator_cli.adapters.artifacts.filesystem:FilesystemArtifactAdapter",
+            "resolved_identity": "crewplane.adapters.artifacts.filesystem:FilesystemArtifactAdapter",
             "options": {},
             "option_scopes": {},
             "capabilities": {},
         },
         "ui": {
             "implementation": "none",
-            "resolved_identity": "orchestrator_cli.adapters.ui.null:NullUIAdapter",
+            "resolved_identity": "crewplane.adapters.ui.null:NullUIAdapter",
             "options": {},
             "option_scopes": {},
             "capabilities": {},
@@ -315,7 +315,7 @@ def workspace_output_manager(
 ) -> OutputManager:
     return OutputManager(
         "workspace",
-        base_dir=tmp_path / ".orchestrator",
+        base_dir=tmp_path / ".crewplane",
         template_base_dir=repo,
         log_cli_output=log_cli_output,
     )

@@ -25,11 +25,11 @@ Duplicate skip:
   `run_base_commit` blob identities and canonical blob-byte digests.
 - Candidate, review, remediation, and lineage-dependent rendered bytes are
   validated as persisted facts of the prior successful run by cross-checking
-  node manifests and `workspace-state.json`.
+  node manifests and `workspace-state*.json`.
 - Duplicate skip does not allocate a workspace or import bundles only to
   recompute candidate-source prompt bytes.
-- Missing or corrupt `workspace-state.json` or `workspace.bundle` prevents
-  workspace-aware duplicate skip.
+- Missing or corrupt `workspace-state*.json` or `workspace-bundles/*.bundle`
+  prevents workspace-aware duplicate skip.
 - Mismatched `worktree_contract` prevents workspace-aware duplicate skip.
 - Mismatched invocation-source descriptors prevent workspace-aware duplicate
   skip.
@@ -47,8 +47,8 @@ Resume:
   truth.
 - Successful node-boundary resume may hydrate ordinary artifacts and workspace
   lineage artifacts.
-- Hydrated mutable nodes copy or re-materialize `workspace-state.json` and
-  `workspace.bundle` into the new run layout.
+- Hydrated mutable nodes copy or re-materialize `workspace-state*.json` and
+  `workspace-bundles/*.bundle` into the new run layout.
 - Hydrated state uses the new run id and artifact-relative bundle path while
   preserving original source/result identities, selected `worktree_contract`,
   provider final-tree descriptors, invocation-source descriptors, rendered
@@ -82,13 +82,13 @@ On SIGINT, SIGTERM, UI stop, or internal cancellation:
 7. Preserve selected `worktree_contract`, invoker compatibility descriptors,
    child-process launch status, invocation-source descriptors, provider
    final-tree diagnostics, provider `HEAD` diagnostics, cleanup/retention
-   outcome, and rendered workspace-file digests in `workspace-state.json`.
+   outcome, and rendered workspace-file digests in `workspace-state*.json`.
 
 Cancellation cleanup is best-effort. A later cleanup command can complete
 removal for any workspace cache directory left after a terminal cleanup failure.
 
 ## Security Considerations
-Workspace confinement protects orchestrator-controlled source materialization
+Workspace confinement protects crewplane-controlled source materialization
 and file-template reads. It is not a provider sandbox.
 
 Provider CLIs may still read, write, execute, mutate Git metadata, or exfiltrate
@@ -125,7 +125,7 @@ Security requirements:
 - Reject absolute paths unless allowlisted.
 - Keep cache/workspace directories owner-private.
 - Create POSIX directories with `0o700` where supported.
-- Keep live workspaces outside project checkout, `.orchestrator/`, artifact
+- Keep live workspaces outside project checkout, `.crewplane/`, artifact
   roots, lock roots, and Git metadata.
 - Reject unsafe symlink paths and overlap in both unresolved and canonical path
   forms.
@@ -134,8 +134,8 @@ Security requirements:
   path behavior.
 - Sanitize path and ref components.
 - Validate refs with `git check-ref-format --normalize`.
-- Do not place live mutable worktrees under `.orchestrator/`.
-- Planned provider output/log paths under `.orchestrator/` are the only
+- Do not place live mutable worktrees under `.crewplane/`.
+- Planned provider output/log paths under `.crewplane/` are the only
   intentional write channel outside provider `cwd`.
 - Do not log environment secrets, provider credentials, prompt secrets, auth
   paths, raw rendered file contents, raw ignore-rule contents, raw local config
@@ -221,7 +221,10 @@ Performance requirements:
   conservatively possible.
 - Preflight warns when projected materialized storage would consume a fixed high
   fraction of available cache filesystem space.
-- V1 does not expose configurable disk-pressure thresholds.
+- By default, preflight warns when estimated remaining cache filesystem space
+  falls below 2 GiB. Users can configure
+  `settings.workspace.disk.warn_free_bytes` and
+  `settings.workspace.disk.fail_free_bytes`.
 - Runtime rechecks free space before large post-invocation operations,
   including result capture and bundle export.
 - Cache roots on a different filesystem than Git common dir are valid but warn.
@@ -292,7 +295,7 @@ Logical worktree 'implementation_worktree' has unordered writers 'implement_api'
 ```
 
 ```text
-Node 'fix' selects worktree 'implementation_worktree' but direct dependency 'prototype' selects a different worktree. Source lines are not merged implicitly; use artifacts or choose one logical worktree line.
+Node 'fix' selects worktree 'implementation_worktree' but upstream dependency 'prototype' selects a different worktree. Source lines are not merged implicitly; use artifacts or choose one logical worktree line.
 ```
 
 ```text

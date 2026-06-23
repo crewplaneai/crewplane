@@ -4,17 +4,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.observability.events.payloads import RuntimeLogEventPayload
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.observability.events import ExecutionEvent
+from crewplane.observability.events.payloads import RuntimeLogEventPayload
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_workflow,
@@ -58,7 +58,7 @@ class WorkflowResumeTests(unittest.IsolatedAsyncioTestCase):
                 invoker,
                 event_sink=events.append,
                 suppress_progress_output=True,
-                workflow_identity=".orchestrator/workflows/resume.task.md",
+                workflow_identity=".crewplane/workflows/resume.task.md",
                 resumed_node_ids=("a",),
             )
 

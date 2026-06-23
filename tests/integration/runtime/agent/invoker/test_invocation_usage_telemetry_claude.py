@@ -2,17 +2,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.failures import (
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.failures import (
     InvocationFailureError,
 )
-from orchestrator_cli.runtime.agent.invoker import (
+from crewplane.runtime.agent.invoker import (
     invoke_agent_with_runner,
 )
 

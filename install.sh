@@ -2,7 +2,6 @@
 set -eu
 
 PACKAGE_NAME="crewplane"
-CLI_NAME="orchestrator"
 CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.0-alpha.1}"
 
 fail() {
@@ -104,7 +103,7 @@ path_remediation() {
     tool_bin="$1"
     shell_name="$(basename "${SHELL:-sh}")"
     info ""
-    info "Add the uv tool directory to PATH if '${CLI_NAME}' is not found by your shell:"
+    info "Add the uv tool directory to PATH if '${PACKAGE_NAME}' is not found by your shell:"
     case "$shell_name" in
         zsh)
             info "  echo 'export PATH=\"$tool_bin:\$PATH\"' >> ~/.zshrc"
@@ -126,18 +125,18 @@ path_remediation() {
 verify_cli() {
     uv_bin="$1"
     tool_bin="$("$uv_bin" tool dir --bin)"
-    cli_path="$tool_bin/$CLI_NAME"
+    cli_path="$tool_bin/$PACKAGE_NAME"
 
     if [ -x "$cli_path" ]; then
         "$cli_path" --help >/dev/null
-    elif command -v "$CLI_NAME" >/dev/null 2>&1; then
-        "$CLI_NAME" --help >/dev/null
+    elif command -v "$PACKAGE_NAME" >/dev/null 2>&1; then
+        "$PACKAGE_NAME" --help >/dev/null
     else
         path_remediation "$tool_bin"
-        fail "'$CLI_NAME' was installed but is not on PATH"
+        fail "'$PACKAGE_NAME' was installed but is not on PATH"
     fi
 
-    if ! command -v "$CLI_NAME" >/dev/null 2>&1; then
+    if ! command -v "$PACKAGE_NAME" >/dev/null 2>&1; then
         path_remediation "$tool_bin"
     fi
 }
@@ -146,13 +145,13 @@ print_provider_notes() {
     info ""
     info "Provider prerequisites:"
     info "  Install and authenticate provider CLIs separately, such as claude, codex, gemini, copilot, or kilo."
-    info "  crewplane does not install provider CLIs, manage provider credentials, or sandbox provider CLI execution."
+    info "  ${PACKAGE_NAME} does not install provider CLIs, manage provider credentials, or sandbox provider CLI execution."
 }
 
 print_uninstall_notes() {
     info ""
     info "Uninstall:"
-    info "  uv tool uninstall crewplane"
+    info "  uv tool uninstall ${PACKAGE_NAME}"
 }
 
 main() {
@@ -166,7 +165,7 @@ main() {
 
     install_crewplane "$uv_bin"
     verify_cli "$uv_bin"
-    info "Installed crewplane ${CREWPLANE_VERSION}. Run '${CLI_NAME} --help' to start."
+    info "Installed ${PACKAGE_NAME} ${CREWPLANE_VERSION}. Run '${PACKAGE_NAME} --help' to start."
     print_provider_notes
     print_uninstall_notes
 }

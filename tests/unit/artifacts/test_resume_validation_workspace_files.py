@@ -3,11 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 
-from orchestrator_cli.artifacts.resume.validation import validate_resume_frontier
-from orchestrator_cli.artifacts.workspace.rendered_file_validation import (
+from crewplane.artifacts.resume.validation import validate_resume_frontier
+from crewplane.artifacts.workspace.rendered_file_validation import (
     provider_rendered_workspace_files_match,
 )
-from orchestrator_cli.core.preflight.models import WorkspaceFileLocator
+from crewplane.core.preflight.models import WorkspaceFileLocator
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,

@@ -1,11 +1,11 @@
 class Crewplane < Formula
   include Language::Python::Virtualenv
 
-  desc "CLI orchestrator for AI agents"
+  desc "CLI workflow runner for AI agents"
   homepage "https://github.com/crewplaneai/crewplane"
   url "https://files.pythonhosted.org/packages/source/c/crewplane/crewplane-0.1.0a1.tar.gz"
   version "0.1.0-alpha.1"
-  sha256 "58657c5585bdfaa5025e94e6a5d5fc1fa77dd0b8fac45a82167d90d2c8c49688"
+  sha256 "d0ec59a34e35d8a5500404c0429fb83f2921d530b7db7f20e2a2e1c494944191"
   license "Apache-2.0"
   head "https://github.com/crewplaneai/crewplane.git", branch: "main"
 
@@ -128,6 +128,6 @@ class Crewplane < Formula
   end
 
   test do
-    assert_match "Usage", shell_output("#{bin}/orchestrator --help")
+    assert_match "Usage", shell_output("#{bin}/crewplane --help")
   end
 end

@@ -8,18 +8,18 @@ from contextlib import suppress
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from orchestrator_cli.architecture.contracts import (
+from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.agent.invoker import (
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
-from orchestrator_cli.runtime.agent.usage import parse_provider_usage
+from crewplane.runtime.agent.usage import parse_provider_usage
 
 
 class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
@@ -122,7 +122,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -502,7 +502,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(
@@ -563,7 +563,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             )
             sleep_mock = AsyncMock()
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.loop.asyncio.sleep",
+                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
                 sleep_mock,
             ):
                 await invoke_agent_with_runner(

@@ -9,122 +9,122 @@ TESTS_ROOT = REPO_ROOT / "tests"
 PRODUCTION_LINE_LIMIT = 500
 
 ORIGINAL_OVERSIZED_FILES = (
-    "src/orchestrator_cli/core/workflow_markdown.py",
-    "src/orchestrator_cli/core/workflow_composition.py",
-    "src/orchestrator_cli/cli/workflow_runner.py",
-    "src/orchestrator_cli/observability/events.py",
-    "src/orchestrator_cli/observability/persistent.py",
-    "src/orchestrator_cli/observability/render.py",
-    "src/orchestrator_cli/artifacts/results/writer.py",
-    "src/orchestrator_cli/runtime/agent/quota.py",
-    "src/orchestrator_cli/runtime/agent/failures.py",
-    "src/orchestrator_cli/runtime/execution/consensus.py",
-    "src/orchestrator_cli/runtime/execution/common.py",
-    "src/orchestrator_cli/adapters/invokers/mock.py",
+    "src/crewplane/core/workflow_markdown.py",
+    "src/crewplane/core/workflow_composition.py",
+    "src/crewplane/cli/workflow_runner.py",
+    "src/crewplane/observability/events.py",
+    "src/crewplane/observability/persistent.py",
+    "src/crewplane/observability/render.py",
+    "src/crewplane/artifacts/results/writer.py",
+    "src/crewplane/runtime/agent/quota.py",
+    "src/crewplane/runtime/agent/failures.py",
+    "src/crewplane/runtime/execution/consensus.py",
+    "src/crewplane/runtime/execution/common.py",
+    "src/crewplane/adapters/invokers/mock.py",
 )
 
 SPLIT_MODULES = (
-    "src/orchestrator_cli/core/review_contract.py",
-    "src/orchestrator_cli/core/workflow_markdown/models.py",
-    "src/orchestrator_cli/core/workflow_markdown/frontmatter.py",
-    "src/orchestrator_cli/core/workflow_markdown/sections.py",
-    "src/orchestrator_cli/core/workflow_markdown/markers.py",
-    "src/orchestrator_cli/core/workflow_markdown/payloads.py",
-    "src/orchestrator_cli/core/workflow_composition/models.py",
-    "src/orchestrator_cli/core/workflow_composition/parsing.py",
-    "src/orchestrator_cli/core/workflow_composition/imports.py",
-    "src/orchestrator_cli/core/workflow_composition/nodes.py",
-    "src/orchestrator_cli/core/workflow_composition/rewrites.py",
-    "src/orchestrator_cli/core/workflow_composition/traversal.py",
-    "src/orchestrator_cli/cli/run/context.py",
-    "src/orchestrator_cli/cli/run/preflight.py",
-    "src/orchestrator_cli/cli/run/manifest.py",
-    "src/orchestrator_cli/cli/run/components.py",
-    "src/orchestrator_cli/cli/run/observability.py",
-    "src/orchestrator_cli/cli/run/execution.py",
-    "src/orchestrator_cli/cli/run/topology.py",
-    "src/orchestrator_cli/observability/events/types.py",
-    "src/orchestrator_cli/observability/events/payloads.py",
-    "src/orchestrator_cli/observability/events/execution_event.py",
-    "src/orchestrator_cli/observability/events/builders.py",
-    "src/orchestrator_cli/observability/events/dashboard_state.py",
-    "src/orchestrator_cli/observability/events/reducer.py",
-    "src/orchestrator_cli/observability/events/log.py",
-    "src/orchestrator_cli/observability/run_summary/logger.py",
-    "src/orchestrator_cli/observability/run_summary/models.py",
-    "src/orchestrator_cli/observability/run_summary/builder.py",
-    "src/orchestrator_cli/observability/run_summary/issues.py",
-    "src/orchestrator_cli/observability/run_summary/spend.py",
-    "src/orchestrator_cli/observability/run_summary/markdown.py",
-    "src/orchestrator_cli/observability/run_summary/terminal.py",
-    "src/orchestrator_cli/observability/run_summary/formatting.py",
-    "src/orchestrator_cli/observability/render/viewport.py",
-    "src/orchestrator_cli/observability/render/header.py",
-    "src/orchestrator_cli/observability/render/timeline.py",
-    "src/orchestrator_cli/observability/render/cells.py",
-    "src/orchestrator_cli/observability/render/text.py",
-    "src/orchestrator_cli/observability/text_layout.py",
-    "src/orchestrator_cli/artifacts/results/selection.py",
-    "src/orchestrator_cli/artifacts/results/review_loop_status.py",
-    "src/orchestrator_cli/artifacts/results/stage_document.py",
-    "src/orchestrator_cli/artifacts/results/findings.py",
-    "src/orchestrator_cli/artifacts/results/stage_outputs.py",
-    "src/orchestrator_cli/runtime/agent/quota/lexicons.py",
-    "src/orchestrator_cli/runtime/agent/quota/parser_resolution.py",
-    "src/orchestrator_cli/runtime/agent/quota/evidence.py",
-    "src/orchestrator_cli/runtime/agent/quota/waits.py",
-    "src/orchestrator_cli/runtime/agent/quota/classifier.py",
-    "src/orchestrator_cli/runtime/agent/failures/types.py",
-    "src/orchestrator_cli/runtime/agent/failures/patterns.py",
-    "src/orchestrator_cli/runtime/agent/failures/evidence.py",
-    "src/orchestrator_cli/runtime/agent/failures/classifier.py",
-    "src/orchestrator_cli/runtime/agent/failures/formatting.py",
-    "src/orchestrator_cli/runtime/agent/process/diagnostics.py",
-    "src/orchestrator_cli/runtime/agent/process/runner.py",
-    "src/orchestrator_cli/runtime/agent/process/signals.py",
-    "src/orchestrator_cli/runtime/agent/process/streams.py",
-    "src/orchestrator_cli/runtime/agent/invocation/command.py",
-    "src/orchestrator_cli/runtime/agent/invocation/loop.py",
-    "src/orchestrator_cli/runtime/agent/invocation/output.py",
-    "src/orchestrator_cli/runtime/agent/invocation/retry.py",
-    "src/orchestrator_cli/runtime/agent/invocation/state.py",
-    "src/orchestrator_cli/runtime/agent/invocation/telemetry.py",
-    "src/orchestrator_cli/runtime/agent/invocation/transitions.py",
-    "src/orchestrator_cli/runtime/execution/reviews/structured.py",
-    "src/orchestrator_cli/runtime/execution/reviews/fingerprints.py",
-    "src/orchestrator_cli/runtime/execution/reviews/plain_language.py",
-    "src/orchestrator_cli/runtime/execution/reviews/consensus.py",
-    "src/orchestrator_cli/runtime/execution/reviews/types.py",
-    "src/orchestrator_cli/runtime/execution/runtime_context.py",
-    "src/orchestrator_cli/runtime/execution/activity/telemetry.py",
-    "src/orchestrator_cli/runtime/execution/activity/console.py",
-    "src/orchestrator_cli/runtime/execution/activity/events.py",
-    "src/orchestrator_cli/runtime/execution/fragment_assembler.py",
-    "src/orchestrator_cli/runtime/execution/prompt_budgeting.py",
-    "src/orchestrator_cli/runtime/execution/stage_tasks.py",
-    "src/orchestrator_cli/runtime/execution/provider_call/__init__.py",
-    "src/orchestrator_cli/runtime/execution/provider_call/display.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/audit_round.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/drift.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/drift_detection.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/drift_events.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/executor_round.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/policy.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/prompts.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/reviewer_round.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/rounds.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/state.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/types.py",
-    "src/orchestrator_cli/runtime/execution/review_loop/validation.py",
-    "src/orchestrator_cli/runtime/execution/stage_finalize_events.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/context.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/fixtures.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/invoker.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/logging.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/mutations.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/options.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/outputs.py",
-    "src/orchestrator_cli/adapters/invokers/mock_invoker/selectors.py",
+    "src/crewplane/core/review_contract.py",
+    "src/crewplane/core/workflow/markdown/models.py",
+    "src/crewplane/core/workflow/markdown/frontmatter.py",
+    "src/crewplane/core/workflow/markdown/sections.py",
+    "src/crewplane/core/workflow/markdown/markers.py",
+    "src/crewplane/core/workflow/markdown/payloads.py",
+    "src/crewplane/core/workflow/composition/models.py",
+    "src/crewplane/core/workflow/composition/parsing.py",
+    "src/crewplane/core/workflow/composition/imports.py",
+    "src/crewplane/core/workflow/composition/nodes.py",
+    "src/crewplane/core/workflow/composition/rewrites.py",
+    "src/crewplane/core/workflow/composition/traversal.py",
+    "src/crewplane/cli/run/context.py",
+    "src/crewplane/cli/run/preflight.py",
+    "src/crewplane/cli/run/manifest.py",
+    "src/crewplane/cli/run/components.py",
+    "src/crewplane/cli/run/observability.py",
+    "src/crewplane/cli/run/execution.py",
+    "src/crewplane/cli/run/topology.py",
+    "src/crewplane/observability/events/types.py",
+    "src/crewplane/observability/events/payloads.py",
+    "src/crewplane/observability/events/execution_event.py",
+    "src/crewplane/observability/events/builders.py",
+    "src/crewplane/observability/events/dashboard_state.py",
+    "src/crewplane/observability/events/reducer.py",
+    "src/crewplane/observability/events/log.py",
+    "src/crewplane/observability/run_summary/logger.py",
+    "src/crewplane/observability/run_summary/models.py",
+    "src/crewplane/observability/run_summary/builder.py",
+    "src/crewplane/observability/run_summary/issues.py",
+    "src/crewplane/observability/run_summary/spend.py",
+    "src/crewplane/observability/run_summary/markdown.py",
+    "src/crewplane/observability/run_summary/terminal.py",
+    "src/crewplane/observability/run_summary/formatting.py",
+    "src/crewplane/observability/render/viewport.py",
+    "src/crewplane/observability/render/header.py",
+    "src/crewplane/observability/render/timeline.py",
+    "src/crewplane/observability/render/cells.py",
+    "src/crewplane/observability/render/text.py",
+    "src/crewplane/observability/text_layout.py",
+    "src/crewplane/artifacts/results/selection.py",
+    "src/crewplane/artifacts/results/review_loop_status.py",
+    "src/crewplane/artifacts/results/stage_document.py",
+    "src/crewplane/artifacts/results/findings.py",
+    "src/crewplane/artifacts/results/stage_outputs.py",
+    "src/crewplane/runtime/agent/quota/lexicons.py",
+    "src/crewplane/runtime/agent/quota/parser_resolution.py",
+    "src/crewplane/runtime/agent/quota/evidence.py",
+    "src/crewplane/runtime/agent/quota/waits.py",
+    "src/crewplane/runtime/agent/quota/classifier.py",
+    "src/crewplane/runtime/agent/failures/types.py",
+    "src/crewplane/runtime/agent/failures/patterns.py",
+    "src/crewplane/runtime/agent/failures/evidence.py",
+    "src/crewplane/runtime/agent/failures/classifier.py",
+    "src/crewplane/runtime/agent/failures/formatting.py",
+    "src/crewplane/runtime/agent/process/diagnostics.py",
+    "src/crewplane/runtime/agent/process/runner.py",
+    "src/crewplane/runtime/agent/process/signals.py",
+    "src/crewplane/runtime/agent/process/streams.py",
+    "src/crewplane/runtime/agent/invocation/command.py",
+    "src/crewplane/runtime/agent/invocation/loop.py",
+    "src/crewplane/runtime/agent/invocation/output.py",
+    "src/crewplane/runtime/agent/invocation/retry.py",
+    "src/crewplane/runtime/agent/invocation/state.py",
+    "src/crewplane/runtime/agent/invocation/telemetry.py",
+    "src/crewplane/runtime/agent/invocation/transitions.py",
+    "src/crewplane/runtime/execution/reviews/structured.py",
+    "src/crewplane/runtime/execution/reviews/fingerprints.py",
+    "src/crewplane/runtime/execution/reviews/plain_language.py",
+    "src/crewplane/runtime/execution/reviews/consensus.py",
+    "src/crewplane/runtime/execution/reviews/types.py",
+    "src/crewplane/runtime/execution/runtime_context.py",
+    "src/crewplane/runtime/execution/activity/telemetry.py",
+    "src/crewplane/runtime/execution/activity/console.py",
+    "src/crewplane/runtime/execution/activity/events.py",
+    "src/crewplane/runtime/execution/fragment_assembler.py",
+    "src/crewplane/runtime/execution/prompt_budgeting.py",
+    "src/crewplane/runtime/execution/stage_tasks.py",
+    "src/crewplane/runtime/execution/provider_call/__init__.py",
+    "src/crewplane/runtime/execution/provider_call/display.py",
+    "src/crewplane/runtime/execution/review_loop/audit_round.py",
+    "src/crewplane/runtime/execution/review_loop/drift.py",
+    "src/crewplane/runtime/execution/review_loop/drift_detection.py",
+    "src/crewplane/runtime/execution/review_loop/drift_events.py",
+    "src/crewplane/runtime/execution/review_loop/executor_round.py",
+    "src/crewplane/runtime/execution/review_loop/policy.py",
+    "src/crewplane/runtime/execution/review_loop/prompts.py",
+    "src/crewplane/runtime/execution/review_loop/reviewer_round.py",
+    "src/crewplane/runtime/execution/review_loop/rounds.py",
+    "src/crewplane/runtime/execution/review_loop/state.py",
+    "src/crewplane/runtime/execution/review_loop/types.py",
+    "src/crewplane/runtime/execution/review_loop/validation.py",
+    "src/crewplane/runtime/execution/stage_finalize_events.py",
+    "src/crewplane/adapters/invokers/mock_invoker/context.py",
+    "src/crewplane/adapters/invokers/mock_invoker/fixtures.py",
+    "src/crewplane/adapters/invokers/mock_invoker/invoker.py",
+    "src/crewplane/adapters/invokers/mock_invoker/logging.py",
+    "src/crewplane/adapters/invokers/mock_invoker/mutations.py",
+    "src/crewplane/adapters/invokers/mock_invoker/options.py",
+    "src/crewplane/adapters/invokers/mock_invoker/outputs.py",
+    "src/crewplane/adapters/invokers/mock_invoker/selectors.py",
 )
 
 LEGACY_EVENT_FIELDS = {
@@ -218,8 +218,8 @@ def import_from_module_name(path: Path, node: ast.ImportFrom) -> str:
 
 def is_repo_module_name(module_name: str) -> bool:
     return (
-        module_name == "orchestrator_cli"
-        or module_name.startswith("orchestrator_cli.")
+        module_name == "crewplane"
+        or module_name.startswith("crewplane.")
         or module_name == "tests"
         or module_name.startswith("tests.")
     )
@@ -249,7 +249,7 @@ def is_repo_import_expression(node: ast.AST, imported_aliases: set[str]) -> bool
     chain = expression_chain(node)
     if not chain:
         return False
-    return chain[0] in imported_aliases or chain[0] in {"orchestrator_cli", "tests"}
+    return chain[0] in imported_aliases or chain[0] in {"crewplane", "tests"}
 
 
 def string_value(node: ast.AST) -> str | None:
@@ -285,7 +285,7 @@ def test_split_modules_stay_under_line_limit() -> None:
 def test_all_production_modules_stay_under_line_limit() -> None:
     offenders = [
         f"{path.relative_to(REPO_ROOT)}: {physical_line_count(path)}"
-        for path in python_files(SRC_ROOT / "orchestrator_cli")
+        for path in python_files(SRC_ROOT / "crewplane")
         if physical_line_count(path) > PRODUCTION_LINE_LIMIT
     ]
     assert offenders == []
@@ -293,17 +293,17 @@ def test_all_production_modules_stay_under_line_limit() -> None:
 
 def test_adapters_do_not_import_runtime_execution_modules() -> None:
     offenders: list[str] = []
-    for path in python_files(SRC_ROOT / "orchestrator_cli" / "adapters"):
+    for path in python_files(SRC_ROOT / "crewplane" / "adapters"):
         module = parse_python(path)
         for node in ast.walk(module):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name.startswith("orchestrator_cli.runtime.execution"):
+                    if alias.name.startswith("crewplane.runtime.execution"):
                         offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
             elif (
                 isinstance(node, ast.ImportFrom)
                 and node.module
-                and node.module.startswith("orchestrator_cli.runtime.execution")
+                and node.module.startswith("crewplane.runtime.execution")
             ):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
     assert offenders == []
@@ -311,12 +311,12 @@ def test_adapters_do_not_import_runtime_execution_modules() -> None:
 
 def test_architecture_ports_do_not_import_runtime_or_observability() -> None:
     forbidden_prefixes = (
-        "orchestrator_cli.core.preflight.runtime_config",
-        "orchestrator_cli.runtime",
-        "orchestrator_cli.observability",
+        "crewplane.core.preflight.runtime_config",
+        "crewplane.runtime",
+        "crewplane.observability",
     )
     offenders: list[str] = []
-    for path in python_files(SRC_ROOT / "orchestrator_cli" / "architecture" / "ports"):
+    for path in python_files(SRC_ROOT / "crewplane" / "architecture" / "ports"):
         module = parse_python(path)
         for node in ast.walk(module):
             if isinstance(node, ast.Import):
@@ -334,7 +334,7 @@ def test_architecture_ports_do_not_import_runtime_or_observability() -> None:
 
 def test_runtime_modules_do_not_own_module_level_console_singletons() -> None:
     offenders: list[str] = []
-    for path in python_files(SRC_ROOT / "orchestrator_cli" / "runtime"):
+    for path in python_files(SRC_ROOT / "crewplane" / "runtime"):
         module = parse_python(path)
         for node in module.body:
             targets: list[ast.expr] = []
@@ -358,7 +358,7 @@ def test_runtime_modules_do_not_own_module_level_console_singletons() -> None:
 
 def test_cli_modules_do_not_own_module_level_console_singletons() -> None:
     offenders: list[str] = []
-    for path in python_files(SRC_ROOT / "orchestrator_cli" / "cli"):
+    for path in python_files(SRC_ROOT / "crewplane" / "cli"):
         module = parse_python(path)
         for node in module.body:
             value: ast.expr | None
@@ -420,7 +420,7 @@ def test_no_cross_module_single_underscore_attribute_access() -> None:
 def test_source_does_not_suppress_unused_arguments() -> None:
     offenders = [
         f"{path.relative_to(REPO_ROOT)}"
-        for path in python_files(SRC_ROOT / "orchestrator_cli")
+        for path in python_files(SRC_ROOT / "crewplane")
         if "noqa: ARG002" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
@@ -472,19 +472,19 @@ def test_no_private_patch_targets() -> None:
 
 
 def test_pep561_marker_is_packaged() -> None:
-    marker = SRC_ROOT / "orchestrator_cli" / "py.typed"
+    marker = SRC_ROOT / "crewplane" / "py.typed"
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert marker.is_file()
-    assert '"src/orchestrator_cli/py.typed"' in pyproject
+    assert '"src/crewplane/py.typed"' in pyproject
 
 
 def test_review_contract_has_neutral_imports() -> None:
-    path = SRC_ROOT / "orchestrator_cli" / "core" / "review_contract.py"
+    path = SRC_ROOT / "crewplane" / "core" / "review_contract.py"
     forbidden_prefixes = (
-        "orchestrator_cli.runtime",
-        "orchestrator_cli.adapters",
-        "orchestrator_cli.artifacts",
-        "orchestrator_cli.observability",
+        "crewplane.runtime",
+        "crewplane.adapters",
+        "crewplane.artifacts",
+        "crewplane.observability",
     )
     offenders: list[str] = []
     module = parse_python(path)
@@ -526,13 +526,7 @@ def test_execution_events_do_not_use_legacy_flat_fields() -> None:
 
 
 def test_execution_event_has_no_legacy_flat_accessors() -> None:
-    path = (
-        SRC_ROOT
-        / "orchestrator_cli"
-        / "observability"
-        / "events"
-        / "execution_event.py"
-    )
+    path = SRC_ROOT / "crewplane" / "observability" / "events" / "execution_event.py"
     module = parse_python(path)
     legacy_properties: list[str] = []
     for node in ast.walk(module):
@@ -550,7 +544,7 @@ def test_runtime_code_uses_event_builders_instead_of_direct_event_construction()
     None
 ):
     offenders: list[str] = []
-    runtime_root = SRC_ROOT / "orchestrator_cli" / "runtime"
+    runtime_root = SRC_ROOT / "crewplane" / "runtime"
     for path in python_files(runtime_root):
         module = parse_python(path)
         for node in ast.walk(module):
@@ -565,7 +559,7 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
         "parser_resolution",
     }
     offenders: list[str] = []
-    for path in python_files(SRC_ROOT / "orchestrator_cli" / "runtime" / "agent"):
+    for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "agent"):
         source = path.read_text(encoding="utf-8")
         for forbidden_name in forbidden_names:
             if forbidden_name in source:
@@ -587,16 +581,14 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
 
 def test_log_presentation_does_not_import_runtime_output_extractors() -> None:
     forbidden_modules = {
-        "orchestrator_cli.runtime.agent.invocation.output",
-        "orchestrator_cli.runtime.agent.invocation.claude_json",
-        "orchestrator_cli.runtime.agent.usage_parsing",
-        "orchestrator_cli.runtime.agent.quota",
-        "orchestrator_cli.runtime.agent.failures",
+        "crewplane.runtime.agent.invocation.output",
+        "crewplane.runtime.agent.invocation.claude_json",
+        "crewplane.runtime.agent.usage_parsing",
+        "crewplane.runtime.agent.quota",
+        "crewplane.runtime.agent.failures",
     }
     offenders: list[str] = []
-    presentation_root = (
-        SRC_ROOT / "orchestrator_cli" / "observability" / "log_presentation"
-    )
+    presentation_root = SRC_ROOT / "crewplane" / "observability" / "log_presentation"
     for path in python_files(presentation_root):
         module = parse_python(path)
         for node in ast.walk(module):
@@ -621,8 +613,8 @@ def test_log_presentation_does_not_import_runtime_output_extractors() -> None:
 def test_runtime_and_tmux_do_not_infer_log_presentation_from_provider_names() -> None:
     provider_literals = {"claude", "codex", "copilot", "gemini", "kilo"}
     checked_roots = [
-        SRC_ROOT / "orchestrator_cli" / "runtime" / "execution",
-        SRC_ROOT / "orchestrator_cli" / "observability" / "tmux",
+        SRC_ROOT / "crewplane" / "runtime" / "execution",
+        SRC_ROOT / "crewplane" / "observability" / "tmux",
     ]
     offenders: list[str] = []
     for root in checked_roots:
@@ -641,15 +633,10 @@ def test_runtime_and_tmux_do_not_infer_log_presentation_from_provider_names() ->
 
 def test_process_stream_capture_uses_persisted_files_and_bounded_tails() -> None:
     streams_path = (
-        SRC_ROOT / "orchestrator_cli" / "runtime" / "agent" / "process" / "streams.py"
+        SRC_ROOT / "crewplane" / "runtime" / "agent" / "process" / "streams.py"
     )
     capture_path = (
-        SRC_ROOT
-        / "orchestrator_cli"
-        / "runtime"
-        / "agent"
-        / "process"
-        / "stream_capture.py"
+        SRC_ROOT / "crewplane" / "runtime" / "agent" / "process" / "stream_capture.py"
     )
     streams_source = streams_path.read_text(encoding="utf-8")
     capture_source = capture_path.read_text(encoding="utf-8")
@@ -666,19 +653,14 @@ def test_process_stream_capture_uses_persisted_files_and_bounded_tails() -> None
 def test_provider_invocation_fallback_usage_does_not_materialize_artifact() -> None:
     path = (
         SRC_ROOT
-        / "orchestrator_cli"
+        / "crewplane"
         / "runtime"
         / "execution"
         / "provider_call"
         / "__init__.py"
     )
     events_path = (
-        SRC_ROOT
-        / "orchestrator_cli"
-        / "runtime"
-        / "execution"
-        / "provider_call"
-        / "events.py"
+        SRC_ROOT / "crewplane" / "runtime" / "execution" / "provider_call" / "events.py"
     )
     source = path.read_text(encoding="utf-8")
     events_source = events_path.read_text(encoding="utf-8")
@@ -688,7 +670,7 @@ def test_provider_invocation_fallback_usage_does_not_materialize_artifact() -> N
 
 
 def test_persistent_run_logger_retains_bounded_event_window() -> None:
-    path = SRC_ROOT / "orchestrator_cli" / "observability" / "run_summary" / "logger.py"
+    path = SRC_ROOT / "crewplane" / "observability" / "run_summary" / "logger.py"
     source = path.read_text(encoding="utf-8")
     assert "MAX_RETAINED_SUMMARY_EVENTS" in source
     assert "deque(maxlen=MAX_RETAINED_SUMMARY_EVENTS)" in source
@@ -697,14 +679,10 @@ def test_persistent_run_logger_retains_bounded_event_window() -> None:
 
 def test_run_summary_retains_bounded_invocation_usage_details() -> None:
     accumulator_path = (
-        SRC_ROOT
-        / "orchestrator_cli"
-        / "observability"
-        / "run_summary"
-        / "accumulator.py"
+        SRC_ROOT / "crewplane" / "observability" / "run_summary" / "accumulator.py"
     )
     markdown_path = (
-        SRC_ROOT / "orchestrator_cli" / "observability" / "run_summary" / "markdown.py"
+        SRC_ROOT / "crewplane" / "observability" / "run_summary" / "markdown.py"
     )
     accumulator_source = accumulator_path.read_text(encoding="utf-8")
     markdown_source = markdown_path.read_text(encoding="utf-8")
@@ -727,7 +705,7 @@ def test_docs_and_templates_do_not_reference_legacy_prompt_config_fields() -> No
     checked_paths = [
         REPO_ROOT / "README.md",
         REPO_ROOT / "docs" / "architecture" / "modular-orchestration-architecture.md",
-        SRC_ROOT / "orchestrator_cli" / "example_templates" / "config.yml",
+        SRC_ROOT / "crewplane" / "example_templates" / "config.yml",
     ]
     offenders: list[str] = []
     for path in checked_paths:
@@ -740,9 +718,9 @@ def test_docs_and_templates_do_not_reference_legacy_prompt_config_fields() -> No
 
 def test_version_catalog_has_single_public_python_source() -> None:
     stale_paths = [
-        SRC_ROOT / "orchestrator_cli" / "versions.py",
-        SRC_ROOT / "orchestrator_cli" / "core" / "versions.py",
-        SRC_ROOT / "orchestrator_cli" / "architecture" / "api_version.py",
+        SRC_ROOT / "crewplane" / "versions.py",
+        SRC_ROOT / "crewplane" / "core" / "versions.py",
+        SRC_ROOT / "crewplane" / "architecture" / "api_version.py",
     ]
     assert [
         path.relative_to(REPO_ROOT).as_posix() for path in stale_paths if path.exists()
@@ -750,11 +728,11 @@ def test_version_catalog_has_single_public_python_source() -> None:
 
     offenders: list[str] = []
     stale_imports = {
-        "orchestrator_cli.architecture.api_version",
-        "orchestrator_cli.core.versions",
-        "orchestrator_cli.versions",
+        "crewplane.architecture.api_version",
+        "crewplane.core.versions",
+        "crewplane.versions",
     }
-    for path in python_files(SRC_ROOT / "orchestrator_cli"):
+    for path in python_files(SRC_ROOT / "crewplane"):
         source = path.read_text(encoding="utf-8")
         for stale_import in stale_imports:
             if stale_import in source:
@@ -763,8 +741,8 @@ def test_version_catalog_has_single_public_python_source() -> None:
 
 
 def test_public_package_exports_are_narrow() -> None:
-    import orchestrator_cli.core as core_package
-    import orchestrator_cli.runtime as runtime_package
+    import crewplane.core as core_package
+    import crewplane.runtime as runtime_package
 
     assert core_package.__all__ == ["SCHEMA_VERSION"]
     assert runtime_package.__all__ == []
@@ -772,7 +750,7 @@ def test_public_package_exports_are_narrow() -> None:
 
 
 def test_output_manager_directory_fields_are_read_only_properties() -> None:
-    path = SRC_ROOT / "orchestrator_cli" / "artifacts" / "manager.py"
+    path = SRC_ROOT / "crewplane" / "artifacts" / "manager.py"
     module = parse_python(path)
     managed_fields = {
         "base_dir",
@@ -819,9 +797,9 @@ def test_output_manager_directory_fields_are_read_only_properties() -> None:
 
 
 def test_preflight_fingerprint_key_state_is_scoped() -> None:
-    secrets_path = SRC_ROOT / "orchestrator_cli" / "core" / "preflight" / "secrets.py"
+    secrets_path = SRC_ROOT / "crewplane" / "core" / "preflight" / "secrets.py"
     compile_state_path = (
-        SRC_ROOT / "orchestrator_cli" / "core" / "preflight" / "compile_state.py"
+        SRC_ROOT / "crewplane" / "core" / "preflight" / "compile_state.py"
     )
     secrets_source = secrets_path.read_text(encoding="utf-8")
     compile_state_source = compile_state_path.read_text(encoding="utf-8")
@@ -832,9 +810,9 @@ def test_preflight_fingerprint_key_state_is_scoped() -> None:
 
 def test_boundary_option_contracts_use_json_object() -> None:
     checked_paths = [
-        SRC_ROOT / "orchestrator_cli" / "architecture",
-        SRC_ROOT / "orchestrator_cli" / "bootstrap",
-        SRC_ROOT / "orchestrator_cli" / "adapters",
+        SRC_ROOT / "crewplane" / "architecture",
+        SRC_ROOT / "crewplane" / "bootstrap",
+        SRC_ROOT / "crewplane" / "adapters",
     ]
     offenders = [
         f"{path.relative_to(REPO_ROOT)}"
@@ -849,14 +827,14 @@ def test_boundary_option_contracts_use_json_object() -> None:
 def test_preflight_any_maps_are_limited_to_redaction_traversal() -> None:
     allowed_path = (
         SRC_ROOT
-        / "orchestrator_cli"
+        / "crewplane"
         / "core"
         / "preflight"
         / "runtime_config"
         / "redaction.py"
     )
     offenders: list[str] = []
-    for path in python_files(SRC_ROOT / "orchestrator_cli" / "core" / "preflight"):
+    for path in python_files(SRC_ROOT / "crewplane" / "core" / "preflight"):
         source = path.read_text(encoding="utf-8")
         if "dict[str, Any]" not in source:
             continue
@@ -871,7 +849,7 @@ def test_preflight_any_maps_are_limited_to_redaction_traversal() -> None:
 
 
 def test_review_loop_status_error_is_public() -> None:
-    from orchestrator_cli.artifacts.results.review_loop_status import (
+    from crewplane.artifacts.results.review_loop_status import (
         ReviewLoopStatusError,
     )
 
@@ -881,7 +859,7 @@ def test_review_loop_status_error_is_public() -> None:
 def test_provider_call_request_does_not_carry_display_state() -> None:
     from dataclasses import fields
 
-    from orchestrator_cli.runtime.execution.provider_call import (
+    from crewplane.runtime.execution.provider_call import (
         ProviderCallRequest,
     )
 

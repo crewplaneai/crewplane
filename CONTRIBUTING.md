@@ -16,7 +16,7 @@ back to `python -m ...` commands when possible.
 
 - Read our [architecture guidance](docs/architecture/modular-orchestration-architecture.md) first.
 - Keep runtime orchestration behavior artifact-backed and auditable under
-  `.orchestrator/`.
+  `.crewplane/`.
 - Keep provider-specific command handling inside adapter or invoker boundaries.
 - Add deterministic pytest coverage for behavior changes.
 - Keep test-only helpers under `tests/`.

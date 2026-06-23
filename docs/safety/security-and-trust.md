@@ -10,7 +10,7 @@ tools.
 
 Generated provider profiles may include provider-specific unattended approval
 flags. Those flags belong to the provider tools. Review the generated
-`.orchestrator/config.yml` before running real providers.
+`.crewplane/config.yml` before running real providers.
 
 Crewplane does not:
 

@@ -4,8 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from orchestrator_cli.core.review_contract import ParsedReviewResult
-from orchestrator_cli.runtime.execution.consensus import render_review_contract
+from crewplane.core.review_contract import ParsedReviewResult
+from crewplane.runtime.execution.consensus import render_review_contract
 
 BASE_APP_TEXT = "base application\n"
 CANDIDATE_ROUND_1_APP_TEXT = "candidate round 1 application\n"
@@ -234,7 +234,7 @@ def latest_succeeded_run(project_root: Path) -> Path:
 
 
 def run_dirs(project_root: Path) -> list[Path]:
-    stages_root = project_root / ".orchestrator" / "execution-stages"
+    stages_root = project_root / ".crewplane" / "execution-stages"
     if not stages_root.exists():
         return []
     return sorted(path for path in stages_root.iterdir() if path.is_dir())

@@ -1,12 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight.plan_contract import (
+from crewplane.core.config import Config
+from crewplane.core.preflight.plan_contract import (
     validate_supported_plan_schema_version,
 )
-from orchestrator_cli.core.workflow_models import WorkflowPlan
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workflow.models import WorkflowPlan
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_authored_schema_version_remains_current() -> None:

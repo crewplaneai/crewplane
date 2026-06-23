@@ -2,10 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_loader import load_tasks
-from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
-from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workflow.loading import load_tasks
+from crewplane.core.workflow.models import WorkflowNode, render_prompt_for_role
+from crewplane.core.workflow.validation import validate_workflow_plan
+from crewplane.version import SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:
@@ -67,7 +67,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "nodes:",
                 "  - id: review-input",
                 "    mode: input",
-                '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                 "  - id: implement",
                 "    mode: sequential",
                 "    needs: [review-input]",
@@ -88,7 +88,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
         self.assertEqual(workflow.nodes[0].mode, "input")
         self.assertEqual(
             workflow.nodes[0].source,
-            "{{file:.orchestrator/inputs/review-findings.md}}",
+            "{{file:.crewplane/inputs/review-findings.md}}",
         )
         self.assertEqual(workflow.nodes[0].prompt_segments, [])
 
@@ -103,7 +103,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "nodes:",
                 "  - id: review-input",
                 "    mode: input",
-                '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                 "  - id: implement",
                 "    mode: sequential",
                 "    needs: [review-input]",
@@ -136,7 +136,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "nodes:",
                 "  - id: implement",
                 "    mode: sequential",
-                '    source: "{{file:.orchestrator/inputs/review-findings.md}}"',
+                '    source: "{{file:.crewplane/inputs/review-findings.md}}"',
                 "    providers: [claude]",
                 "---",
                 "",
@@ -201,13 +201,13 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "",
                 "Shared context.",
                 "",
-                "<!-- orchestrator:executor -->",
+                "<!-- crewplane:executor -->",
                 "Executor instructions.",
-                "<!-- /orchestrator:executor -->",
+                "<!-- /crewplane:executor -->",
                 "",
-                "<!-- orchestrator:reviewer -->",
+                "<!-- crewplane:reviewer -->",
                 "Reviewer instructions.",
-                "<!-- /orchestrator:reviewer -->",
+                "<!-- /crewplane:reviewer -->",
             ]
         )
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -242,18 +242,18 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "",
                 "## review.iterate",
                 "",
-                "<!-- orchestrator:executor -->",
+                "<!-- crewplane:executor -->",
                 "Outer block.",
-                "<!-- orchestrator:reviewer -->",
+                "<!-- crewplane:reviewer -->",
                 "Nested block.",
-                "<!-- /orchestrator:reviewer -->",
-                "<!-- /orchestrator:executor -->",
+                "<!-- /crewplane:reviewer -->",
+                "<!-- /crewplane:executor -->",
             ]
         )
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "workflow.task.md"
             path.write_text(workflow_content, encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "nested orchestrator role markers"):
+            with self.assertRaisesRegex(ValueError, "nested crewplane role markers"):
                 load_tasks(path)
 
     def test_workflow_markdown_treats_marker_text_in_code_block_as_literal(
@@ -273,7 +273,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "## review.node",
                 "",
                 "```md",
-                "<!-- orchestrator:reviewer -->",
+                "<!-- crewplane:reviewer -->",
                 "```",
             ]
         )
@@ -283,7 +283,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
             workflow = validate_workflow_plan(load_tasks(path))
 
         self.assertIn(
-            "<!-- orchestrator:reviewer -->", _executor_prompt(workflow.nodes[0])
+            "<!-- crewplane:reviewer -->", _executor_prompt(workflow.nodes[0])
         )
 
     def test_workflow_markdown_treats_nested_markdown_marker_text_as_literal(
@@ -291,14 +291,14 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
     ) -> None:
         cases = {
             "blockquote": [
-                "> <!-- orchestrator:reviewer -->",
+                "> <!-- crewplane:reviewer -->",
                 "> Reviewer marker text.",
-                "> <!-- /orchestrator:reviewer -->",
+                "> <!-- /crewplane:reviewer -->",
             ],
             "list": [
-                "- <!-- orchestrator:reviewer -->",
+                "- <!-- crewplane:reviewer -->",
                 "  Reviewer marker text.",
-                "  <!-- /orchestrator:reviewer -->",
+                "  <!-- /crewplane:reviewer -->",
             ],
         }
         for case_name, body_lines in cases.items():
@@ -325,11 +325,11 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                     workflow = validate_workflow_plan(load_tasks(path))
 
                 self.assertIn(
-                    "<!-- orchestrator:reviewer -->",
+                    "<!-- crewplane:reviewer -->",
                     _executor_prompt(workflow.nodes[0]),
                 )
 
-    def test_workflow_markdown_allows_non_marker_orchestrator_comment(self) -> None:
+    def test_workflow_markdown_allows_non_marker_crewplane_comment(self) -> None:
         workflow_content = "\n".join(
             [
                 "---",
@@ -343,7 +343,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "",
                 "## review.node",
                 "",
-                "<!-- orchestrator runtime note -->",
+                "<!-- crewplane runtime note -->",
                 "Keep this literal.",
             ]
         )
@@ -353,7 +353,7 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
             workflow = validate_workflow_plan(load_tasks(path))
 
         rendered = _executor_prompt(workflow.nodes[0])
-        self.assertIn("<!-- orchestrator runtime note -->", rendered)
+        self.assertIn("<!-- crewplane runtime note -->", rendered)
         self.assertIn("Keep this literal.", rendered)
 
     def test_workflow_markdown_preserves_crlf_and_trailing_spaces(self) -> None:

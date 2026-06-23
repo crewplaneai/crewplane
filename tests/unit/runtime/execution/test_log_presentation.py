@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.architecture.contracts import InvocationContext
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.execution.activity.events import RuntimeEventContext
-from orchestrator_cli.runtime.execution.activity.telemetry import ExecutionTelemetry
-from orchestrator_cli.runtime.execution.log_presentation import (
+from crewplane.architecture.contracts import InvocationContext
+from crewplane.core.config import AgentConfig
+from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.execution.activity.events import RuntimeEventContext
+from crewplane.runtime.execution.activity.telemetry import ExecutionTelemetry
+from crewplane.runtime.execution.log_presentation import (
     resolve_log_presentation_descriptor,
 )
 

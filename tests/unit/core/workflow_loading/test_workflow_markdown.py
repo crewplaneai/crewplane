@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_markdown import (
+from crewplane.core.workflow.markdown import (
     parse_workflow_markdown_document,
     parse_workflow_markdown_text,
     validate_workflow_markdown_text,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def test_crlf_markdown_preserves_role_segment_boundaries(tmp_path: Path) -> None:
@@ -24,9 +24,9 @@ def test_crlf_markdown_preserves_role_segment_boundaries(tmp_path: Path) -> None
             "## build",
             "",
             "Shared line",
-            "<!-- orchestrator:reviewer -->",
+            "<!-- crewplane:reviewer -->",
             "Reviewer line",
-            "<!-- /orchestrator:reviewer -->",
+            "<!-- /crewplane:reviewer -->",
             "Trailing shared line",
         ]
     )
@@ -64,9 +64,9 @@ def test_markdown_parser_preserves_node_and_prompt_source_spans(
             "## build",
             "",
             "Shared {{file:context.md}}",
-            "<!-- orchestrator:reviewer -->",
+            "<!-- crewplane:reviewer -->",
             "Reviewer {{build.output}}",
-            "<!-- /orchestrator:reviewer -->",
+            "<!-- /crewplane:reviewer -->",
             "Trailing shared",
         ]
     )

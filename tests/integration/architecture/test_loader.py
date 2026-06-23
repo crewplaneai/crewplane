@@ -1,11 +1,11 @@
 import unittest
 
-from orchestrator_cli.architecture.errors import (
+from crewplane.architecture.errors import (
     AdapterContractError,
     AdapterLoadError,
     IntegrationResolutionError,
 )
-from orchestrator_cli.architecture.loader import (
+from crewplane.architecture.loader import (
     instantiate_adapter,
     load_adapter_class,
     resolve_implementation_path,
@@ -30,24 +30,24 @@ class LoaderTests(unittest.TestCase):
         resolved = resolve_implementation_path("invoker", "cli")
         self.assertEqual(
             resolved,
-            "orchestrator_cli.adapters.invokers.cli:CliInvokerAdapter",
+            "crewplane.adapters.invokers.cli:CliInvokerAdapter",
         )
 
     def test_resolve_mock_alias_to_builtin_path(self) -> None:
         resolved = resolve_implementation_path("invoker", "mock")
         self.assertEqual(
             resolved,
-            "orchestrator_cli.adapters.invokers.mock:MockInvokerAdapter",
+            "crewplane.adapters.invokers.mock:MockInvokerAdapter",
         )
 
     def test_resolve_supports_dotted_override(self) -> None:
         resolved = resolve_implementation_path(
             "ui",
-            "orchestrator_cli.adapters.ui.null:NullUIAdapter",
+            "crewplane.adapters.ui.null:NullUIAdapter",
         )
         self.assertEqual(
             resolved,
-            "orchestrator_cli.adapters.ui.null:NullUIAdapter",
+            "crewplane.adapters.ui.null:NullUIAdapter",
         )
 
     def test_unknown_alias_raises_with_allowed_values(self) -> None:
@@ -63,14 +63,14 @@ class LoaderTests(unittest.TestCase):
     def test_load_class_supports_colon_path(self) -> None:
         cls = load_adapter_class(
             "invoker",
-            "orchestrator_cli.adapters.invokers.cli:CliInvokerAdapter",
+            "crewplane.adapters.invokers.cli:CliInvokerAdapter",
         )
         self.assertEqual(cls.__name__, "CliInvokerAdapter")
 
     def test_load_class_supports_dot_path(self) -> None:
         cls = load_adapter_class(
             "ui",
-            "orchestrator_cli.adapters.ui.null.NullUIAdapter",
+            "crewplane.adapters.ui.null.NullUIAdapter",
         )
         self.assertEqual(cls.__name__, "NullUIAdapter")
 
@@ -78,7 +78,7 @@ class LoaderTests(unittest.TestCase):
         with self.assertRaisesRegex(AdapterContractError, "create_invoker"):
             load_adapter_class(
                 "invoker",
-                "orchestrator_cli.adapters.ui.null:NullUIAdapter",
+                "crewplane.adapters.ui.null:NullUIAdapter",
             )
 
     def test_ui_contract_requires_capabilities(self) -> None:
@@ -97,13 +97,13 @@ class LoaderTests(unittest.TestCase):
 
     def test_invalid_colon_path_raises_clear_error(self) -> None:
         with self.assertRaisesRegex(AdapterLoadError, "Invalid implementation path"):
-            load_adapter_class("ui", "orchestrator_cli.adapters.ui.tmux:")
+            load_adapter_class("ui", "crewplane.adapters.ui.tmux:")
 
     def test_non_class_object_path_raises(self) -> None:
         with self.assertRaisesRegex(AdapterLoadError, "is not a class"):
             load_adapter_class(
                 "ui",
-                "orchestrator_cli.architecture.registry:INTEGRATION_ALIAS_REGISTRY",
+                "crewplane.architecture.registry:INTEGRATION_ALIAS_REGISTRY",
             )
 
     def test_instantiate_adapter_returns_instance(self) -> None:

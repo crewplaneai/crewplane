@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     ArtifactContract,
     ExecutionPolicy,
     PreflightExecutionNode,
     ProviderRecord,
     WorkspaceSelectionRecord,
 )
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.runtime.execution.parallel import enforce_parallel_failure_policy
-from orchestrator_cli.runtime.execution.stage_tasks import ParallelResultSummary
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.runtime.execution.parallel import enforce_parallel_failure_policy
+from crewplane.runtime.execution.stage_tasks import ParallelResultSummary
 
 
 def test_lineage_worktree_parallel_node_rejects_allowed_executor_failure() -> None:

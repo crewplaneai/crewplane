@@ -1,24 +1,24 @@
 # crewplane npm Wrapper
 
 This alpha npm package installs the Python `crewplane` package into a private
-virtual environment and exposes the alpha `orchestrator` command. It also
+virtual environment and exposes the alpha `crewplane` command. It also
 provides a `crewplane` shim for npm and `npx` usage; both bins delegate to the
 same Python console command.
 
 ```bash
 npm install -g crewplane@alpha
-orchestrator --help
+crewplane --help
 npx crewplane@alpha --help
 ```
 
 Global npm installs create shims under `$(npm config get prefix)/bin`. If the
-install succeeds but `orchestrator` is not found, add that directory to your
+install succeeds but `crewplane` is not found, add that directory to your
 shell `PATH` and make sure `node` remains on `PATH`:
 
 ```bash
 npm_prefix="$(npm config get prefix)"
 export PATH="$npm_prefix/bin:$PATH"
-command -v orchestrator
+command -v crewplane
 ```
 
 Provider CLIs such as Claude, Codex, Gemini, Copilot, and Kilo are installed

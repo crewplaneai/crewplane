@@ -14,7 +14,7 @@ Runtime must:
 
 1. Verify source identity before finalization.
 2. Verify `blob_exact` before result capture.
-3. Verify protected orchestrator refs and expected Git identities before
+3. Verify protected crewplane refs and expected Git identities before
    lineage export.
 4. Fail if submodule gitlinks or dirty submodule state are detected.
 5. Fail if `.gitattributes` changed in the provider final source view.
@@ -27,11 +27,11 @@ Runtime must:
 10. Treat every runtime-owned path operand under literal path rules.
 11. Write a result tree from the staged index.
 12. Validate the result tree satisfies `blob_exact`.
-13. Create an orchestrator-owned commit with deterministic metadata.
+13. Create a Crewplane-owned commit with deterministic metadata.
 14. Allow an empty result commit when the final captured tree equals the runtime
     parent tree.
-15. Record result commit and tree in `workspace-state.json`.
-16. Export `workspace.bundle`.
+15. Record result commit and tree in `workspace-state*.json`.
+16. Export a bundle under `workspace-bundles/`.
 17. Optionally create a cached final ref.
 18. Write changed-file counts, final `HEAD` diagnostics, protected-state
     diagnostics, contract-validation diagnostics, and bundle byte size to
@@ -42,10 +42,10 @@ commit hooks do not alter commit behavior.
 
 Deterministic commit metadata:
 
-- Author name: `Orchestrator CLI`
-- Author email: `orchestrator-cli@localhost`
-- Committer name: `Orchestrator CLI`
-- Committer email: `orchestrator-cli@localhost`
+- Author name: `Crewplane`
+- Author email: `crewplane@localhost`
+- Committer name: `Crewplane`
+- Committer email: `crewplane@localhost`
 - Author date and committer date: deterministic value derived from source
   commit, node id, workflow signature, `blob_exact`, and candidate
   sequence
@@ -56,10 +56,10 @@ Deterministic commit metadata:
 Commit metadata must not include run id, cache root, local paths, wall-clock
 time, provider credentials, or secrets.
 
-Actual run timing belongs in `workspace-state.json`, not in commit objects.
+Actual run timing belongs in `workspace-state*.json`, not in commit objects.
 
 ## Bundle Semantics
-`workspace.bundle` is a Git bundle produced by `git bundle create`. It is a
+Workspace bundles are produced by `git bundle create`. They are
 binary Git object transport artifact, not a patch, tarball, or working-tree
 archive.
 
@@ -74,7 +74,7 @@ Bundle creation rules:
   refs.
 - Export the range from source commit to result ref.
 - Temporary export refs are deleted after bundle verification.
-- Bundle SHA-256 is recorded in `workspace-state.json`.
+- Bundle SHA-256 is recorded in `workspace-state*.json`.
 - Bundle byte size is recorded in observability.
 - Runtime verifies the bundle before marking lineage complete.
 - Temporary refs are deleted under repository lock.
@@ -84,8 +84,8 @@ Downstream rehydration rules:
 1. Verify recorded bundle SHA-256 before any Git operation on the bundle.
 2. Run `git bundle verify`.
 3. Ensure the required base commit exists.
-4. Import the bundle into an orchestrator-owned internal ref.
-5. Verify imported result commit and tree match `workspace-state.json`.
+4. Import the bundle into a Crewplane-owned internal ref.
+5. Verify imported result commit and tree match `workspace-state*.json`.
 6. Verify the downstream plan expects `blob_exact`.
 7. Create downstream mutable workspace from the verified result commit.
 
@@ -137,19 +137,20 @@ mutable code state, the downstream node must select the same logical
 `kind: worktree` name as the upstream writer. If it makes no changes, runtime
 still emits an explicit empty lineage commit.
 
-## `workspace-state.json`
+## `workspace-state*.json`
 Every managed provider workspace emits an envelope under the node stage
 directory. Input nodes and `worktree: none` nodes do not allocate provider
 workspaces and do not emit workspace lineage state.
 
 The envelope `version` uses the canonical authored schema version from
-`src/orchestrator_cli/version.py` rather than a separate workspace-state schema.
+`src/crewplane/version.py` rather than a separate workspace-state schema.
 
 The envelope records:
 
 - `version: <SCHEMA_VERSION>`
-- run id, run key, workflow name, workflow signature, node id, and status
-- logical worktree name, kind, clean-start mode, and selected
+- run id, run key, workflow name, workflow signature, node id, task id,
+  provider, role, round, audit round, and status
+- logical worktree name, workspace kind, clean-start mode, and selected
   `worktree_contract`
 - selected invoker workspace capability metadata when provider invocation
   occurs
@@ -163,8 +164,9 @@ The envelope records:
 - result identity for mutable nodes: commit, tree, parent commit, bundle path,
   bundle SHA-256, bundle size, cached ref, empty-lineage flag, and required base
   commit
-- workspace placement: live path, effective `cwd`, materialization mode,
-  disposable flag, retention state, and retained reason
+- workspace placement: null public live path fields, execution live paths,
+  materialization mode, writability, lineage flag, retention state, and retained
+  reason
 - rendered workspace-file descriptors, including occurrence id, invocation id,
   role, round, source kind, source commit/tree, candidate sequence,
   workspace-relative path, Git blob, file mode, byte size, canonical blob
@@ -187,29 +189,65 @@ Abbreviated disposable snapshot shape:
   "workflow_name": "feature-work",
   "workflow_signature": "64 lowercase hex characters",
   "node_id": "review",
+  "task_id": "claude-reviewer-0",
+  "provider": "claude",
+  "role": "reviewer",
+  "round_num": 1,
+  "audit_round_num": null,
   "status": "succeeded",
   "logical_worktree_name": "review_snapshot",
-  "kind": "snapshot",
+  "workspace_kind": "snapshot",
   "clean_start": "strict",
-  "worktree_contract": "blob_exact",
+  "worktree_contract": {
+    "mode": "blob_exact",
+    "schema_version": "1.0"
+  },
   "git": {
     "object_format": "sha1",
     "repo_id": "64 lowercase hex characters",
     "run_base_commit": "git object id",
+    "source_tree": "git tree id",
     "worktree_config_active": false
   },
   "source": {
     "kind": "project",
+    "node_id": null,
     "commit": "git object id",
-    "tree": "git object id"
+    "tree": "git tree id",
+    "candidate_sequence": null
   },
   "workspace": {
-    "path": "/cache/snapshots/repo/run/review",
-    "effective_cwd": "/cache/snapshots/repo/run/review/project",
-    "materialization": "snapshot_directory",
-    "disposable": true,
+    "path": null,
+    "effective_cwd": null,
+    "cache_key": "review",
+    "materialization": "snapshot_checkout",
+    "writable": true,
+    "lineage_producer": false,
     "retention": "removed",
-    "retained_reason": null
+    "retained_reason": null,
+    "project_root_relative_path": ""
+  },
+  "execution": {
+    "cache_root": "/cache/crewplane",
+    "workspace_path": "/cache/crewplane/snapshots/repo/run/review",
+    "checkout_root": "/cache/crewplane/snapshots/repo/run/review/checkout",
+    "checkout_size_bytes": 123456,
+    "effective_cwd": "/cache/crewplane/snapshots/repo/run/review/checkout",
+    "provisioning_duration_seconds": 0.123456
+  },
+  "invocation_source": {
+    "source_kind": "project",
+    "source_node_id": null,
+    "source_commit": "git object id",
+    "source_tree": "git tree id",
+    "candidate_sequence": null
+  },
+  "child_process_environment": {
+    "required": true,
+    "applied": true
+  },
+  "invoker": {
+    "implementation": "cli"
   },
   "rendered_workspace_files": [
     {
@@ -257,7 +295,7 @@ Field invariants:
   `unreachable_provider_objects_scanned` is `false`. This is an explicit v1
   limitation, not missing telemetry.
 - For `kind: snapshot`, emit the same envelope with
-  `workspace.materialization: "snapshot_directory"`, snapshot digest, drift
+  `workspace.materialization: "snapshot_checkout"`, snapshot digest, drift
   summary, no result bundle, and no cached final ref.
 - For failed or cancelled nodes, `failure` records operation, message,
   remediation, and retention status. Result fields are omitted unless a verified

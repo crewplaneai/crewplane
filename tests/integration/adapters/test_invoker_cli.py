@@ -5,13 +5,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.adapters.invokers.cli import CliInvokerAdapter
-from orchestrator_cli.adapters.invokers.cli_invoker import (
+from crewplane.adapters.invokers.cli import CliInvokerAdapter
+from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.config import AgentConfig, Config
+from crewplane.version import SCHEMA_VERSION
 
 
 class CliInvokerAdapterTests(unittest.TestCase):

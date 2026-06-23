@@ -2,10 +2,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from orchestrator_cli.adapters.invokers.mock import MockInvokerAdapter
-from orchestrator_cli.architecture.contracts import InvocationContext
-from orchestrator_cli.core.config import AgentConfig
-from orchestrator_cli.runtime.execution.consensus import (
+from crewplane.adapters.invokers.mock import MockInvokerAdapter
+from crewplane.architecture.contracts import InvocationContext
+from crewplane.core.config import AgentConfig
+from crewplane.runtime.execution.consensus import (
     VERDICT_NO_FINDINGS,
     ParsedReviewResult,
     parse_review_result,

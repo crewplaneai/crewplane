@@ -9,29 +9,29 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from orchestrator_cli.architecture.contracts import CanonicalIntegrationConfig
-from orchestrator_cli.architecture.ports.runtime import RuntimeComponents
-from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.artifacts.resume.decision import ResumeDecision
-from orchestrator_cli.artifacts.run_history import RunHistoryRecord
-from orchestrator_cli.cli.run import execution as execution_module
-from orchestrator_cli.cli.run import execution_helpers as execution_helpers_module
-from orchestrator_cli.cli.run.context import WorkflowRunContext
-from orchestrator_cli.cli.run.observability import WorkflowWarningRecorder
-from orchestrator_cli.cli.run.resume import ResumePlan
-from orchestrator_cli.core.config import Config
-from orchestrator_cli.core.preflight import (
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.architecture.ports.runtime import RuntimeComponents
+from crewplane.artifacts.manager import OutputManager
+from crewplane.artifacts.resume.decision import ResumeDecision
+from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.cli.run import execution as execution_module
+from crewplane.cli.run import execution_helpers as execution_helpers_module
+from crewplane.cli.run.context import WorkflowRunContext
+from crewplane.cli.run.observability import WorkflowWarningRecorder
+from crewplane.cli.run.resume import ResumePlan
+from crewplane.core.config import Config
+from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightExecutionPlan,
 )
-from orchestrator_cli.core.preflight.runtime_config import (
+from crewplane.core.preflight.runtime_config import (
     RuntimeConfigSnapshot,
     RuntimeConfigSnapshotOptions,
 )
-from orchestrator_cli.core.preflight.secrets import SecretContext
-from orchestrator_cli.core.preflight.source import PreflightWorkflowSource
-from orchestrator_cli.core.workflow_models import WorkflowPlan
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.preflight.source import PreflightWorkflowSource
+from crewplane.core.workflow.models import WorkflowPlan
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import WORKFLOW_IDENTITY, make_plan, make_run_manifest
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
@@ -63,7 +63,7 @@ def test_successful_run_prints_branch_export_fulfillment(
         ),
         console=console,
         project_root=tmp_path,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
     )
     components = RuntimeComponents(
         artifact_store=output,
@@ -154,7 +154,7 @@ def test_successful_run_prints_branch_export_fulfillment(
                 console=console,
             ),
             observability_hub_cls=None,
-            workflow_identity=".orchestrator/workflows/workflow.task.md",
+            workflow_identity=".crewplane/workflows/workflow.task.md",
         ),
     )
 
@@ -182,23 +182,20 @@ def test_duplicate_skip_prints_branch_export_fulfillment(
     preview = _preview_from_plan(plan)
     source = PreflightWorkflowSource.from_workflow(
         WorkflowPlan(name=plan.workflow_name, nodes=[]),
-        root_workflow_path=tmp_path
-        / ".orchestrator"
-        / "workflows"
-        / "workflow.task.md",
+        root_workflow_path=tmp_path / ".crewplane" / "workflows" / "workflow.task.md",
     )
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
     successful_run = RunHistoryRecord(
         manifest=manifest,
         manifest_path=tmp_path
-        / ".orchestrator"
+        / ".crewplane"
         / "execution-stages"
         / manifest.run_key_name
         / "manifests"
         / "run.json",
-        run_dir=tmp_path / ".orchestrator" / "execution-stages" / manifest.run_key_name,
+        run_dir=tmp_path / ".crewplane" / "execution-stages" / manifest.run_key_name,
         results_dir=tmp_path
-        / ".orchestrator"
+        / ".crewplane"
         / "execution-results"
         / manifest.run_key_name,
     )
@@ -257,7 +254,7 @@ def test_duplicate_skip_prints_branch_export_fulfillment(
             no_live=True,
             console=console,
             project_root=tmp_path,
-            orchestrator_dir=tmp_path / ".orchestrator",
+            state_dir=tmp_path / ".crewplane",
         )
     )
 
@@ -314,7 +311,7 @@ def test_duplicate_skip_refreshes_historical_summary_after_branch_export(
         ),
         console=console,
         project_root=repo,
-        orchestrator_dir=tmp_path / ".orchestrator",
+        state_dir=tmp_path / ".crewplane",
     )
 
     execution_helpers_module.fulfill_duplicate_skip_branch_exports(

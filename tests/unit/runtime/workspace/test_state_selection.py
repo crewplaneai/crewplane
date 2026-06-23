@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.core.preflight.models import (
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -14,20 +14,20 @@ from orchestrator_cli.core.preflight.models import (
     WorkspaceFileLocator,
     WorkspaceSourceSnapshot,
 )
-from orchestrator_cli.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
-from orchestrator_cli.core.workspace_policy import WorktreeContract
-from orchestrator_cli.runtime.execution.workspace_files import (
+from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
+from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
     dynamic_locator_source_state_path,
     latest_executor_workspace_state,
 )
-from orchestrator_cli.runtime.workspace.state import discard_workspace_lineage
-from orchestrator_cli.runtime.workspace.state_selection import workspace_state_paths
-from orchestrator_cli.runtime.workspace.worktree.source_refs import (
+from crewplane.runtime.workspace.state import discard_workspace_lineage
+from crewplane.runtime.workspace.state_selection import workspace_state_paths
+from crewplane.runtime.workspace.worktree.source_refs import (
     invocation_source_ref,
     required_lineage_state,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_records import workspace_selection_record
 
 

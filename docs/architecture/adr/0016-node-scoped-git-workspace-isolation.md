@@ -10,7 +10,7 @@ Accepted
 Adopt optional Git-backed workspace isolation for provider nodes while keeping
 project-root execution as the default. The durable contract is artifact-first:
 provider workspaces are materializations, while source lineage is recorded
-through `.orchestrator/` artifacts.
+through `.crewplane/` artifacts.
 
 The selected model is:
 
@@ -62,7 +62,7 @@ The repository architecture already provides the required ownership split:
   deterministic signatures.
 - Runtime executes compiled plans, materializes provider `cwd`, and captures
   workspace results.
-- `.orchestrator/` artifacts remain the blackboard and audit boundary.
+- `.crewplane/` artifacts remain the blackboard and audit boundary.
 - Invoker adapters own provider launch capabilities, not workspace policy.
 - UI adapters remain observer-only.
 
@@ -71,7 +71,7 @@ simple projects while allowing workflows to opt into isolated source lines when
 they need auditable code lineage.
 
 ## Goals
-- Preserve blackboard orchestration through `.orchestrator/` artifacts.
+- Preserve blackboard orchestration through `.crewplane/` artifacts.
 - Keep provider invocation CLI-first and provider-neutral.
 - Preserve project-root execution by default, including non-Git projects.
 - Require Git only when a workflow selects managed `worktrees` and
@@ -103,7 +103,7 @@ they need auditable code lineage.
 - No project-root registry of reusable logical worktrees.
 - No hidden import of dirty, ignored, or untracked project-root state.
 - No provider-specific setup behavior.
-- No orchestrator-owned provider permission, sandbox, or approval subsystem.
+- No Crewplane-owned provider permission, sandbox, or approval subsystem.
 - No weakening of `{{file:path}}` project-root path restrictions or absolute
   file allowlist behavior.
 - No automatic inference from node names such as `plan`, `implement`, or
@@ -135,7 +135,7 @@ they need auditable code lineage.
    lines.
 4. **Artifacts remain canonical.** Physical worktrees, cache directories, and
    local branches are materializations. Durable source truth remains under
-   `.orchestrator/`.
+   `.crewplane/`.
 5. **Default to practical reuse.** Machine-local cache paths are execution
    facts, not semantic workflow inputs, unless strict identity is requested.
 6. **No surprise promotion.** Branch creation is explicit, default false,
@@ -182,7 +182,7 @@ execution remains whatever the CLI otherwise supports.
 Real execution is filesystem-artifact-only in this release, even when workspace
 isolation is disabled. Same-context locking, duplicate-skip, run-history scan,
 resume hydration, run output allocation, and workspace lineage all currently
-depend on local `.orchestrator/` filesystem paths. Non-filesystem artifact
+depend on local `.crewplane/` filesystem paths. Non-filesystem artifact
 backends may participate in `validate` and `run --dry-run`, but real runs fail
 before lock, skip, resume, or full-run execution until an equivalent
 materialization and integrity contract exists.
@@ -246,13 +246,13 @@ settings:
 
 Authored config uses stable behavior names such as `blob_exact`. Persisted
 artifacts record the selected mode plus `SCHEMA_VERSION` from
-`src/orchestrator_cli/version.py`:
+`src/crewplane/version.py`:
 
 ```json
 {
   "worktree_contract": {
     "mode": "blob_exact",
-    "schema_version": "<SCHEMA_VERSION from src/orchestrator_cli/version.py>"
+    "schema_version": "<SCHEMA_VERSION from src/crewplane/version.py>"
   }
 }
 ```
@@ -503,7 +503,7 @@ Rules:
 Setup artifacts are written only when setup is needed:
 
 ```text
-.orchestrator/execution-stages/<run-key>/<node>/workspace-setup/
+.crewplane/execution-stages/<run-key>/<node>/workspace-setup/
   setup.log
   setup.json
 ```
@@ -524,8 +524,8 @@ Rules:
 - Record a drift summary after invocation when source-looking files changed.
 - Do not fail solely because files were created or modified.
 - Durable reports must be written through ordinary provider output and
-  orchestrator artifact paths, not by relying on files left in the discarded
-  snapshot checkout. Provider output files and logs remain orchestrator-managed
+  crewplane artifact paths, not by relying on files left in the discarded
+  snapshot checkout. Provider output files and logs remain Crewplane-managed
   durable artifacts outside the disposable snapshot source directory.
 
 Example warning:
@@ -554,7 +554,7 @@ the node, including:
 
 - final `HEAD` movement away from the runtime baseline;
 - branch attachment or checkout-state drift;
-- protected orchestrator ref mutation;
+- protected crewplane ref mutation;
 - worktree-specific config creation or mutation;
 - local attribute or ignore source mutation that affects runtime capture;
 - `.gitattributes` changes before lineage export.
@@ -645,7 +645,7 @@ Semantic workflow identity includes:
 - provider execution settings that affect invocation;
 - selected `worktree_contract` mode;
 - worktree contract schema version from `SCHEMA_VERSION` in
-  `src/orchestrator_cli/version.py`;
+  `src/crewplane/version.py`;
 - source repository identity and captured source commit/tree;
 - workspace policy, including worktree kind, compiled source, logical worktree
   name, and selected setup profile;
@@ -705,7 +705,7 @@ Rules:
   Completed bundles remain available for future manual export tooling.
 - If `branch_name` is omitted, runtime generates a local branch name from the
   workflow slug, declared worktree name, and run key:
-  `orchestrator/<workflow>/<worktree>/<run-key>`.
+  `crewplane/<workflow>/<worktree>/<run-key>`.
 - Existing branch names are refused by default. When fulfilling a branch export
   for a previously verified successful run, an existing branch is accepted only
   if it already points at the verified result commit for that fulfillment.
@@ -800,11 +800,11 @@ Cancellation and cleanup are explicit:
 
 Cleanup tolerates missing worktree directories, missing Git admin entries, and
 already-removed cache paths. It must never delete a user-created branch or a
-worktree not recorded as orchestrator-managed for the current run.
+worktree not recorded as Crewplane-managed for the current run.
 
-`orchestrator cleanup workspaces` may remove stale orchestrator-managed
+`crewplane cleanup workspaces` may remove stale Crewplane-managed
 workspace cache entries, but canonical audit artifacts remain under
-`.orchestrator/`.
+`.crewplane/`.
 
 ## Observability and User Feedback
 Validate, dry-run, runtime output, persistent summaries, and generated docs must
@@ -830,7 +830,7 @@ fulfillment without mutating Git refs.
 ## User-Facing Examples
 
 The `schema_version` placeholders below stand for the current
-`SCHEMA_VERSION` exported by `src/orchestrator_cli/version.py`; generated
+`SCHEMA_VERSION` exported by `src/crewplane/version.py`; generated
 templates should render that value instead of duplicating a literal in docs.
 
 ### All Mutating Nodes Use One Worktree
@@ -840,7 +840,7 @@ direct dependency.
 
 ```markdown
 ---
-schema_version: "<SCHEMA_VERSION from src/orchestrator_cli/version.py>"
+schema_version: "<SCHEMA_VERSION from src/crewplane/version.py>"
 name: Authentication Implementation
 worktrees:
   implementation_worktree:
@@ -873,7 +873,7 @@ review/fix continue one mutable source line.
 
 ```markdown
 ---
-schema_version: "<SCHEMA_VERSION from src/orchestrator_cli/version.py>"
+schema_version: "<SCHEMA_VERSION from src/crewplane/version.py>"
 name: Planned Authentication Implementation
 worktrees:
   planning_snapshot:
@@ -923,7 +923,7 @@ merges.
 
 ```markdown
 ---
-schema_version: "<SCHEMA_VERSION from src/orchestrator_cli/version.py>"
+schema_version: "<SCHEMA_VERSION from src/crewplane/version.py>"
 name: Alternative Authentication Implementations
 worktrees:
   conservative_implementation_worktree:
@@ -965,7 +965,7 @@ Implement the experimental approach.
 ## compare_authentication_implementations
 Compare the two implementation reports and recommend one path forward.
 
-Read parent result artifacts from paths instead of asking the orchestrator to
+Read parent result artifacts from paths instead of asking Crewplane to
 inline their full contents:
 
 - Conservative implementation report:
@@ -981,7 +981,7 @@ No extra mutability setting is needed. `snapshot` is writable and disposable.
 
 ```markdown
 ---
-schema_version: "<SCHEMA_VERSION from src/orchestrator_cli/version.py>"
+schema_version: "<SCHEMA_VERSION from src/crewplane/version.py>"
 name: Repository Review
 worktrees:
   repository_review_snapshot:

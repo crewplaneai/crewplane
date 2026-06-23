@@ -3,25 +3,25 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import (
+from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from orchestrator_cli.architecture.contracts import (
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
 )
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.agent.invoker import PlannedAgentInvoker
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     SelectiveFailInvoker,
@@ -145,7 +145,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            input_file = tmp_path / ".orchestrator" / "inputs" / "review-findings.md"
+            input_file = tmp_path / ".crewplane" / "inputs" / "review-findings.md"
             input_file.parent.mkdir(parents=True, exist_ok=True)
             input_file.write_text("Raw findings from file", encoding="utf-8")
             config = Config(
@@ -161,7 +161,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="review-input",
                         mode="input",
-                        source="{{file:.orchestrator/inputs/review-findings.md}}",
+                        source="{{file:.crewplane/inputs/review-findings.md}}",
                     ),
                     WorkflowNode(
                         id="implement",
@@ -199,7 +199,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
     async def test_input_node_fails_when_resolved_source_is_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            input_file = tmp_path / ".orchestrator" / "inputs" / "empty.md"
+            input_file = tmp_path / ".crewplane" / "inputs" / "empty.md"
             input_file.parent.mkdir(parents=True, exist_ok=True)
             input_file.write_text("", encoding="utf-8")
 
@@ -215,7 +215,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                     WorkflowNode(
                         id="empty-input",
                         mode="input",
-                        source="{{file:.orchestrator/inputs/empty.md}}",
+                        source="{{file:.crewplane/inputs/empty.md}}",
                     ),
                     WorkflowNode(
                         id="downstream",
@@ -398,7 +398,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "orchestrator_cli.runtime.agent.invocation.command.run_command_once",
+                    "crewplane.runtime.agent.invocation.command.run_command_once",
                     failing_command_runner,
                 ),
                 self.assertRaisesRegex(RuntimeError, "Exit code 2: boom"),

@@ -6,21 +6,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.tmux.client import TmuxCommandClient
-from orchestrator_cli.observability.tmux.inspect_snapshot import (
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.tmux.client import TmuxCommandClient
+from crewplane.observability.tmux.inspect_snapshot import (
     read_snapshot,
     write_inspect_snapshot,
 )
-from orchestrator_cli.observability.tmux.selection_control import (
+from crewplane.observability.tmux.selection_control import (
     SelectionControlState,
     write_selection_control,
 )
-from orchestrator_cli.observability.types import (
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,
@@ -357,8 +357,8 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         bindings = binding_map(runtime.calls)
         self.assertNotIn(("root", "Up"), bindings)
         self.assertNotIn(("root", "Escape"), bindings)
-        self.assertIn(("orchestrator-inspect", "Escape"), bindings)
-        for table in {"orchestrator-dashboard", "copy-mode", "copy-mode-vi"}:
+        self.assertIn(("crewplane-inspect", "Escape"), bindings)
+        for table in {"crewplane-dashboard", "copy-mode", "copy-mode-vi"}:
             self.assertIn((table, "Up"), bindings)
             self.assertIn((table, "Down"), bindings)
             self.assertIn((table, "Enter"), bindings)
@@ -448,7 +448,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
             )
             self.assertIsNotNone(selected_after_move)
             self.assertEqual(selected_after_move.get("log_file"), str(second_log))  # type: ignore[union-attr]
-            pane_title_writes = pane_option_writes(runtime.calls, "@orchestrator_title")
+            pane_title_writes = pane_option_writes(runtime.calls, "@crewplane_title")
             self.assertIn(
                 ("%20", "Node Log: node.a (raw)"),
                 {(args[3], args[5]) for args in pane_title_writes},
@@ -493,7 +493,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         self.assertIn(("copy-mode", "q"), inspect_bindings)
         self.assertIn(("copy-mode-vi", "Enter"), inspect_bindings)
         self.assertNotIn(
-            "switch-client -T orchestrator-dashboard",
+            "switch-client -T crewplane-dashboard",
             inspect_bindings[("copy-mode", "Up")],
         )
         self.assertIn("send-keys -X cursor-up", inspect_bindings[("copy-mode", "Up")])
@@ -505,7 +505,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         self.assertIn("run-shell", inspect_bindings[("copy-mode", "Escape")])
         self.assertIn("quit-requested.txt", inspect_bindings[("copy-mode", "q")])
         self.assertIn(
-            "kill-session -t orchestrator-compact-copy-mode-sync",
+            "kill-session -t crewplane-compact-copy-mode-sync",
             inspect_bindings[("copy-mode", "q")],
         )
         self.assertIn(
@@ -558,14 +558,14 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                 runtime.refresh_once()
 
                 bindings = binding_map(runtime.calls)
-                enter_binding = bindings[("orchestrator-dashboard", "Enter")]
+                enter_binding = bindings[("crewplane-dashboard", "Enter")]
                 binding_parts = shlex.split(enter_binding)
                 self.assertEqual(
                     binding_parts[:4], ["if-shell", "-F", "1", "run-shell"]
                 )
                 command = binding_parts[4]
                 self.assertIn(
-                    "orchestrator_cli.observability.tmux.inspect_control",
+                    "crewplane.observability.tmux.inspect_control",
                     command,
                 )
                 self.assertIn("--view auto", command)

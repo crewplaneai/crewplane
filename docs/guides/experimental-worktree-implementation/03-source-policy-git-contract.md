@@ -116,15 +116,15 @@ control-plane inputs under ADR 0012. Their bytes affect workflow identity
 through normalized workflow/config signatures. This ADR does not add a separate
 control-plane signing system. If a control-plane file is tracked and dirty in
 the project source scope, source policy treats it like any other tracked dirty
-file. If a control-plane file is untracked or ignored under `.orchestrator/`, it
+file. If a control-plane file is untracked or ignored under `.crewplane/`, it
 may still drive preflight, but it is not materialized into node workspaces as
 source unless it is a tracked source file outside reserved runtime artifact
 roots.
 
 Reserved runtime artifact roots are outside source policy:
 
-- `.orchestrator/execution-stages/`, `.orchestrator/execution-results/`, and
-  `.orchestrator/locks/` are never copied into workspaces.
+- `.crewplane/execution-stages/`, `.crewplane/execution-results/`, and
+  `.crewplane/locks/` are never copied into workspaces.
 - Untracked files under those roots are excluded from clean-start untracked
   classification and are not signed as source.
 - Tracked files under those roots fail source policy because generated runtime
@@ -316,7 +316,7 @@ Workspace-enabled v1 fails preflight or pre-invocation checks for:
 - project root path that cannot be mapped under the discovered Git top-level
 - tracked runtime output under reserved artifact roots
 - unsafe cache-root overlap or symlink placement
-- common Git directory that cannot host an owner-private orchestrator lock
+- common Git directory that cannot host an owner-private crewplane lock
   directory
 - native Windows platform
 - unsupported POSIX locking

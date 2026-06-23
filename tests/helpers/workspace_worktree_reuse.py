@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orchestrator_cli.artifacts.manager import OutputManager
-from orchestrator_cli.core.preflight.models import (
+from crewplane.artifacts.manager import OutputManager
+from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
-from orchestrator_cli.runtime.workspace import WorkspaceInvocationRequest
-from orchestrator_cli.runtime.workspace.service import MaterializationLimiter
-from orchestrator_cli.runtime.workspace.worktree.cache import WorktreeReuseCache
+from crewplane.runtime.workspace import WorkspaceInvocationRequest
+from crewplane.runtime.workspace.service import MaterializationLimiter
+from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 from tests.helpers.workspace_service import workspace_plan
 
 

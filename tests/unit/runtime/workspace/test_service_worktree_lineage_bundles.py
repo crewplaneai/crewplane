@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.runtime.workspace.worktree import (
+from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,
     create_worktree_workspace,
     remove_worktree_workspace,
 )
-from orchestrator_cli.runtime.workspace.worktree.lineage import export_bundle
-from orchestrator_cli.runtime.workspace.worktree.protected_refs import (
+from crewplane.runtime.workspace.worktree.lineage import export_bundle
+from crewplane.runtime.workspace.worktree.protected_refs import (
     ProtectedRefSnapshot,
 )
-from orchestrator_cli.runtime.workspace.worktree.types import WorktreeCaptureRequest
+from crewplane.runtime.workspace.worktree.types import WorktreeCaptureRequest
 from tests.helpers.workspace_lineage_bundles import (
     create_prerequisite_bundle_chain,
     create_pruned_result_bundle,
@@ -137,7 +137,7 @@ def test_export_bundle_rejects_symlinked_bundle_file(tmp_path: Path) -> None:
     outside_file.write_text("outside\n", encoding="utf-8")
     slug = "implement-alpha-round1"
     (bundle_dir / f"{slug}.bundle").symlink_to(outside_file)
-    result_ref = "refs/orchestrator-cli/tests/result"
+    result_ref = "refs/crewplane/tests/result"
     run_git_text(repo, "update-ref", result_ref, source.run_base_commit)
     request = WorktreeCaptureRequest(
         plan=plan,
@@ -395,7 +395,7 @@ def test_worktree_workspace_rejects_local_source_bundle_ref_mismatch(
                 bundle_path=bundle_path,
                 bundle_sha256=bundle_sha256,
                 bundle_size_bytes=bundle_path.stat().st_size,
-                bundle_ref="refs/orchestrator-cli/test/missing",
+                bundle_ref="refs/crewplane/test/missing",
             ),
         )
 

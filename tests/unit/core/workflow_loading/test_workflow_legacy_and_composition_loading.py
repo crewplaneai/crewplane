@@ -2,11 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.core.workflow_loader import load_tasks, load_tasks_with_sources
-from orchestrator_cli.core.workflow_markdown import validate_workflow_markdown
-from orchestrator_cli.core.workflow_models import WorkflowNode, render_prompt_for_role
-from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.workflow.loading import load_tasks, load_tasks_with_sources
+from crewplane.core.workflow.markdown import validate_workflow_markdown
+from crewplane.core.workflow.models import WorkflowNode, render_prompt_for_role
+from crewplane.core.workflow.validation import validate_workflow_plan
+from crewplane.version import SCHEMA_VERSION
 
 
 def _executor_prompt(node: WorkflowNode) -> str:

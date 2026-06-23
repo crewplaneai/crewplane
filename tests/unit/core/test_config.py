@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from orchestrator_cli.core.config import (
+from crewplane.core.config import (
     DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
     DEFAULT_INVOCATION_TIMEOUT_SECONDS,
     DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS,
@@ -13,8 +13,8 @@ from orchestrator_cli.core.config import (
     Settings,
     load_config,
 )
-from orchestrator_cli.core.token_budget import TokenBudgetOverride, resolve_token_budget
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.core.token_budget import TokenBudgetOverride, resolve_token_budget
+from crewplane.version import SCHEMA_VERSION
 
 
 class ConfigTests(unittest.TestCase):
@@ -293,7 +293,7 @@ class ConfigTests(unittest.TestCase):
             Settings(
                 workspace={
                     "enabled": True,
-                    "cache_root": ".orchestrator/workspaces",
+                    "cache_root": ".crewplane/workspaces",
                 }
             )
 
@@ -302,13 +302,13 @@ class ConfigTests(unittest.TestCase):
             Settings(
                 workspace={
                     "enabled": True,
-                    "cache_root": "~orchestrator_cli_missing_user_for_tests/cache",
+                    "cache_root": "~crewplane_missing_user_for_tests/cache",
                 }
             )
 
     def test_settings_rejects_unknown_keys(self) -> None:
         with self.assertRaisesRegex(ValidationError, "Extra inputs are not permitted"):
-            Settings.model_validate({"default_workspace": ".orchestrator/workspaces"})
+            Settings.model_validate({"default_workspace": ".crewplane/workspaces"})
 
     def test_load_config_rejects_unknown_settings_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -323,7 +323,7 @@ class ConfigTests(unittest.TestCase):
                         '    cli_cmd: ["echo"]',
                         "",
                         "settings:",
-                        '  default_workspace: ".orchestrator/workspaces"',
+                        '  default_workspace: ".crewplane/workspaces"',
                     ]
                 ),
                 encoding="utf-8",
@@ -451,7 +451,7 @@ class ConfigTests(unittest.TestCase):
                 load_config(path)
             message = str(exc_info.exception)
             self.assertIn(f"Expected '{SCHEMA_VERSION}'", message)
-            self.assertIn("orchestrator init", message)
+            self.assertIn("crewplane init", message)
 
     def test_settings_default_integrations(self) -> None:
         settings = Settings()

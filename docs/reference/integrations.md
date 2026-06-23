@@ -10,8 +10,8 @@ Built-in aliases:
 | `ui` | `tmux`, `none` |
 | `artifacts` | `filesystem` |
 
-Aliases resolve through the internal registry. A dotted path can also be used
-for an external adapter, for example `package.module:ClassName`.
+Aliases resolve through the internal registry. An external adapter can also be
+selected with `package.module:ClassName` or `package.module.ClassName`.
 
 ## Invokers
 
@@ -45,8 +45,9 @@ support `node_id`, `task_id`, `provider`, `role`, `audit_round_num`, and
 
 ### `tmux`
 
-The `tmux` UI opens a compact live dashboard when tmux is available. Missing
-tmux degrades to a warning and normal execution.
+The `tmux` UI opens a compact live dashboard when output is a terminal,
+`--no-live` is not set, tmux is available, and provider CLI output logging is
+enabled. Missing tmux degrades to a warning and normal execution.
 
 Options:
 
@@ -66,13 +67,14 @@ Options: none.
 ### `filesystem`
 
 The `filesystem` artifact backend stores stages, results, logs, manifests,
-preflight bundles, locks, and workspace state under `.orchestrator/`.
+preflight bundles, locks, and workspace state under `.crewplane/`.
 
 Options:
 
 - `log_cli_output`
 - `allowed_template_paths`
 
-Real execution currently depends on this backend for lock, skip, resume,
-full-run, and workspace-lineage behavior. Non-filesystem artifact backends are
-limited to validation and dry-run in this release.
+This is the only built-in artifact backend. Real execution relies on the
+artifact-store port for locks, skip/resume history, full-run output, and
+workspace lineage; a custom backend must implement those port capabilities to be
+usable for real runs.

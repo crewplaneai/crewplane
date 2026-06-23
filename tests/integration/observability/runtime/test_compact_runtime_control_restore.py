@@ -2,12 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.observability.events import (
+from crewplane.observability.events import (
     apply_event,
     build_initial_state,
 )
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.types import (
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.types import (
     DashboardSnapshot,
     RunContext,
     RunResult,
@@ -155,9 +155,9 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
                         [
                             "set-option",
                             "-t",
-                            f"orchestrator-compact-resize-{case_name}",
+                            f"crewplane-compact-resize-{case_name}",
                             "key-table",
-                            "orchestrator-dashboard",
+                            "crewplane-dashboard",
                         ],
                         commands,
                     )
@@ -199,7 +199,7 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
                 == [
                     "set-option",
                     "-t",
-                    "orchestrator-compact-resize-retry",
+                    "crewplane-compact-resize-retry",
                     "key-table",
                 ]
             ]
@@ -214,7 +214,7 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
                 == [
                     "set-option",
                     "-t",
-                    "orchestrator-compact-resize-retry",
+                    "crewplane-compact-resize-retry",
                     "key-table",
                 ]
             ]
@@ -252,9 +252,9 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
                 [
                     "set-option",
                     "-t",
-                    "orchestrator-compact-first-snapshot-control",
+                    "crewplane-compact-first-snapshot-control",
                     "key-table",
-                    "orchestrator-dashboard",
+                    "crewplane-dashboard",
                 ],
                 commands,
             )
@@ -300,9 +300,9 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
                 [
                     "set-option",
                     "-t",
-                    "orchestrator-compact-inspect-resize",
+                    "crewplane-compact-inspect-resize",
                     "key-table",
-                    "orchestrator-inspect",
+                    "crewplane-inspect",
                 ],
                 commands,
             )

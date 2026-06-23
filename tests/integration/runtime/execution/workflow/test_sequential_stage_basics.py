@@ -5,22 +5,22 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.artifacts import OutputManager, safe_artifact_name
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager, safe_artifact_name
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.observability.persistent import PersistentRunLogger
-from orchestrator_cli.observability.types import RunContext
-from orchestrator_cli.runtime.execution.common import (
+from crewplane.observability.events import ExecutionEvent
+from crewplane.observability.persistent import PersistentRunLogger
+from crewplane.observability.types import RunContext
+from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
-from orchestrator_cli.runtime.execution.fragment_assembler import ResolvedPrompt
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.runtime.execution.fragment_assembler import ResolvedPrompt
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     FailingLogOutputManager,
@@ -103,7 +103,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 return ResolvedPrompt(f"prompt candidate={candidate_source}")
 
             with patch(
-                "orchestrator_cli.runtime.execution.sequential.resolve_prompt_with_output_budget_details",
+                "crewplane.runtime.execution.sequential.resolve_prompt_with_output_budget_details",
                 side_effect=resolve_prompt,
             ):
                 await execute_sequential_stage(config, node, output, invoker=invoker)

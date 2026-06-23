@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from orchestrator_cli.observability.tmux.client import (
+from crewplane.observability.tmux.client import (
     TMUX_TIMEOUT_RETURN_CODE,
     TMUX_TIMEOUT_STDERR,
     TmuxCommandClient,
@@ -54,7 +54,7 @@ def test_has_session_timeout_is_treated_as_existing(
 
     monkeypatch.setattr(subprocess, "run", timeout_run)
 
-    assert client.session_exists("orchestrator-run")
+    assert client.session_exists("crewplane-run")
 
 
 def test_pane_dimension_timeout_returns_default_and_marks_timeout(

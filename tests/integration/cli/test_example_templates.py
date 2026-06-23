@@ -10,17 +10,17 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-import orchestrator_cli.cli.templates as templates
-import orchestrator_cli.cli.workflow_runner as workflow_runner
-from orchestrator_cli.core.config import (
+import crewplane.cli.templates as templates
+import crewplane.cli.workflow_runner as workflow_runner
+from crewplane.core.config import (
     DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
     DEFAULT_INVOCATION_TIMEOUT_SECONDS,
     load_config,
 )
-from orchestrator_cli.core.preflight import load_workflow_source_for_preflight
-from orchestrator_cli.core.workflow_loader import load_tasks_with_sources
-from orchestrator_cli.core.workflow_validation import validate_workflow_plan
-from orchestrator_cli.core.yaml_loader import load_yaml_unique
+from crewplane.core.preflight import load_workflow_source_for_preflight
+from crewplane.core.workflow.loading import load_tasks_with_sources
+from crewplane.core.workflow.validation import validate_workflow_plan
+from crewplane.core.yaml_loader import load_yaml_unique
 
 
 def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
@@ -66,13 +66,13 @@ def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: 
 
 
 def _render_initialized_template_tree(rendered_root: Path) -> Path:
-    orchestrator_dir = rendered_root / ".orchestrator"
-    workflows_dir = orchestrator_dir / "workflows"
+    state_dir = rendered_root / ".crewplane"
+    workflows_dir = state_dir / "workflows"
     workflow_library_dir = workflows_dir / "example-templates"
     workflows_dir.mkdir(parents=True, exist_ok=True)
     workflow_library_dir.mkdir(parents=True, exist_ok=True)
 
-    (orchestrator_dir / "config.yml").write_text(
+    (state_dir / "config.yml").write_text(
         templates.render_template_content(
             templates.CONFIG_TEMPLATE.read_text(encoding="utf-8")
         ),
@@ -95,13 +95,13 @@ def _render_initialized_template_tree(rendered_root: Path) -> Path:
             ),
             encoding="utf-8",
         )
-    return orchestrator_dir
+    return state_dir
 
 
 def _initialize_git_repository(root: Path) -> None:
     _run_git(root, "init")
-    _run_git(root, "config", "user.name", "Orchestrator Test")
-    _run_git(root, "config", "user.email", "orchestrator-test@example.invalid")
+    _run_git(root, "config", "user.name", "Crewplane Test")
+    _run_git(root, "config", "user.email", "crewplane-test@example.invalid")
     _run_git(root, "add", ".")
     _run_git(root, "commit", "-m", "initial")
 
@@ -116,7 +116,7 @@ def _run_git(root: Path, *args: str) -> None:
 
 class ExampleTemplateTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.template_dir = Path("src/orchestrator_cli/example_templates")
+        self.template_dir = Path("src/crewplane/example_templates")
 
     def test_config_template_is_valid(self) -> None:
         config_path = self.template_dir / "config.yml"
@@ -295,8 +295,8 @@ class ExampleTemplateTests(unittest.TestCase):
         )
 
         expected_links = [
-            "../../src/orchestrator_cli/example_templates/example-templates/worktree/workspace-alternatives-example.task.md",
-            "../../src/orchestrator_cli/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md",
+            "../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md",
+            "../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md",
         ]
         for expected_link in expected_links:
             self.assertIn(expected_link, workspace_docs)
@@ -456,9 +456,9 @@ class ExampleTemplateTests(unittest.TestCase):
     def test_initialized_workflow_templates_compile_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             rendered_root = Path(tmp_dir)
-            orchestrator_dir = _render_initialized_template_tree(rendered_root)
+            state_dir = _render_initialized_template_tree(rendered_root)
             _initialize_git_repository(rendered_root)
-            config = load_config(orchestrator_dir / "config.yml")
+            config = load_config(state_dir / "config.yml")
             assert config.settings is not None
             config.settings.workspace.enabled = True
             config.settings.workspace.cache_root = (
@@ -472,9 +472,7 @@ class ExampleTemplateTests(unittest.TestCase):
                 "seed": 42,
             }
 
-            for workflow_path in sorted(
-                (orchestrator_dir / "workflows").rglob("*.task.md")
-            ):
+            for workflow_path in sorted((state_dir / "workflows").rglob("*.task.md")):
                 source = load_workflow_source_for_preflight(
                     workflow_path,
                     project_root=rendered_root,
@@ -486,7 +484,7 @@ class ExampleTemplateTests(unittest.TestCase):
                     no_live=True,
                     fingerprint_key_policy="read_only",
                     project_root=rendered_root,
-                    orchestrator_dir=orchestrator_dir,
+                    state_dir=state_dir,
                     check_cli_availability=False,
                 )
                 self.assertFalse(
@@ -502,11 +500,11 @@ class ExampleTemplateTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             rendered_root = Path(tmp_dir)
-            orchestrator_dir = rendered_root / ".orchestrator"
-            workflows_dir = orchestrator_dir / "workflows"
+            state_dir = rendered_root / ".crewplane"
+            workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True, exist_ok=True)
 
-            rendered_config_path = orchestrator_dir / "config.yml"
+            rendered_config_path = state_dir / "config.yml"
             rendered_workflow_path = workflows_dir / "code-review-example.task.md"
             rendered_config_path.write_text(
                 templates.render_template_content(
@@ -553,10 +551,10 @@ class ExampleTemplateTests(unittest.TestCase):
                 os.chdir(original_cwd)
 
             execution_stage_root = next(
-                (rendered_root / ".orchestrator" / "execution-stages").iterdir()
+                (rendered_root / ".crewplane" / "execution-stages").iterdir()
             )
             execution_results_root = next(
-                (rendered_root / ".orchestrator" / "execution-results").iterdir()
+                (rendered_root / ".crewplane" / "execution-results").iterdir()
             )
             summary_path = execution_stage_root / "logs" / "summary.md"
             event_log_path = execution_stage_root / "logs" / "events.ndjson"

@@ -5,22 +5,22 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from orchestrator_cli.bootstrap import build_runtime_config_snapshot
-from orchestrator_cli.core.preflight import (
+from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.core.preflight import (
     PreflightCompileOptions,
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
-from orchestrator_cli.core.preflight.workspace.files import (
+from crewplane.core.preflight.workspace.files import (
     git_reads as workspace_git_file_reads,
 )
-from orchestrator_cli.core.prompt_segments import PromptSegment
-from orchestrator_cli.core.workflow_models import (
+from crewplane.core.prompt_segments import PromptSegment
+from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
@@ -81,7 +81,7 @@ def test_workspace_imported_file_token_resolves_from_module_root(
     tmp_path: Path,
 ) -> None:
     root = tmp_path
-    child_dir = root / ".orchestrator" / "workflows" / "child"
+    child_dir = root / ".crewplane" / "workflows" / "child"
     root_requirements = root / "docs" / "requirements.md"
     child_requirements = child_dir / "docs" / "requirements.md"
     root_requirements.parent.mkdir()
@@ -110,7 +110,7 @@ def test_workspace_imported_file_token_resolves_from_module_root(
         ),
         encoding="utf-8",
     )
-    root_workflow = root / ".orchestrator" / "workflows" / "root.task.md"
+    root_workflow = root / ".crewplane" / "workflows" / "root.task.md"
     root_workflow.write_text(
         "\n".join(
             [
@@ -141,7 +141,7 @@ def test_workspace_imported_file_token_resolves_from_module_root(
         runtime_snapshot=runtime_snapshot.snapshot,
         options=PreflightCompileOptions(
             project_root=root,
-            orchestrator_dir=root / ".orchestrator",
+            state_dir=root / ".crewplane",
             fingerprint_key_policy="read_only",
             workspace_source_snapshot=source_snapshot,
         ),
@@ -150,24 +150,24 @@ def test_workspace_imported_file_token_resolves_from_module_root(
     assert preview.diagnostics == []
     assert {
         locator.workspace_relative_path for locator in preview.workspace_file_locators
-    } == {".orchestrator/workflows/child/docs/requirements.md"}
+    } == {".crewplane/workflows/child/docs/requirements.md"}
     assert {
         locator.git_top_relative_path for locator in preview.workspace_file_locators
-    } == {".orchestrator/workflows/child/docs/requirements.md"}
+    } == {".crewplane/workflows/child/docs/requirements.md"}
     locator = next(
         locator
         for locator in preview.workspace_file_locators
         if locator.source_class == "project_initial"
     )
     assert locator.source_root == child_dir.as_posix()
-    assert locator.source_root_relative_to_project == ".orchestrator/workflows/child"
+    assert locator.source_root_relative_to_project == ".crewplane/workflows/child"
     assert (
         locator.workspace_relative_path
-        == ".orchestrator/workflows/child/docs/requirements.md"
+        == ".crewplane/workflows/child/docs/requirements.md"
     )
     assert (
         locator.git_top_relative_path
-        == ".orchestrator/workflows/child/docs/requirements.md"
+        == ".crewplane/workflows/child/docs/requirements.md"
     )
     assert locator.content_ref is not None
     assert preview.workspace_file_payloads == {
@@ -326,13 +326,50 @@ def test_workspace_enabled_missing_project_initial_file_locator_fails(
     assert "does not resolve" in preview.diagnostics[0].message
 
 
+def test_workspace_enabled_file_locator_rejects_preflight_runtime_root(
+    tmp_path: Path,
+) -> None:
+    preview = compile_workflow_with_source_snapshot(
+        tmp_path,
+        workspace_workflow("Read {{file:.crewplane/preflight/fingerprint.key}}"),
+        workspace_source_snapshot("a" * 40),
+    )
+
+    assert preview.workflow_signature is None
+    assert [(item.code, item.phase, item.node_id) for item in preview.diagnostics] == [
+        ("WORKSPACE-FILE-LOCATOR", "workspace_file_locator_policy", "implement")
+    ]
+    assert "reserved .crewplane runtime roots" in preview.diagnostics[0].message
+
+
+def test_workspace_enabled_file_locator_allows_crewplane_inputs(
+    tmp_path: Path,
+) -> None:
+    input_file = tmp_path / ".crewplane" / "inputs" / "context.md"
+    input_file.parent.mkdir(parents=True)
+    input_file.write_text("input context\n", encoding="utf-8")
+    source_snapshot = init_git_repo(tmp_path)
+
+    preview = compile_workflow_with_source_snapshot(
+        tmp_path,
+        workspace_workflow("Read {{file:.crewplane/inputs/context.md}}"),
+        source_snapshot,
+    )
+
+    assert preview.diagnostics == []
+    locator = preview.workspace_file_locators[0]
+    assert locator.workspace_relative_path == ".crewplane/inputs/context.md"
+    assert locator.content_ref is not None
+    assert preview.workspace_file_payloads == {locator.content_ref: b"input context\n"}
+
+
 def test_workspace_enabled_unresolved_home_file_locator_reports_diagnostic(
     tmp_path: Path,
 ) -> None:
     preview = compile_workflow_with_source_snapshot(
         tmp_path,
         workspace_workflow(
-            "Read {{file:~orchestrator_cli_missing_user_for_tests/context.md}}"
+            "Read {{file:~crewplane_missing_user_for_tests/context.md}}"
         ),
         workspace_source_snapshot("a" * 40),
     )

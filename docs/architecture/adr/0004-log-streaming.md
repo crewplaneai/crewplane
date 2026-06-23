@@ -22,13 +22,13 @@ availability.
 Live log streaming stays fact-based. The tmux dashboard derives liveness from
 the invocation state and local log file metadata that already exist, then lets
 users explicitly enter a raw log inspector when they need exact lines or
-scrollback. The orchestrator does not infer provider-specific inner phases such
+scrollback. Crewplane does not infer provider-specific inner phases such
 as `thinking`, `tool_running`, or `streaming` in v1.
 
 ## Context
-The orchestrator runs external AI CLIs programmatically. Those tools can have
+Crewplane runs external AI CLIs programmatically. Those tools can have
 long quiet periods during model work, tool use, retries, or internal UI phases.
-The orchestrator cannot force upstream CLIs to emit richer live signals, and
+Crewplane cannot force upstream CLIs to emit richer live signals, and
 the project deliberately avoids understanding provider internals as orchestration
 state.
 
@@ -67,7 +67,7 @@ structured progress stream.
 Run-level operational logs are stored under:
 
 ```text
-.orchestrator/execution-stages/<run_key>/logs/
+.crewplane/execution-stages/<run_key>/logs/
 ```
 
 The run-level files are:
@@ -78,13 +78,13 @@ The run-level files are:
 Existing provider CLI logs remain under each node:
 
 ```text
-.orchestrator/execution-stages/<run_key>/<node>/logs/<provider>/<task>.log
+.crewplane/execution-stages/<run_key>/<node>/logs/<provider>/<task>.log
 ```
 
 Run manifests remain metadata-only under:
 
 ```text
-.orchestrator/execution-stages/<run_key>/manifests/*.json
+.crewplane/execution-stages/<run_key>/manifests/*.json
 ```
 
 `logs` and `manifests` are reserved run-root names and are invalid workflow node
@@ -139,8 +139,8 @@ settled rules:
 `ArtifactStorePort` exposes run-level log paths:
 
 - `get_run_log_dir() -> Path`
-- `get_orchestrator_event_log_path() -> Path`
-- `get_orchestrator_summary_path() -> Path`
+- `get_run_event_log_path() -> Path`
+- `get_run_summary_path() -> Path`
 
 Stage finalization returns structured facts:
 
@@ -410,7 +410,7 @@ raw/plain display and do not affect workflow execution.
 ## Rationale
 ### Always-On Run Logs
 `logs/` at the run root is the right boundary because the run root is already
-owned by the orchestrator. A nested `logs/orchestrator/` directory would add
+owned by Crewplane. A nested `logs/crewplane/` directory would add
 indirection without solving a current collision.
 
 `manifests/` stays metadata-only so deterministic workflow-signature metadata
@@ -463,8 +463,8 @@ users need it.
   events would need rate limiting or coalescing before being added.
 
 ## Defaults and Policy
-- Orchestrator run logs are always generated for real runs.
-- There is no `log_orchestrator_output` flag in v1.
+- Crewplane run logs are always generated for real runs.
+- There is no `log_crewplane_output` flag in v1.
 - `settings.log_level` does not control persistence; all lifecycle events are
   persisted. If log-level settings are wired later, they may control only extra
   `runtime_log` verbosity.

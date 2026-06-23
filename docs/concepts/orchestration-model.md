@@ -4,7 +4,7 @@ Crewplane is a local control plane for AI coding CLIs.
 
 The core model is blackboard orchestration: providers do not coordinate through
 shared in-memory state. Each provider invocation receives a rendered prompt and
-writes output that Crewplane persists as artifacts under `.orchestrator/`.
+writes output that Crewplane persists as artifacts under `.crewplane/`.
 Downstream nodes read upstream artifacts through explicit workflow references.
 
 ## DAG Execution
@@ -22,7 +22,7 @@ Supported node modes:
 ## CLI-First Providers
 
 Crewplane invokes provider tools as external commands configured in
-`.orchestrator/config.yml`. It does not use vendor SDKs for provider execution.
+`.crewplane/config.yml`. It does not use vendor SDKs for provider execution.
 
 Provider-specific command building, retries, quota detection, prompt transport,
 output parsing, and usage parsing live behind the invoker adapter boundary.
@@ -31,8 +31,8 @@ output parsing, and usage parsing live behind the invoker adapter boundary.
 
 Runs write readable files under:
 
-- `.orchestrator/execution-stages/`
-- `.orchestrator/execution-results/`
+- `.crewplane/execution-stages/`
+- `.crewplane/execution-results/`
 
 The stage tree contains logs, manifests, preflight bundles, per-node working
 artifacts, and runtime state. The results tree contains consolidated node

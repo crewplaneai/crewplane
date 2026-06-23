@@ -2,21 +2,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.observability.events import ExecutionEvent
-from orchestrator_cli.observability.layout import compute_topology_layout
-from orchestrator_cli.observability.persistent import PersistentRunLogger
-from orchestrator_cli.observability.runtime import ObservabilityHub
-from orchestrator_cli.observability.types import RunContext
-from orchestrator_cli.runtime.agent.usage import estimate_token_count
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.observability.events import ExecutionEvent
+from crewplane.observability.layout import compute_topology_layout
+from crewplane.observability.persistent import PersistentRunLogger
+from crewplane.observability.runtime import ObservabilityHub
+from crewplane.observability.types import RunContext
+from crewplane.runtime.agent.usage import estimate_token_count
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     BlockingSnapshotObserver,
@@ -199,9 +199,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     blocking_observer.release.set()
 
-            event_log = output.get_orchestrator_event_log_path().read_text(
-                encoding="utf-8"
-            )
+            event_log = output.get_run_event_log_path().read_text(encoding="utf-8")
             self.assertIn('"event_type": "invocation_started"', event_log)
             self.assertIn('"event_type": "invocation_finished"', event_log)
 

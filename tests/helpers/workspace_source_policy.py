@@ -3,16 +3,16 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from orchestrator_cli.cli.run.workspace import source_policy as policy
-from orchestrator_cli.cli.run.workspace.git_source import GitSourceContext
-from orchestrator_cli.core.config import AgentConfig, Config, Settings
-from orchestrator_cli.core.workflow_models import (
+from crewplane.cli.run.workspace import source_policy as policy
+from crewplane.cli.run.workspace.git_source import GitSourceContext
+from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 def workspace_source_config() -> Config:

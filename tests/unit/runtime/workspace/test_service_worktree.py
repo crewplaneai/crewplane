@@ -6,21 +6,21 @@ from pathlib import Path
 
 import pytest
 
-import orchestrator_cli.runtime.workspace.prepared_workspace as prepared_workspace_module
-import orchestrator_cli.runtime.workspace.worktree as workspace_worktree
-from orchestrator_cli.artifacts.generated_files.catalog import (
+import crewplane.runtime.workspace.prepared_workspace as prepared_workspace_module
+import crewplane.runtime.workspace.worktree as workspace_worktree
+from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
 )
-from orchestrator_cli.runtime.execution.provider_call.generated_files import (
+from crewplane.runtime.execution.provider_call.generated_files import (
     changed_generated_file_paths,
 )
-from orchestrator_cli.runtime.workspace import (
+from crewplane.runtime.workspace import (
     PreparedWorkspace,
     prepare_invocation_workspace,
 )
-from orchestrator_cli.runtime.workspace.snapshot import remove_workspace_path
-from orchestrator_cli.runtime.workspace.worktree import remove_worktree_workspace
-from orchestrator_cli.runtime.workspace.worktree.types import WorktreeSourceRef
+from crewplane.runtime.workspace.snapshot import remove_workspace_path
+from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -565,7 +565,7 @@ def _workspace_run_refs(repo: Path) -> str:
         repo,
         "for-each-ref",
         "--format=%(refname)",
-        "refs/orchestrator-cli/runs/workspace-run-001",
+        "refs/crewplane/runs/workspace-run-001",
     )
 
 

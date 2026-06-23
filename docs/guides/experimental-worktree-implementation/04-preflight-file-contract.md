@@ -8,25 +8,23 @@ model: workflow-level `worktrees`, node-level `worktree` selectors,
 non-lineage workspaces, and `worktree: none` for project-root execution.
 
 ## Preflight Phase Model
-When workspace isolation is enabled, preflight phases become:
+When workspace isolation is enabled, persisted diagnostics use these preflight
+phase values:
 
 1. `parse`
-2. `frontmatter`
-3. `schema`
-4. `import`
-5. `workspace_policy`
-6. `invoker_workspace_compatibility`
-7. `source_policy`
-8. `worktree_contract`
-9. `workspace_file_locator_policy`
-10. `provider`
-11. `reference`
-12. `node_policy`
-13. `file_policy`
-14. `env_policy`
-15. `var_policy`
-16. `template_plan`
-17. `resource_estimation`
+2. `validation`
+3. `workspace_policy`
+4. `invoker_workspace_compatibility`
+5. `source_policy`
+6. `worktree_contract`
+7. `workspace_file_locator_policy`
+8. `provider`
+9. `reference`
+10. `node_policy`
+11. `file_policy`
+12. `env_policy`
+13. `var_policy`
+14. `template_plan`
 
 `invoker_workspace_compatibility` validates the selected invoker adapter's
 optional capability record only for enabled-mode real runs that invoke
@@ -142,7 +140,7 @@ Rules:
 14. Diagnostics name node, role, round when relevant, token, source workflow,
     invocation source commit, and workspace-relative path.
 15. Generated templates and examples must not depend on untracked ignored
-    `.orchestrator/inputs` files for workspace-enabled examples.
+    `.crewplane/inputs` files for workspace-enabled examples.
 16. Runtime records the digest of the exact bytes injected into the prompt or
     input artifact.
 
@@ -167,7 +165,7 @@ Duplicate skip and resume validate rendered bytes differently by source class:
   `run_base_commit` blob identities and canonical blob-byte digests.
 - Candidate/reviewer/remediation bytes are execution facts. They validate by
   cross-checking persisted invocation-source descriptors, rendered-file
-  descriptors, node manifests, and `workspace-state.json`.
+  descriptors, node manifests, and `workspace-state*.json`.
 - Duplicate skip does not allocate workspaces or import bundles only to
   recompute candidate-source prompt bytes. Missing or inconsistent persisted
   descriptors fail closed.
@@ -175,7 +173,7 @@ Duplicate skip and resume validate rendered bytes differently by source class:
 Input nodes do not invoke providers and never allocate provider workspaces. In
 workspace-enabled mode, runtime reads only the compiled project-source Git blob
 locators needed to assemble the input output. No snapshot directory, workspace
-cache directory, `workspace-state.json`, or source lineage artifact is created
+cache directory, `workspace-state*.json`, or source lineage artifact is created
 for the input node. Duplicate skip and resume validate recorded blob
 identities, rendered workspace-file digests, literal path resolution
 descriptors, and output artifact hashes through the ordinary artifact contract.

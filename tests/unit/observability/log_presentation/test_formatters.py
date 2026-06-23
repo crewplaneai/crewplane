@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from orchestrator_cli.architecture.contracts import LogPresentationDescriptor
-from orchestrator_cli.observability.log_presentation import (
+from crewplane.architecture.contracts import LogPresentationDescriptor
+from crewplane.observability.log_presentation import (
     JSON_OBJECT_THROTTLE,
     LogPresentationLimits,
     format_log_file,
     formatters,
 )
-from orchestrator_cli.observability.log_presentation.json_extract import (
+from crewplane.observability.log_presentation.json_extract import (
     exceeds_json_depth,
 )
 

@@ -3,24 +3,24 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestrator_cli.adapters.invokers.cli_invoker import (
+from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from orchestrator_cli.architecture.contracts import (
+from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
 )
-from orchestrator_cli.artifacts import OutputManager
-from orchestrator_cli.core.config import AgentConfig, Config
-from orchestrator_cli.core.workflow_models import (
+from crewplane.artifacts import OutputManager
+from crewplane.core.config import AgentConfig, Config
+from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from orchestrator_cli.runtime.agent.invoker import PlannedAgentInvoker
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.runtime.agent.invoker import PlannedAgentInvoker
+from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     execute_workflow,
 )
@@ -73,7 +73,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.command.run_command_once",
+                "crewplane.runtime.agent.invocation.command.run_command_once",
                 side_effect=fake_run_command_once,
             ):
                 await execute_workflow(
@@ -139,7 +139,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.command.run_command_once",
+                "crewplane.runtime.agent.invocation.command.run_command_once",
                 side_effect=fake_run_command_once,
             ):
                 await execute_workflow(
@@ -216,7 +216,7 @@ class WorkflowCliInvocationChainTests(unittest.IsolatedAsyncioTestCase):
                 return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
             with patch(
-                "orchestrator_cli.runtime.agent.invocation.command.run_command_once",
+                "crewplane.runtime.agent.invocation.command.run_command_once",
                 side_effect=fake_run_command_once,
             ):
                 await execute_workflow(

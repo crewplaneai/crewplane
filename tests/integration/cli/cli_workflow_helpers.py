@@ -4,7 +4,7 @@ from typing import Any
 
 from rich.console import Console
 
-from orchestrator_cli.version import SCHEMA_VERSION
+from crewplane.version import SCHEMA_VERSION
 
 
 class ConsoleFactory:
@@ -82,7 +82,7 @@ def write_basic_config_with_settings(path: Path, log_cli_output: bool) -> None:
 
 def repo_task_workflow_stage_names() -> set[str]:
     stages_root = (
-        Path(__file__).resolve().parent.parent / ".orchestrator" / "execution-stages"
+        Path(__file__).resolve().parent.parent / ".crewplane" / "execution-stages"
     )
     if not stages_root.exists():
         return set()

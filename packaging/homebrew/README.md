@@ -5,7 +5,7 @@ This directory contains the formula source intended for the external tap:
 ```bash
 brew tap crewplaneai/crewplane
 brew install crewplane
-orchestrator --help
+crewplane --help
 ```
 
 The tap repository is expected to live at

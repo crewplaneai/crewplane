@@ -20,7 +20,7 @@ are substituted during composition, and unbound params are rewritten to
 `{{var:key}}` before preflight reference policy runs. Runtime execution never
 sees persisted `param` tokens.
 
-Input file locations are not an orchestrator-owned storage convention. Workflows
+Input file locations are not a Crewplane-owned storage convention. Workflows
 declare reusable raw-file boundaries through `inputs` plus `mode: input` nodes,
 and those nodes point at project-local files through the existing `{{file:...}}`
 template policy. Import binding remains compile-time graph rewriting; unbound
@@ -58,13 +58,13 @@ Prior to this decision, the `.task.md` workflow structure had no mechanism for i
 - The compiled graph is larger and slightly harder to debug directly without observability tooling since the executing steps span multiple source files.
 
 ## Updates
-- **2026-04-11**: Full composition capability implemented via `workflow_composition/__init__.py`, enabling parameterized document rewriting and namespace tracking prior to DAG scheduling.
+- **2026-04-11**: Full composition capability implemented via `workflow/composition/__init__.py`, enabling parameterized document rewriting and namespace tracking prior to DAG scheduling.
 - **2026-04-11**: Added `mode: input`, top-level workflow `inputs`, and `imports[].inputs`. Bound imported inputs are pruned during composition and rewritten to explicit upstream node dependencies. `imports[].with` remains prompt-only.
-- **2026-05-06**: Input-boundary semantics were refined, which separates explicit workflow input declaration from post-composition file materialization and removes the `.orchestrator/inputs` convention.
+- **2026-05-06**: Input-boundary semantics were refined, which separates explicit workflow input declaration from post-composition file materialization and removes the `.crewplane/inputs` convention.
 - **2026-06-07**: Folded in composition boundary hardening. Shared syntax
   constants and structured diagnostics prevent drift between imported workflow
   composition, validation, preflight planning, and runtime execution.
-- **2026-06-09**: `orchestrator init` stopped creating
-  `.orchestrator/inputs/`; the sample raw input files moved under the generated
+- **2026-06-09**: `crewplane init` stopped creating
+  `.crewplane/inputs/`; the sample raw input files moved under the generated
   workflow library's `example-templates/sample-inputs/` directory as copyable
   examples rather than a blessed project input location.
