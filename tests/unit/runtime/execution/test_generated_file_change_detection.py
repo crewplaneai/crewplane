@@ -17,6 +17,7 @@ from crewplane.runtime.execution.provider_call.generated_files import (
     GeneratedFileChangeBaseline,
     snapshot_invocation_generated_files,
 )
+from crewplane.runtime.execution.provider_call.types import ProviderOutputPolicy
 from crewplane.runtime.workspace import PreparedWorkspace
 
 
@@ -270,6 +271,47 @@ def test_snapshot_invocation_generated_files_skips_missing_workspace_cwd(
             node_id="build",
             task_id="task",
             provider="provider",
+            role=ProviderRole.EXECUTOR,
+        ),
+    )
+
+    assert snapshot_invocation_generated_files(request, prepared_workspace) is None
+
+
+def test_snapshot_invocation_generated_files_rejects_missing_output_by_default(
+    tmp_path: Path,
+) -> None:
+    request = SimpleNamespace(
+        output_file=tmp_path / "missing.md",
+        provider_output_policy=ProviderOutputPolicy.REQUIRE_OUTPUT,
+    )
+    prepared_workspace = PreparedWorkspace(
+        cwd=tmp_path,
+        invocation_context=InvocationContext(
+            node_id="build",
+            task_id="task",
+            provider="provider",
+            role=ProviderRole.EXECUTOR,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="requires an existing provider output"):
+        snapshot_invocation_generated_files(request, prepared_workspace)
+
+
+def test_snapshot_invocation_generated_files_allows_explicit_missing_output_policy(
+    tmp_path: Path,
+) -> None:
+    request = SimpleNamespace(
+        output_file=tmp_path / "missing.md",
+        provider_output_policy=ProviderOutputPolicy.ALLOW_MISSING_OUTPUT,
+    )
+    prepared_workspace = PreparedWorkspace(
+        cwd=tmp_path,
+        invocation_context=InvocationContext(
+            node_id="review.loop",
+            task_id="exec_executor_0",
+            provider="exec",
             role=ProviderRole.EXECUTOR,
         ),
     )

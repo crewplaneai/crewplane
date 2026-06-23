@@ -486,3 +486,113 @@ def test_preflight_execution_plan_rejects_value_fingerprint_version_mismatch(
         match="value fingerprint at index 0 payload version must be",
     ):
         PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_provider_node_without_render_plan(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["nodes"][0]["render_plan_id"] = None
+
+    with pytest.raises(ValidationError, match="must define render_plan_id"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_provider_node_without_provider_records(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["nodes"][0]["provider_records"] = []
+
+    with pytest.raises(ValidationError, match="at least one provider record"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_input_node_without_input_source(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    node = payload["nodes"][0]
+    node["mode"] = "input"
+    node["render_plan_id"] = None
+    node["provider_records"] = []
+    node["input_content_ref"] = None
+    node["input_workspace_file_locator_id"] = None
+
+    with pytest.raises(ValidationError, match="exactly one input source reference"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_input_node_with_ambiguous_input_sources(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    node = payload["nodes"][0]
+    node["mode"] = "input"
+    node["render_plan_id"] = None
+    node["provider_records"] = []
+    node["input_content_ref"] = "static/input.txt"
+    node["input_workspace_file_locator_id"] = "workspace:input"
+
+    with pytest.raises(ValidationError, match="exactly one input source reference"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_input_node_with_blank_input_source_reference(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    node = payload["nodes"][0]
+    node["mode"] = "input"
+    node["render_plan_id"] = None
+    node["provider_records"] = []
+    node["input_content_ref"] = " "
+    node["input_workspace_file_locator_id"] = None
+
+    with pytest.raises(ValidationError, match="exactly one input source reference"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_provider_node_with_blank_render_plan_id(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["nodes"][0]["render_plan_id"] = " "
+
+    with pytest.raises(ValidationError, match="must define render_plan_id"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_malformed_fragment_payload(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    fragment = payload["render_plans"][0]["streams"][0]["fragments"][0]
+    fragment["content_ref"] = "static/unrelated.txt"
+
+    with pytest.raises(ValidationError, match="literal fragments must not define"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_persisted_param_token(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["token_catalog"] = [
+        {
+            "occurrence_id": "build:executor:0:0",
+            "node_id": "build",
+            "target_role": "executor",
+            "source_role": "shared",
+            "raw_token": "{{param:name}}",
+            "token_kind": "param",
+            "fragment_index": 0,
+            "signature": "param-signature",
+        }
+    ]
+
+    with pytest.raises(
+        ValidationError,
+        match="Param tokens are composition-only",
+    ):
+        PreflightExecutionPlan(**payload)

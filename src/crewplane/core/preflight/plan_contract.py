@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from crewplane.architecture.contracts import JsonObject
 from crewplane.version import SCHEMA_VERSION
 
@@ -29,10 +31,12 @@ def validate_current_execution_plan_shape(
     runtime_config_snapshot: JsonObject,
     fingerprint_metadata: JsonObject,
     value_fingerprints: list[dict[str, str]],
+    nodes: Sequence[object],
 ) -> None:
     _validate_current_runtime_snapshot_shape(runtime_config_snapshot)
     _validate_current_fingerprint_metadata_shape(fingerprint_metadata)
     _validate_current_value_fingerprint_shape(value_fingerprints)
+    _validate_persisted_node_contracts(nodes)
 
 
 def _validate_current_runtime_snapshot_shape(snapshot: JsonObject) -> None:
@@ -101,6 +105,45 @@ def _validate_current_value_fingerprint_shape(
                 "Preflight plan value fingerprint at index "
                 f"{index} payload version must be '{FINGERPRINT_PAYLOAD_VERSION}'."
             )
+
+
+def _validate_persisted_node_contracts(nodes: Sequence[object]) -> None:
+    for node in nodes:
+        if getattr(node, "mode", None) == "input":
+            _validate_persisted_input_node_contract(node)
+            continue
+        _validate_persisted_provider_node_contract(node)
+
+
+def _validate_persisted_input_node_contract(node: object) -> None:
+    input_sources = [
+        field
+        for field in ("input_content_ref", "input_workspace_file_locator_id")
+        if str(getattr(node, field, "") or "").strip()
+    ]
+    if len(input_sources) != 1:
+        raise ValueError(
+            "Persisted input preflight node "
+            f"'{_node_id(node)}' must define exactly one input source reference."
+        )
+
+
+def _validate_persisted_provider_node_contract(node: object) -> None:
+    if not str(getattr(node, "render_plan_id", "") or "").strip():
+        raise ValueError(
+            "Persisted provider preflight node "
+            f"'{_node_id(node)}' must define render_plan_id."
+        )
+    if not getattr(node, "provider_records", ()):
+        raise ValueError(
+            "Persisted provider preflight node "
+            f"'{_node_id(node)}' must define at least one provider record."
+        )
+
+
+def _node_id(node: object) -> str:
+    value = getattr(node, "id", "<unknown>")
+    return value if isinstance(value, str) else "<unknown>"
 
 
 def _reject_legacy_plan_fields(

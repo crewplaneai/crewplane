@@ -18,12 +18,13 @@ from .lifecycle import (
 from .lifecycle import (
     run_provider_invocation_lifecycle,
 )
-from .types import ProviderCallRequest, ProviderCallResult
+from .types import ProviderCallRequest, ProviderCallResult, ProviderOutputPolicy
 
 __all__ = [
     "ProviderCallDisplay",
     "ProviderCallRequest",
     "ProviderCallResult",
+    "ProviderOutputPolicy",
     "finalize_successful_workspace",
     "mark_workspace_succeeded",
     "record_generated_file_workspace",

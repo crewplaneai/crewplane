@@ -148,9 +148,14 @@ class WorkflowImportConfig(BaseModel):
                 )
             if not isinstance(raw_binding, str):
                 raise ValueError(f"Workflow import input '{raw_key}' must be a string.")
+            binding = raw_binding.strip()
+            if not binding:
+                raise ValueError(
+                    f"Workflow import input '{raw_key}' must reference a non-empty node id."
+                )
             if key in normalized:
                 raise ValueError(f"Duplicate workflow import input key '{key}'.")
-            normalized[key] = raw_binding.strip()
+            normalized[key] = binding
         return normalized
 
 

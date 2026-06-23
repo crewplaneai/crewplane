@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from crewplane.architecture.contracts import AgentInvoker
@@ -12,6 +13,11 @@ from crewplane.core.workflow.keywords import ProviderRole
 from ..activity.telemetry import ExecutionTelemetry
 from ..runtime_context import CompiledRuntimeContext
 from ..workspace_files import ResolvedWorkspaceFile
+
+
+class ProviderOutputPolicy(StrEnum):
+    REQUIRE_OUTPUT = "require_output"
+    ALLOW_MISSING_OUTPUT = "allow_missing_output"
 
 
 @dataclass(frozen=True)
@@ -29,6 +35,7 @@ class ProviderCallRequest:
     invoker: AgentInvoker
     telemetry: ExecutionTelemetry | None
     findings_enabled: bool = False
+    provider_output_policy: ProviderOutputPolicy = ProviderOutputPolicy.REQUIRE_OUTPUT
     on_log_file_resolved: Callable[[Path], None] | None = None
     rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 

@@ -10,7 +10,9 @@ from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
     PreflightExecutionPlan,
+    ProviderRecord,
 )
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -29,7 +31,19 @@ def _plan(context_root: Path) -> PreflightExecutionPlan:
             PreflightExecutionNode(
                 id="build",
                 mode="sequential",
+                render_plan_id="build",
                 artifact_contract=ArtifactContract(output_path="build-result.md"),
+                provider_records=[
+                    ProviderRecord(
+                        provider="mock",
+                        role=ProviderRole.EXECUTOR,
+                        task_id="mock_executor_0",
+                        agent_config_key="mock",
+                        invoker_alias="mock",
+                        agent_config_signature="agent-signature",
+                        invoker_config_signature="invoker-signature",
+                    )
+                ],
             )
         ],
         render_plans=[],

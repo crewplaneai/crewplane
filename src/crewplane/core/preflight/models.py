@@ -47,6 +47,25 @@ FragmentKind = Literal[
     "static_var",
     "runtime_locator_lookup",
 ]
+FRAGMENT_PAYLOAD_FIELDS = frozenset(
+    {
+        "text",
+        "content_ref",
+        "key",
+        "value_handle",
+        "value_stored",
+        "fingerprint",
+        "locator",
+    }
+)
+FRAGMENT_ALLOWED_PAYLOAD_FIELDS = {
+    "literal": frozenset({"text"}),
+    "static_file_content": frozenset({"content_ref"}),
+    "workspace_file_locator": frozenset({"locator"}),
+    "static_env": frozenset({"key", "value_handle", "value_stored", "fingerprint"}),
+    "static_var": frozenset({"key", "value_handle", "value_stored", "fingerprint"}),
+    "runtime_locator_lookup": frozenset({"locator"}),
+}
 
 
 class StaticResource(BaseModel):
@@ -80,23 +99,69 @@ class Fragment(BaseModel):
 
     @model_validator(mode="after")
     def _validate_fragment_payload(self) -> Fragment:
-        if self.kind == "literal" and self.text is None:
-            raise ValueError("Literal fragments require text.")
-        if self.kind == "static_file_content" and self.content_ref is None:
-            raise ValueError("Static file fragments require content_ref.")
-        if (
-            self.kind in {"runtime_locator_lookup", "workspace_file_locator"}
-            and self.locator is None
-        ):
-            raise ValueError("Runtime locator fragments require locator.")
+        self._reject_unrelated_payload_fields()
+        if self.kind == "literal":
+            self._require_payload_field("text", "Literal fragments require text.")
+        if self.kind == "static_file_content":
+            self._require_payload_field(
+                "content_ref",
+                "Static file fragments require content_ref.",
+            )
+        if self.kind == "workspace_file_locator":
+            self._validate_workspace_file_locator_fragment()
+        if self.kind == "runtime_locator_lookup":
+            self._validate_runtime_locator_fragment()
         if self.kind in {"static_env", "static_var"}:
-            if self.key is None:
-                raise ValueError("Static value fragments require key.")
-            if self.value_handle is None and self.value_stored is None:
-                raise ValueError(
-                    "Static value fragments require a handle or stored value."
-                )
+            self._validate_static_value_fragment()
         return self
+
+    def _reject_unrelated_payload_fields(self) -> None:
+        allowed_fields = FRAGMENT_ALLOWED_PAYLOAD_FIELDS[self.kind]
+        unrelated_fields = sorted(
+            field
+            for field in FRAGMENT_PAYLOAD_FIELDS.difference(allowed_fields)
+            if getattr(self, field) is not None
+        )
+        if unrelated_fields:
+            raise ValueError(
+                f"{self.kind} fragments must not define payload field(s): "
+                f"{', '.join(unrelated_fields)}."
+            )
+
+    def _require_payload_field(self, field_name: str, message: str) -> None:
+        if getattr(self, field_name) is None:
+            raise ValueError(message)
+
+    def _validate_workspace_file_locator_fragment(self) -> None:
+        if self.locator is None:
+            raise ValueError("Workspace file locator fragments require locator.")
+        if not self.locator.get("locator_id"):
+            raise ValueError(
+                "Workspace file locator fragments require locator_id metadata."
+            )
+
+    def _validate_runtime_locator_fragment(self) -> None:
+        if self.locator is None:
+            raise ValueError("Runtime locator fragments require locator.")
+        if not self.locator.get("node_id") or not self.locator.get("artifact_name"):
+            raise ValueError(
+                "Runtime locator fragments require node_id and artifact_name metadata."
+            )
+
+    def _validate_static_value_fragment(self) -> None:
+        if self.key is None:
+            raise ValueError("Static value fragments require key.")
+        value_source_count = sum(
+            value is not None for value in (self.value_handle, self.value_stored)
+        )
+        if value_source_count != 1:
+            raise ValueError(
+                "Static value fragments require exactly one handle or stored value."
+            )
+        if self.value_stored is not None and self.fingerprint is not None:
+            raise ValueError(
+                "Static value fragments with value_stored must not define fingerprint."
+            )
 
 
 class RenderStream(BaseModel):
@@ -139,9 +204,9 @@ class TokenCatalogEntry(BaseModel):
     resolved: JsonObject = Field(default_factory=dict)
     metadata: dict[str, str] = Field(default_factory=dict)
 
-    @field_validator("token_kind")
+    @field_validator("token_kind", mode="before")
     @classmethod
-    def _reject_param_token_kind(cls, value: TokenKind) -> TokenKind:
+    def _reject_param_token_kind(cls, value: object) -> object:
         if value == "param":
             raise ValueError(
                 "Param tokens are composition-only and cannot be persisted."
@@ -277,6 +342,29 @@ class PreflightExecutionNode(BaseModel):
     input_content_ref: str | None = None
     input_workspace_file_locator_id: str | None = None
 
+    @model_validator(mode="after")
+    def _validate_mode_payload(self) -> PreflightExecutionNode:
+        if self.mode == "input":
+            if self.render_plan_id is not None:
+                raise ValueError(
+                    "Input preflight nodes must not define render_plan_id."
+                )
+            if self.provider_records:
+                raise ValueError(
+                    "Input preflight nodes must not define provider_records."
+                )
+            return self
+        if self.input_content_ref is not None:
+            raise ValueError(
+                "Provider-executed preflight nodes must not define input_content_ref."
+            )
+        if self.input_workspace_file_locator_id is not None:
+            raise ValueError(
+                "Provider-executed preflight nodes must not define "
+                "input_workspace_file_locator_id."
+            )
+        return self
+
 
 class PreflightCompilationPreview(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
@@ -350,6 +438,7 @@ class PreflightExecutionPlan(BaseModel):
             self.runtime_config_snapshot,
             self.fingerprint_metadata,
             self.value_fingerprints,
+            self.nodes,
         )
         return self
 

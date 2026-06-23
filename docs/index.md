@@ -33,6 +33,7 @@ and each run leaves readable artifacts under `.crewplane/`.
 ## Guides
 
 - [Running workflows](guides/running-workflows.md)
+- [Node modes and provider roles](guides/node-modes.md)
 - [Workflow composition](guides/workflow-composition.md)
 - [Findings and review loops](guides/findings-and-review-loops.md)
 - [Mock validation](guides/mock-validation.md)

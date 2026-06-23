@@ -86,6 +86,11 @@ def _node() -> PreflightExecutionNode:
     return PreflightExecutionNode(
         id="review.node",
         mode="sequential",
+        render_plan_id="review.node",
+        provider_records=[
+            provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),
+            provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),
+        ],
         artifact_contract=ArtifactContract(output_path="review.node-result.md"),
     )
 

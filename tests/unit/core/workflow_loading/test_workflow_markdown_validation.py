@@ -289,6 +289,37 @@ class WorkflowMarkdownValidationTests(unittest.TestCase):
             ):
                 load_tasks(path)
 
+    def test_workflow_markdown_rejects_blank_import_input_binding(self) -> None:
+        workflow_content = "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Workflow",
+                "imports:",
+                "  - path: child.task.md",
+                "    as: child",
+                "    inputs:",
+                "      review_input: '   '",
+                "nodes:",
+                "  - id: summary.final",
+                "    mode: sequential",
+                "    providers: [codex]",
+                "---",
+                "",
+                "## summary.final",
+                "",
+                "Summarize.",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workflow.task.md"
+            path.write_text(workflow_content, encoding="utf-8")
+            with self.assertRaisesRegex(
+                ValueError,
+                "must reference a non-empty node id",
+            ):
+                load_tasks(path)
+
     def test_workflow_markdown_rejects_mixed_case_mode_keyword(self) -> None:
         workflow_content = "\n".join(
             [

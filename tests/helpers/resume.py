@@ -129,6 +129,7 @@ def make_plan(findings_edge: bool = False) -> PreflightExecutionPlan:
             PreflightExecutionNode(
                 id="a",
                 mode="sequential",
+                render_plan_id="a",
                 dependencies=[],
                 execution_policy=ExecutionPolicy(),
                 artifact_contract=a_contract,
@@ -137,6 +138,7 @@ def make_plan(findings_edge: bool = False) -> PreflightExecutionPlan:
             PreflightExecutionNode(
                 id="b",
                 mode="sequential",
+                render_plan_id="b",
                 dependencies=["a"],
                 execution_policy=ExecutionPolicy(),
                 artifact_contract=b_contract,
@@ -186,6 +188,7 @@ def make_snapshot_workspace_plan() -> PreflightExecutionPlan:
         update={
             "mode": "input",
             "dependencies": [],
+            "render_plan_id": None,
             "provider_records": [],
             "workspace_policy": policy,
             "input_workspace_file_locator_id": locator.locator_id,

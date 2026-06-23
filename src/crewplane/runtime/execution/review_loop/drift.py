@@ -132,6 +132,7 @@ async def invoke_provider_under_drift_guard(
             invoker=request.invoker,
             telemetry=captured_telemetry,
             findings_enabled=request.findings_enabled,
+            provider_output_policy=request.provider_output_policy,
             on_log_file_resolved=request.allowed_paths.add,
             rendered_workspace_files=request.rendered_workspace_files,
         ),

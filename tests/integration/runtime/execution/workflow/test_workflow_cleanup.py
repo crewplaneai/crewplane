@@ -128,6 +128,7 @@ def test_successful_node_cleanup_retains_failed_generated_file_callbacks(
         id="input",
         mode="input",
         artifact_contract=ArtifactContract(output_path="input.md"),
+        input_content_ref="static-files/input.txt",
     )
 
     asyncio.run(

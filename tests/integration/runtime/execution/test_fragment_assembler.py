@@ -16,6 +16,7 @@ from crewplane.core.preflight.models import (
     Fragment,
     PreflightExecutionNode,
     PreflightExecutionPlan,
+    ProviderRecord,
     RenderPlan,
     RenderStream,
     WorkspaceFileLocator,
@@ -105,6 +106,7 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
         mode="input",
         artifact_contract=ArtifactContract(output_path="compiled-input.md"),
         execution_policy=ExecutionPolicy(),
+        input_content_ref="static-files/input.txt",
     )
     node = PreflightExecutionNode(
         id="build",
@@ -112,6 +114,17 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
         render_plan_id="build",
         artifact_contract=ArtifactContract(output_path="build-result.md"),
         execution_policy=ExecutionPolicy(),
+        provider_records=[
+            ProviderRecord(
+                provider="mock",
+                role=ProviderRole.EXECUTOR,
+                task_id="mock_executor_0",
+                agent_config_key="mock",
+                invoker_alias="mock",
+                agent_config_signature="agent-signature",
+                invoker_config_signature="invoker-signature",
+            )
+        ],
     )
     return PreflightExecutionPlan(
         run_id="run",

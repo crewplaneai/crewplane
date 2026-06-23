@@ -48,6 +48,25 @@ nodes:
 Downstream prompts can reference upstream artifacts, for example
 `{{inspect.output}}` or `{{inspect.findings}}`.
 
+## Node Modes
+
+Every workflow node has a `mode`:
+
+| Mode | Meaning |
+| --- | --- |
+| `input` | Load one file artifact without invoking a provider. |
+| `parallel` | Send the same executor prompt to one or more providers concurrently and aggregate their outputs. |
+| `sequential` | Run one executor in order, or run an executor/reviewer review loop when multiple providers are configured. |
+
+`mode: parallel` is provider fanout inside one node. It is different from DAG
+concurrency, where independent nodes can run at the same time after their
+dependencies are satisfied.
+
+`mode: sequential` has two shapes. With one provider, it is a plain executor
+node; `depth` is the total number of executor rounds. With multiple providers,
+it is a review loop; providers must be declared as executor providers followed
+by reviewer providers.
+
 ## Providers
 
 Providers can be shorthand strings or objects:
@@ -62,6 +81,11 @@ providers:
 
 Roles are `executor` and `reviewer`. Parallel nodes only allow executor roles.
 Sequential review loops use executor providers followed by reviewer providers.
+Reviewers approve with `NO_FINDINGS` or `NITS_ONLY`; all reviewers must approve
+for consensus.
+
+For examples and configuration guidance, see
+[Node modes and provider roles](../guides/node-modes.md).
 
 ## Templates
 

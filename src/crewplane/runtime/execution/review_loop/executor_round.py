@@ -3,6 +3,7 @@ from __future__ import annotations
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details
+from ..provider_call import ProviderOutputPolicy
 from ..workspace_files import WorkspaceCandidateSourceContext
 from .drift import run_provider_call_with_drift_guard
 from .prompts import (
@@ -87,6 +88,7 @@ async def run_executor_round(
                     progress_description=f"Executing {provider.provider}...",
                 ),
                 drift_session=None,
+                provider_output_policy=executor_output_policy(request),
                 rendered_workspace_files=rendered_workspace_files,
             )
         )
@@ -105,3 +107,11 @@ async def run_executor_round(
         outputs=executor_outputs,
         drift_warning_count=drift_warning_count,
     )
+
+
+def executor_output_policy(
+    request: ExecutorRoundRequest,
+) -> ProviderOutputPolicy:
+    if request.round_num > 1:
+        return ProviderOutputPolicy.ALLOW_MISSING_OUTPUT
+    return ProviderOutputPolicy.REQUIRE_OUTPUT

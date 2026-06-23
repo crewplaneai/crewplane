@@ -18,7 +18,7 @@ from .generated_file_changes import (
     changed_generated_file_paths,
     resolved_real_directory,
 )
-from .types import ProviderCallRequest
+from .types import ProviderCallRequest, ProviderOutputPolicy
 
 __all__ = (
     "GeneratedFileChangeBaseline",
@@ -294,6 +294,13 @@ def snapshot_invocation_generated_files(
     prepared_workspace: PreparedWorkspace,
     change_baseline: GeneratedFileChangeBaseline | None = None,
 ) -> Path | None:
+    if not request.output_file.is_file():
+        if request.provider_output_policy == ProviderOutputPolicy.ALLOW_MISSING_OUTPUT:
+            return None
+        raise RuntimeError(
+            "Generated-file snapshot requires an existing provider output file: "
+            f"{request.output_file.as_posix()}"
+        )
     workspace_root = validated_generated_file_workspace_root(prepared_workspace)
     candidate_files = (
         change_baseline.candidate_files() if change_baseline is not None else None

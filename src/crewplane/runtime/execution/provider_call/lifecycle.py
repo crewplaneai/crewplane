@@ -40,7 +40,7 @@ from .generated_files import (
     rendered_workspace_file_descriptors,
     snapshot_invocation_generated_files_async,
 )
-from .types import ProviderCallRequest, ProviderCallResult
+from .types import ProviderCallRequest, ProviderCallResult, ProviderOutputPolicy
 from .workspace import (
     prepare_workspace_with_cancellation,
     workspace_child_environment_applied,
@@ -257,6 +257,7 @@ async def _invoke_provider_and_finalize_workspace(
             prepared_workspace.cwd,
             invocation_context,
         )
+    _validate_provider_output_file(request)
     if state.child_environment_applied:
         state.invocation_metadata = metadata.with_workspace_child_environment_applied()
     generated_file_workspace = await snapshot_invocation_generated_files_async(
@@ -272,6 +273,18 @@ async def _invoke_provider_and_finalize_workspace(
         generated_file_workspace,
     )
     state.workspace_terminal_state_recorded = True
+
+
+def _validate_provider_output_file(request: ProviderCallRequest) -> None:
+    if request.output_file.is_file():
+        return
+    if request.provider_output_policy == ProviderOutputPolicy.ALLOW_MISSING_OUTPUT:
+        return
+    raise RuntimeError(
+        "Provider invocation completed without the expected output file for "
+        f"node '{request.node_id}' task '{request.task_id}': "
+        f"{request.output_file.as_posix()}"
+    )
 
 
 async def _invoke_provider_request(

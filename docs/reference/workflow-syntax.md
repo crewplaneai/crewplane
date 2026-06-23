@@ -43,6 +43,7 @@ Import paths resolve relative to the workflow file that declares them. Imports
 are Markdown-only, alias-namespaced, cycle-checked, and bounded to the project
 root. Duplicate aliases fail. Unused `with` parameters fail so misspelled
 parameter names do not silently disappear.
+`inputs` keys and bound node IDs must be non-empty strings after trimming.
 
 ## Experimental Worktrees
 
@@ -102,6 +103,54 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 Node IDs must match `[a-z0-9._-]+`, cannot be `.` or `..`, and cannot use the
 reserved run-root names `logs`, `manifests`, or `workspace-exports`.
 
+## Node Modes
+
+`mode` selects the execution pattern inside a node:
+
+| Mode | Providers | Mode-specific controls | Result selection |
+| --- | --- | --- | --- |
+| `input` | None. | `source` only. | The referenced file is copied as the node result. |
+| `parallel` | One or more executors. Reviewers are rejected. | `failure_threshold`, `continue_on_failure`. | Latest artifact for each provider task is aggregated. |
+| `sequential` with one provider | Exactly one executor. | `depth`. | Latest executor round is selected. |
+| `sequential` with multiple providers | One or more executors followed by one or more reviewers. | `depth`, `audit_rounds`, `continue_on_failure`. | Runtime review-loop status selects canonical executor and reviewer artifacts. |
+
+Provider nodes can also use `findings`, `token_budget`, and `worktree` where
+the field is otherwise valid.
+
+Parallel nodes render one executor prompt and send it to each provider
+concurrently. `settings.max_parallel_invocations` can cap provider calls inside
+the node. `failure_threshold` defaults to `0`, so any provider failure fails the
+node unless a threshold or `continue_on_failure` allows completion.
+
+Sequential single-provider nodes do not run review loops. `depth` is the total
+number of executor rounds, and `audit_rounds` is invalid.
+
+Sequential multi-provider nodes run review loops. Providers must start with a
+contiguous executor segment and end with a contiguous reviewer segment. In each
+review round, reviewers receive the same reviewer prompt and current executor
+output. With one reviewer, that reviewer must approve. With multiple reviewers,
+all reviewers must approve.
+
+For review loops, `depth` is remediation depth inside each audit round. A
+`depth` of `1` allows one fix attempt after the initial reviewed candidate.
+`audit_rounds` controls fresh audit passes and must not exceed
+`settings.max_audit_rounds`.
+
+Review-loop order is:
+
+```text
+for audit_round in 1..audit_rounds:
+  for local_round in 1..depth+1:
+    executor candidate exists or is remediated
+    reviewer providers review the current candidate
+    stop if all reviewers approve
+```
+
+Local round 1 reviews the initial candidate. Later local rounds are remediation
+attempts. If a later audit round has a valid output from the prior audit round,
+it starts by re-reviewing that output as local round 1; otherwise it invokes the
+executor for local round 1. A clean local-round-1 approval stops the whole loop.
+
 ## Provider Objects
 
 ```yaml
@@ -121,8 +170,10 @@ Roles are `executor` and `reviewer`. Parallel nodes do not allow reviewers.
 Sequential single-provider nodes must use one executor provider and cannot set
 `audit_rounds`; `depth` is the total number of executor rounds. Sequential
 multi-provider review loops must start with a contiguous executor segment and
-end with a contiguous reviewer segment. For review loops, `depth` is remediation
-depth inside each audit round.
+end with a contiguous reviewer segment.
+
+Provider shorthand strings are executor providers. Use provider objects when a
+provider needs a `model` override or `role: reviewer`.
 
 ## Input Nodes
 
@@ -163,6 +214,11 @@ There is no authored `shared` marker.
 
 Role markers must be standalone root-level HTML comments. Markers inside code
 fences, blockquotes, or lists are treated as literal prompt text.
+
+Executors receive shared content plus executor segments. Reviewers receive
+shared content plus reviewer segments. In review loops, Crewplane also wraps
+reviewer prompts with reviewer-only instructions, current executor output,
+previous unresolved feedback when present, and the structured review contract.
 
 ## Templates
 

@@ -396,6 +396,7 @@ def _downstream_node() -> PreflightExecutionNode:
     return PreflightExecutionNode(
         id="verify",
         mode="sequential",
+        render_plan_id="verify",
         provider_records=[
             ProviderRecord(
                 provider="alpha",
@@ -423,6 +424,7 @@ def _same_node() -> PreflightExecutionNode:
     return PreflightExecutionNode(
         id="implement",
         mode="sequential",
+        render_plan_id="implement",
         provider_records=[
             ProviderRecord(
                 provider="alpha",

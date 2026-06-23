@@ -22,6 +22,7 @@ from crewplane.runtime.execution.workspace_files import ResolvedWorkspaceFile
 from ..common import CompiledRuntimeContext, ExecutionTelemetry
 from ..consensus import EvaluatedReviewResult
 from ..provider_call.display import ProviderCallDisplay
+from ..provider_call.types import ProviderOutputPolicy
 
 DEFAULT_REMEDIATION_DEPTH = 1
 DEFAULT_AUDIT_ROUNDS = 1
@@ -118,6 +119,7 @@ class DriftGuardCallRequest:
     allowed_paths: set[Path]
     display: ProviderCallDisplay
     drift_session: DriftGuardSession | None = None
+    provider_output_policy: ProviderOutputPolicy = ProviderOutputPolicy.REQUIRE_OUTPUT
     rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 

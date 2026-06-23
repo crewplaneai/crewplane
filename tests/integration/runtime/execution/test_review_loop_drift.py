@@ -56,6 +56,23 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
     node = PreflightExecutionNode(
         id="review.node",
         mode="sequential",
+        render_plan_id="review.node",
+        provider_records=[
+            ProviderRecord(
+                provider="exec",
+                role=ProviderRole.EXECUTOR,
+                task_id="exec_executor_0",
+                agent_config_key="exec",
+                invoker_alias="mock",
+                agent_config_signature=signature_for_payload(
+                    {
+                        "agent_config": agent_payload,
+                        "agent_config_key": "exec",
+                    }
+                ),
+                invoker_config_signature=signature_for_payload(invoker_payload),
+            )
+        ],
         artifact_contract=ArtifactContract(output_path="review.node-result.md"),
     )
     node_dir = output.create_stage_dir(node.id)
