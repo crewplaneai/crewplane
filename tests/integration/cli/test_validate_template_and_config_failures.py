@@ -71,6 +71,10 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             output_text = stream.getvalue()
             self.assertIn("Provider validation failed", output_text)
             self.assertIn("definitely-not-installed-cli", output_text)
+            self.assertIn(
+                "Provider setup: docs/getting-started/provider-setup.md",
+                output_text,
+            )
 
     def test_validate_compiles_without_real_workspace_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -1,6 +1,8 @@
 # Inspecting Artifacts
 
-Crewplane writes run state under `.crewplane/`.
+Crewplane writes run state under `.crewplane/`. The mock quickstart writes the
+same artifact structure as provider-backed runs, so inspect these files before
+switching to real providers.
 
 ## Main Directories
 
@@ -86,3 +88,17 @@ Experimental workspace-enabled runs can write:
 
 Use the run summary first, then inspect node stage directories for detailed
 state.
+
+## Support Bundle Starting Points
+
+For a reproducible support handoff, start with:
+
+- command output from `crewplane validate` or `crewplane run --no-live`
+- `.crewplane/config.yml`
+- the workflow `.task.md`
+- `.crewplane/execution-stages/<run-key>/logs/summary.md`
+- `.crewplane/execution-stages/<run-key>/logs/events.ndjson`
+- relevant node output and provider log files
+
+See [reproducible support bundle](../safety/reproducible-support-bundle.md) for
+redaction guidance.

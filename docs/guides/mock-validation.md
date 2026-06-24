@@ -1,7 +1,8 @@
 # Mock Validation
 
 Use the `mock` invoker to exercise workflows without provider CLI calls,
-network latency, or provider spend.
+network latency, provider accounts, API keys, or provider spend. New
+`crewplane init` projects use mock execution by default.
 
 ## Config
 
@@ -11,14 +12,22 @@ settings:
     invoker:
       implementation: "mock"
       options:
-        delay_seconds: 0
-        observation_delay_seconds: 0
         output_mode: "lorem"
         seed: 42
+        delay_seconds: 0.25
+        observation_delay_seconds: 5
 ```
 
 `crewplane validate`, `crewplane run --dry-run`, and `crewplane run`
 can all use the mock invoker. Real mock runs still write normal artifacts.
+Mock output is deterministic scaffolding for orchestration checks; it is not
+model output.
+
+When mock is active, `crewplane run` prints:
+
+```text
+Mock invoker active: no provider CLI commands will be started.
+```
 
 ## Output Modes
 

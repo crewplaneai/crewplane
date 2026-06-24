@@ -62,6 +62,7 @@ from .preflight import (
     materialize_preflight_success,
     print_preflight_diagnostics,
     run_cli_availability_errors,
+    uses_mock_invoker,
     write_preflight_diagnostics,
 )
 from .resume import (
@@ -206,6 +207,10 @@ async def execute_workflow_run(
         write_preflight_diagnostics(fallback_output, diagnostics, workflow.name)
         context.console.print(f"[red]Preflight RUNTIME-CONFIG:[/] {exc}")
         raise typer.Exit(code=1) from exc
+    if uses_mock_invoker(config):
+        context.console.print(
+            "Mock invoker active: no provider CLI commands will be started."
+        )
     preview = compile_preview(
         context=context,
         snapshot_result=snapshot_result,

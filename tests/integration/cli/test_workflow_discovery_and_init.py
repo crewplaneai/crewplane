@@ -33,7 +33,7 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
             config_path = state_dir / "config.yml"
-            workflow_path = workflows_dir / "code-review-example.task.md"
+            workflow_path = workflows_dir / "single-agent-review.task.md"
             nested_workflow_path = (
                 workflows_dir / "example-templates" / "design-review-example.task.md"
             )

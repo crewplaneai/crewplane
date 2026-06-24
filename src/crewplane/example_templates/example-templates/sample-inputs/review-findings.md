@@ -1,6 +1,6 @@
 Major
 
-- `.crewplane/workflows/code-review-example.task.md` should not require
+- `.crewplane/workflows/example-templates/code-review-example.task.md` should not require
   machine-specific environment variables before a new user can validate it.
 
 Minor

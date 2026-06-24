@@ -143,7 +143,10 @@ verify_cli() {
 
 print_provider_notes() {
     info ""
-    info "Provider prerequisites:"
+    info "First run:"
+    info "  Run '${PACKAGE_NAME} init', '${PACKAGE_NAME} validate', then '${PACKAGE_NAME} run --no-live'."
+    info "  The generated first run uses deterministic mock execution; provider CLIs are not required."
+    info "Real provider setup:"
     info "  Install and authenticate provider CLIs separately, such as claude, codex, gemini, copilot, or kilo."
     info "  ${PACKAGE_NAME} does not install provider CLIs, manage provider credentials, or sandbox provider CLI execution."
 }

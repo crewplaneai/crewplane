@@ -78,7 +78,7 @@ def _render_initialized_template_tree(rendered_root: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    (workflows_dir / "code-review-example.task.md").write_text(
+    (workflows_dir / "single-agent-review.task.md").write_text(
         templates.render_template_content(
             templates.DEFAULT_WORKFLOW_TEMPLATE.read_text(encoding="utf-8")
         ),
@@ -129,27 +129,15 @@ class ExampleTemplateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             config = load_config(rendered_config)
-        self.assertIn("claude", config.agents)
-        self.assertIn("codex", config.agents)
-        self.assertIn("gemini", config.agents)
-        self.assertEqual(config.agents["claude"].default_model, "sonnet")
-        self.assertIn("--bare", config.agents["claude"].extra_args)
-        self.assertIn(
-            "--dangerously-skip-permissions",
-            config.agents["claude"].extra_args,
-        )
-        self.assertEqual(config.agents["codex"].default_model, "gpt-5.4")
-        self.assertIn(
-            "--dangerously-bypass-approvals-and-sandbox",
-            config.agents["codex"].extra_args,
-        )
+        self.assertEqual(list(config.agents), ["mock"])
         self.assertEqual(
-            config.agents["gemini"].default_model,
-            "auto",
+            config.agents["mock"].cli_cmd,
+            ["__crewplane_mock_invoker_never_executes__"],
         )
-        self.assertIn("--approval-mode=yolo", config.agents["gemini"].extra_args)
-        self.assertEqual(config.agents["gemini"].prompt_transport, "stdin")
-        self.assertIsNone(config.agents["gemini"].prompt_transport_arg)
+        self.assertEqual(config.agents["mock"].default_model, "mock")
+        self.assertEqual(config.agents["mock"].provider_kind, "generic")
+        self.assertEqual(config.agents["mock"].prompt_transport, "stdin")
+        self.assertIsNone(config.agents["mock"].prompt_transport_arg)
         self.assertIsNone(DEFAULT_INVOCATION_TIMEOUT_SECONDS)
         for agent_config in config.agents.values():
             self.assertIsNone(agent_config.invocation_timeout_seconds)
@@ -157,11 +145,51 @@ class ExampleTemplateTests(unittest.TestCase):
                 agent_config.invocation_idle_timeout_seconds,
                 DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
             )
-        self.assertIsNone(config.agents["claude"].pricing.input)
-        self.assertIsNone(config.agents["codex"].pricing.output)
+        self.assertEqual(config.agents["mock"].extra_args, [])
         assert config.settings is not None
+        self.assertEqual(config.settings.integrations.invoker.implementation, "mock")
+        self.assertEqual(
+            config.settings.integrations.invoker.options,
+            {
+                "output_mode": "lorem",
+                "seed": 42,
+                "delay_seconds": 0.25,
+                "observation_delay_seconds": 5,
+            },
+        )
         self.assertEqual(config.settings.token_budget.warn_threshold_chars, 50000)
         self.assertIsNone(config.settings.token_budget.fail_threshold_chars)
+
+    def test_config_template_keeps_real_provider_examples_commented(self) -> None:
+        rendered = templates.render_template_content(
+            (self.template_dir / "config.yml").read_text(encoding="utf-8")
+        )
+        payload = load_yaml_unique(rendered)
+        assert isinstance(payload, dict)
+        agents = payload["agents"]
+        assert isinstance(agents, dict)
+
+        self.assertEqual(list(agents), ["mock"])
+        for provider_name in ("claude", "codex", "gemini", "copilot", "kilo"):
+            self.assertIn(f"# {provider_name}:", rendered)
+            self.assertNotIn(f"\n  {provider_name}:", rendered)
+        self.assertIn('#   cli_cmd: ["claude"]', rendered)
+        self.assertIn('#   cli_cmd: ["codex", "exec"]', rendered)
+        self.assertIn('#   cli_cmd: ["gemini"]', rendered)
+        self.assertIn('#   cli_cmd: ["copilot"]', rendered)
+        self.assertIn('#   cli_cmd: ["kilo"]', rendered)
+        for flag in (
+            "--dangerously-skip-permissions",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--approval-mode=yolo",
+            "--allow-all-tools",
+        ):
+            self.assertIn(f'#     - "{flag}"', rendered)
+            self.assertNotIn(f'\n      - "{flag}"', rendered)
+        self.assertIn(
+            "Real provider runs start the external commands configured in .crewplane/config.yml",
+            rendered,
+        )
 
     def test_built_in_provider_template_omits_generic_model_arg(self) -> None:
         rendered = templates.render_template_content(
@@ -334,6 +362,30 @@ class ExampleTemplateTests(unittest.TestCase):
                 )
                 self.assertGreaterEqual(len(workflow.nodes), 1)
 
+    def test_default_workflow_is_single_mock_provider_review(self) -> None:
+        workflow_path = self.template_dir / "single-agent-review.task.md"
+        rendered = templates.render_template_content(
+            workflow_path.read_text(encoding="utf-8")
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            rendered_root = Path(tmp_dir)
+            rendered_workflow = rendered_root / "single-agent-review.task.md"
+            rendered_workflow.write_text(rendered, encoding="utf-8")
+            workflow = validate_workflow_plan(
+                load_tasks_with_sources(
+                    rendered_workflow,
+                    project_root=rendered_root,
+                ).workflow
+            )
+
+        self.assertEqual([node.id for node in workflow.nodes], ["review.project"])
+        self.assertEqual(
+            [provider.provider for provider in workflow.nodes[0].providers],
+            ["mock"],
+        )
+        for provider_name in ("claude", "codex", "gemini", "copilot", "kilo"):
+            self.assertNotIn(provider_name, rendered.lower())
+
     def test_workflow_templates_avoid_redundant_transitive_dependencies(self) -> None:
         workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
         self.assertGreaterEqual(len(workflow_templates), 1)
@@ -464,13 +516,9 @@ class ExampleTemplateTests(unittest.TestCase):
             config.settings.workspace.cache_root = (
                 rendered_root.parent / f"{rendered_root.name}-workspace-cache"
             ).as_posix()
-            config.settings.integrations.invoker.implementation = "mock"
-            config.settings.integrations.invoker.options = {
-                "delay_seconds": 0,
-                "observation_delay_seconds": 0,
-                "output_mode": "lorem",
-                "seed": 42,
-            }
+            mock_agent = config.agents["mock"]
+            for agent_name in ("claude", "codex", "gemini"):
+                config.agents[agent_name] = mock_agent.model_copy(deep=True)
 
             for workflow_path in sorted((state_dir / "workflows").rglob("*.task.md")):
                 source = load_workflow_source_for_preflight(
@@ -492,11 +540,13 @@ class ExampleTemplateTests(unittest.TestCase):
                     msg=f"{workflow_path} preflight diagnostics: {preview.diagnostics}",
                 )
 
-    def test_code_review_example_runs_with_mock_and_records_estimated_usage(
+    def test_advanced_code_review_example_runs_with_mock_and_records_estimated_usage(
         self,
     ) -> None:
         config_path = self.template_dir / "config.yml"
-        workflow_path = self.template_dir / "code-review-example.task.md"
+        workflow_path = (
+            self.template_dir / "example-templates" / "code-review-example.task.md"
+        )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             rendered_root = Path(tmp_dir)
@@ -521,13 +571,15 @@ class ExampleTemplateTests(unittest.TestCase):
 
             config = load_config(rendered_config_path)
             assert config.settings is not None
-            config.settings.integrations.invoker.implementation = "mock"
             config.settings.integrations.invoker.options = {
                 "delay_seconds": 0,
                 "observation_delay_seconds": 0,
                 "output_mode": "lorem",
                 "seed": 42,
             }
+            mock_agent = config.agents["mock"]
+            for agent_name in ("claude", "codex", "gemini"):
+                config.agents[agent_name] = mock_agent.model_copy(deep=True)
             source = load_workflow_source_for_preflight(
                 rendered_workflow_path,
                 project_root=rendered_root,

@@ -45,6 +45,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             / "src"
             / "crewplane"
             / "example_templates"
+            / "example-templates"
             / "code-review-example.task.md"
         )
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -308,6 +309,99 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
         self.assertEqual(
             "\n".join(lines),
             expected_render("shortcut_fanin_with_fanout"),
+        )
+
+    def test_fanin_connector_crossing_empty_column_remains_continuous(
+        self,
+    ) -> None:
+        workflow = WorkflowPlan(
+            name="public.launch.audit",
+            nodes=[
+                WorkflowNode(
+                    id="context.current",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="a")
+                    ],
+                    providers=[provider("codex")],
+                ),
+                WorkflowNode(
+                    id="benchmark.oss",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="b")
+                    ],
+                    providers=[provider("codex")],
+                ),
+                WorkflowNode(
+                    id="audit.docs",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="c")
+                    ],
+                    needs=["context.current", "benchmark.oss"],
+                    providers=[provider("codex")],
+                ),
+                WorkflowNode(
+                    id="audit.first-use",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="d")
+                    ],
+                    needs=["context.current", "benchmark.oss"],
+                    providers=[provider("codex")],
+                ),
+                WorkflowNode(
+                    id="audit.observability",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="e")
+                    ],
+                    needs=["context.current"],
+                    providers=[provider("codex")],
+                ),
+                WorkflowNode(
+                    id="audit.messaging",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="f")
+                    ],
+                    needs=["context.current", "benchmark.oss"],
+                    providers=[provider("codex")],
+                ),
+                WorkflowNode(
+                    id="synthesis.priorities",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="g")
+                    ],
+                    needs=[
+                        "context.current",
+                        "benchmark.oss",
+                        "audit.docs",
+                        "audit.first-use",
+                        "audit.observability",
+                        "audit.messaging",
+                    ],
+                    providers=[provider("codex")],
+                ),
+            ],
+        )
+        state = build_initial_state(
+            topology_from_workflow(workflow), run_id="run-public-launch"
+        )
+        layout = compute_topology_layout(topology_from_workflow(workflow))
+
+        lines = render_dag_summary(
+            state=state,
+            layout=layout,
+            selected_node_id="context.current",
+            width=120,
+        )
+
+        self.assertEqual(
+            "\n".join(lines),
+            expected_render("fanin_connector_empty_column"),
         )
 
     def test_consumed_left_branch_does_not_render_shifted_stale_lane(self) -> None:

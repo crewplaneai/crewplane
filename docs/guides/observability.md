@@ -3,6 +3,10 @@
 Crewplane records run events, provider logs, and summaries for real execution.
 The default UI integration is the tmux live dashboard.
 
+The quickstart uses `crewplane run --no-live`, so tmux is not required for the
+first successful run. Logs and summaries are still written under
+`.crewplane/execution-stages/<run-key>/logs/`.
+
 ## Live Dashboard
 
 By default, `settings.integrations.ui.implementation` is `tmux`. Real runs open

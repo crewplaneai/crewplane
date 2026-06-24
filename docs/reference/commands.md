@@ -11,10 +11,12 @@ crewplane init
 Creates:
 
 - `.crewplane/config.yml`
-- `.crewplane/workflows/code-review-example.task.md`
+- `.crewplane/workflows/single-agent-review.task.md`
 - `.crewplane/workflows/example-templates/**`
 - `.crewplane/workflows/example-templates/sample-inputs/*.md`
 - `.crewplane/preflight/fingerprint.key`, when possible
+
+The generated config uses deterministic mock execution.
 
 Existing files are not overwritten by template creation.
 
@@ -42,8 +44,9 @@ Arguments and options:
 Execute a workflow DAG.
 
 ```bash
-crewplane run --tasks .crewplane/workflows/code-review-example.task.md
-crewplane run -t .crewplane/workflows/code-review-example.task.md
+crewplane run --no-live
+crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
+crewplane run -t .crewplane/workflows/single-agent-review.task.md
 ```
 
 Options:
@@ -56,8 +59,12 @@ Options:
 | `--force` | Run even if a matching successful `workflow_signature` exists; also bypasses resume hydration. |
 | `--no-live` | Disable live topology dashboard output. |
 
-`run --dry-run` skips provider executable availability checks and may read
-existing manifests for an advisory skip/resume message.
+When the mock invoker is active, `run` prints that no provider CLI commands will
+be started. `run --dry-run` skips provider executable availability checks and
+may read existing manifests for an advisory skip/resume message.
+
+`--force` bypasses same-signature duplicate skip and failed/cancelled-run resume
+hydration, causing a new full run for the selected workflow.
 
 ## `crewplane cleanup workspaces`
 

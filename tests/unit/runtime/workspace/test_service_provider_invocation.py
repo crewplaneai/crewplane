@@ -355,10 +355,17 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
     node_dir = output.get_stage_dir("implement")
     assert node_dir is not None
     events = []
+
+    def record_event(event) -> None:
+        if event.event_type == "invocation_started":
+            assert event.context.log_file is not None
+            assert Path(event.context.log_file).is_file()
+        events.append(event)
+
     telemetry = ExecutionTelemetry(
         workflow_name=plan.workflow_name,
         run_id=plan.run_id,
-        event_sink=events.append,
+        event_sink=record_event,
         suppress_console_output=True,
     )
 

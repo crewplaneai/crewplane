@@ -4,7 +4,8 @@ The public package name is `crewplane`. The installed console command is
 `crewplane`.
 
 Crewplane requires Python 3.13 or newer. Provider CLIs are separate tools; install
-and authenticate them outside Crewplane.
+and authenticate them outside Crewplane when you are ready for real provider
+runs. They are not required for the mock quickstart.
 
 ## Recommended Install
 
@@ -14,6 +15,10 @@ Use `uv tool` for an isolated command-line install:
 uv tool install crewplane
 crewplane --help
 ```
+
+`crewplane --help` confirms the command is installed. For the first run, use the
+[quickstart](quickstart.md): `crewplane init`, `crewplane validate`, then
+`crewplane run --no-live`.
 
 ## Other Install Methods
 

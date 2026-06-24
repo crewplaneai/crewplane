@@ -5,7 +5,7 @@
 Run `crewplane init`, or pass a workflow explicitly:
 
 ```bash
-crewplane run --tasks .crewplane/workflows/code-review-example.task.md
+crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
 ```
 
 ## `Multiple workflow files found`
@@ -17,13 +17,28 @@ of `.crewplane/workflows/`.
 
 `crewplane validate` checks provider CLI availability for the built-in `cli`
 invoker. Confirm the command in `agents.<name>.cli_cmd` exists on `PATH`, or use
-the `mock` invoker for provider-free validation.
+the `mock` invoker for provider-free validation. See
+[provider setup](../getting-started/provider-setup.md).
 
 ## Dry Run Differs From Validate
 
 `run --dry-run` does not invoke providers, write run artifacts, or check provider
 executable availability. It may still read existing manifests for advisory
 skip/resume output.
+
+## A Run Skipped Provider Invocation
+
+Crewplane found a usable successful run with the same `workflow_signature`.
+Inspect `.crewplane/execution-stages/<run-key>/manifests/run.json` and the
+matching `.crewplane/execution-results/<run-key>/` directory. Use
+`crewplane run --force` when you want a new run.
+
+## A Run Resumed Nodes
+
+Crewplane hydrated completed node-boundary artifacts from a failed or cancelled
+run. Check `resumed_node_ids` in the run manifest and
+`<node-id>/resume-source.json` in resumed node stage directories. Use
+`crewplane run --force` to bypass resume.
 
 ## Template Access Denied
 
@@ -86,3 +101,9 @@ Cleanup is scoped to the current Git repository by default. Check that the
 workflow used workspace isolation, confirm the configured cache root, and use
 `--all-projects` only when you intentionally want every repository bucket under
 that cache root.
+
+## Need A Support Bundle
+
+Use [reproducible support bundle](reproducible-support-bundle.md) to collect
+command output, config, workflow, run summary, events, relevant node files,
+versions, platform details, and redacted provider logs.

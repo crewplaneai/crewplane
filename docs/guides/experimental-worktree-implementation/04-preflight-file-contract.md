@@ -81,7 +81,7 @@ Rules:
    - token kind and occurrence id
    - source workflow file
    - source span and token span where available
-   - authored source root
+   - file-token source root
    - source root relative to project root
    - project root relative to Git top-level
    - normalized repo-relative source path
@@ -131,9 +131,9 @@ Rules:
     verified referenced files into the run result directory before linking. In a
     monorepo, provider `cwd` is the project subdirectory inside the workspace,
     not necessarily the Git top-level.
-11. For imported workflows, the authored source root is mapped relative to the
-    project root, then under the effective workspace root and source tree path
-    mapping.
+11. Imported workflow source paths are provenance metadata; relative file-token
+    paths still resolve from the project root before being mapped under the
+    effective workspace root and source tree path mapping.
 12. Workspace-file locators must not read Git metadata, workspace cache roots,
     or reserved runtime artifact subtrees.
 13. Missing files fail the invocation before provider execution.

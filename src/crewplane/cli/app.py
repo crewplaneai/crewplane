@@ -207,7 +207,7 @@ def init() -> None:
 
     _create_template_file(state_dir / "config.yml", CONFIG_TEMPLATE, console)
     _create_template_file(
-        workflows_dir / "code-review-example.task.md",
+        workflows_dir / "single-agent-review.task.md",
         DEFAULT_WORKFLOW_TEMPLATE,
         console,
     )
@@ -222,7 +222,12 @@ def init() -> None:
         console.print(f"[yellow]WARN[/] {diagnostic.message}")
 
     console.print("\n[bold]Initialized .crewplane directory.[/]")
-    console.print("Edit the config and task files, then run: [cyan]crewplane run[/]")
+    console.print(
+        "First run uses deterministic mock execution; no provider CLIs are required."
+    )
+    console.print("\n[bold]Next:[/]")
+    console.print("  [cyan]crewplane validate[/]")
+    console.print("  [cyan]crewplane run --no-live[/]")
 
 
 @app.command()

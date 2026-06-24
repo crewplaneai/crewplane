@@ -3,6 +3,15 @@
 Config lives at `.crewplane/config.yml` by default. The `version` field must
 match the current `SCHEMA_VERSION` in `src/crewplane/version.py`.
 
+Generated config from `crewplane init` starts with one active `mock` agent and
+`settings.integrations.invoker.implementation: "mock"`. That makes the first
+`crewplane validate` and `crewplane run --no-live` provider-free. Mock output is
+deterministic scaffolding, not model output.
+
+The generated config also includes commented provider examples for Claude,
+Codex, Gemini, Copilot, and Kilo. Uncomment and review only the agents you need
+before switching the invoker to `cli`.
+
 ## Top Level
 
 | Field | Description |
@@ -113,6 +122,11 @@ clone before provider invocation.
 Runs configured `agents` commands against real provider CLIs instead of the
 deterministic `mock` invoker. It has no options.
 
+Real provider runs start the external commands configured in
+`.crewplane/config.yml`. Those tools run with their own filesystem, network,
+credential, approval, and sandbox settings. Crewplane coordinates them and
+records artifacts; it does not sandbox them.
+
 ### `mock` invoker
 
 | Option | Description |
@@ -127,6 +141,9 @@ deterministic `mock` invoker. It has no options.
 
 `mock.fail_when[]` selector keys are `node_id`, `task_id`, `provider`, `role`,
 `audit_round_num`, and `round_num`.
+
+The generated mock agent uses a sentinel `cli_cmd` value. The mock invoker does
+not start or validate that command.
 
 ### `tmux` UI
 

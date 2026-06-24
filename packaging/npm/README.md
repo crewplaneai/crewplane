@@ -21,9 +21,12 @@ export PATH="$npm_prefix/bin:$PATH"
 command -v crewplane
 ```
 
-Provider CLIs such as Claude, Codex, Gemini, Copilot, and Kilo are installed
-and authenticated separately. This package does not install provider CLIs,
-manage credentials, or sandbox provider execution.
+The generated quickstart uses deterministic mock execution, so provider CLIs
+are not required for the first `crewplane init && crewplane validate &&
+crewplane run --no-live` path. Provider CLIs such as Claude, Codex, Gemini,
+Copilot, and Kilo are installed and authenticated separately when you configure
+real provider runs. This package does not install provider CLIs, manage
+credentials, or sandbox provider execution.
 
 The postinstall step creates the private environment with Python 3.13 by
 default. Set `CREWPLANE_INSTALL_PYTHON` to an explicit interpreter path when a

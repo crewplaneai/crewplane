@@ -359,7 +359,10 @@ def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     assert "${PACKAGE_NAME} --help" in installer
     assert "uv tool uninstall ${PACKAGE_NAME}" in installer
     assert "native Windows is not supported" in installer
-    assert "Provider prerequisites:" in installer
+    assert "First run:" in installer
+    assert "${PACKAGE_NAME} run --no-live" in installer
+    assert "provider CLIs are not required" in installer
+    assert "Real provider setup:" in installer
     assert "does not install provider CLIs" in installer
     assert (
         "does not install provider CLIs, manage provider credentials, or sandbox provider CLI execution"
@@ -406,6 +409,56 @@ def test_npm_install_docs_explain_global_bin_path() -> None:
         assert "PATH" in content
         assert "command -v crewplane" in content
         assert "node" in content
+
+
+def test_public_first_run_docs_are_mock_first_and_provider_free() -> None:
+    readme = read_text("README.md")
+    quickstart = read_text("docs", "getting-started", "quickstart.md")
+    docs_index = read_text("docs", "index.md")
+
+    for content in (readme, quickstart):
+        assert "crewplane init" in content
+        assert "crewplane validate" in content
+        assert "crewplane run --no-live" in content
+        assert "provider CLI" in content
+        assert "does not require" in content or "needs no" in content
+        assert "API key" in content
+        assert "not model output" in content
+        assert content.index("crewplane run --no-live") < content.index(
+            "provider setup"
+        )
+
+    assert "getting-started/setup-checklist.md" in docs_index
+    assert "guides/inspecting-artifacts.md" in docs_index
+    assert "reference/configuration.md" in docs_index
+    assert "safety/security-and-trust.md" in docs_index
+    assert "safety/troubleshooting.md" in docs_index
+    assert "../AGENTS.md" not in docs_index
+    assert "../DEVELOPMENT.md" not in docs_index
+    assert "architecture/" not in docs_index
+    assert "maintainers/" not in docs_index
+    assert "experimental-worktree-implementation" not in docs_index
+
+
+def test_launch_support_docs_cover_skip_force_resume_and_bundles() -> None:
+    running = read_text("docs", "guides", "running-workflows.md")
+    troubleshooting = read_text("docs", "safety", "troubleshooting.md")
+    support_bundle = read_text("docs", "safety", "reproducible-support-bundle.md")
+    artifacts = read_text("docs", "reference", "artifacts.md")
+
+    for content in (running, troubleshooting, artifacts):
+        assert "workflow_signature" in content
+        assert "--force" in content
+        assert "resume" in content.lower()
+
+    for expected in (
+        "logs/summary.md",
+        "events.ndjson",
+        ".crewplane/config.yml",
+        "versions",
+        "Redact",
+    ):
+        assert expected in support_bundle
 
 
 def test_npm_postinstall_defaults_to_python_313_without_override(

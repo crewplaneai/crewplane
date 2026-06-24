@@ -34,8 +34,9 @@ class CliLiveDashboardTests(unittest.TestCase):
             library_dir = workflows_dir / "example-templates"
             composition_dir = library_dir / "composition"
             self.assertTrue((state_dir / "config.yml").exists())
-            self.assertTrue((workflows_dir / "code-review-example.task.md").exists())
+            self.assertTrue((workflows_dir / "single-agent-review.task.md").exists())
             self.assertFalse((workflows_dir / "example.task.md").exists())
+            self.assertTrue((library_dir / "code-review-example.task.md").exists())
             self.assertTrue((library_dir / "design-review-example.task.md").exists())
             self.assertTrue(
                 (library_dir / "feature-implement-example.task.md").exists()
@@ -58,26 +59,33 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertTrue((sample_input_dir / "coding-standards.md").exists())
             self.assertFalse((state_dir / "tasks.yaml").exists())
             config_text = (state_dir / "config.yml").read_text(encoding="utf-8")
-            workflow_text = (workflows_dir / "code-review-example.task.md").read_text(
+            workflow_text = (workflows_dir / "single-agent-review.task.md").read_text(
                 encoding="utf-8"
             )
             top_level_workflow_files = sorted(workflows_dir.glob("*.task.md"))
             self.assertEqual(
                 [path.name for path in top_level_workflow_files],
-                ["code-review-example.task.md"],
+                ["single-agent-review.task.md"],
             )
             self.assertIn(f'version: "{SCHEMA_VERSION}"', config_text)
             self.assertIn(f'schema_version: "{SCHEMA_VERSION}"', workflow_text)
             self.assertNotIn("__SCHEMA_VERSION__", config_text)
             self.assertNotIn("__SCHEMA_VERSION__", workflow_text)
-            self.assertIn("--dangerously-skip-permissions", config_text)
             self.assertIn(
-                "--dangerously-bypass-approvals-and-sandbox",
+                'cli_cmd: ["__crewplane_mock_invoker_never_executes__"]',
                 config_text,
             )
-            self.assertIn("--approval-mode=yolo", config_text)
-            self.assertIn('cli_cmd: ["copilot"]', config_text)
-            self.assertIn("--no-ask-user", config_text)
+            self.assertIn('implementation: "mock"', config_text)
+            for provider_name in ("claude", "codex", "gemini", "copilot", "kilo"):
+                self.assertIn(f"# {provider_name}:", config_text)
+                self.assertNotIn(f"\n  {provider_name}:", config_text)
+            for flag in (
+                "--dangerously-skip-permissions",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--approval-mode=yolo",
+            ):
+                self.assertIn(f'#     - "{flag}"', config_text)
+                self.assertNotIn(f'\n      - "{flag}"', config_text)
 
     def test_non_tty_run_uses_compact_fallback_without_live_dashboard(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

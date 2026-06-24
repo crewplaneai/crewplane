@@ -261,10 +261,10 @@ Runtime template forms:
 during Markdown workflow composition; unbound parameters are rewritten to
 `{{var:key}}` for runtime variable resolution.
 
-`{{file:path}}` paths in the entry workflow are resolved from the project root
-when relative. In imported Markdown workflows, relative file paths resolve from
-the imported workflow file's directory. All resolved paths are bounded to the
-project root unless explicitly allowlisted with
+Relative `{{file:path}}` paths resolve from the project root, including when
+the token is authored in an imported Markdown workflow. Imported workflow source
+paths remain provenance metadata for diagnostics and audit. All resolved paths
+are bounded to the project root unless explicitly allowlisted with
 `settings.integrations.artifacts.options.allowed_template_paths`.
 
 Node artifact references are valid only for upstream dependencies. Findings

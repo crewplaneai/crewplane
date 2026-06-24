@@ -103,6 +103,10 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             self.assertIn("Preflight warnings:", output_text)
             self.assertIn("PROVIDER-CONFIG", output_text)
             self.assertIn("argv prompt transport", output_text)
+            self.assertIn(
+                "Mock invoker active: no provider CLI commands will be started.",
+                output_text,
+            )
 
     def test_run_reports_invalid_workflow_without_raw_exception(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -491,7 +495,12 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 cli.Console = original_console_cls
 
             self.assertEqual(calls["count"], 1)
-            self.assertNotIn("Provider validation failed", stream.getvalue())
+            output_text = stream.getvalue()
+            self.assertIn(
+                "Mock invoker active: no provider CLI commands will be started.",
+                output_text,
+            )
+            self.assertNotIn("Provider validation failed", output_text)
 
     def test_dry_run_validates_audit_rounds_max_without_cli_validation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

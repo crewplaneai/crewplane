@@ -139,10 +139,8 @@ Duplicate references to the same canonical upstream artifact in one source node 
 
 Imported workflow inputs remain explicit `child_input_id -> caller locator`
 bindings. Child modules see only declared child input IDs, and relative file
-references resolve from the node's effective source root before
-project/allowlist containment checks. The entry workflow's effective source
-root is the project root; imported nodes use the imported workflow file's
-directory. Imported workflow source paths remain provenance metadata for
+references resolve from the project root before project/allowlist containment
+checks. Imported workflow source paths remain provenance metadata for
 diagnostics and audit. `{{<child_input_id>._artifact}}` is not legal template
 grammar.
 
@@ -150,10 +148,9 @@ Token catalog entries are occurrence-level audit records with source provenance 
 
 ### Static Files
 When workspace isolation is disabled, `{{file:path}}` injects UTF-8 text only.
-Preflight resolves relative paths against the node's effective source root,
-applies containment policy, reads bytes, rejects undecodable or NUL-containing
-content, records size and hash, and writes the content into the preflight
-static bundle.
+Preflight resolves relative paths against the project root, applies containment
+policy, reads bytes, rejects undecodable or NUL-containing content, records size
+and hash, and writes the content into the preflight static bundle.
 
 Runtime consumes only the bundle `content_ref`. It must not read the original `resolved_path` or rerun path policy.
 
@@ -307,7 +304,7 @@ Positive consequences:
 - preflight diagnostics are more complete and happen before provider invocation
 - runtime execution is simpler to reason about and test
 - artifact manifests reflect the compiled execution contract
-- imported workflow file-token behavior is deterministic across module roots
+- imported workflow file tokens resolve consistently from the project root
 - duplicate detection ignores presentation-only UI changes
 - sensitive values stay out of persisted Crewplane-owned artifacts
 

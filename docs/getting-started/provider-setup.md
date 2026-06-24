@@ -1,7 +1,13 @@
 # Provider Setup
 
-Crewplane invokes provider CLIs from your machine. It does not manage provider
-accounts, API keys, approvals, or sandbox settings.
+Use this page after the mock quickstart succeeds. The first
+`crewplane init && crewplane validate && crewplane run --no-live` path does not
+need provider CLIs, API keys, or config edits.
+
+Real provider runs start the external commands configured in
+`.crewplane/config.yml`. Those tools run with their own filesystem, network,
+credential, approval, and sandbox settings. Crewplane coordinates them and
+records artifacts; it does not sandbox them.
 
 ## Agent Config
 
@@ -32,6 +38,31 @@ nodes:
 
 The provider name in a workflow must exist under `agents`.
 
+The generated config starts with one active mock agent and commented examples
+for Claude, Codex, Gemini, Copilot, and Kilo:
+
+```yaml
+agents:
+  mock:
+    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]
+
+settings:
+  integrations:
+    invoker:
+      implementation: "mock"
+```
+
+For real providers, uncomment the agent entries you need, adjust command flags
+for your local provider setup, and switch the invoker to `cli`:
+
+```yaml
+settings:
+  integrations:
+    invoker:
+      implementation: "cli"
+      options: {}
+```
+
 ## Provider Kinds
 
 `provider_kind` can be one of:
@@ -46,6 +77,15 @@ The provider name in a workflow must exist under `agents`.
 Provider kind lets the built-in CLI invoker choose provider-aware output
 extraction, quota parsing, log formatting, and usage parsing at the invoker
 boundary. It does not install or authenticate the provider tool.
+
+Confirm provider commands directly before running Crewplane with `cli`:
+
+```bash
+claude --version
+codex --version
+gemini --version
+copilot version
+```
 
 ## Models
 

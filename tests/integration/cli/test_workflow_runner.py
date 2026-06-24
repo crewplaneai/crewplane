@@ -609,7 +609,8 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_cli_availability_failure_writes_preflight_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
-            console = Console(file=io.StringIO(), force_terminal=False)
+            stream = io.StringIO()
+            console = Console(file=stream, force_terminal=False)
             workflow = _workflow()
             config = _mock_config(invoker_implementation="cli")
             original_cwd = Path.cwd()
@@ -640,6 +641,10 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(diagnostics[0]["code"], "PROVIDER-CLI")
             self.assertIn("not found in PATH", diagnostics[0]["message"])
+            self.assertIn(
+                "Provider setup: docs/getting-started/provider-setup.md",
+                stream.getvalue(),
+            )
             failure_manifest = json.loads(
                 (run_dirs[0] / "preflight" / "manifest.json").read_text(
                     encoding="utf-8"

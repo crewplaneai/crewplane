@@ -237,6 +237,13 @@ def _workspace_invocation_request(
     )
 
 
+def _ensure_invocation_log_file(log_file: Path | None) -> None:
+    if log_file is None:
+        return
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.touch(exist_ok=True)
+
+
 async def _invoke_provider_and_finalize_workspace(
     request: ProviderCallRequest,
     display: ProviderCallDisplay,
@@ -245,6 +252,7 @@ async def _invoke_provider_and_finalize_workspace(
 ) -> None:
     metadata = _require_invocation_metadata(state)
     prepared_workspace = _require_prepared_workspace(state)
+    _ensure_invocation_log_file(metadata.log_file)
     emit_invocation_event(request.telemetry, "invocation_started", metadata)
     with ElapsedTimer() as timer:
         state.timer = timer

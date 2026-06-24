@@ -61,34 +61,6 @@ Findings artifact metadata:
 - Size: {{review.context.findings_size}}
 - SHA-256: {{review.context.findings_sha256}}
 
-<!-- crewplane:executor -->
-Produce the current release-readiness candidate.
-Resolve or disposition each finding, cite the evidence used, and include the
-validation you would run before committing.
-<!-- /crewplane:executor -->
-
-<!-- crewplane:reviewer -->
-Review only the current candidate for correctness, regressions, missing
-validation, and unsupported claims. Do not edit files.
-
-End with this structure:
-
-## Major Issues
-None
-
-## Minor Issues
-None
-
-## Nitpicks
-None
-
----
-VERDICT: NO_FINDINGS
-
-Use `CHANGES_REQUESTED` when major or minor issues remain. Use `NITS_ONLY` only
-for optional polish.
-<!-- /crewplane:reviewer -->
-
 ## review.summary
 
 Create one concise final report for the run.

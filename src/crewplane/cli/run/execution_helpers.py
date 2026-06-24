@@ -85,6 +85,13 @@ def print_run_preflight_diagnostics(
         context.console.print(
             f"[red]Preflight {diagnostic.code}:[/] {diagnostic.message}"
         )
+    if any(
+        diagnostic.code == PreflightDiagnosticCode.PROVIDER_CLI
+        for diagnostic in diagnostics
+    ):
+        context.console.print(
+            "[yellow]Provider setup: docs/getting-started/provider-setup.md[/]"
+        )
 
 
 def handle_duplicate_skip(

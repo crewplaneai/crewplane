@@ -236,11 +236,32 @@ def advance_columns(
     ]
     dependent_columns: list[int] = []
     insert_at = insertion_index
+    reuse_existing_dependents = fresh_root and len(node_dependents) > 1
     for dependent_id in ordered_dependents:
-        place_active_column(next_columns, insert_at, dependent_id)
-        dependent_columns.append(insert_at)
-        insert_at += 1
+        existing_column = (
+            existing_column_for(next_columns, dependent_id)
+            if reuse_existing_dependents
+            else None
+        )
+        if existing_column is None:
+            place_active_column(next_columns, insert_at, dependent_id)
+            dependent_columns.append(insert_at)
+            insert_at += 1
+            continue
+        dependent_columns.append(existing_column)
+    if node_column not in dependent_columns and node_column >= len(next_columns):
+        dependent_columns.append(node_column)
     return trim_trailing_empty_columns(next_columns), dependent_columns
+
+
+def existing_column_for(
+    columns: list[GraphColumn],
+    target_id: str,
+) -> int | None:
+    for index, existing_target_id in enumerate(columns):
+        if existing_target_id == target_id:
+            return index
+    return None
 
 
 def place_active_column(
@@ -325,7 +346,7 @@ def render_connector_graph(
                 chars,
                 list(graph_state.dependent_columns),
                 middle_char="┬",
-                end_char="┐",
+                end_char=branch_span_end_char(graph_state),
             )
     elif next_node_id is not None:
         if len(incoming_columns) > 1:
@@ -368,6 +389,12 @@ def overlay_branch_and_join_span(
     overlay_span(chars, span_columns, middle_char="┬", end_char="┘")
 
 
+def branch_span_end_char(graph_state: NodeGraphState) -> str:
+    if graph_state.node_column >= len(graph_state.after_columns):
+        return "┘"
+    return "┐"
+
+
 def fill_vertical_columns(
     chars: list[str],
     columns: tuple[GraphColumn, ...],
@@ -403,8 +430,8 @@ def overlay_span(
         chars[column_index(column)] = middle_char
     for column in range(start_column + 1, end_column):
         char_index = column_index(column)
-        if column not in clipped_columns and chars[char_index] == "│":
-            chars[char_index] = "┼"
+        if column not in clipped_columns:
+            chars[char_index] = "┼" if chars[char_index] == "│" else "─"
 
 
 def graph_chars(visible_columns: int) -> list[str]:

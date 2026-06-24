@@ -7,7 +7,7 @@ from crewplane.version import SCHEMA_VERSION
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "example_templates"
 CONFIG_TEMPLATE = TEMPLATE_DIR / "config.yml"
-DEFAULT_WORKFLOW_TEMPLATE = TEMPLATE_DIR / "code-review-example.task.md"
+DEFAULT_WORKFLOW_TEMPLATE = TEMPLATE_DIR / "single-agent-review.task.md"
 WORKFLOW_LIBRARY_TEMPLATE_DIR = TEMPLATE_DIR / "example-templates"
 TEMPLATE_VERSION_TOKENS = {
     "__SCHEMA_VERSION__": SCHEMA_VERSION,

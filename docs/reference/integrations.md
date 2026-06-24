@@ -1,6 +1,7 @@
 # Integrations Reference
 
 Integrations are configured under `settings.integrations`.
+Generated projects select the `mock` invoker by default.
 
 Built-in aliases:
 

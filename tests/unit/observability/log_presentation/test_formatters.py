@@ -87,7 +87,7 @@ def test_json_lines_renders_stderr_non_json_as_stderr(tmp_path: Path) -> None:
     assert snapshot.lines == ("stderr: provider warning",)
 
 
-def test_json_lines_collapses_embedded_record_line_separators(
+def test_json_lines_expands_decoded_record_newlines(
     tmp_path: Path,
 ) -> None:
     log_path = tmp_path / "codex.log"
@@ -99,11 +99,49 @@ def test_json_lines_collapses_embedded_record_line_separators(
     snapshot = format_log_file(
         log_path,
         LogPresentationDescriptor(format="json_lines", profile="codex"),
-        line_budget=1,
+        line_budget=5,
         wall_time_now=0.0,
     )
 
-    assert snapshot.lines == ("first second third",)
+    assert snapshot.lines == ("first", "  second third")
+
+
+def test_json_lines_keeps_literal_backslash_n_on_one_display_line(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        '{"message":"first\\\\nsecond"}\n',
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=5,
+        wall_time_now=0.0,
+    )
+
+    assert snapshot.lines == ("first\\nsecond",)
+
+
+def test_json_lines_counts_expanded_physical_lines_against_budget(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        '{"message":"first\\nsecond\\nthird"}\n',
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=2,
+        wall_time_now=0.0,
+    )
+
+    assert snapshot.lines == ("  second", "  third")
 
 
 def test_json_lines_skips_oversized_records(tmp_path: Path) -> None:
@@ -376,7 +414,7 @@ def test_claude_json_object_parses_stderr_lines_and_redacts(tmp_path: Path) -> N
     assert '"api_key": "[redacted]"' in snapshot.lines[1]
 
 
-def test_json_object_collapses_embedded_record_line_separators(
+def test_json_object_expands_decoded_labeled_field_newlines(
     tmp_path: Path,
 ) -> None:
     log_path = tmp_path / "claude.log"
@@ -388,12 +426,12 @@ def test_json_object_collapses_embedded_record_line_separators(
     snapshot = format_log_file(
         log_path,
         LogPresentationDescriptor(format="json_object", profile="claude"),
-        line_budget=1,
+        line_budget=5,
         wall_time_now=0.0,
         invocation_status="succeeded",
     )
 
-    assert snapshot.lines == ("result: first second third",)
+    assert snapshot.lines == ("result: first", "  second third")
 
 
 def test_json_object_falls_back_for_deeply_nested_input(tmp_path: Path) -> None:

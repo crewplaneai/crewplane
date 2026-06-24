@@ -73,6 +73,20 @@ def uses_cli_invoker(config: Config) -> bool:
     )
 
 
+def uses_mock_invoker(config: Config) -> bool:
+    settings = config.settings if config.settings is not None else Settings()
+    implementation = settings.integrations.invoker.implementation
+    if implementation == "mock":
+        return True
+    try:
+        resolved = resolve_implementation_path("invoker", implementation)
+    except IntegrationResolutionError:
+        return False
+    return normalize_object_path(resolved) == normalize_object_path(
+        "crewplane.adapters.invokers.mock:MockInvokerAdapter"
+    )
+
+
 def compile_workflow_preview(
     config: Config,
     source: PreflightWorkflowSource,
@@ -131,6 +145,10 @@ def raise_for_preflight_preview_errors(
         console.print(f"[red]{title}:[/]")
     for diagnostic in preview.diagnostics:
         console.print(f"  - {diagnostic.code}: {diagnostic.message}")
+    if preview_has_provider_cli_failure(preview):
+        console.print(
+            "[yellow]Provider setup: docs/getting-started/provider-setup.md[/]"
+        )
     raise typer.Exit(code=1)
 
 
@@ -141,6 +159,13 @@ def preview_error_titles(preview: PreflightCompilationPreview) -> tuple[str, ...
         if title is not None and title not in titles:
             titles.append(title)
     return tuple(titles)
+
+
+def preview_has_provider_cli_failure(preview: PreflightCompilationPreview) -> bool:
+    return any(
+        diagnostic.code == PreflightDiagnosticCode.PROVIDER_CLI
+        for diagnostic in preview.diagnostics
+    )
 
 
 def diagnostic_error_title(diagnostic: PreflightDiagnostic) -> str | None:

@@ -77,7 +77,7 @@ def test_workspace_enabled_file_tokens_compile_to_workspace_locators(
     assert preview.token_catalog[0].canonical_locator == project_locator.locator_id
 
 
-def test_workspace_imported_file_token_resolves_from_module_root(
+def test_workspace_imported_file_token_resolves_from_project_root(
     tmp_path: Path,
 ) -> None:
     root = tmp_path
@@ -150,28 +150,22 @@ def test_workspace_imported_file_token_resolves_from_module_root(
     assert preview.diagnostics == []
     assert {
         locator.workspace_relative_path for locator in preview.workspace_file_locators
-    } == {".crewplane/workflows/child/docs/requirements.md"}
+    } == {"docs/requirements.md"}
     assert {
         locator.git_top_relative_path for locator in preview.workspace_file_locators
-    } == {".crewplane/workflows/child/docs/requirements.md"}
+    } == {"docs/requirements.md"}
     locator = next(
         locator
         for locator in preview.workspace_file_locators
         if locator.source_class == "project_initial"
     )
-    assert locator.source_root == child_dir.as_posix()
-    assert locator.source_root_relative_to_project == ".crewplane/workflows/child"
-    assert (
-        locator.workspace_relative_path
-        == ".crewplane/workflows/child/docs/requirements.md"
-    )
-    assert (
-        locator.git_top_relative_path
-        == ".crewplane/workflows/child/docs/requirements.md"
-    )
+    assert locator.source_root == root.as_posix()
+    assert locator.source_root_relative_to_project == "."
+    assert locator.workspace_relative_path == "docs/requirements.md"
+    assert locator.git_top_relative_path == "docs/requirements.md"
     assert locator.content_ref is not None
     assert preview.workspace_file_payloads == {
-        locator.content_ref: b"child requirements\n"
+        locator.content_ref: b"project requirements\n"
     }
 
 

@@ -94,7 +94,7 @@ def render_codex_record(
     for key in _CODEX_DIRECT_CONTENT_FIELDS:
         value = record.get(key)
         if isinstance(value, str) and value.strip():
-            return [sanitize_line(value, limits)]
+            return display_string_lines(value, limits)
 
     event_type = record.get("type") or record.get("event")
     if isinstance(event_type, str) and event_type.strip():
@@ -120,7 +120,10 @@ def render_claude_object(
     for key in ("result", "error"):
         value = record.get(key)
         if value not in (None, ""):
-            lines.append(sanitize_line(f"{key}: {value}", limits))
+            if isinstance(value, str):
+                lines.extend(display_string_lines(value, limits, label=key))
+            else:
+                lines.append(sanitize_line(f"{key}: {value}", limits))
     usage = record.get("usage")
     if usage is not None:
         lines.append(
@@ -140,8 +143,25 @@ def render_generic_record(
     for key in ("message", "content", "text", "result", "error"):
         value = record.get(key)
         if isinstance(value, str) and value.strip():
-            return [sanitize_line(f"{key}: {value}", limits)]
+            return display_string_lines(value, limits, label=key)
     return [compact_json_line(record, limits)]
+
+
+def display_string_lines(
+    value: str,
+    limits: LogPresentationLimits,
+    label: str | None = None,
+) -> list[str]:
+    stripped = value.strip()
+    if not stripped:
+        return []
+    physical_lines = stripped.replace("\r\n", "\n").split("\n")
+    first_line = physical_lines[0]
+    if label is not None:
+        first_line = f"{label}: {first_line}"
+    lines = [sanitize_line(first_line, limits)]
+    lines.extend(sanitize_line(f"  {line}", limits) for line in physical_lines[1:])
+    return lines
 
 
 def _field(key: str, record: Mapping[str, Any]) -> str | None:

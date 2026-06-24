@@ -2,15 +2,20 @@
 
 Crewplane coordinates provider CLIs. It is not a sandbox.
 
-Provider CLIs run with the permissions, approval settings, environment,
-network access, filesystem access, and credentials configured for those provider
-tools.
+The generated quickstart uses deterministic mock execution, so the first run
+does not start provider CLIs and does not need API keys or provider accounts.
+
+Real provider runs start the external commands configured in
+`.crewplane/config.yml`. Those tools run with their own filesystem, network,
+credential, approval, and sandbox settings. Crewplane coordinates them and
+records artifacts; it does not sandbox them.
 
 ## Provider Permissions
 
-Generated provider profiles may include provider-specific unattended approval
-flags. Those flags belong to the provider tools. Review the generated
-`.crewplane/config.yml` before running real providers.
+The generated config has one active mock agent and no active real-provider
+execution flags. When you add real providers, review every `cli_cmd` and
+`extra_args` value before running. Provider-specific unattended approval flags
+belong to the provider tools, not Crewplane.
 
 Crewplane does not:
 

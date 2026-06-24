@@ -91,6 +91,11 @@ when applicable.
 Corrupt or untrusted manifests are treated as unusable history for skip/resume
 decisions.
 
+Duplicate skip decisions reuse a previous successful run only when the recorded
+`workflow_signature` and required artifacts are usable. Resume decisions hydrate
+completed node-boundary artifacts from a failed or cancelled run into a new run.
+`crewplane run --force` bypasses both behaviors and records a new run.
+
 ## Logs
 
 Provider logs are captured when

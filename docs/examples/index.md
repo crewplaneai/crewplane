@@ -6,19 +6,24 @@
 Use the generated paths when running examples locally:
 
 ```bash
-crewplane run --tasks .crewplane/workflows/code-review-example.task.md
+crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
+crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md
 crewplane run --tasks .crewplane/workflows/example-templates/feature-implement-example.task.md
 ```
+
+Only `single-agent-review.task.md` is top-level after `crewplane init`; nested
+examples require explicit `--tasks` and may require provider setup.
 
 The source-backed public examples are the packaged templates under
 `src/crewplane/example_templates/`.
 
 ## Default Example
 
-- [code-review-example.task.md](../../src/crewplane/example_templates/code-review-example.task.md)
+- [single-agent-review.task.md](../../src/crewplane/example_templates/single-agent-review.task.md)
 
 ## Workflow Library
 
+- [code-review-example.task.md](../../src/crewplane/example_templates/example-templates/code-review-example.task.md)
 - [feature-implement-example.task.md](../../src/crewplane/example_templates/example-templates/feature-implement-example.task.md)
 - [test-generation-example.task.md](../../src/crewplane/example_templates/example-templates/test-generation-example.task.md)
 - [refactoring-example.task.md](../../src/crewplane/example_templates/example-templates/refactoring-example.task.md)

@@ -1,90 +1,85 @@
 # Quickstart
 
-Run these commands from the project you want provider CLIs to inspect or modify:
+Run these commands from the project where you want Crewplane to create local
+workflow artifacts:
 
 ```bash
 crewplane init
 crewplane validate
-crewplane run --dry-run
-crewplane run
+crewplane run --no-live
 ```
 
-After `crewplane init`, choose one first-run path:
-
-- Use real providers: install and authenticate the CLIs referenced in
-  `.crewplane/config.yml`, then edit the workflow providers if you only want a
-  subset.
-- Use mock execution: switch `settings.integrations.invoker.implementation` to
-  `mock` before `crewplane validate`.
-
-Before a real run, review `.crewplane/config.yml`. The generated provider
-examples may include provider-specific unattended approval or sandbox-bypass
-flags so the default templates can run without interactive prompts.
+This first run uses deterministic mock execution. It does not require provider
+CLIs, API keys, provider accounts, or config edits. Mock output is scaffolding
+for validating Crewplane behavior and artifact paths; it is not model output.
 
 ## Initialize
 
-`crewplane init` creates project-local Crewplane files under `.crewplane/`:
+`crewplane init` creates project-local files under `.crewplane/`:
 
 - `.crewplane/config.yml`
-- `.crewplane/workflows/code-review-example.task.md`
+- `.crewplane/workflows/single-agent-review.task.md`
 - `.crewplane/workflows/example-templates/**`
 - `.crewplane/workflows/example-templates/sample-inputs/*.md`
 - `.crewplane/preflight/fingerprint.key`, when a key can be persisted
 
-Generated config and workflow schema values come from the current
-`SCHEMA_VERSION` in `src/crewplane/version.py`.
+The generated config has one active agent, `mock`, and uses
+`settings.integrations.invoker.implementation: "mock"`.
 
 ## Validate
 
 ```bash
 crewplane validate
-crewplane validate .crewplane/workflows/code-review-example.task.md
-crewplane validate .crewplane/workflows/code-review-example.task.md --config .crewplane/config.yml
 ```
 
-`validate` parses and composes the workflow, validates providers and policies,
-compiles a preflight execution-plan preview, and checks configured provider CLI
-availability for the built-in `cli` invoker. It does not invoke providers and
-does not write run artifacts.
+`validate` parses and composes the default workflow, validates providers and
+policies, and compiles a preflight execution-plan preview. With the generated
+mock config it does not check or start provider CLIs.
 
-## Dry Run
-
-```bash
-crewplane run --dry-run
-crewplane run -n --tasks .crewplane/workflows/code-review-example.task.md
-```
-
-`run --dry-run` compiles and prints the execution plan without invoking
-providers, writing run artifacts, or checking provider executable availability.
-With the filesystem artifact backend, it may read existing manifests to print a
-non-binding skip or resume advisory.
-
-## Real Run
+## Run
 
 ```bash
-crewplane run
 crewplane run --no-live
-crewplane run --force
 ```
 
-A real run compiles preflight, writes a run directory under
-`.crewplane/execution-stages/`, invokes providers, writes final node artifacts
-under `.crewplane/execution-results/`, and records manifests and logs.
+The run writes normal Crewplane artifacts while using deterministic mock output.
+Use `--no-live` for the quickstart so the result is a simple terminal run even
+when tmux is installed.
 
-Use `--no-live` to disable the live dashboard while keeping execution fully
-functional. Use `--force` to bypass duplicate-skip and resume behavior for the
-same workflow signature.
+Inspect the durable run files next:
+
+```bash
+find .crewplane/execution-stages -maxdepth 4 -type f | sort
+find .crewplane/execution-results -maxdepth 3 -type f | sort
+```
+
+Start with:
+
+- `.crewplane/execution-stages/<run-key>/logs/summary.md`
+- `.crewplane/execution-stages/<run-key>/logs/events.ndjson`
+- `.crewplane/execution-results/<run-key>/review.project-result.md`
+
+## Setup Checklist
+
+Use the [setup checklist](setup-checklist.md) to confirm mock status, safety
+status, artifact status, live UI status, and readiness for real providers.
+
+## Real Providers
+
+After the mock run succeeds and you have inspected artifacts, configure real
+provider CLIs with [provider setup](provider-setup.md). Real provider runs start
+the external commands configured in `.crewplane/config.yml`.
 
 ## Selecting A Workflow
 
 By default, `crewplane run` and `crewplane validate` expect exactly one
-`.task.md` file directly in `.crewplane/workflows/`. If there are zero or
-multiple top-level workflow files, pass one explicitly:
+`.task.md` file directly in `.crewplane/workflows/`.
+
+Advanced examples are copied under `.crewplane/workflows/example-templates/` and
+are not selected by default. Run them explicitly after provider setup or after
+adjusting their provider names:
 
 ```bash
-crewplane run --tasks .crewplane/workflows/code-review-example.task.md
-crewplane run -t .crewplane/workflows/example-templates/feature-implement-example.task.md
+crewplane validate .crewplane/workflows/example-templates/code-review-example.task.md
+crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md
 ```
-
-The example library under `.crewplane/workflows/example-templates/` is not
-selected by default unless you pass `--tasks`.

@@ -172,7 +172,8 @@ Required deterministic coverage includes these categories:
   `blob_exact`.
 - Workspace-file locators: repo-relative file tokens inject canonical Git blob
   bytes, literal path semantics are enforced for wildcard/pathspec-looking
-  names, imported source roots cannot be bypassed, reviewer/remediation tokens
+  names, imported workflow provenance does not change project-root token
+  resolution, reviewer/remediation tokens
   read from the current candidate, missing runtime-generated files fail before
   invocation, symlinks/trees/gitlinks/non-regular targets fail, input-node
   `\{\{file:...\}\}` is assembled from compiled project-source blob records
