@@ -3,9 +3,9 @@ class Crewplane < Formula
 
   desc "CLI workflow runner for AI agents"
   homepage "https://github.com/crewplaneai/crewplane"
-  url "https://files.pythonhosted.org/packages/source/c/crewplane/crewplane-0.1.0a1.tar.gz"
-  version "0.1.0-alpha.1"
-  sha256 "d0ec59a34e35d8a5500404c0429fb83f2921d530b7db7f20e2a2e1c494944191"
+  url "https://files.pythonhosted.org/packages/source/c/crewplane/crewplane-0.1.0a2.tar.gz"
+  version "0.1.0-alpha.2"
+  sha256 "ec91fb1da8e359aabfebcd8f69eb0c04a89c8a8f2a7069c6dedf5bbcee29a453"
   license "Apache-2.0"
   head "https://github.com/crewplaneai/crewplane.git", branch: "main"
 

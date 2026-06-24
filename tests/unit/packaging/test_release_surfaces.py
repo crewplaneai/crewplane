@@ -13,8 +13,8 @@ from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_NAME = "crewplane"
-AUTHORED_VERSION = "0.1.0-alpha.1"
-NORMALIZED_VERSION = "0.1.0a1"
+AUTHORED_VERSION = "0.1.0-alpha.2"
+NORMALIZED_VERSION = "0.1.0a2"
 CLI_COMMAND = "crewplane"
 IMPORT_PACKAGE = "crewplane"
 REPOSITORY_URL = "https://github.com/crewplaneai/crewplane"
@@ -178,6 +178,21 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "$(PACKAGE_NAME)==$(PROJECT_VERSION)" in makefile
     assert 'CREWPLANE_VERSION="$(PROJECT_VERSION)"' in makefile
     assert 'implementation: "mock"' in makefile
+    for target in (
+        "install-smoke-pip",
+        "install-smoke-uv",
+        "install-smoke-pipx",
+        "npm-smoke",
+    ):
+        smoke_target = make_target_body(target)
+        assert "'  mock:'" in smoke_target
+        assert (
+            "'    cli_cmd: [\"__crewplane_mock_invoker_never_executes__\"]'"
+            in smoke_target
+        )
+        assert "'    provider_kind: \"generic\"'" in smoke_target
+        assert "'    prompt_transport: \"stdin\"'" in smoke_target
+        assert "'    default_model: \"mock\"'" in smoke_target
     assert 'brew list --formula "$(PACKAGE_NAME)"' in makefile
     assert (
         "Skipping brew-smoke: Homebrew formula $(PACKAGE_NAME) is already installed."
@@ -346,7 +361,7 @@ def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     installer = read_text("install.sh")
     assert 'PACKAGE_NAME="crewplane"' in installer
     assert "CLI_NAME" not in installer
-    assert 'CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.0-alpha.1}"' in installer
+    assert 'CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.0-alpha.2}"' in installer
     assert "CREWPLANE_INSTALL_FIND_LINKS" in installer
     assert "CREWPLANE_INSTALL_NO_INDEX" in installer
     assert "CREWPLANE_INSTALL_HOME" in installer

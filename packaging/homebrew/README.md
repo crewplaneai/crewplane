@@ -17,7 +17,7 @@ the exact canonical PyPI artifact and dependency resources that will be served
 publicly:
 
 1. Run `make release-check`.
-2. Publish the canonical `crewplane-0.1.0a1.tar.gz` artifact.
+2. Publish the canonical `crewplane-0.1.0a2.tar.gz` artifact.
 3. Replace the formula URL and SHA256 with that published artifact.
 4. Refresh runtime resources if `uv.lock` changed.
 5. Refresh the pinned Hatchling build-backend wheel resources if

@@ -37,7 +37,7 @@ For local maintainer smoke checks before publication:
 ```bash
 CREWPLANE_INSTALL_FIND_LINKS=/path/to/wheelhouse \
 CREWPLANE_INSTALL_NO_INDEX=1 \
-npm install -g ./crewplane-0.1.0-alpha.1.tgz
+npm install -g ./crewplane-0.1.0-alpha.2.tgz
 ```
 
 If npm lifecycle scripts are disabled, the private environment is not created.

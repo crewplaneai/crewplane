@@ -83,7 +83,7 @@ def _imported_workflow_text() -> str:
             "",
             "## build",
             "",
-            "File: {{file:context.md}}",
+            "File: {{file:.crewplane/workflows/modules/context.md}}",
             "Env: {{env:PREFLIGHT_IMPORTED_TOKEN}}",
             "Var: {{var:project_name}}",
         ]
@@ -160,7 +160,7 @@ def test_mock_invoker_executes_preflight_plan_with_static_and_node_refs(
     assert os.environ["PREFLIGHT_PLAN_EXECUTION_TOKEN"] == "secret-from-env"
 
 
-def test_mock_invoker_executes_imported_preflight_plan_with_module_file_root(
+def test_mock_invoker_executes_imported_preflight_plan_with_project_root_file_token(
     tmp_path: Path,
     monkeypatch,
 ) -> None:

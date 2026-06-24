@@ -178,15 +178,11 @@ install-smoke-pip: package-wheelhouse
 	printf '%s\n' \
 		'version: "1.0"' \
 		'agents:' \
-		'  claude:' \
-		'    cli_cmd: ["mock"]' \
+		'  mock:' \
+		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
 		'    provider_kind: "generic"' \
-		'  codex:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
-		'  gemini:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
+		'    prompt_transport: "stdin"' \
+		'    default_model: "mock"' \
 		'settings:' \
 		'  integrations:' \
 		'    invoker:' \
@@ -225,15 +221,11 @@ install-smoke-uv: package-wheelhouse
 	printf '%s\n' \
 		'version: "1.0"' \
 		'agents:' \
-		'  claude:' \
-		'    cli_cmd: ["mock"]' \
+		'  mock:' \
+		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
 		'    provider_kind: "generic"' \
-		'  codex:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
-		'  gemini:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
+		'    prompt_transport: "stdin"' \
+		'    default_model: "mock"' \
 		'settings:' \
 		'  integrations:' \
 		'    invoker:' \
@@ -272,15 +264,11 @@ install-smoke-pipx: package-wheelhouse
 	printf '%s\n' \
 		'version: "1.0"' \
 		'agents:' \
-		'  claude:' \
-		'    cli_cmd: ["mock"]' \
+		'  mock:' \
+		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
 		'    provider_kind: "generic"' \
-		'  codex:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
-		'  gemini:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
+		'    prompt_transport: "stdin"' \
+		'    default_model: "mock"' \
 		'settings:' \
 		'  integrations:' \
 		'    invoker:' \
@@ -362,15 +350,11 @@ npm-smoke: package-wheelhouse npm-pack
 	printf '%s\n' \
 		'version: "1.0"' \
 		'agents:' \
-		'  claude:' \
-		'    cli_cmd: ["mock"]' \
+		'  mock:' \
+		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
 		'    provider_kind: "generic"' \
-		'  codex:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
-		'  gemini:' \
-		'    cli_cmd: ["mock"]' \
-		'    provider_kind: "generic"' \
+		'    prompt_transport: "stdin"' \
+		'    default_model: "mock"' \
 		'settings:' \
 		'  integrations:' \
 		'    invoker:' \

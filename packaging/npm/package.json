@@ -1,6 +1,6 @@
 {
   "name": "crewplane",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Alpha npm wrapper for Crewplane Python CLI package.",
   "license": "Apache-2.0",
   "repository": {
@@ -27,7 +27,7 @@
   },
   "crewplane": {
     "pythonPackage": "crewplane",
-    "pythonPackageVersion": "0.1.0-alpha.1",
+    "pythonPackageVersion": "0.1.0-alpha.2",
     "pythonConsoleCommand": "crewplane"
   }
 }

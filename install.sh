@@ -2,7 +2,7 @@
 set -eu
 
 PACKAGE_NAME="crewplane"
-CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.0-alpha.1}"
+CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.0-alpha.2}"
 
 fail() {
     printf '%s\n' "error: $*" >&2

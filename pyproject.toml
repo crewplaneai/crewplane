@@ -1,6 +1,6 @@
 [project]
 name = "crewplane"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 description = "Coordinate AI coding CLIs through auditable Markdown workflows and shared artifacts"
 readme = "README.md"
 requires-python = ">=3.13"

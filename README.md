@@ -86,8 +86,9 @@ crewplane run --no-live
 
 `crewplane init` creates `.crewplane/config.yml`, a default workflow, and
 additional example templates under `.crewplane/workflows/example-templates/`.
-The default run uses deterministic `mock` output. It is scaffolding for validating
-the workflow and artifact path, not model output.
+The default run uses deterministic `mock` output and does not require provider
+CLIs, API keys, provider accounts, or config edits. It is scaffolding for
+validating the workflow and artifact path, not model output.
 
 Inspect the first run artifacts under `.crewplane/execution-stages/` and
 `.crewplane/execution-results/`, then follow
