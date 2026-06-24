@@ -20,6 +20,39 @@ REVIEWER_ONLY_INSTRUCTION = (
     "Use NITS_ONLY only when only optional nitpicks remain.\n"
     "Use NO_FINDINGS only when no issues remain at all."
 )
+INITIAL_REVIEWER_ONLY_INSTRUCTION = (
+    "You are acting only as a reviewer.\n"
+    "Review only the existing context shown below before any same-node executor "
+    "candidate exists.\n"
+    "Do not modify files, apply fixes, run changes, or change the workspace.\n"
+    "Approve the initial pass only when the existing context has no major or "
+    "minor issues.\n"
+    "Use NITS_ONLY only when only optional nitpicks remain.\n"
+    "Use NO_FINDINGS only when no issues remain at all."
+)
+INITIAL_REVIEW_APPROVED_HANDOFF = (
+    "The initial reviewer pass found no unresolved major or minor issues in the "
+    "reviewed context. Preserve that reviewed state, avoid broad rewrites, and "
+    "make only the minimal necessary changes required to produce this node's "
+    "canonical executor candidate."
+)
+INITIAL_REVIEW_FAILURE_HANDOFF = (
+    "The initial reviewer pass could not approve the reviewed context because at "
+    "least one reviewer invocation failed. Do not invent reviewer feedback. "
+    "Preserve the reviewed context where possible and make only the minimal "
+    "necessary changes required to produce this node's canonical executor "
+    "candidate."
+)
+INITIAL_REVIEW_BLOCKED_HANDOFF = (
+    "The initial reviewer pass did not produce approval or actionable normalized "
+    "feedback. Treat the reviewed context as blocked, preserve it where possible, "
+    "and make only the minimal necessary changes required to produce this node's "
+    "canonical executor candidate."
+)
+INITIAL_REVIEW_TASK_CONTEXT = (
+    "Review the existing context before the local round 1 executor writes this "
+    "node's canonical candidate."
+)
 REVIEWER_REMEDIATION_INSTRUCTION = (
     "When previous unresolved review state is provided, verify whether those major "
     "and minor issues are now resolved. Report new major or minor issues only when "
@@ -40,8 +73,11 @@ def build_executor_prompt(
     base_prompt: str,
     previous_candidate_context: str | None,
     previous_review_packet: str | None,
+    initial_review_handoff: str | None = None,
 ) -> str:
     sections = [base_prompt, EXECUTOR_CANONICAL_OUTPUT_INSTRUCTION]
+    if initial_review_handoff:
+        sections.append(f"Initial reviewer handoff:\n{initial_review_handoff}")
     if previous_review_packet:
         if previous_candidate_context:
             sections.append(
@@ -129,9 +165,12 @@ def build_reviewer_prompt(
     base_prompt: str,
     review_context: str,
     previous_review_packet: str | None,
+    review_context_heading: str = "Current executor output(s)",
+    review_context_note: str | None = None,
+    reviewer_instruction: str = REVIEWER_ONLY_INSTRUCTION,
 ) -> str:
     sections = [
-        REVIEWER_ONLY_INSTRUCTION,
+        reviewer_instruction,
         f"Task context:\n{base_prompt}",
     ]
     if previous_review_packet:
@@ -139,8 +178,22 @@ def build_reviewer_prompt(
         sections.append(f"Previous unresolved review state:\n{previous_review_packet}")
     sections.extend(
         [
-            f"Current executor output(s):\n\n{review_context}",
+            _review_context_section(
+                review_context_heading,
+                review_context_note,
+                review_context,
+            ),
             REVIEW_RESPONSE_INSTRUCTION,
         ]
     )
     return "\n\n".join(sections)
+
+
+def _review_context_section(
+    heading: str,
+    note: str | None,
+    review_context: str,
+) -> str:
+    if note:
+        return f"{heading}:\n{note}\n\n{review_context}"
+    return f"{heading}:\n\n{review_context}"

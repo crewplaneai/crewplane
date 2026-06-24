@@ -4,6 +4,7 @@ from enum import StrEnum
 from typing import Literal, get_args
 
 NodeMode = Literal["parallel", "sequential", "input"]
+ReviewStartsWith = Literal["executor", "reviewer"]
 
 
 class ProviderRole(StrEnum):
@@ -24,11 +25,13 @@ NodeArtifactName = Literal[
 ]
 
 ALLOWED_NODE_MODES = get_args(NodeMode)
+ALLOWED_REVIEW_STARTS_WITH = get_args(ReviewStartsWith)
 ALLOWED_PROVIDER_ROLES = tuple(role.value for role in ProviderRole)
 ALLOWED_SEQUENTIAL_CONSENSUS_POLICIES = get_args(SequentialConsensusPolicy)
 ALLOWED_NODE_ARTIFACT_NAMES = get_args(NodeArtifactName)
 
 ALLOWED_NODE_MODE_SET = frozenset(ALLOWED_NODE_MODES)
+ALLOWED_REVIEW_STARTS_WITH_SET = frozenset(ALLOWED_REVIEW_STARTS_WITH)
 ALLOWED_PROVIDER_ROLE_SET = frozenset(ALLOWED_PROVIDER_ROLES)
 ALLOWED_SEQUENTIAL_CONSENSUS_POLICY_SET = frozenset(
     ALLOWED_SEQUENTIAL_CONSENSUS_POLICIES

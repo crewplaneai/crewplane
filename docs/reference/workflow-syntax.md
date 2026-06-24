@@ -96,6 +96,7 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 | `source` | Input node file source. Only valid for `mode: input`. |
 | `depth` | Positive sequential execution depth. Defaults to `1`. |
 | `audit_rounds` | Positive sequential review-loop audit round count. Defaults to `1` when reviewers are present. |
+| `review_starts_with` | `executor` or `reviewer` for sequential executor/reviewer review loops. Defaults to `executor`. |
 | `failure_threshold` | Parallel-node failure threshold. Must be less than provider count. |
 | `token_budget` | Node token budget override. |
 | `worktree` | Experimental node worktree selector. Not valid for input nodes. |
@@ -112,7 +113,7 @@ reserved run-root names `logs`, `manifests`, or `workspace-exports`.
 | `input` | None. | `source` only. | The referenced file is copied as the node result. |
 | `parallel` | One or more executors. Reviewers are rejected. | `failure_threshold`, `continue_on_failure`. | Latest artifact for each provider task is aggregated. |
 | `sequential` with one provider | Exactly one executor. | `depth`. | Latest executor round is selected. |
-| `sequential` with multiple providers | One or more executors followed by one or more reviewers. | `depth`, `audit_rounds`, `continue_on_failure`. | Runtime review-loop status selects canonical executor and reviewer artifacts. |
+| `sequential` with multiple providers | One or more executors followed by one or more reviewers. | `depth`, `audit_rounds`, `review_starts_with`, `continue_on_failure`. | Runtime review-loop status selects canonical executor and reviewer artifacts. |
 
 Provider nodes can also use `findings`, `token_budget`, and `worktree` where
 the field is otherwise valid.
@@ -131,12 +132,20 @@ review round, reviewers receive the same reviewer prompt and current executor
 output. With one reviewer, that reviewer must approve. With multiple reviewers,
 all reviewers must approve.
 
+`review_starts_with` controls only the first phase inside a sequential review
+loop. It does not change `mode`, provider roles, or provider declaration order.
+Omit it or set `executor` for the usual executor-candidate-then-reviewer flow.
+Set `reviewer` to run a round-0 reviewer pass against existing review context
+before the local-round-1 executor candidate. Reviewer-first nodes still require
+both executor and reviewer providers, still finalize through the canonical
+executor output, and do not add a downstream artifact protocol.
+
 For review loops, `depth` is remediation depth inside each audit round. A
 `depth` of `1` allows one fix attempt after the initial reviewed candidate.
 `audit_rounds` controls fresh audit passes and must not exceed
 `settings.max_audit_rounds`.
 
-Review-loop order is:
+Executor-first review-loop order is:
 
 ```text
 for audit_round in 1..audit_rounds:
@@ -150,6 +159,13 @@ Local round 1 reviews the initial candidate. Later local rounds are remediation
 attempts. If a later audit round has a valid output from the prior audit round,
 it starts by re-reviewing that output as local round 1; otherwise it invokes the
 executor for local round 1. A clean local-round-1 approval stops the whole loop.
+
+Reviewer-first audit round 1 starts with a round-0 reviewer pass. If reviewers
+approve, the local-round-1 executor still runs with preservation guidance so the
+node produces a canonical same-node executor output. If reviewers report major
+or minor issues, that feedback becomes the local-round-1 executor handoff.
+`depth` still counts remediation attempts after the local-round-1 executor
+candidate; the round-0 review does not consume depth.
 
 ## Provider Objects
 
@@ -170,7 +186,8 @@ Roles are `executor` and `reviewer`. Parallel nodes do not allow reviewers.
 Sequential single-provider nodes must use one executor provider and cannot set
 `audit_rounds`; `depth` is the total number of executor rounds. Sequential
 multi-provider review loops must start with a contiguous executor segment and
-end with a contiguous reviewer segment.
+end with a contiguous reviewer segment. Use `review_starts_with`, not provider
+reordering, when reviewers should run before the first executor candidate.
 
 Provider shorthand strings are executor providers. Use provider objects when a
 provider needs a `model` override or `role: reviewer`.
@@ -191,6 +208,7 @@ Rules:
 - `source` must be exactly one raw `{{file:...}}` template.
 - No Markdown body section is allowed.
 - No `providers`, `needs`, `findings`, `depth`, `audit_rounds`,
+  `review_starts_with`,
   `failure_threshold`, `continue_on_failure`, `token_budget`, or `worktree`
   selector is allowed.
 
@@ -219,6 +237,9 @@ Executors receive shared content plus executor segments. Reviewers receive
 shared content plus reviewer segments. In review loops, Crewplane also wraps
 reviewer prompts with reviewer-only instructions, current executor output,
 previous unresolved feedback when present, and the structured review contract.
+For `review_starts_with: reviewer`, the round-0 reviewer prompt uses the same
+shared plus reviewer content as existing review context before any same-node
+executor candidate exists.
 
 ## Templates
 
@@ -248,6 +269,15 @@ project root unless explicitly allowlisted with
 
 Node artifact references are valid only for upstream dependencies. Findings
 references require the upstream node to declare `findings: true`.
+
+`needs` orders nodes but does not automatically decide what reviewers inspect.
+For reviewer-first review/fix nodes, put the review context in the prompt with
+explicit references such as multiple upstream `{{node.output}}` or
+`{{node.findings}}` values, metadata references like `{{node.output_sha256}}`,
+or `{{file:path}}`. A standalone project-root reviewer-first node can review
+visible project files with `{{file:...}}`; with Experimental managed
+workspaces, reviewer-first file references read the compiled Git source state
+selected by workspace policy rather than uncommitted manual edits.
 
 ## Token Budget Override
 

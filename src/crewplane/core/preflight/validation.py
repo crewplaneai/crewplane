@@ -18,8 +18,13 @@ from crewplane.core.workflow.validation import (
 
 def validate_preflight_workflow_references(workflow: WorkflowPlan) -> WorkflowPlan:
     diagnostics = collect_preflight_workflow_reference_diagnostics(workflow)
-    if diagnostics:
-        raise ValueError("\n".join(diagnostic.message for diagnostic in diagnostics))
+    error_diagnostics = tuple(
+        diagnostic for diagnostic in diagnostics if diagnostic.severity == "error"
+    )
+    if error_diagnostics:
+        raise ValueError(
+            "\n".join(diagnostic.message for diagnostic in error_diagnostics)
+        )
     return workflow
 
 

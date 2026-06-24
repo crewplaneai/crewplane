@@ -77,7 +77,7 @@ def _project_source_matches(
     policy = node.workspace_policy
     if workspace_source is None or policy is None or policy.source_kind != "project":
         return False
-    if policy.lineage_producer and not _initial_executor_payload(payload):
+    if policy.lineage_producer and not _initial_source_payload(payload):
         return False
     return (
         descriptor.get("node_id") is None
@@ -99,7 +99,7 @@ def _node_source_matches(
         policy is None
         or policy.source_kind != "node"
         or policy.source_node_id is None
-        or not _initial_executor_payload(payload)
+        or not _initial_source_payload(payload)
     ):
         return False
     if descriptor.get("node_id") != policy.source_node_id:
@@ -241,6 +241,22 @@ def _initial_executor_payload(payload: dict[str, object]) -> bool:
         payload.get("role") == ProviderRole.EXECUTOR
         and int_field(payload, "round_num") == 1
     )
+
+
+def _initial_reviewer_payload(payload: dict[str, object]) -> bool:
+    workspace = _mapping(payload.get("workspace"))
+    audit_round_num = nullable_int_field(payload, "audit_round_num")
+    if not audit_round_num.valid or audit_round_num.value not in {None, 1}:
+        return False
+    return (
+        payload.get("role") == ProviderRole.REVIEWER
+        and int_field(payload, "round_num") == 0
+        and workspace.get("lineage_producer") is False
+    )
+
+
+def _initial_source_payload(payload: dict[str, object]) -> bool:
+    return _initial_executor_payload(payload) or _initial_reviewer_payload(payload)
 
 
 def _seeded_audit_source_payload(

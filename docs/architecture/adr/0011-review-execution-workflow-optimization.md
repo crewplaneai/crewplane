@@ -91,9 +91,13 @@ Design principles:
 Workflow nodes can use these review-execution fields:
 
 - `findings: true` opts a node into concise findings extraction.
-- `depth` controls local remediation cycles after one fresh audit finds issues.
+- `depth` controls local remediation cycles inside one sequential review-loop
+  audit round.
 - `audit_rounds` controls fresh audit passes overall for multi-provider
   sequential review nodes.
+- `review_starts_with` controls the first phase inside a multi-provider
+  sequential review loop. The allowed values are `executor` and `reviewer`;
+  omitted means `executor`.
 - `token_budget` overrides global prompt-budget settings per node.
 - Provider `role` is `executor` by default; `reviewer` is valid only in
   multi-provider sequential nodes.
@@ -101,6 +105,8 @@ Workflow nodes can use these review-execution fields:
 Multi-provider sequential nodes must declare one contiguous executor provider
 segment followed by one contiguous reviewer provider segment. Parallel nodes and
 single-provider sequential nodes only execute the `executor` role.
+`review_starts_with` does not reorder the provider list and is invalid outside
+multi-provider sequential review loops.
 
 The runtime does not automatically choose different models, CLI flags, or
 invoker profiles for executor and reviewer roles. Users can express model or CLI
@@ -388,19 +394,72 @@ A multi-provider sequential node runs as an executor/reviewer loop:
 6. If consensus is not reached before local remediation depth is exhausted,
    another fresh audit pass may run, up to `audit_rounds`.
 
-`depth` and `audit_rounds` are separate controls:
+`depth`, `audit_rounds`, and `review_starts_with` control separate axes:
 
-- `depth` is the number of remediation fix/verify cycles after a fresh audit
-  finds issues. The default is `1`.
+- `depth` is the local remediation budget inside one audit round. It counts
+  executor fix attempts after the first reviewable candidate has been reviewed
+  and failed. It does not count reviewer calls, fresh audit passes, the initial
+  local-round-1 executor candidate, or reviewer-first round-0 pre-review. The
+  default is `1`.
 - `audit_rounds` is the number of fresh audit passes allowed overall. The
   default is `1`, it is valid only for multi-provider sequential nodes, and it is
   bounded by `settings.max_audit_rounds` (default `5`).
+- `review_starts_with` controls how the first audit round reaches local
+  `round1`; it does not change what `depth` counts.
+
+With executor-first order, local `round1` runs an executor candidate and then
+reviewers inspect it. If that review blocks, local rounds `2..depth+1` are
+executor remediation attempts followed by reviewer verification.
+
+With reviewer-first order, round `0` reviewers inspect existing context before
+any same-node executor candidate exists. That pre-review is outside `depth`.
+Local `round1` still runs an executor candidate and reviewer verification. If
+that review blocks, local rounds `2..depth+1` use the same remediation budget as
+executor-first order.
 
 If every reviewer approves during local `round1`, the node ends immediately and
 skips remaining configured audit rounds. If consensus is reached only after a
 remediation round and more audit rounds remain, the runtime starts the next fresh
 audit. Later audit rounds seed the latest canonical candidate as local `round1`
 but do not inherit unresolved review state from the exhausted prior audit.
+
+### Initial Review Order Update
+The 2026-06-23 update adds an explicit initial-order policy for sequential
+review loops. The default `review_starts_with: executor` preserves the original
+flow: local round 1 runs executor candidate generation, then reviewers inspect
+that candidate.
+
+`review_starts_with: reviewer` starts audit round 1 with a round-0 reviewer pass
+against existing review context before any same-node executor candidate exists.
+That context is still authored through the existing prompt and template
+surface: upstream artifact references such as `{{node.output}}` and
+`{{node.findings}}`, metadata references, `{{file:...}}`, reviewer role
+segments, and ordinary natural-language prompt context. `needs` continues to
+mean DAG ordering; it does not automatically define what reviewers inspect.
+
+After the initial review:
+
+- if reviewers report unresolved major/minor issues or unstructured feedback,
+  that review packet becomes the local-round-1 executor handoff;
+- if reviewers approve, the local-round-1 executor still runs with preservation
+  guidance so the node produces a same-node canonical executor candidate;
+- reviewers then inspect the local-round-1 executor candidate through the
+  ordinary candidate-review path;
+- remediation, no-progress detection, invalid-candidate handling, consensus
+  exhaustion, and continuation policy remain unchanged after local round 1.
+
+Round-0 reviewer outputs are ordinary diagnostic/context artifacts under the
+node stage tree. They are not selected as final review-loop outputs and do not
+replace canonical executor result selection. Successful reviewer-first nodes
+still finalize through `review-state/review-loop-status.json` and the canonical
+executor outputs recorded there.
+
+Managed workspace reviewer `{{file:...}}` resolution is phase-aware. During the
+round-0 pre-review, reviewer prompt file locators resolve from an existing
+same-node candidate when one exists, otherwise from the node's upstream lineage
+source, otherwise from the project-initial source. During normal candidate
+review, reviewer prompt file locators require the matching same-node executor
+candidate source and do not fall back to upstream or project-initial state.
 
 Reviewer prompts always begin with runtime review-only safety instructions and
 end with the structured contract:
@@ -496,6 +555,12 @@ Review state artifacts are written under the node stage directory:
 - reviewer raw sidecars with `.raw.txt`
 - reviewer metadata sidecars with `.review.json`
 
+Reviewer-first initial review uses round `0` in the existing artifact naming
+scheme, for example `<reviewer-task>_round0.md`,
+`<reviewer-task>_round0.raw.txt`,
+`<reviewer-task>_round0.review.json`, and
+`review-state/<reviewer-task>-round-0.state.json`.
+
 Each reviewer state JSON records the reviewer provider, task id, audit round,
 local round, approval flag, normalized verdict, evaluation kind, original
 verdict, leading/trailing text flags, parsed major issues, parsed minor issues,
@@ -580,6 +645,11 @@ Every review-loop node writes
 - final canonical executor output paths
 - reviewer output paths
 
+For reviewer-first loops, round-0 initial reviewer outputs are intentionally
+excluded from `review-loop-status.json` result selection. They are preserved as
+stage artifacts and review-state sidecars, but downstream `{{node.output}}` and
+result finalization continue to describe the canonical executor output.
+
 Stage finalization prefers paths from this status artifact. It falls back to
 latest-round filename selection only when the status artifact is absent,
 malformed, or references no existing output files. This fallback exists for
@@ -607,6 +677,8 @@ model to adapters or config.
 Default review-loop transport is inline and provider-neutral:
 
 - unresolved major and minor issues are embedded in the next executor prompt
+- initial reviewer-first handoff is embedded in the local-round-1 executor
+  prompt under a distinct initial-review section
 - current executor outputs are embedded in reviewer prompts
 - previous canonical candidate context is embedded when remediation needs it
 - prompts remain self-contained for all current invokers and mock tests
@@ -722,6 +794,34 @@ Rejected alternatives:
 20. Infer review verdicts from provider metadata when no review content was
     extracted.
 21. Discard successful parallel reviewer outputs because a peer reviewer failed.
+22. Add `review_first: true`. A boolean hides the default side of the behavior
+    and is harder to extend than an explicit initial-order enum.
+23. Add broad names such as `flow` or `node_flow`. Those names can be confused
+    with workflow DAG flow, node `mode`, or provider fanout.
+24. Add a generic `execution_order: executor_first | reviewer_first` field.
+    The name is too broad and does not make clear that the order applies only
+    inside sequential review loops.
+25. Overload `mode` with values such as `review_first` or `review_then_fix`.
+    `mode` remains the node execution-shape selector, while
+    `review_starts_with` controls only review-loop phase order.
+26. Use `needs` as the review source. `needs` means DAG dependency ordering; it
+    should not also imply which artifacts, findings, files, or prompt context
+    reviewers inspect.
+27. Add `review_source: <node>`. A single source field is too narrow for
+    reviewing multiple upstream nodes, findings-only context, files, or manual
+    local changes.
+28. Add `review_inputs` as the first solution. This remains a possible future
+    convenience layer for common context bundles, but prompt references already
+    provide the explicit context mechanism.
+29. Treat initial reviewer approval as review-only node success. Skipping the
+    executor would require result-writer behavior for a node without a same-node
+    executor candidate and would change downstream `{{node.output}}` semantics.
+30. Require a dummy input node for standalone review/fix workflows. That is a
+    valid workaround but makes direct manual review/fix workflows artificially
+    indirect.
+31. Express reviewer-first execution by reordering provider roles. Provider list
+    shape remains one executor segment followed by one reviewer segment; the
+    execution policy, not provider order, controls the initial phase.
 
 ## Validation Coverage
 The implementation requires deterministic coverage for:
@@ -734,6 +834,8 @@ The implementation requires deterministic coverage for:
 - Role-applicability preflight failures for impossible roles.
 - Render order and cross-role non-leakage.
 - Runtime non-empty scheduled-role assertions.
+- `review_starts_with` workflow loading, validation, preflight policy
+  propagation, and workflow-signature behavior.
 - Composition rewriting for `{{node.output}}`, `{{node.findings}}`, and
   `{{param:...}}` inside every segment.
 - Manifest hash changes for shared and role-specific segment changes.
@@ -744,6 +846,9 @@ The implementation requires deterministic coverage for:
 - Review-loop state artifacts, review inboxes, review-feedback carry-forward,
   stall warnings, audit-round grouping, fresh audit restart behavior, and
   parallel reviewer execution.
+- Reviewer-first round-0 ordering, initial-review handoff prompting, status
+  exclusion for round-0 reviewer outputs, and phase-aware managed-workspace file
+  resolution.
 - Reviewer output classification for parseable or safely repairable structured
   reviews, unstructured reviewer feedback with actual text, and missing review
   content.
@@ -813,6 +918,10 @@ because they are easy to misread from the high-level workflow:
   parser hardening: safely repairable structured reviews, unstructured reviewer
   feedback with actual text, and missing review content as reviewer
   invocation/output failure.
+- **2026-06-23**: Added `review_starts_with` for sequential review loops.
+  Reviewer-first loops run a round-0 reviewer pass against explicit existing
+  context, hand that result to the local-round-1 executor, and still finalize
+  through the canonical executor output selected by review-loop status.
 
 ## References
 - [ADR 0001: Ports + Adapters Runtime Integrations](0001-ports-adapters-runtime-integrations.md)

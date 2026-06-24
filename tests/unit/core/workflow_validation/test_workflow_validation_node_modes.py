@@ -1,6 +1,10 @@
 import unittest
 
 from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.preflight.validation import (
+    collect_preflight_workflow_reference_diagnostics,
+    validate_preflight_workflow_references,
+)
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -10,6 +14,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.core.workflow.validation import (
+    collect_workflow_validation_diagnostics,
     validate_audit_rounds_settings,
     validate_workflow_plan,
 )
@@ -34,6 +39,25 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "does not support audit_rounds"):
+            validate_workflow_plan(workflow)
+
+    def test_parallel_node_rejects_explicit_review_starts_with(self) -> None:
+        workflow = WorkflowPlan(
+            name="Parallel review starts with",
+            nodes=[
+                WorkflowNode(
+                    id="review.parallel",
+                    mode="parallel",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="review")
+                    ],
+                    review_starts_with="executor",
+                    providers=[ProviderSpec(provider="gpt4")],
+                )
+            ],
+        )
+
+        with self.assertRaisesRegex(ValueError, "does not support review_starts_with"):
             validate_workflow_plan(workflow)
 
     def test_workspace_exports_is_reserved_run_root_node_id(self) -> None:
@@ -73,6 +97,22 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must not define audit_rounds"):
             validate_workflow_plan(workflow)
 
+    def test_input_node_rejects_explicit_review_starts_with(self) -> None:
+        workflow = WorkflowPlan(
+            name="Input review starts with",
+            nodes=[
+                WorkflowNode(
+                    id="review.input",
+                    mode="input",
+                    source="{{file:review.md}}",
+                    review_starts_with="executor",
+                )
+            ],
+        )
+
+        with self.assertRaisesRegex(ValueError, "must not define review_starts_with"):
+            validate_workflow_plan(workflow)
+
     def test_single_provider_sequential_rejects_audit_rounds(self) -> None:
         workflow = WorkflowPlan(
             name="Single provider audit rounds",
@@ -92,6 +132,29 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "does not support audit_rounds"):
+            validate_workflow_plan(workflow)
+
+    def test_single_provider_sequential_rejects_explicit_review_starts_with(
+        self,
+    ) -> None:
+        workflow = WorkflowPlan(
+            name="Single provider review starts with",
+            nodes=[
+                WorkflowNode(
+                    id="review.single",
+                    mode="sequential",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="review")
+                    ],
+                    review_starts_with="executor",
+                    providers=[
+                        ProviderSpec(provider="gpt4", role=ProviderRole.EXECUTOR)
+                    ],
+                )
+            ],
+        )
+
+        with self.assertRaisesRegex(ValueError, "does not support review_starts_with"):
             validate_workflow_plan(workflow)
 
     def test_validate_audit_rounds_settings_rejects_values_above_max(self) -> None:
@@ -338,11 +401,175 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
         ):
             validate_workflow_plan(workflow)
 
+    def test_standalone_reviewer_first_without_static_context_warns_only(
+        self,
+    ) -> None:
+        workflow = WorkflowPlan(
+            name="Standalone reviewer first",
+            nodes=[
+                self._review_loop_node(
+                    review_starts_with="reviewer",
+                    prompt_segments=[
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED,
+                            content="Review the current project state.",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        diagnostics = collect_workflow_validation_diagnostics(workflow)
+        warnings = [
+            diagnostic for diagnostic in diagnostics if diagnostic.severity == "warning"
+        ]
+        preflight_diagnostics = collect_preflight_workflow_reference_diagnostics(
+            workflow
+        )
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("starts with a reviewer", warnings[0].message)
+        self.assertIs(validate_workflow_plan(workflow), workflow)
+        self.assertIs(validate_preflight_workflow_references(workflow), workflow)
+        self.assertEqual(
+            [diagnostic.severity for diagnostic in preflight_diagnostics],
+            ["warning"],
+        )
+
+    def test_reviewer_first_missing_context_warning_ignores_executor_segments(
+        self,
+    ) -> None:
+        workflow = WorkflowPlan(
+            name="Executor-only context",
+            nodes=[
+                self._review_loop_node(
+                    review_starts_with="reviewer",
+                    prompt_segments=[
+                        PromptSegment(
+                            role=PromptSegmentRole.EXECUTOR,
+                            content="Use {{file:README.md}}.",
+                        ),
+                        PromptSegment(
+                            role=PromptSegmentRole.REVIEWER,
+                            content="Review the current state.",
+                        ),
+                    ],
+                )
+            ],
+        )
+
+        self.assertEqual(len(self._warning_messages(workflow)), 1)
+
+    def test_reviewer_first_static_context_suppresses_missing_context_warning(
+        self,
+    ) -> None:
+        for role in (PromptSegmentRole.SHARED, PromptSegmentRole.REVIEWER):
+            with self.subTest(role=role):
+                workflow = WorkflowPlan(
+                    name="Static review context",
+                    nodes=[
+                        self._review_loop_node(
+                            review_starts_with="reviewer",
+                            prompt_segments=[
+                                PromptSegment(
+                                    role=PromptSegmentRole.SHARED,
+                                    content="Execute the final handoff.",
+                                ),
+                                PromptSegment(
+                                    role=role,
+                                    content="Review {{file:README.md}}.",
+                                ),
+                            ],
+                        )
+                    ],
+                )
+
+                self.assertEqual(self._warning_messages(workflow), [])
+
+    def test_reviewer_first_needs_suppress_missing_context_warning(self) -> None:
+        workflow = WorkflowPlan(
+            name="Upstream review context",
+            nodes=[
+                WorkflowNode(
+                    id="context",
+                    mode="sequential",
+                    providers=[ProviderSpec(provider="gpt4")],
+                    prompt_segments=[
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED,
+                            content="Build context.",
+                        )
+                    ],
+                ),
+                self._review_loop_node(
+                    review_starts_with="reviewer",
+                    needs=["context"],
+                    prompt_segments=[
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED,
+                            content=(
+                                "Review {{context.output}}, {{context.findings}}, "
+                                "and {{context.output_sha256}}."
+                            ),
+                        )
+                    ],
+                ),
+            ],
+        )
+
+        self.assertEqual(self._warning_messages(workflow), [])
+
+    def test_reviewer_first_artifact_reference_suppresses_warning_even_if_invalid(
+        self,
+    ) -> None:
+        workflow = WorkflowPlan(
+            name="Artifact review context",
+            nodes=[
+                self._review_loop_node(
+                    review_starts_with="reviewer",
+                    prompt_segments=[
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED,
+                            content="Review {{context.findings_size}}.",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        self.assertEqual(self._warning_messages(workflow), [])
+
     def test_workflow_node_mode_rejects_mixed_case_keyword(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be lower-case"):
             WorkflowNode(
                 id="node.a",
                 mode="Parallel",
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
+                providers=[ProviderSpec(provider="alpha")],
+            )
+
+    def test_review_starts_with_rejects_unknown_keyword(self) -> None:
+        with self.assertRaisesRegex(ValueError, "review_starts_with must be one of"):
+            WorkflowNode(
+                id="node.a",
+                mode="sequential",
+                review_starts_with="planner",
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
+                providers=[ProviderSpec(provider="alpha")],
+            )
+
+    def test_review_starts_with_rejects_mixed_case_keyword(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "review_starts_with must be lower-case"
+        ):
+            WorkflowNode(
+                id="node.a",
+                mode="sequential",
+                review_starts_with="Reviewer",
                 prompt_segments=[
                     PromptSegment(role=PromptSegmentRole.SHARED, content="run")
                 ],
@@ -404,3 +631,28 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "not an upstream dependency"):
             validate_workflow_plan(invalid_workflow)
+
+    def _review_loop_node(
+        self,
+        review_starts_with: str,
+        prompt_segments: list[PromptSegment],
+        needs: list[str] | None = None,
+    ) -> WorkflowNode:
+        return WorkflowNode(
+            id="review.loop",
+            mode="sequential",
+            review_starts_with=review_starts_with,
+            needs=needs or [],
+            providers=[
+                ProviderSpec(provider="codex", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="claude", role=ProviderRole.REVIEWER),
+            ],
+            prompt_segments=prompt_segments,
+        )
+
+    def _warning_messages(self, workflow: WorkflowPlan) -> list[str]:
+        return [
+            diagnostic.message
+            for diagnostic in collect_workflow_validation_diagnostics(workflow)
+            if diagnostic.severity == "warning"
+        ]

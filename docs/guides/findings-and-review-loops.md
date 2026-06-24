@@ -40,6 +40,7 @@ nodes:
         role: executor
       - provider: claude
         role: reviewer
+    review_starts_with: executor
     audit_rounds: 2
     depth: 1
 ```
@@ -65,6 +66,12 @@ Executors receive shared content plus executor segments. Reviewers receive
 shared content plus reviewer segments. During a review loop, Crewplane adds the
 current executor output, any previous unresolved feedback, reviewer-only safety
 instructions, and the review contract to the reviewer prompt.
+
+Set `review_starts_with: reviewer` when reviewers should inspect existing
+context before the node's first executor candidate. The provider shape stays the
+same: one or more executors first, then one or more reviewers. Reviewer-first
+nodes still require an executor role, and successful nodes still finalize
+through the canonical executor output.
 
 ## Reviewer Counts
 
@@ -121,6 +128,14 @@ Inside one audit round:
    artifacts and injected into the next remediation prompt.
 6. Remediation repeats up to `depth` fix attempts for that audit round.
 
+For `review_starts_with: reviewer`, audit round 1 begins with a round-0
+reviewer pass against existing review context. If reviewers approve, the
+local-round-1 executor still runs with preservation guidance so the node writes
+its canonical output. If reviewers request changes, their major and minor
+feedback becomes the executor handoff. The round-0 review does not consume
+`depth`; `depth: 1` still means one remediation attempt after the
+local-round-1 candidate.
+
 For example, `depth: 2` and `audit_rounds: 3` can run in this order:
 
 ```text
@@ -155,6 +170,9 @@ prior audit round, the next audit round invokes the executor for local round 1.
   when supplied. For a single-provider sequential node, it is the total executor
   rounds. For a review loop, it is remediation depth inside each audit round;
   `depth: 1` means one fix attempt after the initial reviewed candidate.
+- `review_starts_with`: `executor` or `reviewer` for sequential review loops.
+  Omitted means `executor`. `reviewer` adds the round-0 pre-review described
+  above and is invalid on input, parallel, and single-provider sequential nodes.
 - `continue_on_failure`: converts selected parallel or review-loop failure
   outcomes into successful node completion. Failed dependencies still block
   downstream nodes. It applies to parallel failure-threshold excess, reviewer
@@ -165,6 +183,38 @@ prior audit round, the next audit round invokes the executor for local round 1.
 
 Review-loop status is persisted under each node stage directory, and final
 results are written from the runtime-owned review-loop status artifact.
+
+`needs` orders nodes but does not automatically choose review inputs. In
+reviewer-first review/fix nodes, reference exactly what reviewers should inspect
+in shared or reviewer prompt text. Review context can include multiple upstream
+outputs, findings, and metadata references:
+
+```markdown
+## review.fix
+Review and fix these inputs:
+
+- backend: {{backend.impl.output}}
+- frontend: {{frontend.impl.output}}
+- test findings: {{test.audit.findings}}
+- backend digest: {{backend.impl.output_sha256}}
+```
+
+Standalone project-root reviewer-first nodes can review visible files with
+`{{file:...}}`:
+
+```markdown
+## review.local
+Review the current repository state and fix issues in:
+
+{{file:src/foo.py}}
+{{file:tests/test_foo.py}}
+```
+
+With Experimental managed workspaces, reviewer-first `{{file:...}}` context
+uses compiled Git source state: same-node candidate if one already exists,
+otherwise upstream lineage for node-sourced worktrees, otherwise project initial
+source. It does not add support for uncommitted manual edits inside managed
+workspaces.
 
 For mode selection and parallel-node examples, see
 [Node modes and provider roles](node-modes.md).

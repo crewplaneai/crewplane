@@ -21,6 +21,8 @@ from .serialization import to_json_safe
 from .signatures import signature_for_payload
 from .source import PreflightWorkflowSource
 
+SOURCE_LOCATION_METADATA_FIELDS = frozenset({"source_span"})
+
 
 def workflow_signature(
     source: PreflightWorkflowSource,
@@ -44,11 +46,13 @@ def workflow_signature(
             "nodes": semantic_node_payloads(nodes),
             "project_root": options.project_root.resolve().as_posix(),
             "referenced_workflows": semantic_referenced_workflows(source),
-            "render_plans": render_plans,
-            "static_resources": static_resources,
-            "token_catalog": token_catalog,
+            "render_plans": semantic_source_location_payload(render_plans),
+            "static_resources": semantic_source_location_payload(static_resources),
+            "token_catalog": semantic_source_location_payload(token_catalog),
             "value_fingerprints": value_fingerprints,
-            "workspace_file_locators": workspace_file_locators,
+            "workspace_file_locators": semantic_source_location_payload(
+                workspace_file_locators
+            ),
             "workspace_source": workspace_source_signature_payload(
                 options.workspace_source_snapshot
             ),
@@ -123,6 +127,19 @@ def semantic_workflow_payload(payload: object) -> object:
     if not isinstance(semantic_payload, dict):
         return semantic_payload
 
+    nodes = semantic_payload.get("nodes")
+    if isinstance(nodes, list):
+        normalized_nodes = []
+        for node in nodes:
+            if isinstance(node, dict) and node.get("review_starts_with") == "executor":
+                normalized_node = dict(node)
+                normalized_node.pop("review_starts_with", None)
+                normalized_nodes.append(normalized_node)
+            else:
+                normalized_nodes.append(node)
+        semantic_payload = dict(semantic_payload)
+        semantic_payload["nodes"] = normalized_nodes
+
     worktrees = semantic_payload.get("worktrees")
     if not isinstance(worktrees, dict):
         return semantic_payload
@@ -149,15 +166,50 @@ def semantic_worktree_declaration(declaration: object) -> object:
 def semantic_node_payloads(
     nodes: list[PreflightExecutionNode],
 ) -> list[object]:
-    payloads: list[object] = []
-    for node in nodes:
-        payload = to_json_safe(node)
-        if isinstance(payload, dict) and isinstance(
-            payload.get("workspace_policy"),
-            dict,
-        ):
-            workspace_policy = dict(payload["workspace_policy"])
-            workspace_policy.pop("branch_export", None)
-            payload["workspace_policy"] = workspace_policy
-        payloads.append(payload)
-    return payloads
+    return [semantic_node_payload(node) for node in nodes]
+
+
+def semantic_node_payload(node: PreflightExecutionNode) -> object:
+    payload = semantic_source_location_payload(node)
+    if not isinstance(payload, dict):
+        return payload
+    payload = semantic_execution_policy_payload(payload)
+    return semantic_workspace_policy_payload(payload)
+
+
+def semantic_execution_policy_payload(
+    payload: dict[str, object],
+) -> dict[str, object]:
+    execution_policy = payload.get("execution_policy")
+    if not isinstance(execution_policy, dict):
+        return payload
+    if execution_policy.get("review_starts_with") != "executor":
+        return payload
+    normalized_policy = dict(execution_policy)
+    normalized_policy.pop("review_starts_with", None)
+    return {**payload, "execution_policy": normalized_policy}
+
+
+def semantic_workspace_policy_payload(payload: dict[str, object]) -> dict[str, object]:
+    workspace_policy = payload.get("workspace_policy")
+    if not isinstance(workspace_policy, dict):
+        return payload
+    normalized_policy = dict(workspace_policy)
+    normalized_policy.pop("branch_export", None)
+    return {**payload, "workspace_policy": normalized_policy}
+
+
+def semantic_source_location_payload(payload: object) -> object:
+    return _without_source_location_metadata(to_json_safe(payload))
+
+
+def _without_source_location_metadata(payload: object) -> object:
+    if isinstance(payload, dict):
+        return {
+            key: _without_source_location_metadata(value)
+            for key, value in payload.items()
+            if key not in SOURCE_LOCATION_METADATA_FIELDS
+        }
+    if isinstance(payload, list):
+        return [_without_source_location_metadata(value) for value in payload]
+    return payload

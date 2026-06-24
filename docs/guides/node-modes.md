@@ -104,6 +104,7 @@ nodes:
         role: executor
       - provider: claude
         role: reviewer
+    review_starts_with: executor
     depth: 1
     audit_rounds: 1
 ```
@@ -132,6 +133,9 @@ Review-loop controls:
 - `audit_rounds`: fresh audit passes. A clean first-round approval stops the
   loop. If consensus is reached only after remediation and more audit rounds are
   allowed, the next audit round can re-check the canonical candidate.
+- `review_starts_with`: first phase inside the review loop. `executor` is the
+  default. `reviewer` adds a round-0 reviewer pass against existing review
+  context before the local-round-1 executor candidate.
 - `settings.max_audit_rounds`: configuration limit for `audit_rounds`.
 - `settings.max_parallel_invocations`: optional cap for parallel reviewer calls.
 
@@ -165,6 +169,47 @@ the next audit round re-checks the latest valid output as local round 1. If no
 valid output exists from a prior audit round, the next audit round invokes the
 executor for local round 1.
 
+Reviewer-first order is valid only for the same sequential review-loop provider
+shape. Providers still declare executors first and reviewers second:
+
+```yaml
+nodes:
+  - id: review.fix
+    mode: sequential
+    needs: [implement.backend, implement.frontend]
+    review_starts_with: reviewer
+    providers:
+      - provider: codex
+        role: executor
+      - provider: claude
+        role: reviewer
+      - provider: gemini
+        role: reviewer
+```
+
+```markdown
+## review.fix
+Review these inputs and fix only the issues that need changes:
+
+- backend output: {{implement.backend.output}}
+- frontend output: {{implement.frontend.output}}
+- backend digest: {{implement.backend.output_sha256}}
+```
+
+The round-0 reviewers run in parallel and must unanimously approve. If they
+approve, the executor still runs local round 1 with preservation guidance so
+the node produces a canonical executor output. If they request changes, their
+major and minor feedback becomes the executor handoff. `depth: 1` keeps its
+usual meaning: one remediation attempt after the local-round-1 candidate.
+
+`needs` orders the DAG but does not automatically define review context. Put
+the artifacts, findings, metadata, or files reviewers should inspect directly
+in shared or reviewer prompt text. Standalone project-root reviewer-first nodes
+can review visible files with `{{file:...}}`. With Experimental managed
+workspaces, reviewer-first `{{file:...}}` references resolve from the compiled
+Git source selected by workspace policy: same-node candidate when one exists,
+then upstream lineage, then project initial source.
+
 ## Prompt Roles
 
 Unmarked Markdown is shared prompt content. Role markers add role-specific
@@ -187,6 +232,9 @@ Executors receive shared content plus executor segments. Reviewers receive
 shared content plus reviewer segments. During review loops, Crewplane also adds
 reviewer-only safety instructions, the current executor output, any unresolved
 feedback from the previous round, and the structured review contract.
+For `review_starts_with: reviewer`, the round-0 reviewer prompt labels the
+existing review context instead of claiming a current same-node executor output
+exists.
 
 Multiple reviewers receive the same reviewer prompt. They do not see each
 other's current-round feedback before responding. A structured review block is

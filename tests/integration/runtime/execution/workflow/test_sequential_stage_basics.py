@@ -183,6 +183,155 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("## Minor Issues", reviewer_prompt)
             self.assertIn("## Nitpicks", reviewer_prompt)
 
+    async def test_reviewer_first_runs_round_zero_review_then_canonical_path(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / "README.md").write_text(
+                "buggy implementation context", encoding="utf-8"
+            )
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                },
+            )
+            node = WorkflowNode(
+                id="review.node.reviewer.first",
+                mode="sequential",
+                review_starts_with="reviewer",
+                prompt_segments=[
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED,
+                        content="Review {{file:README.md}} and fix issues.",
+                    )
+                ],
+                depth=1,
+                providers=[
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+                ],
+            )
+            invoker = MockAgentInvoker(
+                outputs=[
+                    review_output(verdict="NO_FINDINGS"),
+                    "canonical executor output",
+                    review_output(verdict="NO_FINDINGS"),
+                ]
+            )
+            output = OutputManager("workflow", base_dir=tmp_path)
+
+            await execute_sequential_stage(config, node, output, invoker=invoker)
+
+            self.assertEqual(
+                [(call["role"], call["round_num"]) for call in invoker.calls],
+                [
+                    (ProviderRole.REVIEWER, 0),
+                    (ProviderRole.EXECUTOR, 1),
+                    (ProviderRole.REVIEWER, 1),
+                ],
+            )
+            pre_review_prompt = str(invoker.calls[0]["prompt"])
+            self.assertIn("Existing review context:", pre_review_prompt)
+            self.assertIn("buggy implementation context", pre_review_prompt)
+            self.assertNotIn("Current executor output(s):", pre_review_prompt)
+            self.assertNotIn(
+                "Review only the current executor output(s)",
+                pre_review_prompt,
+            )
+
+            executor_prompt = str(invoker.calls[1]["prompt"])
+            self.assertIn("Initial reviewer handoff:", executor_prompt)
+            self.assertIn("found no unresolved major or minor issues", executor_prompt)
+            self.assertNotIn("Previous unresolved review state:", executor_prompt)
+
+            reviewer_prompt = str(invoker.calls[2]["prompt"])
+            self.assertIn("Current executor output(s):", reviewer_prompt)
+            self.assertIn("canonical executor output", reviewer_prompt)
+
+            node_dir = output.get_stage_dir(node.id)
+            if node_dir is None:
+                self.fail("Expected node directory to be created")
+            self.assertTrue((node_dir / "review_reviewer_0_round0.md").exists())
+            self.assertTrue((node_dir / "review_reviewer_0_round0.raw.txt").exists())
+            self.assertTrue(
+                (node_dir / "review_reviewer_0_round0.review.json").exists()
+            )
+            self.assertTrue(
+                (
+                    node_dir
+                    / "review-state"
+                    / f"{safe_artifact_name('review_reviewer_0')}-round-0.state.json"
+                ).exists()
+            )
+
+            status_payload = json.loads(
+                review_loop_status_path(node_dir).read_text(encoding="utf-8")
+            )
+            self.assertNotIn("round0", json.dumps(status_payload))
+            self.assertEqual(
+                [
+                    entry["path"]
+                    for entry in status_payload["canonical_executor_outputs"]
+                ],
+                ["exec_executor_0_round1.md"],
+            )
+            self.assertEqual(
+                [entry["path"] for entry in status_payload["reviewer_outputs"]],
+                ["review_reviewer_0_round1.md"],
+            )
+
+    async def test_reviewer_first_blocking_feedback_reaches_executor(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / "README.md").write_text("review context", encoding="utf-8")
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                },
+            )
+            node = WorkflowNode(
+                id="review.node.reviewer.first.blocking",
+                mode="sequential",
+                review_starts_with="reviewer",
+                prompt_segments=[
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED,
+                        content="Review {{file:README.md}} and fix issues.",
+                    )
+                ],
+                depth=1,
+                providers=[
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+                ],
+            )
+            invoker = MockAgentInvoker(
+                outputs=[
+                    review_output(
+                        verdict="CHANGES_REQUESTED",
+                        major="- Fix the retry branch",
+                    ),
+                    "canonical fixed output",
+                    review_output(verdict="NO_FINDINGS"),
+                ]
+            )
+            output = OutputManager("workflow", base_dir=tmp_path)
+
+            await execute_sequential_stage(config, node, output, invoker=invoker)
+
+            executor_prompt = str(invoker.calls[1]["prompt"])
+            self.assertIn("Initial reviewer handoff:", executor_prompt)
+            self.assertIn("## Reviewer Feedback", executor_prompt)
+            self.assertIn("Fix the retry branch", executor_prompt)
+            self.assertNotIn("Previous unresolved review state:", executor_prompt)
+
     async def test_sequential_review_loop_uses_role_scoped_authored_prompt_content(
         self,
     ) -> None:

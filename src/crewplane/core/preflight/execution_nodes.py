@@ -44,6 +44,7 @@ def compile_execution_node(
     policy = ExecutionPolicy(
         depth=node.depth,
         audit_rounds=node.audit_rounds,
+        review_starts_with=node.review_starts_with,
         continue_on_failure=node.continue_on_failure,
         failure_threshold=node.failure_threshold,
         token_budget=resolved_token_budget_payload(node, config),

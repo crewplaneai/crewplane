@@ -263,6 +263,9 @@ class ReviewLoopProgress:
     def record_initial_executor_run(self, executor_run: ExecutorRoundRunResult) -> None:
         self.artifact_drift_warning_count += executor_run.drift_warning_count
 
+    def record_initial_reviewer_run(self, reviewer_run: ReviewerRoundRunResult) -> None:
+        self.artifact_drift_warning_count += reviewer_run.drift_warning_count
+
     def record_audit_result(self, audit_result: AuditRoundResult) -> None:
         self.invalid_candidate_round_count += audit_result.invalid_candidate_round_count
         self.no_progress_round_count += audit_result.no_progress_round_count
@@ -297,6 +300,7 @@ class ExecutorRoundRequest:
     audit_round_num: int | None
     round_num: int
     executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+    initial_review_handoff: str | None = None
 
 
 @dataclass
@@ -315,6 +319,9 @@ class ReviewerRoundRequest:
     audit_round_num: int | None
     round_num: int
     reviewer_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+    review_context_heading: str = "Current executor output(s)"
+    review_context_note: str | None = None
+    reviewer_instruction: str | None = None
 
 
 @dataclass

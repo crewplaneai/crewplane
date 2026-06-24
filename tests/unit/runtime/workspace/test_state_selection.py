@@ -19,6 +19,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
+    dynamic_locator_source,
     dynamic_locator_source_state_path,
     latest_executor_workspace_state,
 )
@@ -246,6 +247,84 @@ def test_reviewer_dynamic_locator_falls_back_to_prior_seeded_audit_candidate(
     )
 
     assert state_path == previous_executor_state
+
+
+def test_initial_pre_review_dynamic_locator_uses_project_source(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path)
+    locator = _runtime_dynamic_locator("reviewer_prompt")
+
+    source = dynamic_locator_source(
+        _plan_with_locator(tmp_path, locator),
+        store,
+        locator,
+        workspace_candidate_context=WorkspaceCandidateSourceContext(
+            role_label=ProviderRole.REVIEWER,
+            round_num=0,
+            audit_round_num=None,
+            phase="initial_pre_review",
+        ),
+    )
+
+    assert source.source_kind == "project"
+    assert source.source_commit == "0" * 40
+
+
+def test_initial_pre_review_dynamic_locator_uses_upstream_source(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path)
+    upstream_state = tmp_path / "upstream" / "workspace-state.json"
+    _write_state(upstream_state, "9" * 40, round_num=1, audit_round_num=None)
+    locator = _runtime_dynamic_locator("reviewer_prompt")
+    node = _same_node().model_copy(
+        update={
+            "workspace_policy": workspace_selection_record(
+                enabled=True,
+                kind="worktree",
+                source_kind="node",
+                source_node_id="upstream",
+                clean_start="strict",
+                materialization="worktree_checkout",
+            )
+        }
+    )
+    plan = _plan_with_locator(tmp_path, locator).model_copy(update={"nodes": [node]})
+
+    source = dynamic_locator_source(
+        plan,
+        store,
+        locator,
+        workspace_candidate_context=WorkspaceCandidateSourceContext(
+            role_label=ProviderRole.REVIEWER,
+            round_num=0,
+            audit_round_num=None,
+            phase="initial_pre_review",
+        ),
+    )
+
+    assert source.source_kind == "node"
+    assert source.source_commit == "9" * 40
+
+
+def test_candidate_review_dynamic_locator_still_requires_executor_state(
+    tmp_path: Path,
+) -> None:
+    store = ArtifactStore(tmp_path)
+    locator = _runtime_dynamic_locator("reviewer_prompt")
+
+    with pytest.raises(RuntimeError, match="no matching executor state"):
+        dynamic_locator_source_state_path(
+            _plan_with_locator(tmp_path, locator),
+            store,
+            locator,
+            workspace_candidate_context=WorkspaceCandidateSourceContext(
+                role_label=ProviderRole.REVIEWER,
+                round_num=1,
+                audit_round_num=None,
+            ),
+        )
 
 
 def test_required_lineage_state_prefers_latest_executor_without_review_status(

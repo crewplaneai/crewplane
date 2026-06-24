@@ -47,6 +47,18 @@ def test_build_executor_prompt_adds_canonical_instruction_and_review_state() -> 
     assert f"Previous unresolved review state:\n{previous}" in prompt
 
 
+def test_build_executor_prompt_adds_initial_review_handoff() -> None:
+    prompt = build_executor_prompt(
+        "Implement the feature.",
+        None,
+        None,
+        "Initial review found no issues.",
+    )
+
+    assert "Initial reviewer handoff:\nInitial review found no issues." in prompt
+    assert "Previous unresolved review state:" not in prompt
+
+
 def test_build_reviewer_prompt_includes_current_context_and_response_contract() -> None:
     prompt = build_reviewer_prompt(
         "Review task.",
@@ -58,6 +70,25 @@ def test_build_reviewer_prompt_includes_current_context_and_response_contract() 
     assert "Previous unresolved review state:\nPrevious unresolved issues" in prompt
     assert "Current executor output(s):" in prompt
     assert "VERDICT: CHANGES_REQUESTED | NITS_ONLY | NO_FINDINGS" in prompt
+
+
+def test_build_reviewer_prompt_can_label_initial_review_context() -> None:
+    prompt = build_reviewer_prompt(
+        "Review task.",
+        "Existing context",
+        None,
+        "Existing review context",
+        "No same-node executor candidate exists yet.",
+        (
+            "You are acting only as a reviewer.\n"
+            "Review only the existing context shown below."
+        ),
+    )
+
+    assert "Review only the existing context shown below." in prompt
+    assert "Existing review context:" in prompt
+    assert "No same-node executor candidate exists yet." in prompt
+    assert "Current executor output(s):" not in prompt
 
 
 def test_resolve_previous_candidate_context_uses_executor_artifacts(tmp_path) -> None:

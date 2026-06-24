@@ -18,7 +18,7 @@ from .drift import (
     create_drift_guard_session,
     run_provider_call_with_drift_guard,
 )
-from .prompts import build_reviewer_prompt
+from .prompts import REVIEWER_ONLY_INSTRUCTION, build_reviewer_prompt
 from .state import (
     persist_review_evaluation,
     persist_review_state,
@@ -84,6 +84,9 @@ def build_reviewer_round_runtime(
         request.reviewer_prompt_context,
         request.review_context,
         request.previous_review_packet,
+        request.review_context_heading,
+        request.review_context_note,
+        request.reviewer_instruction or REVIEWER_ONLY_INSTRUCTION,
     )
     invocation_semaphore: asyncio.Semaphore | None = None
     max_parallel_invocations = request.runtime_context.max_parallel_invocations()

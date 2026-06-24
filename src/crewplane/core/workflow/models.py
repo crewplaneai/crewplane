@@ -32,8 +32,11 @@ from .keywords import (
     ALLOWED_NODE_MODES,
     ALLOWED_PROVIDER_ROLE_SET,
     ALLOWED_PROVIDER_ROLES,
+    ALLOWED_REVIEW_STARTS_WITH,
+    ALLOWED_REVIEW_STARTS_WITH_SET,
     NodeMode,
     ProviderRole,
+    ReviewStartsWith,
     validate_exact_keyword,
 )
 from .syntax import INPUT_SOURCE_PATTERN
@@ -79,6 +82,7 @@ class WorkflowNodePayload(TypedDict):
     source: NotRequired[str]
     depth: NotRequired[int]
     audit_rounds: NotRequired[int]
+    review_starts_with: NotRequired[ReviewStartsWith]
     failure_threshold: NotRequired[int]
     token_budget: NotRequired[TokenBudgetPayload]
     worktree: NotRequired[str]
@@ -117,6 +121,7 @@ class WorkflowNode(BaseModel):
     needs: list[str] = Field(default_factory=list)
     audit_rounds: int | None = None
     depth: int | None = None
+    review_starts_with: ReviewStartsWith = "executor"
     continue_on_failure: bool = False
     failure_threshold: int | None = None
     token_budget: TokenBudgetOverride | None = None
@@ -139,6 +144,16 @@ class WorkflowNode(BaseModel):
             field_name="node mode",
             allowed_values=ALLOWED_NODE_MODES,
             allowed_value_set=ALLOWED_NODE_MODE_SET,
+        )
+
+    @field_validator("review_starts_with", mode="before")
+    @classmethod
+    def _validate_review_starts_with(cls, value: object) -> object:
+        return validate_exact_keyword(
+            value,
+            field_name="review_starts_with",
+            allowed_values=ALLOWED_REVIEW_STARTS_WITH,
+            allowed_value_set=ALLOWED_REVIEW_STARTS_WITH_SET,
         )
 
     @field_validator("worktree", mode="before")
@@ -176,6 +191,10 @@ INPUT_NODE_CONTRACT_RULES = (
     InputNodeContractRule("dependencies", lambda node: bool(node.needs)),
     InputNodeContractRule("depth", lambda node: node.depth is not None),
     InputNodeContractRule("audit_rounds", lambda node: node.audit_rounds is not None),
+    InputNodeContractRule(
+        "review_starts_with",
+        lambda node: "review_starts_with" in node.model_fields_set,
+    ),
     InputNodeContractRule(
         "failure_threshold", lambda node: node.failure_threshold is not None
     ),
@@ -215,6 +234,8 @@ def workflow_node_payload_dict(node: WorkflowNode) -> WorkflowNodePayload:
         node_payload["depth"] = node.depth
     if node.audit_rounds is not None:
         node_payload["audit_rounds"] = node.audit_rounds
+    if "review_starts_with" in node.model_fields_set:
+        node_payload["review_starts_with"] = node.review_starts_with
     if node.failure_threshold is not None:
         node_payload["failure_threshold"] = node.failure_threshold
     if node.token_budget is not None:

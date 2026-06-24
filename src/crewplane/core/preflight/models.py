@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
-from crewplane.core.workflow.keywords import NodeMode, ProviderRole
+from crewplane.core.workflow.keywords import NodeMode, ProviderRole, ReviewStartsWith
 from crewplane.version import SCHEMA_VERSION
 
 from .diagnostics import PreflightDiagnostic
@@ -264,6 +264,7 @@ class ExecutionPolicy(BaseModel):
 
     depth: int | None = None
     audit_rounds: int | None = None
+    review_starts_with: ReviewStartsWith = "executor"
     continue_on_failure: bool = False
     failure_threshold: int | None = None
     token_budget: TokenBudgetPolicy | None = None

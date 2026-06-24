@@ -46,8 +46,11 @@ def validate_workflow_plan(workflow: WorkflowPlan) -> WorkflowPlan:
     """Validate a workflow plan for structural and template correctness."""
 
     diagnostics = collect_workflow_validation_diagnostics(workflow)
-    if diagnostics:
-        raise ValueError(format_diagnostics(diagnostics))
+    error_diagnostics = tuple(
+        diagnostic for diagnostic in diagnostics if diagnostic.severity == "error"
+    )
+    if error_diagnostics:
+        raise ValueError(format_diagnostics(error_diagnostics))
     return workflow
 
 

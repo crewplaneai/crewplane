@@ -4,7 +4,11 @@ from pathlib import Path
 
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.loading import load_tasks
-from crewplane.core.workflow.models import WorkflowNode, render_prompt_for_role
+from crewplane.core.workflow.models import (
+    WorkflowNode,
+    render_prompt_for_role,
+    workflow_node_payload_dict,
+)
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.version import SCHEMA_VERSION
 
@@ -452,6 +456,127 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
             workflow.nodes[0].model_dump(exclude_none=True)["audit_rounds"],
             3,
         )
+
+    def test_workflow_markdown_loads_review_starts_with(self) -> None:
+        workflow_content = "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Workflow",
+                "nodes:",
+                "  - id: review.default",
+                "    mode: sequential",
+                "    providers:",
+                "      - provider: codex",
+                "        role: executor",
+                "      - provider: claude",
+                "        role: reviewer",
+                "  - id: review.executor",
+                "    mode: sequential",
+                "    review_starts_with: executor",
+                "    providers:",
+                "      - provider: codex",
+                "        role: executor",
+                "      - provider: claude",
+                "        role: reviewer",
+                "  - id: review.reviewer",
+                "    mode: sequential",
+                "    review_starts_with: reviewer",
+                "    providers:",
+                "      - provider: codex",
+                "        role: executor",
+                "      - provider: claude",
+                "        role: reviewer",
+                "---",
+                "",
+                "## review.default",
+                "Review this implementation.",
+                "",
+                "## review.executor",
+                "Review this implementation.",
+                "",
+                "## review.reviewer",
+                "Review this implementation.",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "workflow.task.md"
+            path.write_text(workflow_content, encoding="utf-8")
+            workflow = load_tasks(path)
+
+        default_node, executor_node, reviewer_node = workflow.nodes
+        self.assertEqual(default_node.review_starts_with, "executor")
+        self.assertEqual(executor_node.review_starts_with, "executor")
+        self.assertEqual(reviewer_node.review_starts_with, "reviewer")
+        self.assertNotIn(
+            "review_starts_with",
+            workflow_node_payload_dict(default_node),
+        )
+        self.assertEqual(
+            workflow_node_payload_dict(executor_node)["review_starts_with"],
+            "executor",
+        )
+        self.assertEqual(
+            workflow_node_payload_dict(reviewer_node)["review_starts_with"],
+            "reviewer",
+        )
+
+    def test_workflow_markdown_rejects_explicit_review_starts_with_on_invalid_nodes(
+        self,
+    ) -> None:
+        cases = [
+            (
+                [
+                    "  - id: invalid.node",
+                    "    mode: parallel",
+                    "    review_starts_with: executor",
+                    "    providers: [codex]",
+                ],
+                r"does not support review_starts_with",
+                "## invalid.node\n\nReview.",
+            ),
+            (
+                [
+                    "  - id: invalid.node",
+                    "    mode: input",
+                    '    source: "{{file:review.md}}"',
+                    "    review_starts_with: executor",
+                ],
+                r"must not define review_starts_with",
+                "",
+            ),
+            (
+                [
+                    "  - id: invalid.node",
+                    "    mode: sequential",
+                    "    review_starts_with: executor",
+                    "    providers: [codex]",
+                ],
+                r"does not support review_starts_with",
+                "## invalid.node\n\nReview.",
+            ),
+        ]
+
+        for node_lines, expected_error, section_body in cases:
+            workflow_content = "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Workflow",
+                    "nodes:",
+                    *node_lines,
+                    "---",
+                    "",
+                    section_body,
+                ]
+            )
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                path = Path(tmp_dir) / "workflow.task.md"
+                path.write_text(workflow_content, encoding="utf-8")
+                workflow = load_tasks(path)
+
+            with self.assertRaisesRegex(ValueError, expected_error):
+                validate_workflow_plan(workflow)
 
     def test_workflow_markdown_requires_node_section(self) -> None:
         workflow_content = "\n".join(

@@ -13,7 +13,10 @@ from crewplane.version import SCHEMA_VERSION
 from ..keywords import (
     ALLOWED_NODE_MODE_SET,
     ALLOWED_NODE_MODES,
+    ALLOWED_REVIEW_STARTS_WITH,
+    ALLOWED_REVIEW_STARTS_WITH_SET,
     NodeMode,
+    ReviewStartsWith,
     validate_exact_keyword,
 )
 from ..models import ProviderSpec, WorkflowPayload
@@ -35,6 +38,7 @@ class WorkflowNodeConfig(BaseModel):
     needs: list[str] = Field(default_factory=list)
     audit_rounds: int | None = None
     depth: int | None = None
+    review_starts_with: ReviewStartsWith = "executor"
     continue_on_failure: bool = False
     failure_threshold: int | None = Field(default=None, ge=0)
     source: str | None = None
@@ -58,6 +62,16 @@ class WorkflowNodeConfig(BaseModel):
             field_name="node mode",
             allowed_values=ALLOWED_NODE_MODES,
             allowed_value_set=ALLOWED_NODE_MODE_SET,
+        )
+
+    @field_validator("review_starts_with", mode="before")
+    @classmethod
+    def _validate_review_starts_with(cls, value: object) -> object:
+        return validate_exact_keyword(
+            value,
+            field_name="review_starts_with",
+            allowed_values=ALLOWED_REVIEW_STARTS_WITH,
+            allowed_value_set=ALLOWED_REVIEW_STARTS_WITH_SET,
         )
 
     @field_validator("worktree", mode="before")

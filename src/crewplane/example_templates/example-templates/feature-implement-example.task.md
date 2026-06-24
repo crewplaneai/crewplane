@@ -22,6 +22,7 @@ nodes:
   - id: implement.iterate
     mode: sequential
     needs: [implement.build]
+    review_starts_with: reviewer
     depth: 2
     audit_rounds: 1
     continue_on_failure: true
@@ -62,6 +63,9 @@ If files are created or changed, include a link-only section:
 Review and remediate the implementation candidate.
 
 Implementation artifact:
+{{implement.build.output}}
+
+Implementation metadata:
 - Path: {{implement.build.output_path}}
 - Size: {{implement.build.output_size}}
 - SHA-256: {{implement.build.output_sha256}}

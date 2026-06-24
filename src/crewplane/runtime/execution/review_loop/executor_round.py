@@ -51,6 +51,7 @@ async def run_executor_round(
         base_executor_prompt,
         previous_candidate_context,
         request.previous_review_packet,
+        request.initial_review_handoff,
     )
     for provider in request.executors:
         task_id = provider.task_id

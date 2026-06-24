@@ -20,6 +20,8 @@ from ..fragment_assembler import (
     ResolvedPrompt,
     stream_has_runtime_dynamic_workspace_locator,
 )
+from ..reviews.consensus import check_consensus
+from ..workspace_files import ResolvedWorkspaceFile, WorkspaceCandidateSourceContext
 from .policy import (
     audit_round_context,
     audit_round_dir,
@@ -29,13 +31,26 @@ from .policy import (
     review_loop_can_finish,
     split_sequential_review_loop_providers,
 )
-from .rounds import execute_single_audit_round, run_executor_round
-from .state import build_review_loop_status_payload, persist_review_loop_status
+from .prompts import (
+    INITIAL_REVIEW_APPROVED_HANDOFF,
+    INITIAL_REVIEW_BLOCKED_HANDOFF,
+    INITIAL_REVIEW_FAILURE_HANDOFF,
+    INITIAL_REVIEW_TASK_CONTEXT,
+    INITIAL_REVIEWER_ONLY_INSTRUCTION,
+)
+from .rounds import execute_single_audit_round, run_executor_round, run_reviewer_round
+from .state import (
+    build_review_loop_status_payload,
+    persist_review_loop_status,
+    render_unresolved_review_packet,
+)
 from .types import (
     AuditRoundRequest,
     AuditRoundResult,
     ExecutorRoundArtifact,
     ExecutorRoundRequest,
+    ReviewerRoundRequest,
+    ReviewerRoundRunResult,
     ReviewLoopProgress,
     ReviewLoopRunContext,
 )
@@ -217,11 +232,19 @@ async def _execute_review_loop_audit_round(
         audit_round_num,
     )
     _print_audit_round_header(context, audit_round_num)
+    initial_review_handoff = await _initial_pre_review_handoff(
+        context,
+        progress,
+        audit_dir,
+        audit_context,
+        audit_round_num,
+    )
     initial_executor_outputs = await _initial_audit_executor_outputs(
         context,
         progress,
         audit_dir,
         audit_context,
+        initial_review_handoff,
     )
     audit_result = await execute_single_audit_round(
         AuditRoundRequest(
@@ -290,6 +313,7 @@ async def _initial_audit_executor_outputs(
     progress: ReviewLoopProgress,
     audit_dir: Path,
     audit_context: int | None,
+    initial_review_handoff: str | None = None,
 ) -> list[ExecutorRoundArtifact]:
     if progress.latest_executor_outputs is not None:
         return seed_executor_outputs(
@@ -316,10 +340,106 @@ async def _initial_audit_executor_outputs(
             executor_prompt_workspace_files=context.executor_prompt_workspace_files,
             previous_review_packet=None,
             previous_executor_outputs=None,
+            initial_review_handoff=initial_review_handoff,
         )
     )
     progress.record_initial_executor_run(executor_run)
     return executor_run.outputs
+
+
+async def _initial_pre_review_handoff(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+    audit_dir: Path,
+    audit_context: int | None,
+    audit_round_num: int,
+) -> str | None:
+    if not _should_run_initial_pre_review(context, progress, audit_round_num):
+        return None
+
+    reviewer_prompt_context, reviewer_prompt_workspace_files = (
+        _initial_pre_review_prompt(context, audit_context)
+    )
+    reviewer_run = await run_reviewer_round(
+        ReviewerRoundRequest(
+            runtime_context=context.runtime_context,
+            node=context.stage,
+            output=context.output,
+            node_dir=context.node_dir,
+            invoker=context.invoker,
+            telemetry=context.telemetry,
+            reviewers=context.reviewers,
+            audit_round_num=audit_context,
+            round_num=0,
+            artifact_dir=audit_dir,
+            reviewer_prompt_context=INITIAL_REVIEW_TASK_CONTEXT,
+            reviewer_prompt_workspace_files=reviewer_prompt_workspace_files,
+            review_context=reviewer_prompt_context,
+            previous_review_packet=None,
+            review_context_heading="Existing review context",
+            review_context_note=(
+                "No same-node executor candidate exists yet. Review the existing "
+                "context before the local round 1 executor writes a canonical "
+                "candidate."
+            ),
+            reviewer_instruction=INITIAL_REVIEWER_ONLY_INSTRUCTION,
+        )
+    )
+    progress.record_initial_reviewer_run(reviewer_run)
+    return _initial_review_handoff_from_result(reviewer_run)
+
+
+def _should_run_initial_pre_review(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+    audit_round_num: int,
+) -> bool:
+    return (
+        context.stage.execution_policy.review_starts_with == "reviewer"
+        and audit_round_num == 1
+        and progress.latest_executor_outputs is None
+    )
+
+
+def _initial_pre_review_prompt(
+    context: ReviewLoopRunContext,
+    audit_context: int | None,
+) -> tuple[str, tuple[ResolvedWorkspaceFile, ...]]:
+    if context.reviewer_prompt_context:
+        return (
+            context.reviewer_prompt_context,
+            context.reviewer_prompt_workspace_files,
+        )
+    resolved_prompt = resolve_prompt_with_output_budget_details(
+        context.runtime_context,
+        context.stage,
+        context.output,
+        role=ProviderRole.REVIEWER,
+        telemetry=context.telemetry,
+        workspace_candidate_context=WorkspaceCandidateSourceContext(
+            role_label=ProviderRole.REVIEWER,
+            round_num=0,
+            audit_round_num=audit_context,
+            phase="initial_pre_review",
+        ),
+    )
+    return resolved_prompt.text, resolved_prompt.workspace_files
+
+
+def _initial_review_handoff_from_result(
+    reviewer_run: ReviewerRoundRunResult,
+) -> str:
+    if reviewer_run.reviewer_failure_count > 0:
+        return INITIAL_REVIEW_FAILURE_HANDOFF
+
+    unresolved_packet = render_unresolved_review_packet(reviewer_run.outputs)
+    if unresolved_packet is not None:
+        return unresolved_packet
+
+    if check_consensus([artifact.evaluation for artifact in reviewer_run.outputs]):
+        return INITIAL_REVIEW_APPROVED_HANDOFF
+
+    return INITIAL_REVIEW_BLOCKED_HANDOFF
 
 
 def seed_executor_outputs(

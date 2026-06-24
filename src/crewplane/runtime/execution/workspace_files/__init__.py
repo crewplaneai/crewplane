@@ -11,7 +11,6 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
-    WorkspaceFileTarget,
 )
 from crewplane.core.preflight.workspace.files.git_reads import (
     SUPPORTED_FILE_MODES,
@@ -25,14 +24,20 @@ from crewplane.runtime.workspace.state_selection import (
     latest_executor_lineage_state_path,
     required_lineage_state_path,
     review_loop_canonical_lineage_state_path,
-    same_node_executor_state_path,
 )
 from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,
     ensure_source_commit_available,
 )
-from crewplane.runtime.workspace.worktree.descriptors import (
-    load_source_ref_from_state,
+from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
+
+from .source_resolution import (
+    WorkspaceCandidateSourceContext,
+    candidate_source_ref_from_state,
+    contextual_candidate_source_state_path,
+    initial_pre_review_source,
+    project_source_ref,
+    uses_candidate_source,
 )
 
 
@@ -47,13 +52,6 @@ class ResolvedWorkspaceFile:
     git_file_mode: str | None = None
     literal_path_verified: bool = False
     utf8_validated: bool = False
-
-
-@dataclass(frozen=True)
-class WorkspaceCandidateSourceContext:
-    role_label: ProviderRole
-    round_num: int
-    audit_round_num: int | None
 
 
 def resolve_project_initial_workspace_file(
@@ -89,7 +87,7 @@ def resolve_project_initial_workspace_file(
         text=text,
         byte_size=len(payload),
         sha256=digest,
-        source_ref=_project_source_ref(plan),
+        source_ref=project_source_ref(plan),
         git_blob=locator.git_blob,
         git_file_mode=locator.git_file_mode,
         literal_path_verified=locator.literal_path_verified,
@@ -107,9 +105,10 @@ def resolve_workspace_file(
     locator = workspace_file_locator(plan, locator_id)
     if (
         locator.source_class == WorkspaceFileSourceClass.PROJECT_INITIAL
-        and not _uses_candidate_source(
+        and not uses_candidate_source(
             locator,
             workspace_candidate_source,
+            workspace_candidate_context,
         )
     ):
         return resolve_project_initial_workspace_file(plan, locator_id)
@@ -146,6 +145,18 @@ def workspace_file_locator(
     raise RuntimeError(f"Workspace file locator not found in plan: {locator_id}.")
 
 
+def _locator_node(
+    plan: PreflightExecutionPlan,
+    locator: WorkspaceFileLocator,
+) -> PreflightExecutionNode:
+    node = next((item for item in plan.nodes if item.id == locator.node_id), None)
+    if node is None:
+        raise RuntimeError(
+            f"Workspace file locator references an unknown node: {locator.locator_id}."
+        )
+    return node
+
+
 def dynamic_locator_source(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
@@ -153,6 +164,17 @@ def dynamic_locator_source(
     workspace_candidate_source: bool = False,
     workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
 ) -> WorktreeSourceRef:
+    node = _locator_node(plan, locator)
+    pre_review_source = initial_pre_review_source(
+        plan,
+        output,
+        locator,
+        node,
+        workspace_candidate_context,
+    )
+    if pre_review_source is not None:
+        return pre_review_source
+
     state_path = dynamic_locator_source_state_path(
         plan,
         output,
@@ -160,7 +182,11 @@ def dynamic_locator_source(
         workspace_candidate_source,
         workspace_candidate_context,
     )
-    if _uses_candidate_source(locator, workspace_candidate_source):
+    if uses_candidate_source(
+        locator,
+        workspace_candidate_source,
+        workspace_candidate_context,
+    ):
         return candidate_source_ref_from_state(state_path)
     return load_source_ref_from_state(state_path)
 
@@ -172,14 +198,18 @@ def dynamic_locator_source_state_path(
     workspace_candidate_source: bool = False,
     workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
 ) -> Path:
-    node = next((item for item in plan.nodes if item.id == locator.node_id), None)
-    if node is None or node.workspace_policy is None:
+    node = _locator_node(plan, locator)
+    if node.workspace_policy is None:
         raise RuntimeError(
             "Runtime-dynamic workspace file locator has no workspace policy: "
             f"{locator.locator_id}."
         )
-    if _uses_candidate_source(locator, workspace_candidate_source):
-        contextual_state_path = _contextual_candidate_source_state_path(
+    if uses_candidate_source(
+        locator,
+        workspace_candidate_source,
+        workspace_candidate_context,
+    ):
+        contextual_state_path = contextual_candidate_source_state_path(
             output,
             node,
             workspace_candidate_context,
@@ -219,45 +249,6 @@ def dynamic_locator_source_state_path(
             f"source: {locator.locator_id}."
         )
     return state_path
-
-
-def _contextual_candidate_source_state_path(
-    output: ArtifactStorePort,
-    node: PreflightExecutionNode,
-    context: WorkspaceCandidateSourceContext | None,
-) -> Path | None:
-    if context is None:
-        return None
-    if context.role_label == ProviderRole.REVIEWER:
-        return same_node_executor_state_path(
-            output,
-            node,
-            context.round_num,
-            context.audit_round_num,
-            allow_prior_fallback=_reviewer_allows_prior_fallback(context),
-        )
-    if context.role_label == ProviderRole.EXECUTOR and context.round_num > 1:
-        return same_node_executor_state_path(
-            output,
-            node,
-            context.round_num - 1,
-            context.audit_round_num,
-            allow_prior_fallback=True,
-        )
-    return None
-
-
-def _reviewer_allows_prior_fallback(context: WorkspaceCandidateSourceContext) -> bool:
-    return context.audit_round_num is not None and context.audit_round_num > 1
-
-
-def _uses_candidate_source(
-    locator: WorkspaceFileLocator,
-    workspace_candidate_source: bool,
-) -> bool:
-    if locator.target == WorkspaceFileTarget.REVIEWER_PROMPT:
-        return locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
-    return workspace_candidate_source and locator.runtime_dynamic_after_candidate
 
 
 def read_dynamic_locator_blob(
@@ -347,18 +338,6 @@ def rendered_workspace_file_invocation_id(
     return f"{node_id}.{role}.{task_id}{audit}.round-{round_num}"
 
 
-def _project_source_ref(plan: PreflightExecutionPlan) -> WorktreeSourceRef | None:
-    if plan.workspace_source is None:
-        return None
-    return WorktreeSourceRef(
-        source_kind="project",
-        source_node_id=None,
-        source_commit=plan.workspace_source.run_base_commit,
-        source_tree=plan.workspace_source.source_tree,
-        candidate_sequence=None,
-    )
-
-
 def required_workspace_state(
     output: ArtifactStorePort,
     node_id: str,
@@ -389,22 +368,6 @@ def load_workspace_state(path: Path) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise RuntimeError(f"Invalid workspace state payload: {path.as_posix()}")
     return payload
-
-
-def candidate_source_ref_from_state(path: Path) -> WorktreeSourceRef:
-    source_ref = load_source_ref_from_state(path)
-    return WorktreeSourceRef(
-        source_kind="candidate",
-        source_node_id=source_ref.source_node_id,
-        source_commit=source_ref.source_commit,
-        source_tree=source_ref.source_tree,
-        candidate_sequence=source_ref.candidate_sequence,
-        bundle_path=source_ref.bundle_path,
-        bundle_sha256=source_ref.bundle_sha256,
-        bundle_size_bytes=source_ref.bundle_size_bytes,
-        bundle_ref=source_ref.bundle_ref,
-        upstream_sources=source_ref.upstream_sources,
-    )
 
 
 def _read_preflight_workspace_file(

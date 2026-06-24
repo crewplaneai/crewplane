@@ -26,7 +26,10 @@ from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt
-from crewplane.runtime.execution.workspace_files import resolve_workspace_file
+from crewplane.runtime.execution.workspace_files import (
+    WorkspaceCandidateSourceContext,
+    resolve_workspace_file,
+)
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
@@ -694,6 +697,155 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
     assert _git_commit_exists(repo, result_commit)
 
 
+def test_initial_pre_review_reads_project_initial_runtime_dynamic_workspace_file(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
+    (repo / "README.md").write_text("project initial\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "base")
+    run_base_commit = _git(repo, "rev-parse", "HEAD^{commit}")
+    source_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+
+    context_root = tmp_path / "execution-stages" / "demo-run"
+    store = _ArtifactStore(tmp_path)
+    locator = _reviewer_runtime_dynamic_locator(repo)
+    plan = _reviewer_workspace_plan(
+        context_root,
+        repo,
+        run_base_commit,
+        source_tree,
+        locator,
+    )
+    context = WorkspaceCandidateSourceContext(
+        role_label=ProviderRole.REVIEWER,
+        round_num=0,
+        audit_round_num=None,
+        phase="initial_pre_review",
+    )
+
+    prompt = assemble_prompt(
+        plan,
+        plan.nodes[1],
+        ProviderRole.REVIEWER,
+        store,
+        SecretContext(),
+        workspace_candidate_context=context,
+    )
+    resolved = resolve_workspace_file(
+        plan,
+        store,
+        locator.locator_id,
+        workspace_candidate_context=context,
+    )
+
+    assert prompt == "project initial\n"
+    assert resolved.source_ref is not None
+    assert resolved.source_ref.source_kind == "project"
+
+
+def test_initial_pre_review_reads_upstream_runtime_dynamic_workspace_file(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
+    (repo / "README.md").write_text("project initial\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "base")
+    run_base_commit = _git(repo, "rev-parse", "HEAD^{commit}")
+    source_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    (repo / "README.md").write_text("upstream lineage\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "upstream")
+    upstream_commit = _git(repo, "rev-parse", "HEAD^{commit}")
+    upstream_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+
+    context_root = tmp_path / "execution-stages" / "demo-run"
+    store = _ArtifactStore(tmp_path)
+    _write_lineage_state_with_bundle(
+        repo=repo,
+        stage_dir=store.stages_dir / "input",
+        result_commit=upstream_commit,
+        result_tree=upstream_tree,
+        result_ref="refs/crewplane/tests/input/result",
+        bundle_name="input.bundle",
+        extra_payload={"node_id": "input"},
+    )
+    locator = _reviewer_runtime_dynamic_locator(repo)
+    plan = _reviewer_workspace_plan(
+        context_root,
+        repo,
+        run_base_commit,
+        source_tree,
+        locator,
+        source_kind="node",
+        source_node_id="input",
+    )
+
+    prompt = assemble_prompt(
+        plan,
+        plan.nodes[1],
+        ProviderRole.REVIEWER,
+        store,
+        SecretContext(),
+        workspace_candidate_context=WorkspaceCandidateSourceContext(
+            role_label=ProviderRole.REVIEWER,
+            round_num=0,
+            audit_round_num=None,
+            phase="initial_pre_review",
+        ),
+    )
+
+    assert prompt == "upstream lineage\n"
+
+
+def test_normal_candidate_review_rejects_missing_runtime_dynamic_candidate(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.name", "Crewplane Test")
+    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
+    (repo / "README.md").write_text("project initial\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "base")
+    run_base_commit = _git(repo, "rev-parse", "HEAD^{commit}")
+    source_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+
+    context_root = tmp_path / "execution-stages" / "demo-run"
+    store = _ArtifactStore(tmp_path)
+    locator = _reviewer_runtime_dynamic_locator(repo)
+    plan = _reviewer_workspace_plan(
+        context_root,
+        repo,
+        run_base_commit,
+        source_tree,
+        locator,
+    )
+
+    with pytest.raises(RuntimeError, match="no matching executor state"):
+        assemble_prompt(
+            plan,
+            plan.nodes[1],
+            ProviderRole.REVIEWER,
+            store,
+            SecretContext(),
+            workspace_candidate_context=WorkspaceCandidateSourceContext(
+                role_label=ProviderRole.REVIEWER,
+                round_num=1,
+                audit_round_num=None,
+            ),
+        )
+
+
 def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
     tmp_path: Path,
 ) -> None:
@@ -819,6 +971,90 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
             workspace_candidate_source=True,
         )
         == "candidate\n"
+    )
+
+
+def _reviewer_runtime_dynamic_locator(repo: Path) -> WorkspaceFileLocator:
+    return WorkspaceFileLocator(
+        locator_id="workspace-file-reviewer-dynamic",
+        occurrence_id="build:reviewer:0:file:README.md",
+        node_id="build",
+        target="reviewer_prompt",
+        source_class="runtime_dynamic",
+        raw_token="{{file:README.md}}",
+        raw_path="README.md",
+        source_root=repo.as_posix(),
+        source_root_relative_to_project=".",
+        project_root_relative_to_git_top=".",
+        git_top_relative_path="README.md",
+        workspace_relative_path="README.md",
+    )
+
+
+def _reviewer_workspace_plan(
+    context_root: Path,
+    repo: Path,
+    run_base_commit: str,
+    source_tree: str,
+    locator: WorkspaceFileLocator,
+    source_kind: str = "project",
+    source_node_id: str | None = None,
+) -> PreflightExecutionPlan:
+    base_plan = _plan(context_root)
+    return base_plan.model_copy(
+        update={
+            "workspace_source": WorkspaceSourceSnapshot(
+                worktree_contract=WORKTREE_CONTRACT,
+                run_base_commit=run_base_commit,
+                source_tree=source_tree,
+                object_format="sha1",
+                repository_id="repo",
+                git_version=_git(repo, "--version"),
+                git_top_level=repo.as_posix(),
+                project_root_relative_path=".",
+                active_git_dir=(repo / ".git").as_posix(),
+                common_git_dir=(repo / ".git").as_posix(),
+                clean_start="strict",
+            ),
+            "workspace_file_locators": [locator],
+            "nodes": [
+                base_plan.nodes[0],
+                base_plan.nodes[1].model_copy(
+                    update={
+                        "workspace_policy": workspace_selection_record(
+                            enabled=True,
+                            kind="worktree",
+                            source_kind=source_kind,
+                            source_node_id=source_node_id,
+                            clean_start="strict",
+                            materialization="worktree_checkout",
+                        )
+                    }
+                ),
+            ],
+            "render_plans": [
+                RenderPlan(
+                    render_plan_id="build",
+                    streams=[
+                        RenderStream(
+                            target_role=ProviderRole.REVIEWER,
+                            fragments=[
+                                Fragment(
+                                    fragment_index=0,
+                                    kind="workspace_file_locator",
+                                    source_role=PromptSegmentRole.REVIEWER,
+                                    locator={
+                                        "locator_id": locator.locator_id,
+                                        "source_class": "runtime_dynamic",
+                                        "workspace_relative_path": "README.md",
+                                    },
+                                )
+                            ],
+                        )
+                    ],
+                )
+            ],
+        }
     )
 
 
