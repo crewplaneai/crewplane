@@ -2,12 +2,12 @@
   <h1>Crewplane</h1>
   <p>A Markdown-native control plane for AI coding CLIs.</p>
   <p>
-    <a href="https://github.com/crewplaneai/crewplane/blob/main/CHANGELOG.md"><img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-f59e0b.svg"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/main/pyproject.toml"><img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776AB.svg"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/main/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/main/docs/index.md"><img alt="Docs" src="https://img.shields.io/badge/docs-read-0f766e.svg"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/main/SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-b91c1c.svg"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/main/CONTRIBUTING.md"><img alt="Contributing" src="https://img.shields.io/badge/contributing-guide-6b7280.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/blob/master/CHANGELOG.md"><img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-f59e0b.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/blob/master/pyproject.toml"><img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776AB.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/blob/master/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/blob/master/docs/index.md"><img alt="Docs" src="https://img.shields.io/badge/docs-read-0f766e.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/blob/master/SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-b91c1c.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/blob/master/CONTRIBUTING.md"><img alt="Contributing" src="https://img.shields.io/badge/contributing-guide-6b7280.svg"></a>
   </p>
   <img src=".github/crewplane-splash.png" alt="Crewplane splash" width="80%">
 </div>
@@ -55,7 +55,7 @@ pipx install crewplane
 python -m pip install crewplane
 
 # install script for macOS and Linux
-curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/install.sh | sh
 
 # Homebrew
 brew tap crewplaneai/crewplane && brew install crewplane
@@ -74,7 +74,7 @@ python -m pip install .
 
 > ⚠️ **Note:** Provider CLIs are installed and authenticated separately. Crewplane does not install provider CLIs, does not manage provider credentials, and does not sandbox provider CLI execution.
 
-See the [installation guide](https://github.com/crewplaneai/crewplane/blob/main/docs/getting-started/installation.md) for update, uninstall, and npm `PATH` troubleshooting.
+See the [installation guide](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md) for update, uninstall, and npm `PATH` troubleshooting.
 
 ## First Run
 
@@ -91,7 +91,7 @@ the workflow and artifact path, not model output.
 
 Inspect the first run artifacts under `.crewplane/execution-stages/` and
 `.crewplane/execution-results/`, then follow
-[provider setup](https://github.com/crewplaneai/crewplane/blob/main/docs/getting-started/provider-setup.md)
+[provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
 when you are ready to run real provider CLIs.
 
 ## Live Dashboard
@@ -109,7 +109,7 @@ and live log tails while the same durable artifacts are written under
 `.crewplane/`. It starts only when tmux is available, output is attached to a
 terminal, and provider log capture is enabled; otherwise Crewplane warns and
 continues with normal execution. See the
-[observability guide](https://github.com/crewplaneai/crewplane/blob/main/docs/guides/observability.md)
+[observability guide](https://github.com/crewplaneai/crewplane/blob/master/docs/guides/observability.md)
 for dashboard options and log inspection.
 
 ## Workflow Shape
@@ -129,7 +129,7 @@ Review the current repository and report the highest-risk issues.
 ```
 
 Full workflow authoring docs are in the
-[workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/main/docs/reference/workflow-syntax.md).
+[workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/workflow-syntax.md).
 
 ## Safety Boundary
 
@@ -165,19 +165,19 @@ external CLIs:
 When you are ready to configure a project, start with the quickstart and then
 move into provider setup, examples, and reference material as needed:
 
-- [Documentation index](https://github.com/crewplaneai/crewplane/blob/main/docs/index.md)
-- [Installation](https://github.com/crewplaneai/crewplane/blob/main/docs/getting-started/installation.md)
-- [Quickstart](https://github.com/crewplaneai/crewplane/blob/main/docs/getting-started/quickstart.md)
-- [Setup checklist](https://github.com/crewplaneai/crewplane/blob/main/docs/getting-started/setup-checklist.md)
-- [Provider setup](https://github.com/crewplaneai/crewplane/blob/main/docs/getting-started/provider-setup.md)
-- [Examples](https://github.com/crewplaneai/crewplane/blob/main/docs/examples/index.md)
-- [Experimental workspace isolation](https://github.com/crewplaneai/crewplane/blob/main/docs/guides/workspace-isolation.md)
-- [Command reference](https://github.com/crewplaneai/crewplane/blob/main/docs/reference/commands.md)
-- [Configuration reference](https://github.com/crewplaneai/crewplane/blob/main/docs/reference/configuration.md)
-- [Workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/main/docs/reference/workflow-syntax.md)
-- [Artifact reference](https://github.com/crewplaneai/crewplane/blob/main/docs/reference/artifacts.md)
-- [Security and trust](https://github.com/crewplaneai/crewplane/blob/main/docs/safety/security-and-trust.md)
+- [Documentation index](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md)
+- [Installation](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md)
+- [Quickstart](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/quickstart.md)
+- [Setup checklist](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/setup-checklist.md)
+- [Provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
+- [Examples](https://github.com/crewplaneai/crewplane/blob/master/docs/examples/index.md)
+- [Experimental workspace isolation](https://github.com/crewplaneai/crewplane/blob/master/docs/guides/workspace-isolation.md)
+- [Command reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/commands.md)
+- [Configuration reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/configuration.md)
+- [Workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/workflow-syntax.md)
+- [Artifact reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/artifacts.md)
+- [Security and trust](https://github.com/crewplaneai/crewplane/blob/master/docs/safety/security-and-trust.md)
 
 ### Contributing
 
-If you're interested in contributing to Crewplane, please read our [Contributing and local development](https://github.com/crewplaneai/crewplane/blob/main/DEVELOPMENT.md) before submitting a pull request.
+If you're interested in contributing to Crewplane, please read our [Contributing and local development](https://github.com/crewplaneai/crewplane/blob/master/DEVELOPMENT.md) before submitting a pull request.
