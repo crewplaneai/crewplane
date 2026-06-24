@@ -48,5 +48,10 @@ make release
 Release targets read the version from `pyproject.toml`, require packaging
 metadata to match, and fail if the exact version already exists on PyPI or npm.
 `make release` asks for version confirmation before any checks or uploads, then
-publishes PyPI first and npm with `NPM_TAG=alpha` by default. Homebrew tap
-publishing is still a separate maintainer step.
+publishes PyPI first, publishes npm with `NPM_TAG=alpha` by default, and moves
+the npm `latest` dist-tag to the released version. If a release is interrupted
+after only one registry is updated, use `make release-pypi` or `make release-npm`
+to complete the missing registry; each target runs only its own remote duplicate
+check. Use `make release-npm-latest` when the npm version already exists and only
+the `latest` dist-tag needs to be moved; pass npm two-factor codes as
+`NPM_OTP=123456`. Homebrew tap publishing is still a separate maintainer step.

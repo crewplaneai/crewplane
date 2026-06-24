@@ -1,7 +1,7 @@
 {
   "name": "crewplane",
   "version": "0.1.0-alpha.2",
-  "description": "Alpha npm wrapper for Crewplane Python CLI package.",
+  "description": "Markdown-native control plane for AI coding CLIs, packaged as an npm wrapper.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

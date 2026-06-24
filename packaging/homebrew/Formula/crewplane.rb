@@ -1,11 +1,11 @@
 class Crewplane < Formula
   include Language::Python::Virtualenv
 
-  desc "CLI workflow runner for AI agents"
+  desc "Markdown-native control plane for AI coding CLIs"
   homepage "https://github.com/crewplaneai/crewplane"
   url "https://files.pythonhosted.org/packages/source/c/crewplane/crewplane-0.1.0a2.tar.gz"
   version "0.1.0-alpha.2"
-  sha256 "ec91fb1da8e359aabfebcd8f69eb0c04a89c8a8f2a7069c6dedf5bbcee29a453"
+  sha256 "6d4d82e96b862937e015c03f1420cdbb1478714926d0f8be36be3960fc91dcf4"
   license "Apache-2.0"
   head "https://github.com/crewplaneai/crewplane.git", branch: "main"
 

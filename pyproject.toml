@@ -1,7 +1,7 @@
 [project]
 name = "crewplane"
 version = "0.1.0-alpha.2"
-description = "Coordinate AI coding CLIs through auditable Markdown workflows and shared artifacts"
+description = "A Markdown-native control plane for AI coding CLIs"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "Apache-2.0"
@@ -32,7 +32,7 @@ crewplane = "crewplane.cli.app:app"
 Homepage = "https://github.com/crewplaneai/crewplane"
 Repository = "https://github.com/crewplaneai/crewplane"
 Issues = "https://github.com/crewplaneai/crewplane/issues"
-Documentation = "https://github.com/crewplaneai/crewplane/blob/main/docs/index.md"
+Documentation = "https://github.com/crewplaneai/crewplane/blob/master/docs/index.md"
 
 [build-system]
 requires = ["hatchling"]

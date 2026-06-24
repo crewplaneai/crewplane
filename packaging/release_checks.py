@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from packaging.version import Version
+
 REQUEST_TIMEOUT_SECONDS = 15
 USER_AGENT = "crewplane-release-check"
 
@@ -86,9 +88,11 @@ def fetch_registry_json(url: str) -> dict[str, Any] | None:
 def pypi_release(package_name: str, version: str) -> RemoteRelease:
     package_path = urllib.parse.quote(package_name, safe="")
     data = fetch_registry_json(f"https://pypi.org/pypi/{package_path}/json")
+    normalized_version = str(Version(version))
+    releases = data.get("releases", {}) if data is not None else {}
     return RemoteRelease(
         label="PyPI",
-        exists=data is not None and version in data.get("releases", {}),
+        exists=any(str(Version(release)) == normalized_version for release in releases),
     )
 
 
@@ -136,6 +140,48 @@ def check_remote(package_name: str, version: str) -> int:
     return 0
 
 
+def check_remote_pypi(package_name: str, version: str) -> int:
+    try:
+        release = pypi_release(package_name, version)
+    except urllib.error.URLError as error:
+        print(f"Could not query PyPI: {error}", file=sys.stderr)
+        return 1
+
+    if release.exists:
+        print(
+            f"{package_name} {version} already exists on PyPI; "
+            "bump pyproject.toml before releasing to PyPI."
+        )
+        return 1
+
+    print(f"{package_name} {version} is not present on PyPI.")
+    return 0
+
+
+def check_remote_npm(package_name: str, version: str) -> int:
+    try:
+        release = npm_release(package_name, version)
+    except urllib.error.URLError as error:
+        print(f"Could not query npm: {error}", file=sys.stderr)
+        return 1
+
+    if release.exists:
+        print(
+            f"{package_name} {version} already exists on npm; "
+            "bump pyproject.toml before releasing to npm."
+        )
+        return 1
+
+    print(f"{package_name} {version} is not present on npm.")
+    return 0
+
+
+def add_remote_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser], command: str) -> None:
+    remote_parser = subparsers.add_parser(command)
+    remote_parser.add_argument("--package-name", required=True)
+    remote_parser.add_argument("--version", required=True)
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Crewplane release preflight checks.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -144,9 +190,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     local_parser.add_argument("--root", type=Path, default=Path.cwd())
     local_parser.add_argument("--version", required=True)
 
-    remote_parser = subparsers.add_parser("remote")
-    remote_parser.add_argument("--package-name", required=True)
-    remote_parser.add_argument("--version", required=True)
+    add_remote_parser(subparsers, "remote")
+    add_remote_parser(subparsers, "remote-pypi")
+    add_remote_parser(subparsers, "remote-npm")
 
     return parser.parse_args(argv)
 
@@ -157,6 +203,10 @@ def main(argv: list[str]) -> int:
         return check_local(args.root, args.version)
     if args.command == "remote":
         return check_remote(args.package_name, args.version)
+    if args.command == "remote-pypi":
+        return check_remote_pypi(args.package_name, args.version)
+    if args.command == "remote-npm":
+        return check_remote_npm(args.package_name, args.version)
     raise AssertionError(f"unhandled command: {args.command}")
 
 

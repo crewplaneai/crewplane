@@ -76,7 +76,7 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
     urls = project["urls"]
     assert urls["Repository"] == REPOSITORY_URL
     assert urls["Issues"] == f"{REPOSITORY_URL}/issues"
-    assert urls["Documentation"] == f"{REPOSITORY_URL}/blob/main/docs/index.md"
+    assert urls["Documentation"] == f"{REPOSITORY_URL}/blob/master/docs/index.md"
 
     wheel_config = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
     assert wheel_config["packages"] == [f"src/{IMPORT_PACKAGE}"]
@@ -139,7 +139,10 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "PYPI_REPOSITORY ?= pypi" in makefile
     assert "TWINE_UPLOAD_ARGS ?=" in makefile
     assert "NPM_TAG ?= alpha" in makefile
+    assert "NPM_LATEST_TAG ?= latest" in makefile
+    assert "NPM_OTP ?=" in makefile
     assert "NPM_PUBLISH_ARGS ?=" in makefile
+    assert "NPM_AUTH_ARGS =" in makefile
     assert "UNINSTALL_CMD = uv pip uninstall $(PACKAGE_NAME)" in makefile
     assert "help:" in makefile
     assert "package-build:" in makefile
@@ -151,6 +154,8 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "changelog-check:" in makefile
     assert "release-version-check:" in makefile
     assert "release-remote-version-check:" in makefile
+    assert "release-pypi-version-check:" in makefile
+    assert "release-npm-version-check:" in makefile
     assert "release-confirm:" in makefile
     assert "install-smoke-pip:" in makefile
     assert "install-smoke-uv:" in makefile
@@ -166,6 +171,7 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "release-prereqs:" in makefile
     assert "release-pypi:" in makefile
     assert "release-npm:" in makefile
+    assert "release-npm-latest:" in makefile
     assert ".NOTPARALLEL: release-check release" in makefile
     assert (
         "release: release-confirm release-check changelog-check release-prereqs"
@@ -173,6 +179,7 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     )
     assert "twine upload --repository" in makefile
     assert "npm publish" in makefile
+    assert "npm dist-tag add" in makefile
     assert "npm whoami" in makefile
     assert "--no-index" in makefile
     assert "$(PACKAGE_NAME)==$(PROJECT_VERSION)" in makefile
@@ -224,16 +231,24 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     help_target = make_target_body("help")
     assert "Release variables:" in help_target
     assert (
-        "release            Confirm version, run release checks, publish PyPI, then npm"
+        "release            Confirm version, run checks, publish PyPI, publish npm, set npm latest"
         in help_target
     )
     assert (
-        "release-check      Check local metadata, remote availability, tests, and packages"
+        "release-check      Check local metadata, both registries, tests, and packages"
         in help_target
     )
+    assert "release-npm-latest Set the npm latest dist-tag" in help_target
     assert "Release version is read from pyproject.toml" in help_target
     assert "PYPI_REPOSITORY    Twine repository name" in help_target
     assert "NPM_TAG            npm publish dist-tag" in help_target
+    assert "NPM_LATEST_TAG     npm dist-tag updated after publish" in help_target
+    assert "NPM_OTP            npm one-time password for publish/dist-tag" in (
+        help_target
+    )
+    assert "NPM_PUBLISH_ARGS   Extra arguments passed to npm publish and dist-tag" in (
+        help_target
+    )
     assert "Homebrew tap publishing is separate" in help_target
 
     release_version_check = make_target_body("release-version-check")
@@ -242,6 +257,16 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     release_remote_version_check = make_target_body("release-remote-version-check")
     assert 'remote --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"' in (
         release_remote_version_check
+    )
+
+    release_pypi_version_check = make_target_body("release-pypi-version-check")
+    assert 'remote-pypi --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"' in (
+        release_pypi_version_check
+    )
+
+    release_npm_version_check = make_target_body("release-npm-version-check")
+    assert 'remote-npm --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"' in (
+        release_npm_version_check
     )
 
     release_confirm = make_target_body("release-confirm")
@@ -261,6 +286,14 @@ def test_makefile_exposes_local_release_validation_targets() -> None:
     assert "$(MAKE) release-npm" in release
     assert release.index("release-confirm") < release.index("release-check")
     assert release.index("release-pypi") < release.index("release-npm")
+
+    release_npm = make_target_body("release-npm")
+    assert "npm publish" in release_npm
+    assert "$(NPM_AUTH_ARGS)" in release_npm
+
+    release_npm_latest = make_target_body("release-npm-latest")
+    assert "npm dist-tag add" in release_npm_latest
+    assert "$(NPM_AUTH_ARGS)" in release_npm_latest
 
 
 def test_release_check_helper_validates_local_packaging_versions(
@@ -355,6 +388,30 @@ def test_release_check_helper_detects_remote_duplicate_versions(
 
     monkeypatch.setattr(release_checks, "fetch_registry_json", available_fetch)
     assert release_checks.check_remote(PACKAGE_NAME, AUTHORED_VERSION) == 0
+
+
+def test_release_check_helper_detects_registry_specific_duplicate_versions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release_checks = load_release_checks_module()
+
+    def duplicate_pypi_fetch(url: str) -> dict[str, object]:
+        if "pypi.org" in url:
+            return {"releases": {NORMALIZED_VERSION: []}}
+        return {"versions": {}}
+
+    monkeypatch.setattr(release_checks, "fetch_registry_json", duplicate_pypi_fetch)
+    assert release_checks.check_remote_pypi(PACKAGE_NAME, AUTHORED_VERSION) == 1
+    assert release_checks.check_remote_npm(PACKAGE_NAME, AUTHORED_VERSION) == 0
+
+    def duplicate_npm_fetch(url: str) -> dict[str, object]:
+        if "pypi.org" in url:
+            return {"releases": {}}
+        return {"versions": {AUTHORED_VERSION: {}}}
+
+    monkeypatch.setattr(release_checks, "fetch_registry_json", duplicate_npm_fetch)
+    assert release_checks.check_remote_pypi(PACKAGE_NAME, AUTHORED_VERSION) == 0
+    assert release_checks.check_remote_npm(PACKAGE_NAME, AUTHORED_VERSION) == 1
 
 
 def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:

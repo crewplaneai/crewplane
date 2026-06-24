@@ -4,6 +4,8 @@ NPM_PACK_DIR := $(CURDIR)/.release/npm
 PYPI_REPOSITORY ?= pypi
 TWINE_UPLOAD_ARGS ?=
 NPM_TAG ?= alpha
+NPM_LATEST_TAG ?= latest
+NPM_OTP ?=
 NPM_PUBLISH_ARGS ?=
 HAVE_UV := $(shell if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2>&1; then echo 1; else echo 0; fi)
 PROJECT_NAME_CMD = $(PYTHON) -c 'import sys, tomllib; project = tomllib.load(open("pyproject.toml", "rb"))["project"]; name = project["name"]; scripts = list(project.get("scripts", {})); sys.exit(f"expected one [project.scripts] key matching project.name {name!r}, got {scripts!r}") if scripts != [name] else print(name)'
@@ -32,13 +34,16 @@ PROJECT_VERSION_CMD = $(RUN_PYTHON) -c 'import tomllib; print(tomllib.load(open(
 PROJECT_VERSION = $(shell $(PROJECT_VERSION_CMD))
 NORMALIZE_VERSION = $(RUN_PYTHON) -c 'from packaging.version import Version; print(Version("$(PROJECT_VERSION)"))'
 RELEASE_CHECKS = $(RUN_PYTHON) packaging/release_checks.py
+NPM_AUTH_ARGS = $(if $(NPM_OTP),--otp=$(NPM_OTP),) $(NPM_PUBLISH_ARGS)
 
 .PHONY: help setup uninstall test lint format format-check check clean \
 	package-build package-check package-wheelhouse changelog-check \
-	release-version-check release-remote-version-check release-confirm \
-	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
-	install-script-smoke npm-pack npm-smoke brew-smoke install-check \
-	release-check release-prereqs release-pypi release-npm release
+		release-version-check release-remote-version-check \
+		release-pypi-version-check release-npm-version-check release-confirm \
+		install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
+		install-script-smoke npm-pack npm-smoke brew-smoke install-check \
+		release-check release-prereqs release-pypi release-npm \
+		release-npm-latest release
 
 .NOTPARALLEL: release-check release
 
@@ -61,20 +66,23 @@ help:
 		'  package-check      Build artifacts, run twine check, verify Homebrew sdist SHA' \
 		'  install-smoke      Exercise pip, uv tool, and pipx installs where available' \
 		'  install-check      Run package checks plus installer, npm, and Homebrew smokes' \
-		'  release-check      Check local metadata, remote availability, tests, and packages' \
+		'  release-check      Check local metadata, both registries, tests, and packages' \
 		'' \
 		'Publishing:' \
-		'  release            Confirm version, run release checks, publish PyPI, then npm' \
-		'  release-pypi       Upload dist artifacts with twine' \
-		'  release-npm        Pack and publish the npm wrapper' \
-		'  release-prereqs    Require npm and npm authentication before release' \
+		'  release            Confirm version, run checks, publish PyPI, publish npm, set npm latest' \
+		'  release-pypi       Check PyPI availability and upload dist artifacts with twine' \
+		'  release-npm        Check npm availability, pack, publish wrapper, and set npm latest' \
+		'  release-npm-latest Set the npm latest dist-tag to the current version' \
+		'  release-prereqs    Require npm and npm authentication before npm publishing/tagging' \
 		'' \
 		'Release variables:' \
 		'  Release version is read from pyproject.toml' \
 		'  PYPI_REPOSITORY    Twine repository name (default: pypi)' \
 		'  TWINE_UPLOAD_ARGS  Extra arguments passed to twine upload' \
 		'  NPM_TAG            npm publish dist-tag (default: alpha)' \
-		'  NPM_PUBLISH_ARGS   Extra arguments passed to npm publish' \
+		'  NPM_LATEST_TAG     npm dist-tag updated after publish (default: latest)' \
+		'  NPM_OTP            npm one-time password for publish/dist-tag operations' \
+		'  NPM_PUBLISH_ARGS   Extra arguments passed to npm publish and dist-tag' \
 		'' \
 		'Homebrew tap publishing is separate: regenerate pins from the canonical PyPI artifact, copy the formula into the tap, and validate it there.'
 
@@ -146,6 +154,12 @@ release-version-check:
 
 release-remote-version-check:
 	$(RELEASE_CHECKS) remote --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"
+
+release-pypi-version-check:
+	$(RELEASE_CHECKS) remote-pypi --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"
+
+release-npm-version-check:
+	$(RELEASE_CHECKS) remote-npm --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"
 
 release-confirm:
 	@set -eu; \
@@ -411,7 +425,7 @@ release-prereqs:
 		exit 1; \
 	fi
 
-release-pypi: package-check
+release-pypi: release-pypi-version-check package-check
 	@set -eu; \
 	normalized="$$( $(NORMALIZE_VERSION) )"; \
 	sdist="$(CURDIR)/dist/$(PACKAGE_NAME)-$${normalized}.tar.gz"; \
@@ -420,20 +434,23 @@ release-pypi: package-check
 	test -f "$$wheel"; \
 	$(RUN_PYTHON) -m twine upload --repository "$(PYPI_REPOSITORY)" $(TWINE_UPLOAD_ARGS) "$$sdist" "$$wheel"
 
-release-npm: npm-pack
+release-npm: release-prereqs release-npm-version-check npm-pack
 	@set -eu; \
-	if ! command -v npm >/dev/null 2>&1; then \
-		echo "npm is required for release-npm."; \
-		exit 1; \
-	fi; \
 	package="$$(ls -t "$(NPM_PACK_DIR)"/$(PACKAGE_NAME)-*.tgz 2>/dev/null | head -n 1)"; \
 	test -n "$$package"; \
-	npm publish "$$package" --tag "$(NPM_TAG)" $(NPM_PUBLISH_ARGS)
+	npm publish "$$package" --tag "$(NPM_TAG)" $(NPM_AUTH_ARGS); \
+	if [ -n "$(NPM_LATEST_TAG)" ] && [ "$(NPM_LATEST_TAG)" != "$(NPM_TAG)" ]; then \
+		npm dist-tag add "$(PACKAGE_NAME)@$(PROJECT_VERSION)" "$(NPM_LATEST_TAG)" $(NPM_AUTH_ARGS); \
+	fi
+
+release-npm-latest: release-prereqs
+	@set -eu; \
+	npm dist-tag add "$(PACKAGE_NAME)@$(PROJECT_VERSION)" "$(NPM_LATEST_TAG)" $(NPM_AUTH_ARGS)
 
 release: release-confirm release-check changelog-check release-prereqs
 	$(MAKE) release-pypi
 	$(MAKE) release-npm
-	@echo "Released $(PACKAGE_NAME) $(PROJECT_VERSION) to PyPI repository '$(PYPI_REPOSITORY)' and npm tag '$(NPM_TAG)'."
+	@echo "Released $(PACKAGE_NAME) $(PROJECT_VERSION) to PyPI repository '$(PYPI_REPOSITORY)', npm tag '$(NPM_TAG)', and npm latest tag '$(NPM_LATEST_TAG)'."
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache build dist *.egg-info .release
