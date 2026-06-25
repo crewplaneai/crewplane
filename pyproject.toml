@@ -1,6 +1,6 @@
 [project]
 name = "crewplane"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 description = "A Markdown-native control plane for AI coding CLIs"
 readme = "README.md"
 requires-python = ">=3.13"

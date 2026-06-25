@@ -4,6 +4,21 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] - 2026-06-24
+
+### Changed
+
+- Generated config and setup docs now make the mock-to-CLI switch explicit:
+  replace mock invoker options with `options: {}` when using the built-in `cli`
+  invoker.
+- Generated real-provider examples now use `gpt-5.5` for Codex and
+  `claude-sonnet-4.6` for Copilot.
+
+### Fixed
+
+- CLI invoker option validation now points users at the required `options: {}`
+  config when stale mock options are left behind.
+
 ## [0.1.0-alpha.3] - 2026-06-24
 
 ### Added
