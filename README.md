@@ -16,9 +16,9 @@
 
 ## Why Crewplane?
 
-You already have AI coding tools you love. But they can't talk to each other. Claude doesn't know what Codex just wrote. Gemini can't review Claude's output.
+You've got powerful AI tools at your fingertips — Claude Code, Codex CLI, Gemini CLI, and others. Each has its strengths, but tying their work into a single repeatable pipeline usually means shell scripts, brittle glue, and state scattered across temp files.
 
-**Crewplane connects them.** Define tasks in a Markdown file, assign each to an AI provider, and Crewplane runs them — in parallel when possible, in sequence when needed. Each tool reads and writes to a shared folder, so downstream tasks can build on upstream results.
+**Crewplane gives your project a control plane for your agent crews.** Write the workflow once in Markdown, assign each step to whichever AI agent fits best, and Crewplane handles the rest — parallel, fan-out, sequential handoffs, retries, and a complete paper trail.
 
 No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
 
@@ -29,7 +29,7 @@ No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
 | **Autonomous loops** | Explicit DAG control — define exactly how agents work together, in sequence or in parallel |
 | **Hidden state** | Externalized to markdown — fully auditable |
 | **Tight SDK coupling** | CLI-first — zero provider lock-in |
-| **Black box debugging** | Inspect `.crewplane/execution-stages/` at any step |
+| **Black box debugging** | Inspect `.crewplane/execution-stages/` at any step, final results saved in `.crewplane/execution-results/` |
 | **Adapter boilerplate** | Works with any CLI that reads/writes files |
 
 > *"Crewplane doesn't try to understand your AI tools. It just gives them a shared workspace and gets out of the way."*
@@ -86,11 +86,11 @@ crewplane run --no-live
 
 `crewplane init` creates `.crewplane/config.yml`, a default workflow, and
 additional example templates under `.crewplane/workflows/example-templates/`.
-The default run uses deterministic `mock` output and does not require provider
+The default run uses deterministic `mock` output (no cost) and does not require provider
 CLIs, API keys, provider accounts, or config edits. It is scaffolding for
 validating the workflow and artifact path, not model output.
 
-Inspect the first run artifacts under `.crewplane/execution-stages/` and
+Inspect the first run artifacts in `.crewplane/execution-stages/` and execution results in 
 `.crewplane/execution-results/`, then follow
 [provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
 when you are ready to run real provider CLIs.
@@ -98,8 +98,8 @@ when you are ready to run real provider CLIs.
 ## Live Dashboard
 
 For interactive runs, omit `--no-live` to open Crewplane's compact tmux
-dashboard. If you already completed the same mock run, add `--force` to bypass
-duplicate-skip:
+dashboard (install tmux first if your system doesn't already have it).
+Re-running the same workflow? Add `--force` to skip the duplicate check:
 
 ```bash
 crewplane run --force
