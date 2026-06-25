@@ -182,8 +182,10 @@ def test_mock_invoker_review_loop_integration_groups_multi_audit_round_artifacts
         "review.iterate"
     ).read_text(encoding="utf-8")
     assert "Review Inbox" not in result_text
-    assert "## codex_executor_0" in result_text
-    assert "## claude_reviewer_0" in result_text
+    assert "## codex (executor)" in result_text
+    assert "## claude (reviewer)" in result_text
+    assert "## codex_executor_0" not in result_text
+    assert "## claude_reviewer_0" not in result_text
     assert "Executor round 2 output with fixes." in result_text
     assert "VERDICT: NO_FINDINGS" in result_text
 

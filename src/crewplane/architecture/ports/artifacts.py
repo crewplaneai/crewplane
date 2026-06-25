@@ -31,6 +31,7 @@ class StageTaskSpec:
 
     task_id: str
     role: str
+    display_name: str | None = None
 
 
 class ArtifactStorePort(Protocol):

@@ -83,8 +83,8 @@ def build_findings_document(findings_sections: list[tuple[str, str]]) -> str:
         return findings_sections[0][1]
 
     sections: list[str] = []
-    for task_id, findings_content in findings_sections:
-        sections.append(f"## {task_id}\n\n{findings_content}\n\n---\n\n")
+    for section_title, findings_content in findings_sections:
+        sections.append(f"## {section_title}\n\n{findings_content}\n\n---\n\n")
     return "".join(sections)
 
 

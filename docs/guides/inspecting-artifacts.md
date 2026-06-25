@@ -60,7 +60,8 @@ Experimental workspace use.
 
 Result filenames use safe, bounded names derived from node IDs. The artifact
 reference documents the stable artifact keys available to downstream workflow
-nodes.
+nodes. Result section headings are human-readable; inspect stage artifacts,
+logs, manifests, or review-loop state when you need stable provider task IDs.
 
 ## Preflight Bundle
 

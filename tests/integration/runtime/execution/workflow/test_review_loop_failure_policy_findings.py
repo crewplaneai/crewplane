@@ -298,16 +298,21 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
                 encoding="utf-8"
             )
 
-            self.assertIn("## alpha_executor_0", findings_text)
-            self.assertIn("## beta_executor_1", findings_text)
+            self.assertIn("## alpha (executor)", findings_text)
+            self.assertIn("## beta (executor)", findings_text)
+            self.assertNotIn("## alpha_executor_0", findings_text)
+            self.assertNotIn("## beta_executor_1", findings_text)
             self.assertIn("- alpha finding", findings_text)
             self.assertIn("- beta finding", findings_text)
             self.assertNotIn("## Major Issues", findings_text)
             self.assertNotIn("VERDICT:", findings_text)
 
-            self.assertIn("## alpha_executor_0", result_text)
-            self.assertIn("## beta_executor_1", result_text)
-            self.assertIn("## review_reviewer_0", result_text)
+            self.assertIn("## alpha (executor)", result_text)
+            self.assertIn("## beta (executor)", result_text)
+            self.assertIn("## review (reviewer)", result_text)
+            self.assertNotIn("## alpha_executor_0", result_text)
+            self.assertNotIn("## beta_executor_1", result_text)
+            self.assertNotIn("## review_reviewer_0", result_text)
 
     async def test_contradictory_reviewer_contract_is_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

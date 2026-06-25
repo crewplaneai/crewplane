@@ -32,10 +32,13 @@ def aggregate_stage_outputs(
         task_specs,
         findings_enabled,
     )
-    for task_id in ordered_task_ids(selected_files, task_specs):
+    task_ids = ordered_task_ids(selected_files, task_specs)
+    section_titles = section_titles_by_task_id(task_ids, task_specs)
+    for task_id in task_ids:
         add_output_to_aggregation(
             aggregation,
             task_id,
+            section_titles[task_id],
             selected_files[task_id],
             findings_selection,
             result_file,
@@ -49,6 +52,7 @@ def aggregate_stage_outputs(
 def add_output_to_aggregation(
     aggregation: StageOutputAggregation,
     task_id: str,
+    section_title: str,
     output_file: Path,
     findings_selection: FindingsSelection,
     result_file: Path,
@@ -63,7 +67,9 @@ def add_output_to_aggregation(
 
     display_content = strip_synthetic_invocation_failure_marker(raw_output).strip()
     aggregation.included_outputs.append(output_file)
-    aggregation.result_sections.append(f"## {task_id}\n\n{display_content}\n\n---\n\n")
+    aggregation.result_sections.append(
+        f"## {section_title}\n\n{display_content}\n\n---\n\n"
+    )
     record_generated_file_links(
         aggregation,
         task_id,
@@ -78,12 +84,26 @@ def add_output_to_aggregation(
         raw_output
     ):
         aggregation.findings_sections.append(
-            (task_id, build_failure_findings_content(task_id))
+            (section_title, build_failure_findings_content(task_id))
         )
         return
     if findings_selection.should_extract(task_id, raw_output):
         findings_content = extract_findings_content(raw_output, output_file)
-        aggregation.findings_sections.append((task_id, findings_content))
+        aggregation.findings_sections.append((section_title, findings_content))
+
+
+def section_titles_by_task_id(
+    task_ids: list[str],
+    task_specs: tuple[StageTaskSpec, ...],
+) -> dict[str, str]:
+    if len(task_ids) == 1:
+        return {task_ids[0]: "Output"}
+    display_names = {
+        task_spec.task_id: task_spec.display_name
+        for task_spec in task_specs
+        if task_spec.display_name
+    }
+    return {task_id: display_names.get(task_id, task_id) for task_id in task_ids}
 
 
 def record_generated_file_links(

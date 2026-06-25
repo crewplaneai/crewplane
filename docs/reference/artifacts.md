@@ -71,6 +71,10 @@ files are present for nodes that declare `findings: true`. Generated-file
 artifacts are present when Crewplane detects provider-created files that should
 be copied into the result tree.
 
+Consolidated result and findings Markdown uses human-readable section headings.
+Stable provider task IDs remain in stage artifact filenames, logs, manifests,
+and review-loop state.
+
 ## Preflight Files
 
 The root `.crewplane/preflight/fingerprint.key` stores the fingerprint key used
