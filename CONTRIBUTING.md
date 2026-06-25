@@ -29,9 +29,10 @@ back to `python -m ...` commands when possible.
 
 ## Release Surface Checks
 
-Before package-name reservation or alpha publishing, run:
+After manually updating `pyproject.toml` and `CHANGELOG.md`, run:
 
 ```bash
+make release-prepare
 make release-check
 ```
 
@@ -45,13 +46,24 @@ configured:
 make release
 ```
 
-Release targets read the version from `pyproject.toml`, require packaging
-metadata to match, and fail if the exact version already exists on PyPI or npm.
-`make release` asks for version confirmation before any checks or uploads, then
-publishes PyPI first, publishes npm with `NPM_TAG=alpha` by default, and moves
-the npm `latest` dist-tag to the released version. If a release is interrupted
-after only one registry is updated, use `make release-pypi` or `make release-npm`
-to complete the missing registry; each target runs only its own remote duplicate
-check. Use `make release-npm-latest` when the npm version already exists and only
-the `latest` dist-tag needs to be moved; pass npm two-factor codes as
-`NPM_OTP=123456`. Homebrew tap publishing is still a separate maintainer step.
+`make release-prepare` synchronizes generated release metadata from
+`pyproject.toml`, refreshes `uv.lock`, builds local PyPI and npm artifacts,
+writes release manifests, and prepares the Homebrew formula candidate. It fails
+if the target version already exists on PyPI or npm.
+
+`make release-check` is state-aware. For unpublished versions it verifies
+generated metadata and runs lint, format-check, tests, package checks, and
+install smokes. For already completed releases it verifies PyPI, npm, npm
+`latest`, Homebrew formula metadata, and the Git tag, then exits successfully
+without rerunning pre-publish smokes. It prints a final reminder to verify the
+changelog because changelog content is still reviewed manually.
+
+`make release` asks for exact version confirmation, reruns `make release-check`,
+publishes PyPI first, publishes npm with the `latest` dist-tag, reconciles npm
+`latest`, and creates/pushes the annotated Git tag after both registries verify.
+If a release is interrupted after only one registry is updated, fix the issue and
+run `make release-pypi` or `make release-npm` to complete the missing side. In
+non-TTY npm two-factor flows, use `NPM_PUBLISH_OTP` and `NPM_DIST_TAG_OTP` so
+`npm publish` and `npm dist-tag add` each receive a fresh OTP. Homebrew tap
+publishing is still a separate maintainer step: copy the prepared formula into
+the tap, run audit/test there, and push the tap update.

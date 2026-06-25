@@ -98,9 +98,9 @@ def render_codex_record(
 
     event_type = record.get("type") or record.get("event")
     if isinstance(event_type, str) and event_type.strip():
-        item_event = _codex_item_event_line(record, event_type, limits)
+        item_event = _codex_item_event_lines(record, event_type, limits)
         if item_event is not None:
-            return [item_event]
+            return item_event
         detail = _codex_detail(record, limits)
         label = event_type if not detail else f"{event_type}: {detail}"
         return [sanitize_line(label, limits)]
@@ -188,11 +188,11 @@ def _codex_detail(record: Mapping[str, Any], limits: LogPresentationLimits) -> s
     return compact_json_line(record, limits)
 
 
-def _codex_item_event_line(
+def _codex_item_event_lines(
     record: Mapping[str, Any],
     event_type: str,
     limits: LogPresentationLimits,
-) -> str | None:
+) -> list[str] | None:
     if not event_type.startswith("item."):
         return None
     item = record.get("item")
@@ -201,12 +201,59 @@ def _codex_item_event_line(
 
     phase = event_type.removeprefix("item.")
     item_type = _string_field(item, "type") or "item"
+    command_execution = _codex_command_execution_lines(
+        record, item, item_type, phase, limits
+    )
+    if command_execution is not None:
+        return command_execution
     detail = _codex_item_detail(record, item, limits)
     if detail:
-        return sanitize_line(f"{item_type} {phase}: {detail}", limits)
+        return [sanitize_line(f"{item_type} {phase}: {detail}", limits)]
     if _codex_is_empty_web_search_event(item):
-        return sanitize_line(f"{item_type} {phase}", limits)
+        return [sanitize_line(f"{item_type} {phase}", limits)]
     return None
+
+
+def _codex_command_execution_lines(
+    record: Mapping[str, Any],
+    item: Mapping[str, Any],
+    item_type: str,
+    phase: str,
+    limits: LogPresentationLimits,
+) -> list[str] | None:
+    output = item.get("aggregated_output")
+    if item_type != "command_execution" or not isinstance(output, str):
+        return None
+    if not output.strip() or "\n" not in output:
+        return None
+
+    metadata = _codex_command_execution_metadata(record, item, limits)
+    first_line = f"{item_type} {phase}"
+    if metadata:
+        first_line = f"{first_line}: {metadata}"
+    return [
+        sanitize_line(first_line, limits),
+        *display_string_lines(output, limits, label="aggregated_output"),
+    ]
+
+
+def _codex_command_execution_metadata(
+    record: Mapping[str, Any],
+    item: Mapping[str, Any],
+    limits: LogPresentationLimits,
+) -> str:
+    components: list[str] = []
+    command = _display_field_value(item.get("command"), limits)
+    if command:
+        components.append(f"command: {command}")
+    for key in ("status", "exit_code"):
+        raw_value = item.get(key)
+        if raw_value is None:
+            raw_value = record.get(key)
+        value = _display_field_value(raw_value, limits)
+        if value:
+            components.append(f"{key}: {value}")
+    return " | ".join(components)
 
 
 def _codex_item_detail(

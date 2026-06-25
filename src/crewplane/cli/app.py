@@ -225,6 +225,26 @@ def init() -> None:
     console.print(
         "First run uses deterministic mock execution; no provider CLIs are required."
     )
+    console.print("\n[bold]Real provider runs later:[/]")
+    console.print("  Check which provider CLIs are already available:")
+    console.print("  [cyan]which claude codex gemini copilot[/]")
+    console.print(
+        "  Enable matching agents in [cyan].crewplane/config.yml[/] and set "
+        '[cyan]settings.integrations.invoker.implementation: "cli"[/].'
+    )
+    console.print(
+        "  Use [cyan].crewplane/workflows/example-templates/[/] as starting points "
+        "for real-CLI workflows."
+    )
+    console.print("  Run an example with the compact dashboard:")
+    console.print(
+        "  [cyan]crewplane run --tasks "
+        ".crewplane/workflows/example-templates/code-review-example.task.md[/]"
+    )
+    console.print(
+        "  Docs: [cyan]https://github.com/crewplaneai/crewplane/blob/master/"
+        "docs/index.md[/]"
+    )
     console.print("\n[bold]Next:[/]")
     console.print("  [cyan]crewplane validate[/]")
     console.print("  [cyan]crewplane run --no-live[/]")

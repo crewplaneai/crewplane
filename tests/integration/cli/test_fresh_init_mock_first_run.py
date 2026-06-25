@@ -60,6 +60,26 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                 "First run uses deterministic mock execution; no provider CLIs are required.",
                 output_text,
             )
+            self.assertIn("Real provider runs later:", output_text)
+            self.assertIn("which claude codex gemini copilot", output_text)
+            self.assertIn(
+                'settings.integrations.invoker.implementation: "cli"',
+                output_text,
+            )
+            self.assertIn(".crewplane/workflows/example-templates/", output_text)
+            self.assertIn(
+                "crewplane run --tasks "
+                ".crewplane/workflows/example-templates/code-review-example.task.md",
+                output_text,
+            )
+            self.assertIn(
+                "https://github.com/crewplaneai/crewplane/blob/master/docs/index.md",
+                output_text,
+            )
+            self.assertLess(
+                output_text.index("Real provider runs later:"),
+                output_text.index("Next:"),
+            )
             self.assertIn("crewplane validate", output_text)
             self.assertIn("crewplane run --no-live", output_text)
             self.assertIn(

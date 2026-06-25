@@ -30,19 +30,15 @@ The tap repository is expected to live at
 `https://github.com/crewplaneai/homebrew-crewplane`. This repository does not
 create or push that external tap.
 
-Before publishing the tap, maintainers must regenerate the formula pins from
-the exact canonical PyPI artifact and dependency resources that will be served
-publicly:
+Before publishing the tap, maintainers must use the exact canonical PyPI
+artifact and dependency resources that will be served publicly:
 
-1. Run `make release-check` for a coordinated new version, or the
-   registry-specific release target when completing a partial release.
-2. Publish the canonical `crewplane-0.1.0a2.tar.gz` artifact.
-3. Replace the formula URL and SHA256 with that published artifact.
-4. Refresh runtime resources if `uv.lock` changed.
-5. Refresh the pinned Hatchling build-backend wheel resources if
-   `pyproject.toml` changes build-system requirements.
-6. Copy `packaging/homebrew/Formula/crewplane.rb` into the tap repository.
-7. Run `brew audit --strict crewplane` and `brew test crewplane` from the tap.
+1. Run `make release-prepare` for a coordinated new version.
+2. Confirm the prepared formula points at the canonical PyPI sdist and SHA.
+3. Run `make release-check`.
+4. Copy `packaging/homebrew/Formula/crewplane.rb` into the tap repository.
+5. Run `brew audit --strict crewplane` and `brew test crewplane` from the tap.
+6. Push the tap update after PyPI and npm are live.
 
 For local validation before publication, use:
 
@@ -51,10 +47,11 @@ make brew-smoke
 ```
 
 Release and smoke targets read the version from `pyproject.toml`.
-`make release-check` also verifies that the exact version is not already on
-PyPI or npm. `make release-pypi` and `make release-npm` run registry-specific
-remote checks so a partial release can be completed without being blocked by a
-version that already exists in the other registry. The local smoke target
+`make release-prepare` verifies that the exact version is not already on PyPI or
+npm before it rewrites local release scratch state. `make release-pypi` and
+`make release-npm` run registry-specific remote checks so a partial release can
+be completed without being blocked by a version that already exists in the other
+registry. The local smoke target
 creates a temporary formula copy that points at the local sdist. It skips
 clearly when Homebrew is not available or when a `crewplane` formula is already
 installed. The formula declares `maturin` for the `pydantic-core` runtime sdist,

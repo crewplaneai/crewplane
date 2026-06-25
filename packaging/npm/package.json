@@ -1,6 +1,6 @@
 {
   "name": "crewplane",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Markdown-native control plane for AI coding CLIs, packaged as an npm wrapper.",
   "license": "Apache-2.0",
   "repository": {
@@ -27,7 +27,7 @@
   },
   "crewplane": {
     "pythonPackage": "crewplane",
-    "pythonPackageVersion": "0.1.0-alpha.2",
+    "pythonPackageVersion": "0.1.0-alpha.3",
     "pythonConsoleCommand": "crewplane"
   }
 }

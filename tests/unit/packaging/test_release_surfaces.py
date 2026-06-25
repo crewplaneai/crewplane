@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 import re
@@ -12,9 +11,10 @@ import pytest
 from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[3]
+PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 PACKAGE_NAME = "crewplane"
-AUTHORED_VERSION = "0.1.0-alpha.2"
-NORMALIZED_VERSION = "0.1.0a2"
+AUTHORED_VERSION = str(PYPROJECT["project"]["version"])
+NORMALIZED_VERSION = str(Version(AUTHORED_VERSION))
 CLI_COMMAND = "crewplane"
 IMPORT_PACKAGE = "crewplane"
 REPOSITORY_URL = "https://github.com/crewplaneai/crewplane"
@@ -29,7 +29,7 @@ def read_text(*parts: str) -> str:
 
 
 def load_pyproject() -> dict[str, object]:
-    return tomllib.loads(read_text("pyproject.toml"))
+    return PYPROJECT
 
 
 def load_uv_lock() -> dict[str, object]:
@@ -38,17 +38,6 @@ def load_uv_lock() -> dict[str, object]:
 
 def load_npm_package() -> dict[str, object]:
     return json.loads(read_text("packaging", "npm", "package.json"))
-
-
-def load_release_checks_module() -> object:
-    module_path = repo_path("packaging", "release_checks.py")
-    spec = importlib.util.spec_from_file_location("release_checks", module_path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def make_target_body(target: str) -> str:
@@ -122,303 +111,47 @@ def test_uv_lock_tracks_editable_crewplane_package() -> None:
     assert {"build", "packaging", "pytest", "ruff", "twine"} <= dev_dependencies
 
 
-def test_makefile_exposes_local_release_validation_targets() -> None:
+def test_makefile_delegates_release_targets_to_release_tool() -> None:
     makefile = read_text("Makefile")
-    assert "VERSION ?= 0.1.0-alpha.1" not in makefile
-    assert "PROJECT_NAME_CMD =" in makefile
-    assert 'project["name"]' in makefile
-    assert 'project.get("scripts", {})' in makefile
-    assert "expected one [project.scripts] key matching project.name" in makefile
-    assert "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD))" in makefile
-    assert "PACKAGE_NAME := crewplane" not in makefile
-    assert "CLI_NAME" not in makefile
-    assert "PROJECT_VERSION_CMD =" in makefile
-    assert "PROJECT_VERSION = $(shell $(PROJECT_VERSION_CMD))" in makefile
-    assert "RELEASE_CHECKS = $(RUN_PYTHON) packaging/release_checks.py" in makefile
-    assert "CONFIRM_VERSION_MISMATCH" not in makefile
-    assert "PYPI_REPOSITORY ?= pypi" in makefile
-    assert "TWINE_UPLOAD_ARGS ?=" in makefile
-    assert "NPM_TAG ?= alpha" in makefile
-    assert "NPM_LATEST_TAG ?= latest" in makefile
-    assert "NPM_OTP ?=" in makefile
-    assert "NPM_PUBLISH_ARGS ?=" in makefile
-    assert "NPM_AUTH_ARGS =" in makefile
-    assert "UNINSTALL_CMD = uv pip uninstall $(PACKAGE_NAME)" in makefile
-    assert "help:" in makefile
-    assert "package-build:" in makefile
-    assert "package-check:" in makefile
-    assert "formula_sha" in makefile
-    assert "sdist_sha" in makefile
-    assert "packaging/homebrew/Formula/$(PACKAGE_NAME).rb" in makefile
-    assert "uv export --frozen --no-dev --no-emit-project" in makefile
-    assert "changelog-check:" in makefile
-    assert "release-version-check:" in makefile
-    assert "release-remote-version-check:" in makefile
-    assert "release-pypi-version-check:" in makefile
-    assert "release-npm-version-check:" in makefile
-    assert "release-confirm:" in makefile
-    assert "install-smoke-pip:" in makefile
-    assert "install-smoke-uv:" in makefile
-    assert "install-smoke-pipx:" in makefile
-    assert "install-script-smoke:" in makefile
-    assert "npm-pack:" in makefile
-    assert "npm-smoke:" in makefile
-    assert "brew-smoke:" in makefile
-    assert "install-check:" in makefile
-    assert (
-        "release-check: release-version-check release-remote-version-check" in makefile
-    )
-    assert "release-prereqs:" in makefile
-    assert "release-pypi:" in makefile
-    assert "release-npm:" in makefile
-    assert "release-npm-latest:" in makefile
-    assert ".NOTPARALLEL: release-check release" in makefile
-    assert (
-        "release: release-confirm release-check changelog-check release-prereqs"
-        in makefile
-    )
-    assert "twine upload --repository" in makefile
-    assert "npm publish" in makefile
-    assert "npm dist-tag add" in makefile
-    assert "npm whoami" in makefile
-    assert "--no-index" in makefile
-    assert "$(PACKAGE_NAME)==$(PROJECT_VERSION)" in makefile
-    assert 'CREWPLANE_VERSION="$(PROJECT_VERSION)"' in makefile
-    assert 'implementation: "mock"' in makefile
-    for target in (
-        "install-smoke-pip",
-        "install-smoke-uv",
-        "install-smoke-pipx",
-        "npm-smoke",
-    ):
-        smoke_target = make_target_body(target)
-        assert "'  mock:'" in smoke_target
-        assert (
-            "'    cli_cmd: [\"__crewplane_mock_invoker_never_executes__\"]'"
-            in smoke_target
-        )
-        assert "'    provider_kind: \"generic\"'" in smoke_target
-        assert "'    prompt_transport: \"stdin\"'" in smoke_target
-        assert "'    default_model: \"mock\"'" in smoke_target
-    assert 'brew list --formula "$(PACKAGE_NAME)"' in makefile
-    assert (
-        "Skipping brew-smoke: Homebrew formula $(PACKAGE_NAME) is already installed."
-        in makefile
-    )
-    brew_smoke = make_target_body("brew-smoke")
-    assert r"1,/url \"https:.*$(PACKAGE_NAME).*tar.gz\"/s" in brew_smoke
-    assert r"1,/sha256 \".*\"/s" in brew_smoke
-    assert "0,/" not in brew_smoke
-
-    npm_pack = make_target_body("npm-pack")
-    assert "$(PACKAGE_NAME)-*.tgz" in npm_pack
-
-    npm_smoke = make_target_body("npm-smoke")
-    assert 'mkdir -p "$$tmp/home" "$$tmp/npm-cache" "$$tmp/xdg-cache"' in npm_smoke
-    assert 'HOME="$$tmp/home"' in npm_smoke
-    assert 'NPM_CONFIG_CACHE="$$tmp/npm-cache"' in npm_smoke
-    assert 'XDG_CACHE_HOME="$$tmp/xdg-cache"' in npm_smoke
-    assert "export HOME NPM_CONFIG_CACHE XDG_CACHE_HOME" in npm_smoke
-    assert npm_smoke.index("export HOME") < npm_smoke.index("npm install -g")
-    assert 'PATH="$$tmp/prefix/bin:$$PATH"' in npm_smoke
-    assert "export PATH" in npm_smoke
-    assert 'command -v "$(PACKAGE_NAME)" >/dev/null' in npm_smoke
-    assert "$(PACKAGE_NAME) --help >/dev/null" in npm_smoke
-    assert '( cd "$$project" && $(PACKAGE_NAME) init >/dev/null )' in npm_smoke
-    assert '( cd "$$project" && $(PACKAGE_NAME) validate >/dev/null )' in npm_smoke
-    assert "$$exe" not in npm_smoke
-
-    help_target = make_target_body("help")
-    assert "Release variables:" in help_target
-    assert (
-        "release            Confirm version, run checks, publish PyPI, publish npm, set npm latest"
-        in help_target
-    )
-    assert (
-        "release-check      Check local metadata, both registries, tests, and packages"
-        in help_target
-    )
-    assert "release-npm-latest Set the npm latest dist-tag" in help_target
-    assert "Release version is read from pyproject.toml" in help_target
-    assert "PYPI_REPOSITORY    Twine repository name" in help_target
-    assert "NPM_TAG            npm publish dist-tag" in help_target
-    assert "NPM_LATEST_TAG     npm dist-tag updated after publish" in help_target
-    assert "NPM_OTP            npm one-time password for publish/dist-tag" in (
-        help_target
-    )
-    assert "NPM_PUBLISH_ARGS   Extra arguments passed to npm publish and dist-tag" in (
-        help_target
-    )
-    assert "Homebrew tap publishing is separate" in help_target
-
-    release_version_check = make_target_body("release-version-check")
-    assert 'local --version "$(PROJECT_VERSION)"' in release_version_check
-
-    release_remote_version_check = make_target_body("release-remote-version-check")
-    assert 'remote --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"' in (
-        release_remote_version_check
-    )
-
-    release_pypi_version_check = make_target_body("release-pypi-version-check")
-    assert 'remote-pypi --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"' in (
-        release_pypi_version_check
-    )
-
-    release_npm_version_check = make_target_body("release-npm-version-check")
-    assert 'remote-npm --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"' in (
-        release_npm_version_check
-    )
-
-    release_confirm = make_target_body("release-confirm")
-    assert (
-        "Release $(PACKAGE_NAME) $(PROJECT_VERSION) to PyPI repository"
-        in release_confirm
-    )
-    assert "[y/N]" in release_confirm
-    assert "[Yy])" in release_confirm
-
-    assert "node -p 'require(\"./packaging/npm/package.json\").version'" in npm_pack
-    assert "differs from pyproject.toml version" in npm_pack
-    assert "exit 1" in npm_pack
-
+    assert "RUN_RELEASE = $(RUN_PYTHON) scripts/release.py" in makefile
+    assert "packaging/release_checks.py" not in makefile
+    expected_delegations = {
+        "release-prepare": "prepare",
+        "release-check": "check",
+        "release-confirm": "confirm",
+        "release-pypi": "publish-pypi --execute",
+        "release-npm": "publish-npm --execute",
+    }
+    for target, command in expected_delegations.items():
+        assert f"$(RUN_RELEASE) {command}" in make_target_body(target)
     release = make_target_body("release")
     assert "$(MAKE) release-pypi" in release
     assert "$(MAKE) release-npm" in release
-    assert release.index("release-confirm") < release.index("release-check")
-    assert release.index("release-pypi") < release.index("release-npm")
-
-    release_npm = make_target_body("release-npm")
-    assert "npm publish" in release_npm
-    assert "$(NPM_AUTH_ARGS)" in release_npm
-
-    release_npm_latest = make_target_body("release-npm-latest")
-    assert "npm dist-tag add" in release_npm_latest
-    assert "$(NPM_AUTH_ARGS)" in release_npm_latest
+    assert "$(RUN_RELEASE) finalize --execute" in release
 
 
-def test_release_check_helper_validates_local_packaging_versions(
-    tmp_path: Path,
-) -> None:
-    package_root = tmp_path / "package"
-    npm_root = package_root / "packaging" / "npm"
-    formula_root = package_root / "packaging" / "homebrew" / "Formula"
-    npm_root.mkdir(parents=True)
-    formula_root.mkdir(parents=True)
+def test_legacy_release_check_helper_was_replaced() -> None:
+    assert not repo_path("packaging", "release_checks.py").exists()
 
-    (npm_root / "package.json").write_text(
-        json.dumps(
-            {
-                "version": AUTHORED_VERSION,
-                "crewplane": {"pythonPackageVersion": AUTHORED_VERSION},
-            }
-        ),
-        encoding="utf-8",
-    )
-    (formula_root / "crewplane.rb").write_text(
-        f'class Crewplane < Formula\n  version "{AUTHORED_VERSION}"\nend\n',
-        encoding="utf-8",
-    )
 
-    script = repo_path("packaging", "release_checks.py")
+def test_release_script_exposes_stateful_commands() -> None:
     result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            "local",
-            "--root",
-            str(package_root),
-            "--version",
-            AUTHORED_VERSION,
-        ],
-        check=False,
+        [sys.executable, str(repo_path("scripts", "release.py")), "--help"],
+        check=True,
         capture_output=True,
         text=True,
     )
-
-    assert result.returncode == 0
-    assert "Packaging versions match pyproject.toml version" in result.stdout
-
-    (npm_root / "package.json").write_text(
-        json.dumps(
-            {
-                "version": "0.1.0-alpha.3",
-                "crewplane": {"pythonPackageVersion": AUTHORED_VERSION},
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            "local",
-            "--root",
-            str(package_root),
-            "--version",
-            AUTHORED_VERSION,
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 1
-    assert "Packaging versions differ from pyproject.toml version" in result.stdout
-    assert "packaging/npm/package.json version: 0.1.0-alpha.3" in result.stdout
-
-
-def test_release_check_helper_detects_remote_duplicate_versions(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    release_checks = load_release_checks_module()
-
-    def duplicate_fetch(url: str) -> dict[str, object]:
-        if "pypi.org" in url:
-            return {"releases": {AUTHORED_VERSION: []}}
-        return {"versions": {}}
-
-    monkeypatch.setattr(release_checks, "fetch_registry_json", duplicate_fetch)
-    assert release_checks.check_remote(PACKAGE_NAME, AUTHORED_VERSION) == 1
-
-    def available_fetch(url: str) -> dict[str, object]:
-        if "pypi.org" in url:
-            return {"releases": {}}
-        return {"versions": {}}
-
-    monkeypatch.setattr(release_checks, "fetch_registry_json", available_fetch)
-    assert release_checks.check_remote(PACKAGE_NAME, AUTHORED_VERSION) == 0
-
-
-def test_release_check_helper_detects_registry_specific_duplicate_versions(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    release_checks = load_release_checks_module()
-
-    def duplicate_pypi_fetch(url: str) -> dict[str, object]:
-        if "pypi.org" in url:
-            return {"releases": {NORMALIZED_VERSION: []}}
-        return {"versions": {}}
-
-    monkeypatch.setattr(release_checks, "fetch_registry_json", duplicate_pypi_fetch)
-    assert release_checks.check_remote_pypi(PACKAGE_NAME, AUTHORED_VERSION) == 1
-    assert release_checks.check_remote_npm(PACKAGE_NAME, AUTHORED_VERSION) == 0
-
-    def duplicate_npm_fetch(url: str) -> dict[str, object]:
-        if "pypi.org" in url:
-            return {"releases": {}}
-        return {"versions": {AUTHORED_VERSION: {}}}
-
-    monkeypatch.setattr(release_checks, "fetch_registry_json", duplicate_npm_fetch)
-    assert release_checks.check_remote_pypi(PACKAGE_NAME, AUTHORED_VERSION) == 0
-    assert release_checks.check_remote_npm(PACKAGE_NAME, AUTHORED_VERSION) == 1
+    for command in ("prepare", "check", "publish-pypi", "publish-npm", "finalize"):
+        assert command in result.stdout
 
 
 def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     installer = read_text("install.sh")
     assert 'PACKAGE_NAME="crewplane"' in installer
     assert "CLI_NAME" not in installer
-    assert 'CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.0-alpha.2}"' in installer
+    assert (
+        f'CREWPLANE_VERSION="${{CREWPLANE_VERSION:-{AUTHORED_VERSION}}}"' in installer
+    )
     assert "CREWPLANE_INSTALL_FIND_LINKS" in installer
     assert "CREWPLANE_INSTALL_NO_INDEX" in installer
     assert "CREWPLANE_INSTALL_HOME" in installer
@@ -481,6 +214,7 @@ def test_npm_install_docs_explain_global_bin_path() -> None:
         assert "PATH" in content
         assert "command -v crewplane" in content
         assert "node" in content
+        assert "crewplane@alpha" not in content
 
 
 def test_public_first_run_docs_are_mock_first_and_provider_free() -> None:
@@ -671,6 +405,7 @@ def test_homebrew_formula_uses_normalized_python_artifact_and_virtualenv() -> No
     assert 'depends_on "python@3.13"' in formula
     assert 'depends_on "maturin" => :build' in formula
     assert 'depends_on "rust" => :build' in formula
+    assert 'branch: "master"' in formula
     assert 'def python3\n    "python3.13"\n  end' in formula
     assert "virtualenv_create(libexec, python3)" in formula
     assert "venv.pip_install build_resources.map" in formula

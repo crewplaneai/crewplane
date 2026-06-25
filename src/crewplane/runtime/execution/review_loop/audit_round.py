@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent.failures import InvocationFailureError
 
 from ..common import (
+    RuntimeEventContext,
+    emit_runtime_log,
     execution_console,
     resolve_prompt_with_output_budget_details,
     should_print_console,
@@ -48,7 +51,17 @@ async def execute_single_audit_round(
 
     for round_num in range(1, request.remediation_depth + 2):
         progress.last_round_num = round_num
-        await run_remediation_executor_round(request, progress, round_num)
+        try:
+            await run_remediation_executor_round(request, progress, round_num)
+        except InvocationFailureError as exc:
+            if recover_after_remediation_context_exhaustion(
+                request,
+                progress,
+                round_num,
+                exc,
+            ):
+                break
+            raise
 
         validation = validate_executor_outputs(progress.executor_outputs)
         if not validation.valid:
@@ -177,6 +190,59 @@ async def run_review_phase(
             reviewer_outputs
         ),
         current_executor_fingerprint=current_executor_fingerprint,
+    )
+
+
+def recover_after_remediation_context_exhaustion(
+    request: AuditRoundRequest,
+    progress: AuditRoundProgress,
+    round_num: int,
+    exc: InvocationFailureError,
+) -> bool:
+    latest_valid = progress.latest_valid_executor_outputs
+    if (
+        round_num == 1
+        or latest_valid is None
+        or exc.kind != "provider_session_context_exhausted"
+    ):
+        return False
+    discard_executor_workspace_lineage(
+        request.output,
+        request.stage,
+        {provider.task_id for provider in request.executors},
+        request.audit_round_num,
+        round_num,
+        "remediation_context_exhausted",
+    )
+    progress.executor_outputs = latest_valid
+    emit_remediation_context_exhaustion_warning(request, round_num, exc)
+    return True
+
+
+def emit_remediation_context_exhaustion_warning(
+    request: AuditRoundRequest,
+    round_num: int,
+    exc: InvocationFailureError,
+) -> None:
+    emit_runtime_log(
+        request.telemetry,
+        level="warning",
+        message=(
+            f"Sequential review loop for node '{request.stage.id}' stopped "
+            "remediation after provider session context exhaustion. Continuing "
+            "with the latest valid candidate."
+        ),
+        operation="review_loop_remediation_context_exhausted",
+        context=RuntimeEventContext(
+            node_id=request.stage.id,
+            audit_round_num=request.audit_round_num,
+            round_num=round_num,
+        ),
+        attributes={
+            "failure_kind": exc.kind,
+            "failure_phase": exc.phase,
+            "failure_source": exc.source,
+        },
     )
 
 

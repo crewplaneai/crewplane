@@ -13,6 +13,12 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent.failures import (
+    FailureKind,
+    FailurePhase,
+    InvocationFailureError,
+    InvocationFailureSummary,
+)
 from crewplane.runtime.execution import review_loop as review_loop_runtime
 from crewplane.runtime.execution.common import CompiledRuntimeContext
 from crewplane.runtime.execution.consensus import (
@@ -139,6 +145,42 @@ def _reviewer_artifact(node_dir: Path, major: str) -> ReviewerRoundArtifact:
         task_id="review_reviewer_0",
         evaluation=evaluate_review_output(output_file.read_text(encoding="utf-8")),
         output_file=output_file,
+    )
+
+
+def _write_lineage_state(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "status": "succeeded",
+                "workspace": {"lineage_producer": True},
+                "result": {
+                    "candidate_commit": "a" * 40,
+                    "result_commit": "b" * 40,
+                    "candidate_tree": "c" * 40,
+                    "result_tree": "d" * 40,
+                    "changed_path_count": 1,
+                },
+                "refs": {"result": "refs/crewplane/result"},
+                "bundle": {"path": "workspace-bundles/candidate.bundle"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _provider_failure(kind: FailureKind, phase: FailurePhase) -> InvocationFailureError:
+    return InvocationFailureError(
+        "simulated provider failure",
+        InvocationFailureSummary(
+            kind=kind,
+            phase=phase,
+            source="stdout_json",
+            message=f"simulated {kind}",
+            advice="test advice",
+            condensed=False,
+        ),
+        None,
     )
 
 
@@ -466,6 +508,166 @@ def test_no_progress_candidate_skips_second_review_round_and_tracks_accounting(
     assert result.latest_executor_outputs[0].content == candidate
 
 
+def test_remediation_context_exhaustion_keeps_latest_valid_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = _node()
+    node_dir = output.create_stage_dir(node.id)
+    candidate = "Candidate body"
+    review_calls = 0
+
+    async def fake_review(request):  # noqa: ARG001 - Test double callback signature.
+        nonlocal review_calls
+        review_calls += 1
+        return ReviewerRoundRunResult(
+            outputs=[_reviewer_artifact(node_dir, "- Fix the retry branch")],
+            drift_warning_count=0,
+        )
+
+    async def fail_executor(request):  # noqa: ARG001 - Test double callback signature.
+        raise _provider_failure(
+            "provider_session_context_exhausted",
+            "provider_session",
+        )
+
+    monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
+    monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fail_executor)
+    request = AuditRoundRequest(
+        runtime_context=_runtime_context(),
+        stage=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
+        reviewers=(provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),),
+        executor_prompt="Implement.",
+        reviewer_prompt_context="Review.",
+        audit_dir=node_dir,
+        remediation_depth=1,
+        initial_executor_outputs=[_executor_artifact(node_dir, candidate)],
+        audit_round_num=None,
+    )
+
+    result = asyncio.run(review_loop_rounds.execute_single_audit_round(request))
+
+    assert review_calls == 1
+    assert not result.consensus_reached
+    assert result.last_round_num == 2
+    assert result.latest_executor_outputs is not None
+    assert result.latest_executor_outputs[0].content == candidate
+
+
+def test_remediation_context_exhaustion_discards_recovered_executor_lineage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = _worktree_node()
+    node_dir = output.create_stage_dir(node.id)
+    candidate = "Candidate body"
+    state_paths = [
+        node_dir / "workspace-state-review.node-fast_executor_0-round2.json",
+        node_dir / "workspace-state-review.node-failed_executor_1-round2.json",
+    ]
+
+    async def fake_review(request):  # noqa: ARG001 - Test double callback signature.
+        return ReviewerRoundRunResult(
+            outputs=[_reviewer_artifact(node_dir, "- Fix the retry branch")],
+            drift_warning_count=0,
+        )
+
+    async def fail_executor(request):  # noqa: ARG001 - Test double callback signature.
+        for state_path in state_paths:
+            _write_lineage_state(state_path)
+        raise _provider_failure(
+            "provider_session_context_exhausted",
+            "provider_session",
+        )
+
+    monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
+    monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fail_executor)
+    request = AuditRoundRequest(
+        runtime_context=_runtime_context(),
+        stage=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        executors=(
+            provider("fast", ProviderRole.EXECUTOR, "fast_executor_0"),
+            provider("failed", ProviderRole.EXECUTOR, "failed_executor_1"),
+        ),
+        reviewers=(provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),),
+        executor_prompt="Implement.",
+        reviewer_prompt_context="Review.",
+        audit_dir=node_dir,
+        remediation_depth=1,
+        initial_executor_outputs=[_executor_artifact(node_dir, candidate)],
+        audit_round_num=None,
+    )
+
+    result = asyncio.run(review_loop_rounds.execute_single_audit_round(request))
+
+    assert not result.consensus_reached
+    assert result.latest_executor_outputs is not None
+    assert result.latest_executor_outputs[0].content == candidate
+    for state_path in state_paths:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state["workspace"]["lineage_producer"] is False
+        assert state["result"]["lineage_produced"] is False
+        assert state["result"]["lineage_discarded"] is True
+        assert (
+            state["result"]["lineage_discard_reason"] == "remediation_context_exhausted"
+        )
+        assert "refs" not in state
+        assert "bundle" not in state
+
+
+def test_remediation_non_context_invocation_failure_still_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = _node()
+    node_dir = output.create_stage_dir(node.id)
+
+    async def fake_review(request):  # noqa: ARG001 - Test double callback signature.
+        return ReviewerRoundRunResult(
+            outputs=[_reviewer_artifact(node_dir, "- Fix the retry branch")],
+            drift_warning_count=0,
+        )
+
+    async def fail_executor(request):  # noqa: ARG001 - Test double callback signature.
+        raise _provider_failure("quota_or_rate_limit", "provider_transport")
+
+    monkeypatch.setattr(review_loop_audit_round, "run_reviewer_round", fake_review)
+    monkeypatch.setattr(review_loop_audit_round, "run_executor_round", fail_executor)
+    request = AuditRoundRequest(
+        runtime_context=_runtime_context(),
+        stage=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
+        reviewers=(provider("review", ProviderRole.REVIEWER, "review_reviewer_0"),),
+        executor_prompt="Implement.",
+        reviewer_prompt_context="Review.",
+        audit_dir=node_dir,
+        remediation_depth=1,
+        initial_executor_outputs=[_executor_artifact(node_dir, "Candidate body")],
+        audit_round_num=None,
+    )
+
+    with pytest.raises(InvocationFailureError) as caught:
+        asyncio.run(review_loop_rounds.execute_single_audit_round(request))
+
+    assert caught.value.kind == "quota_or_rate_limit"
+
+
 def test_no_progress_candidate_discards_executor_workspace_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -483,24 +685,7 @@ def test_no_progress_candidate_discards_executor_workspace_lineage(
         )
 
     async def fake_executor(request):  # noqa: ARG001 - Test double callback signature.
-        state_path.write_text(
-            json.dumps(
-                {
-                    "status": "succeeded",
-                    "workspace": {"lineage_producer": True},
-                    "result": {
-                        "candidate_commit": "a" * 40,
-                        "result_commit": "b" * 40,
-                        "candidate_tree": "c" * 40,
-                        "result_tree": "d" * 40,
-                        "changed_path_count": 1,
-                    },
-                    "refs": {"result": "refs/crewplane/result"},
-                    "bundle": {"path": "workspace-bundles/candidate.bundle"},
-                }
-            ),
-            encoding="utf-8",
-        )
+        _write_lineage_state(state_path)
         return ExecutorRoundRunResult(
             outputs=[_executor_artifact(node_dir, candidate)],
             drift_warning_count=0,

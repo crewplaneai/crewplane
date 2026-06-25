@@ -32,7 +32,7 @@ class LockOwner(BaseModel):
     owner_token: str
     pid: int
     hostname: str
-    process_start_identity: str | None
+    process_start_identity: str | None = None
     acquired_at: str
     workflow_identity: str
     workflow_signature: str

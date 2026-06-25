@@ -10,7 +10,7 @@ class FakeProcessInspector:
     def __init__(
         self,
         pid: int,
-        start_identity: str,
+        start_identity: str | None,
         live: bool = False,
         live_checks: list[bool] | None = None,
     ) -> None:

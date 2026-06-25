@@ -91,13 +91,19 @@ async def run_provider_call_with_drift_guard(
                 f"{len(drift.warning_paths)} warning path(s), "
                 f"{len(drift.fatal_paths)} fatal path(s)"
             )
+        if drift.fatal_paths:
+            raise fatal_artifact_drift_error(request) from provider_error
         raise provider_error
     if drift.fatal_paths:
-        raise RuntimeError(
-            f"Invocation for node '{request.node.id}' task "
-            f"'{request.task_id}' modified fatal artifacts."
-        )
+        raise fatal_artifact_drift_error(request)
     return 1 if drift.warning_paths else 0
+
+
+def fatal_artifact_drift_error(request: DriftGuardCallRequest) -> RuntimeError:
+    return RuntimeError(
+        f"Invocation for node '{request.node.id}' task "
+        f"'{request.task_id}' modified fatal artifacts."
+    )
 
 
 def drift_guard_telemetry_context(

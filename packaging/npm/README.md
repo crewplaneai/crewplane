@@ -1,14 +1,14 @@
 # crewplane npm Wrapper
 
-This alpha npm package exposes Crewplane, a Markdown-native control plane for
+This npm package exposes Crewplane, a Markdown-native control plane for
 AI coding CLIs. It installs the Python `crewplane` package into a private
 virtual environment and provides a `crewplane` shim for npm and `npx` usage;
 both bins delegate to the same Python console command.
 
 ```bash
-npm install -g crewplane@alpha
+npm install -g crewplane
 crewplane --help
-npx crewplane@alpha --help
+npx crewplane --help
 ```
 
 Start with the mock workflow path:
@@ -49,7 +49,7 @@ For local maintainer smoke checks before publication:
 ```bash
 CREWPLANE_INSTALL_FIND_LINKS=/path/to/wheelhouse \
 CREWPLANE_INSTALL_NO_INDEX=1 \
-npm install -g ./crewplane-0.1.0-alpha.2.tgz
+npm install -g ./crewplane-0.1.0-alpha.3.tgz
 ```
 
 If npm lifecycle scripts are disabled, the private environment is not created.

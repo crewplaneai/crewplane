@@ -122,6 +122,6 @@ test-results/
 # Local runtime artifacts
 .serena/
 docs/maintainers/
-scripts/
+scripts/internal/
 !packaging/npm/scripts/
 !packaging/npm/scripts/**

@@ -25,9 +25,9 @@ crewplane --help
 ```bash
 pipx install crewplane
 python -m pip install crewplane
-curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/install.sh | sh
 brew tap crewplaneai/crewplane && brew install crewplane
-npm install -g crewplane@alpha
+npm install -g crewplane
 ```
 
 The install script targets macOS, WSL, and Ubuntu/Debian-like Linux

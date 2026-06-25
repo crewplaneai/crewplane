@@ -71,6 +71,28 @@ def test_acquire_update_and_release_same_context_lock(tmp_path) -> None:
     assert not lock.lock_dir.exists()
 
 
+def test_acquire_update_and_release_lock_without_process_start_identity(
+    tmp_path,
+) -> None:
+    lock = acquire_same_context_lock(
+        tmp_path,
+        WORKFLOW_NAME,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_SIGNATURE,
+        process_inspector=FakeProcessInspector(100, None),
+    )
+
+    lock.update_run("run", "workflow--run")
+    owner = json.loads(
+        (lock.lock_dir / LOCK_OWNER_FILENAME).read_text(encoding="utf-8")
+    )
+    assert owner["run_id"] == "run"
+
+    lock.release()
+
+    assert not lock.lock_dir.exists()
+
+
 def test_live_owner_fails_closed(tmp_path) -> None:
     lock = acquire_same_context_lock(
         tmp_path,

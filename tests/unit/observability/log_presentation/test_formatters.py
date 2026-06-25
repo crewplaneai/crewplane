@@ -301,6 +301,47 @@ def test_codex_json_lines_renders_nested_tool_details(tmp_path: Path) -> None:
     )
 
 
+def test_codex_json_lines_preserves_command_execution_output_lines(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "command": "nl -ba scripts/release/state.py | sed -n '940,942p'",
+                    "status": "completed",
+                    "exit_code": 0,
+                    "aggregated_output": (
+                        "940     expected = {\n"
+                        '941         "package_name": context.package_name,\n'
+                        "942     }"
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=5,
+        wall_time_now=0.0,
+    )
+
+    assert snapshot.lines == (
+        "command_execution completed: "
+        "command: nl -ba scripts/release/state.py | sed -n '940,942p' | "
+        "status: completed | exit_code: 0",
+        "aggregated_output: 940     expected = {",
+        '  941         "package_name": context.package_name,',
+        "  942     }",
+    )
+
+
 def test_codex_json_lines_renders_observed_aggregated_output_snippet(
     tmp_path: Path,
 ) -> None:

@@ -9,7 +9,7 @@
     <a href="https://github.com/crewplaneai/crewplane/blob/master/SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-b91c1c.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/CONTRIBUTING.md"><img alt="Contributing" src="https://img.shields.io/badge/contributing-guide-6b7280.svg"></a>
   </p>
-  <img src=".github/crewplane-splash.png" alt="Crewplane splash" width="80%">
+  <img src="https://raw.githubusercontent.com/crewplaneai/crewplane/master/.github/crewplane-splash.png" alt="Crewplane splash" width="80%">
 </div>
 
 ---
@@ -60,8 +60,8 @@ curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/instal
 # Homebrew
 brew tap crewplaneai/crewplane && brew install crewplane
 
-# npm alpha wrapper
-npm install -g crewplane@alpha
+# npm wrapper
+npm install -g crewplane
 ```
 
 For a local checkout:

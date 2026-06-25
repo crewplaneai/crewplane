@@ -506,3 +506,55 @@ def test_drift_is_checked_when_provider_call_fails(tmp_path: Path) -> None:
 
     notes = getattr(exc_info.value, "__notes__", [])
     assert any("artifact drift detected" in note for note in notes)
+
+
+def test_fatal_drift_after_provider_call_failure_raises_fatal_error(
+    tmp_path: Path,
+) -> None:
+    request, output, _node_dir = _request(tmp_path)
+
+    class MutatingFailingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,  # noqa: ARG002 - Required by protocol.
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            result_path = output.results_dir / "review.node-result.md"
+            result_path.parent.mkdir(parents=True, exist_ok=True)
+            result_path.write_text("mutated", encoding="utf-8")
+            raise RuntimeError("provider boom")
+
+    request = DriftGuardCallRequest(
+        runtime_context=request.runtime_context,
+        output=request.output,
+        node=request.node,
+        node_dir=request.node_dir,
+        invoker=MutatingFailingInvoker(),
+        telemetry=request.telemetry,
+        audit_round_num=request.audit_round_num,
+        round_num=request.round_num,
+        provider=request.provider,
+        task_id=request.task_id,
+        prompt=request.prompt,
+        output_file=request.output_file,
+        role_label=request.role_label,
+        findings_enabled=request.findings_enabled,
+        allowed_paths=request.allowed_paths,
+        display=request.display,
+    )
+
+    with pytest.raises(RuntimeError, match="fatal artifacts") as exc_info:
+        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert str(exc_info.value.__cause__) == "provider boom"
+    notes = getattr(exc_info.value.__cause__, "__notes__", [])
+    assert any("1 fatal path" in note for note in notes)

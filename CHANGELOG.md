@@ -4,7 +4,38 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
-- No unreleased changes yet.
+## [0.1.0-alpha.3] - 2026-06-24
+
+### Added
+
+- Added a state-aware release tool behind the existing Make targets, including
+  `release-prepare`, completed-release verification, partial publish recovery,
+  npm `latest` reconciliation, release manifests, and post-publish install
+  checks.
+- Added `crewplane init` guidance for switching from the mock quickstart to real
+  provider CLI workflows.
+
+### Changed
+
+- Release Make targets now delegate packaging, smoke, publish, and verification
+  behavior to the Python release tool.
+- Release metadata synchronization now updates npm package metadata, install
+  documentation, `uv.lock`, and Homebrew formula resource pins from the current
+  project version.
+- Public npm install examples now use the default `crewplane` package instead
+  of the alpha dist-tag.
+- Codex JSON log presentation now preserves multiline command execution output
+  as separate display lines.
+
+### Fixed
+
+- Sequential review-loop remediation now stops cleanly after provider session
+  context exhaustion when a previous valid candidate exists, discarding any
+  recovered executor workspace lineage and continuing with that candidate.
+- Fatal artifact drift is now reported as the primary error even when the
+  provider invocation also failed.
+- Resume locks can now load owner files that lack process start identity
+  metadata.
 
 ## [0.1.0-alpha.2] - 2026-06-24
 

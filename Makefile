@@ -1,11 +1,9 @@
 PYTHON ?= python
-WHEELHOUSE := $(CURDIR)/.release/wheelhouse
-NPM_PACK_DIR := $(CURDIR)/.release/npm
 PYPI_REPOSITORY ?= pypi
 TWINE_UPLOAD_ARGS ?=
-NPM_TAG ?= alpha
-NPM_LATEST_TAG ?= latest
 NPM_OTP ?=
+NPM_PUBLISH_OTP ?=
+NPM_DIST_TAG_OTP ?=
 NPM_PUBLISH_ARGS ?=
 HAVE_UV := $(shell if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2>&1; then echo 1; else echo 0; fi)
 PROJECT_NAME_CMD = $(PYTHON) -c 'import sys, tomllib; project = tomllib.load(open("pyproject.toml", "rb"))["project"]; name = project["name"]; scripts = list(project.get("scripts", {})); sys.exit(f"expected one [project.scripts] key matching project.name {name!r}, got {scripts!r}") if scripts != [name] else print(name)'
@@ -18,34 +16,25 @@ ifeq ($(HAVE_UV),1)
 INSTALL_CMD = uv sync --extra dev
 UNINSTALL_CMD = uv pip uninstall $(PACKAGE_NAME)
 RUN_PYTHON = uv run --extra dev python
-RUN_PIP = uv run --extra dev --with pip python -m pip
 RUN_PYTEST = uv run --extra dev python -m pytest -q
 RUN_RUFF = uv run --extra dev python -m ruff
 else
 INSTALL_CMD = $(PYTHON) -m pip install -e '.[dev]'
 UNINSTALL_CMD = $(PYTHON) -m pip uninstall $(PACKAGE_NAME)
 RUN_PYTHON = $(PYTHON)
-RUN_PIP = $(PYTHON) -m pip
 RUN_PYTEST = $(PYTHON) -m pytest -q
 RUN_RUFF = $(PYTHON) -m ruff
 endif
 
-PROJECT_VERSION_CMD = $(RUN_PYTHON) -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])'
-PROJECT_VERSION = $(shell $(PROJECT_VERSION_CMD))
-NORMALIZE_VERSION = $(RUN_PYTHON) -c 'from packaging.version import Version; print(Version("$(PROJECT_VERSION)"))'
-RELEASE_CHECKS = $(RUN_PYTHON) packaging/release_checks.py
-NPM_AUTH_ARGS = $(if $(NPM_OTP),--otp=$(NPM_OTP),) $(NPM_PUBLISH_ARGS)
+RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
 .PHONY: help setup uninstall test lint format format-check check clean \
 	package-build package-check package-wheelhouse changelog-check \
-		release-version-check release-remote-version-check \
-		release-pypi-version-check release-npm-version-check release-confirm \
-		install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
-		install-script-smoke npm-pack npm-smoke brew-smoke install-check \
-		release-check release-prereqs release-pypi release-npm \
-		release-npm-latest release
+	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
+	install-script-smoke npm-pack npm-smoke brew-smoke install-check \
+	release-prepare release-check release-confirm release-pypi release-npm release
 
-.NOTPARALLEL: release-check release
+.NOTPARALLEL: release-prepare release-check release
 
 help:
 	@printf '%s\n' \
@@ -66,25 +55,26 @@ help:
 		'  package-check      Build artifacts, run twine check, verify Homebrew sdist SHA' \
 		'  install-smoke      Exercise pip, uv tool, and pipx installs where available' \
 		'  install-check      Run package checks plus installer, npm, and Homebrew smokes' \
-		'  release-check      Check local metadata, both registries, tests, and packages' \
 		'' \
-		'Publishing:' \
-		'  release            Confirm version, run checks, publish PyPI, publish npm, set npm latest' \
-		'  release-pypi       Check PyPI availability and upload dist artifacts with twine' \
-		'  release-npm        Check npm availability, pack, publish wrapper, and set npm latest' \
-		'  release-npm-latest Set the npm latest dist-tag to the current version' \
-		'  release-prereqs    Require npm and npm authentication before npm publishing/tagging' \
+		'Normal release flow:' \
+		'  release-prepare    Sync generated metadata and prepare local release artifacts' \
+		'  release-check      Run pre-publish checks, or verify a completed release no-op' \
+		'  release            Confirm, check, publish PyPI, publish npm latest, and tag' \
+		'' \
+		'Partial completion:' \
+		'  release-pypi       Publish or verify prepared PyPI artifacts only' \
+		'  release-npm        Publish or verify the npm wrapper and reconcile npm latest' \
 		'' \
 		'Release variables:' \
 		'  Release version is read from pyproject.toml' \
 		'  PYPI_REPOSITORY    Twine repository name (default: pypi)' \
 		'  TWINE_UPLOAD_ARGS  Extra arguments passed to twine upload' \
-		'  NPM_TAG            npm publish dist-tag (default: alpha)' \
-		'  NPM_LATEST_TAG     npm dist-tag updated after publish (default: latest)' \
-		'  NPM_OTP            npm one-time password for publish/dist-tag operations' \
+		'  NPM_OTP            npm one-time password for one npm operation' \
+		'  NPM_PUBLISH_OTP    npm one-time password for npm publish in non-TTY mode' \
+		'  NPM_DIST_TAG_OTP   npm one-time password for npm dist-tag add in non-TTY mode' \
 		'  NPM_PUBLISH_ARGS   Extra arguments passed to npm publish and dist-tag' \
 		'' \
-		'Homebrew tap publishing is separate: regenerate pins from the canonical PyPI artifact, copy the formula into the tap, and validate it there.'
+		'Homebrew tap publishing is separate: copy the prepared formula into the tap, audit/test there, and push the tap update.'
 
 setup:
 	$(INSTALL_CMD)
@@ -96,362 +86,76 @@ test:
 	$(RUN_PYTEST)
 
 lint:
-	$(RUN_RUFF) check src tests
+	$(RUN_RUFF) check src tests scripts
 
 format:
-	$(RUN_RUFF) check --fix --select I src tests
-	$(RUN_RUFF) format src tests
+	$(RUN_RUFF) check --fix --select I src tests scripts
+	$(RUN_RUFF) format src tests scripts
 
 format-check:
-	$(RUN_RUFF) format --check src tests
+	$(RUN_RUFF) format --check src tests scripts
 
 check: lint format-check test
 
 package-build:
-	@set -eu; \
-	version="$(PROJECT_VERSION)"; \
-	echo "Building $(PACKAGE_NAME) $$version from pyproject.toml"; \
-	rm -rf dist build *.egg-info; \
-	$(RUN_PYTHON) -m build --sdist --wheel --outdir dist
+	$(RUN_RELEASE) package-build
 
-package-check: package-build
-	@set -eu; \
-	normalized="$$( $(NORMALIZE_VERSION) )"; \
-	sdist="$(CURDIR)/dist/$(PACKAGE_NAME)-$${normalized}.tar.gz"; \
-	wheel="$(CURDIR)/dist/$(PACKAGE_NAME)-$${normalized}-py3-none-any.whl"; \
-	test -f "$$sdist"; \
-	test -f "$$wheel"; \
-	$(RUN_PYTHON) -m twine check "$$sdist" "$$wheel"; \
-	formula_sha="$$(awk '/sha256 "/ { gsub(/"/, "", $$2); print $$2; exit }' packaging/homebrew/Formula/$(PACKAGE_NAME).rb)"; \
-	sdist_sha="$$(shasum -a 256 "$$sdist" | awk '{print $$1}')"; \
-	if [ "$$formula_sha" != "$$sdist_sha" ]; then \
-		echo "Homebrew formula source SHA $$formula_sha does not match $$sdist_sha"; \
-		exit 1; \
-	fi
+package-check:
+	$(RUN_RELEASE) package-check
 
-package-wheelhouse: package-build
-	@set -eu; \
-	normalized="$$( $(NORMALIZE_VERSION) )"; \
-	wheel="$(CURDIR)/dist/$(PACKAGE_NAME)-$${normalized}-py3-none-any.whl"; \
-	test -f "$$wheel"; \
-	rm -rf "$(WHEELHOUSE)"; \
-	mkdir -p "$(WHEELHOUSE)"; \
-	if command -v uv >/dev/null 2>&1; then \
-		mkdir -p "$(CURDIR)/.release"; \
-		uv export --frozen --no-dev --no-emit-project --no-hashes --format requirements.txt --output-file "$(CURDIR)/.release/runtime-requirements.txt" >/dev/null; \
-		$(RUN_PIP) download --dest "$(WHEELHOUSE)" -r "$(CURDIR)/.release/runtime-requirements.txt" "$$wheel"; \
-	else \
-		$(RUN_PIP) download --dest "$(WHEELHOUSE)" "$$wheel"; \
-	fi
+package-wheelhouse:
+	$(RUN_RELEASE) package-wheelhouse
 
 changelog-check:
-	@set -eu; \
-	version="$(PROJECT_VERSION)"; \
-	grep -Eq "^## \\[$$version\\]|^## $$version" CHANGELOG.md
+	$(RUN_RELEASE) changelog-check
 
-release-version-check:
-	$(RELEASE_CHECKS) local --version "$(PROJECT_VERSION)"
+install-smoke-pip:
+	$(RUN_RELEASE) install-smoke-pip
 
-release-remote-version-check:
-	$(RELEASE_CHECKS) remote --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"
+install-smoke-uv:
+	$(RUN_RELEASE) install-smoke-uv
 
-release-pypi-version-check:
-	$(RELEASE_CHECKS) remote-pypi --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"
+install-smoke-pipx:
+	$(RUN_RELEASE) install-smoke-pipx
 
-release-npm-version-check:
-	$(RELEASE_CHECKS) remote-npm --package-name "$(PACKAGE_NAME)" --version "$(PROJECT_VERSION)"
+install-smoke:
+	$(RUN_RELEASE) install-smoke
 
-release-confirm:
-	@set -eu; \
-	printf '%s' "Release $(PACKAGE_NAME) $(PROJECT_VERSION) to PyPI repository '$(PYPI_REPOSITORY)' and npm tag '$(NPM_TAG)'? [y/N] "; \
-	if ! read answer; then \
-		echo "No confirmation received; aborting."; \
-		exit 1; \
-	fi; \
-	case "$$answer" in \
-		[Yy]) ;; \
-		*) echo "Aborting release."; exit 1 ;; \
-	esac
-
-install-smoke-pip: package-wheelhouse
-	@set -eu; \
-	smoke_python="$$( $(RUN_PYTHON) -c 'import sys; print(sys.executable)' )"; \
-	tmp="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	if command -v uv >/dev/null 2>&1; then \
-		uv venv --seed --python "$$smoke_python" "$$tmp/venv" >/dev/null; \
-	else \
-		$(PYTHON) -m venv "$$tmp/venv"; \
-	fi; \
-	"$$tmp/venv/bin/python" -m pip install --no-index --find-links "$(WHEELHOUSE)" "$(PACKAGE_NAME)==$(PROJECT_VERSION)" >/dev/null; \
-	exe="$$tmp/venv/bin/$(PACKAGE_NAME)"; \
-	"$$exe" --help >/dev/null; \
-	project="$$tmp/project"; \
-	mkdir -p "$$project"; \
-	( cd "$$project" && "$$exe" init >/dev/null ); \
-	printf '%s\n' \
-		'version: "1.0"' \
-		'agents:' \
-		'  mock:' \
-		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
-		'    provider_kind: "generic"' \
-		'    prompt_transport: "stdin"' \
-		'    default_model: "mock"' \
-		'settings:' \
-		'  integrations:' \
-		'    invoker:' \
-		'      implementation: "mock"' \
-		'      options:' \
-		'        delay_seconds: 0' \
-		'        observation_delay_seconds: 0' \
-		'        output_mode: "lorem"' \
-		'    ui:' \
-		'      implementation: "none"' \
-		'      options: {}' \
-		'    artifacts:' \
-		'      implementation: "filesystem"' \
-		'      options:' \
-		'        log_cli_output: true' \
-		'        allowed_template_paths: []' \
-		> "$$project/.crewplane/config.yml"; \
-	( cd "$$project" && "$$exe" validate >/dev/null )
-
-install-smoke-uv: package-wheelhouse
-	@set -eu; \
-	if ! command -v uv >/dev/null 2>&1; then \
-		echo "Skipping install-smoke-uv: uv not found."; \
-		exit 0; \
-	fi; \
-	smoke_python="$$( $(RUN_PYTHON) -c 'import sys; print(sys.executable)' )"; \
-	tmp="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	HOME="$$tmp/home" uv tool install --force --python "$$smoke_python" --find-links "$(WHEELHOUSE)" --no-index "$(PACKAGE_NAME)==$(PROJECT_VERSION)" >/dev/null; \
-	tool_bin="$$(HOME="$$tmp/home" uv tool dir --bin)"; \
-	exe="$$tool_bin/$(PACKAGE_NAME)"; \
-	"$$exe" --help >/dev/null; \
-	project="$$tmp/project"; \
-	mkdir -p "$$project"; \
-	( cd "$$project" && "$$exe" init >/dev/null ); \
-	printf '%s\n' \
-		'version: "1.0"' \
-		'agents:' \
-		'  mock:' \
-		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
-		'    provider_kind: "generic"' \
-		'    prompt_transport: "stdin"' \
-		'    default_model: "mock"' \
-		'settings:' \
-		'  integrations:' \
-		'    invoker:' \
-		'      implementation: "mock"' \
-		'      options:' \
-		'        delay_seconds: 0' \
-		'        observation_delay_seconds: 0' \
-		'        output_mode: "lorem"' \
-		'    ui:' \
-		'      implementation: "none"' \
-		'      options: {}' \
-		'    artifacts:' \
-		'      implementation: "filesystem"' \
-		'      options:' \
-		'        log_cli_output: true' \
-		'        allowed_template_paths: []' \
-		> "$$project/.crewplane/config.yml"; \
-	( cd "$$project" && "$$exe" validate >/dev/null )
-
-install-smoke-pipx: package-wheelhouse
-	@set -eu; \
-	if ! command -v pipx >/dev/null 2>&1; then \
-		echo "Skipping install-smoke-pipx: pipx not found."; \
-		exit 0; \
-	fi; \
-	smoke_python="$$( $(RUN_PYTHON) -c 'import sys; print(sys.executable)' )"; \
-	tmp="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	PIPX_HOME="$$tmp/pipx-home" PIPX_BIN_DIR="$$tmp/bin" \
-		pipx install --force --python "$$smoke_python" --pip-args="--no-index --find-links $(WHEELHOUSE)" "$(PACKAGE_NAME)==$(PROJECT_VERSION)" >/dev/null; \
-	exe="$$tmp/bin/$(PACKAGE_NAME)"; \
-	"$$exe" --help >/dev/null; \
-	project="$$tmp/project"; \
-	mkdir -p "$$project"; \
-	( cd "$$project" && "$$exe" init >/dev/null ); \
-	printf '%s\n' \
-		'version: "1.0"' \
-		'agents:' \
-		'  mock:' \
-		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
-		'    provider_kind: "generic"' \
-		'    prompt_transport: "stdin"' \
-		'    default_model: "mock"' \
-		'settings:' \
-		'  integrations:' \
-		'    invoker:' \
-		'      implementation: "mock"' \
-		'      options:' \
-		'        delay_seconds: 0' \
-		'        observation_delay_seconds: 0' \
-		'        output_mode: "lorem"' \
-		'    ui:' \
-		'      implementation: "none"' \
-		'      options: {}' \
-		'    artifacts:' \
-		'      implementation: "filesystem"' \
-		'      options:' \
-		'        log_cli_output: true' \
-		'        allowed_template_paths: []' \
-		> "$$project/.crewplane/config.yml"; \
-	( cd "$$project" && "$$exe" validate >/dev/null )
-
-install-smoke: install-smoke-pip install-smoke-uv install-smoke-pipx
-
-install-script-smoke: package-wheelhouse
-	@set -eu; \
-	smoke_python="$$( $(RUN_PYTHON) -c 'import sys; print(sys.executable)' )"; \
-	tmp="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	CREWPLANE_VERSION="$(PROJECT_VERSION)" \
-	CREWPLANE_INSTALL_FIND_LINKS="$(WHEELHOUSE)" \
-	CREWPLANE_INSTALL_NO_INDEX=1 \
-	CREWPLANE_INSTALL_PYTHON="$$smoke_python" \
-	CREWPLANE_INSTALL_HOME="$$tmp/home" \
-	HOME="$$tmp/home" \
-		sh install.sh >/dev/null
+install-script-smoke:
+	$(RUN_RELEASE) install-script-smoke
 
 npm-pack:
-	@set -eu; \
-	if ! command -v npm >/dev/null 2>&1; then \
-		echo "Skipping npm-pack: npm not found."; \
-		exit 0; \
-	fi; \
-	project_version="$(PROJECT_VERSION)"; \
-	package_version="$$(node -p 'require("./packaging/npm/package.json").version')"; \
-	if [ "$$package_version" != "$$project_version" ]; then \
-		echo "packaging/npm/package.json version $$package_version differs from pyproject.toml version $$project_version."; \
-		exit 1; \
-	fi; \
-	mkdir -p "$(NPM_PACK_DIR)"; \
-	rm -f "$(NPM_PACK_DIR)"/$(PACKAGE_NAME)-*.tgz; \
-	npm pack ./packaging/npm --pack-destination "$(NPM_PACK_DIR)" >/dev/null
+	$(RUN_RELEASE) npm-pack
 
-npm-smoke: package-wheelhouse npm-pack
-	@set -eu; \
-	if ! command -v npm >/dev/null 2>&1; then \
-		echo "Skipping npm-smoke: npm not found."; \
-		exit 0; \
-	fi; \
-	smoke_python="$$( $(RUN_PYTHON) -c 'import sys; print(sys.executable)' )"; \
-	package="$$(ls -t "$(NPM_PACK_DIR)"/$(PACKAGE_NAME)-*.tgz 2>/dev/null | head -n 1)"; \
-	test -n "$$package"; \
-	tmp="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	mkdir -p "$$tmp/home" "$$tmp/npm-cache" "$$tmp/xdg-cache"; \
-	HOME="$$tmp/home"; \
-	NPM_CONFIG_CACHE="$$tmp/npm-cache"; \
-	XDG_CACHE_HOME="$$tmp/xdg-cache"; \
-	export HOME NPM_CONFIG_CACHE XDG_CACHE_HOME; \
-	CREWPLANE_VERSION="$(PROJECT_VERSION)" \
-	CREWPLANE_INSTALL_FIND_LINKS="$(WHEELHOUSE)" \
-	CREWPLANE_INSTALL_NO_INDEX=1 \
-	CREWPLANE_INSTALL_PYTHON="$$smoke_python" \
-		npm install -g "$$package" --prefix "$$tmp/prefix" --foreground-scripts >/dev/null; \
-	PATH="$$tmp/prefix/bin:$$PATH"; \
-	export PATH; \
-	command -v "$(PACKAGE_NAME)" >/dev/null; \
-	$(PACKAGE_NAME) --help >/dev/null; \
-	project="$$tmp/project"; \
-	mkdir -p "$$project"; \
-	( cd "$$project" && $(PACKAGE_NAME) init >/dev/null ); \
-	printf '%s\n' \
-		'version: "1.0"' \
-		'agents:' \
-		'  mock:' \
-		'    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]' \
-		'    provider_kind: "generic"' \
-		'    prompt_transport: "stdin"' \
-		'    default_model: "mock"' \
-		'settings:' \
-		'  integrations:' \
-		'    invoker:' \
-		'      implementation: "mock"' \
-		'      options:' \
-		'        delay_seconds: 0' \
-		'        observation_delay_seconds: 0' \
-		'        output_mode: "lorem"' \
-		'    ui:' \
-		'      implementation: "none"' \
-		'      options: {}' \
-		'    artifacts:' \
-		'      implementation: "filesystem"' \
-		'      options:' \
-		'        log_cli_output: true' \
-		'        allowed_template_paths: []' \
-		> "$$project/.crewplane/config.yml"; \
-	( cd "$$project" && $(PACKAGE_NAME) validate >/dev/null )
+npm-smoke:
+	$(RUN_RELEASE) npm-smoke
 
-brew-smoke: package-build
-	@set -eu; \
-	if ! command -v brew >/dev/null 2>&1; then \
-		echo "Skipping brew-smoke: brew not found."; \
-		exit 0; \
-	fi; \
-	if brew list --formula "$(PACKAGE_NAME)" >/dev/null 2>&1; then \
-		echo "Skipping brew-smoke: Homebrew formula $(PACKAGE_NAME) is already installed."; \
-		exit 0; \
-	fi; \
-	normalized="$$( $(NORMALIZE_VERSION) )"; \
-	sdist="$(CURDIR)/dist/$(PACKAGE_NAME)-$${normalized}.tar.gz"; \
-	sha="$$(shasum -a 256 "$$sdist" | awk '{print $$1}')"; \
-	tmp="$$(mktemp -d)"; \
-	trap 'status=$$?; if brew list --formula "$(PACKAGE_NAME)" >/dev/null 2>&1; then brew uninstall "$(PACKAGE_NAME)" >/dev/null 2>&1 || true; fi; rm -rf "$$tmp"; exit $$status' EXIT; \
-	sed \
-		-e "1,/url \"https:.*$(PACKAGE_NAME).*tar.gz\"/s|url \".*\"|url \"file://$$sdist\"|" \
-		-e "1,/sha256 \".*\"/s|sha256 \".*\"|sha256 \"$$sha\"|" \
-		packaging/homebrew/Formula/$(PACKAGE_NAME).rb > "$$tmp/$(PACKAGE_NAME).rb"; \
-	brew install --build-from-source "$$tmp/$(PACKAGE_NAME).rb"; \
-	brew test "$(PACKAGE_NAME)"
+brew-smoke:
+	$(RUN_RELEASE) brew-smoke
 
-install-check: package-check install-smoke install-script-smoke npm-pack npm-smoke brew-smoke
+install-check:
+	$(RUN_RELEASE) install-check
 
-release-check: release-version-check release-remote-version-check lint format-check test package-check install-check
+release-prepare:
+	$(RUN_RELEASE) prepare
 
-release-prereqs:
-	@set -eu; \
-	if ! command -v npm >/dev/null 2>&1; then \
-		echo "npm is required for make release."; \
-		exit 1; \
-	fi; \
-	if ! npm whoami >/dev/null 2>&1; then \
-		echo "npm authentication is required before make release."; \
-		exit 1; \
-	fi
+release-check:
+	$(RUN_RELEASE) check
 
-release-pypi: release-pypi-version-check package-check
-	@set -eu; \
-	normalized="$$( $(NORMALIZE_VERSION) )"; \
-	sdist="$(CURDIR)/dist/$(PACKAGE_NAME)-$${normalized}.tar.gz"; \
-	wheel="$(CURDIR)/dist/$(PACKAGE_NAME)-$${normalized}-py3-none-any.whl"; \
-	test -f "$$sdist"; \
-	test -f "$$wheel"; \
-	$(RUN_PYTHON) -m twine upload --repository "$(PYPI_REPOSITORY)" $(TWINE_UPLOAD_ARGS) "$$sdist" "$$wheel"
+release-confirm:
+	$(RUN_RELEASE) confirm
 
-release-npm: release-prereqs release-npm-version-check npm-pack
-	@set -eu; \
-	package="$$(ls -t "$(NPM_PACK_DIR)"/$(PACKAGE_NAME)-*.tgz 2>/dev/null | head -n 1)"; \
-	test -n "$$package"; \
-	npm publish "$$package" --tag "$(NPM_TAG)" $(NPM_AUTH_ARGS); \
-	if [ -n "$(NPM_LATEST_TAG)" ] && [ "$(NPM_LATEST_TAG)" != "$(NPM_TAG)" ]; then \
-		npm dist-tag add "$(PACKAGE_NAME)@$(PROJECT_VERSION)" "$(NPM_LATEST_TAG)" $(NPM_AUTH_ARGS); \
-	fi
+release-pypi:
+	$(RUN_RELEASE) publish-pypi --execute
 
-release-npm-latest: release-prereqs
-	@set -eu; \
-	npm dist-tag add "$(PACKAGE_NAME)@$(PROJECT_VERSION)" "$(NPM_LATEST_TAG)" $(NPM_AUTH_ARGS)
+release-npm:
+	$(RUN_RELEASE) publish-npm --execute
 
-release: release-confirm release-check changelog-check release-prereqs
+release: release-confirm release-check
 	$(MAKE) release-pypi
 	$(MAKE) release-npm
-	@echo "Released $(PACKAGE_NAME) $(PROJECT_VERSION) to PyPI repository '$(PYPI_REPOSITORY)', npm tag '$(NPM_TAG)', and npm latest tag '$(NPM_LATEST_TAG)'."
+	$(RUN_RELEASE) finalize --execute
 
 clean:
-	rm -rf .pytest_cache .ruff_cache .mypy_cache build dist *.egg-info .release
+	rm -rf .pytest_cache .ruff_cache .mypy_cache build dist *.egg-info .release .release-manifests
 	find . -type d -name '__pycache__' -prune -exec rm -rf {} +
