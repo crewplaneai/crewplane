@@ -229,8 +229,9 @@ def init() -> None:
     console.print("  Check which provider CLIs are already available:")
     console.print("  [cyan]which claude codex gemini copilot[/]")
     console.print(
-        "  Enable matching agents in [cyan].crewplane/config.yml[/] and set "
-        '[cyan]settings.integrations.invoker.implementation: "cli"[/].'
+        "  Enable matching agents in [cyan].crewplane/config.yml[/], set "
+        '[cyan]settings.integrations.invoker.implementation: "cli"[/], and set '
+        "[cyan]settings.integrations.invoker.options: {}[/]."
     )
     console.print(
         "  Use [cyan].crewplane/workflows/example-templates/[/] as starting points "

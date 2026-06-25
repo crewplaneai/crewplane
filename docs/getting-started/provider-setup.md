@@ -20,7 +20,7 @@ agents:
   codex:
     cli_cmd: ["codex", "exec"]
     provider_kind: "codex"
-    default_model: "gpt-5.4"
+    default_model: "gpt-5.5"
     prompt_transport: "stdin"
     prompt_transport_arg: "-"
     extra_args:
@@ -53,7 +53,9 @@ settings:
 ```
 
 For real providers, uncomment the agent entries you need, adjust command flags
-for your local provider setup, and switch the invoker to `cli`:
+for your local provider setup, and switch the invoker to `cli`. The `cli`
+invoker does not accept the generated mock options, so replace the whole
+generated mock `options:` block with `options: {}`:
 
 ```yaml
 settings:
@@ -95,7 +97,7 @@ default. A workflow provider object can override the model for one node:
 ```yaml
 providers:
   - provider: codex
-    model: gpt-5.4
+    model: gpt-5.5
 ```
 
 When a model is supplied, `model_arg` controls the CLI flag used to pass it for

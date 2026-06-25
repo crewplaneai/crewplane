@@ -279,7 +279,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["./copilot"],
                 provider_kind="copilot",
-                default_model="claude-sonnet-4.5",
+                default_model="claude-sonnet-4.6",
                 extra_args=[
                     "--silent",
                     "--no-ask-user",
@@ -288,7 +288,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             )
             await invoke_agent_with_runner(
                 config=config,
-                model="claude-sonnet-4.5",
+                model="claude-sonnet-4.6",
                 prompt="review the repository",
                 output_file=output_file,
                 cwd=output_file.parent,
@@ -303,7 +303,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 [
                     "./copilot",
                     "--model",
-                    "claude-sonnet-4.5",
+                    "claude-sonnet-4.6",
                     "--silent",
                     "--no-ask-user",
                     "--allow-tool=write,shell(git:*)",
@@ -316,7 +316,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         config = AgentConfig(
             cli_cmd=["copilot"],
             provider_kind="copilot",
-            default_model="claude-sonnet-4.5",
+            default_model="claude-sonnet-4.6",
         )
 
         quota = classify_quota(
@@ -344,7 +344,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 config=AgentConfig(
                     cli_cmd=["copilot"],
                     provider_kind="copilot",
-                    default_model="claude-sonnet-4.5",
+                    default_model="claude-sonnet-4.6",
                 ),
                 result=CommandResult(
                     returncode=0,
@@ -366,7 +366,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         config = AgentConfig(
             cli_cmd=["copilot"],
             provider_kind="copilot",
-            default_model="claude-sonnet-4.5",
+            default_model="claude-sonnet-4.6",
             quota_reached_on_contains=["rate limit", "quota", "too many requests"],
         )
 
@@ -394,7 +394,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         config = AgentConfig(
             cli_cmd=["copilot"],
             provider_kind="copilot",
-            default_model="claude-sonnet-4.5",
+            default_model="claude-sonnet-4.6",
             quota_reached_on_contains=["rate limit", "quota", "too many requests"],
         )
 

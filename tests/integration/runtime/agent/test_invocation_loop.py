@@ -347,7 +347,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
             )
@@ -355,7 +355,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await invoke_agent_with_runner(
                     config=config,
-                    model="gpt-5.4",
+                    model="gpt-5.5",
                     prompt="prompt",
                     output_file=output_file,
                     cwd=tmp_path,
@@ -451,7 +451,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 max_retries=1,
@@ -468,7 +468,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await invoke_agent_with_runner(
                     config=config,
-                    model="gpt-5.4",
+                    model="gpt-5.5",
                     prompt="prompt",
                     output_file=output_file,
                     cwd=tmp_path,
@@ -520,7 +520,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 max_retries=1,
@@ -534,7 +534,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await invoke_agent_with_runner(
                     config=config,
-                    model="gpt-5.4",
+                    model="gpt-5.5",
                     prompt="prompt",
                     output_file=output_file,
                     cwd=tmp_path,
@@ -679,7 +679,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 max_retries=1,
@@ -689,7 +689,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
 
             await invoke_agent_with_runner(
                 config=config,
-                model="gpt-5.4",
+                model="gpt-5.5",
                 prompt="",
                 output_file=output_file,
                 cwd=Path(tmp_dir),

@@ -185,14 +185,14 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 pricing={"input": 1.5, "output": 6.0},
             )
             await invoke_agent_with_runner(
                 config=config,
-                model="gpt-5.4",
+                model="gpt-5.5",
                 prompt="review the repository",
                 output_file=output_file,
                 cwd=output_file.parent,
@@ -254,7 +254,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=[str(fake_codex), "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
             )
@@ -271,7 +271,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(
                     invoke_agent(
                         config=config,
-                        model="gpt-5.4",
+                        model="gpt-5.5",
                         prompt="review the repository",
                         output_file=output_file,
                         cwd=output_file.parent,
@@ -496,7 +496,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 quota_reached_retry_delay_seconds=0,
@@ -508,7 +508,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await invoke_agent_with_runner(
                     config=config,
-                    model="gpt-5.4",
+                    model="gpt-5.5",
                     prompt="review the repository",
                     output_file=output_file,
                     cwd=output_file.parent,
@@ -555,7 +555,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 max_retries=1,
@@ -569,7 +569,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await invoke_agent_with_runner(
                     config=config,
-                    model="gpt-5.4",
+                    model="gpt-5.5",
                     prompt="review the repository",
                     output_file=output_file,
                     cwd=output_file.parent,
@@ -640,14 +640,14 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 pricing={"input": 1.5, "output": 6.0},
             )
             await invoke_agent_with_runner(
                 config=config,
-                model="gpt-5.4",
+                model="gpt-5.5",
                 prompt="review the repository",
                 output_file=output_file,
                 cwd=output_file.parent,
@@ -700,7 +700,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["./codex", "exec"],
                 provider_kind="codex",
-                default_model="gpt-5.4",
+                default_model="gpt-5.5",
                 prompt_transport="stdin",
                 prompt_transport_arg="-",
                 pricing={"input": 1.5, "output": 6.0},
@@ -710,7 +710,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await invoke_agent_with_runner(
                     config=config,
-                    model="gpt-5.4",
+                    model="gpt-5.5",
                     prompt="review the repository",
                     output_file=output_file,
                     cwd=output_file.parent,

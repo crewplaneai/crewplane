@@ -66,6 +66,10 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                 'settings.integrations.invoker.implementation: "cli"',
                 output_text,
             )
+            self.assertIn(
+                "settings.integrations.invoker.options: {}",
+                output_text,
+            )
             self.assertIn(".crewplane/workflows/example-templates/", output_text)
             self.assertIn(
                 "crewplane run --tasks "

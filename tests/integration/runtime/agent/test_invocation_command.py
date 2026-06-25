@@ -31,10 +31,10 @@ def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:
         AgentConfig(
             cli_cmd=["codex", "exec"],
             provider_kind="codex",
-            default_model="gpt-5.4",
+            default_model="gpt-5.5",
             prompt_transport_arg="-",
         ),
-        "gpt-5.4",
+        "gpt-5.5",
         "prompt",
         Path("output.txt"),
     )

@@ -111,7 +111,8 @@ class CliInvokerAdapter:
         if options:
             raise ValueError(
                 "cli invoker implementation does not support options; "
-                f"got: {sorted(options)}"
+                "set settings.integrations.invoker.options: {} when using "
+                f'implementation: "cli"; got: {sorted(options)}'
             )
         return CanonicalIntegrationConfig(
             implementation=implementation,

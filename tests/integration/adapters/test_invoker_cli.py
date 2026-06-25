@@ -31,7 +31,7 @@ class CliInvokerAdapterTests(unittest.TestCase):
     def test_create_invoker_rejects_unknown_options(self) -> None:
         adapter = CliInvokerAdapter()
         config = Config(version=SCHEMA_VERSION, agents={})
-        with self.assertRaisesRegex(ValueError, "does not support options"):
+        with self.assertRaisesRegex(ValueError, "options: \\{}"):
             adapter.create_invoker(config=config, options={"x": 1})
 
     def test_workspace_capabilities_declare_runtime_command_runner(self) -> None:

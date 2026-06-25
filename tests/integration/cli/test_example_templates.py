@@ -170,6 +170,13 @@ class ExampleTemplateTests(unittest.TestCase):
         assert isinstance(agents, dict)
 
         self.assertEqual(list(agents), ["mock"])
+        self.assertIn('# implementation: "cli"', rendered)
+        self.assertIn("# options: {}", rendered)
+        self.assertIn("Mock invoker for the first provider-free run", rendered)
+        self.assertIn(
+            "commented out so the first run stays mock-only",
+            rendered,
+        )
         for provider_name in ("claude", "codex", "gemini", "copilot", "kilo"):
             self.assertIn(f"# {provider_name}:", rendered)
             self.assertNotIn(f"\n  {provider_name}:", rendered)

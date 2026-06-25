@@ -8,7 +8,8 @@ agents:
     default_model: "mock"
 
   # Real provider examples are commented out so the first run stays mock-only.
-  # Uncomment the agents you need and switch settings.integrations.invoker to "cli".
+  # Uncomment the agents you need, then switch the invoker block near the bottom
+  # of this file from mock to cli.
   #
   # Spend observability notes:
   # - CLI capture, provider token reports, visible lower-bound estimates, and configured
@@ -50,7 +51,7 @@ agents:
   #   provider_kind: "codex"
   #   prompt_transport: "stdin"
   #   prompt_transport_arg: "-"
-  #   default_model: "gpt-5.4"
+  #   default_model: "gpt-5.5"
   #   # pricing:
   #   #   input: 1.5
   #   #   cached_input: 0.375
@@ -97,7 +98,7 @@ agents:
   #   provider_kind: "copilot"
   #   prompt_transport: "stdin"
   #   # Pick a model listed by `copilot /model`; availability varies by plan.
-  #   default_model: "claude-sonnet-4.5"
+  #   default_model: "claude-sonnet-4.6"
   #   # Visible-estimate-only in spend observability v2.
   #   # pricing:
   #   #   total: 2.0
@@ -179,6 +180,15 @@ settings:
     fail_threshold_chars: null # optional fail-fast guard for artifact and review-loop context injections
   integrations:
     invoker:
+      # First run: deterministic mock output, no provider CLI required.
+      #
+      # Real provider runs:
+      # implementation: "cli"
+      # options: {}
+      #
+      # Mock invoker for the first provider-free run. Comment out this
+      # implementation/options block and uncomment the real provider lines above
+      # when you are ready to run external provider CLIs.
       implementation: "mock"
       options:
         output_mode: "lorem"

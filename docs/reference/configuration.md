@@ -122,6 +122,11 @@ clone before provider invocation.
 Runs configured `agents` commands against real provider CLIs instead of the
 deterministic `mock` invoker. It has no options.
 
+When switching the generated config from `mock` to `cli`, replace the generated
+mock invoker `options:` block with `options: {}`. Leaving mock options such as
+`output_mode`, `seed`, or delay settings under the `cli` invoker is a config
+error.
+
 Real provider runs start the external commands configured in
 `.crewplane/config.yml`. Those tools run with their own filesystem, network,
 credential, approval, and sandbox settings. Crewplane coordinates them and
