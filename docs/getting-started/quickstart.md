@@ -1,8 +1,10 @@
 # Quickstart
 
-Checkout this first real run demo with codex:
+Watch the first real run demo with Codex:
 
-<video controls src="../../.github/first_real_run.mp4" title="first run demo with codex"></video>
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/01ff3e39-7626-4896-bd18-358f7a15cfcd" controls width="80%" title="First real run demo with Codex"></video>
+</div>
 
 Run these commands from the project where you want Crewplane to create local
 workflow artifacts:

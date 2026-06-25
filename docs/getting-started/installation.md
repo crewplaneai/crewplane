@@ -2,9 +2,11 @@
 
 Install the `crewplane` package. It provides the `crewplane` command.
 
-Checkout this installation walkthrough:
+Watch the installation walkthrough:
 
-<video controls src="../../.github/installation.mp4" title="Installation walkthrough"></video>
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/50741c4d-6206-4434-a339-8ab537ea0134" controls width="80%" title="Installation walkthrough"></video>
+</div>
 
 ## Requirements
 

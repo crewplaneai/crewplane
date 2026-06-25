@@ -64,7 +64,7 @@ Watch the installation flow if you want to see the command-line setup before
 running it locally:
 
 <div align="center">
-  <video src="https://github.com/crewplaneai/crewplane/raw/master/.github/installation.mp4" controls width="80%" title="Crewplane installation walkthrough"></video>
+  <video src="https://github.com/user-attachments/assets/50741c4d-6206-4434-a339-8ab537ea0134" controls width="80%" title="Crewplane installation walkthrough"></video>
 </div>
 
 > ⚠️ **Note:** Provider CLIs are installed and authenticated separately. Crewplane does not install provider CLIs, does not manage provider credentials, and does not sandbox provider CLI execution.
@@ -134,7 +134,7 @@ provider run:
 
 <div align="center">
   <p><strong>First real provider run</strong></p>
-  <video src="https://github.com/crewplaneai/crewplane/raw/master/.github/first_real_run.mp4" controls width="80%" title="First real provider run walkthrough"></video>
+  <video src="https://github.com/user-attachments/assets/01ff3e39-7626-4896-bd18-358f7a15cfcd" controls width="80%" title="First real provider run walkthrough"></video>
 </div>
 
 Use [provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
