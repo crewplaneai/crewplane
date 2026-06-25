@@ -1,96 +1,126 @@
 # Installation
 
-The public package name is `crewplane`. The installed console command is
-`crewplane`.
+Install the `crewplane` package. It provides the `crewplane` command.
 
-Crewplane requires Python 3.13 or newer. Provider CLIs are separate tools; install
-and authenticate them outside Crewplane when you are ready for real provider
-runs. They are not required for the mock quickstart.
+Checkout this installation walkthrough:
 
-## Recommended Install
+<video controls src="../../.github/installation.mp4" title="Installation walkthrough"></video>
 
-Use `uv tool` for an isolated command-line install:
+## Requirements
+
+- Use Python 3.13 or newer for `uv` and `pip` installs.
+- Use Node.js 18 or newer for the npm wrapper.
+- Install `tmux` if you want to use Crewplane's compact dashboard. The mock
+  quickstart uses `--no-live` and does not require `tmux`.
+- Provider CLIs are not required for installation or for the mock quickstart.
+  Install and authenticate provider CLIs later when you are ready for real
+  provider runs.
+
+**Choose one of the following methods for installation:**
+
+### uv
 
 ```bash
 uv tool install crewplane
 crewplane --help
 ```
 
-`crewplane --help` confirms the command is installed. For the first run, use the
-[quickstart](quickstart.md): `crewplane init`, `crewplane validate`, then
-`crewplane run --no-live`.
+The install succeeded if `crewplane --help` prints command help.
 
-## Other Install Methods
+### pip
+
+Use `pip` inside an activated virtual environment:
 
 ```bash
-pipx install crewplane
+python3.13 -m venv .venv
+. .venv/bin/activate
 python -m pip install crewplane
-curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/install.sh | sh
-brew tap crewplaneai/crewplane && brew install crewplane
-npm install -g crewplane
+crewplane --help
 ```
 
-The install script targets macOS, WSL, and Ubuntu/Debian-like Linux
-environments. The npm wrapper requires Node.js 18 or newer and does not support
-native Windows; use WSL on Windows.
+### npm
 
-For npm installs, the executable shims are written under
-`$(npm config get prefix)/bin`. If npm reports a successful install but your
-shell cannot find `crewplane`, add that directory to `PATH` and confirm the
-Node runtime is still available:
+```bash
+npm install -g crewplane
+crewplane --help
+```
+
+> ⚠️ **Note:**  The npm wrapper does not support native Windows. Use WSL on Windows.
+
+<details>
+<summary>npm PATH troubleshooting</summary>
+
+Global npm installs create shims under `$(npm config get prefix)/bin`. If npm
+reports a successful install but your shell cannot find `crewplane`, add that
+directory to `PATH` and confirm Node.js is still available:
 
 ```bash
 npm_prefix="$(npm config get prefix)"
 export PATH="$npm_prefix/bin:$PATH"
 command -v node
-command -v crewplane
+crewplane --help
 ```
 
-For a local checkout:
+</details>
 
-```bash
-git clone https://github.com/crewplaneai/crewplane.git
-cd crewplane
-python -m pip install .
-```
+<br>
 
 For contributor setup, use the [development guide](../../DEVELOPMENT.md).
 
+## First Run
+
+After installation, run the mock quickstart from the project where you want
+Crewplane to create `.crewplane/`:
+
+```bash
+crewplane init
+crewplane validate
+crewplane run --no-live
+```
+
+The mock quickstart does not require provider CLIs, API keys, provider
+accounts, config edits, or `tmux`. Continue with the [quickstart](quickstart.md)
+for the full first-run walkthrough.
+
+## Compact Dashboard
+
+Crewplane can show a compact dashboard during live runs. Install `tmux`, then
+omit `--no-live`:
+
+```bash
+crewplane run
+```
+
+If `tmux` is missing, Crewplane warns and continues without the dashboard.
+
 ## Update
+
+Use the update command for the install method you chose:
 
 ```bash
 uv tool upgrade crewplane
-pipx upgrade crewplane
 python -m pip install --upgrade crewplane
-```
-
-For a local editable checkout:
-
-```bash
-git pull
-python -m pip install -e '.[dev]'
+npm update -g crewplane
 ```
 
 ## Uninstall
 
-Use the matching package manager:
+Use the uninstall command for the install method you chose:
 
 ```bash
 uv tool uninstall crewplane
-pipx uninstall crewplane
 python -m pip uninstall crewplane
 npm uninstall -g crewplane
-brew uninstall crewplane
 ```
 
 ## Provider CLIs
 
-Crewplane does not install provider CLIs, does not manage provider credentials,
-and does not sandbox provider CLI execution. Install the tools you plan to
-reference in `.crewplane/config.yml`, then confirm they work directly from your
-shell.
+Crewplane does not install provider CLIs, manage provider credentials, or
+sandbox provider CLI execution. Install each provider CLI outside Crewplane,
+authenticate it directly, then confirm it works from your shell before adding
+it to `.crewplane/config.yml`.
 
-Common examples:
+Common checks:
 
 ```bash
 claude --version

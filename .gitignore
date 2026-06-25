@@ -113,7 +113,6 @@ test-results/
 # ---- Generated demos / recordings (commit only curated assets) ----
 *.cast
 *.webm
-*.mp4
 
 # ---- Mac / Linux shell history or misc local files ----
 .history/

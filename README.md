@@ -34,16 +34,7 @@ No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
 
 > *"Crewplane doesn't try to understand your AI tools. It just gives them a shared workspace and gets out of the way."*
 
-> ⚠️ **Security Note:** `{{file:path}}` templates are restricted to the project root by default. Use `settings.integrations.artifacts.options.allowed_template_paths` for explicit external-file allowlisting.
-
 ## Installation
-
-Recommended isolated install:
-
-```bash
-uv tool install crewplane
-crewplane --help
-```
 
 Crewplane can also be installed with the following supported methods:
 
@@ -54,14 +45,11 @@ pipx install crewplane
 # pip
 python -m pip install crewplane
 
-# install script for macOS and Linux
-curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/install.sh | sh
-
-# Homebrew
-brew tap crewplaneai/crewplane && brew install crewplane
-
 # npm wrapper
 npm install -g crewplane
+
+# install script for macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/install.sh | sh
 ```
 
 For a local checkout:
@@ -71,6 +59,13 @@ git clone https://github.com/crewplaneai/crewplane.git
 cd crewplane
 python -m pip install .
 ```
+
+Watch the installation flow if you want to see the command-line setup before
+running it locally:
+
+<div align="center">
+  <video src="https://github.com/crewplaneai/crewplane/raw/master/.github/installation.mp4" controls width="80%" title="Crewplane installation walkthrough"></video>
+</div>
 
 > ⚠️ **Note:** Provider CLIs are installed and authenticated separately. Crewplane does not install provider CLIs, does not manage provider credentials, and does not sandbox provider CLI execution.
 
@@ -132,6 +127,19 @@ Review the current repository and report the highest-risk issues.
 Full workflow authoring docs are in the
 [workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/workflow-syntax.md).
 
+## First Real Run
+
+After the mock path works, this walkthrough shows the shape of a first real
+provider run:
+
+<div align="center">
+  <p><strong>First real provider run</strong></p>
+  <video src="https://github.com/crewplaneai/crewplane/raw/master/.github/first_real_run.mp4" controls width="80%" title="First real provider run walkthrough"></video>
+</div>
+
+Use [provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
+for the complete real-provider configuration path.
+
 ## Safety Boundary
 
 Crewplane coordinates provider CLIs; it is not a security sandbox. Provider CLIs
@@ -142,9 +150,7 @@ Experimental workspace isolation can move selected provider source-tree work
 into Git-backed worktrees or writable snapshots, but it is still source-tree
 isolation only. It does not sandbox provider execution.
 
-`{{file:path}}` template references are bounded to the project root by default.
-External files must be explicitly allowlisted with
-`settings.integrations.artifacts.options.allowed_template_paths`.
+> ⚠️ **Security Note:** `{{file:path}}` templates are restricted to the project root by default. Use `settings.integrations.artifacts.options.allowed_template_paths` for explicit external-file allowlisting.
 
 ## Where Next
 
