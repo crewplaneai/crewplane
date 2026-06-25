@@ -63,6 +63,9 @@ publishes PyPI first, publishes npm with the `latest` dist-tag, reconciles npm
 `latest`, and creates/pushes the annotated Git tag after both registries verify.
 If a release is interrupted after only one registry is updated, fix the issue and
 run `make release-pypi` or `make release-npm` to complete the missing side. In
+that registry-recovery path, `make release` and the publish targets allow local
+worktree and branch state to differ while still verifying generated metadata,
+release-manifest artifacts, registry artifacts, and tag conflicts. In
 non-TTY npm two-factor flows, use `NPM_PUBLISH_OTP` and `NPM_DIST_TAG_OTP` so
 `npm publish` and `npm dist-tag add` each receive a fresh OTP. Homebrew tap
 publishing is still a separate maintainer step: copy the prepared formula into

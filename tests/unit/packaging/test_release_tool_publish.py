@@ -15,6 +15,8 @@ from scripts.release import publish, state
 from test_release_tool_fixtures import (
     FakeRunner,
     constant,
+    matching_npm,
+    matching_pypi,
     no_op,
     release_state_fixture,
     write_manifest,
@@ -91,7 +93,7 @@ def test_registry_recheck_blocks_changed_pypi_artifact(
     monkeypatch.setattr(publish, "read_manifest", constant(manifest))
     monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
     monkeypatch.setattr(publish, "require_pypi_auth", lambda: None)
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", constant(git))
+    monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
     changed = state.PypiRelease(
         True,
         context.version.python,
@@ -121,7 +123,7 @@ def test_publish_pypi_blocks_mismatched_npm_artifact(
     monkeypatch.setattr(publish, "read_manifest", constant(manifest))
     monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
     monkeypatch.setattr(publish, "require_pypi_auth", lambda: None)
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", constant(git))
+    monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
     changed_npm = state.NpmRelease(
         True,
         context.version.npm,
@@ -151,7 +153,7 @@ def test_publish_npm_blocks_mismatched_pypi_artifact(
     monkeypatch.setattr(publish, "read_manifest", constant(manifest))
     monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
     monkeypatch.setattr(publish, "require_npm_auth", lambda: None)
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", constant(git))
+    monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
     changed_pypi = state.PypiRelease(
         True,
         context.version.python,
@@ -189,7 +191,7 @@ def test_publish_pypi_rehashes_local_artifacts_before_upload(
     monkeypatch.setattr(publish, "read_manifest", constant(manifest))
     monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
     monkeypatch.setattr(publish, "require_pypi_auth", lambda: None)
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", constant(git))
+    monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
     monkeypatch.setattr(
         publish,
         "query_pypi_release",
@@ -220,7 +222,7 @@ def test_publish_npm_rehashes_local_tarball_before_upload(
     monkeypatch.setattr(publish, "read_manifest", constant(manifest))
     monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
     monkeypatch.setattr(publish, "require_npm_auth", lambda: None)
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", constant(git))
+    monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
     monkeypatch.setattr(
         publish,
         "query_pypi_release",
@@ -237,6 +239,101 @@ def test_publish_npm_rehashes_local_tarball_before_upload(
         publish.publish_npm(tmp_path, runner, execute=True)
 
     assert runner.commands == []
+
+
+def test_publish_pypi_retries_registry_visibility_after_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    context, manifest, _formula, git = release_state_fixture(tmp_path)
+    write_manifest(tmp_path, manifest)
+    pypi_responses = [
+        state.PypiRelease(False, "", {}),
+        state.PypiRelease(False, "", {}),
+        matching_pypi(context, manifest),
+    ]
+    sleeps: list[int] = []
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
+    monkeypatch.setattr(publish, "require_pypi_auth", lambda: None)
+    monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
+    monkeypatch.setattr(publish, "fail_if_local_artifacts_stale", no_op)
+    monkeypatch.setattr(publish.smoke, "post_publish_pypi_check", no_op)
+    monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(state.NpmRelease(False, "", "", "", "", "", "", "", "")),
+    )
+
+    def query_pypi(context_arg: state.ReleaseContext) -> state.PypiRelease:
+        del context_arg
+        return pypi_responses.pop(0)
+
+    monkeypatch.setattr(publish, "query_pypi_release", query_pypi)
+
+    assert publish.publish_pypi(tmp_path, FakeRunner(), execute=True) == 0
+    assert sleeps == [1]
+    assert not pypi_responses
+    assert "PyPI registry verification passed after 1 retry." in capsys.readouterr().out
+
+
+def test_publish_npm_retries_registry_visibility_after_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    context, manifest, _formula, git = release_state_fixture(tmp_path)
+    write_manifest(tmp_path, manifest)
+    npm_responses = [
+        state.NpmRelease(False, "", "", "", "", "", "", "", ""),
+        state.NpmRelease(False, "", "", "", "", "", "", "", ""),
+        matching_npm(context, manifest, latest=context.version.npm),
+    ]
+    sleeps: list[int] = []
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
+    monkeypatch.setattr(publish, "require_npm_auth", lambda: None)
+    monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
+    monkeypatch.setattr(publish, "fail_if_local_artifacts_stale", no_op)
+    monkeypatch.setattr(publish.smoke, "post_publish_npm_check", no_op)
+    monkeypatch.setattr(publish, "resolve_npm_otp", constant(publish.NpmOtp("", "")))
+    monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(
+        publish,
+        "query_pypi_release",
+        constant(matching_pypi(context, manifest)),
+    )
+
+    def query_npm(context_arg: state.ReleaseContext) -> state.NpmRelease:
+        del context_arg
+        return npm_responses.pop(0)
+
+    monkeypatch.setattr(publish, "query_npm_release", query_npm)
+
+    assert publish.publish_npm(tmp_path, FakeRunner(), execute=True) == 0
+    assert sleeps == [1]
+    assert not npm_responses
+    assert "npm registry verification passed after 1 retry." in capsys.readouterr().out
+
+
+def test_registry_verification_success_message_uses_plural_retries(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    responses = iter([["missing version"], ["missing version"], []])
+    sleeps: list[int] = []
+    monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    issues = publish.wait_for_registry_verification(
+        "npm",
+        lambda: next(responses),
+        attempts=3,
+    )
+
+    assert issues == []
+    assert sleeps == [1, 2]
+    assert (
+        "npm registry verification passed after 2 retries." in capsys.readouterr().out
+    )
 
 
 def test_npm_otp_handling_requires_independent_non_tty_values(

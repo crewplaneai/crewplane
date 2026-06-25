@@ -204,14 +204,17 @@ def fail_if_generated_metadata_stale(
         )
 
 
-def require_clean_publish_git_state(
-    context: ReleaseContext, runner: CommandRunner, allow_existing_tag: bool
+def require_publish_git_state(
+    context: ReleaseContext,
+    runner: CommandRunner,
+    allow_existing_tag: bool,
+    allow_local_changes: bool = False,
 ) -> GitState:
     runner.run(
         ["git", "fetch", "--quiet", "origin", "--tags"], cwd=context.root, timeout=120
     )
     git = inspect_git_state(context, runner)
-    issues = publishing_git_issues(git, allow_existing_tag)
+    issues = publishing_git_issues(git, allow_existing_tag, allow_local_changes)
     if issues:
         rendered = "\n  ".join(issues)
         raise ReleaseError(f"publishing is blocked by Git state:\n  {rendered}")

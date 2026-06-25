@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import shlex
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,13 +28,15 @@ from .state import (
     read_formula_state,
     read_manifest,
     read_release_context,
-    require_clean_publish_git_state,
+    require_publish_git_state,
     verify_formula_state_for_release,
     verify_git_tag_state,
     verify_local_manifest_artifacts,
     verify_npm_artifact,
     verify_pypi_artifacts,
 )
+
+REGISTRY_VERIFICATION_ATTEMPTS = 6
 
 
 @dataclass(frozen=True)
@@ -66,7 +70,12 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
     require_pypi_auth()
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
-    require_clean_publish_git_state(context, runner, pypi.exists)
+    require_publish_git_state(
+        context,
+        runner,
+        pypi.exists,
+        is_registry_recovery(pypi, npm),
+    )
     issues = verify_existing_pypi(context, pypi, manifest)
     issues.extend(verify_existing_npm(context, npm, manifest))
     if issues:
@@ -93,10 +102,10 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
     command.extend(shlex.split(os.environ.get("TWINE_UPLOAD_ARGS", "")))
     command.extend([str(sdist), str(wheel)])
     runner.run(command, cwd=context.root, env=pypi_upload_env(), capture_output=False)
-    pypi = query_pypi_release(context)
-    npm = query_npm_release(context)
-    issues = verify_pypi_artifacts(context, pypi, manifest)
-    issues.extend(verify_existing_npm(context, npm, manifest))
+    issues = wait_for_registry_verification(
+        "PyPI",
+        lambda: pypi_publication_issues(context, manifest),
+    )
     if issues:
         raise ReleaseError(
             "PyPI upload completed but verification failed:\n  " + "\n  ".join(issues)
@@ -117,7 +126,12 @@ def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
     require_npm_auth()
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
-    require_clean_publish_git_state(context, runner, npm.exists)
+    require_publish_git_state(
+        context,
+        runner,
+        npm.exists,
+        is_registry_recovery(pypi, npm),
+    )
     issues = verify_existing_npm(context, npm, manifest)
     issues.extend(verify_existing_pypi(context, pypi, manifest))
     if issues:
@@ -134,12 +148,10 @@ def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
         runner.run(command, cwd=context.root, capture_output=False)
     if needs_dist_tag:
         reconcile_npm_latest(context, runner, otp.dist_tag)
-    npm = query_npm_release(context)
-    pypi = query_pypi_release(context)
-    issues = verify_npm_artifact(context, npm, manifest)
-    issues.extend(verify_pypi_artifacts(context, pypi, manifest))
-    if npm.latest != context.version.npm:
-        issues.append("npm latest dist-tag does not point at the release version")
+    issues = wait_for_registry_verification(
+        "npm",
+        lambda: npm_publication_issues(context, manifest),
+    )
     if issues:
         raise ReleaseError(
             "npm publish completed but verification failed:\n  " + "\n  ".join(issues)
@@ -155,11 +167,12 @@ def finalize_release(root: Path, runner: CommandRunner, execute: bool) -> int:
         return 1
     manifest = read_manifest(root)
     fail_if_generated_metadata_stale(context, manifest)
-    require_clean_publish_git_state(context, runner, True)
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
+    git = require_publish_git_state(
+        context, runner, True, is_registry_recovery(pypi, npm)
+    )
     formula = read_formula_state(context)
-    git = inspect_git_state(context, runner)
     state = derive_release_state(context, pypi, npm, formula, git, manifest)
     if state.status == ReleaseStatus.COMPLETE:
         print(f"{context.version.tag} already exists locally and on origin.")
@@ -193,6 +206,10 @@ def verify_completed_release(root: Path, runner: CommandRunner) -> DerivedReleas
     return derive_release_state(context, pypi, npm, formula, git, manifest)
 
 
+def is_registry_recovery(pypi: PypiRelease, npm: NpmRelease) -> bool:
+    return pypi.exists or npm.exists
+
+
 def verify_existing_pypi(
     context: ReleaseContext, release: PypiRelease, manifest
 ) -> list[str]:
@@ -207,6 +224,54 @@ def verify_existing_npm(
     if not release.exists:
         return []
     return verify_npm_artifact(context, release, manifest)
+
+
+def pypi_publication_issues(
+    context: ReleaseContext,
+    manifest: ReleaseManifest,
+) -> list[str]:
+    pypi = query_pypi_release(context)
+    npm = query_npm_release(context)
+    issues = verify_pypi_artifacts(context, pypi, manifest)
+    issues.extend(verify_existing_npm(context, npm, manifest))
+    return issues
+
+
+def npm_publication_issues(
+    context: ReleaseContext,
+    manifest: ReleaseManifest,
+) -> list[str]:
+    npm = query_npm_release(context)
+    pypi = query_pypi_release(context)
+    issues = verify_npm_artifact(context, npm, manifest)
+    issues.extend(verify_pypi_artifacts(context, pypi, manifest))
+    if npm.latest != context.version.npm:
+        issues.append("npm latest dist-tag does not point at the release version")
+    return issues
+
+
+def wait_for_registry_verification(
+    label: str,
+    collect_issues: Callable[[], list[str]],
+    attempts: int = REGISTRY_VERIFICATION_ATTEMPTS,
+) -> list[str]:
+    issues: list[str] = []
+    for attempt in range(1, attempts + 1):
+        issues = collect_issues()
+        if not issues:
+            if attempt > 1:
+                retries = attempt - 1
+                suffix = "retry" if retries == 1 else "retries"
+                print(f"{label} registry verification passed after {retries} {suffix}.")
+            return []
+        if attempt == attempts:
+            return issues
+        print(
+            f"{label} registry verification did not pass; "
+            f"retrying ({attempt}/{attempts})."
+        )
+        time.sleep(2 ** (attempt - 1))
+    return issues
 
 
 def fail_if_local_artifacts_stale(

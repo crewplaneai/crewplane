@@ -236,21 +236,27 @@ def test_publish_pypi_checks_git_state_with_existing_pypi_release(
         "query_npm_release",
         constant(state.NpmRelease(False, "", "", "", "", "", "", "", "")),
     )
-    called: dict[str, bool] = {"allow_existing_tag": True}
+    called: dict[str, bool] = {
+        "allow_existing_tag": False,
+        "allow_local_changes": False,
+    }
 
     def capture_state(
         _context: state.ReleaseContext,
         _runner: FakeRunner,
         allow_existing_tag: bool,
+        allow_local_changes: bool = False,
     ) -> state.GitState:
         del _context, _runner
         called["allow_existing_tag"] = allow_existing_tag
+        called["allow_local_changes"] = allow_local_changes
         raise state.ReleaseError("publish blocked")
 
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", capture_state)
+    monkeypatch.setattr(publish, "require_publish_git_state", capture_state)
     with pytest.raises(state.ReleaseError, match="publish blocked"):
         publish.publish_pypi(tmp_path, FakeRunner(), execute=True)
     assert called["allow_existing_tag"] is True
+    assert called["allow_local_changes"] is True
 
 
 def test_publish_npm_checks_git_state_with_existing_npm_release(
@@ -285,21 +291,98 @@ def test_publish_npm_checks_git_state_with_existing_npm_release(
         "query_pypi_release",
         constant(state.PypiRelease(False, "", {})),
     )
-    called: dict[str, bool] = {"allow_existing_tag": True}
+    called: dict[str, bool] = {
+        "allow_existing_tag": False,
+        "allow_local_changes": False,
+    }
 
     def capture_state(
         _context: state.ReleaseContext,
         _runner: FakeRunner,
         allow_existing_tag: bool,
+        allow_local_changes: bool = False,
     ) -> state.GitState:
         del _context, _runner
         called["allow_existing_tag"] = allow_existing_tag
+        called["allow_local_changes"] = allow_local_changes
         raise state.ReleaseError("publish blocked")
 
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", capture_state)
+    monkeypatch.setattr(publish, "require_publish_git_state", capture_state)
     with pytest.raises(state.ReleaseError, match="publish blocked"):
         publish.publish_npm(tmp_path, FakeRunner(), execute=True)
     assert called["allow_existing_tag"] is True
+    assert called["allow_local_changes"] is True
+
+
+def test_publish_npm_allows_dirty_git_state_when_pypi_is_already_published(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context, manifest, _formula, _git = release_state_fixture(tmp_path)
+    write_manifest(tmp_path, manifest)
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(publish, "fail_if_generated_metadata_stale", no_op)
+    monkeypatch.setattr(publish, "require_npm_auth", lambda: None)
+    monkeypatch.setattr(
+        publish, "query_pypi_release", constant(matching_pypi(context, manifest))
+    )
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(state.NpmRelease(False, "", "", "", "", "", "", "", "")),
+    )
+    called: dict[str, bool] = {"allow_existing_tag": True, "allow_local_changes": False}
+
+    def capture_state(
+        _context: state.ReleaseContext,
+        _runner: FakeRunner,
+        allow_existing_tag: bool,
+        allow_local_changes: bool = False,
+    ) -> state.GitState:
+        del _context, _runner
+        called["allow_existing_tag"] = allow_existing_tag
+        called["allow_local_changes"] = allow_local_changes
+        raise state.ReleaseError("publish blocked")
+
+    monkeypatch.setattr(publish, "require_publish_git_state", capture_state)
+    with pytest.raises(state.ReleaseError, match="publish blocked"):
+        publish.publish_npm(tmp_path, FakeRunner(), execute=True)
+    assert called == {"allow_existing_tag": False, "allow_local_changes": True}
+
+
+def test_publishing_git_issues_allows_local_state_only_when_requested() -> None:
+    git = state.GitState(
+        branch="release-fix",
+        default_branch="master",
+        head_commit="abc",
+        upstream_ahead=1,
+        upstream_behind=0,
+        dirty=True,
+        tag_commit="",
+        remote_tag_commit="",
+    )
+
+    strict_issues = state.publishing_git_issues(git, True)
+    assert "worktree is dirty" in strict_issues
+    assert any("origin default" in issue for issue in strict_issues)
+    assert "current branch is not synchronized with its upstream" in strict_issues
+    assert not state.publishing_git_issues(git, True, True)
+
+    conflicting_tag = state.GitState(
+        branch="release-fix",
+        default_branch="master",
+        head_commit="abc",
+        upstream_ahead=1,
+        upstream_behind=0,
+        dirty=True,
+        tag_commit="different",
+        remote_tag_commit="",
+    )
+    assert (
+        "existing Git tag points at a different commit"
+        in state.publishing_git_issues(conflicting_tag, True, True)
+    )
 
 
 def test_formula_resource_checks_follow_lock_runtime_graph(
@@ -332,18 +415,18 @@ def test_formula_resource_checks_follow_lock_runtime_graph(
     )
 
 
-def test_finalize_creates_tag_when_registries_are_present_and_tag_is_missing(
+def test_finalize_allows_local_git_state_when_registries_are_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     context, manifest, formula, git = release_state_fixture(tmp_path)
     write_manifest(tmp_path, manifest)
     partial_git = state.GitState(
-        branch=git.branch,
+        branch="release-fix",
         default_branch=git.default_branch,
         head_commit=git.head_commit,
-        upstream_ahead=0,
+        upstream_ahead=1,
         upstream_behind=0,
-        dirty=False,
+        dirty=True,
         tag_commit="",
         remote_tag_commit="",
     )
@@ -357,15 +440,23 @@ def test_finalize_creates_tag_when_registries_are_present_and_tag_is_missing(
     monkeypatch.setattr(publish, "query_npm_release", constant(npm))
     monkeypatch.setattr(publish, "read_formula_state", constant(formula))
 
-    def skip_repo_checks(
+    called: dict[str, bool] = {
+        "allow_existing_tag": False,
+        "allow_local_changes": False,
+    }
+
+    def capture_repo_checks(
         _context: state.ReleaseContext,
         _runner: FakeRunner,
-        _allow_existing_tag: bool,
+        allow_existing_tag: bool,
+        allow_local_changes: bool = False,
     ) -> state.GitState:
-        del _context, _runner, _allow_existing_tag
+        del _context, _runner
+        called["allow_existing_tag"] = allow_existing_tag
+        called["allow_local_changes"] = allow_local_changes
         return partial_git
 
-    monkeypatch.setattr(publish, "require_clean_publish_git_state", skip_repo_checks)
+    monkeypatch.setattr(publish, "require_publish_git_state", capture_repo_checks)
     monkeypatch.setattr(publish, "inspect_git_state", constant(partial_git))
 
     tagged: list[str] = []
@@ -378,6 +469,7 @@ def test_finalize_creates_tag_when_registries_are_present_and_tag_is_missing(
 
     monkeypatch.setattr(publish, "create_and_push_tag", capture_create_tag)
     assert publish.finalize_release(tmp_path, FakeRunner(), execute=True) == 0
+    assert called == {"allow_existing_tag": True, "allow_local_changes": True}
     assert tagged == [context.version.tag]
 
 

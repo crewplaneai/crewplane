@@ -177,16 +177,21 @@ def guidance_for_missing_side_effects(
     return guidance
 
 
-def publishing_git_issues(git: GitState, allow_existing_tag: bool = True) -> list[str]:
+def publishing_git_issues(
+    git: GitState,
+    allow_existing_tag: bool = True,
+    allow_local_changes: bool = False,
+) -> list[str]:
     issues: list[str] = []
-    if git.dirty:
-        issues.append("worktree is dirty")
-    if git.branch != git.default_branch:
-        issues.append(
-            f"current branch {git.branch!r} is not origin default {git.default_branch!r}"
-        )
-    if git.upstream_ahead or git.upstream_behind:
-        issues.append("current branch is not synchronized with its upstream")
+    if not allow_local_changes:
+        if git.dirty:
+            issues.append("worktree is dirty")
+        if git.branch != git.default_branch:
+            issues.append(
+                f"current branch {git.branch!r} is not origin default {git.default_branch!r}"
+            )
+        if git.upstream_ahead or git.upstream_behind:
+            issues.append("current branch is not synchronized with its upstream")
     if git.tag_commit and git.tag_commit != git.head_commit:
         issues.append("existing Git tag points at a different commit")
     if git.remote_tag_commit and git.remote_tag_commit != git.head_commit:
