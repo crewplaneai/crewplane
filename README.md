@@ -1,6 +1,10 @@
 <div align="center">
   <h1>Crewplane</h1>
-  <p>A Markdown-native control plane for AI coding CLIs.</p>
+  <p><strong>A control plane for resumable coding-agent workflows.</strong></p>
+  <p>
+    Define workflows in Markdown, run each stage through Claude Code, Codex,
+    Gemini, Copilot, or any CLI, and keep the run record on disk.
+  </p>
   <p>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/CHANGELOG.md"><img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-f59e0b.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/pyproject.toml"><img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776AB.svg"></a>
@@ -16,48 +20,70 @@
 
 ## Why Crewplane?
 
-You've got powerful AI tools at your fingertips — Claude Code, Codex CLI, Gemini CLI, and others. Each has its strengths, but tying their work into a single repeatable pipeline usually means shell scripts, brittle glue, and state scattered across temp files.
+Teams have spent the last year standardizing how coding agents behave:
+repo instructions, skills, MCP servers, provider settings, and internal
+conventions. What is still missing is the outer execution layer: how agent work
+is sequenced, resumed, reviewed, and inspected after the terminal session ends.
 
-**Crewplane gives your project a control plane for your agent crews.** Write the workflow once in Markdown, assign each step to whichever AI agent fits best, and Crewplane handles the rest — parallel, fan-out, sequential handoffs, retries, and a complete paper trail.
+**Crewplane turns coding-agent CLI calls into explicit, resumable workflows with
+local run records on disk.** Write the workflow in Markdown, assign each stage
+to Claude Code, Codex, Gemini, Copilot, or any CLI, and Crewplane coordinates
+the run without replacing your agents.
 
-No SDKs. No plugins. No vendor lock-in. If your AI tool has a CLI, it works.
+| When agent work becomes... | Crewplane gives you... |
+| --- | --- |
+| A chain of shell scripts, prompts, and temp files | An explicit Markdown workflow with DAG execution |
+| A long terminal session that fails halfway through | Resumable stage boundaries backed by preserved artifacts |
+| Multiple agents reviewing, implementing, or synthesizing work | Clear dependencies, parallelism, handoffs, and review loops |
+| Debugging by reading terminal scrollback | Rendered inputs, provider logs, intermediate outputs, manifests, and final results on disk |
+| Trusting the run only while it happens | A local run record you can inspect later, keep when useful, or delete/archive when not |
 
-**Every step is a Markdown file.** Inputs, outputs, reviews — all saved to `.crewplane/execution-stages/` as readable Markdown. Inspect any step in your editor, diff it in git, or debug with `cat`. Nothing is a black box.
+No SDK rewrite. No provider lock-in. If your agent can run from the CLI,
+Crewplane can coordinate it.
 
-| vs. Other Frameworks | Crewplane |
-|---------------------|------------------|
-| **Autonomous loops** | Explicit DAG control — define exactly how agents work together, in sequence or in parallel |
-| **Hidden state** | Externalized to markdown — fully auditable |
-| **Tight SDK coupling** | CLI-first — zero provider lock-in |
-| **Black box debugging** | Inspect `.crewplane/execution-stages/` at any step, final results saved in `.crewplane/execution-results/` |
-| **Adapter boilerplate** | Works with any CLI that reads/writes files |
+## Where Crewplane Fits
 
-> *"Crewplane doesn't try to understand your AI tools. It just gives them a shared workspace and gets out of the way."*
+Teams already define how agents behave with repo instructions, skills, MCP servers, provider settings, and internal conventions. Crewplane does not replace those pieces. It coordinates the work around them.
+
+| Layer | What it controls |
+| --- | --- |
+| Repo instructions / skills | What agents should know and how they should behave |
+| MCP / tools | What systems and context agents can access |
+| Provider CLIs | The coding agents that do the work |
+| **Crewplane** | How stages are sequenced, parallelized, retried, reviewed, resumed, and inspected |
+
+## Why Not Just Use One Agent CLI?
+
+For one-off tasks, you probably should.
+
+Crewplane is for the moment when agent work becomes a workflow:
+
+| Current pattern | Crewplane gives you |
+| --- | --- |
+| One long terminal session | Explicit DAG control with sequential and parallel stages |
+| Copy-pasted prompts and temp files | Rendered inputs and outputs saved as run artifacts |
+| Restarting from scratch after failure | Resumable execution from validated stage boundaries |
+| Provider-specific glue | CLI-first orchestration across Claude Code, Codex, Gemini, Copilot, or any command |
+| Black-box debugging | Logs, manifests, stage outputs, and final results you can inspect with normal tools |
+
+> Crewplane does not try to become your agent. It gives the agents you already use a shared execution plan, a workspace, and a run record.
 
 ## Installation
 
-Crewplane can also be installed with the following supported methods:
+Run the following on Mac or Linux to install Crewplane:
 
 ```bash
-# pipx
-pipx install crewplane
+uv tool install crewplane
+```
 
+Crewplane can also be installed via the following package managers:
+
+```bash
 # pip
 python -m pip install crewplane
 
-# npm wrapper
+# npm 
 npm install -g crewplane
-
-# install script for macOS and Linux
-curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/install.sh | sh
-```
-
-For a local checkout:
-
-```bash
-git clone https://github.com/crewplaneai/crewplane.git
-cd crewplane
-python -m pip install .
 ```
 
 Watch the installation flow if you want to see the command-line setup before
@@ -67,11 +93,13 @@ running it locally:
   <video src="https://github.com/user-attachments/assets/50741c4d-6206-4434-a339-8ab537ea0134" controls width="80%" title="Crewplane installation walkthrough"></video>
 </div>
 
-> ⚠️ **Note:** Provider CLIs are installed and authenticated separately. Crewplane does not install provider CLIs, does not manage provider credentials, and does not sandbox provider CLI execution.
+> ⚠️ **Note:** Crewplane does **not** install or manage provider CLIs or credentials. Install and authenticate Claude Code, Copilot CLI, etc. separately.
 
-See the [installation guide](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md) for update, uninstall, and npm `PATH` troubleshooting.
+Other install methods (pipx, install script, local checkout) are documented in the [installation guide](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md).
 
-## First Run
+## First Run (No real agent invocations)
+
+From a project directory:
 
 ```bash
 crewplane init
@@ -81,34 +109,42 @@ crewplane run --no-live
 
 `crewplane init` creates `.crewplane/config.yml`, a default workflow, and
 additional example templates under `.crewplane/workflows/example-templates/`.
-The default run uses deterministic `mock` output (no cost) and does not require provider
-CLIs, API keys, provider accounts, or config edits. It is scaffolding for
-validating the workflow and artifact path, not model output.
 
-Inspect the first run artifacts in `.crewplane/execution-stages/` and execution results in 
-`.crewplane/execution-results/`, then follow
-[provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
-when you are ready to run real provider CLIs.
+`crewplane run --no-live` then runs the workflow with a deterministic `mock` provider — no provider CLIs, API keys, or config edits required.
+
+Inspect the artifacts:
+
+- Stage Markdown: `.crewplane/execution-stages/`
+- Final results: `.crewplane/execution-results/`
+
+These files are the same shape you will see with real providers: each step has
+rendered inputs, outputs, logs, manifests, and final results you can inspect or
+diff with normal tools.
+
+Treat run artifacts like build outputs: useful for debugging and review, but
+decide separately what, if anything, belongs in version control.
+
+When you are ready to connect real tools, follow [provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md).
 
 ## Live Dashboard
 
-For interactive runs, omit `--no-live` to open Crewplane's compact tmux
-dashboard (install tmux first if your system doesn't already have it).
-Re-running the same workflow? Add `--force` to skip the duplicate check:
+For interactive runs, drop `--no-live` to open Crewplane’s tmux dashboard (requires `tmux`, install via `brew install tmux` on *macOS* or `sudo apt install tmux` on *Ubuntu/Debian*.):
 
 ```bash
 crewplane run --force
 ```
 
+> **Note:** `--force` ensures a fresh run, ignoring any cached successes.
+
 The dashboard shows the workflow DAG, node status, selected provider output,
 and live log tails while the same durable artifacts are written under
-`.crewplane/`. It starts only when tmux is available, output is attached to a
-terminal, and provider log capture is enabled; otherwise Crewplane warns and
-continues with normal execution. See the
+`.crewplane/`. See the
 [observability guide](https://github.com/crewplaneai/crewplane/blob/master/docs/guides/observability.md)
 for dashboard options and log inspection.
 
 ## Workflow Shape
+
+Workflows are Markdown+frontmatter; for example:
 
 ```yaml
 ---
@@ -137,54 +173,34 @@ provider run:
   <video src="https://github.com/user-attachments/assets/01ff3e39-7626-4896-bd18-358f7a15cfcd" controls width="80%" title="First real provider run walkthrough"></video>
 </div>
 
+> **Safety boundary:** Crewplane coordinates provider CLIs; it does not sandbox
+> them, install them, or manage their credentials. Provider filesystem access,
+> network access, approval mode, and authentication remain controlled by the
+> provider tools you configure.
+
 Use [provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
 for the complete real-provider configuration path.
 
-## Safety Boundary
+## What You Get
 
-Crewplane coordinates provider CLIs; it is not a security sandbox. Provider CLIs
-run with the permissions, approval mode, network access, and filesystem access
-configured for those tools.
+- 🔄 **Explicit DAG Execution** – Run independent stages in parallel and dependencies in sequence
+- 🧭 **Resumable Stage Boundaries** – Reuse validated completed stages after duplicate, failed, or cancelled runs
+- 📂 **Inspectable Run Records** – Rendered prompts, outputs, logs, manifests, and results written under `.crewplane/`
+- 🔌 **CLI-First Providers** – Coordinate Claude Code, Codex, Gemini, Copilot, Kilo, or generic commands
+- 🖥️ **Optional Live Dashboard** – tmux view for DAG progress, node status, provider output, and log tails
+- 🧪 **Experimental Workspace Isolation** – Git-backed worktrees and writable snapshots for isolating source-tree edits
 
-Experimental workspace isolation can move selected provider source-tree work
-into Git-backed worktrees or writable snapshots, but it is still source-tree
-isolation only. It does not sandbox provider execution.
-
-> ⚠️ **Security Note:** `{{file:path}}` templates are restricted to the project root by default. Use `settings.integrations.artifacts.options.allowed_template_paths` for explicit external-file allowlisting.
+For safety, security, and isolation details, see [Security and trust](https://github.com/crewplaneai/crewplane/blob/master/docs/safety/security-and-trust.md).
 
 ## Where Next
 
-The default mock run gives you the same workflow machinery used for real
-provider runs, so you can inspect the shape of the system before connecting
-external CLIs:
-
-- 🔄 **DAG Execution** – Run independent nodes in parallel and dependency nodes in sequence
-- 🔍 **Cross-Review** – Agents review each other's outputs with structured verdict detection
-- 📝 **Task Files** – Frontmatter+Markdown (`.task.md`) workflows by default
-- 🔌 **Pluggable Providers** – Works with any CLI-based AI tool; no API keys or auth managed by Crewplane
-- 📁 **Project-Local Config** – Each project gets its own `.crewplane/` directory
-- 📂 **Transparent Artifacts** – Every intermediate step and final result saved to disk for full auditability
-- 🖥️ **Live Dashboard** – Optional tmux UI shows DAG progress, node status, and selected provider logs
-- 📊 **Spend Observability** – Run logs capture CLI capture status, provider token-report status, visible lower-bound estimates, and configured cost confidence summaries
-- ⚡ **Smart Caching** – Workflow-signature idempotency skips identical successes and resumes failed or cancelled runs from validated node boundaries
-- 🧪 **Experimental Workspace Isolation** – Opt-in Git-backed worktrees and writable snapshots can isolate provider source-tree edits in ordinary supported Git repositories
-
-When you are ready to configure a project, start with the quickstart and then
-move into provider setup, examples, and reference material as needed:
-
-- [Documentation index](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md)
-- [Installation](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md)
 - [Quickstart](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/quickstart.md)
-- [Setup checklist](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/setup-checklist.md)
 - [Provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
 - [Examples](https://github.com/crewplaneai/crewplane/blob/master/docs/examples/index.md)
-- [Experimental workspace isolation](https://github.com/crewplaneai/crewplane/blob/master/docs/guides/workspace-isolation.md)
 - [Command reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/commands.md)
-- [Configuration reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/configuration.md)
-- [Workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/workflow-syntax.md)
-- [Artifact reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/artifacts.md)
-- [Security and trust](https://github.com/crewplaneai/crewplane/blob/master/docs/safety/security-and-trust.md)
+- [Configuration](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/configuration.md)
+- [Artifact](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/artifacts.md)
 
 ### Contributing
 
-If you're interested in contributing to Crewplane, please read our [Contributing and local development](https://github.com/crewplaneai/crewplane/blob/master/DEVELOPMENT.md) before submitting a pull request.
+Interested in contributing? Start with [Contributing and local development](https://github.com/crewplaneai/crewplane/blob/master/DEVELOPMENT.md).
