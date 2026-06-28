@@ -1,7 +1,11 @@
-# Cleanup
+# Cleaning Up Workspace Caches
 
 `crewplane cleanup workspaces` removes generated Experimental workspace
 isolation cache entries.
+
+This command cleans Experimental workspace cache entries. It does not delete
+canonical run records under `.crewplane/execution-stages/` or
+`.crewplane/execution-results/`.
 
 ```bash
 crewplane cleanup workspaces --dry-run
@@ -54,3 +58,9 @@ run manifests, or result artifacts under `.crewplane/`.
 Cleanup scans generated cache families named `workspace-runs`, `workspaces`,
 `snapshots`, and `review-workspaces`. Destructive cleanup can also remove
 run-owned cached Git refs, but it does not remove canonical run artifacts.
+
+## To Remove Run Records
+
+Crewplane does not currently provide a run-record prune command. Delete or
+archive `.crewplane/execution-stages/<run-key>/` and
+`.crewplane/execution-results/<run-key>/` according to your project policy.

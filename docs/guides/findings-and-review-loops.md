@@ -1,7 +1,15 @@
-# Findings And Review Loops
+# How To Produce Findings And Run Review Loops
 
 Crewplane supports structured findings artifacts and sequential executor/reviewer
 loops.
+
+Use `findings: true` when downstream nodes need structured issues.
+
+Use sequential review loops when one provider should produce work and another
+provider should review it before the node finalizes.
+
+For general mode selection, see
+[Node modes and provider roles](node-modes.md).
 
 ## Findings
 

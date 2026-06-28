@@ -3,6 +3,34 @@
 Markdown workflows have two parts: YAML frontmatter that declares the DAG, and
 Markdown sections that provide the prompts for non-input nodes.
 
+Use this page for the exact authoring contract. For the mental model, start
+with [Workflows](../concepts/workflows.md).
+
+## Contents
+
+- [Minimum Valid Workflow](#minimum-valid-workflow)
+- [Multi-Provider Review Workflow](#multi-provider-review-workflow)
+- [Frontmatter Fields](#frontmatter-fields)
+- [Imports](#imports)
+- [Experimental Worktrees](#experimental-worktrees)
+- [Nodes](#nodes)
+- [Node Modes](#node-modes)
+- [Provider Objects](#provider-objects)
+- [Input Nodes](#input-nodes)
+- [Prompt Sections](#prompt-sections)
+- [Templates](#templates)
+- [Token Budget Override](#token-budget-override)
+
+| Need | Start here |
+| --- | --- |
+| Smallest valid Markdown workflow | [Minimum Valid Workflow](#minimum-valid-workflow) |
+| Provider fanout with findings | [Multi-Provider Review Workflow](#multi-provider-review-workflow) |
+| Exact node fields | [Nodes](#nodes) |
+| Execution patterns | [Node Modes](#node-modes) |
+| Template syntax | [Templates](#templates) |
+
+## Minimum Valid Workflow
+
 ```yaml
 ---
 schema_version: "1.0"
@@ -16,6 +44,23 @@ nodes:
 
 ## inspect
 Inspect the project.
+```
+
+## Multi-Provider Review Workflow
+
+```yaml
+---
+schema_version: "1.0"
+name: "Review"
+nodes:
+  - id: review.project
+    mode: parallel
+    providers: ["claude", "codex"]
+    findings: true
+---
+
+## review.project
+Review the project and report correctness, security, and regression risks.
 ```
 
 ## Frontmatter Fields
@@ -125,6 +170,12 @@ node unless a threshold or `continue_on_failure` allows completion.
 
 Sequential single-provider nodes do not run review loops. `depth` is the total
 number of executor rounds, and `audit_rounds` is invalid.
+
+For task-oriented examples, see
+[Node modes and provider roles](../guides/node-modes.md) and
+[How to Produce Findings and Run Review Loops](../guides/findings-and-review-loops.md).
+
+### Review-Loop Details
 
 Sequential multi-provider nodes run review loops. Providers must start with a
 contiguous executor segment and end with a contiguous reviewer segment. In each

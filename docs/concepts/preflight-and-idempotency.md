@@ -1,10 +1,29 @@
-# Preflight And Idempotency
+# Preflight, Duplicate Skip, and Resume
+
+Preflight is how Crewplane knows what it is about to run before provider CLIs
+start. It is also the basis for duplicate-skip and safe resume decisions.
 
 Every validate, dry-run, and real run compiles a preflight execution-plan
 preview before providers are invoked.
 
 For real execution, the runtime consumes the compiled preflight plan and bundle.
 It does not reparse prompt templates or reread original `{{file:...}}` paths.
+
+```text
+validate / dry-run / run
+        |
+        v
+compile preflight plan
+        |
+        v
+compute workflow_signature
+        |
+        v
+run providers or decide skip/resume
+        |
+        v
+write manifests and results
+```
 
 ## What Preflight Compiles
 
@@ -26,7 +45,7 @@ Preflight resolves the composed workflow into:
 - `workflow_signature`
 
 Preflight diagnostics are emitted before runtime execution. A failed real-run
-preflight writes failure artifacts so the run is auditable.
+preflight writes failure artifacts so the run remains inspectable.
 
 ## Workflow Signature
 

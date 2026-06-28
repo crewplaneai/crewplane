@@ -7,7 +7,53 @@ need provider CLIs, API keys, or config edits.
 Real provider runs start the external commands configured in
 `.crewplane/config.yml`. Those tools run with their own filesystem, network,
 credential, approval, and sandbox settings. Crewplane coordinates them and
-records artifacts; it does not sandbox them.
+writes a run record; it does not sandbox them.
+
+## Fast Path: Connect One Provider
+
+Use this after the mock quickstart succeeds.
+
+1. Confirm the provider CLI works directly.
+2. Uncomment or add one entry under `agents`.
+3. Change the workflow node's `providers` value to that agent name.
+4. Switch the invoker from `mock` to `cli`.
+5. Replace generated mock invoker options with `options: {}`.
+6. Run `crewplane validate`.
+7. Run `crewplane run --no-live`.
+
+```bash
+codex --version
+crewplane validate
+crewplane run --no-live
+```
+
+A minimal Codex config looks like this:
+
+```yaml
+version: "1.0"
+
+agents:
+  codex:
+    cli_cmd: ["codex", "exec"]
+    provider_kind: "codex"
+    prompt_transport: "stdin"
+    prompt_transport_arg: "-"
+
+settings:
+  integrations:
+    invoker:
+      implementation: "cli"
+      options: {}
+```
+
+Then point the workflow node at the same agent name:
+
+```yaml
+nodes:
+  - id: review.project
+    mode: parallel
+    providers: ["codex"]
+```
 
 ## Agent Config
 
@@ -42,6 +88,8 @@ The generated config starts with one active mock agent and commented examples
 for Claude, Codex, Gemini, Copilot, and Kilo:
 
 ```yaml
+version: "1.0"
+
 agents:
   mock:
     cli_cmd: ["__crewplane_mock_invoker_never_executes__"]
@@ -52,8 +100,8 @@ settings:
       implementation: "mock"
 ```
 
-For real providers, uncomment the agent entries you need, adjust command flags
-for your local provider setup, and switch the invoker to `cli`. The `cli`
+For real providers, uncomment or add the agent entries you need, adjust command
+flags for your local provider setup, and switch the invoker to `cli`. The `cli`
 invoker does not accept the generated mock options, so replace the whole
 generated mock `options:` block with `options: {}`:
 
@@ -159,3 +207,8 @@ timeout cancels quiet or stalled processes when it is set.
 
 See the [configuration reference](../reference/configuration.md) for every
 config field.
+
+## Next
+
+Run one workflow with `crewplane run --no-live`, then inspect the run record
+with [Inspecting Run Records](../guides/inspecting-artifacts.md).

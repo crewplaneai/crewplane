@@ -2,6 +2,18 @@
 
 Crewplane writes project-local state under `.crewplane/`.
 
+For human inspection, start with
+[Inspecting Run Records](../guides/inspecting-artifacts.md). Use this reference
+when you need exact paths, stable workflow template keys, or skip/resume
+metadata.
+
+| Need | Start with |
+| --- | --- |
+| Human run overview | `execution-stages/<run-key>/logs/summary.md` |
+| Event timeline | `execution-stages/<run-key>/logs/events.ndjson` |
+| Skip/resume evidence | `execution-stages/<run-key>/manifests/run.json` |
+| Final node outputs | `execution-results/<run-key>/` |
+
 ## Root Layout
 
 ```text
@@ -74,6 +86,15 @@ be copied into the result tree.
 Consolidated result and findings Markdown uses human-readable section headings.
 Stable provider task IDs remain in stage artifact filenames, logs, manifests,
 and review-loop state.
+
+## Stable Keys And Filenames
+
+Workflow template keys are the stable interface for downstream nodes.
+Human-readable result filenames are stable enough to inspect, but code should
+prefer workflow template keys or manifest descriptors.
+
+Provider log filenames, task IDs, and review-loop state files are implementation
+details for debugging and support.
 
 ## Preflight Files
 

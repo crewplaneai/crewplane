@@ -52,11 +52,8 @@ Teams already define how agents behave with repo instructions, skills, MCP serve
 | Provider CLIs | The coding agents that do the work |
 | **Crewplane** | How stages are sequenced, parallelized, retried, reviewed, resumed, and inspected |
 
-## Why Not Just Use One Agent CLI?
-
-For one-off tasks, you probably should.
-
-Crewplane is for the moment when agent work becomes a workflow:
+<details>
+<summary><strong>Why not just use one agent CLI?</strong> For one-off tasks, you probably should. Crewplane is for agent work that becomes a workflow.</summary>
 
 | Current pattern | Crewplane gives you |
 | --- | --- |
@@ -65,6 +62,10 @@ Crewplane is for the moment when agent work becomes a workflow:
 | Restarting from scratch after failure | Resumable execution from validated stage boundaries |
 | Provider-specific glue | CLI-first orchestration across Claude Code, Codex, Gemini, Copilot, or any command |
 | Black-box debugging | Logs, manifests, stage outputs, and final results you can inspect with normal tools |
+
+</details>
+
+<br/>
 
 > Crewplane does not try to become your agent. It gives the agents you already use a shared execution plan, a workspace, and a run record.
 
@@ -114,7 +115,7 @@ additional example templates under `.crewplane/workflows/example-templates/`.
 
 Inspect the artifacts:
 
-- Stage Markdown: `.crewplane/execution-stages/`
+- Stage run files: `.crewplane/execution-stages/`
 - Final results: `.crewplane/execution-results/`
 
 These files are the same shape you will see with real providers: each step has
@@ -128,7 +129,17 @@ When you are ready to connect real tools, follow [provider setup](https://github
 
 ## Live Dashboard
 
-For interactive runs, drop `--no-live` to open Crewplane’s tmux dashboard (requires `tmux`, install via `brew install tmux` on *macOS* or `sudo apt install tmux` on *Ubuntu/Debian*.):
+For interactive runs, drop `--no-live` to open Crewplane’s tmux dashboard:
+
+> **Note:** requires `tmux`, install via `brew install tmux` on *macOS* or `sudo apt install tmux` on *Ubuntu/Debian*.
+
+```bash
+crewplane run
+```
+
+Because the first run above already wrote a successful result, Crewplane will print
+`Identical context detected`. That is the idempotency check.
+To start a fresh interactive run, use:
 
 ```bash
 crewplane run --force
@@ -194,12 +205,13 @@ For safety, security, and isolation details, see [Security and trust](https://gi
 
 ## Where Next
 
+- [Why Crewplane?](https://github.com/crewplaneai/crewplane/blob/master/docs/concepts/why-crewplane.md)
 - [Quickstart](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/quickstart.md)
 - [Provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
 - [Examples](https://github.com/crewplaneai/crewplane/blob/master/docs/examples/index.md)
 - [Command reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/commands.md)
 - [Configuration](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/configuration.md)
-- [Artifact](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/artifacts.md)
+- [Artifacts](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/artifacts.md)
 
 ### Contributing
 

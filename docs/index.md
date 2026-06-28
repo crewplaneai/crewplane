@@ -1,28 +1,57 @@
 # Crewplane Documentation
 
-Crewplane gives a project a repeatable workflow path for AI-assisted work, with
-readable run artifacts stored under `.crewplane/`. The default project created
-by `crewplane init` uses deterministic mock execution, so you can validate the
-workflow and inspect artifacts before installing or authenticating provider
-CLIs.
+Crewplane turns coding-agent CLI calls into explicit, resumable workflows with
+local run records on disk.
+
+## Start By Goal
+
+| Goal | Start here |
+| --- | --- |
+| Understand what Crewplane is | [Why Crewplane?](concepts/why-crewplane.md) and [Orchestration model](concepts/orchestration-model.md) |
+| Try it safely without real agent calls | [Quickstart](getting-started/quickstart.md), then [First Run Checklist](getting-started/setup-checklist.md) |
+| Connect, run, author, or debug workflows | [Provider setup](getting-started/provider-setup.md), [Running workflows](guides/running-workflows.md), [Workflows](concepts/workflows.md), [Troubleshooting](safety/troubleshooting.md) |
+| Look up exact syntax and config | [Workflow syntax](reference/workflow-syntax.md), [Configuration](reference/configuration.md), [Commands](reference/commands.md) |
+| Understand security boundaries | [Security and trust](safety/security-and-trust.md) |
+
+## Common Paths
+
+### I Am Evaluating Crewplane
+
+1. Read [Why Crewplane?](concepts/why-crewplane.md).
+2. Run the provider-free [Quickstart](getting-started/quickstart.md).
+3. Open the run summary and final result.
+
+### I Already Have A Provider CLI Installed
+
+1. Run the mock quickstart first.
+2. Follow [Provider setup](getting-started/provider-setup.md).
+3. Run one real workflow with `--no-live`.
+4. Inspect the run record.
+
+### I Need To Debug A Run
+
+1. Check [Running workflows](guides/running-workflows.md).
+2. Open [Inspecting Run Records](guides/inspecting-artifacts.md).
+3. Use [Troubleshooting](safety/troubleshooting.md).
 
 ## Getting Started
 
 - [Installation](getting-started/installation.md)
 - [Quickstart](getting-started/quickstart.md)
-- [Setup checklist](getting-started/setup-checklist.md)
+- [First Run Checklist](getting-started/setup-checklist.md)
 - [Provider setup](getting-started/provider-setup.md)
 
 ## Core Concepts
 
+- [Why Crewplane?](concepts/why-crewplane.md)
 - [Orchestration model](concepts/orchestration-model.md)
 - [Workflows](concepts/workflows.md)
-- [Preflight and idempotency](concepts/preflight-and-idempotency.md)
+- [Preflight, duplicate skip, and resume](concepts/preflight-and-idempotency.md)
 
 ## Guides
 
 - [Running workflows](guides/running-workflows.md)
-- [Inspecting artifacts](guides/inspecting-artifacts.md)
+- [Inspecting Run Records](guides/inspecting-artifacts.md)
 - [Mock validation](guides/mock-validation.md)
 - [Observability](guides/observability.md)
 - [Workflow composition](guides/workflow-composition.md)

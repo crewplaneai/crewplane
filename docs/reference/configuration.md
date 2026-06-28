@@ -3,6 +3,39 @@
 Config lives at `.crewplane/config.yml` by default. The `version` field must
 match the current `SCHEMA_VERSION` in `src/crewplane/version.py`.
 
+For practical setup, start with [Provider setup](../getting-started/provider-setup.md).
+
+| Need | Start here |
+| --- | --- |
+| First provider-free run | [Generated Mock Config](#generated-mock-config) |
+| One real provider | [Minimal Config](#minimal-config) |
+| Full field list | [Top Level](#top-level) and [`agents.<name>`](#agentsname) |
+| Adapter options | [Built-In Integration Options](#built-in-integration-options) |
+| Workspace isolation | [`settings.workspace`](#settingsworkspace) |
+
+## Minimal Config
+
+```yaml
+version: "1.0"
+agents:
+  codex:
+    cli_cmd: ["codex", "exec"]
+    provider_kind: "codex"
+    prompt_transport: "stdin"
+    prompt_transport_arg: "-"
+
+settings:
+  integrations:
+    invoker:
+      implementation: "cli"
+      options: {}
+```
+
+This assumes `codex --version` works directly in your shell and the workflow
+uses `providers: ["codex"]`.
+
+## Generated Mock Config
+
 Generated config from `crewplane init` starts with one active `mock` agent and
 `settings.integrations.invoker.implementation: "mock"`. That makes the first
 `crewplane validate` and `crewplane run --no-live` provider-free. Mock output is
@@ -11,6 +44,29 @@ deterministic scaffolding, not model output.
 The generated config also includes commented provider examples for Claude,
 Codex, Gemini, Copilot, and Kilo. Uncomment and review only the agents you need
 before switching the invoker to `cli`.
+
+```yaml
+version: "1.0"
+
+agents:
+  mock:
+    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]
+
+settings:
+  integrations:
+    invoker:
+      implementation: "mock"
+```
+
+## Switching To Real Providers
+
+When switching from the generated mock config to real providers:
+
+- keep only the `agents` entries you want to run
+- confirm each provider CLI works directly
+- change workflow `providers` values to those agent names
+- set `settings.integrations.invoker.implementation: "cli"`
+- replace generated mock invoker options with `options: {}`
 
 ## Top Level
 

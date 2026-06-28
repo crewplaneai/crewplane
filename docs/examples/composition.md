@@ -3,6 +3,20 @@
 Composition examples show how to reuse workflow modules with imports, aliases,
 parameters, and bound inputs.
 
+Do not start here. Run the default workflow and write one normal workflow first.
+Use composition when workflow pieces should be shared across multiple root
+workflows.
+
+```text
+producer module
+      |
+      v
+consumer module
+      |
+      v
+composed workflow
+```
+
 Packaged templates:
 
 - [review-findings-producer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-findings-producer-example.task.md)

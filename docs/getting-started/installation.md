@@ -18,9 +18,9 @@ Watch the installation walkthrough:
   Install and authenticate provider CLIs later when you are ready for real
   provider runs.
 
-**Choose one of the following methods for installation:**
+## Recommended: uv
 
-### uv
+Use `uv tool install` for an isolated command install:
 
 ```bash
 uv tool install crewplane
@@ -28,6 +28,8 @@ crewplane --help
 ```
 
 The install succeeded if `crewplane --help` prints command help.
+
+## Other Install Methods
 
 ### pip
 
@@ -115,7 +117,7 @@ python -m pip uninstall crewplane
 npm uninstall -g crewplane
 ```
 
-## Provider CLIs
+## Not Needed Yet: Provider CLIs
 
 Crewplane does not install provider CLIs, manage provider credentials, or
 sandbox provider CLI execution. Install each provider CLI outside Crewplane,
@@ -133,3 +135,8 @@ copilot version
 
 Use [provider setup](provider-setup.md) for config examples and prompt transport
 details.
+
+## Next
+
+Run the provider-free [Quickstart](quickstart.md) before configuring real
+provider CLIs.

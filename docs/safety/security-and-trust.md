@@ -2,6 +2,9 @@
 
 Crewplane coordinates provider CLIs. It is not a sandbox.
 
+For the product boundary and privacy model, start with
+[Why Crewplane?](../concepts/why-crewplane.md).
+
 The generated quickstart uses deterministic mock execution, so the first run
 does not start provider CLIs and does not need API keys or provider accounts.
 
@@ -9,6 +12,17 @@ Real provider runs start the external commands configured in
 `.crewplane/config.yml`. Those tools run with their own filesystem, network,
 credential, approval, and sandbox settings. Crewplane coordinates them and
 records artifacts; it does not sandbox them.
+
+## What Crewplane Records
+
+Crewplane records the workflows it launches: rendered inputs, provider logs,
+intermediate outputs, manifests, and final results.
+
+It does not monitor your editor, keystrokes, unrelated shell commands, browser
+activity, or general development activity.
+
+Treat run records like build outputs or CI logs. Review them before sharing or
+committing them.
 
 ## Provider Permissions
 

@@ -6,6 +6,9 @@ pattern for one node.
 
 ## Choosing A Mode
 
+Most users start with `parallel`. It is the simplest provider invocation shape,
+even when there is only one provider.
+
 | Mode | Use when | Provider shape |
 | --- | --- | --- |
 | `input` | A workflow needs to expose a file as an artifact without invoking a provider. | No providers. |
@@ -16,7 +19,21 @@ Independent DAG nodes can also run concurrently when their dependencies are
 satisfied. That is separate from `mode: parallel`, which is provider fanout
 inside one node.
 
-## Parallel Mode
+## Run One Provider
+
+Use `parallel` with one provider for the common single-agent case:
+
+```yaml
+nodes:
+  - id: review.project
+    mode: parallel
+    providers: [codex]
+```
+
+This renders one prompt, invokes one executor provider, and writes one node
+result.
+
+## Fan Out To Multiple Providers
 
 `mode: parallel` renders the node prompt once and sends the same executor prompt
 to every provider at the same time:
@@ -69,7 +86,7 @@ node complete and preserves synthetic failure artifacts in the stage output.
 Parallel mode is not a review loop. If you need an executor followed by one or
 more reviewers, use `mode: sequential`.
 
-## Sequential Mode Without Reviewers
+## Sequential Executor Rounds
 
 A sequential node with one provider is a single executor path:
 
@@ -89,7 +106,7 @@ Use this shape when the node needs ordered executor retries or when later rounds
 should operate on the previous candidate workspace state. It does not add review
 feedback; for review feedback, use a multi-provider sequential node.
 
-## Sequential Review Loops
+## Executor + Reviewer Loop
 
 A sequential node with multiple providers becomes a review loop. Providers must
 be declared as a contiguous executor segment followed by a contiguous reviewer
@@ -115,6 +132,11 @@ checks for consensus.
 
 With one reviewer, consensus means that reviewer approved. With multiple
 reviewers, reviewers run in parallel and every reviewer must approve.
+
+For task-oriented review-loop guidance, see
+[How to Produce Findings and Run Review Loops](findings-and-review-loops.md).
+
+## Detailed Review-Loop Semantics
 
 | Reviewer count | Runtime behavior | Consensus rule |
 | --- | --- | --- |

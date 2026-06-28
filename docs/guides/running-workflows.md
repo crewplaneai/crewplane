@@ -1,5 +1,22 @@
 # Running Workflows
 
+## Choose The Command
+
+| Goal | Command |
+| --- | --- |
+| Check workflow validity | `crewplane validate` |
+| Preview execution without providers | `crewplane run --dry-run` |
+| Run without dashboard | `crewplane run --no-live` |
+| Run with dashboard when tmux is available | `crewplane run` |
+| Select a workflow | `crewplane run --tasks <file>` |
+| Force a fresh run | `crewplane run --force` |
+
+## What Happens On The Second Run
+
+A second run with the same workflow signature may skip provider invocation and
+reuse a previous successful result. This is expected. Use `--force` only when
+you want to bypass duplicate skip and resume.
+
 ## Default Discovery
 
 `crewplane validate` and `crewplane run` look for exactly one top-level
@@ -69,6 +86,9 @@ Use:
 - `--config` or `-c` to select config.
 - `--force` to bypass same-signature skip and failed/cancelled-run resume.
 
+Open [Inspecting Run Records](inspecting-artifacts.md) after a real run to see
+the summary, event timeline, manifests, stage outputs, and results.
+
 ## Duplicate Skip
 
 Crewplane computes a `workflow_signature` from the compiled workflow context and
@@ -81,7 +101,8 @@ Evidence lives under:
 - `.crewplane/execution-results/<run-key>/`
 
 Use `crewplane run --dry-run` to preview the advisory decision. Use `--force`
-when you intentionally want a new run even if an identical success exists.
+when you intentionally want a fresh run and intentionally want to bypass both
+duplicate skip and resume hydration.
 
 ## Resume
 
@@ -97,7 +118,7 @@ Look for:
 
 Use `--force` to bypass resume hydration and rerun every selected node.
 
-## Artifact Backend
+## Advanced: Artifact Backend
 
 The built-in filesystem artifact backend is the supported backend for normal
 real runs. A custom artifact backend must implement the same port capabilities

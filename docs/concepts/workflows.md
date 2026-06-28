@@ -4,6 +4,27 @@ The primary authored workflow format is Markdown: YAML frontmatter plus one
 Markdown section per non-input node. YAML workflow files can be loaded directly,
 but imports and composition are Markdown-only.
 
+## Minimum Workflow
+
+```yaml
+---
+schema_version: "1.0"
+name: "Review"
+nodes:
+  - id: review.project
+    mode: parallel
+    providers: ["mock"]
+---
+
+## review.project
+Review the current repository and summarize the highest-risk issues.
+```
+
+This is one node in one DAG. The provider name must match an `agents` entry in
+`.crewplane/config.yml`.
+
+## Multi-Provider Example
+
 ```yaml
 ---
 schema_version: "1.0"
@@ -18,6 +39,17 @@ nodes:
 ## review.context
 Review the current repository and report high-risk issues.
 ```
+
+## Mental Model
+
+| Term | Meaning |
+| --- | --- |
+| Workflow | The whole DAG. |
+| Node / stage | One unit of work in the DAG. |
+| Provider | A named CLI configuration from `.crewplane/config.yml`. |
+| `needs` | Dependency edge from one node to another. |
+| Preflight | The compiled plan Crewplane validates before provider CLIs run. |
+| Artifact reference | A way for downstream nodes to read upstream results. |
 
 ## Frontmatter
 
@@ -82,7 +114,8 @@ providers:
 Roles are `executor` and `reviewer`. Parallel nodes only allow executor roles.
 Sequential review loops use executor providers followed by reviewer providers.
 Reviewers approve with `NO_FINDINGS` or `NITS_ONLY`; all reviewers must approve
-for consensus.
+for consensus. Keep detailed review-loop behavior in the guide rather than in
+the conceptual model.
 
 For examples and configuration guidance, see
 [Node modes and provider roles](../guides/node-modes.md).

@@ -3,6 +3,22 @@
 Integrations are configured under `settings.integrations`.
 Generated projects select the `mock` invoker by default.
 
+Most users do not need this page. Use it when you are changing integration
+aliases, adapter options, or external adapters.
+
+For task-oriented setup, use [Provider setup](../getting-started/provider-setup.md),
+[Mock validation](../guides/mock-validation.md),
+[Observability](../guides/observability.md), and
+[Inspecting Run Records](../guides/inspecting-artifacts.md).
+
+| Need | Integration |
+| --- | --- |
+| Real provider CLI execution | `cli` invoker |
+| Provider-free testing | `mock` invoker |
+| Live dashboard | `tmux` UI |
+| No live UI | `none` UI |
+| Local run records | `filesystem` artifacts |
+
 Built-in aliases:
 
 | Kind | Aliases |

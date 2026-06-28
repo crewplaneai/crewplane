@@ -1,5 +1,15 @@
 # Command Reference
 
+Use this page for exact CLI syntax. For task-oriented guidance, start with
+[Running workflows](../guides/running-workflows.md).
+
+| Command | Use when |
+| --- | --- |
+| `crewplane init` | Create project-local config and example workflows. |
+| `crewplane validate` | Check workflow/config validity without invoking providers. |
+| `crewplane run` | Execute, dry-run, or force a workflow run. |
+| `crewplane cleanup workspaces` | Remove Experimental workspace cache entries. |
+
 ## `crewplane init`
 
 Initialize project-local config and example workflows.
@@ -56,15 +66,15 @@ Options:
 | `--tasks`, `-t` | Workflow file. Defaults to a single top-level `.crewplane/workflows/*.task.md`. |
 | `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
 | `--dry-run`, `-n` | Show the execution plan without invoking providers or writing run artifacts. |
-| `--force` | Run even if a matching successful `workflow_signature` exists; also bypasses resume hydration. |
+| `--force` | Run fresh and intentionally bypass both duplicate skip and resume hydration. |
 | `--no-live` | Disable live topology dashboard output. |
 
 When the mock invoker is active, `run` prints that no provider CLI commands will
 be started. `run --dry-run` skips provider executable availability checks and
 may read existing manifests for an advisory skip/resume message.
 
-`--force` bypasses same-signature duplicate skip and failed/cancelled-run resume
-hydration, causing a new full run for the selected workflow.
+Use `--force` when you want a fresh run and intentionally want to bypass both
+duplicate skip and resume hydration.
 
 ## `crewplane cleanup workspaces`
 
@@ -77,6 +87,9 @@ crewplane cleanup workspaces --yes
 
 The command is advisory by default. Destructive cleanup happens only when
 `--yes` is set and `--dry-run` is not set.
+
+See [Cleaning Up Workspace Caches](../guides/cleanup.md) for the operational
+guide and run-record retention note.
 
 Options:
 

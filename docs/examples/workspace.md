@@ -2,6 +2,16 @@
 
 Workspace examples show Experimental Git-backed source-tree isolation.
 
+These examples are advanced. Run the mock quickstart and a normal provider
+workflow before using Experimental workspace isolation.
+
+Prerequisites:
+
+- a Git repository
+- workspace support enabled in `.crewplane/config.yml`
+- an ordinary Git repository compatible with `blob_exact`
+- a provider CLI that works directly from your shell
+
 Packaged templates:
 
 - [workspace-alternatives-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md)
@@ -28,3 +38,6 @@ The templates demonstrate:
 
 Experimental workspace isolation is not sandboxing. Provider CLIs still run
 with their own configured permissions.
+
+See [Experimental workspace isolation](../guides/workspace-isolation.md) for
+the setup flow, support matrix, safety boundaries, and cleanup behavior.

@@ -1,5 +1,28 @@
 # Troubleshooting
 
+## Start By Symptom
+
+| Symptom | Start here |
+| --- | --- |
+| Command not found | [Installation](../getting-started/installation.md). |
+| No workflow found | [Default discovery](../guides/running-workflows.md#default-discovery). |
+| Provider not found | [Provider setup](../getting-started/provider-setup.md). |
+| Run skipped | [Duplicate skip](../guides/running-workflows.md#duplicate-skip). |
+| Run resumed | [Resume](../guides/running-workflows.md#resume). |
+| No dashboard | [tmux missing](#tmux-missing) or [Observability](../guides/observability.md). |
+| Need help | [Reproducible support bundle](reproducible-support-bundle.md). |
+
+## `crewplane: command not found`
+
+Confirm the install method finished and that the command is on `PATH`:
+
+```bash
+crewplane --help
+```
+
+For npm installs, check the npm prefix path. See
+[Installation](../getting-started/installation.md).
+
 ## `No workflow file found`
 
 Run `crewplane init`, or pass a workflow explicitly:

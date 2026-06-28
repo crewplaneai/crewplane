@@ -3,6 +3,20 @@
 Markdown workflows can import other Markdown workflows. Composition happens
 before runtime validation and execution.
 
+Only read this after you have written one normal workflow. Composition is for
+reusable workflow modules: shared review patterns, common inputs, or workflows
+that should be assembled from smaller pieces.
+
+```text
+root workflow
+  imports review module as quality.review
+        |
+        v
+composed DAG
+  quality.review.findings
+  quality.review.summary
+```
+
 ## Import Syntax
 
 ```yaml

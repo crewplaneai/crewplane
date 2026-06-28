@@ -2,10 +2,31 @@
 
 Crewplane is a local control plane for AI coding CLIs.
 
+For the product rationale, start with [Why Crewplane?](why-crewplane.md).
+
 The core model is blackboard orchestration: providers do not coordinate through
 shared in-memory state. Each provider invocation receives a rendered prompt and
-writes output that Crewplane persists as artifacts under `.crewplane/`.
-Downstream nodes read upstream artifacts through explicit workflow references.
+writes output that Crewplane persists under `.crewplane/`. Downstream nodes read
+upstream artifacts through explicit workflow references.
+
+```text
+Workflow Markdown
+      |
+      v
+Preflight plan
+      |
+      v
+DAG execution
+      |
+      v
+Provider CLI invocations
+      |
+      v
+Run record on disk
+      |
+      v
+Downstream artifact references
+```
 
 ## DAG Execution
 
@@ -27,9 +48,9 @@ Crewplane invokes provider tools as external commands configured in
 Provider-specific command building, retries, quota detection, prompt transport,
 output parsing, and usage parsing live behind the invoker adapter boundary.
 
-## Auditable Artifacts
+## Inspectable Run Records
 
-Runs write readable files under:
+Runs write inspectable files under:
 
 - `.crewplane/execution-stages/`
 - `.crewplane/execution-results/`
@@ -38,4 +59,10 @@ The stage tree contains logs, manifests, preflight bundles, per-node working
 artifacts, and runtime state. The results tree contains consolidated node
 outputs and findings.
 
-See the [artifact reference](../reference/artifacts.md) for the concrete layout.
+For teams with compliance or audit needs, these files can provide evidence for
+review. For individual developers, they are mainly a way to debug, resume, and
+inspect agent work after the terminal session ends.
+
+See [Preflight, Duplicate Skip, and Resume](preflight-and-idempotency.md) for
+how preflight shapes execution decisions. See the
+[artifact reference](../reference/artifacts.md) for the concrete layout.

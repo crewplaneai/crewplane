@@ -1,8 +1,21 @@
-# Inspecting Artifacts
+# Inspecting Run Records
 
 Crewplane writes run state under `.crewplane/`. The mock quickstart writes the
 same artifact structure as provider-backed runs, so inspect these files before
 switching to real providers.
+
+## Open These First
+
+| File | Why open it |
+| --- | --- |
+| `.crewplane/execution-stages/<run-key>/logs/summary.md` | Human-readable run overview. |
+| `.crewplane/execution-stages/<run-key>/logs/events.ndjson` | Timeline of run events. |
+| `.crewplane/execution-stages/<run-key>/manifests/run.json` | Status, workflow signature, resumed nodes, and run metadata. |
+| `.crewplane/execution-results/<run-key>/` | Consolidated node outputs and findings. |
+
+Use the summary first. Use the full tree below when you need exact artifact
+names for debugging, resume evidence, support bundles, or downstream workflow
+references.
 
 ## Main Directories
 

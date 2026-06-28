@@ -3,6 +3,9 @@
 Workspace isolation is an Experimental, opt-in Git-backed source-tree isolation
 feature. It is not sandboxing and is not a security boundary.
 
+Do not read this for your first run. Use this when provider edits should not
+touch the project root directly.
+
 When enabled and selected by a workflow, Crewplane materializes provider work in
 separate Git-backed worktrees or writable snapshots so providers do not edit the
 project root directly. Provider CLIs and setup commands still run with their
@@ -51,26 +54,6 @@ a workflow declares no `worktrees`, providers still run in the project root and
 no Git source policy, worktree, snapshot, workspace state, or bundle is created.
 
 `settings.default_workspace` is not a supported config key.
-
-## Support Matrix
-
-The initial implementation uses the `blob_exact` contract. Provider-visible file
-bytes must match Git blob bytes exactly, so repositories with features that can
-rewrite bytes fail before provider invocation.
-
-| Repository feature | Experimental workspace support | Remediation |
-| --- | --- | --- |
-| Clean ordinary Git repository | Yes | Use `settings.workspace.enabled: true` with workflow `worktrees` |
-| Non-Git project | No | Set `settings.workspace.enabled: false` |
-| Git LFS or custom filters | No | Disable workspace isolation or wait for an LFS-aware backend |
-| `* text=auto`, `eol`, `crlf`, or encoding conversion | No | Disable workspace isolation or wait for a text-normalized contract |
-| Submodules | No | Disable workspace isolation or restructure the workflow |
-| Sparse or partial clone | No | Use a full clone |
-| Native Windows | No | Use WSL or another POSIX environment |
-| Ordinary ignored caches | Yes, excluded from lineage | Use setup profiles or writable snapshots |
-
-Workspace-enabled runs require supported Git capabilities, POSIX-compatible
-filesystem behavior, and an invoker adapter that honors runtime-supplied `cwd`.
 
 ## Declare Worktrees
 
@@ -136,6 +119,26 @@ Common validation failures:
 - `clean_start` must be `strict` or `tracked_only`.
 - Worktree names cannot be `none`.
 - Mutable `kind: worktree` nodes cannot use multiple executor providers.
+
+## Support Matrix
+
+The initial implementation uses the `blob_exact` contract. Provider-visible file
+bytes must match Git blob bytes exactly, so repositories with features that can
+rewrite bytes fail before provider invocation.
+
+| Repository feature | Experimental workspace support | Remediation |
+| --- | --- | --- |
+| Clean ordinary Git repository | Yes | Use `settings.workspace.enabled: true` with workflow `worktrees` |
+| Non-Git project | No | Set `settings.workspace.enabled: false` |
+| Git LFS or custom filters | No | Disable workspace isolation or wait for an LFS-aware backend |
+| `* text=auto`, `eol`, `crlf`, or encoding conversion | No | Disable workspace isolation or wait for a text-normalized contract |
+| Submodules | No | Disable workspace isolation or restructure the workflow |
+| Sparse or partial clone | No | Use a full clone |
+| Native Windows | No | Use WSL or another POSIX environment |
+| Ordinary ignored caches | Yes, excluded from lineage | Use setup profiles or writable snapshots |
+
+Workspace-enabled runs require supported Git capabilities, POSIX-compatible
+filesystem behavior, and an invoker adapter that honors runtime-supplied `cwd`.
 
 ## Setup Profiles
 

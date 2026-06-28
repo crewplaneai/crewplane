@@ -3,9 +3,19 @@
 Crewplane records run events, provider logs, and summaries for real execution.
 The default UI integration is the tmux live dashboard.
 
-The quickstart uses `crewplane run --no-live`, so tmux is not required for the
-first successful run. Logs and summaries are still written under
-`.crewplane/execution-stages/<run-key>/logs/`.
+## What You Can Observe
+
+| Need | Where to look |
+| --- | --- |
+| Live DAG status | tmux dashboard. |
+| Run summary | `.crewplane/execution-stages/<run-key>/logs/summary.md`. |
+| Event timeline | `.crewplane/execution-stages/<run-key>/logs/events.ndjson`. |
+| Provider output | Node-local provider logs. |
+| Final results | `.crewplane/execution-results/<run-key>/`. |
+
+tmux is optional. The quickstart uses `crewplane run --no-live`, so tmux is not
+required for the first successful run. Logs and summaries are still written
+under `.crewplane/execution-stages/<run-key>/logs/`.
 
 ## Live Dashboard
 
@@ -61,3 +71,8 @@ Run summaries are written to:
 
 Summaries include run status and visible-text usage/spend estimates when the
 provider output contains enough information or pricing is configured.
+
+See also:
+
+- [Inspecting Run Records](inspecting-artifacts.md)
+- [Running workflows](running-workflows.md)

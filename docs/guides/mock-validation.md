@@ -4,6 +4,18 @@ Use the `mock` invoker to exercise workflows without provider CLI calls,
 network latency, provider accounts, API keys, or provider spend. New
 `crewplane init` projects use mock execution by default.
 
+## When To Use Mock
+
+Use mock execution to:
+
+- confirm installation
+- validate workflow shape
+- test imports and template references
+- demonstrate artifact layout
+- simulate provider failure and resume behavior
+
+Mock output proves orchestration behavior, not model quality.
+
 ## Config
 
 ```yaml
@@ -38,7 +50,9 @@ Mock invoker active: no provider CLI commands will be started.
 
 When `output_mode: "file"` is used, `output_dir` is required.
 
-## File Fixtures
+## Advanced Mock Testing
+
+### File Fixtures
 
 File mode searches fixture paths from most specific to least specific. For a
 review-loop invocation, common candidates are:
@@ -71,12 +85,12 @@ invocation working directory after workspace validation.
 }
 ```
 
-## Strict File Mode
+### Strict File Mode
 
 `strict_file_mode: true` makes missing fixtures fail instead of falling back to
 generated mock output.
 
-## Failure Selectors
+### Failure Selectors
 
 Use `fail_when` to simulate failures:
 
