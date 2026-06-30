@@ -60,8 +60,21 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                 "First run uses deterministic mock execution; no provider CLIs are required.",
                 output_text,
             )
-            self.assertIn("Real provider runs later:", output_text)
-            self.assertIn("which claude codex gemini copilot", output_text)
+            self.assertIn("After the provider-free first run:", output_text)
+            self.assertIn("crewplane onboarding", output_text)
+            self.assertIn(
+                "The onboarding command prepares one real provider handoff "
+                "when generated defaults are unchanged.",
+                output_text,
+            )
+            self.assertIn(
+                "It will not start provider CLIs or authenticate providers.",
+                output_text,
+            )
+            self.assertIn(
+                "Manual setup for customized or multi-provider projects:",
+                output_text,
+            )
             self.assertIn(
                 'settings.integrations.invoker.implementation: "cli"',
                 output_text,
@@ -81,11 +94,15 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                 output_text,
             )
             self.assertLess(
-                output_text.index("Real provider runs later:"),
+                output_text.index("After the provider-free first run:"),
                 output_text.index("Next:"),
             )
             self.assertIn("crewplane validate", output_text)
             self.assertIn("crewplane run --no-live", output_text)
+            self.assertLess(
+                output_text.index("crewplane run --no-live"),
+                output_text.index("crewplane onboarding"),
+            )
             self.assertIn(
                 "Mock invoker active: no provider CLI commands will be started.",
                 output_text,

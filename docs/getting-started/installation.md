@@ -62,6 +62,7 @@ directory to `PATH` and confirm Node.js is still available:
 npm_prefix="$(npm config get prefix)"
 export PATH="$npm_prefix/bin:$PATH"
 command -v node
+command -v crewplane
 crewplane --help
 ```
 

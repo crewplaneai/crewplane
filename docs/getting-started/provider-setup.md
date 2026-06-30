@@ -4,6 +4,14 @@ Use this page after the mock quickstart succeeds. The first
 `crewplane init && crewplane validate && crewplane run --no-live` path does not
 need provider CLIs, API keys, or config edits.
 
+If `crewplane onboarding` prepared a provider, your generated Crewplane config
+and default workflow are already wired for that provider. Onboarding only checks
+executable names on `PATH` and validates Crewplane wiring; it does not
+authenticate the provider or check account/model readiness.
+
+If onboarding could not update files because you had local edits, or if you need
+additional providers, use the manual steps below.
+
 Real provider runs start the external commands configured in
 `.crewplane/config.yml`. Those tools run with their own filesystem, network,
 credential, approval, and sandbox settings. Crewplane coordinates them and

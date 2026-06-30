@@ -53,7 +53,7 @@ Teams already define how agents behave with repo instructions, skills, MCP serve
 | **Crewplane** | How stages are sequenced, parallelized, retried, reviewed, resumed, and inspected |
 
 <details>
-<summary><strong>Why not just use one agent CLI?</strong> For one-off tasks, you probably should. Crewplane is for agent work that becomes a workflow.</summary>
+<summary><strong>Why not just use one agent CLI?</strong> For one-off tasks, you probably should. Crewplane is for agent work that becomes a workflow. (Click to expand more details)</summary>
 
 | Current pattern | Crewplane gives you |
 | --- | --- |
@@ -111,7 +111,9 @@ crewplane run --no-live
 `crewplane init` creates `.crewplane/config.yml`, a default workflow, and
 additional example templates under `.crewplane/workflows/example-templates/`.
 
-`crewplane run --no-live` then runs the workflow with a deterministic `mock` provider — no provider CLIs, API keys, or config edits required.
+`crewplane run --no-live` then runs the workflow with a deterministic `mock`
+provider. The first run does not require provider CLIs, API keys, or config
+edits.
 
 Inspect the artifacts:
 
@@ -122,10 +124,33 @@ These files are the same shape you will see with real providers: each step has
 rendered inputs, outputs, logs, manifests, and final results you can inspect or
 diff with normal tools.
 
+Mock output is scaffolding for validating Crewplane behavior, not model output.
+
 Treat run artifacts like build outputs: useful for debugging and review, but
 decide separately what, if anything, belongs in version control.
 
-When you are ready to connect real tools, follow [provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md).
+## Prepare A Real Provider
+
+After the provider-free first run succeeds, use onboarding to prepare one real
+provider handoff:
+
+```bash
+crewplane onboarding
+```
+
+Onboarding detects provider CLI names on `PATH`, lets you choose one provider,
+updates unchanged generated defaults, and validates the resulting Crewplane
+wiring. It does not start real provider CLIs, authenticate providers, or check
+provider account/model readiness.
+
+Recommended first real run:
+
+```bash
+crewplane run --no-live
+```
+
+For edited files, multi-provider setup, or manual configuration, use
+[provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md).
 
 ## Live Dashboard
 
@@ -174,7 +199,7 @@ Review the current repository and report the highest-risk issues.
 Full workflow authoring docs are in the
 [workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/workflow-syntax.md).
 
-## First Real Run
+## First Real Run with live dashboard
 
 After the mock path works, this walkthrough shows the shape of a first real
 provider run:

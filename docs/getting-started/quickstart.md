@@ -3,6 +3,7 @@
 This quickstart does not call a model. It uses deterministic mock execution so
 you can see Crewplane's workflow machinery without provider CLIs, credentials,
 API keys, provider accounts, token cost, config edits, or `tmux`.
+It does not require provider CLIs, API keys, provider accounts, or config edits.
 
 You will see Crewplane:
 
@@ -74,6 +75,25 @@ find .crewplane/execution-stages -maxdepth 4 -type f | sort
 find .crewplane/execution-results -maxdepth 3 -type f | sort
 ```
 
+## Prepare A Real Provider
+
+After the provider-free run succeeds and you have inspected the run record, run:
+
+```bash
+crewplane onboarding
+```
+
+Onboarding checks known provider CLI names on `PATH`, lets you choose one
+provider handoff, updates unchanged generated defaults, and validates the
+resulting Crewplane wiring. It does not start real provider CLIs, authenticate
+providers, or check provider account/model readiness.
+
+When onboarding finishes, start the first real provider run yourself:
+
+```bash
+crewplane run --no-live
+```
+
 ## After The Mock Run
 
 Want to see the same flow with a real provider? Watch the Codex walkthrough:
@@ -89,9 +109,9 @@ status, run-record status, live UI status, and readiness for real providers.
 
 ## Real Providers
 
-After the mock run succeeds and you have inspected the run record, configure
-real provider CLIs with [provider setup](provider-setup.md). Real provider runs
-start the external commands configured in `.crewplane/config.yml`.
+Use [provider setup](provider-setup.md) for edited generated files, additional
+providers, or manual configuration. Real provider runs start the external
+commands configured in `.crewplane/config.yml`.
 
 ## Selecting A Workflow
 
@@ -109,5 +129,7 @@ crewplane run --tasks .crewplane/workflows/example-templates/code-review-example
 
 ## Next
 
-Use the [First Run Checklist](setup-checklist.md). If every section passes,
-continue to [Provider setup](provider-setup.md).
+Use the [First Run Checklist](setup-checklist.md) while you verify the
+mock-first path. When you are ready for the generated default handoff, run
+`crewplane onboarding`; for manual configuration, continue to
+[Provider setup](provider-setup.md).

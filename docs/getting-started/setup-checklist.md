@@ -44,9 +44,27 @@ The quickstart uses `--no-live`, so tmux is not required. Later, omit
 
 If tmux is missing, Crewplane warns and continues without the dashboard.
 
+## Provider Handoff Status
+
+After the mock status, safety status, run record, and optional live UI checks
+pass, run:
+
+```bash
+crewplane onboarding
+```
+
+Confirm:
+
+- [ ] Detection checked provider executable names on `PATH` only.
+- [ ] Onboarding did not authenticate providers, run version commands, check
+  account/model readiness, or inspect provider-tool settings.
+- [ ] Generated defaults were updated, or onboarding stopped and linked to
+  provider setup because generated files had local edits.
+- [ ] No real provider CLI was started by onboarding.
+
 ## Ready For Real Providers
 
-Before switching to real providers:
+Before manual or additional provider setup:
 
 - [ ] Install and authenticate each provider CLI outside Crewplane.
 - [ ] Confirm each command works directly from your shell.
@@ -57,5 +75,7 @@ Before switching to real providers:
 
 ## Next
 
-If every section passes, continue to [Provider setup](provider-setup.md). If
-not, check [Troubleshooting](../safety/troubleshooting.md).
+If onboarding configured one provider, make the first real run with
+`crewplane run --no-live`. For edited files, additional providers, or manual
+setup, continue to [Provider setup](provider-setup.md). If any earlier section
+does not pass, check [Troubleshooting](../safety/troubleshooting.md).

@@ -15,7 +15,6 @@ from crewplane.core.preflight import (
     PreflightCompilationPreview,
     load_workflow_source_for_preflight,
 )
-from crewplane.core.preflight.secrets import FingerprintKeyProvider
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.observability import ObservabilityHub
@@ -24,20 +23,13 @@ from crewplane.runtime.execution import execute_workflow
 from . import workflow_runner
 from .cleanup import cleanup_app
 from .dry_run import preview_topological_waves, print_dry_run_plan
+from .onboarding import ONBOARDING_COMMAND_HELP, run_onboarding_command
 from .paths import (
-    WORKFLOWS_DIRNAME,
-    ensure_state_dir,
     resolve_state_file,
     resolve_tasks_file,
 )
+from .project_init import initialize_project_templates
 from .run.resume import print_dry_run_resume_advisory
-from .templates import (
-    CONFIG_TEMPLATE,
-    DEFAULT_WORKFLOW_TEMPLATE,
-    WORKFLOW_LIBRARY_TEMPLATE_DIR,
-    create_template_file,
-    discover_workflow_library_assets,
-)
 
 app = typer.Typer(name="crewplane", help="Multi-agent workflow runner")
 app.add_typer(cleanup_app, name="cleanup")
@@ -56,12 +48,6 @@ class CliWorkflowContext:
     paths: CliWorkflowPaths
     config: Config
     source: PreflightWorkflowSource
-
-
-def _create_template_file(
-    file_path: Path, template_path: Path, console: Console
-) -> None:
-    create_template_file(file_path, template_path, console)
 
 
 def _resolve_tasks_file(
@@ -182,52 +168,23 @@ def _compile_validate_preview_for_context(
     return preview
 
 
-def _install_template_assets(
-    source_root: Path,
-    destination_root: Path,
-    assets: list[Path],
-    console: Console,
-) -> None:
-    for relative_path in assets:
-        source_template = source_root / relative_path
-        output_path = destination_root / relative_path
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        _create_template_file(output_path, source_template, console)
-
-
 @app.command()
 def init() -> None:
     """Initialize a new .crewplane directory with default config files."""
     console = Console()
-    state_dir = ensure_state_dir()
-    workflows_dir = state_dir / WORKFLOWS_DIRNAME
-    workflows_dir.mkdir(exist_ok=True)
-    workflow_library_dir = workflows_dir / "example-templates"
-    workflow_library_dir.mkdir(exist_ok=True)
-
-    _create_template_file(state_dir / "config.yml", CONFIG_TEMPLATE, console)
-    _create_template_file(
-        workflows_dir / "single-agent-review.task.md",
-        DEFAULT_WORKFLOW_TEMPLATE,
-        console,
-    )
-    _install_template_assets(
-        WORKFLOW_LIBRARY_TEMPLATE_DIR,
-        workflow_library_dir,
-        discover_workflow_library_assets(),
-        console,
-    )
-    key_result = FingerprintKeyProvider(state_dir).load_key("persist_if_needed")
-    for diagnostic in key_result.diagnostics:
-        console.print(f"[yellow]WARN[/] {diagnostic.message}")
+    initialize_project_templates(console)
 
     console.print("\n[bold]Initialized .crewplane directory.[/]")
     console.print(
         "First run uses deterministic mock execution; no provider CLIs are required."
     )
-    console.print("\n[bold]Real provider runs later:[/]")
-    console.print("  Check which provider CLIs are already available:")
-    console.print("  [cyan]which claude codex gemini copilot[/]")
+    console.print("\n[bold]After the provider-free first run:[/]")
+    console.print(
+        "  The onboarding command prepares one real provider handoff "
+        "when generated defaults are unchanged."
+    )
+    console.print("  It will not start provider CLIs or authenticate providers.")
+    console.print("\n[bold]Manual setup for customized or multi-provider projects:[/]")
     console.print(
         "  Enable matching agents in [cyan].crewplane/config.yml[/], set "
         '[cyan]settings.integrations.invoker.implementation: "cli"[/], and set '
@@ -249,6 +206,13 @@ def init() -> None:
     console.print("\n[bold]Next:[/]")
     console.print("  [cyan]crewplane validate[/]")
     console.print("  [cyan]crewplane run --no-live[/]")
+    console.print("  [cyan]crewplane onboarding[/]")
+
+
+@app.command("onboarding", help=ONBOARDING_COMMAND_HELP)
+def onboarding() -> None:
+    """Prepare one real provider after the provider-free first run."""
+    run_onboarding_command()
 
 
 @app.command()

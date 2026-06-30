@@ -20,13 +20,16 @@ local run records on disk.
 1. Read [Why Crewplane?](concepts/why-crewplane.md).
 2. Run the provider-free [Quickstart](getting-started/quickstart.md).
 3. Open the run summary and final result.
+4. Run `crewplane onboarding` when you are ready to prepare one provider.
 
 ### I Already Have A Provider CLI Installed
 
 1. Run the mock quickstart first.
-2. Follow [Provider setup](getting-started/provider-setup.md).
-3. Run one real workflow with `--no-live`.
-4. Inspect the run record.
+2. Inspect the run record.
+3. Run `crewplane onboarding` for the generated default handoff.
+4. Use [Provider setup](getting-started/provider-setup.md) for edited files or more providers.
+5. Run one real workflow with `--no-live`.
+6. Inspect the run record.
 
 ### I Need To Debug A Run
 

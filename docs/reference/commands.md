@@ -6,6 +6,7 @@ Use this page for exact CLI syntax. For task-oriented guidance, start with
 | Command | Use when |
 | --- | --- |
 | `crewplane init` | Create project-local config and example workflows. |
+| `crewplane onboarding` | Prepare one real provider after the provider-free first run. |
 | `crewplane validate` | Check workflow/config validity without invoking providers. |
 | `crewplane run` | Execute, dry-run, or force a workflow run. |
 | `crewplane cleanup workspaces` | Remove Experimental workspace cache entries. |
@@ -29,6 +30,25 @@ Creates:
 The generated config uses deterministic mock execution.
 
 Existing files are not overwritten by template creation.
+
+## `crewplane onboarding`
+
+Prepare one real provider after the provider-free first run.
+
+```bash
+crewplane onboarding
+```
+
+This interactive command checks that the generated default config and workflow
+are present, detects known provider CLI names on `PATH`, lets you choose one
+provider handoff, updates unchanged generated defaults, and validates the
+resulting Crewplane wiring.
+
+In the normal quickstart path, it does not run `crewplane init`, rerun the mock
+workflow, start real provider CLIs, authenticate providers, or check provider
+versions/account/model access. If `.crewplane/` or generated files are missing,
+it can offer a confirmed, non-overwriting init recovery step. There are no
+command-specific options in v1.
 
 ## `crewplane validate`
 
