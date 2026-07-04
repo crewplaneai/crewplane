@@ -156,9 +156,7 @@ def print_missing_mock_run_evidence(console: Console) -> None:
         "   [yellow]WARN[/] No successful provider-free mock run manifest found."
     )
     console.print("")
-    console.print(
-        "The README path normally runs [cyan]crewplane run[/] first."
-    )
+    console.print("The README path normally runs [cyan]crewplane run[/] first.")
     console.print("[1] continue real-provider setup anyway")
     console.print("[0] quit and run mock first")
 
