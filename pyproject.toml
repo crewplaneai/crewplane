@@ -1,7 +1,7 @@
 [project]
 name = "crewplane"
-version = "0.1.0"
-description = "A Markdown-native control plane for AI coding CLIs"
+version = "0.1.1"
+description = "A CLI-first control plane for resumable coding-agent workflows"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "Apache-2.0"

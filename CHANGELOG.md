@@ -4,6 +4,26 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-04
+
+### Added
+
+- Added `crewplane onboarding`, an interactive provider handoff that detects
+  supported provider CLI names on `PATH`, lets users pick one provider, and
+  updates unchanged generated config and workflow defaults for a real-provider
+  first run.
+- Added onboarding validation, provider setup links, and manual fallback
+  snippets so users can recover or complete setup without hand-editing the
+  generated YAML from scratch.
+
+### Changed
+
+- Refreshed the mock-first quickstart, provider setup, workflow, observability,
+  artifact inspection, workspace isolation, and troubleshooting documentation
+  around the new onboarding flow.
+- Reorganized documentation images by topic so public guides reference assets
+  from clearer locations.
+
 ## [0.1.0] - 2026-06-25
 
 ### Added
