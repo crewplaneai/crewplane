@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+from collections import deque
+from collections.abc import Iterator
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -175,6 +177,19 @@ def parse_python(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
+def walk_ast(node: ast.AST) -> Iterator[ast.AST]:
+    todo: deque[ast.AST] = deque([node])
+    while todo:
+        current = todo.popleft()
+        yield current
+        for field in current._fields:
+            value = getattr(current, field, None)
+            if isinstance(value, ast.AST):
+                todo.append(value)
+            elif isinstance(value, list):
+                todo.extend(child for child in value if isinstance(child, ast.AST))
+
+
 def is_single_underscore_name(name: str) -> bool:
     return name.startswith("_") and not name.startswith("__")
 
@@ -227,7 +242,7 @@ def is_repo_module_name(module_name: str) -> bool:
 
 def imported_repo_aliases(path: Path, module: ast.Module) -> set[str]:
     aliases: set[str] = set()
-    for node in ast.walk(module):
+    for node in walk_ast(module):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if is_repo_module_name(alias.name):
@@ -260,6 +275,15 @@ def string_value(node: ast.AST) -> str | None:
 
 def has_private_dotted_part(value: str) -> bool:
     return any(is_single_underscore_name(part) for part in value.split("."))
+
+
+def test_ast_walker_does_not_depend_on_mutable_stdlib_walk_helpers(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(ast, "iter_child_nodes", deque())
+    module = ast.parse("value = helper(1)\n")
+
+    assert any(isinstance(node, ast.Call) for node in walk_ast(module))
 
 
 def test_original_oversized_files_are_small_or_deleted() -> None:
@@ -295,7 +319,7 @@ def test_adapters_do_not_import_runtime_execution_modules() -> None:
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "crewplane" / "adapters"):
         module = parse_python(path)
-        for node in ast.walk(module):
+        for node in walk_ast(module):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name.startswith("crewplane.runtime.execution"):
@@ -318,7 +342,7 @@ def test_architecture_ports_do_not_import_runtime_or_observability() -> None:
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "crewplane" / "architecture" / "ports"):
         module = parse_python(path)
-        for node in ast.walk(module):
+        for node in walk_ast(module):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name.startswith(forbidden_prefixes):
@@ -376,7 +400,7 @@ def test_no_cross_module_single_underscore_imports() -> None:
     for root in (SRC_ROOT, TESTS_ROOT):
         for path in python_files(root):
             module = parse_python(path)
-            for node in ast.walk(module):
+            for node in walk_ast(module):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         parts = alias.name.split(".")
@@ -404,7 +428,7 @@ def test_no_cross_module_single_underscore_attribute_access() -> None:
         for path in python_files(root):
             module = parse_python(path)
             imported_aliases = imported_repo_aliases(path, module)
-            for node in ast.walk(module):
+            for node in walk_ast(module):
                 if not isinstance(node, ast.Attribute):
                     continue
                 if not is_single_underscore_name(node.attr):
@@ -432,7 +456,7 @@ def test_no_private_patch_targets() -> None:
         for path in python_files(root):
             module = parse_python(path)
             imported_aliases = imported_repo_aliases(path, module)
-            for node in ast.walk(module):
+            for node in walk_ast(module):
                 if not isinstance(node, ast.Call):
                     continue
                 call_chain = expression_chain(node.func)
@@ -488,7 +512,7 @@ def test_review_contract_has_neutral_imports() -> None:
     )
     offenders: list[str] = []
     module = parse_python(path)
-    for node in ast.walk(module):
+    for node in walk_ast(module):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.startswith(forbidden_prefixes):
@@ -507,7 +531,7 @@ def test_execution_events_do_not_use_legacy_flat_fields() -> None:
     for root in (SRC_ROOT, TESTS_ROOT):
         for path in python_files(root):
             module = parse_python(path)
-            for node in ast.walk(module):
+            for node in walk_ast(module):
                 if (
                     not isinstance(node, ast.Call)
                     or call_name(node.func) != "ExecutionEvent"
@@ -529,7 +553,7 @@ def test_execution_event_has_no_legacy_flat_accessors() -> None:
     path = SRC_ROOT / "crewplane" / "observability" / "events" / "execution_event.py"
     module = parse_python(path)
     legacy_properties: list[str] = []
-    for node in ast.walk(module):
+    for node in walk_ast(module):
         if (
             not isinstance(node, ast.FunctionDef)
             or node.name not in LEGACY_EVENT_FIELDS
@@ -547,7 +571,7 @@ def test_runtime_code_uses_event_builders_instead_of_direct_event_construction()
     runtime_root = SRC_ROOT / "crewplane" / "runtime"
     for path in python_files(runtime_root):
         module = parse_python(path)
-        for node in ast.walk(module):
+        for node in walk_ast(module):
             if isinstance(node, ast.Call) and call_name(node.func) == "ExecutionEvent":
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
     assert offenders == []
@@ -565,7 +589,7 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
             if forbidden_name in source:
                 offenders.append(f"{path.relative_to(REPO_ROOT)}: {forbidden_name}")
         module = parse_python(path)
-        for node in ast.walk(module):
+        for node in walk_ast(module):
             if isinstance(node, ast.ImportFrom) and node.module == "os.path":
                 imported_names = {alias.name for alias in node.names}
                 if "basename" in imported_names:
@@ -591,7 +615,7 @@ def test_log_presentation_does_not_import_runtime_output_extractors() -> None:
     presentation_root = SRC_ROOT / "crewplane" / "observability" / "log_presentation"
     for path in python_files(presentation_root):
         module = parse_python(path)
-        for node in ast.walk(module):
+        for node in walk_ast(module):
             if isinstance(node, ast.ImportFrom):
                 module_name = import_from_module_name(path, node)
                 if any(
@@ -778,7 +802,7 @@ def test_output_manager_directory_fields_are_read_only_properties() -> None:
                 property_fields.add(member.name)
             if not isinstance(member, ast.FunctionDef) or member.name != "__init__":
                 continue
-            for child in ast.walk(member):
+            for child in walk_ast(member):
                 targets: list[ast.expr] = []
                 if isinstance(child, ast.Assign):
                     targets = list(child.targets)
