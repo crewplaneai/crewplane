@@ -33,7 +33,7 @@ The names must match exactly. Setting the invoker implementation to `cli` is the
 point where `crewplane run` can start the external provider commands listed
 under `agents`.
 
-![Provider setup diagram showing that `agents.codex` in `.crewplane/config.yml` must match `providers: ["codex"]` in the workflow, then the invoker changes from mock to cli before validation and execution.](../images/provider-setup-two-files.png)
+![Provider setup diagram showing that `agents.codex` in `.crewplane/config.yml` must match `providers: ["codex"]` in the workflow, then the invoker changes from mock to cli before validation and execution.](../images/providers/provider-setup-two-files.png)
 
 First, confirm the provider CLI works outside Crewplane:
 

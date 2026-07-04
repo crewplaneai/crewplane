@@ -120,7 +120,7 @@ This is a good time to read
 [Workflow Authoring](../guides/workflow-authoring.md), because you now have a
 local run record to compare against the workflow model.
 
-![Run-record inspection flow showing console workflow execution, console Run Summary, run results, run stages, and debug details with the same run key across stage and result paths.](../images/run-record-read-order.png)
+![Run-record inspection flow showing console workflow execution, console Run Summary, run results, run stages, and debug details with the same run key across stage and result paths.](../images/run-records/run-record-read-order.png)
 
 In short: run the workflow, read the console summary, inspect the saved result,
 then use the stage files for timeline, logs, manifests, and support details.
@@ -149,7 +149,7 @@ find .crewplane/execution-results -maxdepth 3 -type f | sort
 
 Use this tree as a compact map of the folders you just inspected:
 
-![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-record-tree.png)
+![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-records/run-record-tree.png)
 
 ## 5. Onboard A Provider
 

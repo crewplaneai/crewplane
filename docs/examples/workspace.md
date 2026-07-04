@@ -4,7 +4,7 @@ Workspace examples show how Crewplane can run provider work against managed Git
 worktrees and snapshots. Treat them as advanced examples: run the mock
 quickstart and one normal provider workflow before using workspace isolation.
 
-![Workspace isolation boundary diagram showing project root, workspace cache, provider process, `.crewplane/` artifacts, optional branch export, and a clear not-a-sandbox boundary.](../images/workspace-isolation-boundary.png)
+![Workspace isolation boundary diagram showing project root, workspace cache, provider process, `.crewplane/` artifacts, optional branch export, and a clear not-a-sandbox boundary.](../images/workspace/workspace-isolation-boundary.png)
 
 The examples demonstrate source-tree isolation with managed worktrees and
 snapshots. They do not sandbox provider CLIs.

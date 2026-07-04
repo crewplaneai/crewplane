@@ -12,7 +12,7 @@ project root directly. Provider CLIs and setup commands still run with their
 configured process permissions, approval settings, network access, credentials,
 and filesystem access.
 
-![Workspace isolation boundary diagram showing project root, workspace cache, provider process, `.crewplane/` artifacts, optional branch export, and a clear not-a-sandbox boundary.](../images/workspace-isolation-boundary.png)
+![Workspace isolation boundary diagram showing project root, workspace cache, provider process, `.crewplane/` artifacts, optional branch export, and a clear not-a-sandbox boundary.](../images/workspace/workspace-isolation-boundary.png)
 
 Workspace isolation moves provider-visible source files into a managed worktree
 or snapshot and records lineage under `.crewplane/`. The provider process still

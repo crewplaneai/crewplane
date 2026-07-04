@@ -101,7 +101,7 @@ nodes:
 Downstream prompts can reference upstream artifacts, for example
 `{{inspect.output}}` or `{{inspect.findings}}`.
 
-![Three examples showing frontmatter on the left and the rendered node dependency graph on the right: one upstream dependency, two independent nodes that can run in parallel, and two upstream review nodes feeding summarize.](../images/workflow-dependencies.png)
+![Three examples showing frontmatter on the left and the rendered node dependency graph on the right: one upstream dependency, two independent nodes that can run in parallel, and two upstream review nodes feeding summarize.](../images/workflows/workflow-dependencies.png)
 
 ## Node Modes
 
@@ -117,7 +117,7 @@ Every workflow node has a `mode`:
 concurrency, where independent nodes can run at the same time after their
 dependencies are satisfied.
 
-![Diagram contrasting DAG concurrency, where independent nodes run in the same wave, with `mode: parallel`, where one node fans out the same prompt to multiple providers.](../images/dag-vs-provider-fanout.png)
+![Diagram contrasting DAG concurrency, where independent nodes run in the same wave, with `mode: parallel`, where one node fans out the same prompt to multiple providers.](../images/workflows/dag-vs-provider-fanout.png)
 
 > **NOTE**: `needs` controls DAG order across nodes. `mode: parallel` controls provider
 fanout inside one node. A workflow can use both at the same time, but they answer

@@ -80,7 +80,7 @@ When switching from the generated mock config to real providers:
 - set `settings.integrations.invoker.implementation: "cli"`
 - replace generated mock invoker options with `options: {}`
 
-![Provider setup diagram showing the matching agent name in `.crewplane/config.yml`, the matching workflow provider name, and the invoker switch from mock to cli.](../images/provider-setup-two-files.png)
+![Provider setup diagram showing the matching agent name in `.crewplane/config.yml`, the matching workflow provider name, and the invoker switch from mock to cli.](../images/providers/provider-setup-two-files.png)
 
 `.crewplane/config.yml` defines `agents.<name>`. Workflows select that same name
 with `providers: ["<name>"]`. `implementation: "mock"` keeps the first run

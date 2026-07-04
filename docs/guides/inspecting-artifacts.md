@@ -27,7 +27,7 @@ breakdown.
 
 ## Open These First
 
-![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-record-tree.png)
+![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-records/run-record-tree.png)
 
 Start with the files a user usually needs, then go deeper only when you are
 debugging.

@@ -14,7 +14,7 @@ metadata.
 | Skip/resume evidence | `execution-stages/<run-key>/manifests/run.json` |
 | Final node outputs | `execution-results/<run-key>/` |
 
-![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-record-tree.png)
+![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-records/run-record-tree.png)
 
 Stage directories contain run-local logs, preflight bundles, manifests, and node
 artifacts. Result directories contain consolidated outputs, findings, and

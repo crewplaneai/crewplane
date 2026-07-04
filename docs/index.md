@@ -3,7 +3,7 @@
 Crewplane turns coding-agent CLI calls into explicit, resumable workflows with
 local run records on disk.
 
-![Crewplane concept map showing how workflows, preflight, nodes, agents, invokers, artifact references, and run records fit together.](images/concept-map.png)
+![Crewplane concept map showing how workflows, preflight, nodes, agents, invokers, artifact references, and run records fit together.](images/concepts/concept-map.png)
 
 ## Start By Goal
 

@@ -14,7 +14,7 @@ adds the missing control plane around them: an explicit workflow, validated
 stage boundaries, and a local record of what happened.
 
 ![Crewplane explains provider portability, traceable runs, duration control, and
-fit with existing team processes.](../images/why_creplane.png)
+fit with existing team processes.](../images/concepts/why-crewplane.png)
 
 ## The Gap Between Prompt And Process
 
@@ -50,7 +50,7 @@ workflow around those tools explicit.
 
 ![Crewplane differs from typical SDK-first agent frameworks by staying
 CLI-first, Markdown-defined, artifact-backed, and explicit about control
-points.](../images/different_design.png)
+points.](../images/concepts/different-design.png)
 
 ## Why The Control Plane Should Be Separate
 
@@ -74,7 +74,7 @@ in-memory state. Each provider invocation receives a rendered prompt and writes
 output that Crewplane persists under `.crewplane/`. Downstream nodes read
 upstream artifacts through explicit workflow references.
 
-![Crewplane concept map showing workflow Markdown, preflight, DAG nodes, config agents, invoker selection, run records, and artifact references.](../images/concept-map.png)
+![Crewplane concept map showing workflow Markdown, preflight, DAG nodes, config agents, invoker selection, run records, and artifact references.](../images/concepts/concept-map.png)
 
 Read the model as a handoff chain:
 
@@ -141,7 +141,7 @@ filesystem trail to inspect, clean up, archive, compare, or attach to a support
 handoff according to your policy.
 
 ![Crewplane defines workflows in Markdown, runs provider CLIs per task, and
-keeps an auditable filesystem record.](../images/control_plane.png)
+keeps an auditable filesystem record.](../images/concepts/control-plane.png)
 
 For exact artifact paths and inspection starting points, see
 [Inspecting Run Records](../guides/inspecting-artifacts.md).

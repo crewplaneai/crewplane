@@ -6,7 +6,7 @@ run without access to your machine.
 Do not share provider logs until you have reviewed them for secrets and private
 source content.
 
-![Support bundle checklist diagram grouping required files, relevant extra files, redaction, and the final minimal shareable bundle.](../images/support-bundle-checklist.png)
+![Support bundle checklist diagram grouping required files, relevant extra files, redaction, and the final minimal shareable bundle.](../images/run-records/support-bundle-checklist.png)
 
 Collect only the files needed to reproduce or inspect the issue. Add deeper logs
 and manifests only when relevant, redact secrets and private content, and keep

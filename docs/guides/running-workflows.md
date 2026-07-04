@@ -66,7 +66,7 @@ invoked.
 For real execution, the runtime consumes the compiled preflight plan and bundle.
 It does not reparse prompt templates or reread original `{{file:...}}` paths.
 
-![Preflight lifecycle diagram showing validate stopping after diagnostics, dry-run printing a history advisory, and real runs choosing duplicate skip, resume, or new execution with --force.](../images/preflight-skip-resume.png)
+![Preflight lifecycle diagram showing validate stopping after diagnostics, dry-run printing a history advisory, and real runs choosing duplicate skip, resume, or new execution with --force.](../images/workflows/preflight-skip-resume.png)
 
 The lifecycle is:
 

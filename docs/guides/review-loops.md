@@ -44,7 +44,7 @@ This example uses the defaults:
   executor role
 - the loop ends when reviewers approve or the configured attempts are exhausted
 
-![Vertical flow chart for the smallest review loop, starting with the node prompt, then the provider in the executor role, candidate output, Crewplane-built reviewer input bundle, provider in the reviewer role, and an approval decision that either selects the candidate or sends blocked feedback into the next executor prompt.](../images/review-loop-flow.png)
+![Vertical flow chart for the smallest review loop, starting with the node prompt, then the provider in the executor role, candidate output, Crewplane-built reviewer input bundle, provider in the reviewer role, and an approval decision that either selects the candidate or sends blocked feedback into the next executor prompt.](../images/review-loops/review-loop-flow.png)
 
 A candidate is the output from the provider in the executor role that is
 currently being reviewed. In the smallest loop, Crewplane first sends the node
@@ -96,7 +96,7 @@ second reviewer as the reviewer for the second executor. It runs the executor
 segment as one executor phase, then runs the reviewer segment as one review
 phase.
 
-![Provider role order diagram showing a sequential provider list split into executor and reviewer segments, the executor phase producing one candidate set, and every reviewer checking that same set instead of one-to-one executor-reviewer pairs.](../images/review-loop-provider-roles.png)
+![Provider role order diagram showing a sequential provider list split into executor and reviewer segments, the executor phase producing one candidate set, and every reviewer checking that same set instead of one-to-one executor-reviewer pairs.](../images/review-loops/review-loop-provider-roles.png)
 
 In this example, `codex` and `gemini` are providers in the executor role.
 `claude` and `copilot` are providers in the reviewer role. Each executor round
@@ -174,7 +174,7 @@ Authored role markers are only `executor` and `reviewer`; there is no authored
 executor candidate set, any unresolved previous feedback, reviewer-only safety
 instructions, and the review contract to the reviewer prompt.
 
-![Prompt role routing diagram showing the authored Markdown prompt on the left, with unmarked shared content sent to both roles, the executor block sent only to executor-role providers, and the reviewer block sent only to reviewer-role providers.](../images/review-loop-prompt-roles.png)
+![Prompt role routing diagram showing the authored Markdown prompt on the left, with unmarked shared content sent to both roles, the executor block sent only to executor-role providers, and the reviewer block sent only to reviewer-role providers.](../images/review-loops/review-loop-prompt-roles.png)
 
 ## Reviewer Verdicts
 
@@ -233,7 +233,7 @@ nodes:
 `depth` counts executor fix attempts after the first reviewed candidate. It does
 not count the first executor candidate, reviewer calls, or fresh audit passes.
 
-![Depth diagram based on the review-loop flow, showing blocked feedback feeding the next executor prompt and a dashed loop back to the executor role, with depth limiting how many fix attempts can run after the first candidate while reviewer calls do not count.](../images/review-loop-depth.png)
+![Depth diagram based on the review-loop flow, showing blocked feedback feeding the next executor prompt and a dashed loop back to the executor role, with depth limiting how many fix attempts can run after the first candidate while reviewer calls do not count.](../images/review-loops/review-loop-depth.png)
 
 For example, `depth: 2` allows this maximum shape inside one audit round:
 
@@ -270,7 +270,7 @@ nodes:
 `depth` budget. A later audit round reviews the latest valid executor candidate
 from the previous audit round.
 
-![Audit rounds diagram showing the depth loop wrapped inside audit round containers, with a later audit round starting from the latest valid candidate and resetting the local depth budget.](../images/review-loop-audit-rounds.png)
+![Audit rounds diagram showing the depth loop wrapped inside audit round containers, with a later audit round starting from the latest valid candidate and resetting the local depth budget.](../images/review-loops/review-loop-audit-rounds.png)
 
 Use the controls for different reasons:
 

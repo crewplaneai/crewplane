@@ -150,12 +150,6 @@ workflow used workspace isolation, confirm the configured cache root, and use
 `--all-projects` only when you intentionally want every repository bucket under
 that cache root.
 
-## Need A Support Bundle
-
-Use [reproducible support bundle](reproducible-support-bundle.md) to collect
-command output, config, workflow, run summary, events, relevant node files,
-versions, platform details, and redacted provider logs.
-
 ## Next
 
 Continue to [Reproducible Support Bundle](reproducible-support-bundle.md) to
