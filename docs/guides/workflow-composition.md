@@ -29,12 +29,9 @@ imports:
       standards: local.standards
 ```
 
-Fields:
-
-- `path`: Markdown workflow file to import.
-- `as`: namespace alias for imported node IDs.
-- `with`: string parameters for `{{param:key}}` substitution.
-- `inputs`: bind declared child workflow inputs to local node IDs.
+In this example, `path` points to the reusable workflow, `as` gives every
+imported node a namespace, `with` supplies composition-time parameters, and
+`inputs` connects a child workflow input to a node in the parent workflow.
 
 Import paths resolve relative to the workflow file that declares them. Imports
 are Markdown-only and must stay within the project root. Duplicate aliases fail,
@@ -60,7 +57,8 @@ the final runtime contract contains only supported runtime template forms.
 
 ## Inputs
 
-A workflow can declare named inputs:
+A reusable workflow can declare named inputs. Think of each input as a
+replaceable dependency:
 
 ```yaml
 inputs:
@@ -71,13 +69,60 @@ nodes:
     source: "{{file:docs/standards.md}}"
 ```
 
-An importing workflow can bind that input to one of its own nodes. Bound imported
-input nodes are pruned from the composed workflow.
+This means:
+
+- `standards` is the public input name.
+- `standards.file` is the workflow's local fallback input node.
+- If this workflow runs by itself, Crewplane uses `standards.file`.
+
+When another workflow imports it, the importer can bind that input name to a node
+that is visible in the importing workflow:
+
+```yaml
+imports:
+  - path: ./review-fix-consumer-example.task.md
+    as: fix
+    inputs:
+      standards: handoff.standards
+```
+
+During composition, import `inputs` act as overrides. The binding replaces the
+fallback input node:
+
+> ⚠️ **Note:** When an importing workflow binds an input, that upstream binding
+> overrides the imported workflow's fallback input node.
+
+- `standards.file` is removed from the imported workflow.
+- `needs: [standards.file]` becomes `needs: [handoff.standards]`.
+- `{{standards.file.output}}` becomes `{{handoff.standards.output}}`.
+
+If an input is not bound by the importer, the fallback input node stays in the
+composed workflow under the import namespace, such as `fix.standards.file`.
 
 ## Examples
+
+If an imported workflow defines `findings` and you import it as
+`quality.review`, the composed node becomes `quality.review.findings`.
+Downstream prompts should use the composed name:
+
+```markdown
+Use the review findings:
+
+{{quality.review.findings}}
+```
 
 Packaged composition templates:
 
 - [review-findings-producer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-findings-producer-example.task.md)
 - [review-fix-consumer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
 - [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)
+
+## Next
+
+Optionally continue to [Experimental Workspace Isolation](workspace-isolation.md)
+when workflows need isolated source-tree edits.
+
+Otherwise, skip to
+[Mock Validation](mock-validation.md).
+
+Or return to the [Guides](../index.md#guides).

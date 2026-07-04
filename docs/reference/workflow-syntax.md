@@ -4,7 +4,7 @@ Markdown workflows have two parts: YAML frontmatter that declares the DAG, and
 Markdown sections that provide the prompts for non-input nodes.
 
 Use this page for the exact authoring contract. For the mental model, start
-with [Workflows](../concepts/workflows.md).
+with [Workflow Authoring](../guides/workflow-authoring.md).
 
 ## Contents
 
@@ -28,6 +28,9 @@ with [Workflows](../concepts/workflows.md).
 | Exact node fields | [Nodes](#nodes) |
 | Execution patterns | [Node Modes](#node-modes) |
 | Template syntax | [Templates](#templates) |
+
+Use the map above for common authoring tasks; the contents list is the complete
+field index.
 
 ## Minimum Valid Workflow
 
@@ -173,7 +176,7 @@ number of executor rounds, and `audit_rounds` is invalid.
 
 For task-oriented examples, see
 [Node modes and provider roles](../guides/node-modes.md) and
-[How to Produce Findings and Run Review Loops](../guides/findings-and-review-loops.md).
+[Review loops](../guides/review-loops.md).
 
 ### Review-Loop Details
 
@@ -182,6 +185,10 @@ contiguous executor segment and end with a contiguous reviewer segment. In each
 review round, reviewers receive the same reviewer prompt and current executor
 output. With one reviewer, that reviewer must approve. With multiple reviewers,
 all reviewers must approve.
+
+For a visual walkthrough of executor output, reviewer verdicts, remediation,
+`depth`, and `audit_rounds`, see
+[Review loops](../guides/review-loops.md).
 
 `review_starts_with` controls only the first phase inside a sequential review
 loop. It does not change `mode`, provider roles, or provider declaration order.
@@ -229,9 +236,11 @@ providers:
 
 Provider object fields:
 
-- `provider`
-- `model`
-- `role`
+| Field | Description |
+| --- | --- |
+| `provider` | Agent name from `.crewplane/config.yml`. Required. |
+| `model` | Optional model override for this provider use. |
+| `role` | `executor` or `reviewer`. Defaults to `executor`. |
 
 Roles are `executor` and `reviewer`. Parallel nodes do not allow reviewers.
 Sequential single-provider nodes must use one executor provider and cannot set

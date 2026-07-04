@@ -1,11 +1,14 @@
 # Composition Examples
 
-Composition examples show how to reuse workflow modules with imports, aliases,
-parameters, and bound inputs.
+Composition is useful after you have run a basic workflow and written one normal
+workflow of your own. Use these examples when the same workflow pieces should be
+shared across multiple root workflows.
 
-Do not start here. Run the default workflow and write one normal workflow first.
-Use composition when workflow pieces should be shared across multiple root
-workflows.
+These templates teach Markdown imports, alias-namespaced node IDs, parameters,
+and input binding. They are not mock-safe with the default generated config:
+the templates name real-provider agents such as `claude`, `codex`, and `gemini`.
+To keep using mock output, adapt those provider names first. To run real CLIs,
+enable the matching agents and switch the invoker to `cli`.
 
 ```text
 producer module
@@ -17,13 +20,14 @@ consumer module
 composed workflow
 ```
 
-Packaged templates:
+The example is split into three generated files:
 
 - [review-findings-producer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-findings-producer-example.task.md)
 - [review-fix-consumer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
 - [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)
 
-After `crewplane init`, run the composed example with:
+After `crewplane init`, adapt the provider names or enable the real providers,
+then run the composed workflow:
 
 ```bash
 crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md

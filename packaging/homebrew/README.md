@@ -14,7 +14,7 @@ Start with the mock workflow path:
 ```bash
 crewplane init
 crewplane validate
-crewplane run --no-live
+crewplane run
 ```
 
 `crewplane init` creates `.crewplane/config.yml`, a default workflow, and

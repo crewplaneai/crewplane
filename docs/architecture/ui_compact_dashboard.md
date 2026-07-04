@@ -259,19 +259,19 @@ The compact dashboard **keeps logs per invocation** (for correctness and paralle
 ### Current
 
 ```
-execution_stages/<workflow>_<run_id>/logs/<provider>/<stage>_<task_id>_round<r>_<run_id>.log
+.crewplane/execution-stages/<workflow>-<run_id>/logs/<provider>/<stage>_<task_id>_round<r>_<run_id>.log
 ```
 
 ### Node-local layout
 
 ```
-execution-stages/<run_key>/<node_id>/logs/<provider>/<task_id>-round<r>.log
+.crewplane/execution-stages/<run-key>/<node-id>/logs/<provider>/<task-id>-round<r>.log
 ```
 
 ### Example
 
 ```
-execution-stages/
+.crewplane/execution-stages/
   design-review-20260426-101530/
     design.discovery/
       logs/

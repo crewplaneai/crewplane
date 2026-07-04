@@ -3,64 +3,68 @@
 Crewplane turns coding-agent CLI calls into explicit, resumable workflows with
 local run records on disk.
 
+![Crewplane concept map showing how workflows, preflight, nodes, agents, invokers, artifact references, and run records fit together.](images/concept-map.png)
+
 ## Start By Goal
 
 | Goal | Start here |
 | --- | --- |
-| Understand what Crewplane is | [Why Crewplane?](concepts/why-crewplane.md) and [Orchestration model](concepts/orchestration-model.md) |
-| Try it safely without real agent calls | [Quickstart](getting-started/quickstart.md), then [First Run Checklist](getting-started/setup-checklist.md) |
-| Connect, run, author, or debug workflows | [Provider setup](getting-started/provider-setup.md), [Running workflows](guides/running-workflows.md), [Workflows](concepts/workflows.md), [Troubleshooting](safety/troubleshooting.md) |
+| Understand what Crewplane is | [Why Crewplane?](getting-started/why-crewplane.md) |
+| Try it safely without real agent calls | [Installation](getting-started/installation.md), then [Quickstart](getting-started/quickstart.md) |
+| Prepare a real provider | [Quickstart](getting-started/quickstart.md), then [Provider setup](getting-started/provider-setup.md) |
+| Follow the guided tutorial track | [Running workflows](guides/running-workflows.md) |
 | Look up exact syntax and config | [Workflow syntax](reference/workflow-syntax.md), [Configuration](reference/configuration.md), [Commands](reference/commands.md) |
-| Understand security boundaries | [Security and trust](safety/security-and-trust.md) |
 
-## Common Paths
+## First Project Path
 
-### I Am Evaluating Crewplane
+For a first project, keep this order:
 
-1. Read [Why Crewplane?](concepts/why-crewplane.md).
-2. Run the provider-free [Quickstart](getting-started/quickstart.md).
-3. Open the run summary and final result.
-4. Run `crewplane onboarding` when you are ready to prepare one provider.
+1. Install Crewplane.
+2. Run `crewplane init`.
+3. Run `crewplane validate`.
+4. Run `crewplane run` with the generated mock invoker.
+5. Inspect the run record.
+6. Run `crewplane onboarding` when you are ready to prepare one real provider.
 
-### I Already Have A Provider CLI Installed
+For details, follow the Getting Started pages in order before moving into the guide track:
 
-1. Run the mock quickstart first.
-2. Inspect the run record.
-3. Run `crewplane onboarding` for the generated default handoff.
-4. Use [Provider setup](getting-started/provider-setup.md) for edited files or more providers.
-5. Run one real workflow with `--no-live`.
-6. Inspect the run record.
+1. [Why Crewplane?](getting-started/why-crewplane.md)
+2. [Installation](getting-started/installation.md)
+3. [Quickstart](getting-started/quickstart.md)
+4. [Provider setup](getting-started/provider-setup.md)
+5. Continue to [Running workflows](guides/running-workflows.md).
 
-### I Need To Debug A Run
+## Guided Tutorial Track
 
-1. Check [Running workflows](guides/running-workflows.md).
-2. Open [Inspecting Run Records](guides/inspecting-artifacts.md).
-3. Use [Troubleshooting](safety/troubleshooting.md).
+These guides are written to be read in order. Each page ends with a `Next`
+section that continues the tour.
 
-## Getting Started
+1. [Running workflows](guides/running-workflows.md)
+2. [Watch Runs Live and Inspect Results](guides/watch-runs-live-and-inspect-results.md)
+3. [Inspecting Run Records](guides/inspecting-artifacts.md)
+4. [Workflow authoring](guides/workflow-authoring.md)
+5. [Node modes and provider roles](guides/node-modes.md)
+6. [Review loops](guides/review-loops.md)
+7. [Findings artifacts](guides/findings.md)
+8. [Workflow composition](guides/workflow-composition.md)
+9. Optional: [Experimental workspace isolation](guides/workspace-isolation.md)
+   can be omitted unless you need isolated source-tree edits.
+10. [Mock validation](guides/mock-validation.md)
+11. [Troubleshooting](guides/troubleshooting.md)
+12. [Reproducible support bundle](guides/reproducible-support-bundle.md)
+13. [Cleanup](guides/cleanup.md)
 
-- [Installation](getting-started/installation.md)
-- [Quickstart](getting-started/quickstart.md)
-- [First Run Checklist](getting-started/setup-checklist.md)
-- [Provider setup](getting-started/provider-setup.md)
+### Jump In By Task
 
-## Core Concepts
+Feel free to jump around based on what you need right now:
 
-- [Why Crewplane?](concepts/why-crewplane.md)
-- [Orchestration model](concepts/orchestration-model.md)
-- [Workflows](concepts/workflows.md)
-- [Preflight, duplicate skip, and resume](concepts/preflight-and-idempotency.md)
-
-## Guides
-
-- [Running workflows](guides/running-workflows.md)
-- [Inspecting Run Records](guides/inspecting-artifacts.md)
-- [Mock validation](guides/mock-validation.md)
-- [Observability](guides/observability.md)
-- [Workflow composition](guides/workflow-composition.md)
-- [Node modes and provider roles](guides/node-modes.md)
-- [Findings and review loops](guides/findings-and-review-loops.md)
-- [Cleanup](guides/cleanup.md)
+- Run a workflow: [Running workflows](guides/running-workflows.md)
+- Inspect outputs: [Inspecting Run Records](guides/inspecting-artifacts.md)
+- Write workflows: [Workflow authoring](guides/workflow-authoring.md)
+- Configure provider roles and reviews: [Node modes and provider roles](guides/node-modes.md), [Review loops](guides/review-loops.md), [Findings artifacts](guides/findings.md)
+- Reuse workflows or isolate file edits: [Workflow composition](guides/workflow-composition.md), [Experimental workspace isolation](guides/workspace-isolation.md)
+- Debug or share a run: [Troubleshooting](guides/troubleshooting.md), [Reproducible support bundle](guides/reproducible-support-bundle.md)
+- Clean generated state: [Cleanup](guides/cleanup.md)
 
 ## Examples
 
@@ -75,13 +79,3 @@ local run records on disk.
 - [Workflow syntax](reference/workflow-syntax.md)
 - [Integrations](reference/integrations.md)
 - [Artifacts](reference/artifacts.md)
-
-## Safety And Troubleshooting
-
-- [Security and trust](safety/security-and-trust.md)
-- [Troubleshooting](safety/troubleshooting.md)
-- [Reproducible support bundle](safety/reproducible-support-bundle.md)
-
-## Advanced
-
-- [Experimental source-tree isolation, not sandboxing](guides/workspace-isolation.md)

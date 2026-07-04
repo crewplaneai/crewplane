@@ -1,10 +1,10 @@
 # Experimental Workspace Isolation
 
-Workspace isolation is an Experimental, opt-in Git-backed source-tree isolation
-feature. It is not sandboxing and is not a security boundary.
+> ⚠️ **Note:** Workspace isolation is an experimental, opt-in Git-backed source-tree isolation feature. It is not sandboxing and is not a security boundary.
 
-Do not read this for your first run. Use this when provider edits should not
-touch the project root directly.
+***This guide is optional in the tutorial track.*** Use the default project-root
+execution model unless provider edits should happen in managed Git-backed
+workspaces instead of touching the project root directly.
 
 When enabled and selected by a workflow, Crewplane materializes provider work in
 separate Git-backed worktrees or writable snapshots so providers do not edit the
@@ -12,8 +12,39 @@ project root directly. Provider CLIs and setup commands still run with their
 configured process permissions, approval settings, network access, credentials,
 and filesystem access.
 
+![Workspace isolation boundary diagram showing project root, workspace cache, provider process, `.crewplane/` artifacts, optional branch export, and a clear not-a-sandbox boundary.](../images/workspace-isolation-boundary.png)
+
+Workspace isolation moves provider-visible source files into a managed worktree
+or snapshot and records lineage under `.crewplane/`. The provider process still
+runs with the provider tool's configured permissions, so this is source-tree
+isolation, not sandboxing.
+
 Use this feature only for ordinary supported Git repositories. Non-Git projects
 should keep it disabled.
+
+## Decide Whether You Need Isolation
+
+Use workspace isolation when the source tree itself is the thing you want to
+protect from direct provider edits. It is useful for controlled implementation
+branches and reproducible source lineage, not for containing provider process
+permissions.
+
+Choose this only when:
+
+- provider edits should not touch the project root directly
+- the project is an ordinary supported Git repository
+- provider CLIs can run from a runtime-supplied working directory
+- setup steps can be expressed as audited argv lists
+- you need lineage artifacts or optional local branch export
+
+Avoid this when:
+
+- you are doing your first Crewplane run
+- the project is not a Git repository
+- the repository uses Git LFS, custom filters, submodules, sparse checkout,
+  partial clone, or text/eol transformations unsupported by `blob_exact`
+- you need provider sandboxing or network isolation
+- manual uncommitted edits must be part of the provider-visible source tree
 
 ## Enable Workspace Support
 
@@ -225,8 +256,9 @@ workspaces, temporary indexes, and run-owned cached refs. It does not remove
 canonical lineage artifacts, provider outputs, findings, manifests, or final
 result artifacts under `.crewplane/`.
 
-## Implementation Reference
+## Next
 
-The accepted architecture is [ADR 0016: Node-scoped Git workspace isolation (Experimental)](../architecture/adr/0016-node-scoped-git-workspace-isolation.md).
-The developer-facing implementation guide is
-[Experimental worktree implementation](experimental-worktree-implementation/index.md).
+Continue to [Mock Validation](mock-validation.md) to exercise workflows without
+real provider calls while you iterate.
+
+Or return to the [Guides](../index.md#guides).

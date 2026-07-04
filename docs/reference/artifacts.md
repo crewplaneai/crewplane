@@ -14,6 +14,12 @@ metadata.
 | Skip/resume evidence | `execution-stages/<run-key>/manifests/run.json` |
 | Final node outputs | `execution-results/<run-key>/` |
 
+![Run-record tree showing `.crewplane/execution-stages/<run-key>` for logs, preflight, manifests, and node artifacts, and `.crewplane/execution-results/<run-key>` for final outputs and findings.](../images/run-record-tree.png)
+
+Stage directories contain run-local logs, preflight bundles, manifests, and node
+artifacts. Result directories contain consolidated outputs, findings, and
+generated files intended for inspection or downstream handoff.
+
 ## Root Layout
 
 ```text
@@ -34,14 +40,16 @@ The output directories are hyphenated:
 
 ## Stage Runs
 
-Each real run allocates:
+Each non-dry `crewplane run` allocates:
 
 ```text
 .crewplane/execution-stages/<run-key>/
 .crewplane/execution-results/<run-key>/
 ```
 
-`<run-key>` is a safe generated name derived from workflow name and run ID.
+`<run-key>` is the filesystem directory name for one run. It has the shape
+`<workflow-slug>--<workflow-hash>-<run-id>`, for example
+`single-agent-review--5e34bc54c79a-20260629-202539`.
 
 Stage run contents can include:
 
@@ -49,10 +57,16 @@ Stage run contents can include:
 logs/events.ndjson
 logs/summary.md
 preflight/execution-plan.json
+preflight/dependency-graph.json
 preflight/manifest.json
 preflight/metadata.json
 preflight/render-plans.json
 preflight/execution-bundle.json
+preflight/runtime-config-snapshot.json
+preflight/static-resources.json
+preflight/static-files/*
+preflight/summary.md
+preflight/token-catalog.json
 manifests/run.json
 manifests/nodes/*.json
 <node-id>/logs/<provider>/*.log
@@ -99,12 +113,12 @@ details for debugging and support.
 ## Preflight Files
 
 The root `.crewplane/preflight/fingerprint.key` stores the fingerprint key used
-for stable secret fingerprints when it can be persisted. Each real run also
+for stable secret fingerprints when it can be persisted. Each executed run also
 writes a run-local `preflight/` directory. Preflight compiles static resources,
 render plans, dependency edges, token catalog entries, provider records, runtime
 config snapshots, and the `workflow_signature`.
 
-Real execution consumes compiled preflight artifacts and same-process secret
+Runtime execution consumes compiled preflight artifacts and same-process secret
 handles. It does not re-read original `{{file:...}}` source paths.
 
 ## Manifests

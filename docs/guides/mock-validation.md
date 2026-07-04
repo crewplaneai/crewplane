@@ -30,10 +30,11 @@ settings:
         observation_delay_seconds: 5
 ```
 
-`crewplane validate`, `crewplane run --dry-run`, and `crewplane run`
-can all use the mock invoker. Real mock runs still write normal artifacts.
-Mock output is deterministic scaffolding for orchestration checks; it is not
-model output.
+`crewplane validate`, `crewplane run --dry-run`, and `crewplane run` can all use
+the mock invoker. A `crewplane run` using the mock invoker is still a real
+Crewplane run: it writes normal run artifacts and exercises orchestration,
+skip/resume, and result handling. The content is deterministic mock output, not
+model output from a provider CLI.
 
 When mock is active, `crewplane run` prints:
 
@@ -107,3 +108,10 @@ settings:
 
 Supported selector keys are `node_id`, `task_id`, `provider`, `role`,
 `audit_round_num`, and `round_num`.
+
+## Next
+
+Continue to [Troubleshooting](troubleshooting.md) to debug command, provider,
+template, skip/resume, workspace, or cleanup failures.
+
+Or return to the [Guides](../index.md#guides).

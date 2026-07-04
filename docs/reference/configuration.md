@@ -15,6 +15,10 @@ For practical setup, start with [Provider setup](../getting-started/provider-set
 
 ## Minimal Config
 
+Use this as the smallest real-provider config after the provider CLI works in
+your shell. New `crewplane init` projects should start with the generated mock
+config instead.
+
 ```yaml
 version: "1.0"
 agents:
@@ -38,7 +42,7 @@ uses `providers: ["codex"]`.
 
 Generated config from `crewplane init` starts with one active `mock` agent and
 `settings.integrations.invoker.implementation: "mock"`. That makes the first
-`crewplane validate` and `crewplane run --no-live` provider-free. Mock output is
+`crewplane validate` and `crewplane run` provider-free. Mock output is
 deterministic scaffolding, not model output.
 
 The generated config also includes commented provider examples for Claude,
@@ -51,11 +55,19 @@ version: "1.0"
 agents:
   mock:
     cli_cmd: ["__crewplane_mock_invoker_never_executes__"]
+    provider_kind: "generic"
+    prompt_transport: "stdin"
+    default_model: "mock"
 
 settings:
   integrations:
     invoker:
       implementation: "mock"
+      options:
+        output_mode: "lorem"
+        seed: 42
+        delay_seconds: 0.25
+        observation_delay_seconds: 5
 ```
 
 ## Switching To Real Providers
@@ -67,6 +79,15 @@ When switching from the generated mock config to real providers:
 - change workflow `providers` values to those agent names
 - set `settings.integrations.invoker.implementation: "cli"`
 - replace generated mock invoker options with `options: {}`
+
+![Provider setup diagram showing the matching agent name in `.crewplane/config.yml`, the matching workflow provider name, and the invoker switch from mock to cli.](../images/provider-setup-two-files.png)
+
+`.crewplane/config.yml` defines `agents.<name>`. Workflows select that same name
+with `providers: ["<name>"]`. `implementation: "mock"` keeps the first run
+provider-free; `implementation: "cli"` runs real provider commands.
+
+The following tables are a field index for `.crewplane/config.yml`; nested
+settings use dotted paths in the left column.
 
 ## Top Level
 
@@ -189,6 +210,9 @@ credential, approval, and sandbox settings. Crewplane coordinates them and
 records artifacts; it does not sandbox them.
 
 ### `mock` invoker
+
+Use `mock` to validate and run workflows without starting provider CLIs. Its
+output is deterministic scaffolding for orchestration checks, not model output.
 
 | Option | Description |
 | --- | --- |

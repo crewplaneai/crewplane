@@ -165,7 +165,8 @@ def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     assert "uv tool uninstall ${PACKAGE_NAME}" in installer
     assert "native Windows is not supported" in installer
     assert "First run:" in installer
-    assert "${PACKAGE_NAME} run --no-live" in installer
+    assert "${PACKAGE_NAME} run" in installer
+    assert "${PACKAGE_NAME} run --no-live" not in installer
     assert "provider CLIs are not required" in installer
     assert "Real provider setup:" in installer
     assert "does not install provider CLIs" in installer
@@ -225,25 +226,22 @@ def test_public_first_run_docs_are_mock_first_and_provider_free() -> None:
     for content in (readme, quickstart):
         assert "crewplane init" in content
         assert "crewplane validate" in content
-        assert "crewplane run --no-live" in content
+        assert "crewplane run" in content
+        assert "crewplane run --no-live" not in content
         assert "crewplane onboarding" in content
         assert "provider CLI" in content
         assert "does not require" in content or "needs no" in content
         assert "API key" in content
         assert "not model output" in content
-        assert content.index("crewplane run --no-live") < content.index(
-            "crewplane onboarding"
-        )
-        assert content.index("crewplane run --no-live") < content.index(
-            "provider setup"
-        )
+        assert content.index("crewplane run") < content.index("crewplane onboarding")
+        assert content.index("crewplane run") < content.index("provider setup")
 
-    assert "getting-started/setup-checklist.md" in docs_index
     assert "crewplane onboarding" in docs_index
     assert "guides/inspecting-artifacts.md" in docs_index
+    assert "guides/troubleshooting.md" in docs_index
+    assert "guides/reproducible-support-bundle.md" in docs_index
     assert "reference/configuration.md" in docs_index
-    assert "safety/security-and-trust.md" in docs_index
-    assert "safety/troubleshooting.md" in docs_index
+    assert "safety/" not in docs_index
     assert "../AGENTS.md" not in docs_index
     assert "../DEVELOPMENT.md" not in docs_index
     assert "architecture/" not in docs_index
@@ -253,8 +251,8 @@ def test_public_first_run_docs_are_mock_first_and_provider_free() -> None:
 
 def test_launch_support_docs_cover_skip_force_resume_and_bundles() -> None:
     running = read_text("docs", "guides", "running-workflows.md")
-    troubleshooting = read_text("docs", "safety", "troubleshooting.md")
-    support_bundle = read_text("docs", "safety", "reproducible-support-bundle.md")
+    troubleshooting = read_text("docs", "guides", "troubleshooting.md")
+    support_bundle = read_text("docs", "guides", "reproducible-support-bundle.md")
     artifacts = read_text("docs", "reference", "artifacts.md")
 
     for content in (running, troubleshooting, artifacts):

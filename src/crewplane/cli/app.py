@@ -205,7 +205,7 @@ def init() -> None:
     )
     console.print("\n[bold]Next:[/]")
     console.print("  [cyan]crewplane validate[/]")
-    console.print("  [cyan]crewplane run --no-live[/]")
+    console.print("  [cyan]crewplane run[/]")
     console.print("  [cyan]crewplane onboarding[/]")
 
 

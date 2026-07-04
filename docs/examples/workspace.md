@@ -1,32 +1,41 @@
 # Experimental Workspace Examples
 
-Workspace examples show Experimental Git-backed source-tree isolation.
+Workspace examples show how Crewplane can run provider work against managed Git
+worktrees and snapshots. Treat them as advanced examples: run the mock
+quickstart and one normal provider workflow before using workspace isolation.
 
-These examples are advanced. Run the mock quickstart and a normal provider
-workflow before using Experimental workspace isolation.
+![Workspace isolation boundary diagram showing project root, workspace cache, provider process, `.crewplane/` artifacts, optional branch export, and a clear not-a-sandbox boundary.](../images/workspace-isolation-boundary.png)
 
-Prerequisites:
+The examples demonstrate source-tree isolation with managed worktrees and
+snapshots. They do not sandbox provider CLIs.
 
-- a Git repository
-- workspace support enabled in `.crewplane/config.yml`
+Before running these examples, make sure you have:
+
 - an ordinary Git repository compatible with `blob_exact`
-- a provider CLI that works directly from your shell
+- workspace support enabled in `.crewplane/config.yml`
+- real provider agents enabled with an invoker that honors runtime working
+  directories
+
+The templates demonstrate logical `worktree` and `snapshot` source lines,
+`worktree: none`, inherited worktree selection, and optional branch export. They
+are for real provider-backed workspace behavior, not the default mock-only first
+run.
 
 Packaged templates:
 
 - [workspace-alternatives-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md)
 - [workspace-inherited-worktree-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md)
 
-After `crewplane init`, run one explicitly:
+Before running them, enable Experimental workspace support in
+`.crewplane/config.yml`. You may set an absolute `settings.workspace.cache_root`;
+when it is omitted, Crewplane uses the platform cache directory.
+
+Then run one generated template explicitly:
 
 ```bash
 crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-alternatives-example.task.md
 crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-inherited-worktree-example.task.md
 ```
-
-Before real execution, enable Experimental workspace support in
-`.crewplane/config.yml`. You may set an absolute `settings.workspace.cache_root`;
-when it is omitted, Crewplane uses the platform cache directory.
 
 The templates demonstrate:
 

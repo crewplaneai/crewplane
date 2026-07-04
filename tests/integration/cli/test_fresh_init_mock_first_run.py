@@ -98,9 +98,11 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                 output_text.index("Next:"),
             )
             self.assertIn("crewplane validate", output_text)
-            self.assertIn("crewplane run --no-live", output_text)
+            self.assertIn("crewplane run", output_text)
+            self.assertNotIn("crewplane run --no-live", output_text)
+            next_index = output_text.index("Next:")
             self.assertLess(
-                output_text.index("crewplane run --no-live"),
+                output_text.index("crewplane run", next_index),
                 output_text.index("crewplane onboarding"),
             )
             self.assertIn(

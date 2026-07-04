@@ -318,8 +318,14 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
     assert "This activates the generated gemini CLI profile" not in output
     assert "Generated Crewplane files are unchanged." not in output
     assert "Onboarding complete." in output
-    assert "crewplane run --no-live" in output
+    assert "Recommended first real run:" in output
+    assert "Run without the live dashboard:" in output
     assert "crewplane run" in output
+    assert "crewplane run --no-live" in output
+    recommended_run_index = output.index("Recommended first real run:")
+    no_live_index = output.index("Run without the live dashboard:")
+    assert output.index("crewplane run", recommended_run_index) < no_live_index
+    assert no_live_index < output.index("crewplane run --no-live", no_live_index)
     assert "has not checked Gemini auth" in output
     assert not any("backup" in path.name.lower() for path in tmp_path.rglob("*"))
     assert which.calls == [*known_provider_names(), "gemini"]

@@ -39,7 +39,7 @@ def print_onboarding_intro(console: Console) -> None:
     console.print("Run these first if you haven't already:")
     console.print("  [cyan]crewplane init[/]")
     console.print("  [cyan]crewplane validate[/]")
-    console.print("  [cyan]crewplane run --no-live[/]")
+    console.print("  [cyan]crewplane run[/]")
     console.print("")
     console.print("Onboarding will not start provider CLIs, make model calls,")
     console.print("authenticate providers, or overwrite files you've edited.")
@@ -157,7 +157,7 @@ def print_missing_mock_run_evidence(console: Console) -> None:
     )
     console.print("")
     console.print(
-        "The README path normally runs [cyan]crewplane run --no-live[/] first."
+        "The README path normally runs [cyan]crewplane run[/] first."
     )
     console.print("[1] continue real-provider setup anyway")
     console.print("[0] quit and run mock first")
@@ -318,10 +318,10 @@ def print_final_success(console: Console, provider: str) -> None:
     print_provider_setup_link(console, "To add more providers, use:")
     console.print("")
     console.print("Recommended first real run:")
-    console.print("  [cyan]crewplane run --no-live[/]")
-    console.print("")
-    console.print("Run with the live dashboard:")
     console.print("  [cyan]crewplane run[/]")
+    console.print("")
+    console.print("Run without the live dashboard:")
+    console.print("  [cyan]crewplane run --no-live[/]")
     console.print("")
     console.print(
         f"Crewplane has not checked {provider.capitalize()} auth, account status, "

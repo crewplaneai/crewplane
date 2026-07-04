@@ -1,22 +1,26 @@
 # Examples
 
-`crewplane init` copies the default workflow to `.crewplane/workflows/` and
-additional examples to `.crewplane/workflows/example-templates/`.
+After `crewplane init`, you have one mock-safe workflow at
+`.crewplane/workflows/single-agent-review.task.md` and additional examples under
+`.crewplane/workflows/example-templates/`.
 
-Start with the default workflow. Use the others after provider setup or after
-changing their provider names to match your config.
+Start with the mock-safe workflow. For the other examples, either change their
+provider names to match configured mock-safe agents or enable the real provider
+agents in `.crewplane/config.yml` and switch the invoker to `cli`.
 
-| Example | Use when | Requires |
-| --- | --- | --- |
-| `single-agent-review.task.md` | First mock or first real review. | mock or one provider. |
-| `code-review-example.task.md` | Multi-provider code review. | provider setup. |
-| `feature-implement-example.task.md` | Implementation workflow. | provider setup. |
-| `test-generation-example.task.md` | Generate tests. | provider setup. |
-| `multi-executor-review-chain-example.task.md` | Compare executors then review. | multiple providers. |
-| Composition examples | Reuse workflow modules. | imports. |
-| Workspace examples | Isolate source-tree edits. | Experimental workspace support. |
+## Suggested Path
 
-Copy-paste run commands use generated paths:
+1. Run `single-agent-review.task.md` first. It uses the generated `mock` agent
+   and leaves result and findings files you can inspect immediately.
+2. Move to `code-review-example.task.md` after you have provider names that
+   match your config.
+3. Use the implementation, refactoring, design-review, and test-generation
+   examples when you are ready to run real provider CLIs.
+4. Use composition and workspace examples only after the basic workflow shape is
+   familiar.
+
+Once `crewplane init` has generated the workflow copies, these commands run the
+most common examples:
 
 ```bash
 crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
@@ -24,8 +28,10 @@ crewplane run --tasks .crewplane/workflows/example-templates/code-review-example
 crewplane run --tasks .crewplane/workflows/example-templates/feature-implement-example.task.md
 ```
 
-Only `single-agent-review.task.md` is top-level after `crewplane init`; nested
-examples require explicit `--tasks` and may require provider setup.
+Only `single-agent-review.task.md` is generated at the top level. The other
+examples live under `example-templates/`, so they need an explicit `--tasks`
+path. Add `--no-live` only when you want a plain terminal run without the live
+dashboard.
 
 The source-backed public examples are the packaged templates under
 `src/crewplane/example_templates/`.
@@ -35,7 +41,7 @@ The source-backed public examples are the packaged templates under
 - [single-agent-review.task.md](../../src/crewplane/example_templates/single-agent-review.task.md)
 
 ```bash
-crewplane run --tasks .crewplane/workflows/single-agent-review.task.md --no-live
+crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
 ```
 
 ## Workflow Library
@@ -48,7 +54,7 @@ crewplane run --tasks .crewplane/workflows/single-agent-review.task.md --no-live
 - [multi-executor-review-chain-example.task.md](../../src/crewplane/example_templates/example-templates/multi-executor-review-chain-example.task.md)
 
 ```bash
-crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md --no-live
+crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md
 ```
 
 ## Composition
@@ -60,7 +66,7 @@ crewplane run --tasks .crewplane/workflows/example-templates/code-review-example
 See [composition examples](composition.md).
 
 ```bash
-crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md --no-live
+crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md
 ```
 
 ## Experimental Workspace
@@ -71,7 +77,7 @@ crewplane run --tasks .crewplane/workflows/example-templates/composition/review-
 See [Experimental workspace examples](workspace.md).
 
 ```bash
-crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-alternatives-example.task.md --no-live
+crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-alternatives-example.task.md
 ```
 
 ## Sample Inputs

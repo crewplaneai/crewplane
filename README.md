@@ -6,7 +6,6 @@
     Gemini, Copilot, or any CLI, and keep the run record on disk.
   </p>
   <p>
-    <a href="https://github.com/crewplaneai/crewplane/blob/master/CHANGELOG.md"><img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-f59e0b.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/pyproject.toml"><img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776AB.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/docs/index.md"><img alt="Docs" src="https://img.shields.io/badge/docs-read-0f766e.svg"></a>
@@ -20,54 +19,52 @@
 
 ## Why Crewplane?
 
-Teams have spent the last year standardizing how coding agents behave:
-repo instructions, skills, MCP servers, provider settings, and internal
-conventions. What is still missing is the outer execution layer: how agent work
-is sequenced, resumed, reviewed, and inspected after the terminal session ends.
+You already have the pieces: repo instructions, skills, MCP servers,
+provider settings, internal conventions. **The agents know how to work.
+What's missing is the control plane: _when_ to work, _in what order_,
+and _what to do when something breaks._**
 
-**Crewplane turns coding-agent CLI calls into explicit, resumable workflows with
-local run records on disk.** Write the workflow in Markdown, assign each stage
-to Claude Code, Codex, Gemini, Copilot, or any CLI, and Crewplane coordinates
-the run without replacing your agents.
+Define the DAG in Markdown, assign each stage to Claude Code, Codex, Gemini,
+Copilot, or any CLI. Crewplane runs exactly the plan you wrote, saves every
+stage to disk, and picks up where a failed run left off. No SDK, no framework
+lock-in, no autonomous loop deciding what happens next.
 
-| When agent work becomes... | Crewplane gives you... |
+### What changes when you add Crewplane
+
+| Agent work today | With Crewplane |
 | --- | --- |
-| A chain of shell scripts, prompts, and temp files | An explicit Markdown workflow with DAG execution |
-| A long terminal session that fails halfway through | Resumable stage boundaries backed by preserved artifacts |
-| Multiple agents reviewing, implementing, or synthesizing work | Clear dependencies, parallelism, handoffs, and review loops |
-| Debugging by reading terminal scrollback | Rendered inputs, provider logs, intermediate outputs, manifests, and final results on disk |
-| Trusting the run only while it happens | A local run record you can inspect later, keep when useful, or delete/archive when not |
+| One long session | Markdown DAG with sequential and parallel stages |
+| One provider at a time | Claude Code, Codex, Gemini, Copilot, or any CLI |
+| Copy-pasted prompts | Rendered inputs saved under `.crewplane/` |
+| Terminal scrollback | Outputs, logs, manifests, and final results on disk |
+| Start over after failure | Resume from validated stage boundaries |
+| Hard-to-follow progress | Optional tmux dashboard |
+| Edits in the project root | Optional Git-backed worktrees and snapshots |
 
-No SDK rewrite. No provider lock-in. If your agent can run from the CLI,
-Crewplane can coordinate it.
+***The result is a run record you can inspect, diff, archive, attach to a review, or delete like any other build output.***
 
-## Where Crewplane Fits
+> **CLI-first by design.**
+> Crewplane invokes provider CLIs directly instead of wrapping them in a vendor SDK or agent framework. If a tool has a command line, Crewplane can run it.
 
-Teams already define how agents behave with repo instructions, skills, MCP servers, provider settings, and internal conventions. Crewplane does not replace those pieces. It coordinates the work around them.
+### Where it fits in your stack
 
-| Layer | What it controls |
-| --- | --- |
-| Repo instructions / skills | What agents should know and how they should behave |
-| MCP / tools | What systems and context agents can access |
-| Provider CLIs | The coding agents that do the work |
-| **Crewplane** | How stages are sequenced, parallelized, retried, reviewed, resumed, and inspected |
+```
+┌─────────────────────────────────────────────────┐
+│  Your repo: instructions, skills, MCP, config   │  ← agents read this
+├─────────────────────────────────────────────────┤
+│  Provider CLIs: Claude Code, Codex, Gemini, …   │  ← agents do the work
+├─────────────────────────────────────────────────┤
+│  Crewplane                                      │  ← sequences, resumes,
+│    workflow DAG · stage artifacts · run record  │    records, coordinates
+└─────────────────────────────────────────────────┘
+```
 
 <details>
-<summary><strong>Why not just use one agent CLI?</strong> For one-off tasks, you probably should. Crewplane is for agent work that becomes a workflow. (Click to expand more details)</summary>
+<summary><strong>When should you just use one agent CLI?</strong></summary>
 
-| Current pattern | Crewplane gives you |
-| --- | --- |
-| One long terminal session | Explicit DAG control with sequential and parallel stages |
-| Copy-pasted prompts and temp files | Rendered inputs and outputs saved as run artifacts |
-| Restarting from scratch after failure | Resumable execution from validated stage boundaries |
-| Provider-specific glue | CLI-first orchestration across Claude Code, Codex, Gemini, Copilot, or any command |
-| Black-box debugging | Logs, manifests, stage outputs, and final results you can inspect with normal tools |
+For a quick question, a one-off patch, or exploratory work that fits in a single session — use the provider directly. Crewplane is for the moment agent work becomes a **process**: multiple stages, provider handoffs, review loops, or runs that need to survive failure and remain auditable.
 
 </details>
-
-<br/>
-
-> Crewplane does not try to become your agent. It gives the agents you already use a shared execution plan, a workspace, and a run record.
 
 ## Installation
 
@@ -83,16 +80,9 @@ Crewplane can also be installed via the following package managers:
 # pip
 python -m pip install crewplane
 
-# npm 
+# npm
 npm install -g crewplane
 ```
-
-Watch the installation flow if you want to see the command-line setup before
-running it locally:
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/50741c4d-6206-4434-a339-8ab537ea0134" controls width="80%" title="Crewplane installation walkthrough"></video>
-</div>
 
 > ⚠️ **Note:** Crewplane does **not** install or manage provider CLIs or credentials. Install and authenticate Claude Code, Copilot CLI, etc. separately.
 
@@ -105,20 +95,47 @@ From a project directory:
 ```bash
 crewplane init
 crewplane validate
-crewplane run --no-live
+crewplane run
 ```
 
 `crewplane init` creates `.crewplane/config.yml`, a default workflow, and
 additional example templates under `.crewplane/workflows/example-templates/`.
 
-`crewplane run --no-live` then runs the workflow with a deterministic `mock`
-provider. The first run does not require provider CLIs, API keys, or config
-edits.
+`crewplane run` then runs the workflow with a deterministic `mock` provider.
+The first run does not require provider CLIs, API keys, or config edits.
+
+When output is attached to a terminal and `tmux` is available, Crewplane opens
+the compact live dashboard for DAG progress, node status, provider output, and
+live log tails. If `tmux` is missing, Crewplane warns and continues without the
+dashboard.
+
+> **Note:** install `tmux` via `brew install tmux` on *macOS* or
+> `sudo apt install tmux` on *Ubuntu/Debian*.
+
+> Pass `--no-live` when you want to omit the live dashboard.
 
 Inspect the artifacts:
 
 - Stage run files: `.crewplane/execution-stages/`
 - Final results: `.crewplane/execution-results/`
+
+After `crewplane run`, the key files under `.crewplane/` look like:
+
+```
+.crewplane/
+├── execution-results/                  # final outputs you care about
+│   └── <run-key>/
+│       ├── review.project-findings.md  # findings from the review node
+│       └── review.project-result.md    # final result from the review node
+├── execution-stages/                   # per-stage raw artifacts
+│   └── <run-key>/
+│       ├── preflight/                  # plan, dependency graph, render plans
+│       ├── logs/                       # events.ndjson, summary
+│       └── review.project/             # per-node rendered input, output, logs
+├── workflows/                          # your workflow definitions, preloaded with example workflows
+│   └── single-agent-review.task.md
+└── config.yml                          # provider wiring and settings
+```
 
 These files are the same shape you will see with real providers: each step has
 rendered inputs, outputs, logs, manifests, and final results you can inspect or
@@ -126,57 +143,15 @@ diff with normal tools.
 
 Mock output is scaffolding for validating Crewplane behavior, not model output.
 
-Treat run artifacts like build outputs: useful for debugging and review, but
-decide separately what, if anything, belongs in version control.
+> **Note:** Treat run artifacts like build outputs: useful for debugging and review, but decide separately what, if anything, belongs in version control.
 
-## Prepare A Real Provider
-
-After the provider-free first run succeeds, use onboarding to prepare one real
-provider handoff:
-
-```bash
-crewplane onboarding
-```
-
-Onboarding detects provider CLI names on `PATH`, lets you choose one provider,
-updates unchanged generated defaults, and validates the resulting Crewplane
-wiring. It does not start real provider CLIs, authenticate providers, or check
-provider account/model readiness.
-
-Recommended first real run:
-
-```bash
-crewplane run --no-live
-```
-
-For edited files, multi-provider setup, or manual configuration, use
-[provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md).
-
-## Live Dashboard
-
-For interactive runs, drop `--no-live` to open Crewplane’s tmux dashboard:
-
-> **Note:** requires `tmux`, install via `brew install tmux` on *macOS* or `sudo apt install tmux` on *Ubuntu/Debian*.
-
-```bash
-crewplane run
-```
-
-Because the first run above already wrote a successful result, Crewplane will print
-`Identical context detected`. That is the idempotency check.
-To start a fresh interactive run, use:
+Because the first run already wrote a successful result, a later identical run may print `Identical context detected`.
+That means Crewplane found a previous successful run with the same inputs and reused the saved result instead of running the workflow again.
+To start a fresh run, use:
 
 ```bash
 crewplane run --force
 ```
-
-> **Note:** `--force` ensures a fresh run, ignoring any cached successes.
-
-The dashboard shows the workflow DAG, node status, selected provider output,
-and live log tails while the same durable artifacts are written under
-`.crewplane/`. See the
-[observability guide](https://github.com/crewplaneai/crewplane/blob/master/docs/guides/observability.md)
-for dashboard options and log inspection.
 
 ## Workflow Shape
 
@@ -184,11 +159,13 @@ Workflows are Markdown+frontmatter; for example:
 
 ```yaml
 ---
-schema_version: "<current>"
-name: "Quick Review"
+schema_version: "1.0"
+name: Single Agent Review
+description: One deterministic mock review node for the first Crewplane run.
 nodes:
   - id: review.project
     mode: parallel
+    findings: true
     providers: ["mock"]
 ---
 
@@ -199,44 +176,47 @@ Review the current repository and report the highest-risk issues.
 Full workflow authoring docs are in the
 [workflow syntax reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/workflow-syntax.md).
 
-## First Real Run with live dashboard
+## Prepare a Real Provider
 
-After the mock path works, this walkthrough shows the shape of a first real
-provider run:
+After the provider-free first run succeeds, use onboarding to prepare one real provider handoff:
 
-<div align="center">
-  <p><strong>First real provider run</strong></p>
-  <video src="https://github.com/user-attachments/assets/01ff3e39-7626-4896-bd18-358f7a15cfcd" controls width="80%" title="First real provider run walkthrough"></video>
-</div>
+```bash
+crewplane onboarding
+```
 
-> **Safety boundary:** Crewplane coordinates provider CLIs; it does not sandbox
-> them, install them, or manage their credentials. Provider filesystem access,
-> network access, approval mode, and authentication remain controlled by the
-> provider tools you configure.
+Onboarding detects provider CLI names on `PATH`, lets you choose one provider,
+updates unchanged generated defaults, and validates the resulting Crewplane
+wiring. It does not start real provider CLIs, authenticate providers, or check
+provider account/model readiness.
 
-Use [provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
-for the complete real-provider configuration path.
+After onboarding, run the workflow when the selected provider CLI is installed, authenticated, and ready to execute:
 
-## What You Get
+```bash
+crewplane run
+```
 
-- 🔄 **Explicit DAG Execution** – Run independent stages in parallel and dependencies in sequence
-- 🧭 **Resumable Stage Boundaries** – Reuse validated completed stages after duplicate, failed, or cancelled runs
-- 📂 **Inspectable Run Records** – Rendered prompts, outputs, logs, manifests, and results written under `.crewplane/`
-- 🔌 **CLI-First Providers** – Coordinate Claude Code, Codex, Gemini, Copilot, Kilo, or generic commands
-- 🖥️ **Optional Live Dashboard** – tmux view for DAG progress, node status, provider output, and log tails
-- 🧪 **Experimental Workspace Isolation** – Git-backed worktrees and writable snapshots for isolating source-tree edits
+If you edited generated files, want multiple providers, or need manual setup, use
+[provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md).
 
-For safety, security, and isolation details, see [Security and trust](https://github.com/crewplaneai/crewplane/blob/master/docs/safety/security-and-trust.md).
+At this point you have seen the core path: install, run the generated mock
+workflow, inspect artifacts, and prepare a real provider when ready.
 
 ## Where Next
 
-- [Why Crewplane?](https://github.com/crewplaneai/crewplane/blob/master/docs/concepts/why-crewplane.md)
-- [Quickstart](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/quickstart.md)
-- [Provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md)
-- [Examples](https://github.com/crewplaneai/crewplane/blob/master/docs/examples/index.md)
-- [Command reference](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/commands.md)
-- [Configuration](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/configuration.md)
-- [Artifacts](https://github.com/crewplaneai/crewplane/blob/master/docs/reference/artifacts.md)
+The full documentation starts at [Documentation](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md).
+
+**Just getting started?** → follow the
+[First Project Path](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#first-project-path)
+in the documentation index.
+
+**Guided end-to-end tour** → check out
+[Guided Tutorial Track](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#guided-tutorial-track).
+- It walks through running workflows, inspecting run records, authoring workflows,
+provider roles, review loops, composition, validation, troubleshooting, and cleanup.
+
+For exact flags, config keys, workflow syntax, and artifact formats, use the
+[Reference](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#reference)
+section.
 
 ### Contributing
 

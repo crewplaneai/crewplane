@@ -9,7 +9,7 @@ Use this page for exact CLI syntax. For task-oriented guidance, start with
 | `crewplane onboarding` | Prepare one real provider after the provider-free first run. |
 | `crewplane validate` | Check workflow/config validity without invoking providers. |
 | `crewplane run` | Execute, dry-run, or force a workflow run. |
-| `crewplane cleanup workspaces` | Remove Experimental workspace cache entries. |
+| `crewplane cleanup workspaces` | Remove generated workspace cache entries. |
 
 ## `crewplane init`
 
@@ -27,7 +27,8 @@ Creates:
 - `.crewplane/workflows/example-templates/sample-inputs/*.md`
 - `.crewplane/preflight/fingerprint.key`, when possible
 
-The generated config uses deterministic mock execution.
+The generated config selects the `mock` invoker for deterministic provider-free
+execution.
 
 Existing files are not overwritten by template creation.
 
@@ -39,16 +40,16 @@ Prepare one real provider after the provider-free first run.
 crewplane onboarding
 ```
 
-This interactive command checks that the generated default config and workflow
-are present, detects known provider CLI names on `PATH`, lets you choose one
-provider handoff, updates unchanged generated defaults, and validates the
-resulting Crewplane wiring.
+Use this after `crewplane init`, `crewplane validate`, and a mock
+`crewplane run` when you want to connect one real provider without editing
+config by hand. The command checks generated config and workflow files, detects
+supported provider CLIs on `PATH`, prompts for one provider, updates unchanged
+generated defaults, and validates the result.
 
-In the normal quickstart path, it does not run `crewplane init`, rerun the mock
-workflow, start real provider CLIs, authenticate providers, or check provider
-versions/account/model access. If `.crewplane/` or generated files are missing,
-it can offer a confirmed, non-overwriting init recovery step. There are no
-command-specific options in v1.
+It does not authenticate provider tools, verify account or model access, or run
+providers. If `.crewplane/` or generated files are missing, it may offer a
+confirmed, non-overwriting init recovery step. There are no command-specific
+options in v1.
 
 ## `crewplane validate`
 
@@ -74,7 +75,7 @@ Arguments and options:
 Execute a workflow DAG.
 
 ```bash
-crewplane run --no-live
+crewplane run
 crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
 crewplane run -t .crewplane/workflows/single-agent-review.task.md
 ```
@@ -98,7 +99,7 @@ duplicate skip and resume hydration.
 
 ## `crewplane cleanup workspaces`
 
-Remove generated Experimental workspace isolation cache entries.
+Remove generated workspace cache entries.
 
 ```bash
 crewplane cleanup workspaces --dry-run

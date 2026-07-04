@@ -1,14 +1,14 @@
 # Integrations Reference
 
-Integrations are configured under `settings.integrations`.
-Generated projects select the `mock` invoker by default.
-
-Most users do not need this page. Use it when you are changing integration
-aliases, adapter options, or external adapters.
+Use this page when you need the adapter contract behind
+`settings.integrations`: choosing the built-in `mock` or `cli` invoker,
+disabling the live UI, tuning artifact options, or selecting an external
+adapter. Generated projects start with the `mock` invoker; switch to `cli` only
+when Crewplane should start real provider commands.
 
 For task-oriented setup, use [Provider setup](../getting-started/provider-setup.md),
 [Mock validation](../guides/mock-validation.md),
-[Observability](../guides/observability.md), and
+[Watch Runs Live and Inspect Results](../guides/watch-runs-live-and-inspect-results.md), and
 [Inspecting Run Records](../guides/inspecting-artifacts.md).
 
 | Need | Integration |
@@ -19,7 +19,8 @@ For task-oriented setup, use [Provider setup](../getting-started/provider-setup.
 | No live UI | `none` UI |
 | Local run records | `filesystem` artifacts |
 
-Built-in aliases:
+These aliases are valid values for
+`settings.integrations.<kind>.implementation`:
 
 | Kind | Aliases |
 | --- | --- |
@@ -42,7 +43,8 @@ Options: none.
 
 ### `mock`
 
-The `mock` invoker provides deterministic provider-free execution.
+The `mock` invoker provides deterministic provider-free execution. It writes
+normal run records without starting provider CLIs.
 
 Options:
 
@@ -91,7 +93,7 @@ Options:
 - `log_cli_output`
 - `allowed_template_paths`
 
-This is the only built-in artifact backend. Real execution relies on the
+This is the only built-in artifact backend. Non-dry execution relies on the
 artifact-store port for locks, skip/resume history, full-run output, and
 workspace lineage; a custom backend must implement those port capabilities to be
-usable for real runs.
+usable for executed runs.
