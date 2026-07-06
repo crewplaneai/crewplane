@@ -1,5 +1,12 @@
 # Troubleshooting
 
+## Supported Platforms
+
+Crewplane supports Linux, macOS, and WSL. Native Windows is not supported:
+process liveness and lock recovery rely on POSIX process checks. On Windows,
+run Crewplane inside WSL. See
+[Installation](../getting-started/installation.md).
+
 ## Start By Symptom
 
 | Symptom | Start here |
@@ -89,15 +96,19 @@ run. Check `resumed_nodes` in the run manifest and
 ## Run Lock Unavailable
 
 `crewplane run` holds a lock directory under `.crewplane/locks/` while a
-workflow executes, so two runs of the same workflow context cannot interleave.
-The lock records its owning process and is released when the run ends.
+workflow executes, so two runs with the same workflow name, workflow identity,
+and workflow signature cannot interleave. The lock name is built from those
+fields. The lock records its owning process and is released when the run ends.
 
 `Run lock unavailable` means the lock could not be acquired. Either a matching
 run is still active, or a previous run ended without releasing the lock, for
-example after a crash or power loss. When the recorded owner process is no
-longer alive, the next run reclaims the lock automatically and finalizes the
-interrupted run's manifest as `cancelled`, which makes it a valid resume
-source.
+example after a crash or power loss. The next run reclaims the lock only when
+the recorded owner process is verified to be no longer alive and the lock and
+manifest metadata are readable and match the current run; corrupt, mismatched,
+cross-host, or otherwise unverifiable lock state fails closed with a specific
+reason instead. A successful reclaim finalizes the interrupted run's manifest
+as `cancelled`, which makes it eligible for resume consideration; resume itself
+still depends on validated node-boundary artifacts.
 
 If the message repeats with no active run, or an error traceback references
 `.crewplane/locks/`, confirm no crewplane process is running, then delete the
