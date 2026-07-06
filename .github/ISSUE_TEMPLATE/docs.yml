@@ -1,0 +1,24 @@
+name: Documentation issue
+description: Report missing, confusing, or incorrect docs.
+title: "docs: "
+labels: ["type: docs", "status: needs-triage"]
+body:
+  - type: textarea
+    id: page
+    attributes:
+      label: Page or file
+      placeholder: docs/guides/running-workflows.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested change

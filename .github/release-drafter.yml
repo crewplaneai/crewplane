@@ -1,0 +1,89 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+version-template: "$MAJOR.$MINOR.$PATCH"
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+change-title-escapes: '<*_&`#@'
+sort-by: "merged_at"
+sort-direction: "descending"
+template: |
+  ## What changed
+
+  $CHANGES
+
+  ## Install
+
+  ```bash
+  pipx install crewplane==$RESOLVED_VERSION
+  # or
+  uv tool install crewplane==$RESOLVED_VERSION
+  ```
+
+  ## Contributors
+
+  $CONTRIBUTORS
+
+categories:
+  - title: "Breaking changes"
+    labels:
+      - "breaking-change"
+    semver-increment: major
+
+  - title: "Features"
+    labels:
+      - "type: feature"
+      - "enhancement"
+    semver-increment: minor
+
+  - title: "Bug fixes"
+    labels:
+      - "type: bug"
+      - "bug"
+      - "fix"
+    semver-increment: patch
+
+  - title: "AI CLI integrations"
+    labels:
+      - "type: integration"
+    semver-increment: minor
+
+  - title: "Security"
+    labels:
+      - "type: security"
+    semver-increment: patch
+
+  - title: "Documentation"
+    labels:
+      - "type: docs"
+      - "area: docs"
+
+  - title: "Maintenance"
+    labels:
+      - "type: chore"
+      - "dependencies"
+      - "area: ci"
+      - "area: packaging"
+
+exclude-labels:
+  - "skip-changelog"
+
+autolabeler:
+  - label: "type: docs"
+    files:
+      - "*.md"
+      - "docs/**"
+  - label: "area: ci"
+    files:
+      - ".github/**"
+      - ".pre-commit-config.yaml"
+  - label: "area: agents"
+    files:
+      - ".agents/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "GEMINI.md"
+  - label: "area: core"
+    files:
+      - "src/crewplane/**"
+  - label: "area: tests"
+    files:
+      - "tests/**"

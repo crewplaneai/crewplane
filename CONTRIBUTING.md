@@ -12,6 +12,26 @@ make check
 Use Python 3.13 or newer. `uv` is optional but recommended; the Makefile falls
 back to `python -m ...` commands when possible.
 
+Crewplane supports Python 3.13+ on Linux, macOS, Windows, and WSL when the
+configured provider CLIs are available. Pull-request CI runs on Linux for Python
+3.13 and 3.14; nightly CI also covers macOS and Windows. See
+[Supported Platforms](DEVELOPMENT.md#supported-platforms) for the current
+platform policy and tmux live UI notes.
+
+## Pull Requests
+
+- Use a Conventional Commit-style PR title, such as
+  `fix(runtime): handle failed provider output`.
+- Keep PRs focused enough for a maintainer to review in one pass.
+- Run `make check` before opening a PR when the change touches code, workflows,
+  config, or docs.
+- For GitHub Actions or community-file changes, also run:
+
+```bash
+uvx pre-commit validate-config .pre-commit-config.yaml
+uvx --with mkdocs-material mkdocs build --strict
+```
+
 ## Development Rules
 
 - Read our [architecture guidance](docs/architecture/modular-orchestration-architecture.md) first.

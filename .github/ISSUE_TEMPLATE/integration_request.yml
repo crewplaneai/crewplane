@@ -1,0 +1,43 @@
+name: AI CLI integration request
+description: Request support for another AI CLI or runtime adapter.
+title: "feat: add integration for "
+labels: ["type: integration", "status: needs-triage"]
+body:
+  - type: input
+    id: cli
+    attributes:
+      label: CLI/tool name
+      placeholder: Codex CLI, Claude Code, Gemini CLI, etc.
+    validations:
+      required: true
+
+  - type: input
+    id: homepage
+    attributes:
+      label: Official docs or repo URL
+    validations:
+      required: true
+
+  - type: textarea
+    id: commands
+    attributes:
+      label: Relevant commands/options
+      description: Link to official docs. Do not paste proprietary docs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: usecase
+    attributes:
+      label: Use case
+      description: What workflow would this unlock?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: The integration can be tested without real provider credentials.
+        - label: The integration does not require bypassing the tool's terms of service.

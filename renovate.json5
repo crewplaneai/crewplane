@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Optional Renovate config. Install the Renovate GitHub App only if you want Renovate in addition to or instead of Dependabot.",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":dependencyDashboard"
+  ],
+  "labels": ["dependencies"],
+  "schedule": ["before 10am on Monday"],
+  "timezone": "America/Vancouver",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 10am on Monday"]
+  },
+  "packageRules": [
+    {
+      "matchDatasources": ["pypi"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions"
+    },
+    {
+      "matchManagers": ["pep621", "uv"],
+      "groupName": "python dependencies"
+    }
+  ],
+  "pep723": {
+    "managerFilePatterns": ["scripts/**/*.py", "docs/**/*.py"]
+  }
+}

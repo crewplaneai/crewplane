@@ -1,0 +1,24 @@
+# Optional automation helpers.
+# The repository Makefile remains authoritative for setup, lint, format, test,
+# check, package, and release targets.
+
+.PHONY: docs docs-serve pre-commit-check actionlint zizmor pip-audit
+
+docs:
+	uvx --with mkdocs-material mkdocs build --strict
+
+docs-serve:
+	uvx --with mkdocs-material mkdocs serve
+
+pre-commit-check:
+	uvx pre-commit run --all-files --show-diff-on-failure
+
+actionlint:
+	bash -c 'bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) && ./actionlint -color'
+
+zizmor:
+	uvx zizmor --persona=regular --no-exit-codes .github/workflows
+
+pip-audit:
+	uv export --locked --extra dev --format requirements-txt --output-file /tmp/crewplane-requirements.txt
+	uvx pip-audit -r /tmp/crewplane-requirements.txt --strict

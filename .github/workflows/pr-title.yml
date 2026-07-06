@@ -1,0 +1,39 @@
+name: pr-title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+
+          title = os.environ["TITLE"]
+          pattern = re.compile(r"^(feat|fix|docs|test|tests|refactor|perf|build|ci|chore|revert|security)(\([a-z0-9._-]+\))?!?: .+")
+          if not pattern.match(title):
+              print("PR title must follow Conventional Commit style.")
+              print("Examples:")
+              print("  feat: add workflow composition primitive")
+              print("  fix(runtime): handle corrupt manifests")
+              print("  docs: explain agent skill policy")
+              print(f"Actual: {title!r}")
+              sys.exit(1)
+          PY

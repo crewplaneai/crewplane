@@ -1,0 +1,63 @@
+name: repo-hygiene
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-hygiene-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check for stale automation placeholders
+        run: |
+          set -euo pipefail
+          set +e
+          rg -n \
+            "YOUR_ORG|YOUR_REPO|YOUR_GITHUB_USERNAME|security@example\.com|src/orchestrator_cli|orchestrator-cli|Orchestrator CLI|\.orchestrator|Python 3\.1[0-2]|python-version: \"3\.12\"|test \(3\.12\)" \
+            .github .editorconfig .gitattributes .pre-commit-config.yaml CODE_OF_CONDUCT.md GOVERNANCE.md MAINTAINERS.md MANIFEST.md NOTICE SUPPORT.md mkdocs.yml pyproject.gitops-fragment.toml renovate.json5 \
+            --glob '!.github/workflows/repo-hygiene.yml'
+          rg_status=$?
+          set -e
+          if [ "$rg_status" -eq 0 ]; then
+            exit 1
+          fi
+          if [ "$rg_status" -ne 1 ]; then
+            exit "$rg_status"
+          fi
+
+      - name: Check expected automation files
+        run: |
+          set -euo pipefail
+          test -f .github/labels.json
+          test -f .github/labeler.yml
+          test -f .github/dependabot.yml
+          test -f .github/release-drafter.yml
+          test -f .github/workflows/ci.yml
+          test -f .github/workflows/release.yml
+
+      - name: Check package metadata
+        run: |
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
+          assert project["name"] == "crewplane"
+          assert project["requires-python"] == ">=3.13"
+          assert project["scripts"] == {"crewplane": "crewplane.cli.app:app"}
+          PY

@@ -1,0 +1,58 @@
+name: pr-size
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-size-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-size:
+    name: pr-size
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Label PR size
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const {owner, repo} = context.repo;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100
+            });
+
+            const changed = files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
+            const labels = [
+              "size: xs", "size: s", "size: m", "size: l", "size: xl"
+            ];
+            let next = "size: xl";
+            if (changed <= 20) next = "size: xs";
+            else if (changed <= 100) next = "size: s";
+            else if (changed <= 300) next = "size: m";
+            else if (changed <= 800) next = "size: l";
+
+            const existing = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner, repo, issue_number: pr.number, per_page: 100
+            });
+
+            for (const label of existing) {
+              if (labels.includes(label.name) && label.name !== next) {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: pr.number, name: label.name
+                }).catch(() => {});
+              }
+            }
+
+            if (!existing.some(label => label.name === next)) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: pr.number, labels: [next]
+              });
+            }

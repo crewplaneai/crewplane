@@ -1,0 +1,36 @@
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - ".pre-commit-config.yaml"
+
+"area: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "*.md"
+
+"area: agents":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".agents/**"
+          - "AGENTS.md"
+          - "CLAUDE.md"
+          - "GEMINI.md"
+
+"area: core":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/crewplane/**"
+
+"area: tests":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"
+
+"area: packaging":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "pyproject.toml"
+          - "uv.lock"
+          - "Makefile"

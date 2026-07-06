@@ -1,0 +1,39 @@
+name: stale
+
+on:
+  schedule:
+    - cron: "17 10 * * 1"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: stale-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stale:
+    name: stale
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@v10
+        with:
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-label: "status: stale"
+          stale-pr-label: "status: stale"
+          exempt-issue-labels: "priority: high,status: accepted,type: security"
+          exempt-pr-labels: "priority: high,status: accepted,type: security"
+          stale-issue-message: >
+            This issue has been inactive for 60 days and is marked stale.
+            Add a comment with current reproduction details if it is still relevant.
+          close-issue-message: >
+            Closing due to inactivity. Please open a new issue with fresh reproduction details if needed.
+          stale-pr-message: >
+            This PR has been inactive for 60 days and is marked stale.
+            Please rebase and confirm whether it is still intended.
+          close-pr-message: >
+            Closing due to inactivity. A smaller fresh PR is welcome.

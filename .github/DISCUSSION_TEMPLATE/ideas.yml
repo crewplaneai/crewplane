@@ -1,0 +1,16 @@
+title: "[Idea] "
+labels: ["discussion: idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What should Crewplane make easier?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What are you trying to orchestrate today?

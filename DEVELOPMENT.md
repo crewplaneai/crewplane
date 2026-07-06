@@ -12,6 +12,18 @@ Use this document for local setup, repository layout, repeatable development wor
 - `pip` (required)
 - `uv` (optional, used automatically by `Makefile` if available)
 
+## Supported Platforms
+
+Crewplane supports Python 3.13 and newer on Linux, macOS, Windows, and WSL when
+the configured provider CLIs are available on that platform.
+
+Pull-request CI runs on Linux for Python 3.13 and 3.14. Nightly CI runs on
+Linux, macOS, and Windows for Python 3.13 and 3.14.
+
+The tmux live dashboard requires `tmux` and is intended for Unix-like
+environments. On Windows, use WSL for tmux live mode or run workflows without
+live UI.
+
 ## Setup
 
 ```bash
@@ -33,6 +45,56 @@ make help         # list package and release targets
 make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
 ```
+
+## Repository Automation
+
+GitHub Actions, issue templates, label automation, and community files are
+tailored for the public `crewplane` repository. Use the same entry points
+locally and in CI:
+
+```bash
+make setup
+make check
+uvx pre-commit run --all-files --show-diff-on-failure
+uvx --with mkdocs-material mkdocs build --strict
+```
+
+`uv` is preferred, and the Makefile falls back to `python -m ...` where that is
+supported.
+
+Current CI policy:
+
+- Default branch: `master`.
+- The supported platform matrix is defined in
+  [Supported Platforms](#supported-platforms).
+- Release publishing uses PyPI Trusted Publishing through GitHub OIDC.
+- Docs deploy to GitHub Pages from `.github/workflows/docs.yml`.
+- `.github/workflows/zizmor.yml` runs as an advisory audit. Make it blocking
+  only after the repository adopts SHA-pinned third-party GitHub Actions.
+
+Branch protection and `.github/settings.yml` expect these required checks:
+
+- `lint`
+- `test (3.13)`
+- `test (3.14)`
+- `package`
+- `hygiene`
+- `pre-commit`
+- `pr-title`
+
+Run the first full workflow set before enabling branch protection, then apply
+the same check names in GitHub settings.
+
+Operational notes:
+
+- `pull_request_target` workflows do not check out or execute PR code.
+- Label synchronization is manual through `.github/workflows/sync-labels.yml`.
+- `.github/CODEOWNERS` is intentionally inactive until real maintainer handles
+  or teams are added.
+- `.github/FUNDING.yml` is intentionally inactive until a real sponsorship path
+  exists.
+- Security reports should go through GitHub Security Advisories for
+  `crewplaneai/crewplane`.
 
 ## Cleanup and Deletion
 
