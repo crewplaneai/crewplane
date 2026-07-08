@@ -3,6 +3,10 @@ name: dependency-review
 on:
   pull_request:
     branches: ["master"]
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/**"
 
 permissions:
   contents: read

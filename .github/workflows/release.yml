@@ -12,8 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -104,7 +103,54 @@ jobs:
           name: dist
           path: dist
 
+      - name: Check PyPI release state
+        id: pypi-state
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          dist_dir = Path("dist")
+          local_dists = {
+              path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in dist_dir.iterdir()
+              if path.is_file()
+          }
+          if not local_dists:
+              raise SystemExit("No local distribution files found in dist/.")
+
+          pypi_url = f"https://pypi.org/pypi/crewplane/{os.environ['VERSION']}/json"
+          try:
+              with urllib.request.urlopen(pypi_url, timeout=20) as response:
+                  payload = json.load(response)
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise
+              should_publish = "true"
+          else:
+              remote_dists = {
+                  item["filename"]: item["digests"]["sha256"]
+                  for item in payload.get("urls", [])
+              }
+              if local_dists != remote_dists:
+                  raise SystemExit(
+                      "PyPI already has this version, but published files do not "
+                      "exactly match the local dist artifacts."
+                  )
+              should_publish = "false"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"publish={should_publish}\n")
+          PY
+
       - name: Publish to PyPI via Trusted Publishing
+        if: steps.pypi-state.outputs.publish == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
 
   github-release:

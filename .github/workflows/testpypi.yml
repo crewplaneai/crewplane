@@ -10,20 +10,16 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: testpypi-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-and-publish-testpypi:
-    name: build-and-publish-testpypi
+  build:
+    name: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/project/crewplane/
     steps:
       - uses: actions/checkout@v7
         with:
@@ -49,7 +45,34 @@ jobs:
       - name: Verify wheel metadata
         run: uvx twine check dist/*
 
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-testpypi:
+    name: publish-testpypi
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/crewplane/
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+
       - name: Publish to TestPyPI via Trusted Publishing
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
