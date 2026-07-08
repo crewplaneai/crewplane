@@ -120,6 +120,30 @@ def inspect_git_state(context: ReleaseContext, runner: CommandRunner) -> GitStat
     )
 
 
+def inspect_release_tag_state(
+    context: ReleaseContext, runner: CommandRunner, expected_tag: str | None = None
+) -> GitState:
+    root = context.root
+    tag = expected_tag or context.version.tag
+    if expected_tag is not None and expected_tag != context.version.tag:
+        raise ReleaseError(
+            f"expected workflow tag {expected_tag!r} but context declares {context.version.tag!r}"
+        )
+    head_commit = git_output(runner, root, ["git", "rev-parse", "HEAD"])
+    tag_commit = git_tag_commit(runner, root, tag)
+    remote_tag_commit = remote_git_tag_commit(runner, root, tag)
+    return GitState(
+        branch="",
+        default_branch="",
+        head_commit=head_commit,
+        upstream_ahead=0,
+        upstream_behind=0,
+        dirty=False,
+        tag_commit=tag_commit,
+        remote_tag_commit=remote_tag_commit,
+    )
+
+
 def git_output(runner: CommandRunner, root: Path, command: Sequence[str]) -> str:
     result = runner.run(command, cwd=root, timeout=60, capture_output=True, check=True)
     return result.stdout.strip()

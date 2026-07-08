@@ -22,7 +22,9 @@ from .state import (
     derive_release_state,
     fail_if_generated_metadata_stale,
     inspect_git_state,
+    inspect_release_tag_state,
     is_tag_only_missing_error,
+    print_state,
     query_npm_release,
     query_pypi_release,
     read_formula_state,
@@ -196,14 +198,26 @@ def finalize_release(root: Path, runner: CommandRunner, execute: bool) -> int:
     )
 
 
-def verify_completed_release(root: Path, runner: CommandRunner) -> DerivedReleaseState:
+def verify_completed_release(
+    root: Path, runner: CommandRunner, expected_tag: str | None = None
+) -> DerivedReleaseState:
     context = read_release_context(root)
     manifest = read_manifest(root)
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
     formula = read_formula_state(context)
-    git = inspect_git_state(context, runner)
+    git = inspect_release_tag_state(context, runner, expected_tag=expected_tag)
     return derive_release_state(context, pypi, npm, formula, git, manifest)
+
+
+def verify_complete_release(
+    root: Path, runner: CommandRunner, expected_tag: str | None = None
+) -> int:
+    state = verify_completed_release(root, runner, expected_tag=expected_tag)
+    print_state(state)
+    if state.status == ReleaseStatus.COMPLETE:
+        return 0
+    return 1
 
 
 def is_registry_recovery(pypi: PypiRelease, npm: NpmRelease) -> bool:

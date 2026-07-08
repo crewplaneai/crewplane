@@ -15,20 +15,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: build
+  verify:
+    name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    env:
+      TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -42,40 +43,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --extra dev
 
-      - name: Check tag matches project version
-        id: version
-        env:
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
+      - name: Rebuild release artifacts
+        run: uv run --extra dev python scripts/release.py release-artifacts
 
-          project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
-          version = project["version"]
-          expected_tag = f"v{version}"
-          tag_name = os.environ["TAG_NAME"]
-          if tag_name != expected_tag:
-              raise SystemExit(
-                  f"Release tag {tag_name!r} must match pyproject version {expected_tag!r}."
-              )
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"version={version}\n")
-          PY
-
-      - name: Run quality gate
-        run: make check
-
-      - name: Build package
-        run: uv build
-
-      - name: Verify wheel
-        run: |
-          ls -la dist
-          python -m zipfile --test dist/*.whl
-          uvx twine check dist/*
+      - name: Verify completed release
+        run: uv run --extra dev python scripts/release.py verify-complete --expected-tag "$TAG_NAME"
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v6
@@ -85,81 +57,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish-pypi:
-    name: publish-pypi
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: pypi
-      url: https://pypi.org/project/crewplane/
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist
-
-      - name: Check PyPI release state
-        id: pypi-state
-        env:
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          python - <<'PY'
-          import hashlib
-          import json
-          import os
-          import urllib.error
-          import urllib.request
-          from pathlib import Path
-
-          dist_dir = Path("dist")
-          local_dists = {
-              path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-              for path in dist_dir.iterdir()
-              if path.is_file()
-          }
-          if not local_dists:
-              raise SystemExit("No local distribution files found in dist/.")
-
-          pypi_url = f"https://pypi.org/pypi/crewplane/{os.environ['VERSION']}/json"
-          try:
-              with urllib.request.urlopen(pypi_url, timeout=20) as response:
-                  payload = json.load(response)
-          except urllib.error.HTTPError as error:
-              if error.code != 404:
-                  raise
-              should_publish = "true"
-          else:
-              remote_dists = {
-                  item["filename"]: item["digests"]["sha256"]
-                  for item in payload.get("urls", [])
-              }
-              if local_dists != remote_dists:
-                  raise SystemExit(
-                      "PyPI already has this version, but published files do not "
-                      "exactly match the local dist artifacts."
-                  )
-              should_publish = "false"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"publish={should_publish}\n")
-          PY
-
-      - name: Publish to PyPI via Trusted Publishing
-        if: steps.pypi-state.outputs.publish == 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
-
   github-release:
     name: github-release
-    needs: [build, publish-pypi]
+    needs: [verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+    env:
+      TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - name: Download dist artifact
         uses: actions/download-artifact@v8
@@ -170,7 +76,6 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release create "$TAG_NAME" dist/* \
             --verify-tag \

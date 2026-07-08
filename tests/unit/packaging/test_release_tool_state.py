@@ -17,6 +17,7 @@ from test_release_tool_fixtures import (
     FakeRunner,
     append_uv_lock_package,
     constant,
+    release_state_fixture,
     write_minimal_repo,
 )
 
@@ -206,3 +207,63 @@ def test_prepare_refuses_existing_remote_versions(
 
     with pytest.raises(state.ReleaseError, match="already exists on PyPI"):
         build.prepare_release(tmp_path, FakeRunner())
+
+
+def test_release_artifacts_rebuilds_from_committed_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context, manifest, _formula, _git = release_state_fixture(tmp_path)
+    calls: list[tuple[str, bool | None]] = []
+
+    def stale_check(
+        context_arg: state.ReleaseContext, manifest_arg: state.ReleaseManifest | None
+    ) -> None:
+        assert context_arg == context
+        calls.append(("stale-check", manifest_arg is None))
+
+    def fail_registry_query(_context: state.ReleaseContext) -> object:
+        del _context
+        raise AssertionError("release-artifacts must not query registries")
+
+    def fail_metadata_sync(_context: state.ReleaseContext, _runner: FakeRunner) -> None:
+        del _context, _runner
+        raise AssertionError("release-artifacts must not sync generated metadata")
+
+    def clean_outputs(context_arg: state.ReleaseContext) -> None:
+        assert context_arg == context
+        calls.append(("clean", None))
+
+    def build_artifacts(
+        context_arg: state.ReleaseContext, runner_arg: FakeRunner
+    ) -> dict[str, state.ArtifactIdentity]:
+        assert context_arg == context
+        assert isinstance(runner_arg, FakeRunner)
+        calls.append(("build", None))
+        return dict(manifest.artifacts)
+
+    def write_manifest(
+        context_arg: state.ReleaseContext,
+        artifacts: dict[str, state.ArtifactIdentity],
+    ) -> state.ReleaseManifest:
+        assert context_arg == context
+        assert artifacts == manifest.artifacts
+        calls.append(("manifest", None))
+        return manifest
+
+    monkeypatch.setattr(build, "read_release_context", constant(context))
+    monkeypatch.setattr(build, "fail_if_generated_metadata_stale", stale_check)
+    monkeypatch.setattr(build, "query_registry_state", fail_registry_query)
+    monkeypatch.setattr(build, "sync_generated_metadata", fail_metadata_sync)
+    monkeypatch.setattr(build, "clean_release_outputs", clean_outputs)
+    monkeypatch.setattr(build, "build_release_artifacts", build_artifacts)
+    monkeypatch.setattr(build, "write_release_manifest", write_manifest)
+
+    build.release_artifacts(tmp_path, FakeRunner())
+
+    assert calls == [
+        ("stale-check", True),
+        ("clean", None),
+        ("build", None),
+        ("manifest", None),
+        ("stale-check", False),
+    ]

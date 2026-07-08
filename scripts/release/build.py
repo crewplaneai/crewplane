@@ -48,6 +48,16 @@ def prepare_release(root: Path, runner: CommandRunner) -> None:
     print_homebrew_instructions(context)
 
 
+def release_artifacts(root: Path, runner: CommandRunner) -> None:
+    context = read_release_context(root)
+    fail_if_generated_metadata_stale(context, None)
+    clean_release_outputs(context)
+    artifacts = build_release_artifacts(context, runner)
+    manifest = write_release_manifest(context, artifacts)
+    fail_if_generated_metadata_stale(context, manifest)
+    print("Release artifacts rebuilt.")
+
+
 def clean_release_outputs(context: ReleaseContext) -> None:
     for relative in ("dist", "build", ".release", ".release-manifests"):
         shutil.rmtree(context.root / relative, ignore_errors=True)

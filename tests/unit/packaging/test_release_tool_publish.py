@@ -35,6 +35,187 @@ def test_publish_commands_without_execute_are_non_publishing_failures(
     assert not runner.commands
 
 
+def test_verify_complete_release_returns_zero_for_complete_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(
+        publish, "query_pypi_release", constant(matching_pypi(context, manifest))
+    )
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(matching_npm(context, manifest, latest=context.version.npm)),
+    )
+    monkeypatch.setattr(publish, "read_formula_state", constant(formula))
+    monkeypatch.setattr(publish, "inspect_release_tag_state", constant(git))
+
+    assert publish.verify_complete_release(tmp_path, FakeRunner()) == 0
+    assert (
+        publish.verify_complete_release(
+            tmp_path, FakeRunner(), expected_tag=context.version.tag
+        )
+        == 0
+    )
+    assert "Release state: complete" in capsys.readouterr().out
+
+
+def test_verify_complete_release_fails_on_expected_tag_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(
+        publish, "query_pypi_release", constant(matching_pypi(context, manifest))
+    )
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(matching_npm(context, manifest, latest=context.version.npm)),
+    )
+    monkeypatch.setattr(publish, "read_formula_state", constant(formula))
+
+    with pytest.raises(
+        state.ReleaseError, match="expected workflow tag .* but context declares"
+    ):
+        publish.verify_complete_release(
+            tmp_path, FakeRunner(), expected_tag="v0.0.0-mismatch"
+        )
+
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "missing-pypi",
+        "missing-npm-latest",
+        "stale-manifest",
+        "mismatched-tag",
+        "missing-remote-tag",
+    ),
+)
+def test_verify_complete_release_returns_nonzero_for_incomplete_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    pypi = matching_pypi(context, manifest)
+    npm = matching_npm(context, manifest, latest=context.version.npm)
+    release_manifest = manifest
+    release_git = git
+    if case == "missing-pypi":
+        pypi = state.PypiRelease(False, "", {})
+    elif case == "missing-npm-latest":
+        npm = matching_npm(context, manifest, latest="previous")
+    elif case == "stale-manifest":
+        release_manifest = state.ReleaseManifest(
+            package_name=manifest.package_name,
+            project_version="0.0.0",
+            python_version=manifest.python_version,
+            npm_version=manifest.npm_version,
+            git_tag=manifest.git_tag,
+            artifacts=manifest.artifacts,
+        )
+    elif case == "mismatched-tag":
+        release_git = state.GitState(
+            branch="",
+            default_branch="",
+            head_commit=git.head_commit,
+            upstream_ahead=0,
+            upstream_behind=0,
+            dirty=False,
+            tag_commit="different",
+            remote_tag_commit=git.remote_tag_commit,
+        )
+    elif case == "missing-remote-tag":
+        release_git = state.GitState(
+            branch="",
+            default_branch="",
+            head_commit=git.head_commit,
+            upstream_ahead=0,
+            upstream_behind=0,
+            dirty=False,
+            tag_commit=git.tag_commit,
+            remote_tag_commit="",
+        )
+
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(release_manifest))
+    monkeypatch.setattr(publish, "query_pypi_release", constant(pypi))
+    monkeypatch.setattr(publish, "query_npm_release", constant(npm))
+    monkeypatch.setattr(publish, "read_formula_state", constant(formula))
+    monkeypatch.setattr(publish, "inspect_release_tag_state", constant(release_git))
+
+    assert publish.verify_complete_release(tmp_path, FakeRunner()) == 1
+
+
+def test_verify_completed_release_allows_detached_tag_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context, manifest, formula, _git = release_state_fixture(tmp_path)
+
+    class DetachedTagRunner:
+        def __init__(self) -> None:
+            self.commands: list[tuple[str, ...]] = []
+
+        def run(
+            self,
+            command,
+            cwd: Path,
+            env=None,
+            timeout=None,
+            capture_output: bool = True,
+            check: bool = True,
+        ) -> state.CommandResult:
+            del cwd, env, timeout, capture_output, check
+            command_tuple = tuple(command)
+            self.commands.append(command_tuple)
+            if command_tuple == ("git", "rev-parse", "HEAD"):
+                return state.CommandResult(command_tuple, 0, "abc\n", "")
+            if command_tuple == (
+                "git",
+                "rev-parse",
+                "-q",
+                "--verify",
+                f"refs/tags/{context.version.tag}^{{}}",
+            ):
+                return state.CommandResult(command_tuple, 0, "abc\n", "")
+            if command_tuple == (
+                "git",
+                "ls-remote",
+                "--tags",
+                "origin",
+                f"refs/tags/{context.version.tag}*",
+            ):
+                return state.CommandResult(
+                    command_tuple, 0, f"abc\trefs/tags/{context.version.tag}^{{}}\n", ""
+                )
+            raise AssertionError(f"unexpected git command: {command_tuple}")
+
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(
+        publish, "query_pypi_release", constant(matching_pypi(context, manifest))
+    )
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(matching_npm(context, manifest, latest=context.version.npm)),
+    )
+    monkeypatch.setattr(publish, "read_formula_state", constant(formula))
+
+    runner = DetachedTagRunner()
+    release_state = publish.verify_completed_release(tmp_path, runner)
+
+    assert release_state.status == state.ReleaseStatus.COMPLETE
+    assert ("git", "rev-list", "--left-right", "--count", "@{u}...HEAD") not in (
+        runner.commands
+    )
+
+
 def test_publish_auth_checks_fail_before_upload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

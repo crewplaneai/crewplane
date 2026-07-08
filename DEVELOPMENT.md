@@ -67,7 +67,20 @@ Current CI policy:
 - Default branch: `master`.
 - The supported platform matrix is defined in
   [Supported Platforms](#supported-platforms).
-- Release publishing uses PyPI Trusted Publishing through GitHub OIDC.
+- Production publishing is local-only. Maintainers run `make release` to
+  publish PyPI, publish npm with the `latest` dist-tag, and create/push the
+  final Git tag. GitHub Actions does not publish production PyPI or npm
+  packages and does not need PyPI or npm credentials.
+- `.github/workflows/release.yml` is post-tag GitHub Release automation. It
+  runs on `v*.*.*` tag pushes, or by manual dispatch for an existing tag, then
+  rebuilds and verifies release artifacts, registry state, Homebrew formula
+  metadata, and tag state through `scripts/release.py`. If verification passes,
+  it creates or backfills the GitHub Release from `dist/*`.
+- The release workflow verifies the Homebrew formula metadata in this repo, but
+  does not update the external Homebrew tap; tap publishing remains a separate
+  maintainer step.
+- `.github/workflows/testpypi.yml` remains the separate TestPyPI Trusted
+  Publishing workflow.
 - Docs deploy to GitHub Pages from `.github/workflows/docs.yml`.
 - `.github/workflows/zizmor.yml` runs as an advisory audit. Make it blocking
   only after the repository adopts SHA-pinned third-party GitHub Actions.

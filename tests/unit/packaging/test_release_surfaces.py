@@ -141,8 +141,58 @@ def test_release_script_exposes_stateful_commands() -> None:
         capture_output=True,
         text=True,
     )
-    for command in ("prepare", "check", "publish-pypi", "publish-npm", "finalize"):
+    for command in (
+        "prepare",
+        "release-artifacts",
+        "check",
+        "verify-complete",
+        "publish-pypi",
+        "publish-npm",
+        "finalize",
+    ):
         assert command in result.stdout
+
+
+def test_production_release_workflow_reuses_release_tool_without_pypi_publish() -> None:
+    workflow = read_text(".github", "workflows", "release.yml")
+
+    assert "fetch-depth: 0" in workflow
+    assert "group: release-${{ github.event.inputs.tag || github.ref_name }}" in (
+        workflow
+    )
+    assert "scripts/release.py release-artifacts" in workflow
+    assert "scripts/release.py verify-complete --expected-tag" in workflow
+    assert 'gh release create "$TAG_NAME" dist/*' in workflow
+    assert "path: dist/*" in workflow
+    assert "uv build" not in workflow
+    assert "urllib.request" not in workflow
+    assert "pypa/gh-action-pypi-publish" not in workflow
+    assert "id-token: write" not in workflow
+
+
+def test_release_docs_describe_single_production_publish_path() -> None:
+    development = read_text("DEVELOPMENT.md")
+    contributing = read_text("CONTRIBUTING.md")
+    normalized_development = " ".join(development.split())
+    normalized_contributing = " ".join(contributing.split())
+
+    assert "Production publishing is local-only." in development
+    assert "Maintainers run `make release`" in normalized_development
+    assert "does not publish production PyPI or npm packages" in normalized_development
+    assert "does not need PyPI or npm credentials" in normalized_development
+    assert "post-tag GitHub Release automation" in development
+    assert "manual dispatch for an existing tag" in normalized_development
+    assert "creates or backfills the GitHub Release from `dist/*`" in (
+        normalized_development
+    )
+    assert "does not update the Homebrew tap" in development
+    assert "TestPyPI Trusted Publishing workflow" in normalized_development
+    assert "PyPI Trusted Publishing through GitHub OIDC" not in development
+    assert "scripts/release.py release-artifacts" in contributing
+    assert "scripts/release.py verify-complete" in contributing
+    assert "It does not publish production PyPI or npm packages." in (
+        normalized_contributing
+    )
 
 
 def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:

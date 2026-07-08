@@ -90,3 +90,10 @@ non-TTY npm two-factor flows, use `NPM_PUBLISH_OTP` and `NPM_DIST_TAG_OTP` so
 `npm publish` and `npm dist-tag add` each receive a fresh OTP. Homebrew tap
 publishing is still a separate maintainer step: copy the prepared formula into
 the tap, run audit/test there, and push the tap update.
+
+After the tag exists, `.github/workflows/release.yml` rebuilds release artifacts
+with `scripts/release.py release-artifacts`, verifies the completed PyPI, npm,
+Homebrew, manifest, and tag state with `scripts/release.py verify-complete`, and
+creates the GitHub Release from `dist/*`. It does not publish production PyPI or
+npm packages. `.github/workflows/testpypi.yml` is the separate TestPyPI Trusted
+Publishing workflow.
