@@ -1,5 +1,12 @@
 # Troubleshooting
 
+## Supported Platforms
+
+Crewplane supports Linux, macOS, and WSL. Native Windows is not supported:
+process liveness and lock recovery rely on POSIX process checks. On Windows,
+run Crewplane inside WSL. See
+[Installation](../getting-started/installation.md).
+
 ## Start By Symptom
 
 | Symptom | Start here |
@@ -9,6 +16,7 @@
 | Provider not found | [Provider setup](../getting-started/provider-setup.md). |
 | Run skipped | [Duplicate skip](running-workflows.md#duplicate-skip). |
 | Run resumed | [Resume](running-workflows.md#resume). |
+| Run lock unavailable | [Run lock unavailable](#run-lock-unavailable). |
 | No dashboard | [tmux missing](#tmux-missing) or [Watch Runs Live and Inspect Results](watch-runs-live-and-inspect-results.md). |
 | Need help | [Reproducible support bundle](reproducible-support-bundle.md). |
 
@@ -29,6 +37,7 @@ and `.crewplane/execution-results/<run-key>/` as needed.
 | `Resume advisory: would_skip` | Dry-run predicts duplicate skip. | Run with `--force` to bypass. |
 | `Resume advisory: would_resume <n> node(s) from <run-id>` | Dry-run predicts resume hydration from a failed or cancelled run. | Inspect `resumed_nodes` and `.crewplane/execution-stages/<run-key>/<node-id>/resume-source.json` after a run. |
 | `Resuming workflow '<name>' from <n> validated node boundary(s)` | A run hydrated completed nodes from prior artifacts. | Inspect `.crewplane/execution-stages/<run-key>/manifests/run.json`. |
+| `Run lock unavailable: <reason>` | The same-context run lock could not be acquired. | [Run lock unavailable](#run-lock-unavailable). |
 | `tmux not found; continuing without live dashboard.` | Execution can continue without the live dashboard. | Use `--no-live` or install/configure tmux. |
 | `No workflow file found` | Default discovery found no top-level `.task.md`. | Run `crewplane init` or pass `--tasks`. |
 | `Multiple workflow files found` | Default discovery found more than one top-level `.task.md`. | Pass `--tasks` to select one. |
@@ -83,6 +92,36 @@ Crewplane hydrated completed node-boundary artifacts from a failed or cancelled
 run. Check `resumed_nodes` in the run manifest and
 `<node-id>/resume-source.json` in resumed node stage directories. Use
 `crewplane run --force` to bypass resume.
+
+## Run Lock Unavailable
+
+`crewplane run` holds a lock directory under `.crewplane/locks/` while a
+workflow executes, so two runs with the same workflow name, workflow identity,
+and workflow signature cannot interleave. The lock name is built from those
+fields. The lock records its owning process and is released when the run ends.
+
+`Run lock unavailable` means the lock could not be acquired. Either a matching
+run is still active, or a previous run ended without releasing the lock, for
+example after a crash or power loss. The next run reclaims the lock only when
+the recorded owner process is verified to be no longer alive and the lock and
+manifest metadata are readable and match the current run; corrupt, mismatched,
+cross-host, or otherwise unverifiable lock state fails closed with a specific
+reason instead. A successful reclaim finalizes the interrupted run's manifest
+as `cancelled`, which makes it eligible for resume consideration; resume itself
+still depends on validated node-boundary artifacts.
+
+If the message repeats with no active run, or an error traceback references
+`.crewplane/locks/`, confirm no crewplane process is running, then delete the
+lock state and retry:
+
+```bash
+rm -rf .crewplane/locks
+```
+
+Manual deletion skips the automatic finalization, so the interrupted run keeps
+`status: running` and is not considered for resume. If an older successful run
+with the same context exists, the next run prints `Identical context detected`;
+use `--force` for a fresh run.
 
 ## Template Access Denied
 
