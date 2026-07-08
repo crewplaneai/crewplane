@@ -139,11 +139,11 @@ def _build_argv(
     prompt: str,
     structured_output_file: Path | None,
 ) -> list[str]:
-    """Build the provider CLI argv and validate the executable.
+    """Build the provider CLI argv and resolve the executable when available.
 
     The first argument identifies the process to launch, so it is resolved
-    before appending provider flags. This keeps command validation and log
-    headers tied to the actual executable while leaving user-supplied
+    before appending provider flags. This keeps log headers tied to the actual
+    executable when PATH resolution succeeds while leaving user-supplied
     arguments untouched.
     """
     cmd = config.get_command()
@@ -170,9 +170,11 @@ def _build_argv(
 def _resolved_cli_executable(executable: str) -> str:
     """Return an executable path suitable for subprocess invocation.
 
-    Bare executable names are resolved through `PATH` and validated. Absolute
-    paths are validated directly. Relative path-like commands are preserved so
-    subprocess can resolve them relative to the configured working directory.
+    Bare executable names are resolved through `PATH` when available. Missing
+    bare names are preserved so injected command runners and subprocess launch
+    handle the execution boundary consistently. Absolute paths are validated
+    directly. Relative path-like commands are preserved so subprocess can
+    resolve them relative to the configured working directory.
     """
     executable_path = Path(executable)
     if executable_path.is_absolute():
@@ -181,7 +183,7 @@ def _resolved_cli_executable(executable: str) -> str:
         return executable
     resolved = shutil.which(executable)
     if resolved is None:
-        raise FileNotFoundError(f"CLI executable '{executable}' was not found.")
+        return executable
     return _resolved_existing_executable(Path(resolved))
 
 

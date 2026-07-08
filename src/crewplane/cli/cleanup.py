@@ -96,7 +96,7 @@ def cleanup_workspaces(
         ),
     ] = False,
 ) -> None:
-    console = Console()
+    console = Console(highlight=False)
     try:
         resolved_config_file = resolve_state_file(
             config_file,

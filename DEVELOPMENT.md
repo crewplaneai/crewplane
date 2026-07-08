@@ -77,8 +77,8 @@ Current CI policy:
   metadata, and tag state through `scripts/release.py`. If verification passes,
   it creates or backfills the GitHub Release from `dist/*`.
 - The release workflow verifies the Homebrew formula metadata in this repo, but
-  does not update the external Homebrew tap; tap publishing remains a separate
-  maintainer step.
+  does not update the Homebrew tap; tap publishing remains a separate maintainer
+  step.
 - `.github/workflows/testpypi.yml` remains the separate TestPyPI Trusted
   Publishing workflow.
 - Docs deploy to GitHub Pages from `.github/workflows/docs.yml`.
