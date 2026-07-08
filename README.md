@@ -1,17 +1,21 @@
 <div align="center">
   <h1>Crewplane</h1>
-  <p><strong>A control plane for resumable coding-agent workflows.</strong></p>
+  <p><strong>Turn AI agent calls into structured, repeatable workflows.</strong></p>
   <p>
-    Define workflows in Markdown, run each stage through Claude Code, Codex,
-    Gemini, Copilot, or any CLI, and keep the run record on disk.
+    Define multi-step workflows in Markdown. Run each stage through Claude Code,
+    Codex, Gemini, Copilot, or any CLI. Resume from where you left off. Keep
+    every input, output, and decision on disk.
   </p>
   <p>
+    <a href="https://pypi.org/project/crewplane/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/crewplane?color=0f766e"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/pyproject.toml"><img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776AB.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/docs/index.md"><img alt="Docs" src="https://img.shields.io/badge/docs-read-0f766e.svg"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/master/SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-b91c1c.svg"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/master/CONTRIBUTING.md"><img alt="Contributing" src="https://img.shields.io/badge/contributing-guide-6b7280.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/crewplaneai/crewplane?style=social"></a>
   </p>
+</div>
+
+<div align="center">
   <img src="https://raw.githubusercontent.com/crewplaneai/crewplane/master/.github/crewplane-splash.png" alt="Crewplane splash" width="80%">
 </div>
 
@@ -41,23 +45,10 @@ lock-in, no autonomous loop deciding what happens next.
 | Hard-to-follow progress | Optional tmux dashboard |
 | Edits in the project root | Optional Git-backed worktrees and snapshots |
 
-***The result is a run record you can inspect, diff, archive, attach to a review, or delete like any other build output.***
+> ***The result is a run record you can inspect, diff, archive, attach to a review, or delete like any other build output.***
 
 > **CLI-first by design.**
 > Crewplane invokes provider CLIs directly instead of wrapping them in a vendor SDK or agent framework. If a tool has a command line, Crewplane can run it.
-
-### Where it fits in your stack
-
-```
-┌─────────────────────────────────────────────────┐
-│  Your repo: instructions, skills, MCP, config   │  ← agents read this
-├─────────────────────────────────────────────────┤
-│  Provider CLIs: Claude Code, Codex, Gemini, …   │  ← agents do the work
-├─────────────────────────────────────────────────┤
-│  Crewplane                                      │  ← sequences, resumes,
-│    workflow DAG · stage artifacts · run record  │    records, coordinates
-└─────────────────────────────────────────────────┘
-```
 
 <details>
 <summary><strong>When should you just use one agent CLI?</strong></summary>
@@ -66,15 +57,38 @@ For a quick question, a one-off patch, or exploratory work that fits in a single
 
 </details>
 
-## Installation
+### Where it fits in your stack
 
-Run the following on Mac or Linux to install Crewplane:
+```
+┌──────────────────────────────────────────────┐
+│ Developer / Team Intent                      │
+│ Markdown workflow · policies · approvals     │  ← Markdown defines the workflow.
+└──────────────────────────────────────────────┘
+                    ↓
+┌──────────────────────────────────────────────┐
+│ Crewplane - Control Plane                    │
+│ preflight · DAG · routing · resume · receipts│  ← Crewplane enforces the graph.
+└──────────────────────────────────────────────┘
+                    ↓
+┌──────────────────────────────────────────────┐
+│ Agent Execution Plane                        │
+│ Claude Code · Codex · Copilot CLI · Gemini   │  ← Agents execute the stages.
+└──────────────────────────────────────────────┘
+                    ↕ read/write
+┌──────────────────────────────────────────────┐
+│ Repo / Filesystem / CI                       │
+│ source · tests · logs · manifests · results  │  ← Artifacts stay on disk.
+└──────────────────────────────────────────────┘
+```
+
+## Install
 
 ```bash
 uv tool install crewplane
 ```
 
-Crewplane can also be installed via the following package managers:
+<details>
+<summary><strong>Other install methods</strong></summary>
 
 ```bash
 # pip
@@ -84,42 +98,51 @@ python -m pip install crewplane
 npm install -g crewplane
 ```
 
-> ⚠️ **Note:** Crewplane does **not** install or manage provider CLIs or credentials. Install and authenticate Claude Code, Copilot CLI, etc. separately.
+Other methods (pipx, install script, local checkout) are documented in the
+[installation guide](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md).
 
-Other install methods (pipx, install script, local checkout) are documented in the [installation guide](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md).
+</details>
 
-## First Run (No real agent invocations)
+<br/>
+
+> ⚠️ Crewplane does **not** install or manage provider CLIs or credentials. Install and authenticate Claude Code, Copilot CLI, etc. separately.
+
+## Quick Start
 
 From a project directory:
 
 ```bash
-crewplane init
-crewplane validate
-crewplane run
+crewplane init       # scaffold a project with a mock workflow
+crewplane validate   # check the workflow DAG
+crewplane run        # execute — no API keys needed
 ```
+
+Inspect the run record:
+
+```
+.crewplane/
+├── execution-results/<run>/   # final outputs: findings, results
+└── execution-stages/<run>/    # per-stage inputs, outputs, logs, manifests
+```
+
+That's it. The first run uses a deterministic `mock` provider — no provider CLIs,
+API keys, or config edits required.
+
+<details>
+<summary><strong>More on the first run</strong></summary>
 
 `crewplane init` creates `.crewplane/config.yml`, a default workflow, and
 additional example templates under `.crewplane/workflows/example-templates/`.
 
-`crewplane run` then runs the workflow with a deterministic `mock` provider.
-The first run does not require provider CLIs, API keys, or config edits.
-
 When output is attached to a terminal and `tmux` is available, Crewplane opens
-the compact live dashboard for DAG progress, node status, provider output, and
-live log tails. If `tmux` is missing, Crewplane warns and continues without the
-dashboard.
+the compact live dashboard for DAG progress, node status, and live log tails.
 
 > **Note:** install `tmux` via `brew install tmux` on *macOS* or
 > `sudo apt install tmux` on *Ubuntu/Debian*.
 
 > Pass `--no-live` when you want to omit the live dashboard.
 
-Inspect the artifacts:
-
-- Stage run files: `.crewplane/execution-stages/`
-- Final results: `.crewplane/execution-results/`
-
-After `crewplane run`, the key files under `.crewplane/` look like:
+After the first run, the full artifact layout looks like:
 
 ```
 .crewplane/
@@ -141,21 +164,16 @@ These files are the same shape you will see with real providers: each step has
 rendered inputs, outputs, logs, manifests, and final results you can inspect or
 diff with normal tools.
 
-Mock output is scaffolding for validating Crewplane behavior, not model output.
+Because the first run already wrote a successful result, a later identical run
+may print `Identical context detected` (Crewplane reuses the saved result for
+identical inputs). Use `crewplane run --force` to start fresh.
 
-> **Note:** Treat run artifacts like build outputs: useful for debugging and review, but decide separately what, if anything, belongs in version control.
+</details>
 
-Because the first run already wrote a successful result, a later identical run may print `Identical context detected`.
-That means Crewplane found a previous successful run with the same inputs and reused the saved result instead of running the workflow again.
-To start a fresh run, use:
+## What a Workflow Looks Like
 
-```bash
-crewplane run --force
-```
-
-## Workflow Shape
-
-Workflows are Markdown+frontmatter; for example:
+Workflows are Markdown files that live in your repo. Review them in a PR,
+version them with your code, share them across teams.
 
 ```yaml
 ---
@@ -178,46 +196,87 @@ Full workflow authoring docs are in the
 
 ## Prepare a Real Provider
 
-After the provider-free first run succeeds, use onboarding to prepare one real provider handoff:
+After the mock run succeeds, use `onboarding` to wire up a real provider:
 
 ```bash
 crewplane onboarding
 ```
 
-Onboarding detects provider CLI names on `PATH`, lets you choose one provider,
-updates unchanged generated defaults, and validates the resulting Crewplane
-wiring. It does not start real provider CLIs, authenticate providers, or check
-provider account/model readiness.
+Onboarding detects provider CLIs on `PATH`, lets you choose one, and updates
+the generated config. It does not start provider CLIs or authenticate them —
+install and authenticate Claude Code, Copilot CLI, etc. separately.
 
-After onboarding, run the workflow when the selected provider CLI is installed, authenticated, and ready to execute:
+After onboarding, run the workflow with the selected provider:
 
 ```bash
 crewplane run
 ```
 
-If you edited generated files, want multiple providers, or need manual setup, use
-[provider setup](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md).
+If you need multiple providers or manual setup, see the
+[provider setup guide](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md).
+
+> **Note:** Treat run artifacts like build outputs: useful for debugging and
+> review, but decide separately what, if anything, belongs in version control.
 
 At this point you have seen the core path: install, run the generated mock
 workflow, inspect artifacts, and prepare a real provider when ready.
 
-## Where Next
+## Learn More
 
-The full documentation starts at [Documentation](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md).
+The full documentation starts at [docs/index.md](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md).
 
 **Just getting started?** → follow the
 [First Project Path](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#first-project-path)
-in the documentation index.
+to install Crewplane, run the mock workflow, inspect artifacts, and prepare a
+real provider.
 
-**Guided end-to-end tour** → check out
-[Guided Tutorial Track](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#guided-tutorial-track).
-- It walks through running workflows, inspecting run records, authoring workflows,
-provider roles, review loops, composition, validation, troubleshooting, and cleanup.
+**Guided tour:** → use the
+[Guided Tutorial Track](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#guided-tutorial-track)
+to walk through workflow runs, run records, authoring, provider roles, review
+loops, composition, validation, troubleshooting, and cleanup.
 
-For exact flags, config keys, workflow syntax, and artifact formats, use the
-[Reference](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#reference)
-section.
+**Want to see what Crewplane can orchestrate?** → try these generated workflows after enabling their provider names in `.crewplane/config.yml`:
 
-### Contributing
+- `example-templates/code-review-example.task.md` for parallel agent review and reviewer loops.
+- `example-templates/feature-implement-example.task.md` for brief → plan → build → review → handoff.
+- `example-templates/composition/review-fix-composed-example.task.md` for reusable workflow composition.
+
+With `settings.integrations.invoker.implementation: "mock"`, Crewplane validates those agent profiles but still writes deterministic mock output and does not start provider CLIs. Switch the invoker to `cli` only when you want real provider runs.
+
+<details>
+<summary><strong>How to run them with mock</strong></summary>
+1. Uncomment the agents in the generated config (i.e. lines 22-138), keep the `settings.integrations.invoker.implementation` as `mock` so the workflow runs with mock. See [how to turn mock on and off](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md#turn-mock-mode-onoff) for details.
+2. Use the following commands to try it out.
+
+Copy pastable commands for the workflows:
+```
+crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md
+```
+```
+crewplane run --tasks .crewplane/workflows/example-templates/feature-implement-example.task.md
+```
+```
+crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md
+```
+</details>
+
+For more workflows, see the
+[Examples guide](https://github.com/crewplaneai/crewplane/blob/master/docs/examples/index.md);
+for exact flags, config keys, workflow syntax, and artifact formats, use the
+[Reference](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md#reference).
+
+## Contributing
 
 Interested in contributing? Start with [Contributing and local development](https://github.com/crewplaneai/crewplane/blob/master/DEVELOPMENT.md).
+
+Have a coding-agent workflow you don't want to leave to a free-running loop?
+Open a [Discussion](https://github.com/crewplaneai/crewplane/discussions) and describe it — good examples can become Crewplane templates.
+
+---
+
+<div align="center">
+  <p>
+    If you believe coding-agent workflows should be files you can review, reuse,
+    and run locally — <a href="https://github.com/crewplaneai/crewplane"><b>star this repo</b></a> ⭐ so more developers can find it.
+  </p>
+</div>

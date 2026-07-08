@@ -230,12 +230,16 @@ def test_public_first_run_docs_are_mock_first_and_provider_free() -> None:
         assert "crewplane run --no-live" not in content
         assert "crewplane onboarding" in content
         assert "provider CLI" in content
-        assert "does not require" in content or "needs no" in content
+        assert (
+            "does not require" in content
+            or "needs no" in content
+            or "no provider CLIs" in content
+        )
         assert "API key" in content
-        assert "not model output" in content
         assert content.index("crewplane run") < content.index("crewplane onboarding")
         assert content.index("crewplane run") < content.index("provider setup")
 
+    assert "not model output" in quickstart
     assert "crewplane onboarding" in docs_index
     assert "guides/inspecting-artifacts.md" in docs_index
     assert "guides/troubleshooting.md" in docs_index
