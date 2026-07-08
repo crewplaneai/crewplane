@@ -313,7 +313,7 @@ def test_preview_branch_exports_verifies_chained_bundles_without_branch_ref(
     assert len(records) == 1
     record = records[0]
     assert record["dry_run"] is True
-    assert record["status"] == "fulfilled"
+    assert record["status"] == "fulfilled", record
     assert record["operation"] == "created"
     assert not git_commit_exists(repo, first.commit)
     assert not git_commit_exists(repo, second.commit)
@@ -364,7 +364,7 @@ def test_preview_branch_exports_verifies_sha256_chained_bundles(
     assert len(records) == 1
     record = records[0]
     assert record["dry_run"] is True
-    assert record["status"] == "fulfilled"
+    assert record["status"] == "fulfilled", record
     assert record["operation"] == "created"
     assert not git_commit_exists(repo, first.commit)
     assert not git_commit_exists(repo, second.commit)
