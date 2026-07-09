@@ -92,7 +92,11 @@ def _verify_source_commit_available(
     active_commits.remove(source_ref.source_commit)
 
     if _source_requires_bundle(source_ref):
-        bundle_path = _verify_source_bundle_descriptor(command, source_ref)
+        bundle_path = _verify_source_bundle_descriptor(
+            command,
+            source_ref,
+            verify_prerequisites=False,
+        )
         _fetch_bundle_for_verification(command, bundle_path, source_ref)
     elif not _command_commit_exists(command, source_ref.source_commit):
         _fetch_commit_for_verification(command, source, source_ref.source_commit)
@@ -326,6 +330,7 @@ def _reject_source_tree_mismatch_with_command(
 def _verify_source_bundle_descriptor(
     command: GitCommand,
     source_ref: WorktreeSourceRef,
+    verify_prerequisites: bool = True,
 ) -> Path:
     bundle_path = source_ref.bundle_path
     if bundle_path is None:
@@ -345,7 +350,8 @@ def _verify_source_bundle_descriptor(
         raise RuntimeError("Workspace lineage bundle size mismatch.")
     if source_ref.bundle_ref is None:
         raise RuntimeError("Workspace lineage bundle ref is missing.")
-    command.run("bundle", "verify", bundle_path.as_posix())
+    if verify_prerequisites:
+        command.run("bundle", "verify", bundle_path.as_posix())
     _reject_bundle_ref_mismatch(command, bundle_path, source_ref)
     return bundle_path
 
