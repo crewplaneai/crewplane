@@ -393,7 +393,9 @@ def test_workspace_source_policy_allows_disabled_sparse_checkout_config(
     _require_workspace_git()
     _create_clean_repo(tmp_path)
     run_git_text(tmp_path, "config", "core.sparseCheckout", config_value)
-    (tmp_path / ".git" / "info" / "sparse-checkout").write_text(
+    sparse_checkout_path = tmp_path / ".git" / "info" / "sparse-checkout"
+    sparse_checkout_path.parent.mkdir(parents=True, exist_ok=True)
+    sparse_checkout_path.write_text(
         "README.md\n",
         encoding="utf-8",
     )

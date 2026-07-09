@@ -52,6 +52,7 @@ def test_worktree_capture_rejects_common_policy_file_drift(
     assert source is not None
     (prepared.cwd / "result.txt").write_text("captured\n", encoding="utf-8")
     drift_path = Path(source.common_git_dir) / "info" / policy_file
+    drift_path.parent.mkdir(parents=True, exist_ok=True)
     drift_path.write_text(content, encoding="utf-8")
 
     try:
