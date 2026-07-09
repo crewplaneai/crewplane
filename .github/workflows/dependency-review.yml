@@ -30,5 +30,8 @@ jobs:
         uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
-          deny-licenses: GPL-2.0, GPL-3.0, AGPL-1.0, AGPL-3.0
+          allow-licenses: >
+            0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC0-1.0,
+            ISC, MIT, MPL-2.0, PSF-2.0, Python-2.0,
+            Unicode-3.0, Unicode-DFS-2016, Unlicense, Zlib
           comment-summary-in-pr: always
