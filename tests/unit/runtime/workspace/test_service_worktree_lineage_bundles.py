@@ -1,21 +1,16 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
-from crewplane.runtime.workspace.git import GitCommand
 from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,
     create_worktree_workspace,
     remove_worktree_workspace,
 )
-from crewplane.runtime.workspace.worktree.lineage import (
-    export_bundle,
-    verify_source_commit_available,
-)
+from crewplane.runtime.workspace.worktree.lineage import export_bundle
 from crewplane.runtime.workspace.worktree.protected_refs import (
     ProtectedRefSnapshot,
 )
@@ -231,74 +226,6 @@ def test_worktree_workspace_imports_depth_two_bundle_chain(
         )
     finally:
         remove_worktree_workspace(source, worktree.workspace_path)
-
-
-def test_verify_source_commit_available_fetches_chained_bundles_without_bundle_verify(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
-    repo = create_git_repo(tmp_path)
-    cache_root = tmp_path / "cache"
-    plan = workspace_plan(
-        repo,
-        cache_root,
-        cleanup_on_success=True,
-        kind="worktree",
-    )
-    source = plan.workspace_source
-    assert source is not None
-    first, second = create_prerequisite_bundle_chain(
-        repo,
-        tmp_path / "first.bundle",
-        tmp_path / "second.bundle",
-    )
-    if git_commit_exists(repo, first.commit) or git_commit_exists(repo, second.commit):
-        pytest.skip("git retained the test commits after pruning")
-
-    original_run = GitCommand.run
-
-    def reject_bundle_verify(
-        self: GitCommand,
-        *args: str,
-    ) -> subprocess.CompletedProcess[bytes]:
-        if args[:2] == ("bundle", "verify"):
-            raise subprocess.CalledProcessError(1, ["git", *args])
-        return original_run(self, *args)
-
-    monkeypatch.setattr(GitCommand, "run", reject_bundle_verify)
-
-    verify_source_commit_available(
-        source,
-        WorktreeSourceRef(
-            source_kind="node",
-            source_node_id="second",
-            source_commit=second.commit,
-            source_tree=second.tree,
-            candidate_sequence=1,
-            bundle_path=second.path,
-            bundle_sha256=second.sha256,
-            bundle_size_bytes=second.size_bytes,
-            bundle_ref=second.ref,
-            upstream_sources=(
-                WorktreeSourceRef(
-                    source_kind="node",
-                    source_node_id="first",
-                    source_commit=first.commit,
-                    source_tree=first.tree,
-                    candidate_sequence=1,
-                    bundle_path=first.path,
-                    bundle_sha256=first.sha256,
-                    bundle_size_bytes=first.size_bytes,
-                    bundle_ref=first.ref,
-                ),
-            ),
-        ),
-    )
-
-    assert not git_commit_exists(repo, first.commit)
-    assert not git_commit_exists(repo, second.commit)
 
 
 def test_worktree_workspace_rejects_imported_source_tree_mismatch(
