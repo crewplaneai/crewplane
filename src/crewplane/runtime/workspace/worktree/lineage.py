@@ -30,17 +30,23 @@ def verify_source_commit_available(
     source: WorkspaceSourceSnapshot,
     source_ref: WorktreeSourceRef,
 ) -> None:
-    with TemporaryDirectory(prefix="crewplane-lineage-verify-") as temp_dir:
-        git_dir = Path(temp_dir) / "verify.git"
-        git(Path(temp_dir)).run(
+    with TemporaryDirectory(prefix="crewplane-lineage-verify-") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        git_dir = temp_dir / "verify.git"
+        git(temp_dir).run(
             "init",
             "--bare",
             f"--object-format={source.object_format}",
             git_dir.as_posix(),
         )
         command = git(git_dir)
-        _fetch_commit_for_verification(command, source, source.run_base_commit)
-        _verify_source_commit_available(source, command, source_ref, set())
+        _fetch_project_source_for_verification(
+            command,
+            source,
+            source.run_base_commit,
+            temp_dir,
+        )
+        _verify_source_commit_available(source, command, source_ref, set(), temp_dir)
 
 
 def _ensure_source_commit_available(
@@ -83,19 +89,31 @@ def _verify_source_commit_available(
     command: GitCommand,
     source_ref: WorktreeSourceRef,
     active_commits: set[str],
+    temp_dir: Path,
 ) -> None:
     if source_ref.source_commit in active_commits:
         raise RuntimeError("Workspace lineage source chain contains a cycle.")
     active_commits.add(source_ref.source_commit)
     for upstream in source_ref.upstream_sources:
-        _verify_source_commit_available(source, command, upstream, active_commits)
+        _verify_source_commit_available(
+            source,
+            command,
+            upstream,
+            active_commits,
+            temp_dir,
+        )
     active_commits.remove(source_ref.source_commit)
 
     if _source_requires_bundle(source_ref):
         bundle_path = _verify_source_bundle_descriptor(command, source_ref)
         _fetch_bundle_for_verification(command, bundle_path, source_ref)
     elif not _command_commit_exists(command, source_ref.source_commit):
-        _fetch_commit_for_verification(command, source, source_ref.source_commit)
+        _fetch_project_source_for_verification(
+            command,
+            source,
+            source_ref.source_commit,
+            temp_dir,
+        )
     if not _command_commit_exists(command, source_ref.source_commit):
         raise RuntimeError(
             "Workspace lineage source bundle import did not provide the expected "
@@ -409,16 +427,59 @@ def _fetch_bundle_for_verification(
     )
 
 
-def _fetch_commit_for_verification(
+def _fetch_project_source_for_verification(
     command: GitCommand,
     source: WorkspaceSourceSnapshot,
     commit: str,
+    temp_dir: Path,
 ) -> None:
+    if commit != source.run_base_commit:
+        raise RuntimeError(
+            "Workspace lineage verification requires non-project source commits "
+            "to be supplied by recorded bundles."
+        )
+    source_root = Path(source.git_top_level)
+    source_command = git(source_root)
+    verification_ref = checked_ref(
+        source_root,
+        "refs/crewplane/verification/"
+        f"{safe_ref_component(temp_dir.name)}/"
+        f"{safe_ref_component(commit[:24])}",
+    )
+    bundle_path = temp_dir / f"project-base-{safe_file_component(commit[:24])}.bundle"
+    _create_verification_bundle(source, source_command, verification_ref, bundle_path)
+    command.run("bundle", "verify", bundle_path.as_posix())
     command.run(
         "fetch",
-        Path(source.git_top_level).as_posix(),
-        f"{commit}:{_import_ref_for_source_commit(commit)}",
+        bundle_path.as_posix(),
+        f"{verification_ref}:{_import_ref_for_source_commit(commit)}",
     )
+
+
+def _create_verification_bundle(
+    source: WorkspaceSourceSnapshot,
+    command: GitCommand,
+    verification_ref: str,
+    bundle_path: Path,
+) -> None:
+    with git_metadata_lock(Path(source.common_git_dir)):
+        ref_created = False
+        try:
+            command.run("update-ref", verification_ref, source.run_base_commit, "")
+            ref_created = True
+            command.run("bundle", "create", bundle_path.as_posix(), verification_ref)
+        except Exception as exc:
+            if ref_created:
+                try:
+                    command.run("update-ref", "-d", verification_ref)
+                except Exception as cleanup_error:
+                    note_cleanup_failure(
+                        exc,
+                        "Workspace verification source ref cleanup",
+                        cleanup_error,
+                    )
+            raise
+        command.run("update-ref", "-d", verification_ref)
 
 
 def _result_ref_base(run_key_name: str, node_id: str, slug: str) -> str:
