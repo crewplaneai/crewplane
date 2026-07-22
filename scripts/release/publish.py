@@ -8,8 +8,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from packaging.version import InvalidVersion, Version
+
 from . import smoke
 from .state import (
+    ORIGIN_MASTER_ANCESTRY_ERROR,
     CommandRunner,
     DerivedReleaseState,
     NpmRelease,
@@ -24,6 +27,7 @@ from .state import (
     inspect_git_state,
     inspect_release_tag_state,
     is_tag_only_missing_error,
+    manifest_context_issues,
     print_state,
     query_npm_release,
     query_pypi_release,
@@ -31,6 +35,7 @@ from .state import (
     read_manifest,
     read_release_context,
     require_publish_git_state,
+    verified_release_notes_start_tag,
     verify_formula_state_for_release,
     verify_git_tag_state,
     verify_local_manifest_artifacts,
@@ -45,6 +50,13 @@ REGISTRY_VERIFICATION_ATTEMPTS = 6
 class NpmOtp:
     publish: str
     dist_tag: str
+
+
+@dataclass(frozen=True)
+class GitHubReleasePlan:
+    prerelease: bool
+    latest: bool
+    notes_start_tag: str
 
 
 def confirm_release(root: Path) -> None:
@@ -199,7 +211,9 @@ def finalize_release(root: Path, runner: CommandRunner, execute: bool) -> int:
 
 
 def verify_completed_release(
-    root: Path, runner: CommandRunner, expected_tag: str | None = None
+    root: Path,
+    runner: CommandRunner,
+    expected_tag: str | None = None,
 ) -> DerivedReleaseState:
     context = read_release_context(root)
     manifest = read_manifest(root)
@@ -214,6 +228,147 @@ def verify_complete_release(
     root: Path, runner: CommandRunner, expected_tag: str | None = None
 ) -> int:
     state = verify_completed_release(root, runner, expected_tag=expected_tag)
+    return report_verification_result(state)
+
+
+def verified_github_release_plan(
+    root: Path,
+    runner: CommandRunner,
+    expected_tag: str | None = None,
+) -> GitHubReleasePlan:
+    context = read_release_context(root)
+    manifest = read_manifest(root)
+    manifest_issues = manifest_context_issues(context, manifest)
+    expected_artifact_keys = {"pypi_sdist", "pypi_wheel", "npm_tarball"}
+    if set(manifest.artifacts) != expected_artifact_keys:
+        manifest_issues.append(
+            "release manifest must contain exactly the sdist, wheel, and npm tarball"
+        )
+    fail_github_release_verification(manifest_issues)
+
+    local_issues = github_release_bundle_issues(context, manifest)
+    local_issues.extend(
+        verify_local_manifest_artifacts(
+            context,
+            manifest,
+            ("pypi_sdist", "pypi_wheel", "npm_tarball"),
+        )
+    )
+    fail_github_release_verification(local_issues)
+
+    pypi = query_pypi_release(context)
+    npm = query_npm_release(context)
+    formula = read_formula_state(context)
+    git = inspect_release_tag_state(context, runner, expected_tag=expected_tag)
+    issues: list[str] = []
+    issues.extend(verify_pypi_artifacts(context, pypi, manifest))
+    issues.extend(verify_npm_artifact(context, npm, manifest))
+    issues.extend(verify_formula_state_for_release(context, formula, manifest))
+    issues.extend(verify_git_tag_state(git))
+    issues.extend(npm_latest_progression_issues(context, npm))
+    latest, latest_issues = github_latest_eligibility(context, pypi)
+    issues.extend(latest_issues)
+    fail_github_release_verification(issues)
+    notes_start_tag = verified_release_notes_start_tag(context, runner)
+    return GitHubReleasePlan(
+        prerelease=context.version.is_prerelease,
+        latest=latest,
+        notes_start_tag=notes_start_tag,
+    )
+
+
+def github_release_bundle_issues(
+    context: ReleaseContext,
+    manifest: ReleaseManifest,
+) -> list[str]:
+    expected_paths = {
+        "pypi_sdist": Path("dist") / context.sdist_filename,
+        "pypi_wheel": Path("dist") / context.wheel_filename,
+        "npm_tarball": Path(".release") / "npm" / context.npm_filename,
+    }
+    issues: list[str] = []
+    for key, expected_path in expected_paths.items():
+        if Path(manifest.artifact(key).path) != expected_path:
+            issues.append(f"release manifest artifact {key} has an unexpected path")
+
+    expected_directories = {
+        Path("dist"): {context.sdist_filename, context.wheel_filename},
+        Path(".release") / "npm": {context.npm_filename},
+    }
+    for relative_directory, expected_names in expected_directories.items():
+        directory = context.root / relative_directory
+        if not directory.is_dir() or directory.is_symlink():
+            issues.append(
+                f"release bundle directory is missing or invalid: {relative_directory}"
+            )
+            continue
+        entries = list(directory.iterdir())
+        actual_names = {entry.name for entry in entries}
+        if actual_names != expected_names:
+            issues.append(
+                f"release bundle directory has unexpected contents: {relative_directory}"
+            )
+        for entry in entries:
+            if entry.name in expected_names and (
+                not entry.is_file() or entry.is_symlink()
+            ):
+                relative_path = entry.relative_to(context.root)
+                issues.append(
+                    f"release bundle artifact must be a regular file: {relative_path}"
+                )
+    return issues
+
+
+def npm_latest_progression_issues(
+    context: ReleaseContext, npm: NpmRelease
+) -> list[str]:
+    try:
+        latest = Version(npm.latest)
+    except InvalidVersion:
+        return ["npm latest dist-tag is missing or invalid"]
+    target = Version(context.version.npm)
+    if latest == target and npm.latest != context.version.npm:
+        return ["npm latest dist-tag does not exactly match the target release"]
+    if latest < target:
+        return ["npm latest dist-tag points to an older release"]
+    return []
+
+
+def github_latest_eligibility(
+    context: ReleaseContext,
+    pypi: PypiRelease,
+) -> tuple[bool, list[str]]:
+    if context.version.is_prerelease:
+        return False, []
+    try:
+        latest_stable = Version(pypi.latest_stable)
+    except InvalidVersion:
+        return False, ["PyPI has no verifiable stable release for GitHub Latest"]
+    target = Version(context.version.python)
+    if latest_stable < target:
+        return False, ["PyPI reports a stable release older than the target version"]
+    return latest_stable == target, []
+
+
+def fail_github_release_verification(issues: list[str]) -> None:
+    if issues:
+        raise ReleaseError(
+            "GitHub release verification failed:\n  " + "\n  ".join(issues)
+        )
+
+
+def print_github_release_plan(
+    root: Path,
+    runner: CommandRunner,
+    expected_tag: str | None = None,
+) -> None:
+    plan = verified_github_release_plan(root, runner, expected_tag=expected_tag)
+    print(f"prerelease={str(plan.prerelease).lower()}")
+    print(f"latest={str(plan.latest).lower()}")
+    print(f"notes_start_tag={plan.notes_start_tag}")
+
+
+def report_verification_result(state: DerivedReleaseState) -> int:
     print_state(state)
     if state.status == ReleaseStatus.COMPLETE:
         return 0
@@ -398,6 +553,8 @@ def otp_arg(value: str) -> list[str]:
 
 def create_and_push_tag(context: ReleaseContext, runner: CommandRunner) -> None:
     git = inspect_git_state(context, runner)
+    if not git.head_reachable_from_origin_master:
+        raise ReleaseError(ORIGIN_MASTER_ANCESTRY_ERROR)
     if not git.tag_commit:
         runner.run(
             [

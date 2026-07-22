@@ -1,7 +1,7 @@
 name: Documentation issue
 description: Report missing, confusing, or incorrect docs.
 title: "docs: "
-labels: ["type: docs", "status: needs-triage"]
+labels: ["type: docs"]
 body:
   - type: textarea
     id: page

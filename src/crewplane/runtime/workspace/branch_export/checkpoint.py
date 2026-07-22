@@ -96,6 +96,7 @@ def _ensure_branch_export_source_available(
     source_ref: WorktreeSourceRef,
 ) -> None:
     try:
+        verify_source_commit_available(source, source_ref)
         ensure_source_commit_available(source, source_ref)
     except RuntimeError as exc:
         _raise_branch_export_result_mismatch(exc)

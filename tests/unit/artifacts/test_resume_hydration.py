@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
+import crewplane.artifacts.resume.generated_files as generated_files_module
+import crewplane.artifacts.resume.hydration as hydration_module
 from crewplane.artifacts.manager import OutputManager
 from crewplane.artifacts.naming import (
     build_generated_file_result_dir_name,
@@ -102,6 +105,27 @@ def test_hydrate_rechecks_source_hash_after_validation(tmp_path) -> None:
         hydrate_resume_frontier(frontier, plan, output)
 
 
+def test_hydrate_rechecks_target_after_descriptor_bound_copy(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    frontier, plan = validated_frontier(tmp_path, include_findings=False)
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    def corrupt_target_write(path: Path, payload: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload + b"corruption")
+
+    monkeypatch.setattr(
+        hydration_module,
+        "atomic_write_bytes",
+        corrupt_target_write,
+    )
+
+    with pytest.raises(ValueError, match="Hydrated resume artifact size changed"):
+        hydrate_resume_frontier(frontier, plan, output)
+
+
 def test_hydrate_resume_frontier_records_findings_hash_when_required(tmp_path) -> None:
     frontier, plan = validated_frontier(
         tmp_path,
@@ -159,6 +183,50 @@ def test_hydrate_resume_frontier_copies_generated_file_sidecars(tmp_path) -> Non
     assert node_state["generated_files"][0]["relative_path"] == (
         "generated-files/a/alpha/src/app.txt"
     )
+
+
+def test_hydrate_rechecks_generated_file_target_after_copy(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    manifest = make_run_manifest("source", "workflow--source", status="failed")
+    write_run_manifest(tmp_path, manifest)
+    source = find_same_context_runs(
+        tmp_path,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_NAME,
+        WORKFLOW_SIGNATURE,
+    )[0]
+    output_descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    generated_descriptor = write_generated_file(
+        source.results_dir,
+        "generated-files/a/alpha/src/app.txt",
+        "generated content",
+    )
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, "a", [output_descriptor]).model_copy(
+            update={"generated_files": [generated_descriptor]}
+        ),
+    )
+    frontier = validate_resume_frontier(source, make_plan())
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    def corrupt_target_write(path: Path, payload: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload + b"corruption")
+
+    monkeypatch.setattr(
+        generated_files_module,
+        "atomic_write_bytes",
+        corrupt_target_write,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Hydrated generated file artifact size changed",
+    ):
+        hydrate_resume_frontier(frontier, make_plan(), output)
 
 
 def test_hydrate_resume_frontier_copies_generated_file_from_bounded_node_directory(
@@ -271,6 +339,91 @@ def test_hydrate_resume_frontier_rewrites_workspace_state_run_identity(
     )
     assert workspace["states"][0]["resume_origin"]["source_run_id"] == "source"
     assert workspace["states"][0]["workspace"]["materialization"] == "snapshot_checkout"
+
+
+def test_hydrate_rechecks_rewritten_workspace_state_before_node_success(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    manifest = make_run_manifest("source", "workflow--source", status="failed")
+    write_run_manifest(tmp_path, manifest)
+    source = find_same_context_runs(
+        tmp_path,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_NAME,
+        WORKFLOW_SIGNATURE,
+    )[0]
+    descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, "a", [descriptor]),
+    )
+    plan = _workspace_snapshot_plan()
+    _write_snapshot_workspace_state(source, plan)
+    frontier = validate_resume_frontier(source, plan)
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    write_bytes = hydration_module.atomic_write_bytes
+
+    def corrupt_workspace_state(path: Path, payload: bytes) -> None:
+        write_bytes(path, payload)
+        if path.name == "workspace-state.json":
+            path.write_bytes(b"x" + payload[1:])
+
+    monkeypatch.setattr(
+        hydration_module,
+        "atomic_write_bytes",
+        corrupt_workspace_state,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Hydrated workspace resume artifact changed",
+    ):
+        hydrate_resume_frontier(frontier, plan, output)
+
+    node_state_path = (
+        output.stages_dir / "manifests" / "nodes" / build_node_state_filename("a")
+    )
+    assert not node_state_path.exists()
+
+
+def test_workspace_target_verification_does_not_add_full_file_read(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    manifest = make_run_manifest("source", "workflow--source", status="failed")
+    write_run_manifest(tmp_path, manifest)
+    source = find_same_context_runs(
+        tmp_path,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_NAME,
+        WORKFLOW_SIGNATURE,
+    )[0]
+    descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, "a", [descriptor]),
+    )
+    plan = _workspace_snapshot_plan()
+    _write_snapshot_workspace_state(source, plan)
+    frontier = validate_resume_frontier(source, plan)
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    target_path = output.stages_dir / "a" / "workspace-state.json"
+    read_bytes = Path.read_bytes
+    target_read_count = 0
+
+    def track_full_target_read(path: Path) -> bytes:
+        nonlocal target_read_count
+        if path == target_path:
+            target_read_count += 1
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", track_full_target_read)
+
+    hydrate_resume_frontier(frontier, plan, output)
+
+    assert target_path.is_file()
+    assert target_read_count <= 1
 
 
 def test_hydrate_resume_frontier_strips_source_branch_export(

@@ -149,6 +149,44 @@ def test_fulfill_branch_exports_from_history_writes_duplicate_skip_record(
     )
 
 
+def test_fulfill_branch_exports_ignores_inherited_git_transport_restrictions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = branch_export_plan(repo, tmp_path, branch_name="feature/restricted-env")
+    output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
+    result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
+        repo,
+        output.create_stage_dir("implement"),
+        "feature result\n",
+    )
+    write_workspace_state(
+        output.stages_dir,
+        plan,
+        result_commit,
+        result_tree,
+        result_ref,
+        bundle_path,
+    )
+    history = history_record_for_output(output)
+    monkeypatch.setenv("GIT_PROTOCOL_FROM_USER", "0")
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "https")
+
+    fulfill_branch_exports_from_history(plan, history)
+
+    assert (
+        run_git_text(
+            repo,
+            "rev-parse",
+            "refs/heads/feature/restricted-env",
+        )
+        == result_commit
+    )
+
+
 def test_fulfill_branch_exports_writes_skipped_record_when_disabled(
     tmp_path: Path,
 ) -> None:
@@ -287,6 +325,11 @@ def test_preview_branch_exports_verifies_chained_bundles_without_branch_ref(
     )
     if git_commit_exists(repo, first.commit) or git_commit_exists(repo, second.commit):
         pytest.skip("git retained the test commits after pruning")
+    source_refs_before = run_git_text(
+        repo,
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+    )
     write_workspace_state(
         output.stages_dir,
         plan,
@@ -318,6 +361,72 @@ def test_preview_branch_exports_verifies_chained_bundles_without_branch_ref(
     assert not git_commit_exists(repo, first.commit)
     assert not git_commit_exists(repo, second.commit)
     assert not run_git_text(repo, "branch", "--list", "feature/preview")
+    assert (
+        run_git_text(repo, "for-each-ref", "--format=%(refname) %(objectname)")
+        == source_refs_before
+    )
+
+
+def test_preview_and_fulfillment_reject_ambient_omitted_bundle_prerequisite(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = branch_export_plan(repo, tmp_path, branch_name="feature/omitted-upstream")
+    output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
+    first, second = create_prerequisite_bundle_chain(
+        repo,
+        output.stages_dir / "prepare" / "workspace-bundles" / "first.bundle",
+        output.create_stage_dir("implement") / "workspace-bundles" / "second.bundle",
+    )
+    run_git_text(
+        repo,
+        "fetch",
+        first.path.as_posix(),
+        f"{first.ref}:refs/crewplane/test/ambient-first",
+    )
+    run_git_text(
+        repo,
+        "fetch",
+        second.path.as_posix(),
+        f"{second.ref}:refs/crewplane/test/ambient-second",
+    )
+    run_git_text(repo, "update-ref", "-d", "refs/crewplane/test/ambient-first")
+    run_git_text(repo, "update-ref", "-d", "refs/crewplane/test/ambient-second")
+    assert git_commit_exists(repo, first.commit)
+    assert git_commit_exists(repo, second.commit)
+    write_workspace_state(
+        output.stages_dir,
+        plan,
+        second.commit,
+        second.tree,
+        second.ref,
+        second.path,
+    )
+    history = history_record_for_output(output)
+
+    preview_records = preview_branch_exports_from_history(plan, history)
+    with pytest.raises(RuntimeError) as exc_info:
+        fulfill_branch_exports_from_history(plan, history)
+
+    assert len(preview_records) == 1
+    assert preview_records[0]["status"] == "failed_verification"
+    failure_message = str(preview_records[0]["failure_message"])
+    assert failure_message.startswith(
+        "Workspace lineage source verification failed while validating recorded "
+        "Git artifacts:"
+    )
+    assert str(exc_info.value) == failure_message
+    assert "Git did not provide diagnostic output" not in failure_message
+    assert "crewplane-lineage-verify-" not in failure_message
+    assert "Command '['git'" not in failure_message
+    assert not run_git_text(
+        repo,
+        "branch",
+        "--list",
+        "feature/omitted-upstream",
+    )
 
 
 def test_preview_branch_exports_verifies_sha256_chained_bundles(

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from packaging.markers import InvalidMarker, Marker
+from packaging.version import InvalidVersion, Version
 
 from .state_types import (
     ArtifactIdentity,
@@ -104,6 +105,7 @@ def inspect_git_state(context: ReleaseContext, runner: CommandRunner) -> GitStat
     branch = git_output(runner, root, ["git", "branch", "--show-current"])
     default_branch = remote_default_branch(runner, root)
     head_commit = git_output(runner, root, ["git", "rev-parse", "HEAD"])
+    head_reachable = head_reachable_from_origin_master(runner, root)
     dirty = bool(git_output(runner, root, ["git", "status", "--porcelain=v1"]))
     ahead, behind = upstream_counts(runner, root)
     tag_commit = git_tag_commit(runner, root, context.version.tag)
@@ -112,6 +114,7 @@ def inspect_git_state(context: ReleaseContext, runner: CommandRunner) -> GitStat
         branch=branch,
         default_branch=default_branch,
         head_commit=head_commit,
+        head_reachable_from_origin_master=head_reachable,
         upstream_ahead=ahead,
         upstream_behind=behind,
         dirty=dirty,
@@ -130,18 +133,38 @@ def inspect_release_tag_state(
             f"expected workflow tag {expected_tag!r} but context declares {context.version.tag!r}"
         )
     head_commit = git_output(runner, root, ["git", "rev-parse", "HEAD"])
+    head_reachable = head_reachable_from_origin_master(runner, root)
     tag_commit = git_tag_commit(runner, root, tag)
     remote_tag_commit = remote_git_tag_commit(runner, root, tag)
     return GitState(
         branch="",
         default_branch="",
         head_commit=head_commit,
+        head_reachable_from_origin_master=head_reachable,
         upstream_ahead=0,
         upstream_behind=0,
         dirty=False,
         tag_commit=tag_commit,
         remote_tag_commit=remote_tag_commit,
     )
+
+
+def head_reachable_from_origin_master(runner: CommandRunner, root: Path) -> bool:
+    runner.run(
+        ["git", "fetch", "--quiet", "--no-tags", "origin", "refs/heads/master"],
+        cwd=root,
+        timeout=120,
+    )
+    result = runner.run(
+        ["git", "merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"],
+        cwd=root,
+        timeout=60,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode in {0, 1}:
+        return result.returncode == 0
+    raise ReleaseError("could not verify release commit ancestry against origin/master")
 
 
 def git_output(runner: CommandRunner, root: Path, command: Sequence[str]) -> str:
@@ -215,6 +238,98 @@ def remote_git_tag_commit(runner: CommandRunner, root: Path, tag: str) -> str:
         if parts[1] == direct_ref:
             direct = parts[0]
     return direct
+
+
+def verified_release_notes_start_tag(
+    context: ReleaseContext,
+    runner: CommandRunner,
+) -> str:
+    parent_commit = _release_commit_first_parent(context.root, runner)
+    if not parent_commit:
+        return ""
+    predecessor = _nearest_reachable_version_tag(
+        context.root,
+        runner,
+        parent_commit,
+    )
+    if not predecessor:
+        return ""
+    _verify_release_notes_predecessor(context, runner, predecessor)
+    return predecessor
+
+
+def _release_commit_first_parent(root: Path, runner: CommandRunner) -> str:
+    ancestry = git_output(
+        runner,
+        root,
+        ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+    ).split()
+    if not ancestry:
+        raise ReleaseError("could not determine the release commit ancestry")
+    return ancestry[1] if len(ancestry) > 1 else ""
+
+
+def _nearest_reachable_version_tag(
+    root: Path,
+    runner: CommandRunner,
+    parent_commit: str,
+) -> str:
+    reachable_tags = frozenset(
+        git_output(
+            runner,
+            root,
+            ["git", "tag", "--merged", parent_commit, "--list", "v*"],
+        ).splitlines()
+    )
+    if not reachable_tags:
+        return ""
+    predecessor = git_output(
+        runner,
+        root,
+        ["git", "describe", "--tags", "--abbrev=0", "--match", "v*", parent_commit],
+    )
+    if predecessor not in reachable_tags:
+        raise ReleaseError("could not verify the release notes predecessor tag")
+    return predecessor
+
+
+def _verify_release_notes_predecessor(
+    context: ReleaseContext,
+    runner: CommandRunner,
+    predecessor: str,
+) -> None:
+    try:
+        predecessor_version = Version(predecessor.removeprefix("v"))
+    except InvalidVersion as error:
+        raise ReleaseError(
+            f"release notes predecessor is not a valid version tag: {predecessor!r}"
+        ) from error
+    if not predecessor.startswith("v") or predecessor_version >= Version(
+        context.version.python
+    ):
+        raise ReleaseError(
+            f"release notes predecessor is not older than {context.version.tag}: {predecessor!r}"
+        )
+
+    local_commit = git_tag_commit(runner, context.root, predecessor)
+    remote_commit = remote_git_tag_commit(runner, context.root, predecessor)
+    if not local_commit or remote_commit != local_commit:
+        raise ReleaseError(
+            f"release notes predecessor tag does not match origin: {predecessor!r}"
+        )
+    ancestry = runner.run(
+        ["git", "merge-base", "--is-ancestor", local_commit, "HEAD"],
+        cwd=context.root,
+        timeout=60,
+        capture_output=True,
+        check=False,
+    )
+    if ancestry.returncode == 1:
+        raise ReleaseError(
+            f"release notes predecessor tag is not reachable from HEAD: {predecessor!r}"
+        )
+    if ancestry.returncode != 0:
+        raise ReleaseError("could not verify release notes predecessor ancestry")
 
 
 def verify_generated_metadata(
@@ -605,6 +720,9 @@ def verify_pypi_artifacts(
     for filename in expected_names:
         if filename not in release.files:
             issues.append(f"PyPI is missing expected file {filename}")
+    unexpected_names = sorted(release.files.keys() - expected_names)
+    if unexpected_names:
+        issues.append(f"PyPI has unexpected files: {', '.join(unexpected_names)}")
     return issues
 
 

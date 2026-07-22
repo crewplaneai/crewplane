@@ -616,6 +616,11 @@ project source if there is no verified boundary. Runtime may reset a retained
 checkout back to the verified source commit; if reset verification fails, it
 falls back to a fresh managed checkout and records the fallback.
 
+[ADR 0014](0014-artifact-backed-node-boundary-resume.md) owns resume artifact
+eligibility. Workspace-enabled resume adds only descriptor-named,
+integrity-checked lineage artifacts; it never reuses live workspaces or cached
+refs as truth.
+
 Large repository behavior:
 
 - The first node for a logical worktree creates a full checkout.
@@ -1152,7 +1157,7 @@ are reserved by the design:
   repo-relative `\{\{file:...\}\}` tokens become workspace-file locators backed
   by Git blob bytes, literal path resolution, and per-invocation source
   identities.
-- Extends ADR 0014 with workspace lineage artifact hydration,
+- Extends ADR 0014 with descriptor-bound workspace lineage artifact hydration,
   invocation-source descriptor hydration, duplicate-skip verification, and
   resume validation.
 - Refines ADR 0001 for mandatory invocation `cwd`, optional invoker workspace

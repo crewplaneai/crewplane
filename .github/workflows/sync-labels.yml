@@ -1,6 +1,11 @@
 name: sync-labels
 
 on:
+  push:
+    branches: ["master"]
+    paths:
+      - ".github/labels.json"
+      - ".github/workflows/sync-labels.yml"
   workflow_dispatch:
     inputs:
       prune:
@@ -24,14 +29,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - name: Reject non-master runs
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "Label synchronization must run from master." >&2
+          exit 1
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
 
       - name: Sync labels
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
-          PRUNE: ${{ inputs.prune }}
+          PRUNE: ${{ inputs.prune || 'false' }}
         with:
           script: |
             const fs = require("fs");

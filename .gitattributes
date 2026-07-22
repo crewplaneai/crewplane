@@ -1,11 +1,5 @@
-* text=auto eol=lf
-
-*.py text eol=lf
-*.md text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
-*.toml text eol=lf
-*.lock text eol=lf
+# Disable EOL conversion for release builds and blob_exact workspaces.
+* -text
 
 *.png binary
 *.jpg binary

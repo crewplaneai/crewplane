@@ -1,12 +1,13 @@
 name: Bug report
 description: Report a reproducible bug.
 title: "fix: "
-labels: ["type: bug", "status: needs-triage"]
+labels: ["type: bug"]
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for reporting a bug. Please include enough detail for a maintainer to reproduce it without your private environment.
+        Sanitize commands, workflows, and logs. Never include credentials, proprietary prompts, customer data, or private provider payloads.
 
   - type: textarea
     id: summary
@@ -65,10 +66,57 @@ body:
       required: true
 
   - type: input
+    id: shell
+    attributes:
+      label: Shell
+      placeholder: zsh 5.9, Bash 5.2, etc.
+    validations:
+      required: true
+
+  - type: input
     id: python
     attributes:
       label: Python version
       placeholder: "3.13.7"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation method
+      options:
+        - uv tool
+        - pip or pipx
+        - npm
+        - Homebrew
+        - install.sh
+        - Source checkout
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: provider_invoker
+    attributes:
+      label: Provider CLI or invoker
+      description: List each provider CLI and version, or state that you used the mock invoker. Do not include credentials or private provider payloads.
+      placeholder: mock invoker, Codex CLI 1.2.3, etc.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: live_mode
+    attributes:
+      label: Live mode
+      description: How was the optional tmux dashboard handled?
+      options:
+        - Enabled with tmux
+        - Disabled with --no-live
+        - Requested but unavailable
+        - Not applicable
+    validations:
+      required: true
 
   - type: textarea
     id: logs

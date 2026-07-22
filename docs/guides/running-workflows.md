@@ -174,8 +174,9 @@ Expected advisory phrases include:
 
 - `Resume advisory: would_execute_full_run`
 - `Resume advisory: would_skip`
-- `Resume advisory: would_resume <n> node(s) from <run-id>`, for example
-  `from 20260629-202539`
+- `Resume advisory: would_resume <n> node(s) from <run-id> (nodes: <ids>)`,
+  which reports the exact dependency-closed node identifiers selected for
+  hydration
 
 ## Run The Workflow
 

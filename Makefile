@@ -28,7 +28,8 @@ endif
 
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
-.PHONY: help setup uninstall test lint format format-check check clean \
+.PHONY: help setup uninstall test lint format format-check check actionlint \
+	dependency-audit clean \
 	package-build package-check package-wheelhouse changelog-check \
 	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
 	install-script-smoke npm-pack npm-smoke brew-smoke install-check \
@@ -47,6 +48,8 @@ help:
 		'  format             Run ruff import fixes and formatter' \
 		'  format-check       Check formatting' \
 		'  check              Run lint, format-check, and tests' \
+		'  actionlint         Validate GitHub Actions workflows' \
+		'  dependency-audit   Audit locked and build-system Python dependencies' \
 		'  clean              Remove caches, build output, and release scratch files' \
 		'  uninstall          Uninstall the package from the active environment' \
 		'' \
@@ -96,6 +99,12 @@ format-check:
 	$(RUN_RUFF) format --check src tests scripts
 
 check: lint format-check test
+
+actionlint:
+	scripts/actionlint.sh
+
+dependency-audit:
+	$(PYTHON) scripts/dependency_audit.py
 
 package-build:
 	$(RUN_RELEASE) package-build

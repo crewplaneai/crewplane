@@ -124,6 +124,10 @@ class ReleaseVersion:
     npm: str
     tag: str
 
+    @property
+    def is_prerelease(self) -> bool:
+        return Version(self.python).is_prerelease
+
     @classmethod
     def from_project(cls, project_version: str) -> ReleaseVersion:
         try:
@@ -214,6 +218,7 @@ class PypiRelease:
     exists: bool
     version_key: str
     files: dict[str, PypiFile]
+    latest_stable: str = ""
 
 
 @dataclass(frozen=True)
@@ -245,6 +250,7 @@ class GitState:
     branch: str
     default_branch: str
     head_commit: str
+    head_reachable_from_origin_master: bool
     upstream_ahead: int
     upstream_behind: int
     dirty: bool
@@ -417,6 +423,17 @@ def query_pypi_release(context: ReleaseContext) -> PypiRelease:
     releases = data.get("releases")
     if not isinstance(releases, dict):
         raise ReleaseError("PyPI response is missing releases")
+    stable_versions: list[Version] = []
+    for candidate, files in releases.items():
+        if not isinstance(files, list) or not files:
+            continue
+        try:
+            parsed = Version(str(candidate))
+        except InvalidVersion:
+            continue
+        if not parsed.is_prerelease:
+            stable_versions.append(parsed)
+    latest_stable = str(max(stable_versions)) if stable_versions else ""
     version_key = ""
     files_payload: list[Any] = []
     for candidate, files in releases.items():
@@ -431,7 +448,12 @@ def query_pypi_release(context: ReleaseContext) -> PypiRelease:
             files_payload = files
             break
     if not version_key:
-        return PypiRelease(exists=False, version_key="", files={})
+        return PypiRelease(
+            exists=False,
+            version_key="",
+            files={},
+            latest_stable=latest_stable,
+        )
     files_by_name: dict[str, PypiFile] = {}
     for file_payload in files_payload:
         if not isinstance(file_payload, dict):
@@ -447,7 +469,12 @@ def query_pypi_release(context: ReleaseContext) -> PypiRelease:
             size=int(file_payload.get("size", 0)),
             sha256=str(digests["sha256"]),
         )
-    return PypiRelease(exists=True, version_key=version_key, files=files_by_name)
+    return PypiRelease(
+        exists=True,
+        version_key=version_key,
+        files=files_by_name,
+        latest_stable=latest_stable,
+    )
 
 
 def query_npm_release(context: ReleaseContext) -> NpmRelease:

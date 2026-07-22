@@ -3,6 +3,7 @@ from __future__ import annotations
 # ruff: noqa: E402, I001
 
 from pathlib import Path
+import subprocess
 import sys
 
 _LOCAL_TEST_DIR = Path(__file__).resolve().parent
@@ -37,6 +38,25 @@ def test_release_state_derivation_ready_complete_partial_and_blocked(
         context, missing_pypi, missing_npm, formula, git, manifest
     )
     assert ready.status == state.ReleaseStatus.READY
+
+    unreachable_git = state.GitState(
+        branch="release-fix",
+        default_branch="master",
+        head_commit=git.head_commit,
+        head_reachable_from_origin_master=False,
+        upstream_ahead=1,
+        upstream_behind=0,
+        dirty=False,
+        tag_commit="",
+        remote_tag_commit="",
+    )
+    unreachable = state.derive_release_state(
+        context, missing_pypi, missing_npm, formula, unreachable_git, manifest
+    )
+    assert unreachable.status == state.ReleaseStatus.BLOCKED
+    assert unreachable.reasons == (
+        "release commit is not reachable from origin/master",
+    )
 
     pypi = matching_pypi(context, manifest)
     npm = matching_npm(context, manifest, latest=context.version.npm)
@@ -196,6 +216,7 @@ def test_release_check_allows_tag_missing_partial_without_pre_publish_smokes(
         branch="master",
         default_branch="master",
         head_commit=git.head_commit,
+        head_reachable_from_origin_master=True,
         upstream_ahead=0,
         upstream_behind=0,
         dirty=False,
@@ -356,6 +377,7 @@ def test_publishing_git_issues_allows_local_state_only_when_requested() -> None:
         branch="release-fix",
         default_branch="master",
         head_commit="abc",
+        head_reachable_from_origin_master=True,
         upstream_ahead=1,
         upstream_behind=0,
         dirty=True,
@@ -369,10 +391,26 @@ def test_publishing_git_issues_allows_local_state_only_when_requested() -> None:
     assert "current branch is not synchronized with its upstream" in strict_issues
     assert not state.publishing_git_issues(git, True, True)
 
+    unreachable_git = state.GitState(
+        branch="release-fix",
+        default_branch="master",
+        head_commit="abc",
+        head_reachable_from_origin_master=False,
+        upstream_ahead=1,
+        upstream_behind=0,
+        dirty=True,
+        tag_commit="",
+        remote_tag_commit="",
+    )
+    assert "release commit is not reachable from origin/master" in (
+        state.publishing_git_issues(unreachable_git, True, True)
+    )
+
     conflicting_tag = state.GitState(
         branch="release-fix",
         default_branch="master",
         head_commit="abc",
+        head_reachable_from_origin_master=True,
         upstream_ahead=1,
         upstream_behind=0,
         dirty=True,
@@ -424,6 +462,7 @@ def test_finalize_allows_local_git_state_when_registries_are_present(
         branch="release-fix",
         default_branch=git.default_branch,
         head_commit=git.head_commit,
+        head_reachable_from_origin_master=True,
         upstream_ahead=1,
         upstream_behind=0,
         dirty=True,
@@ -473,6 +512,33 @@ def test_finalize_allows_local_git_state_when_registries_are_present(
     assert tagged == [context.version.tag]
 
 
+def test_create_and_push_tag_rejects_freshly_unreachable_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context, _manifest, _formula, git = release_state_fixture(tmp_path)
+    unreachable_git = state.GitState(
+        branch=git.branch,
+        default_branch=git.default_branch,
+        head_commit=git.head_commit,
+        head_reachable_from_origin_master=False,
+        upstream_ahead=git.upstream_ahead,
+        upstream_behind=git.upstream_behind,
+        dirty=git.dirty,
+        tag_commit="",
+        remote_tag_commit="",
+    )
+    monkeypatch.setattr(publish, "inspect_git_state", constant(unreachable_git))
+    runner = FakeRunner()
+
+    with pytest.raises(
+        state.ReleaseError,
+        match="release commit is not reachable from origin/master",
+    ):
+        publish.create_and_push_tag(context, runner)
+
+    assert runner.commands == []
+
+
 def test_derive_release_state_is_blocked_on_manifest_identity_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -514,6 +580,135 @@ def test_artifact_identity_checks_detect_matching_and_mismatching_registries(
     assert "npm shasum" in "\n".join(
         state.verify_npm_artifact(context, bad_npm, manifest)
     )
+
+
+def test_pypi_artifact_verification_rejects_unexpected_files(
+    tmp_path: Path,
+) -> None:
+    context, manifest, _formula, _git = release_state_fixture(tmp_path)
+    pypi = matching_pypi(context, manifest)
+    unexpected_filename = (
+        f"{context.package_name}-{context.version.python}-cp313-cp313-manylinux.whl"
+    )
+    release_with_unexpected_wheel = state.PypiRelease(
+        exists=True,
+        version_key=pypi.version_key,
+        files={
+            **pypi.files,
+            unexpected_filename: state.PypiFile(
+                unexpected_filename,
+                99,
+                "f" * 64,
+            ),
+        },
+        latest_stable=pypi.latest_stable,
+    )
+
+    assert state.verify_pypi_artifacts(
+        context,
+        release_with_unexpected_wheel,
+        manifest,
+    ) == [f"PyPI has unexpected files: {unexpected_filename}"]
+
+
+def test_release_notes_predecessor_uses_target_history_for_delayed_release(
+    tmp_path: Path,
+) -> None:
+    origin = tmp_path / "origin.git"
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(repository, "init", "-b", "master")
+    run_git(repository, "config", "user.name", "Release Test")
+    run_git(repository, "config", "user.email", "release@example.com")
+    run_git(repository, "remote", "add", "origin", str(origin))
+
+    for version in ("1.0.0", "1.1.0", "1.2.0"):
+        (repository / "version.txt").write_text(version, encoding="utf-8")
+        run_git(repository, "add", "version.txt")
+        run_git(repository, "commit", "-m", f"Release {version}")
+        run_git(repository, "tag", "-a", f"v{version}", "-m", f"Release {version}")
+
+    run_git(repository, "push", "origin", "master", "--tags")
+    run_git(repository, "checkout", "--detach", "v1.1.0")
+
+    delayed_context = state.ReleaseContext(
+        root=repository,
+        package_name="crewplane",
+        console_script="crewplane",
+        version=state.ReleaseVersion.from_project("1.1.0"),
+    )
+    assert (
+        state.verified_release_notes_start_tag(
+            delayed_context,
+            state.CommandRunner(),
+        )
+        == "v1.0.0"
+    )
+
+    run_git(repository, "checkout", "--detach", "v1.0.0")
+    first_context = state.ReleaseContext(
+        root=repository,
+        package_name="crewplane",
+        console_script="crewplane",
+        version=state.ReleaseVersion.from_project("1.0.0"),
+    )
+    assert (
+        state.verified_release_notes_start_tag(
+            first_context,
+            state.CommandRunner(),
+        )
+        == ""
+    )
+
+
+def test_release_commit_ancestry_allows_a_delayed_release_checkout(
+    tmp_path: Path,
+) -> None:
+    origin = tmp_path / "origin.git"
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    run_git(tmp_path, "init", "--bare", str(origin))
+    run_git(repository, "init", "-b", "master")
+    run_git(repository, "config", "user.name", "Release Test")
+    run_git(repository, "config", "user.email", "release@example.com")
+    run_git(repository, "remote", "add", "origin", str(origin))
+
+    for version in ("1.0.0", "1.1.0"):
+        (repository / "version.txt").write_text(version, encoding="utf-8")
+        run_git(repository, "add", "version.txt")
+        run_git(repository, "commit", "-m", f"Release {version}")
+
+    run_git(repository, "push", "origin", "master")
+    run_git(repository, "checkout", "--detach", "HEAD^")
+
+    assert state.head_reachable_from_origin_master(
+        state.CommandRunner(),
+        repository,
+    )
+
+    run_git(repository, "checkout", "-b", "unreleased-change")
+    (repository / "version.txt").write_text("unreleased", encoding="utf-8")
+    run_git(repository, "add", "version.txt")
+    run_git(repository, "commit", "-m", "Unreleased change")
+
+    assert not state.head_reachable_from_origin_master(
+        state.CommandRunner(),
+        repository,
+    )
+
+
+def run_git(root: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
 
 
 def test_local_artifact_identity_rejects_paths_outside_repo(
@@ -574,6 +769,32 @@ def test_npm_registry_lookup_reads_version_and_latest(
     assert npm.python_package_version == context.version.project
 
 
+def test_pypi_registry_lookup_reports_highest_published_stable_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_repo(tmp_path, "1.2.3")
+    context = state.read_release_context(tmp_path)
+
+    def fake_fetch(_url: str) -> dict[str, object]:
+        del _url
+        return {
+            "releases": {
+                "1.2.3": [],
+                "2.0.0-alpha.1": [{}],
+                "1.9.0": [{}],
+                "invalid": [{}],
+                "3.0.0": [],
+            }
+        }
+
+    monkeypatch.setattr(state.state_types, "fetch_registry_json", fake_fetch)
+
+    release = state.query_pypi_release(context)
+
+    assert release.exists
+    assert release.latest_stable == "1.9.0"
+
+
 def test_remote_git_tag_uses_peeled_annotated_tag_commit(tmp_path: Path) -> None:
     class TagRunner:
         def run(
@@ -595,6 +816,61 @@ def test_remote_git_tag_uses_peeled_annotated_tag_commit(tmp_path: Path) -> None
             )
 
     assert state.remote_git_tag_commit(TagRunner(), tmp_path, "v1.0.0") == "commit-sha"
+
+
+@pytest.mark.parametrize(("merge_base_status", "expected"), ((0, True), (1, False)))
+def test_release_commit_reachability_uses_fresh_origin_master(
+    tmp_path: Path,
+    merge_base_status: int,
+    expected: bool,
+) -> None:
+    class AncestryRunner:
+        def __init__(self) -> None:
+            self.commands: list[tuple[str, ...]] = []
+
+        def run(
+            self,
+            command,
+            cwd: Path,
+            env=None,
+            timeout=None,
+            capture_output: bool = True,
+            check: bool = True,
+        ) -> state.CommandResult:
+            del cwd, env, timeout, capture_output, check
+            command_tuple = tuple(command)
+            self.commands.append(command_tuple)
+            if command_tuple[:2] == ("git", "fetch"):
+                return state.CommandResult(command_tuple, 0, "", "")
+            assert command_tuple == (
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                "HEAD",
+                "FETCH_HEAD",
+            )
+            return state.CommandResult(command_tuple, merge_base_status, "", "")
+
+    runner = AncestryRunner()
+
+    assert state.head_reachable_from_origin_master(runner, tmp_path) is expected
+    assert runner.commands == [
+        (
+            "git",
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "origin",
+            "refs/heads/master",
+        ),
+        (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "HEAD",
+            "FETCH_HEAD",
+        ),
+    ]
 
 
 def test_completed_release_check_skips_pre_publish_suite(

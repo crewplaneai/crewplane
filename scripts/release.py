@@ -48,11 +48,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "changelog-check",
     ):
         subparsers.add_parser(command)
-    verify_complete_parser = subparsers.add_parser("verify-complete")
-    verify_complete_parser.add_argument(
-        "--expected-tag",
-        help="The tag expected by the release workflow. Must match context.version.tag.",
-    )
+    for command in (
+        "verify-complete",
+        "github-release-plan",
+    ):
+        verify_parser = subparsers.add_parser(command)
+        verify_parser.add_argument(
+            "--expected-tag",
+            help="The tag expected by the release workflow. Must match context.version.tag.",
+        )
     for command in ("publish-pypi", "publish-npm", "finalize"):
         command_parser = subparsers.add_parser(command)
         command_parser.add_argument("--execute", action="store_true")
@@ -81,6 +85,9 @@ def dispatch(args: argparse.Namespace, root: Path, runner: CommandRunner) -> int
         return release_check(root, runner)
     if command == "verify-complete":
         return publish.verify_complete_release(root, runner, args.expected_tag)
+    if command == "github-release-plan":
+        publish.print_github_release_plan(root, runner, args.expected_tag)
+        return 0
     if command == "confirm":
         publish.confirm_release(root)
         return 0

@@ -18,6 +18,8 @@ from .state_types import (
     ReleaseStatus,
 )
 
+ORIGIN_MASTER_ANCESTRY_ERROR = "release commit is not reachable from origin/master"
+
 
 def derive_release_state(
     context: ReleaseContext,
@@ -38,6 +40,12 @@ def derive_release_state(
             (
                 "run make release-prepare to regenerate the release manifest and synced metadata",
             ),
+        )
+    if git is not None and not git.head_reachable_from_origin_master:
+        return DerivedReleaseState(
+            ReleaseStatus.BLOCKED,
+            (ORIGIN_MASTER_ANCESTRY_ERROR,),
+            ("Create releases only from commits reachable from origin/master.",),
         )
 
     artifact_issues: list[str] = []
@@ -149,13 +157,16 @@ def verify_formula_state_for_release(
 def verify_git_tag_state(git: GitState | None) -> list[str]:
     if git is None:
         return ["Git tag state could not be inspected"]
+    issues: list[str] = []
+    if not git.head_reachable_from_origin_master:
+        issues.append(ORIGIN_MASTER_ANCESTRY_ERROR)
     if git.tag_commit and git.tag_commit != git.head_commit:
-        return ["Git tag points at a different commit"]
+        issues.append("Git tag points at a different commit")
     if git.remote_tag_commit and git.remote_tag_commit != git.head_commit:
-        return ["remote Git tag points at a different commit"]
+        issues.append("remote Git tag points at a different commit")
     if not git.tag_commit or not git.remote_tag_commit:
-        return ["Git tag is missing locally or on origin"]
-    return []
+        issues.append("Git tag is missing locally or on origin")
+    return issues
 
 
 def is_tag_only_missing_error(issues: list[str]) -> bool:
@@ -183,6 +194,8 @@ def publishing_git_issues(
     allow_local_changes: bool = False,
 ) -> list[str]:
     issues: list[str] = []
+    if not git.head_reachable_from_origin_master:
+        issues.append(ORIGIN_MASTER_ANCESTRY_ERROR)
     if not allow_local_changes:
         if git.dirty:
             issues.append("worktree is dirty")

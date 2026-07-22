@@ -19,6 +19,8 @@
   <img src="https://raw.githubusercontent.com/crewplaneai/crewplane/master/.github/crewplane-splash.png" alt="Crewplane splash" width="80%">
 </div>
 
+> **Public alpha.** Workflow and config compatibility may break before 1.0.
+
 ---
 
 ## Why Crewplane?
@@ -269,8 +271,10 @@ for exact flags, config keys, workflow syntax, and artifact formats, use the
 
 Interested in contributing? Start with [Contributing and local development](https://github.com/crewplaneai/crewplane/blob/master/DEVELOPMENT.md).
 
+Questions and workflow ideas are welcome in
+[GitHub Discussions](https://github.com/crewplaneai/crewplane/discussions).
 Have a coding-agent workflow you don't want to leave to a free-running loop?
-Open a [Discussion](https://github.com/crewplaneai/crewplane/discussions) and describe it — good examples can become Crewplane templates.
+Describe it there — good examples can become Crewplane templates.
 
 ---
 

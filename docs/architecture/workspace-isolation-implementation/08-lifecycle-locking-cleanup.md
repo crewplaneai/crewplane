@@ -202,7 +202,8 @@ Runtime-owned Git commands use a sanitized environment:
 - reject local/worktree config includes rather than following them
 - use plumbing commands for runtime-owned commits
 
-The inherited exact unset list includes:
+The common inherited exact unset list for Crewplane-owned Git commands and
+managed provider/setup child processes includes:
 
 - `GIT_DIR`
 - `GIT_WORK_TREE`
@@ -218,6 +219,7 @@ The inherited exact unset list includes:
 - `GIT_CONFIG_NOSYSTEM`
 - `GIT_CONFIG_COUNT`
 - `GIT_CONFIG_PARAMETERS`
+- `GIT_TEMPLATE_DIR`
 - `GIT_ATTR_NOSYSTEM`
 - `GIT_ATTR_SOURCE`
 - `GIT_LITERAL_PATHSPECS`
@@ -226,6 +228,13 @@ The inherited exact unset list includes:
 - `GIT_ICASE_PATHSPECS`
 - `GIT_ASKPASS`
 - `SSH_ASKPASS`
+
+Crewplane-owned Git commands additionally unset these transport controls so
+trusted local source and bundle fetches are not blocked by ambient process
+policy:
+
+- `GIT_PROTOCOL_FROM_USER`
+- `GIT_ALLOW_PROTOCOL`
 
 The runtime helper expands prefix variables into exact names before process
 launch:
@@ -241,6 +250,10 @@ attribute source, pathspec behavior, lazy fetch path, or discovery ceiling
 outside the effective workspace. Runtime may set `GIT_CEILING_DIRECTORIES` to
 the workspace checkout root's parent so Git can discover metadata inside the
 workspace but cannot climb above it.
+
+Provider and setup child processes preserve inherited
+`GIT_PROTOCOL_FROM_USER` and `GIT_ALLOW_PROTOCOL` values. These variables are
+caller-owned transport restrictions rather than repository-discovery state.
 
 Runtime does not promise to suppress hooks, filters, or pathspec behavior in
 provider-run Git commands after the provider starts. Instead, v1 rejects final

@@ -36,10 +36,15 @@ directories. Current run state is written under:
 Cancelled run manifests record explicit reasons for UI stops, external
 cancellation, and stale-lock recovery.
 
-Resume hydration copies only consolidated result artifacts and required findings
-artifacts into the fresh results directory. Raw stage outputs, invocation logs,
-review scratch state, review-loop status, symlinks, and hardlinks are never
-hydrated.
+Resume hydration copies validated consolidated result, required findings, and
+generated-file artifacts. Workspace-enabled resume may also copy only lineage
+artifacts named by validated node-state descriptors, including the selected
+canonical review output and `review-state/review-loop-status.json` when needed
+to reconstruct lineage. Each copied file must be contained, regular, safely
+mapped into the fresh run, and match its recorded hash and size; hydrated
+workspace state is rewritten through the resume schema to preserve provenance
+and fresh-run identity. Arbitrary or unselected stage output, logs, scratch
+state, live workspaces, cached refs, symlinks, and hardlinks remain ineligible.
 
 ## Rationale
 Filesystem artifacts are the product's audit boundary. Reusing only validated
@@ -53,10 +58,10 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   more directories than mutating the failed run in place.
 - Node-boundary resume avoids provider-specific replay and hidden in-memory
   state, but any partially completed node must run again.
-- Hydrating only consolidated results and required findings keeps downstream
-  template lookups equivalent to a fresh upstream completion, but raw stage
-  outputs, logs, review scratch state, and review-loop status remain only in the
-  source run.
+- Restricting hydration to stable result artifacts and descriptor-named
+  workspace lineage keeps downstream templates and source reconstruction
+  equivalent to a fresh upstream completion. Unlisted stage output, logs, and
+  scratch state remain only in the source run.
 - Success-first duplicate detection keeps ADR 0009 whole-workflow idempotency
   authoritative, even when a newer failed or cancelled same-context run exists.
 - Filesystem-only v1 allows strict local path, symlink, hardlink, and lock
@@ -76,10 +81,10 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
 - Add fine-grained successful-run caching. Rejected to preserve ADR 0009's
   coarse workflow-level idempotency and avoid a dependency-aware drift engine in
   this change.
-- Hydrate raw stage directories, provider logs, review scratch state, or
-  review-loop status. Rejected because those files are not the stable
-  downstream contract and may contain provider-specific or partial execution
-  state.
+- Hydrate whole stage directories or arbitrary provider logs and review state.
+  Rejected because those files are not the stable downstream contract and may
+  contain provider-specific or partial execution state. Workspace lineage is
+  limited to descriptor-named, integrity-checked files.
 - Implement provider-native replay or intra-node resume. Rejected because it
   crosses the invoker adapter boundary and would require provider-specific
   semantics inside runtime scheduling.
@@ -121,3 +126,6 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   fresh runs. Resume hydration copies ordinary node-boundary artifacts plus
   workspace state/bundle descriptors into the new run layout; it does not reuse
   old live workspace directories or cached refs as truth.
+- **2026-07-11**: Clarified that descriptor-named workspace lineage may include
+  the selected canonical review output and review-loop status without allowing
+  arbitrary stage hydration.

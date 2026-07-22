@@ -122,6 +122,8 @@ def test_run_workspace_setup_uses_controlled_git_environment(
     monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", "/tmp/hooks")
+    monkeypatch.setenv("GIT_PROTOCOL_FROM_USER", "0")
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "https")
     cwd = tmp_path / "workspace"
     cwd.mkdir()
     state_path = tmp_path / "stage" / "workspace-state.json"
@@ -137,7 +139,10 @@ def test_run_workspace_setup_uses_controlled_git_environment(
                     "'GIT_WORK_TREE': os.environ.get('GIT_WORK_TREE'), "
                     "'GIT_CONFIG_COUNT': os.environ.get('GIT_CONFIG_COUNT'), "
                     "'GIT_CONFIG_NOSYSTEM': os.environ.get('GIT_CONFIG_NOSYSTEM'), "
-                    "'GIT_CONFIG_GLOBAL': os.environ.get('GIT_CONFIG_GLOBAL')"
+                    "'GIT_CONFIG_GLOBAL': os.environ.get('GIT_CONFIG_GLOBAL'), "
+                    "'GIT_PROTOCOL_FROM_USER': "
+                    "os.environ.get('GIT_PROTOCOL_FROM_USER'), "
+                    "'GIT_ALLOW_PROTOCOL': os.environ.get('GIT_ALLOW_PROTOCOL')"
                     "}, open('env.json', 'w'))"
                 ),
             ]
@@ -151,6 +156,8 @@ def test_run_workspace_setup_uses_controlled_git_environment(
     assert env_payload["GIT_CONFIG_COUNT"] != "1"
     assert env_payload["GIT_CONFIG_NOSYSTEM"] == "1"
     assert env_payload["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert env_payload["GIT_PROTOCOL_FROM_USER"] == "0"
+    assert env_payload["GIT_ALLOW_PROTOCOL"] == "https"
 
 
 def test_run_workspace_setup_uses_process_group_capability(

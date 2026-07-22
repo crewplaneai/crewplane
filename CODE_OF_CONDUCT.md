@@ -34,7 +34,10 @@ This Code of Conduct applies within all project spaces and when an individual is
 
 ## Reporting
 
-Report unacceptable behavior to the maintainers.
+Report unacceptable behavior privately through a
+[GitHub Security Advisory](https://github.com/crewplaneai/crewplane/security/advisories/new).
+If the report concerns a maintainer or needs independent escalation, use
+[GitHub's Report Abuse form](https://support.github.com/contact/report-abuse).
 
 All complaints will be reviewed and investigated promptly and fairly. Maintainers are obligated to respect the privacy and security of the reporter of any incident.
 

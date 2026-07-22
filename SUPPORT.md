@@ -7,7 +7,7 @@ Discussions.
 
 - **Bug reports:** use the bug report issue template.
 - **Feature requests:** use the feature request issue template.
-- **Questions:** use GitHub Discussions when enabled.
+- **Questions and ideas:** use GitHub Discussions.
 - **Security issues:** use GitHub Security Advisories; do not open public issues.
 
 ## What to include

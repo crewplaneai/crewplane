@@ -87,6 +87,210 @@ def test_verify_complete_release_fails_on_expected_tag_mismatch(
 
 
 @pytest.mark.parametrize(
+    ("version", "npm_latest", "pypi_latest_stable", "expected"),
+    (
+        (
+            "1.2.3",
+            "1.2.3",
+            "1.2.3",
+            "prerelease=false\nlatest=true\nnotes_start_tag=v1.0.0\n",
+        ),
+        (
+            "1.2.3",
+            "2.0.0",
+            "2.0.0",
+            "prerelease=false\nlatest=false\nnotes_start_tag=v1.0.0\n",
+        ),
+        (
+            "1.2.3",
+            "2.0.0-alpha.1",
+            "1.2.3",
+            "prerelease=false\nlatest=true\nnotes_start_tag=v1.0.0\n",
+        ),
+        (
+            "1.2.3-alpha.4",
+            "1.2.3-alpha.4",
+            "1.1.0",
+            "prerelease=true\nlatest=false\nnotes_start_tag=v1.0.0\n",
+        ),
+        (
+            "1.2.3.dev5",
+            "1.2.3-dev.5",
+            "1.1.0",
+            "prerelease=true\nlatest=false\nnotes_start_tag=v1.0.0\n",
+        ),
+        (
+            "1.2.3.post6",
+            "1.2.3-post.6",
+            "1.2.3.post6",
+            "prerelease=false\nlatest=true\nnotes_start_tag=v1.0.0\n",
+        ),
+    ),
+)
+def test_github_release_plan_uses_fresh_registry_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    version: str,
+    npm_latest: str,
+    pypi_latest_stable: str,
+    expected: str,
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path, version)
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(
+        publish,
+        "query_pypi_release",
+        constant(
+            matching_pypi(
+                context,
+                manifest,
+                latest_stable=pypi_latest_stable,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(matching_npm(context, manifest, latest=npm_latest)),
+    )
+    monkeypatch.setattr(publish, "read_formula_state", constant(formula))
+    monkeypatch.setattr(publish, "inspect_release_tag_state", constant(git))
+    monkeypatch.setattr(publish, "github_release_bundle_issues", constant([]))
+    monkeypatch.setattr(publish, "verify_local_manifest_artifacts", constant([]))
+    monkeypatch.setattr(
+        publish,
+        "verified_release_notes_start_tag",
+        constant("v1.0.0"),
+    )
+
+    publish.print_github_release_plan(
+        tmp_path,
+        FakeRunner(),
+        expected_tag=context.version.tag,
+    )
+
+    assert capsys.readouterr().out == expected
+
+
+@pytest.mark.parametrize(
+    ("failed_check", "expected_error"),
+    (
+        ("manifest", "manifest mismatch"),
+        ("bundle", "bundle mismatch"),
+        ("local", "local artifact mismatch"),
+        ("pypi", "PyPI mismatch"),
+        ("npm", "npm mismatch"),
+        ("formula", "formula mismatch"),
+        ("tag", "tag mismatch"),
+    ),
+)
+def test_github_release_plan_fails_closed_on_verification_issue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_check: str,
+    expected_error: str,
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path, "1.2.3")
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(
+        publish, "query_pypi_release", constant(matching_pypi(context, manifest))
+    )
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(matching_npm(context, manifest, latest=context.version.npm)),
+    )
+    monkeypatch.setattr(publish, "read_formula_state", constant(formula))
+    monkeypatch.setattr(publish, "inspect_release_tag_state", constant(git))
+    monkeypatch.setattr(publish, "manifest_context_issues", constant([]))
+    monkeypatch.setattr(publish, "github_release_bundle_issues", constant([]))
+    monkeypatch.setattr(publish, "verify_local_manifest_artifacts", constant([]))
+    monkeypatch.setattr(publish, "verify_pypi_artifacts", constant([]))
+    monkeypatch.setattr(publish, "verify_npm_artifact", constant([]))
+    monkeypatch.setattr(publish, "verify_formula_state_for_release", constant([]))
+    monkeypatch.setattr(publish, "verify_git_tag_state", constant([]))
+    monkeypatch.setattr(
+        publish,
+        "verified_release_notes_start_tag",
+        constant("v1.0.0"),
+    )
+
+    check_name = {
+        "manifest": "manifest_context_issues",
+        "bundle": "github_release_bundle_issues",
+        "local": "verify_local_manifest_artifacts",
+        "pypi": "verify_pypi_artifacts",
+        "npm": "verify_npm_artifact",
+        "formula": "verify_formula_state_for_release",
+        "tag": "verify_git_tag_state",
+    }[failed_check]
+    monkeypatch.setattr(publish, check_name, constant([expected_error]))
+
+    with pytest.raises(state.ReleaseError, match=expected_error):
+        publish.verified_github_release_plan(
+            tmp_path,
+            FakeRunner(),
+            expected_tag=context.version.tag,
+        )
+
+
+@pytest.mark.parametrize(
+    ("npm_latest", "expected_error"),
+    (
+        ("", "missing or invalid"),
+        ("not-a-version", "missing or invalid"),
+        ("1.2.3.0", "does not exactly match"),
+        ("1.2.2", "older release"),
+    ),
+)
+def test_github_release_plan_rejects_invalid_or_older_npm_latest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    npm_latest: str,
+    expected_error: str,
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path, "1.2.3")
+    monkeypatch.setattr(publish, "read_release_context", constant(context))
+    monkeypatch.setattr(publish, "read_manifest", constant(manifest))
+    monkeypatch.setattr(
+        publish, "query_pypi_release", constant(matching_pypi(context, manifest))
+    )
+    monkeypatch.setattr(
+        publish,
+        "query_npm_release",
+        constant(matching_npm(context, manifest, latest=npm_latest)),
+    )
+    monkeypatch.setattr(publish, "read_formula_state", constant(formula))
+    monkeypatch.setattr(publish, "inspect_release_tag_state", constant(git))
+    monkeypatch.setattr(publish, "github_release_bundle_issues", constant([]))
+    monkeypatch.setattr(publish, "verify_local_manifest_artifacts", constant([]))
+
+    with pytest.raises(state.ReleaseError, match=expected_error):
+        publish.verified_github_release_plan(tmp_path, FakeRunner())
+
+
+def test_github_release_bundle_requires_exact_generated_layout(
+    tmp_path: Path,
+) -> None:
+    context, manifest, _formula, _git = release_state_fixture(tmp_path, "1.2.3")
+    for artifact in manifest.artifacts.values():
+        path = tmp_path / artifact.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"artifact")
+
+    assert publish.github_release_bundle_issues(context, manifest) == []
+
+    (tmp_path / "dist" / "unexpected.txt").write_text("unexpected", encoding="utf-8")
+
+    assert publish.github_release_bundle_issues(context, manifest) == [
+        "release bundle directory has unexpected contents: dist"
+    ]
+
+
+@pytest.mark.parametrize(
     "case",
     (
         "missing-pypi",
@@ -94,6 +298,7 @@ def test_verify_complete_release_fails_on_expected_tag_mismatch(
         "stale-manifest",
         "mismatched-tag",
         "missing-remote-tag",
+        "not-on-origin-master",
     ),
 )
 def test_verify_complete_release_returns_nonzero_for_incomplete_state(
@@ -124,6 +329,7 @@ def test_verify_complete_release_returns_nonzero_for_incomplete_state(
             branch="",
             default_branch="",
             head_commit=git.head_commit,
+            head_reachable_from_origin_master=True,
             upstream_ahead=0,
             upstream_behind=0,
             dirty=False,
@@ -135,11 +341,24 @@ def test_verify_complete_release_returns_nonzero_for_incomplete_state(
             branch="",
             default_branch="",
             head_commit=git.head_commit,
+            head_reachable_from_origin_master=True,
             upstream_ahead=0,
             upstream_behind=0,
             dirty=False,
             tag_commit=git.tag_commit,
             remote_tag_commit="",
+        )
+    elif case == "not-on-origin-master":
+        release_git = state.GitState(
+            branch="",
+            default_branch="",
+            head_commit=git.head_commit,
+            head_reachable_from_origin_master=False,
+            upstream_ahead=0,
+            upstream_behind=0,
+            dirty=False,
+            tag_commit=git.tag_commit,
+            remote_tag_commit=git.remote_tag_commit,
         )
 
     monkeypatch.setattr(publish, "read_release_context", constant(context))
@@ -175,6 +394,23 @@ def test_verify_completed_release_allows_detached_tag_checkout(
             self.commands.append(command_tuple)
             if command_tuple == ("git", "rev-parse", "HEAD"):
                 return state.CommandResult(command_tuple, 0, "abc\n", "")
+            if command_tuple == (
+                "git",
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "origin",
+                "refs/heads/master",
+            ):
+                return state.CommandResult(command_tuple, 0, "", "")
+            if command_tuple == (
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                "HEAD",
+                "FETCH_HEAD",
+            ):
+                return state.CommandResult(command_tuple, 0, "", "")
             if command_tuple == (
                 "git",
                 "rev-parse",
@@ -214,6 +450,21 @@ def test_verify_completed_release_allows_detached_tag_checkout(
     assert ("git", "rev-list", "--left-right", "--count", "@{u}...HEAD") not in (
         runner.commands
     )
+    assert (
+        "git",
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "origin",
+        "refs/heads/master",
+    ) in runner.commands
+    assert (
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        "HEAD",
+        "FETCH_HEAD",
+    ) in runner.commands
 
 
 def test_publish_auth_checks_fail_before_upload(

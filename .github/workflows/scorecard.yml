@@ -11,7 +11,6 @@ on:
 permissions:
   contents: read
   security-events: write
-  id-token: write
 
 concurrency:
   group: scorecard-${{ github.ref }}
@@ -24,13 +23,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Run analysis
-        uses: ossf/scorecard-action@v2.4.3
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
         with:
           results_file: results.sarif
           results_format: sarif
           publish_results: false
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
         with:
           sarif_file: results.sarif

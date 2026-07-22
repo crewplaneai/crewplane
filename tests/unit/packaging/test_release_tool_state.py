@@ -17,6 +17,7 @@ from test_release_tool_fixtures import (
     FakeRunner,
     append_uv_lock_package,
     constant,
+    no_op,
     release_state_fixture,
     write_minimal_repo,
 )
@@ -207,6 +208,68 @@ def test_prepare_refuses_existing_remote_versions(
 
     with pytest.raises(state.ReleaseError, match="already exists on PyPI"):
         build.prepare_release(tmp_path, FakeRunner())
+
+
+def test_prepare_builds_offline_wheelhouse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context, manifest, _formula, _git = release_state_fixture(tmp_path)
+    missing_releases = (
+        state.PypiRelease(False, "", {}),
+        state.NpmRelease(False, "", "", "", "", "", "", "", ""),
+    )
+    calls: list[str] = []
+
+    def record_wheelhouse(_context: object, _runner: object) -> None:
+        del _context, _runner
+        calls.append("wheelhouse")
+
+    monkeypatch.setattr(build, "read_release_context", constant(context))
+    monkeypatch.setattr(build, "query_registry_state", constant(missing_releases))
+    monkeypatch.setattr(build, "sync_generated_metadata", no_op)
+    monkeypatch.setattr(build, "clean_release_outputs", no_op)
+    monkeypatch.setattr(
+        build, "build_release_artifacts", constant(dict(manifest.artifacts))
+    )
+    monkeypatch.setattr(build, "sync_homebrew_formula_metadata", no_op)
+    monkeypatch.setattr(build, "write_release_manifest", constant(manifest))
+    monkeypatch.setattr(build, "fail_if_generated_metadata_stale", no_op)
+    monkeypatch.setattr(build, "build_wheelhouse", record_wheelhouse)
+
+    build.prepare_release(tmp_path, FakeRunner())
+
+    assert calls == ["wheelhouse"]
+
+
+def test_release_artifact_build_does_not_download_wheelhouse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context, manifest, _formula, _git = release_state_fixture(tmp_path)
+
+    def fail_wheelhouse_build(_context: object, _runner: object) -> None:
+        del _context, _runner
+        raise AssertionError("post-tag artifact builds must not download a wheelhouse")
+
+    def identity(
+        _path: Path, _root: Path, artifact_type: str
+    ) -> state.ArtifactIdentity:
+        del _path, _root
+        return manifest.artifact(artifact_type)
+
+    monkeypatch.setattr(build, "build_python_artifacts", no_op)
+    monkeypatch.setattr(build, "run_twine_check", no_op)
+    monkeypatch.setattr(
+        build,
+        "build_npm_artifact",
+        constant(tmp_path / ".release" / "npm" / context.npm_filename),
+    )
+    monkeypatch.setattr(build, "build_wheelhouse", fail_wheelhouse_build)
+    monkeypatch.setattr(build, "ensure_file", no_op)
+    monkeypatch.setattr(build, "artifact_identity", identity)
+
+    artifacts = build.build_release_artifacts(context, FakeRunner())
+
+    assert artifacts == manifest.artifacts
 
 
 def test_release_artifacts_rebuilds_from_committed_metadata(

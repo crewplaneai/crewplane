@@ -1,6 +1,6 @@
 name: issue-triage
 
-on:
+on: # zizmor: ignore[dangerous-triggers] metadata only; no checkout or PR code
   issues:
     types: [opened, reopened]
   pull_request_target:
@@ -9,7 +9,6 @@ on:
 permissions:
   issues: write
   pull-requests: write
-  contents: read
 
 concurrency:
   group: issue-triage-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
@@ -18,24 +17,19 @@ concurrency:
 jobs:
   triage:
     name: triage
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Add needs-triage
-        uses: actions/github-script@v8
+      - name: Add triage labels
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const isIssue = !!context.payload.issue;
             const item = context.payload.issue || context.payload.pull_request;
-            const labels = ["status: needs-triage"];
-
-            if (item.user?.type === "Bot") {
-              labels.push("dependencies");
-            }
 
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: item.number,
-              labels
+              labels: ["status: needs-triage"]
             });

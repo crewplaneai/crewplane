@@ -2,6 +2,9 @@
 
 Thanks for contributing to `crewplane`.
 
+See [GOVERNANCE.md](GOVERNANCE.md) for project roles and decision making, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for participation expectations.
+
 ## Local Setup
 
 ```bash
@@ -9,12 +12,13 @@ make setup
 make check
 ```
 
-Use Python 3.13 or newer. `uv` is optional but recommended; the Makefile falls
-back to `python -m ...` commands when possible.
+Use Python 3.13 or newer. The Makefile falls back to `python -m ...` for project
+checks when possible; install `uv` to run the full automation checks below.
 
-Crewplane supports Python 3.13+ on Linux, macOS, Windows, and WSL when the
-configured provider CLIs are available. Pull-request CI runs on Linux for Python
-3.13 and 3.14; nightly CI also covers macOS and Windows. See
+Crewplane supports Python 3.13+ on Linux, macOS, and WSL when the configured
+provider CLIs are available. Native Windows is not supported; use WSL on Windows
+hosts. Pull-request CI runs on Linux for Python 3.13 and 3.14; nightly CI also
+covers macOS. See
 [Supported Platforms](DEVELOPMENT.md#supported-platforms) for the current
 platform policy and tmux live UI notes.
 
@@ -28,8 +32,8 @@ platform policy and tmux live UI notes.
 - For GitHub Actions or community-file changes, also run:
 
 ```bash
-uvx pre-commit validate-config .pre-commit-config.yaml
-uvx --with mkdocs-material mkdocs build --strict
+make actionlint
+uvx pre-commit==4.6.0 run --all-files --show-diff-on-failure
 ```
 
 ## Development Rules
@@ -67,9 +71,16 @@ make release
 ```
 
 `make release-prepare` synchronizes generated release metadata from
-`pyproject.toml`, refreshes `uv.lock`, builds local PyPI and npm artifacts,
-writes release manifests, and prepares the Homebrew formula candidate. It fails
-if the target version already exists on PyPI or npm.
+`pyproject.toml`, refreshes `uv.lock`, builds local PyPI and npm artifacts plus
+the offline runtime wheelhouse, writes release manifests, and prepares the
+Homebrew formula candidate. It fails if the target version already exists on
+PyPI or npm.
+
+The exact Hatchling build-system pin keeps the manual release and its immediately
+following GitHub Release rebuild on the same backend version. The manually
+dispatched `release-artifacts` command rebuilds the registry artifacts needed for
+verification but skips the offline wheelhouse, which stays local to release
+preparation and explicit wheelhouse checks.
 
 `make release-check` is state-aware. For unpublished versions it verifies
 generated metadata and runs lint, format-check, tests, package checks, and
@@ -91,9 +102,35 @@ non-TTY npm two-factor flows, use `NPM_PUBLISH_OTP` and `NPM_DIST_TAG_OTP` so
 publishing is still a separate maintainer step: copy the prepared formula into
 the tap, run audit/test there, and push the tap update.
 
-After the tag exists, `.github/workflows/release.yml` rebuilds release artifacts
-with `scripts/release.py release-artifacts`, verifies the completed PyPI, npm,
-Homebrew, manifest, and tag state with `scripts/release.py verify-complete`, and
-creates the GitHub Release from `dist/*`. It does not publish production PyPI or
-npm packages. `.github/workflows/testpypi.yml` is the separate TestPyPI Trusted
-Publishing workflow.
+Immediately after the manual `make release` flow creates and pushes the tag,
+dispatch `.github/workflows/release.yml` from `master` and provide that tag as
+the required `tag` input, before `master` advances. The workflow rejects any
+other dispatch ref. At the start of verification, it checks out the requested
+tag, resolves its commit, and requires it to match the master commit that
+dispatched the workflow exactly. Historical-tag backfills and new dispatches
+after `master` advances are unsupported. It rebuilds from that tagged source
+with `scripts/release.py release-artifacts`, verifies PyPI, npm, Homebrew,
+manifest, local artifact, and tag state with
+`scripts/release.py github-release-plan`, and transfers the verified artifacts
+and manifest to the write-authorized job. The publishing job checks out the
+exact verified commit, verifies fresh external state before mutating GitHub,
+repeats the plan, and supplies the verified predecessor tag explicitly when
+GitHub generates release notes. Every plan evaluation re-fetches
+`origin/master` and requires the release commit to remain reachable from it. The
+publisher then reloads and re-verifies draft assets immediately before
+publication. The GitHub Release contains `dist/*`; the npm tarball is an
+integrity input, not a GitHub Release asset. It verifies exact asset names,
+sizes, and GitHub SHA-256 digests before and after publication, rejects
+unexpected draft assets, and never mutates an already-published mismatch. The
+release title must match the tag, and generated notes carry a hidden, versioned
+automation marker; existing drafts without both are rejected before asset
+mutation.
+Prereleases can never be GitHub `Latest`. A stable release is `Latest` only when
+it is the highest published stable version on PyPI. A repository-wide
+non-dropping queue serializes publication workflows around those checks and
+mutations. PyPI and npm remain the production publishing sources of truth; the
+workflow does not publish production packages.
+`.github/workflows/testpypi.yml` is the separate TestPyPI Trusted Publishing
+workflow. Maintainers may intentionally dispatch it from any selected ref; it is
+not restricted to `master`. It fails if the package version already exists on
+TestPyPI.

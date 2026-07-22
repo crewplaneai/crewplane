@@ -256,29 +256,22 @@ def test_verify_source_commit_available_uses_bundles_for_source_verification(
     )
     if git_commit_exists(repo, first.commit) or git_commit_exists(repo, second.commit):
         pytest.skip("git retained the test commits after pruning")
-
+    source_refs_before = run_git_text(
+        repo,
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+    )
     original_run = GitCommand.run
-    original_run_with_input = GitCommand.run_with_input
 
-    def reject_raw_source_fetch(
+    def reject_source_ref_update(
         self: GitCommand,
         *args: str,
     ) -> subprocess.CompletedProcess[bytes]:
-        if args[:2] == ("fetch", repo.as_posix()):
-            raise subprocess.CalledProcessError(1, ["git", *args])
+        if self.cwd == repo and args and args[0] == "update-ref":
+            raise AssertionError("lineage verification mutated a source ref")
         return original_run(self, *args)
 
-    def reject_pack_transport(
-        self: GitCommand,
-        input_data: bytes,
-        *args: str,
-    ) -> subprocess.CompletedProcess[bytes]:
-        if args and args[0] in {"pack-objects", "unpack-objects"}:
-            raise subprocess.CalledProcessError(1, ["git", *args])
-        return original_run_with_input(self, input_data, *args)
-
-    monkeypatch.setattr(GitCommand, "run", reject_raw_source_fetch)
-    monkeypatch.setattr(GitCommand, "run_with_input", reject_pack_transport)
+    monkeypatch.setattr(GitCommand, "run", reject_source_ref_update)
 
     verify_source_commit_available(
         source,
@@ -310,7 +303,170 @@ def test_verify_source_commit_available_uses_bundles_for_source_verification(
 
     assert not git_commit_exists(repo, first.commit)
     assert not git_commit_exists(repo, second.commit)
-    assert run_git_text(repo, "for-each-ref", "refs/crewplane/verification") == ""
+    assert (
+        run_git_text(repo, "for-each-ref", "--format=%(refname) %(objectname)")
+        == source_refs_before
+    )
+
+
+def test_verify_source_commit_available_does_not_import_base_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    base_parent = run_git_text(repo, "rev-parse", "HEAD^{commit}")
+    (repo / "README.md").write_text("current base\n", encoding="utf-8")
+    run_git_text(repo, "add", "README.md")
+    run_git_text(repo, "commit", "-m", "current base")
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    source = plan.workspace_source
+    assert source is not None
+    base_fetch_observed = False
+    original_run = GitCommand.run
+
+    def assert_base_history_is_absent(
+        self: GitCommand,
+        *args: str,
+    ) -> subprocess.CompletedProcess[bytes]:
+        nonlocal base_fetch_observed
+        result = original_run(self, *args)
+        if args and args[0] == "fetch" and repo.as_posix() in args:
+            base_fetch_observed = True
+            assert not git_commit_exists(self.cwd, base_parent)
+        return result
+
+    monkeypatch.setattr(GitCommand, "run", assert_base_history_is_absent)
+
+    verify_source_commit_available(
+        source,
+        WorktreeSourceRef(
+            source_kind="project",
+            source_node_id=None,
+            source_commit=source.run_base_commit,
+            source_tree=source.source_tree,
+        ),
+    )
+
+    assert base_fetch_observed
+
+
+def test_verify_source_commit_available_rejects_ambient_omitted_upstream(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    source = plan.workspace_source
+    assert source is not None
+    first, second = create_prerequisite_bundle_chain(
+        repo,
+        tmp_path / "first.bundle",
+        tmp_path / "second.bundle",
+    )
+    ambient_first_ref = "refs/crewplane/test/ambient-first"
+    ambient_second_ref = "refs/crewplane/test/ambient-second"
+    run_git_text(
+        repo, "fetch", first.path.as_posix(), f"{first.ref}:{ambient_first_ref}"
+    )
+    run_git_text(
+        repo,
+        "fetch",
+        second.path.as_posix(),
+        f"{second.ref}:{ambient_second_ref}",
+    )
+    run_git_text(repo, "update-ref", "-d", ambient_first_ref)
+    run_git_text(repo, "update-ref", "-d", ambient_second_ref)
+    assert git_commit_exists(repo, first.commit)
+    assert git_commit_exists(repo, second.commit)
+    source_refs_before = run_git_text(
+        repo,
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        verify_source_commit_available(
+            source,
+            WorktreeSourceRef(
+                source_kind="node",
+                source_node_id="second",
+                source_commit=second.commit,
+                source_tree=second.tree,
+                candidate_sequence=1,
+                bundle_path=second.path,
+                bundle_sha256=second.sha256,
+                bundle_size_bytes=second.size_bytes,
+                bundle_ref=second.ref,
+            ),
+        )
+
+    message = str(exc_info.value)
+    assert message.startswith(
+        "Workspace lineage source verification failed while validating recorded "
+        "Git artifacts:"
+    )
+    assert "Git did not provide diagnostic output" not in message
+    assert "crewplane-lineage-verify-" not in message
+    assert "Command '['git'" not in message
+    assert (
+        run_git_text(repo, "for-each-ref", "--format=%(refname) %(objectname)")
+        == source_refs_before
+    )
+
+
+def test_verify_source_commit_available_rejects_ambient_project_commit(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    source = plan.workspace_source
+    assert source is not None
+    (repo / "ambient.txt").write_text("ambient\n", encoding="utf-8")
+    run_git_text(repo, "add", "ambient.txt")
+    run_git_text(repo, "commit", "-m", "ambient")
+    ambient_commit = run_git_text(repo, "rev-parse", "HEAD^{commit}")
+    ambient_tree = run_git_text(repo, "rev-parse", "HEAD^{tree}")
+    source_refs_before = run_git_text(
+        repo,
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+    )
+
+    with pytest.raises(RuntimeError, match="requires a recorded bundle"):
+        verify_source_commit_available(
+            source,
+            WorktreeSourceRef(
+                source_kind="project",
+                source_node_id=None,
+                source_commit=ambient_commit,
+                source_tree=ambient_tree,
+            ),
+        )
+
+    assert (
+        run_git_text(repo, "for-each-ref", "--format=%(refname) %(objectname)")
+        == source_refs_before
+    )
 
 
 def test_worktree_workspace_rejects_imported_source_tree_mismatch(

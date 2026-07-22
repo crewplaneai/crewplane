@@ -1,7 +1,7 @@
 name: AI CLI integration request
 description: Request support for another AI CLI or runtime adapter.
 title: "feat: add integration for "
-labels: ["type: integration", "status: needs-triage"]
+labels: ["type: integration"]
 body:
   - type: input
     id: cli

@@ -8,6 +8,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -18,6 +19,12 @@ NORMALIZED_VERSION = str(Version(AUTHORED_VERSION))
 CLI_COMMAND = "crewplane"
 IMPORT_PACKAGE = "crewplane"
 REPOSITORY_URL = "https://github.com/crewplaneai/crewplane"
+GRANDFATHERED_LARGE_FILE_LIMITS = {
+    ".github/crewplane-splash.png": 1_093_755,
+    "docs/images/concepts/control-plane.png": 1_664_884,
+    "docs/images/concepts/different-design.png": 1_466_376,
+    "docs/images/concepts/why-crewplane.png": 1_511_410,
+}
 
 
 def repo_path(*parts: str) -> Path:
@@ -66,6 +73,10 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
     assert urls["Repository"] == REPOSITORY_URL
     assert urls["Issues"] == f"{REPOSITORY_URL}/issues"
     assert urls["Documentation"] == f"{REPOSITORY_URL}/blob/master/docs/index.md"
+
+    build_system = pyproject["build-system"]
+    assert build_system["requires"] == ["hatchling==1.30.1"]
+    assert build_system["build-backend"] == "hatchling.build"
 
     wheel_config = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
     assert wheel_config["packages"] == [f"src/{IMPORT_PACKAGE}"]
@@ -146,28 +157,335 @@ def test_release_script_exposes_stateful_commands() -> None:
         "release-artifacts",
         "check",
         "verify-complete",
+        "github-release-plan",
         "publish-pypi",
         "publish-npm",
         "finalize",
     ):
         assert command in result.stdout
+    assert "recover-release-artifacts" not in result.stdout
+    assert "verify-backfill" not in result.stdout
+
+
+def test_ci_package_job_smoke_tests_wheel_before_inspection_and_upload() -> None:
+    workflow = yaml.load(
+        read_text(".github", "workflows", "ci.yml"), Loader=yaml.BaseLoader
+    )
+    package_steps = workflow["jobs"]["package"]["steps"]
+    step_positions = {
+        step.get("name"): index for index, step in enumerate(package_steps)
+    }
+    smoke_index = step_positions["Build and smoke-test package"]
+    inspect_index = step_positions["Inspect dist"]
+    upload_index = step_positions["Upload dist artifact"]
+
+    assert package_steps[smoke_index]["run"] == "make install-smoke-pip"
+    assert smoke_index < inspect_index < upload_index
+    assert all(step.get("run") != "uv build" for step in package_steps)
 
 
 def test_production_release_workflow_reuses_release_tool_without_pypi_publish() -> None:
     workflow = read_text(".github", "workflows", "release.yml")
+    workflow_config = yaml.load(workflow, Loader=yaml.BaseLoader)
+    release_script = read_text("scripts", "publish_github_release.sh")
 
-    assert "fetch-depth: 0" in workflow
-    assert "group: release-${{ github.event.inputs.tag || github.ref_name }}" in (
-        workflow
+    dispatch = workflow_config["on"]["workflow_dispatch"]
+    assert "push" not in workflow_config["on"]
+    assert dispatch["inputs"]["tag"]["required"] == "true"
+    assert dispatch["inputs"]["tag"]["type"] == "string"
+    assert dispatch["inputs"]["tag"]["description"] == (
+        "Tag just created by make release from the current master commit"
     )
-    assert "scripts/release.py release-artifacts" in workflow
-    assert "scripts/release.py verify-complete --expected-tag" in workflow
-    assert 'gh release create "$TAG_NAME" dist/*' in workflow
-    assert "path: dist/*" in workflow
+    verify_steps = workflow_config["jobs"]["verify"]["steps"]
+    master_guard = verify_steps[0]
+    assert master_guard["name"] == "Reject non-master dispatch"
+    assert master_guard["if"] == "github.ref != 'refs/heads/master'"
+    assert "exit 1" in master_guard["run"]
+    release_source_guard = verify_steps[2]
+    assert release_source_guard["name"] == "Resolve and verify current release source"
+    assert (
+        'if [ "$release_commit" != "$GITHUB_SHA" ]; then'
+        in (release_source_guard["run"])
+    )
+    assert (
+        "Release tag must point to the dispatched master commit."
+        in (release_source_guard["run"])
+    )
+    assert workflow.count("TAG_NAME: ${{ inputs.tag }}") == 2
+    assert workflow.count("fetch-depth: 0") == 2
+    assert workflow.count("git fetch --quiet --no-tags origin refs/heads/master") == 1
+    assert workflow.count("git merge-base --is-ancestor") == 1
+    assert "ref: refs/tags/${{ inputs.tag }}" in workflow
+    assert (
+        "release_commit: ${{ steps.release-source.outputs.release_commit }}" in workflow
+    )
+    assert "ref: ${{ needs.verify.outputs.release_commit }}" in workflow
+    assert 'echo "release_commit=$release_commit" >> "$GITHUB_OUTPUT"' in workflow
+    assert "group: github-release-publication" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "queue: max" in workflow
+    assert workflow.count("uses: actions/checkout@") == 2
+    assert "github.event.inputs" not in workflow
+    assert "github.ref_name" not in workflow
+    assert "path: tooling" not in workflow
+    assert "path: source" not in workflow
+    assert "working-directory:" not in workflow
+    assert "python scripts/release.py release-artifacts" in workflow
+    assert workflow.count("python scripts/release.py github-release-plan") == 1
+    assert "python scripts/release.py github-release-plan" in release_script
+    assert "github-release-metadata" not in workflow
+    assert workflow.count("needs.verify.outputs.release_commit") == 1
+    assert "steps.release-plan.outputs" not in workflow
+    assert "name: release-bundle" in workflow
+    assert "dist/*" in workflow
+    assert ".release/npm/*.tgz" in workflow
+    assert ".release/release-manifest.json" in workflow
+    assert "include-hidden-files: true" in workflow
+    assert "overwrite: true" in workflow
+    assert "scripts/publish_github_release.sh dist" in workflow
+    assert "release_flags=(--prerelease --latest=false)" in release_script
+    assert "release_flags=(--prerelease=false --latest)" in release_script
+    assert "release_flags=(--prerelease=false --latest=false)" in release_script
+    assert '"${release_flags[@]}"' in release_script
+    assert '--expected-tag "$TAG_NAME"' in workflow
+    assert "recover-release-artifacts" not in workflow
+    assert "verify-backfill" not in workflow
+    assert "IS_BACKFILL" not in workflow
+    assert 'gh release create "$tag_name" "${release_artifacts[@]}"' in release_script
+    assert "release(tagName: $tag)" in release_script
+    assert "nodes { name size digest }" in release_script
+    assert "totalCount" in release_script
+    assert 'gh release upload "$tag_name" "${release_artifacts[@]}"' in (release_script)
+    assert "--clobber" in release_script
+    assert 'release_artifacts=("$dist_dir"/*)' in release_script
+    assert 'comm -13 "$expected_names_file" "$release_names_file"' in (release_script)
+    assert 'cmp -s "$expected_assets_file" "$release_assets_file"' in release_script
+    assert "Refusing to publish a draft with unexpected assets" in release_script
+    assert "assets do not match the verified dist artifacts" in release_script
+    assert "prerelease state does not match" in release_script
+    assert "Latest state does not match" in release_script
+    assert "Verified existing published GitHub Release" in release_script
+    assert "query was truncated or internally inconsistent" in release_script
+    assert "refusing to mutate it" in release_script
+    assert 'gh release edit "$tag_name"' in release_script
+    assert '--tag "$tag_name"' in release_script
+    assert "--draft=false" in release_script
+    assert "--verify-tag" in release_script
+    assert "GH_REPO: ${{ github.repository }}" in workflow
+    assert '--repo "$repository"' in release_script
+    assert workflow.count("contents: write") == 1
     assert "uv build" not in workflow
     assert "urllib.request" not in workflow
     assert "pypa/gh-action-pypi-publish" not in workflow
     assert "id-token: write" not in workflow
+
+
+def test_release_drafter_was_removed() -> None:
+    assert not repo_path(".github", "release-drafter.yml").exists()
+    assert not repo_path(".github", "workflows", "release-drafter.yml").exists()
+
+
+def test_github_workflow_actions_are_pinned_to_commits() -> None:
+    workflows = sorted(repo_path(".github", "workflows").glob("*.yml"))
+    for workflow in workflows:
+        for line_number, line in enumerate(
+            workflow.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if "uses:" not in line:
+                continue
+            action = line.split("uses:", 1)[1].split("#", 1)[0].strip()
+            assert re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", action), (
+                f"{workflow.relative_to(ROOT)}:{line_number} is not commit-pinned"
+            )
+
+
+def test_github_workflow_uv_installs_are_version_pinned() -> None:
+    workflows = sorted(repo_path(".github", "workflows").glob("*.yml"))
+    for workflow in workflows:
+        lines = workflow.read_text(encoding="utf-8").splitlines()
+        for line_number, line in enumerate(lines, start=1):
+            if "astral-sh/setup-uv@" not in line:
+                continue
+            step = "\n".join(lines[line_number - 1 : line_number + 6])
+            assert 'version: "0.10.9"' in step, (
+                f"{workflow.relative_to(ROOT)}:{line_number} does not pin uv"
+            )
+
+
+def test_large_file_hook_enforces_limit_with_narrow_grandfathering() -> None:
+    config = yaml.safe_load(read_text(".pre-commit-config.yaml"))
+    hooks = [
+        hook
+        for repository in config["repos"]
+        for hook in repository["hooks"]
+        if hook["id"] == "check-added-large-files"
+    ]
+    assert len(hooks) == 1
+    hook = hooks[0]
+    assert hook["args"] == ["--maxkb=1024", "--enforce-all"]
+
+    exclusion = re.compile(hook["exclude"])
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split("\0")
+    tracked_paths = {path for path in tracked if path}
+    oversized = {
+        path
+        for path in tracked_paths
+        if (ROOT / path).is_file() and (ROOT / path).stat().st_size > 1024**2
+    }
+    excluded = {path for path in tracked_paths if exclusion.search(path)}
+
+    grandfathered = set(GRANDFATHERED_LARGE_FILE_LIMITS)
+    assert oversized == grandfathered
+    assert excluded == grandfathered
+    for path, size_limit in GRANDFATHERED_LARGE_FILE_LIMITS.items():
+        assert (ROOT / path).stat().st_size <= size_limit
+    assert "pre-commit==4.6.0 run --all-files" in read_text(
+        ".github", "workflows", "ci.yml"
+    )
+
+
+def test_pre_commit_hooks_are_immutable_and_dependabot_managed() -> None:
+    pre_commit_text = read_text(".pre-commit-config.yaml")
+    pre_commit = yaml.safe_load(pre_commit_text)
+    hook_repository = next(
+        repository
+        for repository in pre_commit["repos"]
+        if repository["repo"] == "https://github.com/pre-commit/pre-commit-hooks"
+    )
+
+    hook_revision = hook_repository["rev"]
+    assert isinstance(hook_revision, str)
+    assert re.fullmatch(r"[0-9a-f]{40}", hook_revision)
+    assert re.search(
+        rf"^\s+rev:\s+{re.escape(hook_revision)}\s+"
+        r"# frozen: v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\s*$",
+        pre_commit_text,
+        re.MULTILINE,
+    )
+
+    dependabot = yaml.safe_load(read_text(".github", "dependabot.yml"))
+    pre_commit_updates = [
+        update
+        for update in dependabot["updates"]
+        if update["package-ecosystem"] == "pre-commit"
+    ]
+    assert len(pre_commit_updates) == 1
+    assert pre_commit_updates[0]["directory"] == "/"
+    assert {"dependencies", "status: needs-triage", "area: ci"} <= set(
+        pre_commit_updates[0]["labels"]
+    )
+
+
+def test_ruff_lint_rejects_debugger_calls() -> None:
+    ruff_lint = load_pyproject()["tool"]["ruff"]["lint"]
+
+    assert "T10" in ruff_lint["select"]
+
+
+def test_label_automation_uses_declared_labels() -> None:
+    labels = json.loads(read_text(".github", "labels.json"))
+    label_names = [label["name"] for label in labels]
+    assert len(label_names) == len(set(label_names))
+    declared_labels = set(label_names)
+
+    template_labels: set[str] = set()
+    template_paths = [
+        *repo_path(".github", "ISSUE_TEMPLATE").glob("*.yml"),
+        *repo_path(".github", "DISCUSSION_TEMPLATE").glob("*.yml"),
+    ]
+    for template_path in template_paths:
+        template = yaml.safe_load(template_path.read_text(encoding="utf-8"))
+        template_labels.update(template.get("labels", []))
+
+    path_labels = yaml.safe_load(read_text(".github", "labeler.yml"))
+    referenced_labels = {
+        "status: needs-triage",
+        "dependencies",
+        *template_labels,
+        *path_labels,
+    }
+    assert referenced_labels <= declared_labels
+    packaging_globs = path_labels["area: packaging"][0]["changed-files"][0][
+        "any-glob-to-any-file"
+    ]
+    assert "packaging/**" in packaging_globs
+
+    triage = read_text(".github", "workflows", "issue-triage.yml")
+    assert 'item.user?.login === "dependabot[bot]"' not in triage
+    assert 'item.user?.type === "Bot"' not in triage
+    assert "github.event_name != 'pull_request_target'" in triage
+    assert "github.event.pull_request.user.login != 'dependabot[bot]'" in triage
+
+    pr_labeler = read_text(".github", "workflows", "pr-labeler.yml")
+    assert "github.event.pull_request.user.login != 'dependabot[bot]'" in pr_labeler
+
+    dependabot = yaml.safe_load(read_text(".github", "dependabot.yml"))
+    for update in dependabot["updates"]:
+        assert {"dependencies", "status: needs-triage"} <= set(update["labels"])
+
+    sync = read_text(".github", "workflows", "sync-labels.yml")
+    assert 'branches: ["master"]' in sync
+    assert "inputs.prune || 'false'" in sync
+
+
+def test_manual_label_sync_fails_outside_master() -> None:
+    workflow = yaml.safe_load(read_text(".github", "workflows", "sync-labels.yml"))
+    steps = workflow["jobs"]["sync-labels"]["steps"]
+    guard = steps[0]
+
+    assert guard["name"] == "Reject non-master runs"
+    assert guard["if"] == "github.ref != 'refs/heads/master'"
+    assert "exit 1" in guard["run"]
+    assert steps[1]["uses"].startswith("actions/checkout@")
+
+
+def test_questions_and_usage_help_are_routed_to_discussions() -> None:
+    assert not repo_path(".github", "ISSUE_TEMPLATE", "question.yml").exists()
+
+    issue_config = yaml.safe_load(read_text(".github", "ISSUE_TEMPLATE", "config.yml"))
+    discussions_links = [
+        link
+        for link in issue_config["contact_links"]
+        if link["url"] == f"{REPOSITORY_URL}/discussions"
+    ]
+    assert len(discussions_links) == 1
+    assert "questions" in discussions_links[0]["about"].lower()
+    assert "usage help" in discussions_links[0]["about"].lower()
+
+    labels = json.loads(read_text(".github", "labels.json"))
+    assert "type: question" not in {label["name"] for label in labels}
+    assert "**Questions and ideas:** use GitHub Discussions." in read_text("SUPPORT.md")
+
+
+def test_bug_report_requires_support_environment_details() -> None:
+    bug_report = yaml.safe_load(
+        read_text(".github", "ISSUE_TEMPLATE", "bug_report.yml")
+    )
+    fields = {field["id"]: field for field in bug_report["body"] if "id" in field}
+    required_fields = {
+        "os": "Operating system",
+        "shell": "Shell",
+        "python": "Python version",
+        "install_method": "Installation method",
+        "provider_invoker": "Provider CLI or invoker",
+        "live_mode": "Live mode",
+    }
+
+    for field_id, label in required_fields.items():
+        assert fields[field_id]["attributes"]["label"] == label
+        assert fields[field_id]["validations"]["required"] is True
+
+    privacy_guidance = fields["logs"]["attributes"]["description"].lower()
+    for protected_detail in ("secrets", "tokens", "customer data", "provider payloads"):
+        assert protected_detail in privacy_guidance
+    safety_checks = fields["safety"]["attributes"]["options"]
+    assert all(option["required"] is True for option in safety_checks)
 
 
 def test_release_docs_describe_single_production_publish_path() -> None:
@@ -180,19 +498,140 @@ def test_release_docs_describe_single_production_publish_path() -> None:
     assert "Maintainers run `make release`" in normalized_development
     assert "does not publish production PyPI or npm packages" in normalized_development
     assert "does not need PyPI or npm credentials" in normalized_development
-    assert "post-tag GitHub Release automation" in development
-    assert "manual dispatch for an existing tag" in normalized_development
-    assert "creates or backfills the GitHub Release from `dist/*`" in (
+    assert "manually dispatched GitHub Release automation" in normalized_development
+    assert "required `tag` input" in normalized_development
+    assert "rejects dispatches outside `refs/heads/master`" in normalized_development
+    assert "manual `make release` flow is the production source of truth" in (
         normalized_development
     )
+    assert "second phase of the same release operation" in normalized_development
+    assert (
+        "requires it to match the master commit that dispatched the workflow exactly"
+        in normalized_development
+    )
+    assert (
+        "Historical-tag backfills and new dispatches after `master` advances are unsupported"
+        in normalized_development
+    )
+    assert "exact Hatchling build-system pin" in normalized_development
+    assert "offline runtime wheelhouse" in normalized_development
+    assert "GitHub Release itself contains only `dist/*`" in (normalized_development)
+    assert "New releases are built as drafts, verified, published" in (
+        normalized_development
+    )
+    assert "exact name, size, and GitHub's immutable upload-time SHA-256 digest" in (
+        normalized_development
+    )
+    assert "highest published stable version on PyPI" in normalized_development
     assert "does not update the Homebrew tap" in development
     assert "TestPyPI Trusted Publishing workflow" in normalized_development
+    assert "dispatch it from any selected ref" in normalized_development
+    assert "not restricted to `master`" in normalized_development
+    assert "delayed GitHub Release" not in normalized_development
+    assert "stale attempts for older releases" not in normalized_development
     assert "PyPI Trusted Publishing through GitHub OIDC" not in development
     assert "scripts/release.py release-artifacts" in contributing
-    assert "scripts/release.py verify-complete" in contributing
-    assert "It does not publish production PyPI or npm packages." in (
+    assert "scripts/release.py github-release-plan" in contributing
+    assert "recover-release-artifacts" not in contributing
+    assert "verify-backfill" not in contributing
+    assert "exact Hatchling build-system pin" in normalized_contributing
+    assert "offline runtime wheelhouse" in normalized_contributing
+    assert "exact asset names, sizes, and GitHub SHA-256 digests" in (
         normalized_contributing
     )
+    assert "never mutates an already-published mismatch" in (normalized_contributing)
+    assert "highest published stable version on PyPI" in normalized_contributing
+    assert "checks out the requested tag" in normalized_contributing
+    assert (
+        "requires it to match the master commit that dispatched the workflow exactly"
+        in normalized_contributing
+    )
+    assert (
+        "Historical-tag backfills and new dispatches after `master` advances are unsupported"
+        in normalized_contributing
+    )
+    assert "checks out the exact verified commit" in normalized_contributing
+    assert "current `master` tip" not in normalized_contributing
+    assert "reloads and re-verifies draft assets immediately before publication" in (
+        normalized_contributing
+    )
+    assert "does not publish production packages" in normalized_contributing
+    assert "dispatch it from any selected ref" in normalized_contributing
+    assert "not restricted to `master`" in normalized_contributing
+    assert "delayed GitHub Release" not in normalized_contributing
+    assert "stale attempts for older releases" not in normalized_contributing
+
+
+def test_repository_automation_matches_supported_platform_and_publish_policy() -> None:
+    development = read_text("DEVELOPMENT.md")
+    contributing = read_text("CONTRIBUTING.md")
+    nightly_text = read_text(".github", "workflows", "nightly.yml")
+    nightly = yaml.safe_load(nightly_text)
+    testpypi = read_text(".github", "workflows", "testpypi.yml")
+
+    for document in (development, contributing):
+        normalized_document = " ".join(document.split())
+        assert "Linux, macOS, and WSL" in normalized_document
+        assert "Native Windows is not supported" in normalized_document
+        assert (
+            "supports Python 3.13+ on Linux, macOS, Windows" not in normalized_document
+        )
+
+    assert nightly["jobs"]["cross-platform"]["strategy"]["matrix"]["os"] == [
+        "ubuntu-latest",
+        "macos-latest",
+    ]
+    assert "windows-latest" not in nightly_text
+    assert "skip-existing" not in testpypi
+
+
+def test_private_reporting_surfaces_use_github_security_advisories() -> None:
+    issue_config = yaml.safe_load(read_text(".github", "ISSUE_TEMPLATE", "config.yml"))
+    advisory_url = f"{REPOSITORY_URL}/security/advisories/new"
+    security_links = [
+        link for link in issue_config["contact_links"] if link["url"] == advisory_url
+    ]
+
+    assert len(security_links) == 1
+    assert "privately" in security_links[0]["about"].lower()
+    assert "GitHub Security Advisories" in read_text("SECURITY.md")
+    assert "GitHub Security Advisories" in read_text("SUPPORT.md")
+    assert advisory_url in read_text("CODE_OF_CONDUCT.md")
+
+
+def test_repository_hosting_policy_uses_current_workflow_surfaces() -> None:
+    assert not repo_path(".github", "branch-protection.json").exists()
+    assert not repo_path(".github", "settings.yml").exists()
+
+    testpypi = yaml.safe_load(read_text(".github", "workflows", "testpypi.yml"))
+    publisher = testpypi["jobs"]["publish-testpypi"]
+    assert publisher["environment"]["name"] == "testpypi"
+    assert publisher["permissions"] == {"id-token": "write", "contents": "read"}
+
+
+def test_repository_gitattributes_preserve_blob_exact_workspace_compatibility() -> None:
+    attributes = read_text(".gitattributes")
+    policy_lines = {
+        line.strip()
+        for line in attributes.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert "* -text" in policy_lines
+    assert "text=" not in attributes
+    assert " eol=" not in attributes
+    assert " crlf=" not in attributes
+    assert "working-tree-encoding" not in attributes
+
+
+def test_dependency_review_covers_python_and_npm_manifests() -> None:
+    workflow = yaml.load(
+        read_text(".github", "workflows", "dependency-review.yml"),
+        Loader=yaml.BaseLoader,
+    )
+    paths = set(workflow["on"]["pull_request"]["paths"])
+
+    assert {"pyproject.toml", "uv.lock", "packaging/npm/package*.json"} <= paths
 
 
 def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:

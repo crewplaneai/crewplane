@@ -17,3 +17,8 @@ Current maintainer:
 ## Adding maintainers
 
 Trusted contributors may become maintainers after repeated high-quality contributions, security-conscious behavior, and alignment with the project direction.
+
+## Contributors
+
+Contributors are recognized through the Git history and release notes.
+Contribution does not require maintainer or repository permissions.

@@ -50,11 +50,6 @@
     "description": "AI CLI/runtime integration"
   },
   {
-    "name": "type: question",
-    "color": "d4c5f9",
-    "description": "Usage question or support request"
-  },
-  {
     "name": "type: chore",
     "color": "c5def5",
     "description": "Maintenance"

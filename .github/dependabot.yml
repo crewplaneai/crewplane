@@ -8,7 +8,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Vancouver"
-    labels: ["dependencies", "area: packaging"]
+    labels: ["dependencies", "status: needs-triage", "area: packaging"]
     open-pull-requests-limit: 5
     cooldown:
       default-days: 3
@@ -25,9 +25,21 @@ updates:
       day: "monday"
       time: "09:30"
       timezone: "America/Vancouver"
-    labels: ["dependencies", "area: ci"]
+    labels: ["dependencies", "status: needs-triage", "area: ci"]
     open-pull-requests-limit: 5
     groups:
       github-actions:
         patterns: ["*"]
         update-types: ["patch", "minor"]
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "America/Vancouver"
+    labels: ["dependencies", "status: needs-triage", "area: ci"]
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
