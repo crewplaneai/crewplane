@@ -10,7 +10,19 @@ Use this document for local setup, repository layout, repeatable development wor
 
 - Python 3.13+
 - `pip` (required)
-- `uv` (optional, used automatically by `Makefile` if available)
+- `uv` (recommended; required for the repository-automation checks below)
+
+## Supported Platforms
+
+Crewplane supports Python 3.13 and newer on Linux, macOS, and WSL when the
+configured provider CLIs are available on that platform. Native Windows is not
+supported; use WSL on Windows hosts.
+
+Pull-request CI runs on Linux for Python 3.13 and 3.14. Nightly CI runs on
+Linux and macOS for Python 3.13 and 3.14.
+
+The tmux live dashboard requires `tmux` and is intended for Unix-like
+environments. WSL supports the same tmux live mode as Linux.
 
 ## Setup
 
@@ -25,14 +37,111 @@ make setup
 
 ```bash
 make test         # project-env pytest -q
-make lint         # project-env ruff check src tests
-make format       # project-env ruff format src tests
-make format-check # project-env ruff format --check src tests
+make lint         # project-env ruff check src tests scripts
+make format       # project-env ruff import fixes + format src tests scripts
+make format-check # project-env ruff format --check src tests scripts
 make check        # lint + format-check + tests
 make help         # list package and release targets
 make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
 ```
+
+## Repository Automation
+
+GitHub Actions, issue templates, label automation, and community files are
+tailored for the public `crewplane` repository. Use the same entry points
+locally and in CI:
+
+```bash
+make setup
+make check
+make actionlint
+uvx pre-commit==4.6.0 run --all-files --show-diff-on-failure
+```
+
+The Makefile falls back to `python -m ...` for project checks when `uv` is not
+installed. The full repository-automation check uses `uvx` for pinned
+pre-commit execution.
+
+Current CI policy:
+
+- Default branch: `master`.
+- The supported platform matrix is defined in
+  [Supported Platforms](#supported-platforms).
+- Production publishing is local-only. Maintainers run `make release` to
+  publish PyPI, publish npm with the `latest` dist-tag, and create/push the
+  final Git tag. GitHub Actions does not publish production PyPI or npm
+  packages and does not need PyPI or npm credentials.
+- `.github/workflows/release.yml` provides manually dispatched GitHub Release
+  automation as the second phase of the same release operation:
+
+  1. **Create the production release locally.** The manual `make release` flow
+     is the production source of truth.
+  2. **Dispatch GitHub publication from the same commit.** Immediately after
+     `make release` creates and pushes the final tag, dispatch the workflow from
+     `master` with the required `tag` input, before `master` advances. The
+     workflow rejects dispatches outside `refs/heads/master`. It checks out the
+     requested tag, resolves its commit, and requires it to match the master
+     commit that dispatched the workflow exactly. Historical-tag backfills and
+     new dispatches after `master` advances are unsupported.
+  3. **Verify the tagged source.** The workflow rebuilds the artifacts and
+     verifies their manifest, registry state, Homebrew formula metadata, and tag
+     state through `scripts/release.py`. It transfers the verified sdist, wheel,
+     npm tarball, and manifest to the write-authorized job.
+  4. **Publish the GitHub Release.** The publisher checks out the exact verified
+     commit and verifies fresh registry and tag state before mutating GitHub. It
+     repeats the plan after draft-asset verification immediately before
+     publication and supplies the verified predecessor tag when GitHub generates
+     release notes. The GitHub Release itself contains only `dist/*`.
+
+- GitHub Release publication fails closed:
+
+  - Every plan evaluation re-fetches `origin/master` and requires the release
+    commit to remain reachable from it.
+  - Draft and published assets are checked by exact name, size, and GitHub's
+    immutable upload-time SHA-256 digest. API failures, truncated responses, and
+    unexpected assets fail closed.
+  - Release titles must exactly match their tags, and generated notes carry a
+    hidden, versioned automation marker. Existing drafts without both are
+    rejected before any asset mutation.
+  - New releases are built as drafts, verified, published, and verified again.
+    Prereleases can never be GitHub `Latest`; a stable release is `Latest` only
+    when it is the highest published stable version on PyPI.
+  - A repository-wide non-dropping concurrency queue serializes publication
+    workflows around those checks and mutations. PyPI and npm remain the
+    production publishing sources of truth.
+
+- Release artifact builds are reproducible:
+
+  - `pyproject.toml` uses an exact Hatchling build-system pin so the manual
+    release and its immediately following GitHub Release rebuild use the same
+    backend version.
+  - The manually dispatched job rebuilds only the registry artifacts needed for
+    verification. `make release-prepare` owns the offline runtime wheelhouse used
+    by maintainer checks.
+- The release workflow verifies the Homebrew formula metadata in this repo, but
+  does not update the Homebrew tap; tap publishing remains a separate maintainer
+  step.
+- `.github/workflows/testpypi.yml` remains the separate TestPyPI Trusted
+  Publishing workflow. Maintainers may intentionally dispatch it from any
+  selected ref; it is not restricted to `master`. It fails if the package
+  version already exists on TestPyPI. Trusted Publishing is free and uses
+  short-lived OIDC credentials instead of a stored package token.
+- Workflow actions are pinned to immutable commits, with version comments kept
+  beside each pin for dependency automation and review. Workflow `uv`
+  installations are also version-pinned.
+
+Operational notes:
+
+- `pull_request_target` label workflows do not check out or execute pull-request
+  code.
+- Label definitions synchronize on `master` when `.github/labels.json` changes;
+  manual dispatch can intentionally prune labels that are no longer declared.
+- Before running `.github/workflows/testpypi.yml`, create the `testpypi` GitHub
+  environment under `Settings -> Environments`, then register a free pending
+  publisher at <https://test.pypi.org/manage/account/publishing/> with project
+  `crewplane`, owner `crewplaneai`, repository `crewplane`, workflow
+  `testpypi.yml`, and environment `testpypi`. No repository secret is required.
 
 ## Cleanup and Deletion
 

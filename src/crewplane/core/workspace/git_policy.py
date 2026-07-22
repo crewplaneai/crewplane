@@ -43,6 +43,10 @@ WORKSPACE_GIT_ENV_UNSET = (
     "GIT_ASKPASS",
     "SSH_ASKPASS",
 )
+RUNTIME_OWNED_GIT_TRANSPORT_ENV_UNSET = (
+    "GIT_PROTOCOL_FROM_USER",
+    "GIT_ALLOW_PROTOCOL",
+)
 WORKSPACE_GIT_ENV_PREFIXES_UNSET = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 WORKSPACE_GIT_BASE_ENVIRONMENT = (
     ("GIT_CONFIG_NOSYSTEM", "1"),
@@ -158,7 +162,11 @@ def sanitized_workspace_git_environment(
     ceiling_directories: Path | None = None,
 ) -> dict[str, str]:
     env = dict(os.environ)
-    for key in workspace_git_environment_unset_keys(env):
+    unset_keys = (
+        *workspace_git_environment_unset_keys(env),
+        *RUNTIME_OWNED_GIT_TRANSPORT_ENV_UNSET,
+    )
+    for key in unset_keys:
         env.pop(key, None)
     env.update(
         workspace_git_base_environment(

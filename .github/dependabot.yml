@@ -1,0 +1,45 @@
+version: 2
+
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Vancouver"
+    labels: ["dependencies", "status: needs-triage", "area: packaging"]
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    groups:
+      python-patch-and-minor:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:30"
+      timezone: "America/Vancouver"
+    labels: ["dependencies", "status: needs-triage", "area: ci"]
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "America/Vancouver"
+    labels: ["dependencies", "status: needs-triage", "area: ci"]
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3

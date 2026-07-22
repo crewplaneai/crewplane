@@ -75,6 +75,21 @@ def test_sanitized_workspace_git_environment_removes_dynamic_config_keys(
     assert "GIT_CONFIG_VALUE_9" not in env
 
 
+@pytest.mark.parametrize(
+    "key",
+    ["GIT_PROTOCOL_FROM_USER", "GIT_ALLOW_PROTOCOL"],
+)
+def test_sanitized_workspace_git_environment_removes_runtime_transport_controls(
+    key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(key, "restricted")
+
+    env = sanitized_workspace_git_environment()
+
+    assert key not in env
+
+
 def test_workspace_git_base_environment_supports_known_variants(
     tmp_path: Path,
 ) -> None:
@@ -133,12 +148,16 @@ def test_workspace_child_environment_uses_shared_unset_and_ceiling_policy(
     monkeypatch.setenv("GIT_TEMPLATE_DIR", "/tmp/template")
     monkeypatch.setenv("GIT_CONFIG_KEY_4", "core.fsmonitor")
     monkeypatch.setenv("GIT_CONFIG_VALUE_4", "true")
+    monkeypatch.setenv("GIT_PROTOCOL_FROM_USER", "0")
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "https")
 
     child = workspace_child_environment(tmp_path / "checkout")
 
     assert "GIT_TEMPLATE_DIR" in child.unset
     assert "GIT_CONFIG_KEY_4" in child.unset
     assert "GIT_CONFIG_VALUE_4" in child.unset
+    assert "GIT_PROTOCOL_FROM_USER" not in child.unset
+    assert "GIT_ALLOW_PROTOCOL" not in child.unset
     assert child.set["GIT_CONFIG_NOSYSTEM"] == "1"
     assert child.set["GIT_CEILING_DIRECTORIES"] == tmp_path.as_posix()
     assert "GIT_OPTIONAL_LOCKS" not in child.set

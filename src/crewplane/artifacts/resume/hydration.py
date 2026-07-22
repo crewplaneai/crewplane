@@ -14,6 +14,7 @@ from crewplane.core.execution_state import (
     NodeState,
     ResumeOrigin,
 )
+from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -107,12 +108,21 @@ def _copy_descriptors(
             raise ValueError(f"Resume artifact size changed for node '{node.id}'.")
         target_path = output.results_dir / descriptor.relative_path
         atomic_write_bytes(target_path, payload)
+        target_size, target_sha256 = file_size_and_sha256(target_path)
+        if target_size != descriptor.size_bytes:
+            raise ValueError(
+                f"Hydrated resume artifact size changed for node '{node.id}'."
+            )
+        if target_sha256 != descriptor.sha256:
+            raise ValueError(
+                f"Hydrated resume artifact hash changed for node '{node.id}'."
+            )
         hydrated.append(
             ArtifactDescriptor(
                 kind=descriptor.kind,
                 relative_path=descriptor.relative_path,
-                size_bytes=target_path.stat().st_size,
-                sha256=hashlib.sha256(target_path.read_bytes()).hexdigest(),
+                size_bytes=target_size,
+                sha256=descriptor.sha256,
             )
         )
     return hydrated
@@ -160,6 +170,9 @@ def _copy_workspace_artifacts(
             payload,
             expected_artifacts,
         )
+        source_descriptor = expected_artifacts[run_relative_path]
+        expected_size = source_descriptor["size_bytes"]
+        expected_sha256 = source_descriptor["sha256"]
         if relative.name.startswith("workspace-state") and relative.suffix == ".json":
             payload = _hydrated_workspace_state_payload(
                 payload,
@@ -168,7 +181,14 @@ def _copy_workspace_artifacts(
                 node.id,
                 hydrated_at,
             )
+            expected_size = len(payload)
+            expected_sha256 = hashlib.sha256(payload).hexdigest()
         atomic_write_bytes(target_path, payload)
+        actual_size, actual_sha256 = file_size_and_sha256(target_path)
+        if actual_size != expected_size or actual_sha256 != expected_sha256:
+            raise ValueError(
+                f"Hydrated workspace resume artifact changed for node '{node.id}'."
+            )
 
 
 def _stage_relative_workspace_artifact_path(

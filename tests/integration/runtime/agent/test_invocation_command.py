@@ -23,6 +23,7 @@ from crewplane.runtime.agent.invocation.command import (
     run_command_once,
     run_invocation_attempt,
 )
+from crewplane.runtime.agent.workspace_environment import workspace_child_environment
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -112,6 +113,36 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(Path(lines[0]), Path.cwd())
         self.assertEqual(lines[1], "applied")
         self.assertEqual(lines[2], "None")
+
+    async def test_workspace_child_environment_preserves_git_transport_controls(
+        self,
+    ) -> None:
+        inherited = {
+            "GIT_PROTOCOL_FROM_USER": "0",
+            "GIT_ALLOW_PROTOCOL": "https",
+        }
+        with patch.dict(os.environ, inherited):
+            result = await run_command_once(
+                cmd=[
+                    sys.executable,
+                    "-c",
+                    (
+                        "import os; "
+                        "print(os.getenv('GIT_PROTOCOL_FROM_USER')); "
+                        "print(os.getenv('GIT_ALLOW_PROTOCOL'))"
+                    ),
+                ],
+                stdin_data=None,
+                log_file=None,
+                append_log=False,
+                log_header=None,
+                cwd=Path.cwd(),
+                invocation_context=None,
+                idle_timeout_seconds=None,
+                child_environment=workspace_child_environment(Path.cwd()),
+            )
+
+        self.assertEqual(result.stdout_text.strip().splitlines(), ["0", "https"])
 
     async def test_run_command_once_records_child_environment_after_spawn(self) -> None:
         record_calls = 0

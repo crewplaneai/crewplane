@@ -26,6 +26,13 @@ from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.version import SCHEMA_VERSION
 
+GIT_TEST_CONFIG_ARGS = (
+    "-c",
+    "maintenance.auto=false",
+    "-c",
+    "gc.auto=0",
+)
+
 
 def create_git_repo(tmp_path: Path, object_format: str = "sha1") -> Path:
     repo = tmp_path / "repo"
@@ -46,7 +53,7 @@ def create_git_repo(tmp_path: Path, object_format: str = "sha1") -> Path:
 
 def run_git_text(repo: Path, *args: str) -> str:
     result = subprocess.run(
-        ["git", "-C", repo.as_posix(), *args],
+        ["git", *GIT_TEST_CONFIG_ARGS, "-C", repo.as_posix(), *args],
         check=True,
         capture_output=True,
     )
@@ -55,7 +62,15 @@ def run_git_text(repo: Path, *args: str) -> str:
 
 def git_commit_exists(repo: Path, object_id: str) -> bool:
     result = subprocess.run(
-        ["git", "-C", repo.as_posix(), "cat-file", "-e", f"{object_id}^{{commit}}"],
+        [
+            "git",
+            *GIT_TEST_CONFIG_ARGS,
+            "-C",
+            repo.as_posix(),
+            "cat-file",
+            "-e",
+            f"{object_id}^{{commit}}",
+        ],
         check=False,
         capture_output=True,
     )

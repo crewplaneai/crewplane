@@ -35,7 +35,7 @@ and `.crewplane/execution-results/<run-key>/` as needed.
 | `CLI '<name>' not found in PATH for provider '<provider>'` | A workflow references an agent whose CLI executable is unavailable. | Confirm the command works directly or switch back to `mock`. |
 | `Identical context detected` | A same-signature successful run was reused. | Use `crewplane run --force` for a fresh run. |
 | `Resume advisory: would_skip` | Dry-run predicts duplicate skip. | Run with `--force` to bypass. |
-| `Resume advisory: would_resume <n> node(s) from <run-id>` | Dry-run predicts resume hydration from a failed or cancelled run. | Inspect `resumed_nodes` and `.crewplane/execution-stages/<run-key>/<node-id>/resume-source.json` after a run. |
+| `Resume advisory: would_resume <n> node(s) from <run-id> (nodes: <ids>)` | Dry-run predicts resume hydration of the listed dependency-closed nodes from a failed or cancelled run. | Inspect `resumed_nodes` and `.crewplane/execution-stages/<run-key>/<node-id>/resume-source.json` after a run. |
 | `Resuming workflow '<name>' from <n> validated node boundary(s)` | A run hydrated completed nodes from prior artifacts. | Inspect `.crewplane/execution-stages/<run-key>/manifests/run.json`. |
 | `Run lock unavailable: <reason>` | The same-context run lock could not be acquired. | [Run lock unavailable](#run-lock-unavailable). |
 | `tmux not found; continuing without live dashboard.` | Execution can continue without the live dashboard. | Use `--no-live` or install/configure tmux. |

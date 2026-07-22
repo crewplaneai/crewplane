@@ -1,0 +1,38 @@
+name: dependency-review
+
+on:
+  pull_request:
+    branches: ["master"]
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "packaging/npm/package*.json"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: dependency-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
+        with:
+          fail-on-severity: high
+          allow-licenses: >
+            0BSD, Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC0-1.0,
+            ISC, MIT, MPL-2.0, PSF-2.0, Python-2.0,
+            Unicode-3.0, Unicode-DFS-2016, Unlicense, Zlib
+          comment-summary-in-pr: always

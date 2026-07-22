@@ -89,6 +89,14 @@ Downstream rehydration rules:
 6. Verify the downstream plan expects `blob_exact`.
 7. Create downstream mutable workspace from the verified result commit.
 
+Branch-export validation verifies the same bundle chain in an ephemeral bare
+repository seeded with a depth-one copy of the already-validated project base
+commit, tree, and blobs. Project history before that base is not copied, and
+the verifier does not use object alternates. Bundle imports and verification
+refs exist only in that temporary repository. Real fulfillment imports the
+verified lineage afterward; dry-run stops before importing objects or creating
+refs in the source repository.
+
 For chained lineage, the workspace manager imports bundles in dependency order.
 Node-sourced state preserves upstream source descriptors so a depth-2 chain
 imports the first node bundle before the second node bundle when materializing a

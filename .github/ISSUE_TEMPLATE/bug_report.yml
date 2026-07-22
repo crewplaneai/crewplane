@@ -1,56 +1,136 @@
 name: Bug report
-description: Report a reproducible problem
-title: "[bug]: "
-labels:
-  - bug
+description: Report a reproducible bug.
+title: "fix: "
+labels: ["type: bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for filing a bug. Please provide enough detail for us to reproduce it.
-  - type: input
+        Thanks for reporting a bug. Please include enough detail for a maintainer to reproduce it without your private environment.
+        Sanitize commands, workflows, and logs. Never include credentials, proprietary prompts, customer data, or private provider payloads.
+
+  - type: textarea
     id: summary
     attributes:
       label: Summary
-      placeholder: One-sentence description of the problem
+      description: What happened?
+      placeholder: The workflow failed when...
     validations:
       required: true
+
   - type: textarea
-    id: steps
+    id: reproduction
     attributes:
-      label: Steps to reproduce
+      label: Reproduction steps
+      description: Minimal steps, command, workflow file, or fixture.
       placeholder: |
         1. Run ...
-        2. Use workflow ...
-        3. Observe ...
+        2. Observe ...
     validations:
       required: true
+
   - type: textarea
     id: expected
     attributes:
       label: Expected behavior
     validations:
       required: true
+
   - type: textarea
     id: actual
     attributes:
       label: Actual behavior
     validations:
       required: true
-  - type: textarea
-    id: environment
+
+  - type: input
+    id: version
     attributes:
-      label: Environment
-      placeholder: |
-        OS:
-        Shell:
-        Python:
-        Install method:
-        AI CLI(s):
+      label: Version or commit
+      placeholder: v0.1.0 or commit SHA
     validations:
       required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      multiple: true
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - WSL
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: shell
+    attributes:
+      label: Shell
+      placeholder: zsh 5.9, Bash 5.2, etc.
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.13.7"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation method
+      options:
+        - uv tool
+        - pip or pipx
+        - npm
+        - Homebrew
+        - install.sh
+        - Source checkout
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: provider_invoker
+    attributes:
+      label: Provider CLI or invoker
+      description: List each provider CLI and version, or state that you used the mock invoker. Do not include credentials or private provider payloads.
+      placeholder: mock invoker, Codex CLI 1.2.3, etc.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: live_mode
+    attributes:
+      label: Live mode
+      description: How was the optional tmux dashboard handled?
+      options:
+        - Enabled with tmux
+        - Disabled with --no-live
+        - Requested but unavailable
+        - Not applicable
+    validations:
+      required: true
+
   - type: textarea
     id: logs
     attributes:
-      label: Logs / traceback
-      render: shell
+      label: Sanitized logs
+      description: Remove secrets, tokens, usernames, home directories, customer data, and provider payloads.
+      render: text
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed secrets and private data from this report.
+          required: true
+        - label: I searched existing issues first.
+          required: true

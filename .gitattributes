@@ -1,0 +1,9 @@
+# Disable EOL conversion for release builds and blob_exact workspaces.
+* -text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary

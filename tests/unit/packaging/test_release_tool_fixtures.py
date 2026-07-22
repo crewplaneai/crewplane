@@ -228,29 +228,30 @@ def append_uv_lock_package(
 
 def release_state_fixture(
     root: Path,
+    version: str = "1.0.0-alpha.1",
 ) -> tuple[
     state.ReleaseContext, state.ReleaseManifest, state.FormulaState, state.GitState
 ]:
-    write_minimal_repo(root, "1.0.0-alpha.1")
+    write_minimal_repo(root, version)
     context = state.read_release_context(root)
     artifacts = {
         "pypi_sdist": state.ArtifactIdentity(
             "pypi_sdist",
-            "dist/crewplane-1.0.0a1.tar.gz",
+            f"dist/{context.sdist_filename}",
             context.sdist_filename,
             10,
             "a" * 64,
         ),
         "pypi_wheel": state.ArtifactIdentity(
             "pypi_wheel",
-            "dist/crewplane-1.0.0a1-py3-none-any.whl",
+            f"dist/{context.wheel_filename}",
             context.wheel_filename,
             20,
             "b" * 64,
         ),
         "npm_tarball": state.ArtifactIdentity(
             "npm_tarball",
-            ".release/npm/crewplane-1.0.0-alpha.1.tgz",
+            f".release/npm/{context.npm_filename}",
             context.npm_filename,
             30,
             "c" * 64,
@@ -287,6 +288,7 @@ def release_state_fixture(
         branch="master",
         default_branch="master",
         head_commit="abc",
+        head_reachable_from_origin_master=True,
         upstream_ahead=0,
         upstream_behind=0,
         dirty=False,
@@ -297,7 +299,9 @@ def release_state_fixture(
 
 
 def matching_pypi(
-    context: state.ReleaseContext, manifest: state.ReleaseManifest
+    context: state.ReleaseContext,
+    manifest: state.ReleaseManifest,
+    latest_stable: str | None = None,
 ) -> state.PypiRelease:
     sdist = manifest.artifact("pypi_sdist")
     wheel = manifest.artifact("pypi_wheel")
@@ -308,6 +312,11 @@ def matching_pypi(
             sdist.filename: state.PypiFile(sdist.filename, sdist.size, sdist.sha256),
             wheel.filename: state.PypiFile(wheel.filename, wheel.size, wheel.sha256),
         },
+        latest_stable=(
+            latest_stable
+            if latest_stable is not None
+            else ("" if context.version.is_prerelease else context.version.python)
+        ),
     )
 
 

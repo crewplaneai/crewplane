@@ -41,11 +41,22 @@ def prepare_release(root: Path, runner: CommandRunner) -> None:
     sync_generated_metadata(context, runner)
     clean_release_outputs(context)
     artifacts = build_release_artifacts(context, runner)
+    build_wheelhouse(context, runner)
     sync_homebrew_formula_metadata(context, artifacts["pypi_sdist"].sha256)
     manifest = write_release_manifest(context, artifacts)
     fail_if_generated_metadata_stale(context, manifest)
     print("Release artifacts prepared.")
     print_homebrew_instructions(context)
+
+
+def release_artifacts(root: Path, runner: CommandRunner) -> None:
+    context = read_release_context(root)
+    fail_if_generated_metadata_stale(context, None)
+    clean_release_outputs(context)
+    artifacts = build_release_artifacts(context, runner)
+    manifest = write_release_manifest(context, artifacts)
+    fail_if_generated_metadata_stale(context, manifest)
+    print("Release artifacts rebuilt.")
 
 
 def clean_release_outputs(context: ReleaseContext) -> None:
@@ -62,7 +73,6 @@ def build_release_artifacts(
     build_python_artifacts(context, runner)
     run_twine_check(context, runner)
     npm_artifact = build_npm_artifact(context, runner)
-    build_wheelhouse(context, runner)
     sdist = context.root / "dist" / context.sdist_filename
     wheel = context.root / "dist" / context.wheel_filename
     ensure_file(sdist)

@@ -1,0 +1,157 @@
+[
+  {
+    "name": "status: needs-triage",
+    "color": "fbca04",
+    "description": "Needs maintainer triage"
+  },
+  {
+    "name": "status: blocked",
+    "color": "b60205",
+    "description": "Blocked by missing info or dependency"
+  },
+  {
+    "name": "status: needs-repro",
+    "color": "d93f0b",
+    "description": "Needs a minimal reproduction"
+  },
+  {
+    "name": "status: accepted",
+    "color": "0e8a16",
+    "description": "Accepted for implementation"
+  },
+  {
+    "name": "status: stale",
+    "color": "cfd3d7",
+    "description": "Inactive for a while"
+  },
+  {
+    "name": "type: bug",
+    "color": "d73a4a",
+    "description": "Bug report"
+  },
+  {
+    "name": "type: feature",
+    "color": "a2eeef",
+    "description": "Feature request"
+  },
+  {
+    "name": "type: docs",
+    "color": "0075ca",
+    "description": "Documentation"
+  },
+  {
+    "name": "type: security",
+    "color": "ee0701",
+    "description": "Security-related change"
+  },
+  {
+    "name": "type: integration",
+    "color": "5319e7",
+    "description": "AI CLI/runtime integration"
+  },
+  {
+    "name": "type: chore",
+    "color": "c5def5",
+    "description": "Maintenance"
+  },
+  {
+    "name": "area: ci",
+    "color": "0366d6",
+    "description": "CI, release, GitHub automation"
+  },
+  {
+    "name": "area: docs",
+    "color": "0075ca",
+    "description": "Docs"
+  },
+  {
+    "name": "area: agents",
+    "color": "5319e7",
+    "description": "Agent skills or workflows"
+  },
+  {
+    "name": "area: core",
+    "color": "1d76db",
+    "description": "Core runtime"
+  },
+  {
+    "name": "area: tests",
+    "color": "0e8a16",
+    "description": "Tests"
+  },
+  {
+    "name": "area: packaging",
+    "color": "c2e0c6",
+    "description": "Packaging and dependency management"
+  },
+  {
+    "name": "size: xs",
+    "color": "c2e0c6",
+    "description": "Very small pull request"
+  },
+  {
+    "name": "size: s",
+    "color": "bfdadc",
+    "description": "Small pull request"
+  },
+  {
+    "name": "size: m",
+    "color": "fbca04",
+    "description": "Medium pull request"
+  },
+  {
+    "name": "size: l",
+    "color": "d93f0b",
+    "description": "Large pull request"
+  },
+  {
+    "name": "size: xl",
+    "color": "b60205",
+    "description": "Very large pull request"
+  },
+  {
+    "name": "priority: high",
+    "color": "b60205",
+    "description": "High priority"
+  },
+  {
+    "name": "priority: low",
+    "color": "cfd3d7",
+    "description": "Low priority"
+  },
+  {
+    "name": "good first issue",
+    "color": "7057ff",
+    "description": "Good for newcomers"
+  },
+  {
+    "name": "help wanted",
+    "color": "008672",
+    "description": "Maintainer would welcome help"
+  },
+  {
+    "name": "breaking-change",
+    "color": "b60205",
+    "description": "Breaking change"
+  },
+  {
+    "name": "skip-changelog",
+    "color": "ededed",
+    "description": "Exclude from release notes"
+  },
+  {
+    "name": "dependencies",
+    "color": "0366d6",
+    "description": "Dependency update"
+  },
+  {
+    "name": "automerge",
+    "color": "0e8a16",
+    "description": "Eligible for safe automerge"
+  },
+  {
+    "name": "discussion: idea",
+    "color": "bfdadc",
+    "description": "Idea discussion"
+  }
+]

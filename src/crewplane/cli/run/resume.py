@@ -200,9 +200,11 @@ def print_dry_run_resume_advisory(
             source_run_id = (
                 source_run.manifest.run_id if source_run is not None else "unknown"
             )
+            resumed_nodes = ", ".join(resume_plan.resumed_node_ids)
             console.print(
                 "Resume advisory: would_resume "
-                f"{len(resume_plan.resumed_node_ids)} node(s) from {source_run_id}"
+                f"{len(resume_plan.resumed_node_ids)} node(s) from {source_run_id} "
+                f"(nodes: {resumed_nodes})"
             )
         case "execute_full":
             console.print("Resume advisory: would_execute_full_run")

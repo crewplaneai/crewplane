@@ -12,7 +12,7 @@ from crewplane.core.preflight.models import (
 )
 
 from ..cleanup_notes import note_cleanup_failure
-from ..git import GitCommand, git
+from ..git import GitCommand, git, git_error
 from ..locks import git_metadata_lock
 from .protected_refs import PROTECTED_REF_PREFIX
 from .refs import checked_ref, safe_file_component, safe_ref_component
@@ -30,17 +30,48 @@ def verify_source_commit_available(
     source: WorkspaceSourceSnapshot,
     source_ref: WorktreeSourceRef,
 ) -> None:
-    with TemporaryDirectory(prefix="crewplane-lineage-verify-") as temp_dir:
-        git_dir = Path(temp_dir) / "verify.git"
-        git(Path(temp_dir)).run(
-            "init",
-            "--bare",
-            f"--object-format={source.object_format}",
-            git_dir.as_posix(),
-        )
-        command = git(git_dir)
-        _fetch_commit_for_verification(command, source, source.run_base_commit)
-        _verify_source_commit_available(source, command, source_ref, set())
+    pending_sources = [source_ref]
+    visited_sources: set[int] = set()
+    while pending_sources:
+        pending_source = pending_sources.pop()
+        if id(pending_source) in visited_sources:
+            continue
+        visited_sources.add(id(pending_source))
+        if not _source_requires_bundle(pending_source) and not (
+            pending_source.source_kind == "project"
+            and pending_source.source_commit == source.run_base_commit
+        ):
+            raise RuntimeError(
+                "Workspace lineage source commit is unavailable from recorded "
+                "lineage and requires a recorded bundle."
+            )
+        pending_sources.extend(pending_source.upstream_sources)
+
+    with TemporaryDirectory(prefix="crewplane-lineage-verify-") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        try:
+            git(temp_dir).run(
+                "init",
+                "--bare",
+                f"--object-format={source.object_format}",
+            )
+            command = git(temp_dir)
+            _fetch_commit_for_verification(command, source, source.run_base_commit)
+            _verify_source_commit_available(source, command, source_ref, set())
+        except subprocess.CalledProcessError as exc:
+            detail = (
+                git_error(exc)
+                if isinstance(exc.stderr, bytes) and exc.stderr.strip()
+                else "Git did not provide diagnostic output."
+            )
+            safe_detail = detail.replace(
+                temp_dir.as_posix(),
+                "<isolated verification repository>",
+            )
+            raise RuntimeError(
+                "Workspace lineage source verification failed while validating "
+                f"recorded Git artifacts: {safe_detail}"
+            ) from exc
 
 
 def _ensure_source_commit_available(
@@ -391,6 +422,7 @@ def _import_source_bundle(
     with git_metadata_lock(Path(source.common_git_dir)):
         command.run(
             "fetch",
+            "--no-auto-maintenance",
             bundle_path.as_posix(),
             f"{source_ref.bundle_ref}:{import_ref}",
         )
@@ -404,6 +436,7 @@ def _fetch_bundle_for_verification(
     import_ref = _import_ref_for_source_commit(source_ref.source_commit)
     command.run(
         "fetch",
+        "--no-auto-maintenance",
         bundle_path.as_posix(),
         f"{source_ref.bundle_ref}:{import_ref}",
     )
@@ -416,6 +449,9 @@ def _fetch_commit_for_verification(
 ) -> None:
     command.run(
         "fetch",
+        "--no-auto-maintenance",
+        "--depth=1",
+        "--no-tags",
         Path(source.git_top_level).as_posix(),
         f"{commit}:{_import_ref_for_source_commit(commit)}",
     )

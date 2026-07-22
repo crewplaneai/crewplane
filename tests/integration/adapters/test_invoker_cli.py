@@ -87,6 +87,19 @@ class CliInvokerAdapterTests(unittest.TestCase):
 
         self.assertEqual(plan.cmd[0], expected_executable)
 
+    def test_invocation_plan_preserves_missing_bare_cli_executable(
+        self,
+    ) -> None:
+        with patch.dict(os.environ, {"PATH": ""}):
+            plan = build_cli_invocation_plan(
+                AgentConfig(cli_cmd=["missing-provider"]),
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+            )
+
+        self.assertEqual(plan.cmd[0], "missing-provider")
+
     def test_invocation_plan_preserves_relative_path_cli_executable(
         self,
     ) -> None:

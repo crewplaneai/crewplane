@@ -1,0 +1,85 @@
+name: sync-labels
+
+on:
+  push:
+    branches: ["master"]
+    paths:
+      - ".github/labels.json"
+      - ".github/workflows/sync-labels.yml"
+  workflow_dispatch:
+    inputs:
+      prune:
+        description: "Delete repository labels not present in .github/labels.json"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: sync-labels-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync-labels:
+    name: sync-labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Reject non-master runs
+        if: github.ref != 'refs/heads/master'
+        run: |
+          echo "Label synchronization must run from master." >&2
+          exit 1
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Sync labels
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          PRUNE: ${{ inputs.prune || 'false' }}
+        with:
+          script: |
+            const fs = require("fs");
+            const desired = JSON.parse(fs.readFileSync(".github/labels.json", "utf8"));
+            const desiredNames = new Set(desired.map(label => label.name));
+            const {owner, repo} = context.repo;
+
+            for (const label of desired) {
+              try {
+                await github.rest.issues.updateLabel({
+                  owner,
+                  repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+              }
+            }
+
+            if (process.env.PRUNE === "true") {
+              const existing = await github.paginate(github.rest.issues.listLabelsForRepo, {
+                owner,
+                repo,
+                per_page: 100
+              });
+              for (const label of existing) {
+                if (!desiredNames.has(label.name)) {
+                  await github.rest.issues.deleteLabel({owner, repo, name: label.name});
+                }
+              }
+            }
