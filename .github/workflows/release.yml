@@ -42,7 +42,7 @@ jobs:
       - name: Resolve and verify current release source
         id: release-source
         run: |
-          release_commit="$(git rev-parse --verify HEAD^{commit})"
+          release_commit="$(git rev-parse --verify 'HEAD^{commit}')"
           if [ "$release_commit" != "$GITHUB_SHA" ]; then
             echo "Release tag must point to the dispatched master commit." >&2
             exit 1

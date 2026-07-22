@@ -204,6 +204,10 @@ def test_production_release_workflow_reuses_release_tool_without_pypi_publish() 
     release_source_guard = verify_steps[2]
     assert release_source_guard["name"] == "Resolve and verify current release source"
     assert (
+        "release_commit=\"$(git rev-parse --verify 'HEAD^{commit}')\""
+        in release_source_guard["run"]
+    )
+    assert (
         'if [ "$release_commit" != "$GITHUB_SHA" ]; then'
         in (release_source_guard["run"])
     )
