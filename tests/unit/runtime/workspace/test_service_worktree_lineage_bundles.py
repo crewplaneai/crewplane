@@ -262,6 +262,7 @@ def test_verify_source_commit_available_uses_bundles_for_source_verification(
         "--format=%(refname) %(objectname)",
     )
     original_run = GitCommand.run
+    verification_fetches: list[tuple[str, ...]] = []
 
     def reject_source_ref_update(
         self: GitCommand,
@@ -269,6 +270,8 @@ def test_verify_source_commit_available_uses_bundles_for_source_verification(
     ) -> subprocess.CompletedProcess[bytes]:
         if self.cwd == repo and args and args[0] == "update-ref":
             raise AssertionError("lineage verification mutated a source ref")
+        if self.cwd != repo and args and args[0] == "fetch":
+            verification_fetches.append(args)
         return original_run(self, *args)
 
     monkeypatch.setattr(GitCommand, "run", reject_source_ref_update)
@@ -301,6 +304,8 @@ def test_verify_source_commit_available_uses_bundles_for_source_verification(
         ),
     )
 
+    assert verification_fetches
+    assert all("--no-auto-maintenance" in args for args in verification_fetches)
     assert not git_commit_exists(repo, first.commit)
     assert not git_commit_exists(repo, second.commit)
     assert (

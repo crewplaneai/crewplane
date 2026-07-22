@@ -422,6 +422,7 @@ def _import_source_bundle(
     with git_metadata_lock(Path(source.common_git_dir)):
         command.run(
             "fetch",
+            "--no-auto-maintenance",
             bundle_path.as_posix(),
             f"{source_ref.bundle_ref}:{import_ref}",
         )
@@ -435,6 +436,7 @@ def _fetch_bundle_for_verification(
     import_ref = _import_ref_for_source_commit(source_ref.source_commit)
     command.run(
         "fetch",
+        "--no-auto-maintenance",
         bundle_path.as_posix(),
         f"{source_ref.bundle_ref}:{import_ref}",
     )
@@ -447,6 +449,7 @@ def _fetch_commit_for_verification(
 ) -> None:
     command.run(
         "fetch",
+        "--no-auto-maintenance",
         "--depth=1",
         "--no-tags",
         Path(source.git_top_level).as_posix(),
