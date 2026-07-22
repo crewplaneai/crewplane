@@ -11,6 +11,21 @@ Use this page for exact CLI syntax. For task-oriented guidance, start with
 | `crewplane run` | Execute, dry-run, or force a workflow run. |
 | `crewplane cleanup workspaces` | Remove generated workspace cache entries. |
 
+## Global Options
+
+Print the installed package release version and exit:
+
+```bash
+crewplane --version
+crewplane -v
+```
+
+Both aliases print one line in this format:
+
+```text
+crewplane <installed-version>
+```
+
 ## `crewplane init`
 
 Initialize project-local config and example workflows.

@@ -109,6 +109,7 @@ test-results/
 .claude/
 .kilocode/
 .kiro/
+.a-temp/
 
 # ---- Generated demos / recordings (commit only curated assets) ----
 *.cast

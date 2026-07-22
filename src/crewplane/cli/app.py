@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 from dataclasses import dataclass
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Annotated
 
@@ -33,6 +34,30 @@ from .run.resume import print_dry_run_resume_advisory
 
 app = typer.Typer(name="crewplane", help="Multi-agent workflow runner")
 app.add_typer(cleanup_app, name="cleanup")
+
+
+def _print_version(show_version: bool) -> None:
+    if not show_version:
+        return
+
+    typer.echo(f"crewplane {distribution_version('crewplane')}")
+    raise typer.Exit()
+
+
+@app.callback()
+def main(
+    _version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            "-v",
+            callback=_print_version,
+            help="Show the installed Crewplane package version and exit.",
+            is_eager=True,
+        ),
+    ] = False,
+) -> None:
+    """Multi-agent workflow runner."""
 
 
 @dataclass(frozen=True)
