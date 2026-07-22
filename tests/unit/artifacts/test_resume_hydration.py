@@ -12,7 +12,6 @@ from crewplane.artifacts.naming import (
     build_generated_file_result_dir_name,
     build_node_state_filename,
 )
-from crewplane.artifacts.resume.hydration import hydrate_resume_frontier
 from crewplane.artifacts.resume.validation import (
     ValidatedResumeFrontier,
     validate_resume_frontier,
@@ -102,7 +101,7 @@ def test_hydrate_rechecks_source_hash_after_validation(tmp_path) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
 
     with pytest.raises(ValueError, match="hash changed"):
-        hydrate_resume_frontier(frontier, plan, output)
+        hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
 
 def test_hydrate_rechecks_target_after_descriptor_bound_copy(
@@ -123,7 +122,7 @@ def test_hydrate_rechecks_target_after_descriptor_bound_copy(
     )
 
     with pytest.raises(ValueError, match="Hydrated resume artifact size changed"):
-        hydrate_resume_frontier(frontier, plan, output)
+        hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
 
 def test_hydrate_resume_frontier_records_findings_hash_when_required(tmp_path) -> None:
@@ -134,7 +133,7 @@ def test_hydrate_resume_frontier_records_findings_hash_when_required(tmp_path) -
     )
     output = OutputManager("Workflow", base_dir=tmp_path)
 
-    hydrate_resume_frontier(frontier, plan, output)
+    hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
     resume_source = json.loads(
         (output.stages_dir / "a" / "resume-source.json").read_text(encoding="utf-8")
