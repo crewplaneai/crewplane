@@ -1,7 +1,5 @@
 version: 2
 
-# One version-update PR for repository automation:
-# GitHub Actions plus pre-commit hooks.
 multi-ecosystem-groups:
   ci-tooling:
     schedule:
@@ -9,13 +7,9 @@ multi-ecosystem-groups:
       day: "monday"
       time: "08:30"
       timezone: "America/Vancouver"
-    labels:
-      - "dependencies"
-      - "status: needs-triage"
-      - "area: ci"
 
 updates:
-  # One version-update PR for all Python dependencies.
+  # One PR for all Python dependency updates.
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
@@ -36,16 +30,23 @@ updates:
         patterns:
           - "*"
 
-  # Included in the shared ci-tooling PR.
+  # GitHub Actions and pre-commit share one ci-tooling PR.
   - package-ecosystem: "github-actions"
     directory: "/"
+    labels:
+      - "dependencies"
+      - "status: needs-triage"
+      - "area: ci"
     patterns:
       - "*"
     multi-ecosystem-group: "ci-tooling"
 
-  # Included in the same shared ci-tooling PR.
   - package-ecosystem: "pre-commit"
     directory: "/"
+    labels:
+      - "dependencies"
+      - "status: needs-triage"
+      - "area: ci"
     patterns:
       - "*"
     multi-ecosystem-group: "ci-tooling"

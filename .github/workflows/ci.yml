@@ -33,7 +33,7 @@ jobs:
         with:
           version: "0.10.9"
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          prune-cache: true
 
       - name: Install dependencies
         run: uv sync --locked --extra dev
@@ -73,7 +73,7 @@ jobs:
         with:
           version: "0.10.9"
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          prune-cache: true
 
       - name: Install dependencies
         run: uv sync --locked --extra dev
@@ -104,7 +104,7 @@ jobs:
         with:
           version: "0.10.9"
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          prune-cache: true
 
       - name: Build and smoke-test package
         run: make install-smoke-pip
