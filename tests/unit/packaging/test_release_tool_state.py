@@ -39,6 +39,17 @@ def test_release_version_maps_python_and_npm_versions() -> None:
         state.ReleaseVersion.from_project("1.2.3+local")
 
 
+def test_default_minimal_repo_version_maps_to_expected_npm_version(
+    tmp_path: Path,
+) -> None:
+    write_minimal_repo(tmp_path)
+    context = state.read_release_context(tmp_path)
+
+    assert context.version.project == "1.2.3-alpha.4"
+    assert context.version.python == "1.2.3a4"
+    assert context.version.npm == "1.2.3-alpha.4"
+
+
 def test_command_runner_reports_stdout_and_stderr_on_failure(tmp_path: Path) -> None:
     runner = state.CommandRunner()
 
@@ -74,8 +85,8 @@ def test_metadata_sync_refreshes_and_reads_back_generated_files(
 
     assert ("uv", "lock") in runner.commands
     package = json.loads((tmp_path / "packaging" / "npm" / "package.json").read_text())
-    assert package["version"] == "1.2.3-alpha.4"
-    assert package["crewplane"]["pythonPackageVersion"] == "1.2.3-alpha.4"
+    assert package["version"] == context.version.npm
+    assert package["crewplane"]["pythonPackageVersion"] == context.version.project
     assert f'CREWPLANE_VERSION="${{CREWPLANE_VERSION:-{context.version.project}}}"' in (
         tmp_path / "install.sh"
     ).read_text(encoding="utf-8")
@@ -86,7 +97,7 @@ def test_metadata_sync_refreshes_and_reads_back_generated_files(
     formula = (
         tmp_path / "packaging" / "homebrew" / "Formula" / "crewplane.rb"
     ).read_text(encoding="utf-8")
-    assert 'version "1.2.3-alpha.4"' in formula
+    assert f'version "{context.version.npm}"' in formula
     assert 'branch: "master"' in formula
     assert not state.verify_generated_metadata(context, None)
 

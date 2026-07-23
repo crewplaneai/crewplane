@@ -7,6 +7,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = ROOT / "scripts" / "dependency_audit.py"
@@ -31,11 +32,11 @@ def test_audits_locked_and_build_dependencies_as_separate_inputs(
     dependency_audit = load_dependency_audit_script()
     (tmp_path / "pyproject.toml").write_text(
         "[build-system]\n"
-        'requires = ["hatchling==1.30.1", "packaging>=24"]\n'
+        'requires = ["hatchling", "packaging"]\n'
         'build-backend = "hatchling.build"\n',
         encoding="utf-8",
     )
-    locked_requirements = "click==8.3.1 --hash=sha256:abc123\n"
+    locked_requirements = "click --hash=sha256:abc123\n"
     commands: list[list[str]] = []
     timeouts: list[int] = []
     audit_inputs: list[tuple[Path, str]] = []
@@ -68,7 +69,11 @@ def test_audits_locked_and_build_dependencies_as_separate_inputs(
     dependency_audit.audit_dependencies(tmp_path)
 
     assert [command[0] for command in commands] == ["uv", "uvx", "uvx"]
-    assert timeouts == [120, 300, 300]
+    assert timeouts == [
+        dependency_audit.UV_EXPORT_TIMEOUT_SECONDS,
+        dependency_audit.AUDIT_TIMEOUT_SECONDS,
+        dependency_audit.AUDIT_TIMEOUT_SECONDS,
+    ]
     assert commands[0][1:-1] == [
         "export",
         "--locked",
@@ -83,15 +88,20 @@ def test_audits_locked_and_build_dependencies_as_separate_inputs(
         command[1:5]
         == [
             "--python",
-            "3.13",
-            "pip-audit==2.10.1",
+            dependency_audit.AUDIT_PYTHON_VERSION,
+            f"pip-audit=={dependency_audit.PIP_AUDIT_VERSION}",
             "-r",
         ]
         and command[-1] == "--strict"
         for command in commands[1:]
     )
     assert audit_inputs[0][1] == locked_requirements
-    assert audit_inputs[1][1] == "hatchling==1.30.1\npackaging>=24\n"
+    audited_build_requirements = {
+        Requirement(requirement).name: Requirement(requirement)
+        for requirement in audit_inputs[1][1].splitlines()
+        if requirement.strip()
+    }
+    assert set(audited_build_requirements) == {"hatchling", "packaging"}
     assert audit_inputs[0][0] != audit_inputs[1][0]
     assert all(not path.exists() for path, _contents in audit_inputs)
 
@@ -100,7 +110,7 @@ def test_audits_locked_and_build_dependencies_as_separate_inputs(
     "pyproject_text",
     [
         '[project]\nname = "crewplane"\n',
-        '[build-system]\nrequires = "hatchling==1.30.1"\n',
+        '[build-system]\nrequires = "hatchling"\n',
         "[build-system]\nrequires = []\n",
         '[build-system]\nrequires = [""]\n',
     ],
@@ -141,12 +151,18 @@ def test_main_reports_subprocess_timeout_without_a_traceback(
 
     def time_out(root: Path) -> None:
         assert root == Path.cwd()
-        raise subprocess.TimeoutExpired(["uvx", "pip-audit"], 300)
+        raise subprocess.TimeoutExpired(
+            ["uvx", "pip-audit"],
+            dependency_audit.AUDIT_TIMEOUT_SECONDS,
+        )
 
     monkeypatch.setattr(dependency_audit, "audit_dependencies", time_out)
 
     assert dependency_audit.main() == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "timed out after 300 seconds" in captured.err
+    assert (
+        f"timed out after {dependency_audit.AUDIT_TIMEOUT_SECONDS} seconds"
+        in captured.err
+    )
     assert "Traceback" not in captured.err

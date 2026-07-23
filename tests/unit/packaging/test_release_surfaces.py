@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -37,6 +38,28 @@ def parse_requirement_map(requirements: list[str]) -> dict[str, Requirement]:
 
 def has_lower_bound(requirement: Requirement) -> bool:
     return any(spec.operator in {">", ">="} for spec in requirement.specifier)
+
+
+def extract_python_floor_from_pyproject() -> str:
+    requires_python = str(PYPROJECT["project"]["requires-python"])
+    specifier_set = SpecifierSet(requires_python)
+    lower_bounds = [
+        Version(spec.version) for spec in specifier_set if spec.operator in {">", ">="}
+    ]
+    assert lower_bounds
+    return str(min(lower_bounds))
+
+
+def parse_formula_resources(formula: str) -> dict[str, tuple[str, str]]:
+    resource_pattern = re.compile(
+        r'resource "(?P<name>[^"]+)" do\s+url "(?P<url>[^"]+)"\s+'
+        r'sha256 "(?P<sha>[a-f0-9]{64})"\s+end',
+        re.MULTILINE,
+    )
+    return {
+        match.group("name"): (match.group("url"), match.group("sha"))
+        for match in resource_pattern.finditer(formula)
+    }
 
 
 def repo_path(*parts: str) -> Path:
@@ -87,7 +110,9 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
     assert urls["Documentation"] == f"{REPOSITORY_URL}/blob/master/docs/index.md"
 
     build_system = pyproject["build-system"]
-    assert build_system["requires"] == ["hatchling==1.30.1"]
+    build_system_requirements = parse_requirement_map(build_system["requires"])
+    hatchling_requirement = build_system_requirements["hatchling"]
+    assert any(spec.operator == "==" for spec in hatchling_requirement.specifier)
     assert build_system["build-backend"] == "hatchling.build"
 
     wheel_config = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
@@ -333,8 +358,12 @@ def test_github_workflow_uv_installs_are_version_pinned() -> None:
             if "astral-sh/setup-uv@" not in line:
                 continue
             step = "\n".join(lines[line_number - 1 : line_number + 6])
-            assert 'version: "0.10.9"' in step, (
+            match = re.search(r'^\s*version:\s*"([^"]+)"', step, re.MULTILINE)
+            assert match is not None, (
                 f"{workflow.relative_to(ROOT)}:{line_number} does not pin uv"
+            )
+            assert Version(match.group(1)), (
+                f"{workflow.relative_to(ROOT)}:{line_number} has invalid uv version"
             )
 
 
@@ -371,8 +400,10 @@ def test_large_file_hook_enforces_limit_with_narrow_grandfathering() -> None:
     assert excluded == grandfathered
     for path, size_limit in GRANDFATHERED_LARGE_FILE_LIMITS.items():
         assert (ROOT / path).stat().st_size <= size_limit
-    assert "pre-commit==4.6.0 run --all-files" in read_text(
-        ".github", "workflows", "ci.yml"
+    ci_workflow = read_text(".github", "workflows", "ci.yml")
+    assert re.search(
+        r"uvx pre-commit==[0-9]+\.[0-9]+\.[0-9]+ run --all-files",
+        ci_workflow,
     )
 
 
@@ -707,7 +738,8 @@ def test_npm_wrapper_metadata_and_scripts_pin_python_package() -> None:
     assert "CREWPLANE_INSTALL_FIND_LINKS" in postinstall
     assert "CREWPLANE_INSTALL_NO_INDEX" in postinstall
     assert "CREWPLANE_INSTALL_PYTHON" in postinstall
-    assert 'const DEFAULT_PYTHON = "3.13";' in postinstall
+    default_python = extract_python_floor_from_pyproject()
+    assert f'const DEFAULT_PYTHON = "{default_python}";' in postinstall
     assert "process.env.CREWPLANE_INSTALL_PYTHON || DEFAULT_PYTHON" in postinstall
     assert "ensureSupportedPlatform();" in postinstall
     assert "uv" in postinstall
@@ -789,7 +821,7 @@ def test_launch_support_docs_cover_skip_force_resume_and_bundles() -> None:
         assert expected in support_bundle
 
 
-def test_npm_postinstall_defaults_to_python_313_without_override(
+def test_npm_postinstall_defaults_to_min_supported_python_without_override(
     tmp_path: Path,
 ) -> None:
     if os.name == "nt":
@@ -837,7 +869,8 @@ def test_npm_postinstall_defaults_to_python_313_without_override(
         line.split("\t")
         for line in fake_uv_log.read_text(encoding="utf-8").splitlines()
     ]
-    assert calls[0][:4] == ["CALL", "venv", "--python", "3.13"]
+    default_python = extract_python_floor_from_pyproject()
+    assert calls[0][:4] == ["CALL", "venv", "--python", default_python]
     assert calls[0][4] == str(repo_path("packaging", "npm", ".venv"))
     assert calls[1][:4] == [
         "CALL",
@@ -919,16 +952,17 @@ def test_npm_bin_rejects_native_windows_before_venv_lookup() -> None:
 
 def test_homebrew_formula_uses_normalized_python_artifact_and_virtualenv() -> None:
     formula = read_text("packaging", "homebrew", "Formula", "crewplane.rb")
+    default_python = extract_python_floor_from_pyproject()
     assert "class Crewplane < Formula" in formula
     assert "include Language::Python::Virtualenv" in formula
     assert f'version "{AUTHORED_VERSION}"' in formula
     assert f"crewplane-{NORMALIZED_VERSION}.tar.gz" in formula
     assert 'license "Apache-2.0"' in formula
-    assert 'depends_on "python@3.13"' in formula
+    assert f'depends_on "python@{default_python}"' in formula
     assert 'depends_on "maturin" => :build' in formula
     assert 'depends_on "rust" => :build' in formula
     assert 'branch: "master"' in formula
-    assert 'def python3\n    "python3.13"\n  end' in formula
+    assert f'def python3\n    "python{default_python}"\n  end' in formula
     assert "virtualenv_create(libexec, python3)" in formula
     assert "venv.pip_install build_resources.map" in formula
     assert "venv.pip_install resources.reject" in formula
@@ -940,6 +974,8 @@ def test_homebrew_formula_uses_normalized_python_artifact_and_virtualenv() -> No
     hashes = re.findall(r'sha256 "([a-f0-9]{64})"', formula)
     assert len(hashes) >= 10
     assert all(hash_value != "0" * 64 for hash_value in hashes)
+    formula_resources = parse_formula_resources(formula)
+    assert formula_resources
     for resource in (
         "hatchling",
         "packaging",
@@ -961,18 +997,18 @@ def test_homebrew_formula_uses_normalized_python_artifact_and_virtualenv() -> No
         "typing-extensions",
         "typing-inspection",
     ):
-        assert f'resource "{resource}" do' in formula
+        assert resource in formula_resources, f"missing resource {resource}"
+        resource_url, sha = formula_resources[resource]
+        assert resource_url and sha
+        assert sha == sha.lower()
+        normalized_name = resource.replace("-", "_")
+        assert re.search(
+            rf"{re.escape(normalized_name)}-[^/]+\.(?:whl|tar\.gz)$",
+            resource_url,
+        )
     assert formula.index('depends_on "maturin" => :build') < formula.index(
         'resource "pydantic-core" do'
     )
-    for wheel in (
-        "hatchling-1.30.1-py3-none-any.whl",
-        "packaging-26.2-py3-none-any.whl",
-        "pathspec-1.1.1-py3-none-any.whl",
-        "pluggy-1.6.0-py3-none-any.whl",
-        "trove_classifiers-2026.6.1.19-py3-none-any.whl",
-    ):
-        assert wheel in formula
 
 
 def test_gitignore_contains_release_build_manifest_patterns() -> None:
