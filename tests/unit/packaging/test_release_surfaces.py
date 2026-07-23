@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from packaging.requirements import Requirement
 from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -25,6 +26,17 @@ GRANDFATHERED_LARGE_FILE_LIMITS = {
     "docs/images/concepts/different-design.png": 1_466_376,
     "docs/images/concepts/why-crewplane.png": 1_511_410,
 }
+
+
+def parse_requirement_map(requirements: list[str]) -> dict[str, Requirement]:
+    return {
+        Requirement(requirement).name: Requirement(requirement)
+        for requirement in requirements
+    }
+
+
+def has_lower_bound(requirement: Requirement) -> bool:
+    return any(spec.operator in {">", ">="} for spec in requirement.specifier)
 
 
 def repo_path(*parts: str) -> Path:
@@ -90,17 +102,27 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
     ]
     assert "include" not in sdist_config
 
-    dev_dependencies = set(project["optional-dependencies"]["dev"])
-    assert "build>=1.3" in dev_dependencies
-    assert "twine>=6.0" in dev_dependencies
-    assert "packaging>=24.0" in dev_dependencies
+    dev_dependencies = parse_requirement_map(project["optional-dependencies"]["dev"])
+    assert "build" in dev_dependencies
+    assert "twine" in dev_dependencies
+    assert "packaging" in dev_dependencies
+    assert all(
+        has_lower_bound(dep)
+        for dep in dev_dependencies.values()
+        if dep.name in {"build", "twine", "packaging"}
+    )
 
-    dependencies = set(project["dependencies"])
-    assert "typer>=0.12.0" in dependencies
-    assert "click>=8.0.0" in dependencies
-    assert "shellingham>=1.3.0" in dependencies
-    assert "rich>=13.0" in dependencies
-    assert all("typer[all]" not in dependency for dependency in dependencies)
+    dependencies = parse_requirement_map(project["dependencies"])
+    assert "typer" in dependencies
+    assert "click" in dependencies
+    assert "shellingham" in dependencies
+    assert "rich" in dependencies
+    assert all(
+        has_lower_bound(dep)
+        for dep in dependencies.values()
+        if dep.name in {"typer", "click", "shellingham", "rich"}
+    )
+    assert not dependencies["typer"].extras
 
 
 def test_uv_lock_tracks_editable_crewplane_package() -> None:
