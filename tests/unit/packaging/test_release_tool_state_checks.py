@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import sys
+from packaging.version import InvalidVersion, Version
 
 _LOCAL_TEST_DIR = Path(__file__).resolve().parent
 if str(_LOCAL_TEST_DIR) not in sys.path:
@@ -774,17 +775,18 @@ def test_pypi_registry_lookup_reports_highest_published_stable_version(
 ) -> None:
     write_minimal_repo(tmp_path, "1.2.3")
     context = state.read_release_context(tmp_path)
+    releases = {
+        "1.2.3": [],
+        "2.0.0-alpha.1": [{}],
+        "1.9.0": [{}],
+        "invalid": [{}],
+        "3.0.0": [],
+    }
 
     def fake_fetch(_url: str) -> dict[str, object]:
         del _url
         return {
-            "releases": {
-                "1.2.3": [],
-                "2.0.0-alpha.1": [{}],
-                "1.9.0": [{}],
-                "invalid": [{}],
-                "3.0.0": [],
-            }
+            "releases": releases,
         }
 
     monkeypatch.setattr(state.state_types, "fetch_registry_json", fake_fetch)
@@ -792,7 +794,18 @@ def test_pypi_registry_lookup_reports_highest_published_stable_version(
     release = state.query_pypi_release(context)
 
     assert release.exists
-    assert release.latest_stable == "1.9.0"
+    stable_versions: list[Version] = []
+    for version, files in releases.items():
+        if not files:
+            continue
+        try:
+            parsed = Version(version)
+        except InvalidVersion:
+            continue
+        if parsed.is_prerelease:
+            continue
+        stable_versions.append(parsed)
+    assert release.latest_stable == str(max(stable_versions))
 
 
 def test_remote_git_tag_uses_peeled_annotated_tag_commit(tmp_path: Path) -> None:

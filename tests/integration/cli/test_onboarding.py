@@ -68,15 +68,18 @@ def test_root_help_lists_onboarding_command() -> None:
     assert ONBOARDING_COMMAND_HELP in result.output
 
 
-def test_cli_onboarding_non_tty_does_not_prompt_or_mutate() -> None:
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        result = runner.invoke(cli.app, ["onboarding"])
+def test_cli_onboarding_non_tty_does_not_prompt_or_mutate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
 
-        assert result.exit_code == 0
-        assert "Onboarding is interactive." in result.output
-        assert "crewplane onboarding" in result.output
-        assert not Path(".crewplane").exists()
+    result = CliRunner().invoke(cli.app, ["onboarding"])
+
+    assert result.exit_code == 0
+    assert "Onboarding is interactive." in result.output
+    assert "crewplane onboarding" in result.output
+    assert not (tmp_path / ".crewplane").exists()
 
 
 def test_missing_state_dir_defaults_to_no_init(tmp_path: Path) -> None:

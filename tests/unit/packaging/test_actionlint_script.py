@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -8,6 +9,13 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 ACTIONLINT_SCRIPT = ROOT / "scripts" / "actionlint.sh"
+
+
+def actionlint_version() -> str:
+    script_text = ACTIONLINT_SCRIPT.read_text(encoding="utf-8")
+    match = re.search(r'readonly ACTIONLINT_VERSION="([^"]+)"', script_text)
+    assert match is not None
+    return match.group(1)
 
 
 def run_script_function(
@@ -38,25 +46,25 @@ def run_script_function(
         (
             "Darwin",
             "x86_64",
-            "actionlint_1.7.9_darwin_amd64.tar.gz",
+            f"actionlint_{actionlint_version()}_darwin_amd64.tar.gz",
             "f89a910e90e536f60df7c504160247db01dd67cab6f08c064c1c397b76c91a79",
         ),
         (
             "Darwin",
             "arm64",
-            "actionlint_1.7.9_darwin_arm64.tar.gz",
+            f"actionlint_{actionlint_version()}_darwin_arm64.tar.gz",
             "855e49e823fc68c6371fd6967e359cde11912d8d44fed343283c8e6e943bd789",
         ),
         (
             "Linux",
             "x86_64",
-            "actionlint_1.7.9_linux_amd64.tar.gz",
+            f"actionlint_{actionlint_version()}_linux_amd64.tar.gz",
             "233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4",
         ),
         (
             "Linux",
             "aarch64",
-            "actionlint_1.7.9_linux_arm64.tar.gz",
+            f"actionlint_{actionlint_version()}_linux_arm64.tar.gz",
             "6b82a3b8c808bf1bcd39a95aced22fc1a026eef08ede410f81e274af8deadbbc",
         ),
     ],
@@ -91,7 +99,7 @@ def test_installed_actionlint_ignores_only_the_new_concurrency_queue_key(
     actionlint = fake_bin / "actionlint"
     actionlint.write_text(
         "#!/bin/sh\n"
-        'if [ "$1" = "-version" ]; then printf "1.7.9\\n"; exit 0; fi\n'
+        f'if [ "$1" = "-version" ]; then printf "{actionlint_version()}\\n"; exit 0; fi\n'
         'printf "%s\\n" "$@" > "$ACTIONLINT_CALL_LOG"\n',
         encoding="utf-8",
     )
