@@ -16,10 +16,8 @@
 </div>
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/crewplaneai/crewplane/master/.github/crewplane-splash.png" alt="Crewplane splash" width="80%">
+  <img src="https://github.com/user-attachments/assets/dca2dacb-49e4-4849-b92b-7a47b493ea52" alt="Crewplane Dashboard View" width="80%">
 </div>
-
-> **Public alpha.** Workflow and config compatibility may break before 1.0.
 
 ---
 
@@ -105,7 +103,6 @@ Other methods (pipx, install script, local checkout) are documented in the
 
 </details>
 
-<br/>
 
 > ⚠️ Crewplane does **not** install or manage provider CLIs or credentials. Install and authenticate Claude Code, Copilot CLI, etc. separately.
 
@@ -247,7 +244,9 @@ With `settings.integrations.invoker.implementation: "mock"`, Crewplane validates
 
 <details>
 <summary><strong>How to run them with mock</strong></summary>
+
 1. Uncomment the agents in the generated config (i.e. lines 22-138), keep the `settings.integrations.invoker.implementation` as `mock` so the workflow runs with mock. See [how to turn mock on and off](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/provider-setup.md#turn-mock-mode-onoff) for details.
+
 2. Use the following commands to try it out.
 
 Copy pastable commands for the workflows:
