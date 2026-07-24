@@ -397,12 +397,8 @@ def test_worktree_capture_rejects_unicode_colliding_result_paths(
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
-    if not supports_distinct_names(
-        prepared.cwd, "Cafe\u0301.txt", "Café.txt"
-    ):
-        pytest.skip(
-            "filesystem does not support distinct Unicode-normalized variants"
-        )
+    if not supports_distinct_names(prepared.cwd, "Cafe\u0301.txt", "Café.txt"):
+        pytest.skip("filesystem does not support distinct Unicode-normalized variants")
     (prepared.cwd / "Cafe\u0301.txt").write_text("decomposed\n", encoding="utf-8")
     (prepared.cwd / "Café.txt").write_text("composed\n", encoding="utf-8")
 

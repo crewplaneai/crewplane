@@ -145,7 +145,9 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             self.assertIn("Workflow: Review apps", output_text)
             self.assertIn("Artifact key: review-apps", output_text)
             stages_root = str((tmp_path / ".crewplane" / "execution-stages").resolve())
-            results_root = str((tmp_path / ".crewplane" / "execution-results").resolve())
+            results_root = str(
+                (tmp_path / ".crewplane" / "execution-results").resolve()
+            )
             self.assertRegex(
                 output_text,
                 re.escape(stages_root)

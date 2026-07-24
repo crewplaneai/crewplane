@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import unicodedata
+from collections.abc import Iterable
 from pathlib import Path
 
 from ..git import git

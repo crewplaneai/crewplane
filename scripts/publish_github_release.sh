@@ -365,20 +365,28 @@ publish_github_release() (
     refresh_release_state
     verify_loaded_draft_release "Draft"
   else
-    local release_notes_flags=()
     if [[ -n "$notes_start_tag" ]]; then
-      release_notes_flags=(--notes-start-tag "$notes_start_tag")
+      gh release create "$tag_name" "${release_artifacts[@]}" \
+        --repo "$repository" \
+        --draft \
+        --verify-tag \
+        --generate-notes \
+        --notes "$RELEASE_AUTOMATION_MARKER" \
+        --notes-start-tag "$notes_start_tag" \
+        --title "$tag_name" \
+        --prerelease=false \
+        --latest=false
+    else
+      gh release create "$tag_name" "${release_artifacts[@]}" \
+        --repo "$repository" \
+        --draft \
+        --verify-tag \
+        --generate-notes \
+        --notes "$RELEASE_AUTOMATION_MARKER" \
+        --title "$tag_name" \
+        --prerelease=false \
+        --latest=false
     fi
-    gh release create "$tag_name" "${release_artifacts[@]}" \
-      --repo "$repository" \
-      --draft \
-      --verify-tag \
-      --generate-notes \
-      --notes "$RELEASE_AUTOMATION_MARKER" \
-      "${release_notes_flags[@]}" \
-      --title "$tag_name" \
-      --prerelease=false \
-      --latest=false
     refresh_release_state
     verify_loaded_draft_release "New draft"
   fi
