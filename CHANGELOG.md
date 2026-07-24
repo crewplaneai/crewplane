@@ -4,6 +4,28 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-23
+
+### Added
+
+- Added global `crewplane --version` and `crewplane -v` options that print the installed package version and exit.
+- Added repository contribution and support templates plus automated CI, security, dependency, TestPyPI, and release checks.
+
+### Changed
+
+- Strengthened workspace-aware resume hydration so reusable nodes restore only validated results, findings, generated files, and descriptor-declared lineage artifacts required by downstream worktree and review-loop execution.
+- Dry-run resume advisories now list the exact dependency-closed node IDs selected for hydration.
+- Strengthened cancellation and cleanup handling for workspace-backed provider runs.
+- Refreshed README onboarding, quickstart, workflow, and artifact-layout guidance.
+- Clarified supported platforms as Linux, macOS, and WSL; native Windows remains unsupported.
+- Expanded same-context run-lock troubleshooting and stale-lock recovery guidance.
+
+### Fixed
+
+- Fixed workspace lineage source verification through result bundles.
+- Fixed a Git maintenance race during lineage fetches.
+- Hardened runtime-owned Git environment handling so trusted local lineage fetches are not blocked by inherited transport-policy settings.
+
 ## [0.1.1] - 2026-07-04
 
 ### Added
