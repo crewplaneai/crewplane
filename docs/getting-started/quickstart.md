@@ -189,6 +189,13 @@ To see the same flow with a real provider, watch the Codex walkthrough:
   <video src="https://github.com/user-attachments/assets/01ff3e39-7626-4896-bd18-358f7a15cfcd" controls width="80%" title="First real run demo with Codex"></video>
 </div>
 
+> Alternatively, this video shows the full walkthrough: install Crewplane, initialize a
+> project, run the first mock workflow, inspect artifacts, and onboard a real provider.
+
+<div align="center" style="margin-bottom: 0;">
+  <video src="https://github.com/user-attachments/assets/b6573226-ba31-473e-aaae-ba3ddca2d3cd" controls width="80%"></video>
+</div>
+
 ## Try Another Workflow
 
 The quickstart used the one workflow created directly in

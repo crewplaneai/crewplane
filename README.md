@@ -217,6 +217,16 @@ If you need multiple providers or manual setup, see the
 > **Note:** Treat run artifacts like build outputs: useful for debugging and
 > review, but decide separately what, if anything, belongs in version control.
 
+### Demo walkthrough
+
+Watch the demo below for the full setup flow: install Crewplane, initialize a project, run the first mock workflow, inspect artifacts, and onboard a real provider.
+
+<p align="center" style="margin-bottom: 0;">
+  <video src="https://github.com/user-attachments/assets/b6573226-ba31-473e-aaae-ba3ddca2d3cd" autoplay loop muted playsinline width="1000"></video>
+</p>
+
+---
+
 At this point you have seen the core path: install, run the generated mock
 workflow, inspect artifacts, and prepare a real provider when ready.
 
