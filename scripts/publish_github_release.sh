@@ -286,7 +286,7 @@ refresh_verified_release_plan() {
   if [[ "$line_count" != "3" \
     || ! "$prerelease_line" =~ ^prerelease=(true|false)$ \
     || ! "$latest_line" =~ ^latest=(true|false)$ \
-    || ! "$notes_start_tag_line" =~ ^notes_start_tag=(|v[0-9A-Za-z._!-]+)$ ]]; then
+    || ! "$notes_start_tag_line" =~ ^notes_start_tag=(v[0-9A-Za-z._!-]+)?$ ]]; then
     echo "The verified release plan returned malformed output." >&2
     return 1
   fi

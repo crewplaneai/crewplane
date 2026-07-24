@@ -36,9 +36,9 @@ def print_artifact_locations(
     console.print(f"Workflow: {workflow_name}", style="dim")
     console.print(f"Run ID: {output.run_id}", style="dim")
     console.print(f"Artifact key: {output.task_name}", style="dim")
-    console.print(f"Stages: {output.stages_dir}", style="dim")
-    console.print(f"Results: {output.results_dir}", style="dim")
-    console.print(f"Logs: {output.logs_dir}", style="dim")
+    console.print(f"Stages: {output.stages_dir}", style="dim", soft_wrap=True)
+    console.print(f"Results: {output.results_dir}", style="dim", soft_wrap=True)
+    console.print(f"Logs: {output.logs_dir}", style="dim", soft_wrap=True)
 
 
 def fallback_workflow_name(tasks_file: Path) -> str:
