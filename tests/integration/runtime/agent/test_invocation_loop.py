@@ -102,7 +102,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(child_environment.set["GIT_CONFIG_GLOBAL"], os.devnull)
             self.assertEqual(
                 child_environment.set["GIT_CEILING_DIRECTORIES"],
-                tmp_path.parent.as_posix(),
+                tmp_path.resolve().parent.as_posix(),
             )
             self.assertIn("GIT_DIR", child_environment.unset)
             self.assertIn("GIT_CONFIG_KEY_0", child_environment.unset)
@@ -177,7 +177,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             assert child_environment is not None
             self.assertEqual(
                 child_environment.set["GIT_CEILING_DIRECTORIES"],
-                checkout_root.parent.as_posix(),
+                checkout_root.resolve().parent.as_posix(),
             )
 
     async def test_workspace_retry_reset_runs_before_next_attempt(self) -> None:

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.runtime.workspace.worktree.result_validation import (
+    validate_portable_path_collisions,
     validate_result_tree,
 )
 from tests.helpers.workspace_service import create_git_repo, run_git_text
@@ -25,3 +26,18 @@ def test_validate_result_tree_rejects_reserved_paths_under_project_root(
 
     with pytest.raises(RuntimeError, match="reserved runtime artifact paths"):
         validate_result_tree(repo, tree, "packages/app")
+
+
+@pytest.mark.parametrize(
+    ("left_path", "right_path"),
+    (
+        ("Case.txt", "case.txt"),
+        ("Cafe\u0301.txt", "Café.txt"),
+    ),
+)
+def test_validate_portable_path_collisions(
+    left_path: str,
+    right_path: str,
+) -> None:
+    with pytest.raises(RuntimeError, match="case or Unicode normalization"):
+        validate_portable_path_collisions((left_path, right_path))

@@ -105,7 +105,7 @@ def test_workspace_git_base_environment_supports_known_variants(
     assert env["GIT_NO_LAZY_FETCH"] == "1"
     assert env["GIT_TERMINAL_PROMPT"] == "0"
     assert env["GIT_OPTIONAL_LOCKS"] == "0"
-    assert env["GIT_CEILING_DIRECTORIES"] == tmp_path.as_posix()
+    assert env["GIT_CEILING_DIRECTORIES"] == tmp_path.resolve().as_posix()
 
 
 def test_sanitized_workspace_git_environment_injects_temporary_index(
@@ -159,7 +159,7 @@ def test_workspace_child_environment_uses_shared_unset_and_ceiling_policy(
     assert "GIT_PROTOCOL_FROM_USER" not in child.unset
     assert "GIT_ALLOW_PROTOCOL" not in child.unset
     assert child.set["GIT_CONFIG_NOSYSTEM"] == "1"
-    assert child.set["GIT_CEILING_DIRECTORIES"] == tmp_path.as_posix()
+    assert child.set["GIT_CEILING_DIRECTORIES"] == tmp_path.resolve().as_posix()
     assert "GIT_OPTIONAL_LOCKS" not in child.set
     assert int(child.set["GIT_CONFIG_COUNT"]) > 0
 

@@ -18,6 +18,29 @@ from tests.helpers.workspace_service import (
 )
 
 
+def supports_distinct_names(
+    root: Path,
+    first_name: str,
+    second_name: str,
+) -> bool:
+    probe = root / "collision-probe"
+    try:
+        probe.mkdir()
+    except OSError:
+        return False
+    try:
+        try:
+            (probe / first_name).write_text("first\n", encoding="utf-8")
+            (probe / second_name).write_text("second\n", encoding="utf-8")
+            return len(list(probe.iterdir())) == 2
+        except OSError:
+            return False
+    finally:
+        for path in probe.iterdir():
+            path.unlink()
+        probe.rmdir()
+
+
 def test_worktree_retry_reset_rejects_own_protected_ref_drift(
     tmp_path: Path,
 ) -> None:
@@ -339,6 +362,8 @@ def test_worktree_capture_rejects_case_colliding_result_paths(
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
+    if not supports_distinct_names(prepared.cwd, "Case.txt", "case.txt"):
+        pytest.skip("filesystem does not support distinct case variants")
     (prepared.cwd / "Case.txt").write_text("upper\n", encoding="utf-8")
     (prepared.cwd / "case.txt").write_text("lower\n", encoding="utf-8")
 
@@ -372,6 +397,8 @@ def test_worktree_capture_rejects_unicode_colliding_result_paths(
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
+    if not supports_distinct_names(prepared.cwd, "Cafe\u0301.txt", "Café.txt"):
+        pytest.skip("filesystem does not support distinct Unicode-normalized variants")
     (prepared.cwd / "Cafe\u0301.txt").write_text("decomposed\n", encoding="utf-8")
     (prepared.cwd / "Café.txt").write_text("composed\n", encoding="utf-8")
 
