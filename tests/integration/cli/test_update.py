@@ -7,6 +7,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from rich.console import Console
 from typer.testing import CliRunner
 
@@ -18,9 +19,10 @@ def test_help_lists_global_update_option() -> None:
     result = CliRunner().invoke(cli.app, ["--help"])
 
     assert result.exit_code == 0
-    assert "--update" in result.output
-    assert "-u" in result.output
-    assert "Update Crewplane" in result.output
+    output = unstyle(result.output)
+    assert "--update" in output
+    assert "-u" in output
+    assert "Update Crewplane" in output
 
 
 def test_cli_help_imports_without_packaging_runtime_dependency() -> None:
@@ -45,6 +47,7 @@ def test_cli_help_imports_without_packaging_runtime_dependency() -> None:
 
         sys.meta_path.insert(0, BlockPackaging())
 
+        from click import unstyle
         from typer.testing import CliRunner
         from crewplane.cli import app as cli
 
@@ -52,7 +55,7 @@ def test_cli_help_imports_without_packaging_runtime_dependency() -> None:
         if result.exit_code != 0:
             print(result.output)
             raise SystemExit(result.exit_code)
-        if "--update" not in result.output:
+        if "--update" not in unstyle(result.output):
             raise SystemExit("missing --update")
         """
     )
