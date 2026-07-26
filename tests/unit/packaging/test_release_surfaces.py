@@ -15,7 +15,7 @@ from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[3]
 PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-PACKAGE_NAME = "crewplane"
+PACKAGE_NAME = str(PYPROJECT["project"]["name"])
 AUTHORED_VERSION = str(PYPROJECT["project"]["version"])
 NORMALIZED_VERSION = str(Version(AUTHORED_VERSION))
 CLI_COMMAND = "crewplane"
@@ -695,9 +695,10 @@ def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     installer = read_text("install.sh")
     assert 'PACKAGE_NAME="crewplane"' in installer
     assert "CLI_NAME" not in installer
-    assert (
-        f'CREWPLANE_VERSION="${{CREWPLANE_VERSION:-{AUTHORED_VERSION}}}"' in installer
-    )
+    assert 'CREWPLANE_VERSION="${CREWPLANE_VERSION:-}"' in installer
+    assert 'package_spec="$PACKAGE_NAME"' in installer
+    assert 'package_spec="${PACKAGE_NAME}==${CREWPLANE_VERSION}"' in installer
+    assert f"CREWPLANE_VERSION:-{AUTHORED_VERSION}" not in installer
     assert "CREWPLANE_INSTALL_FIND_LINKS" in installer
     assert "CREWPLANE_INSTALL_NO_INDEX" in installer
     assert "CREWPLANE_INSTALL_HOME" in installer
@@ -720,6 +721,75 @@ def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
         "does not install provider CLIs, manage provider credentials, or sandbox provider CLI execution"
         in installer
     )
+
+
+@pytest.mark.parametrize(
+    ("version_override", "expected_package_spec"),
+    [
+        (None, PACKAGE_NAME),
+        ("9.8.7", f"{PACKAGE_NAME}==9.8.7"),
+    ],
+)
+def test_install_script_only_pins_an_explicit_version_override(
+    tmp_path: Path,
+    version_override: str | None,
+    expected_package_spec: str,
+) -> None:
+    fake_uv = tmp_path / "uv"
+    fake_uv_log = tmp_path / "uv.log"
+    tool_bin = tmp_path / "bin"
+    tool_bin.mkdir()
+    fake_cli = tool_bin / PACKAGE_NAME
+    fake_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_cli.chmod(0o755)
+    fake_uv.write_text(
+        "\n".join(
+            [
+                "#!/bin/sh",
+                "{",
+                "  printf 'CALL'",
+                '  for arg in "$@"; do printf "\\t%s" "$arg"; done',
+                "  printf '\\n'",
+                '} >> "$CREWPLANE_FAKE_UV_LOG"',
+                'if [ "$1" = "tool" ] && [ "$2" = "dir" ]; then',
+                '  printf "%s\\n" "$CREWPLANE_FAKE_TOOL_BIN"',
+                "fi",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+
+    env = os.environ.copy()
+    for name in (
+        "CREWPLANE_VERSION",
+        "CREWPLANE_INSTALL_FIND_LINKS",
+        "CREWPLANE_INSTALL_NO_INDEX",
+        "CREWPLANE_INSTALL_PYTHON",
+    ):
+        env.pop(name, None)
+    env["CREWPLANE_UV_BIN"] = str(fake_uv)
+    env["CREWPLANE_FAKE_UV_LOG"] = str(fake_uv_log)
+    env["CREWPLANE_FAKE_TOOL_BIN"] = str(tool_bin)
+    env["CREWPLANE_INSTALL_HOME"] = str(tmp_path / "home")
+    env["PATH"] = f"{tool_bin}{os.pathsep}{env.get('PATH', '')}"
+    if version_override is not None:
+        env["CREWPLANE_VERSION"] = version_override
+
+    subprocess.run(
+        ["sh", str(repo_path("install.sh"))],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    calls = [
+        line.split("\t")
+        for line in fake_uv_log.read_text(encoding="utf-8").splitlines()
+    ]
+    assert calls[0] == ["CALL", "tool", "install", "--force", expected_package_spec]
 
 
 def test_npm_wrapper_metadata_and_scripts_pin_python_package() -> None:
@@ -763,6 +833,33 @@ def test_npm_install_docs_explain_global_bin_path() -> None:
         assert "command -v crewplane" in content
         assert "node" in content
         assert "crewplane@alpha" not in content
+
+
+def test_update_docs_keep_package_managers_in_charge() -> None:
+    installation_doc = read_text("docs", "getting-started", "installation.md")
+    command_reference = read_text("docs", "reference", "commands.md")
+
+    for command in (
+        "uv tool install --force crewplane",
+        "pipx upgrade --global crewplane",
+        "npm rebuild --global crewplane",
+    ):
+        assert command in installation_doc
+    assert "postinstall" in installation_doc
+
+    required_guidance = (
+        "package manager",
+        "fresh process",
+        "version stayed the same",
+        "direct `pip` or `uv pip` installation",
+        "editable checkout",
+        "project-local `npm` dependency",
+        "version pin",
+    )
+    for content in (installation_doc, command_reference):
+        normalized = " ".join(content.split())
+        for guidance in required_guidance:
+            assert guidance in normalized
 
 
 def test_public_first_run_docs_are_mock_first_and_provider_free() -> None:

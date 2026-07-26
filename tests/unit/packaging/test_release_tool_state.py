@@ -87,9 +87,6 @@ def test_metadata_sync_refreshes_and_reads_back_generated_files(
     package = json.loads((tmp_path / "packaging" / "npm" / "package.json").read_text())
     assert package["version"] == context.version.npm
     assert package["crewplane"]["pythonPackageVersion"] == context.version.project
-    assert f'CREWPLANE_VERSION="${{CREWPLANE_VERSION:-{context.version.project}}}"' in (
-        tmp_path / "install.sh"
-    ).read_text(encoding="utf-8")
     assert "crewplane@alpha" not in (tmp_path / "README.md").read_text(encoding="utf-8")
     assert "crewplane/main/install.sh" not in (
         tmp_path / "docs" / "getting-started" / "installation.md"
@@ -194,15 +191,18 @@ def test_formula_resource_sync_cleans_generated_blank_lines(
     ) in formula
 
 
-def test_metadata_sync_fails_when_replacement_is_missing(
+def test_metadata_sync_fails_when_required_npm_metadata_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_minimal_repo(tmp_path)
-    (tmp_path / "install.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tmp_path / "packaging" / "npm" / "package.json").write_text(
+        json.dumps({"name": "crewplane"}) + "\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(state.state_sync, "command_exists", lambda name: name == "uv")
     context = state.read_release_context(tmp_path)
 
-    with pytest.raises(state.ReleaseError, match="expected exactly one replacement"):
+    with pytest.raises(state.ReleaseError, match="missing crewplane metadata"):
         state.sync_generated_metadata(context, FakeRunner())
 
 

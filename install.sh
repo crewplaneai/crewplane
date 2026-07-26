@@ -2,7 +2,7 @@
 set -eu
 
 PACKAGE_NAME="crewplane"
-CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.1.2}"
+CREWPLANE_VERSION="${CREWPLANE_VERSION:-}"
 
 fail() {
     printf '%s\n' "error: $*" >&2
@@ -79,10 +79,14 @@ install_uv() {
 
 install_crewplane() {
     uv_bin="$1"
-    package_spec="${PACKAGE_NAME}==${CREWPLANE_VERSION}"
+    package_spec="$PACKAGE_NAME"
     find_links="${CREWPLANE_INSTALL_FIND_LINKS:-}"
     no_index="${CREWPLANE_INSTALL_NO_INDEX:-}"
     python="${CREWPLANE_INSTALL_PYTHON:-}"
+
+    if [ -n "$CREWPLANE_VERSION" ]; then
+        package_spec="${PACKAGE_NAME}==${CREWPLANE_VERSION}"
+    fi
 
     if [ -n "$python" ] && [ -n "$find_links" ] && [ "$no_index" != "0" ]; then
         "$uv_bin" tool install --force --python "$python" --find-links "$find_links" --no-index "$package_spec"
@@ -168,7 +172,7 @@ main() {
 
     install_crewplane "$uv_bin"
     verify_cli "$uv_bin"
-    info "Installed ${PACKAGE_NAME} ${CREWPLANE_VERSION}. Run '${PACKAGE_NAME} --help' to start."
+    info "Installed ${PACKAGE_NAME}. Run '${PACKAGE_NAME} --help' to start."
     print_provider_notes
     print_uninstall_notes
 }

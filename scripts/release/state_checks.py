@@ -336,23 +336,11 @@ def verify_generated_metadata(
     context: ReleaseContext, manifest: ReleaseManifest | None
 ) -> list[str]:
     issues: list[str] = []
-    issues.extend(verify_install_script(context))
     issues.extend(verify_npm_package_json(context))
     issues.extend(verify_uv_lock(context))
     issues.extend(verify_docs_snippets(context))
     issues.extend(verify_homebrew_formula(context, manifest))
     return issues
-
-
-def verify_install_script(context: ReleaseContext) -> list[str]:
-    path = context.root / "install.sh"
-    text = path.read_text(encoding="utf-8")
-    expected = f'CREWPLANE_VERSION="${{CREWPLANE_VERSION:-{context.version.project}}}"'
-    return (
-        []
-        if expected in text
-        else [f"{path.relative_to(context.root)} has a stale default version"]
-    )
 
 
 def verify_npm_package_json(context: ReleaseContext) -> list[str]:

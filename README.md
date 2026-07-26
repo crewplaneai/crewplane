@@ -87,6 +87,21 @@ For a quick question, a one-off patch, or exploratory work that fits in a single
 uv tool install crewplane
 ```
 
+Update Crewplane from any directory, then print the installed version:
+
+```bash
+crewplane --update
+crewplane --version
+```
+
+Crewplane verifies which supported package manager installed the copy you are
+running, then runs that manager's standard upgrade command. Automatic updates
+support `uv tool` (including the install script), `pipx`, and Homebrew. For a
+global `npm` installation, Crewplane prints manual update instructions instead.
+See the
+[installation guide](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/installation.md#update)
+for supported installation methods, failure behavior, and manual commands.
+
 <details>
 <summary><strong>Other install methods</strong></summary>
 
