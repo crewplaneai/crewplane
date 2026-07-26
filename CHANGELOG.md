@@ -4,6 +4,35 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-26
+
+### Added
+
+- Added global `crewplane --update` and `crewplane -u` options that verify the
+  active installation's owning package manager before delegating updates to
+  `uv tool`, `pipx`, or Homebrew, then confirm the installed version in a fresh
+  process.
+- Added safe manual-update guidance for global npm wrappers, direct Python
+  installs, editable or direct-source installs, and temporary or project-local
+  package environments.
+
+### Changed
+
+- The install script now follows the latest available Crewplane release by
+  default so later `uv tool upgrade crewplane` commands are not held to the
+  originally installed version. `CREWPLANE_VERSION` remains available for an
+  explicit version pin.
+- Artifact location output now preserves long filesystem paths without
+  inserting terminal-width line breaks.
+- Expanded the npm and Homebrew package documentation with the mock-first
+  quickstart, workflow overview, provider onboarding, update guidance, and
+  package-specific troubleshooting.
+
+### Fixed
+
+- Fixed GitHub Release publication on macOS Bash when generated release notes
+  do not have a predecessor tag.
+
 ## [0.1.2] - 2026-07-23
 
 ### Added
