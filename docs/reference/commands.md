@@ -26,6 +26,71 @@ Both aliases print one line in this format:
 crewplane <installed-version>
 ```
 
+Update the installed copy of Crewplane and exit:
+
+```bash
+crewplane --update
+crewplane -u
+```
+
+These options run immediately. Crewplane does not read `.crewplane/`, load
+config, discover workflows, or create run artifacts.
+
+Crewplane only updates the copy that is currently running. Before running an
+upgrade command, it checks the installation path against the package manager's
+records. If it cannot verify which package manager installed that copy, it
+stops and prints manual update instructions.
+
+For installations created by `uv tool` (including the install script), `pipx`,
+or Homebrew, Crewplane runs that manager's standard command: `uv tool upgrade`,
+`pipx upgrade`, or `brew upgrade`. It leaves the manager's configured package
+source, allowed versions, and security checks unchanged.
+
+Crewplane cannot automatically update a global `npm` installation because `npm`
+recreates Crewplane's private Python environment in a required `postinstall`
+script. Crewplane prints the manual `npm` update commands instead.
+
+After the package manager reports success, Crewplane starts a fresh process to
+read the installed version. This avoids reusing version information loaded
+before the update:
+
+- If the version changed, Crewplane prints the previous and new versions.
+- If the version stayed the same, the package manager did not select a
+  different version from its configured package source and version rules.
+  A newer release may still exist elsewhere.
+
+If the package manager command fails, Crewplane exits with the same status code
+and prints the command you can retry. It does not retry automatically, run
+`sudo`, or change the command. If a global `pipx` installation requires
+administrator privileges, rerun the displayed command using the elevation
+method approved for your system.
+
+Crewplane refuses to update these installations automatically:
+
+- a direct `pip` or `uv pip` installation
+- an editable checkout or an installation from a direct URL or local source
+- a project-local `npm` dependency
+- a temporary `uvx` or `npx` environment
+
+In these cases, Crewplane exits without changing the installation and tells
+you which environment, checkout, project, or command to update manually.
+
+Older versions of the install script recorded a fixed Crewplane version in
+`uv`'s installation record. Because `uv tool upgrade` honors that version pin,
+it cannot select a newer release. If you used the default install settings,
+remove the pin by reinstalling Crewplane once:
+
+```bash
+uv tool install --force crewplane
+```
+
+If the original installation used a custom Python interpreter, package source,
+or constraints, rerun the original install command. Replace the exact
+requirement, such as `crewplane==0.1.0`, with `crewplane` and keep all other
+options. See the
+[installation guide](../getting-started/installation.md#update) for exact
+package-manager commands and manual update instructions.
+
 ## `crewplane init`
 
 Initialize project-local config and example workflows.

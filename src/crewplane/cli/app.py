@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import shutil
 from dataclasses import dataclass
-from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Annotated
 
@@ -31,6 +30,7 @@ from .paths import (
 )
 from .project_init import initialize_project_templates
 from .run.resume import print_dry_run_resume_advisory
+from .update import UpdateError, installed_package_identity, update_crewplane
 
 app = typer.Typer(name="crewplane", help="Multi-agent workflow runner")
 app.add_typer(cleanup_app, name="cleanup")
@@ -40,8 +40,23 @@ def _print_version(show_version: bool) -> None:
     if not show_version:
         return
 
-    typer.echo(f"crewplane {distribution_version('crewplane')}")
+    package_name, package_version = installed_package_identity()
+    typer.echo(f"{package_name} {package_version}")
     raise typer.Exit()
+
+
+def _update_package(update_package: bool) -> None:
+    if not update_package:
+        return
+
+    console = Console()
+    try:
+        exit_code = update_crewplane(console)
+    except UpdateError as exc:
+        console.print(str(exc), markup=False)
+        raise typer.Exit(1) from exc
+
+    raise typer.Exit(exit_code)
 
 
 @app.callback()
@@ -53,6 +68,16 @@ def main(
             "-v",
             callback=_print_version,
             help="Show the installed Crewplane package version and exit.",
+            is_eager=True,
+        ),
+    ] = False,
+    _update: Annotated[
+        bool,
+        typer.Option(
+            "--update",
+            "-u",
+            callback=_update_package,
+            help="Update Crewplane through its owning package manager and exit.",
             is_eager=True,
         ),
     ] = False,

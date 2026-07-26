@@ -42,7 +42,6 @@ def replace_optional_regex(path: Path, pattern: str, replacement: str) -> None:
 
 
 def sync_generated_metadata(context: ReleaseContext, runner: CommandRunner) -> None:
-    sync_install_script(context)
     sync_npm_package_json(context)
     sync_public_docs(context)
     refresh_uv_lock(context, runner)
@@ -53,14 +52,6 @@ def sync_generated_metadata(context: ReleaseContext, runner: CommandRunner) -> N
         raise ReleaseError(
             f"generated metadata sync failed read-back validation:\n  {rendered}"
         )
-
-
-def sync_install_script(context: ReleaseContext) -> None:
-    replace_one_regex(
-        context.root / "install.sh",
-        r'^CREWPLANE_VERSION="\$\{CREWPLANE_VERSION:-[^}]+\}"$',
-        f'CREWPLANE_VERSION="${{CREWPLANE_VERSION:-{context.version.project}}}"',
-    )
 
 
 def sync_npm_package_json(context: ReleaseContext) -> None:

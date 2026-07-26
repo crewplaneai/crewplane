@@ -22,7 +22,8 @@ def test_global_version_option_prints_distribution_version(
     result = CliRunner().invoke(cli.app, [option])
 
     assert result.exit_code == 0, result.output
-    assert result.output == f"crewplane {distribution_version('crewplane')}\n"
+    package_name, _package_version = cli.installed_package_identity()
+    assert result.output == f"{package_name} {distribution_version(package_name)}\n"
 
 
 def test_help_lists_global_version_option() -> None:

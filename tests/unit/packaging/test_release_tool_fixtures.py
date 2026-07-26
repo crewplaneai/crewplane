@@ -76,7 +76,7 @@ def write_minimal_repo(root: Path, version: str = "1.2.3-alpha.4") -> None:
     )
     write_uv_lock(root, "0.0.0")
     (root / "install.sh").write_text(
-        'CREWPLANE_VERSION="${CREWPLANE_VERSION:-0.0.0}"\n',
+        'CREWPLANE_VERSION="${CREWPLANE_VERSION:-}"\n',
         encoding="utf-8",
     )
     (root / "packaging" / "npm" / "package.json").write_text(
