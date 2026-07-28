@@ -4,8 +4,9 @@ from .state_checks import (
     _verify_required_homebrew_resource_specs as _verify_homebrew_specs,
 )
 from .state_checks import (
+    missing_pypi_artifact_keys,
     verify_npm_artifact,
-    verify_pypi_artifacts,
+    verify_present_pypi_artifacts,
 )
 from .state_types import (
     DerivedReleaseState,
@@ -49,6 +50,7 @@ def derive_release_state(
         )
 
     artifact_issues: list[str] = []
+    missing_pypi_keys: tuple[str, ...] = ()
     if pypi.exists or npm.exists:
         if manifest is None:
             return DerivedReleaseState(
@@ -59,7 +61,10 @@ def derive_release_state(
                 ),
             )
         if pypi.exists:
-            artifact_issues.extend(verify_pypi_artifacts(context, pypi, manifest))
+            artifact_issues.extend(
+                verify_present_pypi_artifacts(context, pypi, manifest)
+            )
+            missing_pypi_keys = missing_pypi_artifact_keys(pypi, manifest)
         if npm.exists:
             artifact_issues.extend(verify_npm_artifact(context, npm, manifest))
         if artifact_issues:
@@ -71,19 +76,28 @@ def derive_release_state(
                 tuple(reasons),
                 (
                     "Remote registry artifacts do not match local manifest; "
-                    "recover manually before rerunning release commands."
+                    "recover manually before rerunning release commands.",
                 ),
             )
 
     formula_issues = verify_formula_state_for_release(context, formula, manifest)
     tag_issues = verify_git_tag_state(git)
 
-    if pypi.exists and npm.exists and npm.latest == context.version.npm:
+    pypi_complete = pypi.exists and not missing_pypi_keys
+    missing_pypi_issues = [
+        f"PyPI is missing {manifest.artifact(key).filename}"
+        for key in missing_pypi_keys
+        if manifest is not None
+    ]
+
+    if pypi_complete and npm.exists and npm.latest == context.version.npm:
         if formula_issues or tag_issues:
             reasons.extend(formula_issues)
             reasons.extend(tag_issues)
             guidance.extend(
-                guidance_for_missing_side_effects(False, False, npm.latest, context)
+                guidance_for_missing_side_effects(
+                    pypi_complete, npm.exists, npm.latest, context
+                )
             )
             return DerivedReleaseState(
                 ReleaseStatus.PARTIAL, tuple(reasons), tuple(guidance)
@@ -97,11 +111,12 @@ def derive_release_state(
         )
 
     if pypi.exists or npm.exists:
+        reasons.extend(missing_pypi_issues)
         reasons.extend(formula_issues)
         reasons.extend(tag_issues)
         guidance.extend(
             guidance_for_missing_side_effects(
-                pypi.exists, npm.exists, npm.latest, context
+                pypi_complete, npm.exists, npm.latest, context
             )
         )
         return DerivedReleaseState(
@@ -109,7 +124,11 @@ def derive_release_state(
         )
 
     reasons.extend(formula_issues)
-    reasons.extend(tag_issues)
+    tag_is_expectedly_absent = (
+        git is not None and not git.tag_commit and not git.remote_tag_commit
+    )
+    if not tag_is_expectedly_absent:
+        reasons.extend(tag_issues)
     return DerivedReleaseState(ReleaseStatus.READY, tuple(reasons), tuple(guidance))
 
 
@@ -132,7 +151,25 @@ def manifest_context_issues(
     }
     if actual != expected:
         return ["release manifest package identity does not match pyproject.toml"]
-    return []
+    return _pypi_manifest_filename_issues(context, manifest)
+
+
+def _pypi_manifest_filename_issues(
+    context: ReleaseContext, manifest: ReleaseManifest
+) -> list[str]:
+    expected_filenames = {
+        "pypi_sdist": context.sdist_filename,
+        "pypi_wheel": context.wheel_filename,
+    }
+    issues: list[str] = []
+    for key, expected_filename in expected_filenames.items():
+        actual_filename = manifest.artifact(key).filename
+        if actual_filename != expected_filename:
+            issues.append(
+                f"release manifest {key} filename does not match release context: "
+                f"expected {expected_filename}, found {actual_filename}"
+            )
+    return issues
 
 
 def verify_formula_state_for_release(

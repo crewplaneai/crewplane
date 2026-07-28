@@ -62,3 +62,70 @@ def test_brew_smoke_uses_built_sdist_sha_for_local_formula(
     assert f'url "file://{sdist}"' in runner.installed_formula_text
     assert f'sha256 "{expected_sha}"' in runner.installed_formula_text
     assert f'sha256 "{"0" * 64}"' not in runner.installed_formula_text
+
+
+def test_install_check_prepares_each_artifact_set_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_repo(tmp_path)
+    build_steps: list[str] = []
+    smoke_steps: list[str] = []
+
+    def record_step(target: list[str], step: str):
+        def record(*args) -> None:
+            del args
+            target.append(step)
+
+        return record
+
+    monkeypatch.setattr(
+        smoke.build,
+        "package_check",
+        record_step(build_steps, "python"),
+    )
+    monkeypatch.setattr(
+        smoke.build,
+        "build_wheelhouse",
+        record_step(build_steps, "wheelhouse"),
+    )
+    monkeypatch.setattr(
+        smoke.build,
+        "npm_pack",
+        record_step(build_steps, "npm"),
+    )
+    monkeypatch.setattr(smoke, "command_exists", bool)
+    monkeypatch.setattr(
+        smoke,
+        "_install_smoke_pip",
+        record_step(smoke_steps, "pip"),
+    )
+    monkeypatch.setattr(
+        smoke,
+        "_install_smoke_uv",
+        record_step(smoke_steps, "uv"),
+    )
+    monkeypatch.setattr(
+        smoke,
+        "_install_smoke_pipx",
+        record_step(smoke_steps, "pipx"),
+    )
+    monkeypatch.setattr(
+        smoke,
+        "_install_script_smoke",
+        record_step(smoke_steps, "install-script"),
+    )
+    monkeypatch.setattr(
+        smoke,
+        "_npm_smoke",
+        record_step(smoke_steps, "npm"),
+    )
+    monkeypatch.setattr(
+        smoke,
+        "_brew_smoke",
+        record_step(smoke_steps, "brew"),
+    )
+
+    smoke.install_check(tmp_path, state.CommandRunner())
+
+    assert build_steps == ["python", "wheelhouse", "npm"]
+    assert smoke_steps == ["pip", "uv", "pipx", "install-script", "npm", "brew"]

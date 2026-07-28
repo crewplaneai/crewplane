@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
 
+from markdown_it import MarkdownIt
 from release import build, publish, smoke
 from release.state import (
     CommandRunner,
@@ -161,6 +163,7 @@ def release_check(root: Path, runner: CommandRunner) -> int:
             and npm.latest == context.version.npm
             and not formula_issues
             and is_tag_only_missing_error(tag_issues)
+            and is_tag_only_missing_error(list(state.reasons))
         ):
             print(
                 "Release registries are published and Git tag is missing; pre-publish checks are not needed."
@@ -169,10 +172,8 @@ def release_check(root: Path, runner: CommandRunner) -> int:
     if state.status in {ReleaseStatus.PARTIAL, ReleaseStatus.BLOCKED}:
         return 1
     fail_if_generated_metadata_stale(context, manifest)
+    changelog_check(root)
     run_pre_publish_checks(root, runner)
-    print(
-        "Verify CHANGELOG.md describes the pyproject.toml version before running make release."
-    )
     return 0
 
 
@@ -186,10 +187,21 @@ def run_pre_publish_checks(root: Path, runner: CommandRunner) -> None:
 def changelog_check(root: Path) -> None:
     context = read_release_context(root)
     text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    if (
-        f"## [{context.version.project}]" not in text
-        and f"## {context.version.project}" not in text
-    ):
+    version = re.escape(context.version.project)
+    version_heading = re.compile(rf"^(?:\[{version}\]|{version})(?:[ \t]+.*)?$")
+    tokens = MarkdownIt("commonmark").parse(text)
+    has_version_heading = any(
+        opening.type == "heading_open"
+        and opening.tag == "h2"
+        and opening.level == 0
+        and opening.markup == "##"
+        and inline.type == "inline"
+        and version_heading.fullmatch(
+            "".join(child.content for child in inline.children or ())
+        )
+        for opening, inline in zip(tokens, tokens[1:], strict=False)
+    )
+    if not has_version_heading:
         raise ReleaseError(
             f"CHANGELOG.md does not contain a section for {context.version.project}. "
             "Changelog content is still reviewed manually."

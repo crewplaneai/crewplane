@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # ruff: noqa: E402, I001
 
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -40,6 +41,19 @@ def test_release_state_derivation_ready_complete_partial_and_blocked(
     )
     assert ready.status == state.ReleaseStatus.READY
 
+    tag_missing_git = replace(git, tag_commit="", remote_tag_commit="")
+    ready_before_tagging = state.derive_release_state(
+        context, missing_pypi, missing_npm, formula, tag_missing_git, manifest
+    )
+    assert ready_before_tagging.status == state.ReleaseStatus.READY
+    assert "Git tag is missing locally or on origin" not in ready_before_tagging.reasons
+
+    local_tag_only = replace(git, remote_tag_commit="")
+    ready_with_partial_tag = state.derive_release_state(
+        context, missing_pypi, missing_npm, formula, local_tag_only, manifest
+    )
+    assert "Git tag is missing locally or on origin" in ready_with_partial_tag.reasons
+
     unreachable_git = state.GitState(
         branch="release-fix",
         default_branch="master",
@@ -70,6 +84,40 @@ def test_release_state_derivation_ready_complete_partial_and_blocked(
     assert partial.status == state.ReleaseStatus.PARTIAL
     assert any("release-npm" in item for item in partial.guidance)
 
+    partial_before_tagging = state.derive_release_state(
+        context, pypi, missing_npm, formula, tag_missing_git, manifest
+    )
+    assert "Git tag is missing locally or on origin" in partial_before_tagging.reasons
+
+    finalization_pending = state.derive_release_state(
+        context, pypi, npm, formula, tag_missing_git, manifest
+    )
+    assert finalization_pending.guidance == (
+        "Rerun make release after fixing Git tag or Homebrew formula state.",
+    )
+
+    sdist = manifest.artifact("pypi_sdist")
+    partial_pypi = state.PypiRelease(
+        True,
+        context.version.python,
+        {
+            sdist.filename: state.PypiFile(
+                sdist.filename,
+                sdist.size,
+                sdist.sha256,
+            )
+        },
+    )
+    recoverable_pypi = state.derive_release_state(
+        context, partial_pypi, npm, formula, tag_missing_git, manifest
+    )
+    assert recoverable_pypi.status == state.ReleaseStatus.PARTIAL
+    assert (
+        recoverable_pypi.reasons.count(f"PyPI is missing {context.wheel_filename}") == 1
+    )
+    assert any("release-pypi" in item for item in recoverable_pypi.guidance)
+    assert not any("release-npm" in item for item in recoverable_pypi.guidance)
+
     bad_pypi = state.PypiRelease(
         True,
         context.version.python,
@@ -88,6 +136,10 @@ def test_release_state_derivation_ready_complete_partial_and_blocked(
         context, bad_pypi, missing_npm, formula, git, manifest
     )
     assert blocked.status == state.ReleaseStatus.BLOCKED
+    assert blocked.guidance == (
+        "Remote registry artifacts do not match local manifest; "
+        "recover manually before rerunning release commands.",
+    )
 
 
 def test_complete_state_requires_formula_resources_to_match_requirements(
@@ -236,6 +288,150 @@ def test_release_check_allows_tag_missing_partial_without_pre_publish_smokes(
 
     monkeypatch.setattr(release_script, "run_pre_publish_checks", fail_suite)
     assert release_script.release_check(tmp_path, FakeRunner()) == 0
+
+
+def test_release_check_does_not_treat_partial_pypi_as_tag_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release_script = load_release_script()
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    sdist = manifest.artifact("pypi_sdist")
+    partial_pypi = state.PypiRelease(
+        True,
+        context.version.python,
+        {
+            sdist.filename: state.PypiFile(
+                sdist.filename,
+                sdist.size,
+                sdist.sha256,
+            )
+        },
+    )
+    npm = matching_npm(context, manifest, latest=context.version.npm)
+    tag_missing_git = replace(git, tag_commit="", remote_tag_commit="")
+    monkeypatch.setattr(release_script, "read_release_context", constant(context))
+    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(
+        release_script, "query_registry_state", constant((partial_pypi, npm))
+    )
+    monkeypatch.setattr(release_script, "read_formula_state", constant(formula))
+    monkeypatch.setattr(release_script, "inspect_git_state", constant(tag_missing_git))
+
+    assert release_script.release_check(tmp_path, FakeRunner()) == 1
+
+
+def test_release_check_requires_current_changelog_section_before_suite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release_script = load_release_script()
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    missing_pypi = state.PypiRelease(False, "", {})
+    missing_npm = state.NpmRelease(False, "", "", "", "", "", "", "", "")
+    tag_missing_git = replace(git, tag_commit="", remote_tag_commit="")
+    (tmp_path / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n## {context.version.project}0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_script, "read_release_context", constant(context))
+    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(
+        release_script, "query_registry_state", constant((missing_pypi, missing_npm))
+    )
+    monkeypatch.setattr(release_script, "read_formula_state", constant(formula))
+    monkeypatch.setattr(release_script, "inspect_git_state", constant(tag_missing_git))
+    monkeypatch.setattr(release_script, "fail_if_generated_metadata_stale", no_op)
+
+    def fail_suite(_root: Path, _runner: FakeRunner) -> None:
+        del _root, _runner
+        raise AssertionError("pre-publish suite should not run")
+
+    monkeypatch.setattr(release_script, "run_pre_publish_checks", fail_suite)
+
+    with pytest.raises(release_script.ReleaseError, match="does not contain a section"):
+        release_script.release_check(tmp_path, FakeRunner())
+
+
+def test_release_check_accepts_dated_current_changelog_heading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release_script = load_release_script()
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    missing_pypi = state.PypiRelease(False, "", {})
+    missing_npm = state.NpmRelease(False, "", "", "", "", "", "", "", "")
+    tag_missing_git = replace(git, tag_commit="", remote_tag_commit="")
+    (tmp_path / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n## [{context.version.project}] - 2026-07-27\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_script, "read_release_context", constant(context))
+    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(
+        release_script, "query_registry_state", constant((missing_pypi, missing_npm))
+    )
+    monkeypatch.setattr(release_script, "read_formula_state", constant(formula))
+    monkeypatch.setattr(release_script, "inspect_git_state", constant(tag_missing_git))
+    monkeypatch.setattr(release_script, "fail_if_generated_metadata_stale", no_op)
+    suites: list[Path] = []
+
+    def record_suite(root: Path, runner: FakeRunner) -> None:
+        del runner
+        suites.append(root)
+
+    monkeypatch.setattr(
+        release_script,
+        "run_pre_publish_checks",
+        record_suite,
+    )
+
+    assert release_script.release_check(tmp_path, FakeRunner()) == 0
+    assert suites == [tmp_path]
+
+
+def test_changelog_check_accepts_linked_version_heading(tmp_path: Path) -> None:
+    release_script = load_release_script()
+    context, _manifest, _formula, _git = release_state_fixture(tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n## [{context.version.project}]"
+        f"(https://example.test/releases/{context.version.tag}) - 2026-07-27\n",
+        encoding="utf-8",
+    )
+
+    release_script.changelog_check(tmp_path)
+
+
+@pytest.mark.parametrize("indentation", ("", " ", "  ", "   "))
+def test_changelog_check_accepts_valid_heading_indentation(
+    tmp_path: Path, indentation: str
+) -> None:
+    release_script = load_release_script()
+    context, _manifest, _formula, _git = release_state_fixture(tmp_path)
+    (tmp_path / "CHANGELOG.md").write_text(
+        f"# Changelog\n\n{indentation}## [{context.version.project}] - 2026-07-27\n",
+        encoding="utf-8",
+    )
+
+    release_script.changelog_check(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "hidden_section",
+    (
+        "```markdown\n## [{version}]\n```\n",
+        "<!--\n## [{version}]\n-->\n",
+    ),
+)
+def test_changelog_check_rejects_hidden_version_headings(
+    tmp_path: Path, hidden_section: str
+) -> None:
+    release_script = load_release_script()
+    context, _manifest, _formula, _git = release_state_fixture(tmp_path)
+    changelog = "# Changelog\n\n" + hidden_section.format(
+        version=context.version.project
+    )
+    (tmp_path / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
+
+    with pytest.raises(release_script.ReleaseError, match="does not contain a section"):
+        release_script.changelog_check(tmp_path)
 
 
 def test_publish_pypi_checks_git_state_with_existing_pypi_release(
@@ -566,6 +762,40 @@ def test_derive_release_state_is_blocked_on_manifest_identity_mismatch(
     )
 
 
+def test_derive_release_state_blocks_noncanonical_pypi_manifest_filename(
+    tmp_path: Path,
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    wheel = manifest.artifact("pypi_wheel")
+    alternate_filename = wheel.filename.replace(
+        "-py3-none-any.whl", "-1-py3-none-any.whl"
+    )
+    alternate_wheel = replace(
+        wheel,
+        path=f"dist/{alternate_filename}",
+        filename=alternate_filename,
+    )
+    mismatched_manifest = replace(
+        manifest,
+        artifacts={**manifest.artifacts, "pypi_wheel": alternate_wheel},
+    )
+
+    state_result = state.derive_release_state(
+        context,
+        matching_pypi(context, manifest),
+        matching_npm(context, manifest, latest=context.version.npm),
+        formula,
+        git,
+        mismatched_manifest,
+    )
+
+    assert state_result.status == state.ReleaseStatus.BLOCKED
+    assert state_result.reasons == (
+        "release manifest pypi_wheel filename does not match release context: "
+        f"expected {context.wheel_filename}, found {alternate_filename}",
+    )
+
+
 def test_artifact_identity_checks_detect_matching_and_mismatching_registries(
     tmp_path: Path,
 ) -> None:
@@ -610,6 +840,28 @@ def test_pypi_artifact_verification_rejects_unexpected_files(
         release_with_unexpected_wheel,
         manifest,
     ) == [f"PyPI has unexpected files: {unexpected_filename}"]
+
+
+def test_pypi_artifact_verification_reports_missing_file_once(
+    tmp_path: Path,
+) -> None:
+    context, manifest, _formula, _git = release_state_fixture(tmp_path)
+    sdist = manifest.artifact("pypi_sdist")
+    partial_release = state.PypiRelease(
+        True,
+        context.version.python,
+        {
+            sdist.filename: state.PypiFile(
+                sdist.filename,
+                sdist.size,
+                sdist.sha256,
+            )
+        },
+    )
+
+    assert state.verify_pypi_artifacts(context, partial_release, manifest) == [
+        f"PyPI is missing {context.wheel_filename}"
+    ]
 
 
 def test_release_notes_predecessor_uses_target_history_for_delayed_release(
