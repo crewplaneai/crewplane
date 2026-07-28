@@ -284,6 +284,7 @@ class InvocationContext:
         None
     )
     workspace: InvocationWorkspaceContext | None = None
+    requested_reasoning: str | None = None
 
 
 @dataclass(frozen=True)

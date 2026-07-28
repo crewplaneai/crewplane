@@ -66,6 +66,7 @@ def build_quota_failure_error(
     provider_kind: ProviderKind,
     result: CommandResult,
     log_file: Path | None,
+    last_non_quota_failure: InvocationFailureSummary | None = None,
 ) -> InvocationFailureError:
     summary = classify_invocation_failure(provider_kind, result)
     if summary.kind != "quota_or_rate_limit":
@@ -77,4 +78,16 @@ def build_quota_failure_error(
             advice=ADVICE_BY_KIND["quota_or_rate_limit"],
             condensed=summary.condensed,
         )
-    return InvocationFailureError(prefix, summary, log_file)
+    if last_non_quota_failure is not None:
+        prefix = (
+            f"{prefix}; last distinct non-quota failure: "
+            f"{last_non_quota_failure.message}"
+        )
+    error = InvocationFailureError(prefix, summary, log_file)
+    error.last_non_quota_failure = last_non_quota_failure
+    if last_non_quota_failure is not None:
+        error.add_note(
+            "Last distinct non-quota failure before quota retries: "
+            f"{last_non_quota_failure.message}"
+        )
+    return error

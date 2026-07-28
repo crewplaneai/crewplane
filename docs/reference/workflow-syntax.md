@@ -231,6 +231,7 @@ candidate; the round-0 review does not consume depth.
 providers:
   - provider: codex
     model: gpt-5.5
+    reasoning: xhigh
     role: executor
 ```
 
@@ -240,6 +241,7 @@ Provider object fields:
 | --- | --- |
 | `provider` | Agent name from `.crewplane/config.yml`. Required. |
 | `model` | Optional model override for this provider use. |
+| `reasoning` | Optional provider-native reasoning request for the built-in CLI invoker with `provider_kind: codex` or `claude`. |
 | `role` | `executor` or `reviewer`. Defaults to `executor`. |
 
 Roles are `executor` and `reviewer`. Parallel nodes do not allow reviewers.
@@ -250,7 +252,17 @@ end with a contiguous reviewer segment. Use `review_starts_with`, not provider
 reordering, when reviewers should run before the first executor candidate.
 
 Provider shorthand strings are executor providers. Use provider objects when a
-provider needs a `model` override or `role: reviewer`.
+provider needs a `model` or `reasoning` override, or `role: reviewer`.
+
+`reasoning` is an opaque provider-native token, not a portable Crewplane
+effort scale. Crewplane records it as `requested_reasoning` and includes it in
+execution identity. When omitted or set to `null`, Crewplane supplies no
+reasoning argument and the provider's existing configuration remains in
+control. Direct reasoning selectors in `cli_cmd`, `extra_args`, or
+`CLAUDE_CODE_EFFORT_LEVEL` conflict with a first-class request and fail
+preflight. For Claude, that includes `effortLevel` and
+`env.CLAUDE_CODE_EFFORT_LEVEL` in explicit `--settings` JSON or files.
+Unrelated Claude settings remain valid.
 
 ## Input Nodes
 

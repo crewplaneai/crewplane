@@ -251,6 +251,34 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                 "stderr_text",
             ),
             (
+                "codex",
+                CommandResult(
+                    returncode=1,
+                    stdout_text="",
+                    stderr_text=(
+                        '{"type":"error","error":{"type":"invalid_request_error",'
+                        '"message":"Invalid value for reasoning.effort"}}'
+                    ),
+                ),
+                "model_or_config_error",
+                "provider_config",
+                "stderr_json",
+            ),
+            (
+                "codex",
+                CommandResult(
+                    returncode=1,
+                    stdout_text="",
+                    stderr_text=(
+                        "invalid_request_error: Tool call failed: "
+                        "invalid value for path"
+                    ),
+                ),
+                "provider_tool_error",
+                "provider_tool",
+                "stderr_text",
+            ),
+            (
                 "gemini",
                 CommandResult(
                     returncode=53,

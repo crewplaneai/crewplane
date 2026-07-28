@@ -97,6 +97,26 @@ files are present for nodes that declare `findings: true`. Generated-file
 artifacts are present when Crewplane detects provider-created files that should
 be copied into the result tree.
 
+Generated-file ownership depends on the workspace boundary:
+
+- In an isolated managed workspace, Crewplane owns the workspace for the
+  invocation and may capture filesystem changes.
+- In the shared project root, Crewplane captures only files explicitly listed
+  by the provider under a `## Generated Files` section and verified by Git as
+  changed since the invocation began. Without a usable Git baseline,
+  generated-file capture fails closed.
+
+Snapshot capture limits and snapshot copy failures do not invalidate an
+otherwise successful provider result. Crewplane preserves the result, captures
+accepted files, emits an `artifact_capture_partial` or
+`artifact_capture_failed` runtime-log event, and records rejected-file metadata
+in the generated-file snapshot metadata. Rejection metadata keeps the exact
+`rejected_file_count` while bounding detailed `rejected_files` records to 100;
+`rejected_files_truncated` reports whether details were omitted. If later
+publication into the consolidated result tree fails, Crewplane omits the failed
+generated-file link, preserves the consolidated result, and emits a
+`stage_finalize_warning` event.
+
 Consolidated result and findings Markdown uses human-readable section headings.
 Stable provider task IDs remain in stage artifact filenames, logs, manifests,
 and review-loop state.

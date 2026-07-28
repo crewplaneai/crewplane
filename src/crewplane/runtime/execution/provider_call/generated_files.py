@@ -316,6 +316,7 @@ def snapshot_invocation_generated_files(
         request.output_file,
         workspace_root,
         candidate_files=candidate_files,
+        explicit_claims_only=prepared_workspace.workspace_kind == "project_root",
     )
 
 

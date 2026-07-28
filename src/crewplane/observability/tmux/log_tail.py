@@ -10,6 +10,7 @@ _LOG_HEADER_PREFIXES = (
     "model:",
     "output_file:",
 )
+_OPTIONAL_REASONING_PREFIX = "requested_reasoning:"
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,10 @@ def _find_log_body_start(log_path: Path, file_size: int) -> int:
     else:
         return 0
 
+    if len(header_lines) == len(_LOG_HEADER_PREFIXES) + 1 and header_lines[
+        3
+    ].startswith(_OPTIONAL_REASONING_PREFIX):
+        header_lines.pop(3)
     if len(header_lines) != len(_LOG_HEADER_PREFIXES):
         return 0
     if any(

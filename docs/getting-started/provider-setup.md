@@ -197,6 +197,34 @@ provider CLI. Built-in provider kinds choose their own model flag. For
 `--model`. Set `model_arg: null` if your generic CLI should not receive a model
 flag.
 
+## Choose Reasoning
+
+Provider objects can request a provider-native reasoning value when the
+built-in `cli` invoker uses `provider_kind: codex` or `provider_kind: claude`:
+
+```yaml
+providers:
+  - provider: codex
+    model: gpt-5.6-sol
+    reasoning: xhigh
+```
+
+Crewplane passes Codex requests through
+`--config model_reasoning_effort="..."` and Claude requests through
+`--effort ...`. The value is provider-native and may be model-dependent;
+Crewplane records the request but does not claim that it was applied
+unchanged. Omit `reasoning` to leave the provider's current defaults and user
+configuration unmanaged.
+
+Do not configure a second reasoning authority in `cli_cmd` or `extra_args`.
+For Claude, a non-empty inherited `CLAUDE_CODE_EFFORT_LEVEL` also conflicts.
+Explicit `--settings` JSON or files may contain unrelated settings, but
+`effortLevel` or `env.CLAUDE_CODE_EFFORT_LEVEL` conflicts with the workflow
+field. When reasoning is requested, Crewplane must be able to read and parse
+each explicit Claude settings source so `crewplane validate` can report
+conflicts before launch. An `env` wrapper cannot use `--chdir` or `-C` with a
+workflow reasoning request because it would change relative settings resolution.
+
 ## Choose Prompt Transport
 
 Crewplane can send the rendered prompt to a provider CLI in two ways:

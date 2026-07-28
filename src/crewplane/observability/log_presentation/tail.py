@@ -13,6 +13,7 @@ _INITIAL_HEADER_PREFIXES = (
     "model:",
     "output_file:",
 )
+_OPTIONAL_REASONING_PREFIX = "requested_reasoning:"
 _RETRY_MARKER = b"\n---\nretry_attempt:"
 
 
@@ -136,6 +137,10 @@ def find_initial_body_start(
     else:
         return 0
 
+    if len(header_lines) == len(_INITIAL_HEADER_PREFIXES) + 1 and header_lines[
+        3
+    ].startswith(_OPTIONAL_REASONING_PREFIX):
+        header_lines.pop(3)
     if len(header_lines) != len(_INITIAL_HEADER_PREFIXES):
         return 0
     for line, prefix in zip(header_lines, _INITIAL_HEADER_PREFIXES, strict=True):

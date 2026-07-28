@@ -5,8 +5,8 @@ nodes wait for upstream artifacts. This guide zooms in on **one node**.
 
 Inside a node, `mode` chooses the invocation shape, `providers` selects the
 configured agents, `model` can override an agent's default model for that
-invocation, and `role` decides whether a provider executes the work or reviews
-a candidate.
+invocation, `reasoning` can request provider-native reasoning effort, and
+`role` decides whether a provider executes the work or reviews a candidate.
 
 ## Choosing A Mode
 
@@ -23,26 +23,51 @@ Independent DAG nodes can also run concurrently when their dependencies are
 satisfied. That is separate from `mode: parallel`, which is provider fanout
 inside one node.
 
-## Provider Entries, Models, And Roles
+## Provider Entries, Models, Reasoning, And Roles
 
 Every non-input node lists one or more configured agents in `providers`. A
-string is shorthand for that agent's default model and executor role:
+string uses that agent's default model, adds no Crewplane reasoning override,
+and assigns the executor role:
 
 ```yaml
 providers: [codex]
 ```
 
-Use object form when one node invocation needs a model override or explicit
-role:
+### Use Provider Objects
+
+Use object form when one node invocation needs a model or reasoning override,
+or an explicit role:
 
 ```yaml
 providers:
   - provider: codex
     model: gpt-5.5
+    reasoning: high
     role: executor
   - provider: claude
     role: reviewer
 ```
+
+### Choose Reasoning Effort
+
+In the example above, `reasoning: high` asks Codex to use high reasoning effort
+for that invocation. Claude has no workflow override and uses its normal
+configuration.
+
+The value is provider-native: Codex and Claude define which values their models
+support. Crewplane currently supports this field for the built-in `cli` invoker
+when `provider_kind` is `codex` or `claude`.
+
+When `reasoning` is omitted or set to `null`, Crewplane sends no reasoning
+override and the provider uses its normal configuration. Do not also configure
+the provider's native reasoning option in `cli_cmd` or `extra_args`.
+
+See [Provider setup](../getting-started/provider-setup.md#choose-reasoning) for
+the native Codex and Claude transports, and the
+[workflow syntax reference](../reference/workflow-syntax.md#provider-objects)
+for the complete validation contract.
+
+### Assign Provider Roles
 
 The `role` field describes what a provider does inside this node:
 

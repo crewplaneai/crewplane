@@ -107,6 +107,7 @@ def evaluate_quota_retry(
     result: CommandResult,
     quota_retry_started_at: float | None,
     quota_retry_count: int,
+    quota_retry_wait_seconds: float = 0.0,
 ) -> QuotaRetryDecision:
     quota = classify_quota(config, result, quota_parser)
     if not quota.is_quota:
@@ -128,6 +129,19 @@ def evaluate_quota_retry(
         )
 
     if (
+        config.quota_retry_max_attempts is not None
+        and quota_retry_count >= config.quota_retry_max_attempts
+    ):
+        return QuotaRetryFailure(
+            quota_retry_started_at=quota_retry_started_at,
+            quota_retry_count=quota_retry_count,
+            message=(
+                f"Quota retry configured attempt ceiling of "
+                f"{config.quota_retry_max_attempts} reached for {cmd[0]}"
+            ),
+        )
+
+    if (
         quota.reset_after_seconds is not None
         and quota.reset_after_seconds > QUOTA_RETRY_GUARD_SECONDS
     ):
@@ -143,6 +157,22 @@ def evaluate_quota_retry(
         )
 
     wait_seconds = compute_quota_wait_seconds(config, quota)
+    if (
+        config.quota_retry_max_wait_seconds is not None
+        and quota_retry_wait_seconds + wait_seconds
+        >= config.quota_retry_max_wait_seconds
+    ):
+        return QuotaRetryFailure(
+            quota_retry_started_at=quota_retry_started_at,
+            quota_retry_count=quota_retry_count,
+            message=(
+                "Quota retry configured wait ceiling of "
+                f"{format_wait_duration(config.quota_retry_max_wait_seconds)} "
+                f"would be reached for {cmd[0]}; cumulative quota wait is "
+                f"{format_wait_duration(quota_retry_wait_seconds)} and next wait is "
+                f"{format_wait_duration(wait_seconds)}"
+            ),
+        )
     if quota_retry_guard_will_exhaust(quota_retry_started_at, wait_seconds):
         elapsed_seconds = quota_retry_elapsed_seconds(quota_retry_started_at)
         return QuotaRetryFailure(
@@ -173,17 +203,18 @@ def evaluate_quota_retry(
             level="warning",
             message=(
                 f"Quota reached for {cmd[0]}; retrying in {wait_detail} "
-                f"(quota attempt {quota_retry_count})"
+                f"(quota attempt {quota_retry_count}; independent of max_retries)"
             ),
             operation="quota_retry_scheduled",
             attributes={
                 "quota_attempt": quota_retry_count,
                 "wait_seconds": round(wait_seconds, 3),
+                "ordinary_max_retries": config.max_retries,
             },
             console_message=(
                 "[yellow]WARN[/] Quota reached for "
                 f"{cmd[0]}; retrying in {wait_detail} "
-                f"(quota attempt {quota_retry_count})"
+                f"(quota attempt {quota_retry_count}; independent of max_retries)"
             ),
         ),
     )

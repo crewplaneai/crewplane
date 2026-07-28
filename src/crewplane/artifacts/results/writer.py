@@ -48,7 +48,7 @@ class ResultWriter:
         findings_enabled: bool = False,
         task_specs: tuple[StageTaskSpec, ...] = (),
         generated_file_detection_enabled: bool = True,
-        generated_file_workspace_roots: dict[Path, Path] | None = None,
+        generated_file_workspace_roots: dict[Path, Path | None] | None = None,
     ) -> StageFinalizeResult:
         result_file = self._result_file_resolver(stage_name)
         findings_file = (
@@ -96,7 +96,10 @@ class ResultWriter:
             findings_file=resolved_findings_file,
             included_outputs=tuple(aggregation.included_outputs),
             skipped_empty_outputs=tuple(aggregation.skipped_empty_outputs),
-            warnings=tuple(self._warnings_for_skipped_outputs(aggregation)),
+            warnings=(
+                *self._warnings_for_skipped_outputs(aggregation),
+                *aggregation.warnings,
+            ),
             generated_files=tuple(
                 dict.fromkeys(
                     link.target_path for link in aggregation.generated_file_links

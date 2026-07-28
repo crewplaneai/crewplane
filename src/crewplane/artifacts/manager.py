@@ -92,7 +92,7 @@ class OutputManager:
         findings_enabled: bool = False,
         task_specs: tuple[StageTaskSpec, ...] = (),
         generated_file_detection_enabled: bool = True,
-        generated_file_workspace_roots: dict[Path, Path] | None = None,
+        generated_file_workspace_roots: dict[Path, Path | None] | None = None,
     ) -> StageFinalizeResult:
         return self._result_writer.finalize_stage(
             stage_name,

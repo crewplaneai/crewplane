@@ -17,7 +17,9 @@ from ..failures import (
     build_invocation_failure_error,
     build_output_extraction_failure_error,
     build_quota_failure_error,
+    classify_invocation_failure,
 )
+from ..failures.types import InvocationFailureSummary
 from ..usage import InvocationUsageAccumulator
 from .command import (
     build_invocation_runtime,
@@ -86,9 +88,11 @@ async def run_invocation_loop(
         quota_retry_count=0,
         quota_retry_started_at=None,
     )
+    quota_retry_wait_seconds = 0.0
     usage_state = InvocationUsageState(
         accumulator=InvocationUsageAccumulator(plan.log_provider_kind, prompt)
     )
+    last_non_quota_failure: InvocationFailureSummary | None = None
 
     try:
         while True:
@@ -115,7 +119,15 @@ async def run_invocation_loop(
                     runtime=runtime,
                     attempt_result=attempt_result,
                     cursor=cursor,
+                    quota_retry_wait_seconds=quota_retry_wait_seconds,
                 )
+                if _is_non_quota_retry(transition):
+                    failure_summary = classify_invocation_failure(
+                        runtime.failure_profile,
+                        attempt_result.result,
+                    )
+                    if failure_summary.kind != "quota_or_rate_limit":
+                        last_non_quota_failure = failure_summary
                 continuation = await _execute_transition_action(
                     transition=transition,
                     runtime=runtime,
@@ -126,12 +138,19 @@ async def run_invocation_loop(
                     config=config,
                     usage_state=usage_state,
                     attempt=attempt,
+                    last_non_quota_failure=last_non_quota_failure,
                 )
             finally:
                 result.cleanup_stream_files()
             if continuation is None:
                 return
-            attempt, cursor = continuation
+            next_attempt, next_cursor = continuation
+            if (
+                isinstance(transition, SleepAndRetryAttemptTransition)
+                and next_cursor.quota_retry_count > cursor.quota_retry_count
+            ):
+                quota_retry_wait_seconds += transition.retry_delay_seconds
+            attempt, cursor = next_attempt, next_cursor
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -141,11 +160,20 @@ async def run_invocation_loop(
         cleanup_structured_output_file(runtime.structured_output_file)
 
 
+def _is_non_quota_retry(transition: InvocationAttemptTransition) -> bool:
+    return (
+        isinstance(transition, SleepAndRetryAttemptTransition)
+        and transition.notice is not None
+        and transition.notice.operation != "quota_retry_scheduled"
+    )
+
+
 def _select_attempt_transition(
     config: AgentConfig,
     runtime: InvocationCommandRuntime,
     attempt_result: InvocationAttemptResult,
     cursor: InvocationRetryCursor,
+    quota_retry_wait_seconds: float,
 ) -> InvocationAttemptTransition:
     structured_retry_decision = _evaluate_structured_retry(
         config,
@@ -169,6 +197,7 @@ def _select_attempt_transition(
         result=attempt_result.result,
         quota_retry_started_at=cursor.quota_retry_started_at,
         quota_retry_count=cursor.quota_retry_count,
+        quota_retry_wait_seconds=quota_retry_wait_seconds,
     )
     transition = transition_from_quota_retry(
         attempt_result=attempt_result,
@@ -243,6 +272,7 @@ async def _execute_transition_action(
     config: AgentConfig,
     usage_state: InvocationUsageState,
     attempt: int,
+    last_non_quota_failure: InvocationFailureSummary | None = None,
 ) -> tuple[int, InvocationRetryCursor] | None:
     try:
         match transition:
@@ -288,6 +318,7 @@ async def _execute_transition_action(
                     runtime=runtime,
                     result=attempt_result.result,
                     message=message,
+                    last_non_quota_failure=last_non_quota_failure,
                 )
             case RaiseOutputExtractionFailureAttemptTransition(
                 extracted_output=extracted_output
@@ -386,10 +417,12 @@ def _raise_quota_failure(
     runtime: InvocationCommandRuntime,
     result: CommandResult,
     message: str,
+    last_non_quota_failure: InvocationFailureSummary | None = None,
 ) -> None:
     raise build_quota_failure_error(
         message,
         runtime.failure_profile,
         result,
         None,
+        last_non_quota_failure,
     )

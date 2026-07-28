@@ -90,6 +90,8 @@ class RuntimeAgentConfigSnapshot(BaseModel):
     quota_reached_on_contains: list[str] = Field(default_factory=list)
     quota_reached_retry_delay_seconds: float = 300.0
     quota_reset_sleep_floor_seconds: float = 5.0
+    quota_retry_max_wait_seconds: float | None = Field(default=None, gt=0)
+    quota_retry_max_attempts: int | None = Field(default=None, ge=1)
     invocation_timeout_seconds: float | None = None
     invocation_idle_timeout_seconds: float | None = 1800.0
     pricing: TokenPricing = Field(default_factory=TokenPricing)

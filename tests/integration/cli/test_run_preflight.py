@@ -3,6 +3,7 @@ from pathlib import Path
 from rich.console import Console
 
 from crewplane.bootstrap import build_runtime_config_snapshot
+from crewplane.cli.run.preflight import run_reasoning_control_errors
 from crewplane.core.config import (
     AgentConfig,
     Config,
@@ -286,6 +287,110 @@ def test_successful_preflight_preview_builds_execution_contract(
     assert preview.workflow_signature is not None
     assert preview.execution_order == ["build"]
     assert preview.nodes[0].provider_records[0].agent_config_key == "alpha"
+
+
+def test_preflight_records_reasoning_and_changes_execution_identity(
+    tmp_path: Path,
+) -> None:
+    base_node = WorkflowNode(
+        id="build",
+        mode="sequential",
+        providers=[ProviderSpec(provider="alpha")],
+        prompt_segments=[PromptSegment(role=PromptSegmentRole.SHARED, content="Build")],
+    )
+    default_preview = _preview(
+        WorkflowPlan(name="demo", nodes=[base_node]),
+        tmp_path,
+    )
+    reasoning_preview = _preview(
+        WorkflowPlan(
+            name="demo",
+            nodes=[
+                base_node.model_copy(
+                    update={
+                        "providers": [ProviderSpec(provider="alpha", reasoning="high")]
+                    }
+                )
+            ],
+        ),
+        tmp_path,
+    )
+
+    provider = reasoning_preview.nodes[0].provider_records[0]
+    assert provider.requested_reasoning == "high"
+    assert default_preview.nodes[0].provider_records[0].requested_reasoning is None
+    assert reasoning_preview.workflow_signature != default_preview.workflow_signature
+
+
+def test_reasoning_control_rejects_non_cli_invoker() -> None:
+    workflow = WorkflowPlan(
+        name="demo",
+        nodes=[
+            WorkflowNode(
+                id="build",
+                mode="sequential",
+                providers=[ProviderSpec(provider="alpha", reasoning="high")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Build")
+                ],
+            )
+        ],
+    )
+
+    errors = run_reasoning_control_errors(workflow, _config())
+
+    assert errors == (
+        "workflow 'demo' -> node 'build' -> provider 'alpha': first-class "
+        "reasoning requires the built-in CLI invoker.",
+    )
+
+
+def test_reasoning_control_checks_relative_claude_settings_file(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "claude-settings.json").write_text(
+        '{"effortLevel": "low"}',
+        encoding="utf-8",
+    )
+    workflow = WorkflowPlan(
+        name="demo",
+        nodes=[
+            WorkflowNode(
+                id="build",
+                mode="sequential",
+                providers=[ProviderSpec(provider="alpha", reasoning="high")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Build")
+                ],
+            )
+        ],
+    )
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={
+            "alpha": AgentConfig(
+                cli_cmd=["claude", "--settings", "claude-settings.json"],
+                provider_kind="claude",
+            )
+        },
+        settings=Settings(
+            integrations=IntegrationsConfig(
+                invoker=IntegrationSpec(implementation="cli", options={}),
+                artifacts=IntegrationSpec(
+                    implementation="filesystem",
+                    options={"allowed_template_paths": [], "log_cli_output": True},
+                ),
+                ui=IntegrationSpec(implementation="none", options={}),
+            )
+        ),
+    )
+
+    errors = run_reasoning_control_errors(workflow, config, tmp_path)
+
+    assert errors == (
+        "workflow 'demo' -> node 'build' -> provider 'alpha': --settings "
+        "effortLevel conflicts with the workflow reasoning request.",
+    )
 
 
 def test_preflight_preview_warns_on_argv_prompt_transport(

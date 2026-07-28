@@ -11,7 +11,7 @@ from crewplane.adapters.invokers.cli_invoker import (
     build_cli_log_presentation,
 )
 from crewplane.adapters.invokers.cli_invoker.capabilities import CAPABILITIES
-from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KINDS
+from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KINDS, InvocationContext
 from crewplane.core.config import AgentConfig, Config
 from crewplane.version import SCHEMA_VERSION
 
@@ -122,3 +122,644 @@ class CliInvokerAdapterTests(unittest.TestCase):
             )
 
         self.assertEqual(plan.cmd[0], relative_executable)
+
+    def test_codex_reasoning_request_builds_native_config_before_extra_args(
+        self,
+    ) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="codex",
+            role="executor",
+            requested_reasoning="xhigh",
+        )
+        plan = build_cli_invocation_plan(
+            AgentConfig(
+                cli_cmd=["codex", "exec"],
+                provider_kind="codex",
+                extra_args=["--ephemeral"],
+            ),
+            model="gpt-5.5",
+            prompt="prompt",
+            output_file=Path("output.md"),
+            invocation_context=context,
+        )
+
+        self.assertEqual(
+            plan.cmd[1:8],
+            [
+                "exec",
+                "--model",
+                "gpt-5.5",
+                "--config",
+                'model_reasoning_effort="xhigh"',
+                "--ephemeral",
+                "--json",
+            ],
+        )
+        self.assertIn("requested_reasoning: xhigh\n", plan.log_header.decode())
+
+    def test_claude_reasoning_request_builds_native_effort(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="reviewer",
+            requested_reasoning="high",
+        )
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}):
+            plan = build_cli_invocation_plan(
+                AgentConfig(cli_cmd=["claude"], provider_kind="claude"),
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+        self.assertEqual(plan.cmd[1:3], ["--effort", "high"])
+
+    def test_reasoning_request_rejects_claude_settings_effort(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        configs = (
+            AgentConfig(
+                cli_cmd=[
+                    "claude",
+                    "--settings",
+                    '{"effortLevel": "low"}',
+                ],
+                provider_kind="claude",
+            ),
+            AgentConfig(
+                cli_cmd=["claude"],
+                extra_args=['--settings={"effortLevel": "low"}'],
+                provider_kind="claude",
+            ),
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}):
+            for config in configs:
+                with (
+                    self.subTest(config=config),
+                    self.assertRaisesRegex(ValueError, "--settings effortLevel"),
+                ):
+                    build_cli_invocation_plan(
+                        config,
+                        model=None,
+                        prompt="prompt",
+                        output_file=Path("output.md"),
+                        invocation_context=context,
+                    )
+
+    def test_reasoning_request_rejects_claude_settings_environment(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        config = AgentConfig(
+            cli_cmd=[
+                "claude",
+                "--settings",
+                '{"env": {"CLAUDE_CODE_EFFORT_LEVEL": "low"}}',
+            ],
+            provider_kind="claude",
+        )
+
+        with (
+            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+            self.assertRaisesRegex(ValueError, "CLAUDE_CODE_EFFORT_LEVEL"),
+        ):
+            build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_allows_unrelated_claude_settings(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        config = AgentConfig(
+            cli_cmd=[
+                "claude",
+                "--settings",
+                (
+                    '{"permissions": {"allow": ["Read"]}, '
+                    '"effortLevel": "", '
+                    '"env": {"CLAUDE_CODE_EFFORT_LEVEL": ""}}'
+                ),
+            ],
+            provider_kind="claude",
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}):
+            plan = build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+        self.assertIn("--effort", plan.cmd)
+
+    def test_reasoning_request_checks_relative_claude_settings_file(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            working_directory = Path(tmp_dir)
+            (working_directory / "claude-settings.json").write_text(
+                '{"effortLevel": "low"}',
+                encoding="utf-8",
+            )
+            config = AgentConfig(
+                cli_cmd=["claude", "--settings", "claude-settings.json"],
+                provider_kind="claude",
+            )
+
+            with (
+                patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+                self.assertRaisesRegex(ValueError, "--settings effortLevel"),
+            ):
+                build_cli_invocation_plan(
+                    config,
+                    model=None,
+                    prompt="prompt",
+                    output_file=working_directory / "output.md",
+                    invocation_context=context,
+                    working_directory=working_directory,
+                )
+
+    def test_reasoning_request_fails_closed_for_unreadable_claude_settings(
+        self,
+    ) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        config = AgentConfig(
+            cli_cmd=["claude", "--settings", "missing-settings.json"],
+            provider_kind="claude",
+        )
+
+        with (
+            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+            self.assertRaisesRegex(ValueError, "Cannot validate"),
+        ):
+            build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_rejects_direct_codex_config_conflict(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="codex",
+            role="executor",
+            requested_reasoning="high",
+        )
+        conflict_forms = (
+            ["--config", 'model_reasoning_effort="low"'],
+            ['--config=model_reasoning_effort="low"'],
+            ["-c", 'model_reasoning_effort = "low"'],
+            ['-c=model_reasoning_effort="low"'],
+            ['-cmodel_reasoning_effort="low"'],
+        )
+
+        for extra_args in conflict_forms:
+            with (
+                self.subTest(extra_args=extra_args),
+                self.assertRaisesRegex(ValueError, "model_reasoning_effort"),
+            ):
+                build_cli_invocation_plan(
+                    AgentConfig(
+                        cli_cmd=["codex", "exec"],
+                        provider_kind="codex",
+                        extra_args=extra_args,
+                    ),
+                    model="gpt-5.5",
+                    prompt="prompt",
+                    output_file=Path("output.md"),
+                    invocation_context=context,
+                )
+
+    def test_codex_reasoning_conflict_scan_respects_extra_args_terminator(
+        self,
+    ) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="codex",
+            role="executor",
+            requested_reasoning="high",
+        )
+
+        plan = build_cli_invocation_plan(
+            AgentConfig(
+                cli_cmd=["codex", "exec"],
+                provider_kind="codex",
+                extra_args=["--", 'model_reasoning_effort="low"'],
+            ),
+            model=None,
+            prompt="prompt",
+            output_file=Path("output.md"),
+            invocation_context=context,
+        )
+
+        self.assertEqual(
+            plan.cmd[2:6],
+            [
+                "--config",
+                'model_reasoning_effort="high"',
+                "--",
+                'model_reasoning_effort="low"',
+            ],
+        )
+
+    def test_codex_reasoning_allows_env_prefix_provider_like_tokens(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="codex",
+            role="executor",
+            requested_reasoning="high",
+        )
+
+        plan = build_cli_invocation_plan(
+            AgentConfig(
+                cli_cmd=["env", "-u", "--config", "codex"],
+                provider_kind="codex",
+            ),
+            model=None,
+            prompt="prompt",
+            output_file=Path("output.md"),
+            invocation_context=context,
+        )
+
+        command_index = plan.cmd.index("codex")
+        self.assertEqual(
+            plan.cmd[command_index + 1 : command_index + 3],
+            ["--config", 'model_reasoning_effort="high"'],
+        )
+
+    def test_reasoning_request_rejects_cli_command_option_terminator(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="codex",
+            role="executor",
+            requested_reasoning="high",
+        )
+
+        with self.assertRaisesRegex(ValueError, "option terminator"):
+            build_cli_invocation_plan(
+                AgentConfig(
+                    cli_cmd=["codex", "exec", "--"],
+                    provider_kind="codex",
+                ),
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_rejects_unsupported_provider_kind(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="generic",
+            role="executor",
+            requested_reasoning="high",
+        )
+
+        with self.assertRaisesRegex(ValueError, "provider_kind 'codex' or 'claude'"):
+            build_cli_invocation_plan(
+                AgentConfig(cli_cmd=["provider"], provider_kind="generic"),
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_rejects_claude_environment_conflict(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        with (
+            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": "low"}),
+            self.assertRaisesRegex(ValueError, "CLAUDE_CODE_EFFORT_LEVEL"),
+        ):
+            build_cli_invocation_plan(
+                AgentConfig(cli_cmd=["claude"], provider_kind="claude"),
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_rejects_claude_cli_environment_assignment(
+        self,
+    ) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        config = AgentConfig(
+            cli_cmd=["env", "CLAUDE_CODE_EFFORT_LEVEL=low", "claude"],
+            provider_kind="claude",
+        )
+
+        with (
+            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+            self.assertRaisesRegex(ValueError, "CLAUDE_CODE_EFFORT_LEVEL"),
+        ):
+            build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_allows_blank_claude_cli_environment_assignment(
+        self,
+    ) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        config = AgentConfig(
+            cli_cmd=["env", "CLAUDE_CODE_EFFORT_LEVEL=", "claude"],
+            provider_kind="claude",
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": "low"}):
+            plan = build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+        self.assertIn("--effort", plan.cmd)
+
+    def test_reasoning_request_rejects_path_qualified_env_assignment(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        config = AgentConfig(
+            cli_cmd=[
+                "/usr/bin/env",
+                "-i",
+                "CLAUDE_CODE_EFFORT_LEVEL=low",
+                "claude",
+            ],
+            provider_kind="claude",
+        )
+
+        with (
+            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+            self.assertRaisesRegex(ValueError, "CLAUDE_CODE_EFFORT_LEVEL"),
+        ):
+            build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_allows_assignment_tokens_after_env_command(
+        self,
+    ) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        assignment = "CLAUDE_CODE_EFFORT_LEVEL=low"
+        configs = (
+            AgentConfig(
+                cli_cmd=["env", "claude", assignment],
+                provider_kind="claude",
+            ),
+            AgentConfig(
+                cli_cmd=["claude"],
+                extra_args=[assignment],
+                provider_kind="claude",
+            ),
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}):
+            for config in configs:
+                with self.subTest(config=config):
+                    plan = build_cli_invocation_plan(
+                        config,
+                        model=None,
+                        prompt="prompt",
+                        output_file=Path("output.md"),
+                        invocation_context=context,
+                    )
+                    self.assertIn(assignment, plan.cmd)
+                    self.assertIn("--effort", plan.cmd)
+
+    def test_reasoning_request_allows_env_to_remove_inherited_effort(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        configs = (
+            AgentConfig(
+                cli_cmd=["env", "-i", "claude"],
+                provider_kind="claude",
+            ),
+            AgentConfig(
+                cli_cmd=["env", "-u", "CLAUDE_CODE_EFFORT_LEVEL", "claude"],
+                provider_kind="claude",
+            ),
+            AgentConfig(
+                cli_cmd=[
+                    "env",
+                    "--unset=CLAUDE_CODE_EFFORT_LEVEL",
+                    "claude",
+                ],
+                provider_kind="claude",
+            ),
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": "low"}):
+            for config in configs:
+                with self.subTest(config=config):
+                    plan = build_cli_invocation_plan(
+                        config,
+                        model=None,
+                        prompt="prompt",
+                        output_file=Path("output.md"),
+                        invocation_context=context,
+                    )
+                    self.assertIn("--effort", plan.cmd)
+
+    def test_reasoning_request_rejects_clustered_env_assignment(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        config = AgentConfig(
+            cli_cmd=[
+                "env",
+                "-iv",
+                "CLAUDE_CODE_EFFORT_LEVEL=low",
+                "claude",
+            ],
+            provider_kind="claude",
+        )
+
+        with (
+            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+            self.assertRaisesRegex(ValueError, "CLAUDE_CODE_EFFORT_LEVEL"),
+        ):
+            build_cli_invocation_plan(
+                config,
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+                invocation_context=context,
+            )
+
+    def test_reasoning_request_rejects_env_split_string(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        split_value = "CLAUDE_CODE_EFFORT_LEVEL=low claude"
+        cli_commands = (
+            ["env", "-S", split_value],
+            ["env", f"-S{split_value}"],
+            ["env", "--split-string", split_value],
+            ["env", f"--split-string={split_value}"],
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}):
+            for cli_cmd in cli_commands:
+                with (
+                    self.subTest(cli_cmd=cli_cmd),
+                    self.assertRaisesRegex(ValueError, "cannot be combined"),
+                ):
+                    build_cli_invocation_plan(
+                        AgentConfig(cli_cmd=cli_cmd, provider_kind="claude"),
+                        model=None,
+                        prompt="prompt",
+                        output_file=Path("output.md"),
+                        invocation_context=context,
+                    )
+
+    def test_reasoning_request_rejects_env_working_directory_change(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        cli_commands = (
+            ["env", "--chdir", "subdir", "claude"],
+            ["env", "--chdir=subdir", "claude"],
+            ["env", "-C", "subdir", "claude"],
+            ["env", "-Csubdir", "claude"],
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}):
+            for cli_cmd in cli_commands:
+                with (
+                    self.subTest(cli_cmd=cli_cmd),
+                    self.assertRaisesRegex(ValueError, "cannot be combined"),
+                ):
+                    build_cli_invocation_plan(
+                        AgentConfig(cli_cmd=cli_cmd, provider_kind="claude"),
+                        model=None,
+                        prompt="prompt",
+                        output_file=Path("output.md"),
+                        invocation_context=context,
+                    )
+
+    def test_reasoning_request_allows_env_prefix_provider_like_tokens(self) -> None:
+        context = InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="claude",
+            role="executor",
+            requested_reasoning="high",
+        )
+        cli_commands = (
+            ["env", "--", "claude"],
+            ["env", "-u", "--effort", "claude"],
+            ["env", "--unset", "--effort", "claude"],
+        )
+
+        with patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}):
+            for cli_cmd in cli_commands:
+                with self.subTest(cli_cmd=cli_cmd):
+                    plan = build_cli_invocation_plan(
+                        AgentConfig(cli_cmd=cli_cmd, provider_kind="claude"),
+                        model=None,
+                        prompt="prompt",
+                        output_file=Path("output.md"),
+                        invocation_context=context,
+                    )
+                    command_index = plan.cmd.index("claude")
+                    self.assertEqual(
+                        plan.cmd[command_index + 1 : command_index + 3],
+                        ["--effort", "high"],
+                    )

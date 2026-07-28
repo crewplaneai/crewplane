@@ -22,6 +22,7 @@ from ..activity.events import (
 )
 from ..log_presentation import resolve_log_presentation_descriptor
 from ..runtime_context import CompiledRuntimeContext
+from .artifact_capture import capture_invocation_generated_files
 from .display import (
     ProviderCallDisplay,
     invoke_with_display,
@@ -38,7 +39,6 @@ from .generated_files import (
     capture_generated_file_change_baseline,
     finalize_successful_workspace,
     rendered_workspace_file_descriptors,
-    snapshot_invocation_generated_files_async,
 )
 from .types import ProviderCallRequest, ProviderCallResult, ProviderOutputPolicy
 from .workspace import (
@@ -163,6 +163,7 @@ def _initial_invocation_metadata(
         provider=request.provider.provider,
         role=request.role_label,
         model=model,
+        requested_reasoning=request.provider.requested_reasoning,
         task_id=request.task_id,
         audit_round_num=request.audit_round_num,
         round_num=request.round_num,
@@ -268,10 +269,11 @@ async def _invoke_provider_and_finalize_workspace(
     _validate_provider_output_file(request)
     if state.child_environment_applied:
         state.invocation_metadata = metadata.with_workspace_child_environment_applied()
-    generated_file_workspace = await snapshot_invocation_generated_files_async(
+    generated_file_workspace = await capture_invocation_generated_files(
         request,
         prepared_workspace,
         state.generated_file_change_baseline,
+        state.invocation_metadata,
     )
     state.workspace_success_finalization_started = True
     await finalize_successful_workspace(

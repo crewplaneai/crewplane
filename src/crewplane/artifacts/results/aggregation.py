@@ -24,7 +24,7 @@ def aggregate_stage_outputs(
     findings_enabled: bool,
     result_file: Path,
     stage_name: str,
-    generated_file_workspace_roots: dict[Path, Path],
+    generated_file_workspace_roots: dict[Path, Path | None],
     generated_file_detection_enabled: bool,
 ) -> StageOutputAggregation:
     aggregation = StageOutputAggregation()
@@ -57,7 +57,7 @@ def add_output_to_aggregation(
     findings_selection: FindingsSelection,
     result_file: Path,
     stage_name: str,
-    generated_file_workspace_roots: dict[Path, Path],
+    generated_file_workspace_roots: dict[Path, Path | None],
     generated_file_detection_enabled: bool,
 ) -> None:
     raw_output = output_file.read_text(encoding="utf-8")
@@ -113,24 +113,25 @@ def record_generated_file_links(
     output_file: Path,
     result_file: Path,
     stage_name: str,
-    generated_file_workspace_roots: dict[Path, Path],
+    generated_file_workspace_roots: dict[Path, Path | None],
     detection_enabled: bool,
 ) -> None:
     if not detection_enabled:
         return
-    workspace_root = generated_file_workspace_roots.get(
-        output_file.resolve(strict=False)
-    )
-    if workspace_root is None:
+    resolved_output_file = output_file.resolve(strict=False)
+    if resolved_output_file not in generated_file_workspace_roots:
         aggregation.generated_file_reference_content.append(display_content)
         return
-    aggregation.generated_file_links.extend(
-        generated_file_links_for_content(
-            display_content,
-            workspace_root,
-            result_file,
-            stage_name,
-            materialize=True,
-            copy_namespace=task_id,
-        )
+    workspace_root = generated_file_workspace_roots[resolved_output_file]
+    if workspace_root is None:
+        return
+    link_result = generated_file_links_for_content(
+        display_content,
+        workspace_root,
+        result_file,
+        stage_name,
+        materialize=True,
+        copy_namespace=task_id,
     )
+    aggregation.generated_file_links.extend(link_result.links)
+    aggregation.warnings.extend(link_result.warnings)

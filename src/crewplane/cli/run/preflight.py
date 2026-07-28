@@ -7,7 +7,10 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from crewplane.adapters.invokers.cli import collect_cli_availability_errors
+from crewplane.adapters.invokers.cli import (
+    collect_cli_availability_errors,
+    collect_cli_reasoning_errors,
+)
 from crewplane.architecture.errors import IntegrationResolutionError
 from crewplane.architecture.loader import (
     instantiate_adapter,
@@ -256,7 +259,14 @@ def compile_preview(
             state_dir=context.state_dir,
             allowed_template_paths=allowed_template_paths(snapshot_result),
             fingerprint_key_policy=fingerprint_key_policy,
-            additional_validation_errors=additional_validation_errors,
+            additional_validation_errors=(
+                run_reasoning_control_errors(
+                    context.source.workflow,
+                    context.config,
+                    context.project_root,
+                )
+                + additional_validation_errors
+            ),
             additional_diagnostics=workspace_preflight_diagnostics(workspace_check),
             workspace_source_snapshot=workspace_check.source_snapshot,
         ),
@@ -277,6 +287,34 @@ def run_cli_availability_errors(
             config,
             which_fn=which_fn,
             project_root=project_root,
+        )
+    )
+
+
+def run_reasoning_control_errors(
+    workflow: WorkflowPlan,
+    config: Config,
+    working_directory: Path | None = None,
+) -> tuple[str, ...]:
+    requested_locations = [
+        f"workflow '{workflow.name}' -> node '{node.id}' -> provider "
+        f"'{provider.provider}'"
+        for node in workflow.nodes
+        for provider in node.providers
+        if provider.reasoning is not None
+    ]
+    if not requested_locations:
+        return ()
+    if not uses_cli_invoker(config):
+        return tuple(
+            f"{location}: first-class reasoning requires the built-in CLI invoker."
+            for location in requested_locations
+        )
+    return tuple(
+        collect_cli_reasoning_errors(
+            workflow,
+            config,
+            working_directory=working_directory,
         )
     )
 

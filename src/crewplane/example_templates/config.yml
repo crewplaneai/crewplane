@@ -45,6 +45,8 @@ agents:
   #     - "quota reached"
   #     - "too many requests"
   #   quota_reached_retry_delay_seconds: 300
+  #   quota_retry_max_wait_seconds: null
+  #   quota_retry_max_attempts: null
   #
   # codex:
   #   cli_cmd: ["codex", "exec"]
@@ -70,6 +72,8 @@ agents:
   #     - "rate limit reached"
   #     - "too many requests"
   #   quota_reached_retry_delay_seconds: 300
+  #   quota_retry_max_wait_seconds: null
+  #   quota_retry_max_attempts: null
   #
   # gemini:
   #   cli_cmd: ["gemini"]
@@ -92,6 +96,8 @@ agents:
   #     - "resource exhausted"
   #     - "quota will reset after"
   #   quota_reached_retry_delay_seconds: 300
+  #   quota_retry_max_wait_seconds: null
+  #   quota_retry_max_attempts: null
   #
   # copilot:
   #   cli_cmd: ["copilot"]
@@ -118,6 +124,8 @@ agents:
   #     - "quota reached"
   #     - "too many requests"
   #   quota_reached_retry_delay_seconds: 300
+  #   quota_retry_max_wait_seconds: null
+  #   quota_retry_max_attempts: null
   #
   # kilo:
   #   cli_cmd: ["kilo"]
@@ -136,6 +144,8 @@ agents:
   #     - "quota reached"
   #     - "too many requests"
   #   quota_reached_retry_delay_seconds: 300
+  #   quota_retry_max_wait_seconds: null
+  #   quota_retry_max_attempts: null
 
 settings:
   # Experimental workspace isolation feature is disabled by default. With enabled:

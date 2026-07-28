@@ -137,6 +137,104 @@ def test_evaluate_quota_retry_returns_failure_when_reset_exceeds_guard() -> None
     assert "exceeds 5 hours" in decision.message
 
 
+def test_evaluate_quota_retry_enforces_configured_attempt_ceiling() -> None:
+    decision = evaluate_quota_retry(
+        config=AgentConfig(
+            cli_cmd=["gemini"],
+            provider_kind="gemini",
+            quota_retry_max_attempts=2,
+        ),
+        cmd=["gemini"],
+        quota_parser="gemini",
+        result=CommandResult(
+            returncode=1,
+            stdout_text="You have exhausted your capacity on this model.",
+            stderr_text="",
+        ),
+        quota_retry_started_at=None,
+        quota_retry_count=2,
+    )
+
+    assert isinstance(decision, QuotaRetryFailure)
+    assert "configured attempt ceiling of 2" in decision.message
+
+
+def test_evaluate_quota_retry_enforces_configured_wait_ceiling() -> None:
+    decision = evaluate_quota_retry(
+        config=AgentConfig(
+            cli_cmd=["gemini"],
+            provider_kind="gemini",
+            quota_reached_retry_delay_seconds=120,
+            quota_retry_max_wait_seconds=60,
+        ),
+        cmd=["gemini"],
+        quota_parser="gemini",
+        result=CommandResult(
+            returncode=1,
+            stdout_text="You have exhausted your capacity on this model.",
+            stderr_text="",
+        ),
+        quota_retry_started_at=None,
+        quota_retry_count=0,
+    )
+
+    assert isinstance(decision, QuotaRetryFailure)
+    assert "configured wait ceiling of 1m" in decision.message
+
+
+def test_quota_wait_ceiling_excludes_provider_execution_time() -> None:
+    with patch(
+        "crewplane.runtime.agent.invocation.retry.time.monotonic",
+        return_value=20,
+    ):
+        decision = evaluate_quota_retry(
+            config=AgentConfig(
+                cli_cmd=["gemini"],
+                provider_kind="gemini",
+                quota_reached_retry_delay_seconds=10,
+                quota_retry_max_wait_seconds=25,
+            ),
+            cmd=["gemini"],
+            quota_parser="gemini",
+            result=CommandResult(
+                returncode=1,
+                stdout_text="You have exhausted your capacity on this model.",
+                stderr_text="",
+            ),
+            quota_retry_started_at=0,
+            quota_retry_count=1,
+            quota_retry_wait_seconds=10,
+        )
+
+    assert isinstance(decision, ScheduleQuotaRetry)
+
+
+def test_bare_local_reset_uses_configured_delay_in_utc_timezone() -> None:
+    with local_timezone("UTC"):
+        decision = evaluate_quota_retry(
+            config=AgentConfig(
+                cli_cmd=["gemini"],
+                provider_kind="gemini",
+                quota_reached_retry_delay_seconds=73,
+            ),
+            cmd=["gemini"],
+            quota_parser="gemini",
+            result=CommandResult(
+                returncode=1,
+                stdout_text=(
+                    "You have exhausted your capacity on this model. Try again at 2 PM."
+                ),
+                stderr_text="",
+            ),
+            quota_retry_started_at=None,
+            quota_retry_count=0,
+        )
+
+    assert isinstance(decision, ScheduleQuotaRetry)
+    assert decision.wait_seconds == 73
+    assert "configured fixed delay" in decision.notice.message
+
+
 def test_evaluate_failure_retry_reads_retried_output_from_persisted_stream() -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         path = Path(tmp_dir) / "stream.txt"

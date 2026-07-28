@@ -108,7 +108,7 @@ settings use dotted paths in the left column.
 | `prompt_transport` | `stdin` or `argv`. Defaults to `stdin`. |
 | `prompt_transport_arg` | Required for `argv`; optional stdin sentinel for `stdin`. |
 | `extra_args` | Additional argv tokens appended to the provider command. |
-| `max_retries` | Maximum retry attempts. Defaults to `0`. |
+| `max_retries` | Maximum ordinary non-quota retry attempts. Defaults to `0`. |
 | `retry_delay_seconds` | Delay between generic retries. Defaults to `300.0`. |
 | `retry_on_exit_codes` | Exit codes that trigger retry. |
 | `retry_on_stderr_contains` | Stderr substrings that trigger retry. |
@@ -116,6 +116,8 @@ settings use dotted paths in the left column.
 | `quota_reached_on_contains` | Output substrings treated as quota exhaustion. |
 | `quota_reached_retry_delay_seconds` | Delay after quota detection. Defaults to `300.0`. |
 | `quota_reset_sleep_floor_seconds` | Minimum sleep when a quota reset time is parsed. Defaults to `5.0`. |
+| `quota_retry_max_wait_seconds` | Optional cumulative quota-wait ceiling for one invocation. Quota retries stop before the next sleep would reach this value. |
+| `quota_retry_max_attempts` | Optional quota-retry attempt ceiling for one invocation. Quota retries are independent of `max_retries`. |
 | `invocation_timeout_seconds` | Optional wall-clock timeout. Defaults to `null`. |
 | `invocation_idle_timeout_seconds` | Optional idle-output timeout. Defaults to `1800.0`. |
 | `pricing` | Optional token pricing buckets. |

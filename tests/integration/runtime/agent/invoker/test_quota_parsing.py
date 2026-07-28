@@ -185,6 +185,18 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(waits)
         self.assertAlmostEqual(max(waits), 3600.0, delta=1.0)
 
+    def test_does_not_treat_timezone_qualified_reset_as_host_local(self) -> None:
+        now_utc = datetime(2026, 7, 10, 17, 0, 0, tzinfo=UTC)
+        lines = (
+            "Usage limit reached; try again at 2 PM UTC.",
+            "Usage limit reached; try again at 2 PM EDT.",
+            "Usage limit reached; try again at 2 PM, (America/New_York).",
+        )
+
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(extract_wait_candidates_from_line(line, now_utc), [])
+
     def test_parses_epoch_pipe_reset_hint(self) -> None:
         now_utc = datetime(2026, 4, 10, 0, 0, 0, tzinfo=UTC)
         line = "quota reached |1893456000"
