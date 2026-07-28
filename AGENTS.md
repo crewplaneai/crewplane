@@ -188,5 +188,6 @@ Keep docs synchronized with implementation, especially when changing:
 - generated example templates
 
 - Keep instructions specific, consistent, and compact. Remove or rewrite outdated guidance instead of layering conflicting rules.
+- Keep changelog entries concise and outcome-focused. Describe user- or maintainer-visible effects instead of implementation mechanics, test details, or commit inventories.
 - Keep shared repository rules here. If guidance only applies to a narrower area, place it closer to that scope instead of expanding this file indefinitely.
 - If instructions grow large, split them by scope so the most relevant guidance stays nearest to the work it controls.

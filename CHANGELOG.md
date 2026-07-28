@@ -4,6 +4,18 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-28
+
+### Changed
+
+- Streamlined pre-publish validation and consolidated the maintainer release
+  workflow.
+
+### Fixed
+
+- Hardened release publishing against partial registry updates, transient
+  verification failures, and credential exposure in errors.
+
 ## [0.1.4] - 2026-07-27
 
 ### Added
