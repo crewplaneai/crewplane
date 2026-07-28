@@ -4,6 +4,45 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-27
+
+### Added
+
+- Added optional workflow-provider `reasoning` requests for Codex and Claude
+  when using the built-in CLI invoker. Crewplane passes the provider-native
+  value through unchanged and records it in dry-run output, preflight plans,
+  invocation logs and events, and duplicate-run and resume identity.
+- Added preflight validation for reasoning token shape, unsupported invokers or
+  provider kinds, and conflicting native reasoning controls in CLI arguments,
+  inherited Claude environment state, and explicit Claude settings.
+- Added optional `quota_retry_max_wait_seconds` and
+  `quota_retry_max_attempts` agent settings to bound quota retries
+  independently of ordinary `max_retries`.
+
+### Changed
+
+- Shared-project-root generated-file capture now requires providers to list
+  files under `## Generated Files`; Crewplane captures only listed files that
+  Git verifies changed during the invocation. Capture fails closed when no
+  usable Git baseline is available; managed isolated workspaces retain
+  workspace-owned change capture.
+- Generated-file snapshot limits and copy failures no longer discard an
+  otherwise successful provider result. Crewplane preserves accepted files,
+  records bounded rejection metadata, emits capture and finalization warnings,
+  copies accepted generated files into the result tree atomically while
+  preserving file modes, and omits links for files that could not be
+  published.
+- Quota retry diagnostics now state that quota attempts are independent of
+  `max_retries` and preserve the last distinct non-quota failure when a later
+  quota guard or configured ceiling ends the invocation.
+
+### Fixed
+
+- Prevented failed generated-file capture from falling back to live
+  project-root file detection during result consolidation.
+- Provider failures mentioning `reasoning.effort` are now classified as
+  model or configuration errors.
+
 ## [0.1.3] - 2026-07-26
 
 ### Added
