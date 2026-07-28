@@ -93,7 +93,7 @@ def test_install_check_prepares_each_artifact_set_once(
         "npm_pack",
         record_step(build_steps, "npm"),
     )
-    monkeypatch.setattr(smoke, "command_exists", lambda name: bool(name))
+    monkeypatch.setattr(smoke, "command_exists", bool)
     monkeypatch.setattr(
         smoke,
         "_install_smoke_pip",
