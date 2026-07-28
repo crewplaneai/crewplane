@@ -706,7 +706,7 @@ def test_publish_pypi_retries_registry_visibility_after_upload(
     monkeypatch.setattr(publish, "query_pypi_release", query_pypi)
 
     assert publish.publish_pypi(tmp_path, FakeRunner(), execute=True) == 0
-    assert sleeps == [1]
+    assert sleeps == [2]
     assert not pypi_responses
     assert "PyPI registry verification passed after 1 retry." in capsys.readouterr().out
 
@@ -854,7 +854,7 @@ def test_publish_npm_enforces_latest_and_retries_registry_visibility(
 
     runner = FakeRunner()
     assert publish.publish_npm(tmp_path, runner, execute=True) == 0
-    assert sleeps == [1]
+    assert sleeps == [2]
     assert not npm_responses
     npm_mutations = [command for command in runner.commands if command[0] == "npm"]
     assert len(npm_mutations) == 1
@@ -922,10 +922,11 @@ def test_registry_verification_success_message_uses_plural_retries(
         "npm",
         lambda: next(responses),
         attempts=3,
+        initial_delay_seconds=2,
     )
 
     assert issues == []
-    assert sleeps == [1, 2]
+    assert sleeps == [2, 4]
     assert (
         "npm registry verification passed after 2 retries." in capsys.readouterr().out
     )
@@ -947,13 +948,19 @@ def test_registry_verification_retries_transient_query_error(
     monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
 
     assert (
-        publish.wait_for_registry_verification("npm", collect_issues, attempts=2) == []
+        publish.wait_for_registry_verification(
+            "npm",
+            collect_issues,
+            attempts=2,
+            initial_delay_seconds=2,
+        )
+        == []
     )
     assert calls == 2
-    assert sleeps == [1]
+    assert sleeps == [2]
     output = capsys.readouterr().out
     assert "registry query failed: HTTP 503" in output
-    assert "retrying in 1s" in output
+    assert "retrying in 2s" in output
 
 
 def test_registry_verification_does_not_retry_non_transient_error(

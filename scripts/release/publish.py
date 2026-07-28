@@ -12,6 +12,7 @@ from packaging.version import InvalidVersion, Version
 
 from . import smoke
 from .state import (
+    NPM_RETRY_INITIAL_DELAY_SECONDS,
     ORIGIN_MASTER_ANCESTRY_ERROR,
     CommandRunner,
     DerivedReleaseState,
@@ -427,6 +428,7 @@ def wait_for_registry_verification(
     label: str,
     collect_issues: Callable[[], list[str]],
     attempts: int = REGISTRY_VERIFICATION_ATTEMPTS,
+    initial_delay_seconds: int = NPM_RETRY_INITIAL_DELAY_SECONDS,
 ) -> list[str]:
     issues: list[str] = []
     for attempt in range(1, attempts + 1):
@@ -442,7 +444,7 @@ def wait_for_registry_verification(
             return []
         if attempt == attempts:
             return issues
-        delay = 2 ** (attempt - 1)
+        delay = initial_delay_seconds * 2 ** (attempt - 1)
         print(
             f"{label} registry verification pending ({attempt}/{attempts}): "
             f"{'; '.join(issues)}; retrying in {delay}s."

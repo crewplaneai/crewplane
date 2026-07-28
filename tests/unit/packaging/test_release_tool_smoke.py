@@ -64,6 +64,34 @@ def test_brew_smoke_uses_built_sdist_sha_for_local_formula(
     assert f'sha256 "{"0" * 64}"' not in runner.installed_formula_text
 
 
+def test_post_publish_npm_check_retries_after_two_seconds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_minimal_repo(tmp_path)
+    context = state.read_release_context(tmp_path)
+    calls = 0
+    sleeps: list[int] = []
+
+    def check(
+        context_arg: state.ReleaseContext,
+        runner_arg: state.CommandRunner,
+    ) -> None:
+        nonlocal calls
+        del context_arg, runner_arg
+        calls += 1
+        if calls < 3:
+            raise state.ReleaseError("package is not visible yet")
+
+    monkeypatch.setattr(smoke, "remote_npm_install_check", check)
+    monkeypatch.setattr(smoke.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    smoke.post_publish_npm_check(context, state.CommandRunner(), attempts=3)
+
+    assert calls == 3
+    assert sleeps == [2, 4]
+
+
 def test_install_check_prepares_each_artifact_set_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -20,6 +20,7 @@ from packaging.version import InvalidVersion, Version
 
 REQUEST_TIMEOUT_SECONDS = 15
 COMMAND_TIMEOUT_SECONDS = 900
+NPM_RETRY_INITIAL_DELAY_SECONDS = 2
 USER_AGENT = "crewplane-release/1"
 MANIFEST_PATH = Path(".release/release-manifest.json")
 COMMAND_FAILURE_OUTPUT_LIMIT = 12000
