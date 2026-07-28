@@ -57,11 +57,11 @@ help:
 		'  package-build      Build wheel and sdist into dist/' \
 		'  package-check      Build artifacts, run twine check, verify Homebrew sdist SHA' \
 		'  install-smoke      Exercise pip, uv tool, and pipx installs where available' \
-		'  install-check      Run package checks plus installer, npm, and Homebrew smokes' \
+		'  install-check      Build once, then run package, installer, npm, and Homebrew smokes' \
 		'' \
 		'Normal release flow:' \
 		'  release-prepare    Sync generated metadata and prepare local release artifacts' \
-		'  release-check      Run pre-publish checks, or verify a completed release no-op' \
+		'  release-check      Verify changelog and pre-publish checks, or a completed release' \
 		'  release            Confirm, check, publish PyPI, publish npm latest, and tag' \
 		'' \
 		'Partial completion:' \

@@ -29,6 +29,10 @@ class ReleaseError(RuntimeError):
     """Raised when release state is unsafe or cannot be verified."""
 
 
+class RetryableRegistryError(ReleaseError):
+    """Raised when a registry query may succeed on a later attempt."""
+
+
 class ReleaseStatus(StrEnum):
     READY = "ready"
     COMPLETE = "complete"
@@ -84,25 +88,40 @@ class CommandRunner:
 
 def _redacted_args(command: Sequence[str]) -> tuple[str, ...]:
     redacted: list[str] = []
-    previous = ""
+    secret_option = ""
     for arg in command:
-        if previous == "--otp":
+        option, separator, _value = arg.partition("=")
+        if secret_option:
             redacted.append("<redacted>")
-            previous = ""
+            secret_option = (
+                option if _is_secret_option(option) and not separator else ""
+            )
             continue
-        if arg == "--otp":
+        if arg.startswith("-p") and not arg.startswith("--") and len(arg) > 2:
+            redacted.append("-p<redacted>")
+            continue
+        if _is_secret_option(option):
+            if separator:
+                redacted.append(f"{option}=<redacted>")
+                continue
             redacted.append(arg)
-            previous = "--otp"
+            secret_option = option
             continue
-        if arg.startswith("--otp="):
-            redacted.append("--otp=<redacted>")
-            previous = ""
-            continue
-        previous = ""
         redacted.append(arg)
-    if previous == "--otp":
-        redacted.append("<missing-otp>")
+    if secret_option:
+        redacted.append("<missing-value>")
     return tuple(redacted)
+
+
+def _is_secret_option(option: str) -> bool:
+    normalized = option.casefold()
+    return normalized in {
+        "--otp",
+        "--password",
+        "-p",
+        "--token",
+        "--auth-token",
+    } or normalized.endswith("_authtoken")
 
 
 def _command_failure_output(result: CommandResult) -> str:
@@ -405,11 +424,18 @@ def fetch_registry_json(url: str) -> dict[str, Any] | None:
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None
-        raise ReleaseError(
+        error_type = (
+            RetryableRegistryError
+            if error.code in {408, 429} or 500 <= error.code < 600
+            else ReleaseError
+        )
+        raise error_type(
             f"registry query failed for {url}: HTTP {error.code}"
         ) from error
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
-        raise ReleaseError(f"registry query failed for {url}: {error}") from error
+        raise RetryableRegistryError(
+            f"registry query failed for {url}: {error}"
+        ) from error
     if not isinstance(payload, dict):
         raise ReleaseError(f"registry response is not a JSON object: {url}")
     return payload

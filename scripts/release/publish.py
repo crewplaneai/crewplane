@@ -21,6 +21,7 @@ from .state import (
     ReleaseError,
     ReleaseManifest,
     ReleaseStatus,
+    RetryableRegistryError,
     command_exists,
     derive_release_state,
     fail_if_generated_metadata_stale,
@@ -28,6 +29,7 @@ from .state import (
     inspect_release_tag_state,
     is_tag_only_missing_error,
     manifest_context_issues,
+    missing_pypi_artifact_keys,
     print_state,
     query_npm_release,
     query_pypi_release,
@@ -40,6 +42,7 @@ from .state import (
     verify_git_tag_state,
     verify_local_manifest_artifacts,
     verify_npm_artifact,
+    verify_present_pypi_artifacts,
     verify_pypi_artifacts,
 )
 
@@ -81,7 +84,6 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         return 1
     manifest = read_manifest(root)
     fail_if_generated_metadata_stale(context, manifest)
-    require_pypi_auth()
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
     require_publish_git_state(
@@ -90,21 +92,19 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         pypi.exists,
         is_registry_recovery(pypi, npm),
     )
-    issues = verify_existing_pypi(context, pypi, manifest)
+    issues = verify_present_pypi_artifacts(context, pypi, manifest)
     issues.extend(verify_existing_npm(context, npm, manifest))
     if issues:
         raise ReleaseError("PyPI publication is blocked:\n  " + "\n  ".join(issues))
-    if pypi.exists:
+    missing_keys = missing_pypi_artifact_keys(pypi, manifest)
+    if not missing_keys:
         print(
             f"PyPI already has {context.package_name} {context.version.project}; verified existing files."
         )
         smoke.post_publish_pypi_check(context, runner)
         return 0
-    fail_if_local_artifacts_stale(
-        context, manifest, ("pypi_sdist", "pypi_wheel"), "PyPI"
-    )
-    sdist = context.root / manifest.artifact("pypi_sdist").path
-    wheel = context.root / manifest.artifact("pypi_wheel").path
+    require_pypi_auth()
+    fail_if_local_artifacts_stale(context, manifest, missing_keys, "PyPI")
     command = [
         sys.executable,
         "-m",
@@ -114,7 +114,9 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         os.environ.get("PYPI_REPOSITORY", "pypi"),
     ]
     command.extend(shlex.split(os.environ.get("TWINE_UPLOAD_ARGS", "")))
-    command.extend([str(sdist), str(wheel)])
+    command.extend(
+        str(context.root / manifest.artifact(key).path) for key in missing_keys
+    )
     runner.run(command, cwd=context.root, env=pypi_upload_env(), capture_output=False)
     issues = wait_for_registry_verification(
         "PyPI",
@@ -137,7 +139,6 @@ def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
         return 1
     manifest = read_manifest(root)
     fail_if_generated_metadata_stale(context, manifest)
-    require_npm_auth()
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
     require_publish_git_state(
@@ -150,14 +151,17 @@ def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
     issues.extend(verify_existing_pypi(context, pypi, manifest))
     if issues:
         raise ReleaseError("npm publication is blocked:\n  " + "\n  ".join(issues))
-    needs_dist_tag = npm.exists is False or npm.latest != context.version.npm
+    needs_dist_tag = npm.exists and npm.latest != context.version.npm
+    if not npm.exists or needs_dist_tag:
+        require_npm_auth()
     if not npm.exists:
         fail_if_local_artifacts_stale(context, manifest, ("npm_tarball",), "npm")
     otp = resolve_npm_otp(npm_exists=npm.exists, needs_dist_tag=needs_dist_tag)
     if not npm.exists:
         package = context.root / manifest.artifact("npm_tarball").path
-        command = ["npm", "publish", str(package), "--tag", "latest"]
+        command = ["npm", "publish", str(package)]
         command.extend(npm_extra_args())
+        command.extend(["--tag", "latest"])
         command.extend(otp_arg(otp.publish))
         runner.run(command, cwd=context.root, capture_output=False)
     if needs_dist_tag:
@@ -426,7 +430,10 @@ def wait_for_registry_verification(
 ) -> list[str]:
     issues: list[str] = []
     for attempt in range(1, attempts + 1):
-        issues = collect_issues()
+        try:
+            issues = collect_issues()
+        except RetryableRegistryError as error:
+            issues = [str(error)]
         if not issues:
             if attempt > 1:
                 retries = attempt - 1
@@ -435,11 +442,12 @@ def wait_for_registry_verification(
             return []
         if attempt == attempts:
             return issues
+        delay = 2 ** (attempt - 1)
         print(
-            f"{label} registry verification did not pass; "
-            f"retrying ({attempt}/{attempts})."
+            f"{label} registry verification pending ({attempt}/{attempts}): "
+            f"{'; '.join(issues)}; retrying in {delay}s."
         )
-        time.sleep(2 ** (attempt - 1))
+        time.sleep(delay)
     return issues
 
 

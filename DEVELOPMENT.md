@@ -68,65 +68,9 @@ Current CI policy:
 - Default branch: `master`.
 - The supported platform matrix is defined in
   [Supported Platforms](#supported-platforms).
-- Production publishing is local-only. Maintainers run `make release` to
-  publish PyPI, publish npm with the `latest` dist-tag, and create/push the
-  final Git tag. GitHub Actions does not publish production PyPI or npm
-  packages and does not need PyPI or npm credentials.
-- `.github/workflows/release.yml` provides manually dispatched GitHub Release
-  automation as the second phase of the same release operation:
-
-  1. **Create the production release locally.** The manual `make release` flow
-     is the production source of truth.
-  2. **Dispatch GitHub publication from the same commit.** Immediately after
-     `make release` creates and pushes the final tag, dispatch the workflow from
-     `master` with the required `tag` input, before `master` advances. The
-     workflow rejects dispatches outside `refs/heads/master`. It checks out the
-     requested tag, resolves its commit, and requires it to match the master
-     commit that dispatched the workflow exactly. Historical-tag backfills and
-     new dispatches after `master` advances are unsupported.
-  3. **Verify the tagged source.** The workflow rebuilds the artifacts and
-     verifies their manifest, registry state, Homebrew formula metadata, and tag
-     state through `scripts/release.py`. It transfers the verified sdist, wheel,
-     npm tarball, and manifest to the write-authorized job.
-  4. **Publish the GitHub Release.** The publisher checks out the exact verified
-     commit and verifies fresh registry and tag state before mutating GitHub. It
-     repeats the plan after draft-asset verification immediately before
-     publication and supplies the verified predecessor tag when GitHub generates
-     release notes. The GitHub Release itself contains only `dist/*`.
-
-- GitHub Release publication fails closed:
-
-  - Every plan evaluation re-fetches `origin/master` and requires the release
-    commit to remain reachable from it.
-  - Draft and published assets are checked by exact name, size, and GitHub's
-    immutable upload-time SHA-256 digest. API failures, truncated responses, and
-    unexpected assets fail closed.
-  - Release titles must exactly match their tags, and generated notes carry a
-    hidden, versioned automation marker. Existing drafts without both are
-    rejected before any asset mutation.
-  - New releases are built as drafts, verified, published, and verified again.
-    Prereleases can never be GitHub `Latest`; a stable release is `Latest` only
-    when it is the highest published stable version on PyPI.
-  - A repository-wide non-dropping concurrency queue serializes publication
-    workflows around those checks and mutations. PyPI and npm remain the
-    production publishing sources of truth.
-
-- Release artifact builds are reproducible:
-
-  - `pyproject.toml` uses an exact Hatchling build-system pin so the manual
-    release and its immediately following GitHub Release rebuild use the same
-    backend version.
-  - The manually dispatched job rebuilds only the registry artifacts needed for
-    verification. `make release-prepare` owns the offline runtime wheelhouse used
-    by maintainer checks.
-- The release workflow verifies the Homebrew formula metadata in this repo, but
-  does not update the Homebrew tap; tap publishing remains a separate maintainer
-  step.
-- `.github/workflows/testpypi.yml` remains the separate TestPyPI Trusted
-  Publishing workflow. Maintainers may intentionally dispatch it from any
-  selected ref; it is not restricted to `master`. It fails if the package
-  version already exists on TestPyPI. Trusted Publishing is free and uses
-  short-lived OIDC credentials instead of a stored package token.
+- Production publishing is local-only. Follow the
+  [Release Workflow](#release-workflow). GitHub Actions does not publish
+  production PyPI or npm packages and does not need their credentials.
 - Workflow actions are pinned to immutable commits, with version comments kept
   beside each pin for dependency automation and review. Workflow `uv`
   installations are also version-pinned.
@@ -199,10 +143,81 @@ See [ADR 0013](docs/architecture/adr/0013-version-source-of-truth-and-documentat
 
 During the public-alpha `0.x` period, support the current schema only. Persisted run artifacts are disposable audit outputs, not migration targets; stale preflight plans may be rejected by explicit shape validation even when they carry the current `SCHEMA_VERSION`.
 
-## Release Workflows
+## Release Workflow
 
-Use `make help` for target details and [CONTRIBUTING.md](CONTRIBUTING.md) for
-the maintainer release flow.
+Production releases have two publication phases: publish the packages and Git
+tag locally, then publish the GitHub Release. Use `make help` for target
+details.
+
+### 1. Prepare and validate
+
+Update the version in `pyproject.toml` and add the matching section to
+`CHANGELOG.md`. Review the changelog content manually, then run:
+
+```bash
+make release-prepare
+make release-check
+```
+
+Both commands must pass before publication. Preparation stops if the target
+version already exists on PyPI or npm. Some install checks may be skipped when
+optional local tools such as `pipx`, npm, or Homebrew are unavailable; review
+the skip messages before continuing.
+
+### 2. Publish packages and the Git tag
+
+Configure the PyPI and npm credentials, then run:
+
+```bash
+make release
+```
+
+Confirm the exact version when prompted. A successful run publishes PyPI,
+publishes npm with the `latest` dist-tag, and pushes the annotated Git tag.
+
+For a non-interactive npm release that requires two-factor authentication, set
+`NPM_PUBLISH_OTP` or `NPM_OTP`. A separate npm `latest` recovery uses
+`NPM_DIST_TAG_OTP` or `NPM_OTP`.
+
+### 3. Publish the GitHub Release
+
+Immediately after `make release` pushes the tag, dispatch
+`.github/workflows/release.yml` from `master`. Use the full Git tag, including
+the `v` prefix, as the required `tag` input: for package version `0.1.4`, enter
+`v0.1.4`, not `0.1.4`. Do this before `master` advances: dispatching from
+another ref, backfilling a historical tag, or dispatching after a newer commit
+reaches `master` is unsupported.
+
+The workflow verifies the tagged release and publishes the GitHub Release. It
+does not publish the production PyPI or npm packages. Prereleases are never
+marked as GitHub `Latest`; a stable release is marked `Latest` only when it is
+the highest published stable version on PyPI.
+
+### 4. Publish Homebrew separately
+
+Copy the prepared formula into the Homebrew tap, run the tap's audit and test
+steps, and push the tap update.
+
+### Recover an interrupted release
+
+If only part of PyPI or one registry was published, fix the reported problem
+and rerun the corresponding target:
+
+```bash
+make release-pypi
+make release-npm
+```
+
+These targets verify anything already published and complete only the missing
+work. Use `make release-npm` when the npm package exists but its `latest`
+dist-tag is stale. Once both registries are complete, rerun `make release` to
+finish the Git tag.
+
+### TestPyPI
+
+Use `.github/workflows/testpypi.yml` for TestPyPI Trusted Publishing. It may be
+dispatched from any selected ref and stops if that package version already
+exists on TestPyPI.
 
 ## Key Modules
 

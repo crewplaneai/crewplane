@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+import urllib.error
 
 _LOCAL_TEST_DIR = Path(__file__).resolve().parent
 if str(_LOCAL_TEST_DIR) not in sys.path:
@@ -71,6 +72,87 @@ def test_command_runner_reports_stdout_and_stderr_on_failure(tmp_path: Path) -> 
     message = str(caught.value)
     assert "stdout:\nvisible stdout" in message
     assert "stderr:\nvisible stderr" in message
+
+
+def test_command_runner_redacts_credentials_from_failure(
+    tmp_path: Path,
+) -> None:
+    runner = state.CommandRunner()
+
+    with pytest.raises(state.ReleaseError) as caught:
+        runner.run(
+            [
+                sys.executable,
+                "-c",
+                "raise SystemExit(7)",
+                "--password",
+                "pypi-secret",
+                "--//registry.npmjs.org/:_authToken=npm-secret",
+                "--otp=123456",
+                "-pattached-secret",
+                "--_authToken=generic-secret",
+            ],
+            cwd=tmp_path,
+        )
+
+    message = str(caught.value)
+    assert "pypi-secret" not in message
+    assert "npm-secret" not in message
+    assert "123456" not in message
+    assert "attached-secret" not in message
+    assert "generic-secret" not in message
+    assert message.count("<redacted>") == 5
+
+
+def test_command_runner_redacts_adjacent_secret_options(tmp_path: Path) -> None:
+    secret = "nested-secret"
+
+    with pytest.raises(state.ReleaseError) as caught:
+        state.CommandRunner().run(
+            [
+                sys.executable,
+                "-c",
+                "raise SystemExit(7)",
+                "-p",
+                "--otp",
+                secret,
+            ],
+            cwd=tmp_path,
+        )
+
+    assert secret not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type"),
+    (
+        (408, state.RetryableRegistryError),
+        (429, state.RetryableRegistryError),
+        (503, state.RetryableRegistryError),
+        (400, state.ReleaseError),
+    ),
+)
+def test_registry_http_errors_are_classified_for_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    error_type: type[state.ReleaseError],
+) -> None:
+    def fail_request(*args, **kwargs):
+        del args, kwargs
+        raise urllib.error.HTTPError(
+            "https://registry.example.test/package",
+            status_code,
+            "failure",
+            None,
+            None,
+        )
+
+    monkeypatch.setattr(state.state_types.urllib.request, "urlopen", fail_request)
+
+    with pytest.raises(state.ReleaseError) as caught:
+        state.fetch_registry_json("https://registry.example.test/package")
+
+    assert type(caught.value) is error_type
 
 
 def test_metadata_sync_refreshes_and_reads_back_generated_files(

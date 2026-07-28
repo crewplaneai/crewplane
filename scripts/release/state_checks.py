@@ -693,21 +693,36 @@ def verify_pypi_artifacts(
 ) -> list[str]:
     if not release.exists:
         return ["PyPI version is missing"]
+    issues = verify_present_pypi_artifacts(context, release, manifest)
+    for key in missing_pypi_artifact_keys(release, manifest):
+        issues.append(f"PyPI is missing {manifest.artifact(key).filename}")
+    return issues
+
+
+def missing_pypi_artifact_keys(
+    release: PypiRelease, manifest: ReleaseManifest
+) -> tuple[str, ...]:
+    return tuple(
+        key
+        for key in ("pypi_sdist", "pypi_wheel")
+        if manifest.artifact(key).filename not in release.files
+    )
+
+
+def verify_present_pypi_artifacts(
+    context: ReleaseContext, release: PypiRelease, manifest: ReleaseManifest
+) -> list[str]:
     issues: list[str] = []
     for key in ("pypi_sdist", "pypi_wheel"):
         artifact = manifest.artifact(key)
         remote = release.files.get(artifact.filename)
         if remote is None:
-            issues.append(f"PyPI is missing {artifact.filename}")
             continue
         if remote.sha256 != artifact.sha256:
             issues.append(f"PyPI hash mismatch for {artifact.filename}")
         if remote.size and remote.size != artifact.size:
             issues.append(f"PyPI size mismatch for {artifact.filename}")
     expected_names = {context.sdist_filename, context.wheel_filename}
-    for filename in expected_names:
-        if filename not in release.files:
-            issues.append(f"PyPI is missing expected file {filename}")
     unexpected_names = sorted(release.files.keys() - expected_names)
     if unexpected_names:
         issues.append(f"PyPI has unexpected files: {', '.join(unexpected_names)}")

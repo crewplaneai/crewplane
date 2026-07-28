@@ -549,74 +549,28 @@ def test_release_docs_describe_single_production_publish_path() -> None:
     development = read_text("DEVELOPMENT.md")
     contributing = read_text("CONTRIBUTING.md")
     normalized_development = " ".join(development.split())
-    normalized_contributing = " ".join(contributing.split())
 
     assert "Production publishing is local-only." in development
-    assert "Maintainers run `make release`" in normalized_development
+    assert "[Release Workflow](#release-workflow)" in development
     assert "does not publish production PyPI or npm packages" in normalized_development
-    assert "does not need PyPI or npm credentials" in normalized_development
-    assert "manually dispatched GitHub Release automation" in normalized_development
-    assert "required `tag` input" in normalized_development
-    assert "rejects dispatches outside `refs/heads/master`" in normalized_development
-    assert "manual `make release` flow is the production source of truth" in (
-        normalized_development
-    )
-    assert "second phase of the same release operation" in normalized_development
-    assert (
-        "requires it to match the master commit that dispatched the workflow exactly"
-        in normalized_development
-    )
-    assert (
-        "Historical-tag backfills and new dispatches after `master` advances are unsupported"
-        in normalized_development
-    )
-    assert "exact Hatchling build-system pin" in normalized_development
-    assert "offline runtime wheelhouse" in normalized_development
-    assert "GitHub Release itself contains only `dist/*`" in (normalized_development)
-    assert "New releases are built as drafts, verified, published" in (
-        normalized_development
-    )
-    assert "exact name, size, and GitHub's immutable upload-time SHA-256 digest" in (
-        normalized_development
-    )
+    assert "does not need their credentials" in normalized_development
+    assert "## Release Workflow" in development
+    for command in (
+        "make release-prepare",
+        "make release-check",
+        "make release",
+        "make release-pypi",
+        "make release-npm",
+    ):
+        assert command in development
+    assert "`v0.1.4`, not `0.1.4`" in normalized_development
+    assert "before `master` advances" in normalized_development
+    assert "backfilling a historical tag" in normalized_development
     assert "highest published stable version on PyPI" in normalized_development
-    assert "does not update the Homebrew tap" in development
-    assert "TestPyPI Trusted Publishing workflow" in normalized_development
-    assert "dispatch it from any selected ref" in normalized_development
-    assert "not restricted to `master`" in normalized_development
-    assert "delayed GitHub Release" not in normalized_development
-    assert "stale attempts for older releases" not in normalized_development
-    assert "PyPI Trusted Publishing through GitHub OIDC" not in development
-    assert "scripts/release.py release-artifacts" in contributing
-    assert "scripts/release.py github-release-plan" in contributing
-    assert "recover-release-artifacts" not in contributing
-    assert "verify-backfill" not in contributing
-    assert "exact Hatchling build-system pin" in normalized_contributing
-    assert "offline runtime wheelhouse" in normalized_contributing
-    assert "exact asset names, sizes, and GitHub SHA-256 digests" in (
-        normalized_contributing
-    )
-    assert "never mutates an already-published mismatch" in (normalized_contributing)
-    assert "highest published stable version on PyPI" in normalized_contributing
-    assert "checks out the requested tag" in normalized_contributing
-    assert (
-        "requires it to match the master commit that dispatched the workflow exactly"
-        in normalized_contributing
-    )
-    assert (
-        "Historical-tag backfills and new dispatches after `master` advances are unsupported"
-        in normalized_contributing
-    )
-    assert "checks out the exact verified commit" in normalized_contributing
-    assert "current `master` tip" not in normalized_contributing
-    assert "reloads and re-verifies draft assets immediately before publication" in (
-        normalized_contributing
-    )
-    assert "does not publish production packages" in normalized_contributing
-    assert "dispatch it from any selected ref" in normalized_contributing
-    assert "not restricted to `master`" in normalized_contributing
-    assert "delayed GitHub Release" not in normalized_contributing
-    assert "stale attempts for older releases" not in normalized_contributing
+    assert "Publish Homebrew separately" in development
+    assert ".github/workflows/testpypi.yml" in development
+    assert "dispatched from any selected ref" in normalized_development
+    assert "## Release Workflow" not in contributing
 
 
 def test_repository_automation_matches_supported_platform_and_publish_policy() -> None:

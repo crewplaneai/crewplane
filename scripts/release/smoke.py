@@ -20,23 +20,50 @@ from .state import (
 
 
 def install_check(root: Path, runner: CommandRunner) -> None:
+    context = read_release_context(root)
     build.package_check(root, runner)
-    install_smoke(root, runner)
-    install_script_smoke(root, runner)
-    build.npm_pack(root, runner)
-    npm_smoke(root, runner)
-    brew_smoke(root, runner)
+    build.build_wheelhouse(context, runner)
+    _exercise_python_install_smokes(context, runner)
+    _install_script_smoke(context, runner)
+    if command_exists("npm"):
+        build.npm_pack(root, runner)
+        _npm_smoke(context, runner)
+    else:
+        print("Skipping npm-smoke: npm not found.")
+    if command_exists("brew"):
+        _brew_smoke(context, runner)
+    else:
+        print("Skipping brew-smoke: brew not found.")
 
 
 def install_smoke(root: Path, runner: CommandRunner) -> None:
-    install_smoke_pip(root, runner)
-    install_smoke_uv(root, runner)
-    install_smoke_pipx(root, runner)
+    context = read_release_context(root)
+    build.package_wheelhouse(root, runner)
+    _exercise_python_install_smokes(context, runner)
+
+
+def _exercise_python_install_smokes(
+    context: ReleaseContext, runner: CommandRunner
+) -> None:
+    _install_smoke_pip(context, runner)
+    if command_exists("uv"):
+        _install_smoke_uv(context, runner)
+    else:
+        print("Skipping install-smoke-uv: uv not found.")
+    if command_exists("pipx"):
+        _install_smoke_pipx(context, runner)
+    else:
+        print("Skipping install-smoke-pipx: pipx not found.")
 
 
 def install_smoke_pip(root: Path, runner: CommandRunner) -> None:
     context = read_release_context(root)
     build.package_wheelhouse(root, runner)
+    _install_smoke_pip(context, runner)
+
+
+def _install_smoke_pip(context: ReleaseContext, runner: CommandRunner) -> None:
+    root = context.root
     with tempfile.TemporaryDirectory() as temporary:
         tmp = Path(temporary)
         smoke_python = current_python(root, runner)
@@ -72,6 +99,11 @@ def install_smoke_uv(root: Path, runner: CommandRunner) -> None:
         return
     context = read_release_context(root)
     build.package_wheelhouse(root, runner)
+    _install_smoke_uv(context, runner)
+
+
+def _install_smoke_uv(context: ReleaseContext, runner: CommandRunner) -> None:
+    root = context.root
     with tempfile.TemporaryDirectory() as temporary:
         tmp = Path(temporary)
         home = tmp / "home"
@@ -109,6 +141,11 @@ def install_smoke_pipx(root: Path, runner: CommandRunner) -> None:
         return
     context = read_release_context(root)
     build.package_wheelhouse(root, runner)
+    _install_smoke_pipx(context, runner)
+
+
+def _install_smoke_pipx(context: ReleaseContext, runner: CommandRunner) -> None:
+    root = context.root
     with tempfile.TemporaryDirectory() as temporary:
         tmp = Path(temporary)
         smoke_python = current_python(root, runner)
@@ -133,6 +170,11 @@ def install_smoke_pipx(root: Path, runner: CommandRunner) -> None:
 def install_script_smoke(root: Path, runner: CommandRunner) -> None:
     context = read_release_context(root)
     build.package_wheelhouse(root, runner)
+    _install_script_smoke(context, runner)
+
+
+def _install_script_smoke(context: ReleaseContext, runner: CommandRunner) -> None:
+    root = context.root
     with tempfile.TemporaryDirectory() as temporary:
         tmp = Path(temporary)
         env = {
@@ -155,6 +197,11 @@ def npm_smoke(root: Path, runner: CommandRunner) -> None:
     context = read_release_context(root)
     build.package_wheelhouse(root, runner)
     build.npm_pack(root, runner)
+    _npm_smoke(context, runner)
+
+
+def _npm_smoke(context: ReleaseContext, runner: CommandRunner) -> None:
+    root = context.root
     package = context.root / ".release" / "npm" / context.npm_filename
     if not package.is_file():
         raise ReleaseError(f"npm package artifact is missing: {package}")
@@ -205,6 +252,11 @@ def brew_smoke(root: Path, runner: CommandRunner) -> None:
         return
     context = read_release_context(root)
     build.package_build(root, runner)
+    _brew_smoke(context, runner)
+
+
+def _brew_smoke(context: ReleaseContext, runner: CommandRunner) -> None:
+    root = context.root
     installed = runner.run(
         ["brew", "list", "--formula", context.package_name],
         cwd=root,
