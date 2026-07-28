@@ -25,6 +25,23 @@ def test_provider_role_validates_and_serializes_lowercase_values() -> None:
     assert provider.model_dump(mode="json")["role"] == "reviewer"
 
 
+@pytest.mark.parametrize(
+    "reasoning",
+    ["", "has space", "élevé", "bad/value", "bad\\value", "bad=value", "x" * 65],
+)
+def test_provider_reasoning_rejects_unsafe_native_tokens(reasoning: str) -> None:
+    with pytest.raises(ValidationError, match="reasoning must be"):
+        ProviderSpec(provider="alpha", reasoning=reasoning)
+
+
+def test_provider_reasoning_null_matches_omission() -> None:
+    omitted = ProviderSpec(provider="alpha")
+    explicit_null = ProviderSpec(provider="alpha", reasoning=None)
+
+    assert omitted == explicit_null
+    assert omitted.model_dump(mode="json") == explicit_null.model_dump(mode="json")
+
+
 @pytest.mark.parametrize("role", ["Reviewer", " reviewer ", "author"])
 def test_provider_role_rejects_invalid_or_mixed_case_values(role: str) -> None:
     with pytest.raises(ValidationError):

@@ -4,6 +4,7 @@ import pytest
 
 from crewplane.architecture.contracts import (
     SUPPORTED_PROVIDER_KIND_VALUES,
+    InvocationContext,
     InvocationSourceContext,
     InvocationWorkspaceContext,
     InvocationWorktreeContract,
@@ -129,3 +130,12 @@ def test_invocation_workspace_context_records_source_identity(tmp_path) -> None:
     assert workspace.cwd == tmp_path
     assert workspace.invocation_source.source_kind == "project"
     assert workspace.worktree_contract.mode == "blob_exact"
+
+
+def test_invocation_context_preserves_existing_positional_contract() -> None:
+    context = InvocationContext("node", "task", "codex", "executor", 2, 3, True)
+
+    assert context.audit_round_num == 2
+    assert context.round_num == 3
+    assert context.findings_enabled is True
+    assert context.requested_reasoning is None

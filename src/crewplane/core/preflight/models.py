@@ -232,6 +232,7 @@ class ProviderRecord(BaseModel):
     provider: str
     role: ProviderRole
     model: str | None = None
+    requested_reasoning: str | None = None
     task_id: str
     agent_config_key: str
     invoker_alias: str

@@ -125,6 +125,8 @@ class AgentConfig(BaseModel):
     quota_reached_on_contains: list[str] = Field(default_factory=list)
     quota_reached_retry_delay_seconds: float = Field(default=300.0, ge=0)
     quota_reset_sleep_floor_seconds: float = Field(default=5.0, ge=0)
+    quota_retry_max_wait_seconds: float | None = Field(default=None, gt=0)
+    quota_retry_max_attempts: int | None = Field(default=None, ge=1)
     # A finite wall-clock timeout cancels and reaps the provider process.
     invocation_timeout_seconds: float | None = DEFAULT_INVOCATION_TIMEOUT_SECONDS
     invocation_idle_timeout_seconds: float | None = (

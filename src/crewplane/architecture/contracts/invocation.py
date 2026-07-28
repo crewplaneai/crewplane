@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import KW_ONLY, dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -284,6 +284,7 @@ class InvocationContext:
         None
     )
     workspace: InvocationWorkspaceContext | None = None
+    requested_reasoning: str | None = None
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
@@ -17,6 +17,7 @@ from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.runtime.agent.invoker import PlannedAgentInvoker
 
 from .cli_invoker import build_cli_invocation_plan, build_cli_log_presentation
+from .cli_invoker.reasoning import validate_reasoning_request
 
 
 def collect_cli_availability_errors(
@@ -47,6 +48,35 @@ def collect_cli_availability_errors(
                 f"{location} (CLI: {cli_executable})"
             )
     return _format_missing_cli_errors(config, missing_cli_locations)
+
+
+def collect_cli_reasoning_errors(
+    workflow: WorkflowPlan,
+    config: Config,
+    environment: Mapping[str, str] | None = None,
+    working_directory: Path | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    for node in workflow.nodes:
+        for provider in node.providers:
+            if provider.reasoning is None:
+                continue
+            agent_config = config.agents.get(provider.provider)
+            if agent_config is None:
+                continue
+            try:
+                validate_reasoning_request(
+                    agent_config,
+                    provider.reasoning,
+                    environment,
+                    working_directory,
+                )
+            except ValueError as exc:
+                errors.append(
+                    f"workflow '{workflow.name}' -> node '{node.id}' -> provider "
+                    f"'{provider.provider}': {exc}"
+                )
+    return errors
 
 
 def _format_missing_cli_errors(

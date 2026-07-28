@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import tempfile
 import unittest
 from datetime import datetime
@@ -11,7 +12,7 @@ from unittest.mock import patch
 
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
-    generated_file_source_root,
+    generated_file_snapshot_rejection_summary,
     snapshot_generated_file_workspace,
 )
 from crewplane.core.execution_state import (
@@ -165,6 +166,7 @@ class OutputManagerTests(unittest.TestCase):
                 "alpha content",
                 encoding="utf-8",
             )
+            (alpha_workspace / "src" / "app.txt").chmod(0o640)
             (beta_workspace / "src" / "app.txt").write_text(
                 "beta content",
                 encoding="utf-8",
@@ -202,6 +204,111 @@ class OutputManagerTests(unittest.TestCase):
                 ),
                 "beta content",
             )
+            self.assertEqual(
+                stat.S_IMODE(
+                    (generated_dir / "alpha" / "src" / "app.txt").stat().st_mode
+                ),
+                0o640,
+            )
+
+    def test_finalize_stage_preserves_result_when_generated_file_copy_fails(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            workspace = base_dir / "workspace"
+            (workspace / "blocked").mkdir(parents=True)
+            (workspace / "blocked" / "app.txt").write_text(
+                "blocked content",
+                encoding="utf-8",
+            )
+            (workspace / "good.txt").write_text("good content", encoding="utf-8")
+            stage_dir = output.create_stage_dir("build.node")
+            provider_output = stage_dir / "alpha_round1.md"
+            provider_output.write_text(
+                "## Generated Files\n\n- `blocked/app.txt`\n- `good.txt`\n",
+                encoding="utf-8",
+            )
+            snapshot = snapshot_generated_file_workspace(provider_output, workspace)
+            blocking_path = (
+                output.results_dir
+                / "generated-files"
+                / "build.node"
+                / "alpha"
+                / "blocked"
+            )
+            blocking_path.parent.mkdir(parents=True, exist_ok=True)
+            blocking_path.write_text("preserve me", encoding="utf-8")
+
+            result = output.finalize_stage(
+                "build.node",
+                generated_file_workspace_roots={
+                    provider_output.resolve(strict=False): snapshot,
+                },
+            )
+
+            result_text = result.result_file.read_text(encoding="utf-8")
+            generated_file = (
+                output.results_dir
+                / "generated-files"
+                / "build.node"
+                / "alpha"
+                / "good.txt"
+            )
+            self.assertTrue(provider_output.is_file())
+            self.assertIn("[alpha/good.txt]", result_text)
+            self.assertNotIn("[alpha/blocked/app.txt]", result_text)
+            self.assertEqual(result.generated_files, (generated_file,))
+            self.assertEqual(
+                generated_file.read_text(encoding="utf-8"),
+                "good content",
+            )
+            self.assertEqual(blocking_path.read_text(encoding="utf-8"), "preserve me")
+            self.assertEqual(len(result.warnings), 1)
+            self.assertIn("alpha/blocked/app.txt", result.warnings[0])
+            self.assertIn("copy failed", result.warnings[0].lower())
+
+    def test_finalize_stage_removes_partial_generated_file_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            workspace = base_dir / "workspace"
+            workspace.mkdir()
+            (workspace / "app.txt").write_text("complete", encoding="utf-8")
+            stage_dir = output.create_stage_dir("build.node")
+            provider_output = stage_dir / "alpha_round1.md"
+            provider_output.write_text(
+                "## Generated Files\n\n- `app.txt`\n",
+                encoding="utf-8",
+            )
+            snapshot = snapshot_generated_file_workspace(provider_output, workspace)
+
+            def fail_after_partial_copy(source: Path, target: Path) -> None:  # noqa: ARG001
+                Path(target).write_text("partial", encoding="utf-8")
+                raise OSError("disk full")
+
+            with patch(
+                "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
+                side_effect=fail_after_partial_copy,
+            ):
+                result = output.finalize_stage(
+                    "build.node",
+                    generated_file_workspace_roots={
+                        provider_output.resolve(strict=False): snapshot,
+                    },
+                )
+
+            result_text = result.result_file.read_text(encoding="utf-8")
+            generated_file_dir = (
+                output.results_dir / "generated-files" / "build.node" / "alpha"
+            )
+            self.assertNotIn("[alpha/app.txt]", result_text)
+            self.assertEqual(result.generated_files, ())
+            self.assertEqual(len(result.warnings), 1)
+            self.assertIn("disk full", result.warnings[0])
+            self.assertFalse((generated_file_dir / "app.txt").exists())
+            self.assertEqual(list(generated_file_dir.glob(".generated-file-*.tmp")), [])
 
     def test_workspace_generated_files_hash_truncated_stage_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -456,7 +563,7 @@ class OutputManagerTests(unittest.TestCase):
                 "created",
             )
 
-    def test_workspace_generated_file_snapshot_rejects_too_many_before_copying(
+    def test_workspace_generated_file_snapshot_records_files_over_count_limit(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -479,7 +586,110 @@ class OutputManagerTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            snapshot_root = generated_file_source_root(alpha_output)
+
+            with patch(
+                "crewplane.artifacts.generated_files.catalog."
+                "MAX_GENERATED_FILE_SNAPSHOT_FILES",
+                1,
+            ):
+                snapshot_root = snapshot_generated_file_workspace(
+                    alpha_output, workspace
+                )
+
+            metadata = json.loads(
+                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(len(metadata["files"]), 1)
+            self.assertEqual(metadata["rejected_file_count"], 1)
+            self.assertFalse(metadata["rejected_files_truncated"])
+            self.assertEqual(
+                metadata["rejected_files"],
+                [
+                    {
+                        "configured_limit_count": 1,
+                        "discovery_source": "provider_explicit_section",
+                        "disposition": "rejected",
+                        "explicit": True,
+                        "path": "src/two.txt",
+                        "reason": "file_count_limit",
+                        "size_bytes": 1,
+                    }
+                ],
+            )
+            self.assertTrue((snapshot_root / "src" / "one.txt").is_file())
+            self.assertFalse((snapshot_root / "src" / "two.txt").exists())
+
+    def test_workspace_generated_file_snapshot_records_oversized_explicit_file(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            workspace = base_dir / "workspace"
+            (workspace / "src").mkdir(parents=True)
+            oversized = workspace / "src" / "large.bin"
+            oversized.write_bytes(b"xx")
+            stage_dir = output.create_stage_dir("build.node")
+            alpha_output = stage_dir / "alpha_round1.md"
+            alpha_output.write_text(
+                "## Generated Files\n\n- `src/large.bin`\n",
+                encoding="utf-8",
+            )
+
+            with patch(
+                "crewplane.artifacts.generated_files.catalog."
+                "MAX_GENERATED_FILE_SNAPSHOT_BYTES",
+                1,
+            ):
+                snapshot_root = snapshot_generated_file_workspace(
+                    alpha_output,
+                    workspace,
+                    candidate_files=(oversized,),
+                    explicit_claims_only=True,
+                )
+
+            metadata = json.loads(
+                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(metadata["files"], [])
+            self.assertEqual(metadata["rejected_file_count"], 1)
+            self.assertFalse(metadata["rejected_files_truncated"])
+            self.assertEqual(
+                metadata["rejected_files"],
+                [
+                    {
+                        "configured_limit_bytes": 1,
+                        "discovery_source": "provider_explicit_section",
+                        "disposition": "rejected",
+                        "explicit": True,
+                        "path": "src/large.bin",
+                        "reason": "per_file_size_limit",
+                        "size_bytes": 2,
+                    }
+                ],
+            )
+            self.assertFalse((snapshot_root / "src" / "large.bin").exists())
+
+    def test_workspace_generated_file_snapshot_bounds_rejection_details(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            workspace = base_dir / "workspace"
+            source_dir = workspace / "src"
+            source_dir.mkdir(parents=True)
+            generated_files = []
+            for index in range(6):
+                generated_file = source_dir / f"{index}.txt"
+                generated_file.write_text(str(index), encoding="utf-8")
+                generated_files.append(generated_file)
+            stage_dir = output.create_stage_dir("build.node")
+            alpha_output = stage_dir / "alpha_round1.md"
 
             with (
                 patch(
@@ -487,13 +697,34 @@ class OutputManagerTests(unittest.TestCase):
                     "MAX_GENERATED_FILE_SNAPSHOT_FILES",
                     1,
                 ),
-                self.assertRaisesRegex(RuntimeError, "too many files"),
+                patch(
+                    "crewplane.artifacts.generated_files.catalog."
+                    "MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS",
+                    2,
+                ),
             ):
-                snapshot_generated_file_workspace(alpha_output, workspace)
+                snapshot_root = snapshot_generated_file_workspace(
+                    alpha_output,
+                    workspace,
+                    candidate_files=generated_files,
+                )
 
-            self.assertFalse(snapshot_root.exists())
+            metadata = json.loads(
+                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            summary = generated_file_snapshot_rejection_summary(snapshot_root)
 
-    def test_workspace_generated_file_snapshot_rejects_size_change_during_copy(
+            self.assertEqual(len(metadata["files"]), 1)
+            self.assertEqual(metadata["rejected_file_count"], 5)
+            self.assertEqual(len(metadata["rejected_files"]), 2)
+            self.assertTrue(metadata["rejected_files_truncated"])
+            self.assertEqual(summary.total_count, 5)
+            self.assertEqual(len(summary.recorded_files), 2)
+            self.assertTrue(summary.truncated)
+
+    def test_workspace_generated_file_snapshot_records_size_change_during_copy(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -505,25 +736,66 @@ class OutputManagerTests(unittest.TestCase):
             stage_dir = output.create_stage_dir("build.node")
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-            snapshot_root = generated_file_source_root(alpha_output)
 
             def write_expanded_copy(source: Path, target: Path) -> Path:
                 target.write_bytes(source.read_bytes() + b"expanded")
                 return target
 
-            with (
-                patch(
-                    "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
-                    side_effect=write_expanded_copy,
-                ),
-                self.assertRaisesRegex(RuntimeError, "changed while copying"),
+            with patch(
+                "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
+                side_effect=write_expanded_copy,
             ):
-                snapshot_generated_file_workspace(alpha_output, workspace)
+                snapshot_root = snapshot_generated_file_workspace(
+                    alpha_output, workspace
+                )
 
-            self.assertFalse((snapshot_root / "src" / "app.txt").exists())
-            self.assertFalse(
-                (snapshot_root / ".crewplane-generated-file-snapshot.json").exists()
+            metadata = json.loads(
+                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
+                    encoding="utf-8"
+                )
             )
+            self.assertEqual(metadata["files"], [])
+            self.assertEqual(metadata["rejected_files"][0]["reason"], "copy_failed")
+            self.assertEqual(metadata["rejected_files"][0]["path"], "src/app.txt")
+            self.assertFalse((snapshot_root / "src" / "app.txt").exists())
+
+    def test_workspace_generated_file_snapshot_removes_partial_failed_copy(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            workspace = base_dir / "workspace"
+            (workspace / "src").mkdir(parents=True)
+            (workspace / "src" / "app.txt").write_text(
+                "complete",
+                encoding="utf-8",
+            )
+            stage_dir = output.create_stage_dir("build.node")
+            alpha_output = stage_dir / "alpha_round1.md"
+            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
+
+            def write_partial_copy_then_fail(source: Path, target: Path) -> None:
+                target.write_bytes(source.read_bytes()[:3])
+                raise OSError("copy failed")
+
+            with patch(
+                "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
+                side_effect=write_partial_copy_then_fail,
+            ):
+                snapshot_root = snapshot_generated_file_workspace(
+                    alpha_output,
+                    workspace,
+                )
+
+            metadata = json.loads(
+                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(metadata["files"], [])
+            self.assertEqual(metadata["rejected_files"][0]["reason"], "copy_failed")
+            self.assertFalse((snapshot_root / "src" / "app.txt").exists())
 
     def test_workspace_generated_file_snapshot_ignores_hardlinked_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

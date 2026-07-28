@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
+    InvocationContext,
     InvocationPlan,
     LogPresentationDescriptor,
     LogPresentationFormat,
@@ -18,6 +19,8 @@ from crewplane.architecture.contracts import (
     UsageParserProfile,
 )
 from crewplane.core.config import AgentConfig
+
+from .reasoning import build_reasoning_args
 
 
 @dataclass(frozen=True)
@@ -101,10 +104,25 @@ def build_cli_invocation_plan(
     model: str | None,
     prompt: str,
     output_file: Path,
+    invocation_context: InvocationContext | None = None,
+    working_directory: Path | None = None,
 ) -> InvocationPlan:
     capability = get_cli_provider_capability(config.provider_kind)
+    requested_reasoning = (
+        invocation_context.requested_reasoning
+        if invocation_context is not None
+        else None
+    )
     structured_output_file = _structured_output_file(capability)
-    cmd = _build_argv(config, capability, model, prompt, structured_output_file)
+    cmd = _build_argv(
+        config,
+        capability,
+        model,
+        prompt,
+        structured_output_file,
+        requested_reasoning,
+        working_directory,
+    )
     stdin_data = prompt.encode("utf-8") if config.prompt_transport == "stdin" else None
     return InvocationPlan(
         cmd=cmd,
@@ -120,6 +138,7 @@ def build_cli_invocation_plan(
             cli_executable=cmd[0],
             model=model,
             output_file=output_file,
+            requested_reasoning=requested_reasoning,
         ),
     )
 
@@ -138,14 +157,10 @@ def _build_argv(
     model: str | None,
     prompt: str,
     structured_output_file: Path | None,
+    requested_reasoning: str | None = None,
+    working_directory: Path | None = None,
 ) -> list[str]:
-    """Build the provider CLI argv and resolve the executable when available.
-
-    The first argument identifies the process to launch, so it is resolved
-    before appending provider flags. This keeps log headers tied to the actual
-    executable when PATH resolution succeeds while leaving user-supplied
-    arguments untouched.
-    """
+    """Build the provider CLI argv and resolve the executable when available."""
     cmd = config.get_command()
     cmd[0] = _resolved_cli_executable(cmd[0])
     model_arg = (
@@ -155,6 +170,13 @@ def _build_argv(
     )
     if model_arg is not None and model is not None:
         cmd.extend([model_arg, model])
+    cmd.extend(
+        build_reasoning_args(
+            config,
+            requested_reasoning,
+            working_directory,
+        )
+    )
     cmd.extend(config.extra_args)
     cmd.extend(_structured_output_args(capability, structured_output_file))
     if config.prompt_transport == "stdin":
@@ -232,13 +254,20 @@ def _build_log_header(
     cli_executable: str,
     model: str | None,
     output_file: Path,
+    requested_reasoning: str | None = None,
 ) -> bytes:
     started_at = datetime.now(UTC).isoformat()
     model_label = model if model is not None else "provider default"
+    reasoning_line = (
+        f"requested_reasoning: {requested_reasoning}\n"
+        if requested_reasoning is not None
+        else ""
+    )
     header = (
         f"started_at: {started_at}\n"
         f"cli_executable: {cli_executable}\n"
         f"model: {model_label}\n"
+        f"{reasoning_line}"
         f"output_file: {output_file}\n"
         "---\n"
     )

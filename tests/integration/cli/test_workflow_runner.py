@@ -10,6 +10,7 @@ import unittest
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import typer
 from rich.console import Console
@@ -378,6 +379,54 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(_run_dirs(root), [])
             self.assertEqual(_result_dirs(root), [])
             self.assertFalse((root / ".crewplane" / "locks").exists())
+
+    async def test_reasoning_validation_stops_real_run_before_execution_setup(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            stream = io.StringIO()
+            console = Console(file=stream, force_terminal=False, color_system=None)
+            workflow = _workflow()
+            workflow.nodes[0] = workflow.nodes[0].model_copy(
+                update={"providers": [ProviderSpec(provider="alpha", reasoning="high")]}
+            )
+            execute_workflow_mock = AsyncMock()
+            original_cwd = Path.cwd()
+            os.chdir(root)
+            try:
+                with (
+                    patch(
+                        "crewplane.cli.run.execution.acquire_same_context_lock",
+                        side_effect=AssertionError(
+                            "reasoning validation reached locking"
+                        ),
+                    ) as acquire_lock,
+                    patch(
+                        "crewplane.cli.run.execution.allocate_run_output",
+                        side_effect=AssertionError(
+                            "reasoning validation reached allocation"
+                        ),
+                    ) as allocate_output,
+                    self.assertRaises(typer.Exit) as raised,
+                ):
+                    await _run_workflow(
+                        workflow,
+                        _mock_config(),
+                        console,
+                        execute_workflow_impl=execute_workflow_mock,
+                    )
+            finally:
+                os.chdir(original_cwd)
+
+            self.assertEqual(raised.exception.exit_code, 1)
+            self.assertIn(
+                "first-class reasoning requires the built-in CLI invoker",
+                stream.getvalue(),
+            )
+            acquire_lock.assert_not_called()
+            allocate_output.assert_not_called()
+            execute_workflow_mock.assert_not_called()
 
     async def test_force_ignores_duplicate_signature(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

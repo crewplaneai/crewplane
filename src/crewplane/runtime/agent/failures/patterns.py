@@ -63,8 +63,8 @@ ADVICE_BY_KIND: dict[FailureKind, str] = {
         "answer, or use a model/profile with a larger output budget."
     ),
     "quota_or_rate_limit": (
-        "The provider reported quota or rate limiting. Check retry/reset details "
-        "and provider account limits."
+        "The provider reported quota or rate limiting. Quota retries are independent "
+        "of max_retries; check retry/reset details and provider account limits."
     ),
     "auth_or_permission": (
         "The provider CLI is unauthenticated or lacks required tool, file, or "
@@ -108,6 +108,7 @@ MODEL_OR_CONFIG_PATTERNS: tuple[str, ...] = (
     "unknown option",
     "unrecognized option",
     "invalid argument",
+    "reasoning.effort",
 )
 INITIAL_REQUEST_TOO_LARGE_PATTERNS: tuple[str, ...] = (
     "prompt is too long",

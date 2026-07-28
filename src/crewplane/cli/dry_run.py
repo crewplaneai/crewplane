@@ -68,7 +68,12 @@ def preview_topological_waves(
 def _format_provider_dry_run_line(provider: ProviderRecord) -> str:
     model = provider.model or "provider default"
     role_suffix = f" [{provider.role}]" if provider.role else ""
-    return f"      - {provider.provider}{role_suffix} ({model})"
+    reasoning_suffix = (
+        f", requested reasoning: {provider.requested_reasoning}"
+        if provider.requested_reasoning is not None
+        else ""
+    )
+    return f"      - {provider.provider}{role_suffix} ({model}{reasoning_suffix})"
 
 
 def _print_workspace_summary(

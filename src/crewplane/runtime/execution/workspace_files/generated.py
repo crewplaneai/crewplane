@@ -14,7 +14,7 @@ class GeneratedFileWorkspaceCleanupResult:
 
 @dataclass
 class GeneratedFileWorkspaceRegistry:
-    roots_by_node: dict[str, dict[Path, Path]] = field(default_factory=dict)
+    roots_by_node: dict[str, dict[Path, Path | None]] = field(default_factory=dict)
     cleanup_by_node: dict[str, list[Callable[[], None]]] = field(default_factory=dict)
 
     def record(
@@ -31,7 +31,12 @@ class GeneratedFileWorkspaceRegistry:
         if cleanup is not None:
             self.cleanup_by_node.setdefault(node_id, []).append(cleanup)
 
-    def roots_for_node(self, node_id: str) -> dict[Path, Path]:
+    def record_capture_failure(self, node_id: str, output_file: Path) -> None:
+        self.roots_by_node.setdefault(node_id, {})[
+            output_file.resolve(strict=False)
+        ] = None
+
+    def roots_for_node(self, node_id: str) -> dict[Path, Path | None]:
         return dict(self.roots_by_node.get(node_id, {}))
 
     def alias_output_file(
@@ -43,10 +48,10 @@ class GeneratedFileWorkspaceRegistry:
         roots = self.roots_by_node.get(node_id)
         if roots is None:
             return
-        workspace_root = roots.get(source_output_file.resolve(strict=False))
-        if workspace_root is None:
+        source_output = source_output_file.resolve(strict=False)
+        if source_output not in roots:
             return
-        roots[alias_output_file.resolve(strict=False)] = workspace_root
+        roots[alias_output_file.resolve(strict=False)] = roots[source_output]
 
     def cleanup_node(self, node_id: str) -> None:
         errors = self.cleanup_node_best_effort(node_id)

@@ -128,6 +128,7 @@ def provider_records(
                 role=provider.role,
                 model=provider.model
                 or (agent_config.default_model if agent_config is not None else None),
+                requested_reasoning=provider.reasoning,
                 task_id=artifact_task_id(provider, role_index),
                 agent_config_key=provider.provider,
                 invoker_alias=runtime_snapshot.invoker.implementation,

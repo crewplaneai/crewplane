@@ -22,6 +22,7 @@ class ExecutionEventContext:
     provider: str | None = None
     role: str | None = None
     model: str | None = None
+    requested_reasoning: str | None = None
     task_id: str | None = None
     audit_round_num: int | None = None
     round_num: int | None = None
@@ -36,6 +37,7 @@ class ExecutionEventContext:
             "provider": self.provider,
             "role": self.role,
             "model": self.model,
+            "requested_reasoning": self.requested_reasoning,
             "task_id": self.task_id,
             "audit_round_num": self.audit_round_num,
             "round_num": self.round_num,

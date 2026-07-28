@@ -634,6 +634,35 @@ def test_plain_formatter_strips_recognized_header(tmp_path: Path) -> None:
     assert snapshot.lines == ("visible",)
 
 
+def test_plain_formatter_strips_header_with_requested_reasoning(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "plain-reasoning.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                "started_at: 2026-06-10T00:00:00+00:00",
+                "cli_executable: provider",
+                "model: test",
+                "requested_reasoning: xhigh",
+                f"output_file: {tmp_path / 'out.md'}",
+                "---",
+                "visible",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="plain", profile="generic"),
+        line_budget=5,
+        wall_time_now=0.0,
+    )
+
+    assert snapshot.lines == ("visible",)
+
+
 def _nested_json_object(depth: int) -> str:
     return '{"message":' * depth + '"leaf"' + "}" * depth + "\n"
 

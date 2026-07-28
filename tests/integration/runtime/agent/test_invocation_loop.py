@@ -748,6 +748,50 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(len(usages), 1)
 
+    async def test_quota_wait_ceiling_counts_only_completed_quota_sleeps(
+        self,
+    ) -> None:
+        quota_result = CommandResult(
+            returncode=1,
+            stdout_text="You have exhausted your capacity on this model.",
+            stderr_text="",
+        )
+        runner = AsyncMock(side_effect=[quota_result, quota_result, quota_result])
+        sleep = AsyncMock()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            patch("crewplane.runtime.agent.invocation.loop.asyncio.sleep", sleep),
+            patch(
+                "crewplane.runtime.agent.invocation.retry.quota_retry_elapsed_seconds",
+                return_value=20,
+            ),
+            self.assertRaises(InvocationFailureError) as caught,
+        ):
+            await invoke_agent_with_runner(
+                config=AgentConfig(
+                    cli_cmd=["gemini"],
+                    provider_kind="gemini",
+                    default_model="test",
+                    model_arg=None,
+                    quota_reached_retry_delay_seconds=10,
+                    quota_retry_max_wait_seconds=25,
+                ),
+                model="test",
+                prompt="prompt",
+                output_file=Path(tmp_dir) / "output.txt",
+                cwd=Path(tmp_dir),
+                log_file=None,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+
+        self.assertEqual(runner.await_count, 3)
+        self.assertEqual(sleep.await_count, 2)
+        self.assertEqual([item.args[0] for item in sleep.await_args_list], [10, 10])
+        self.assertIn("cumulative quota wait is 20s", str(caught.exception))
+
     async def test_quota_failure_records_usage_once_before_reraising(self) -> None:
         quota_message = (
             "You have exhausted your capacity on this model. "
@@ -808,3 +852,128 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
                 + estimate_token_count(len(quota_message)),
             )
             self.assertFalse(output_file.exists())
+
+    async def test_quota_failure_preserves_last_non_quota_failure(self) -> None:
+        results = [
+            CommandResult(returncode=1, stdout_text="", stderr_text="fatal transport"),
+            CommandResult(
+                returncode=0,
+                stdout_text="partial success",
+                stderr_text="HTTP 429 Too Many Requests",
+            ),
+            CommandResult(
+                returncode=1,
+                stdout_text="Quota reached. Your quota will reset after 6h.",
+                stderr_text="",
+            ),
+        ]
+
+        async def runner(
+            cmd: list[str],  # noqa: ARG001
+            stdin_data: bytes | None,  # noqa: ARG001
+            log_file: Path | None,  # noqa: ARG001
+            append_log: bool,  # noqa: ARG001
+            log_header: bytes | None,  # noqa: ARG001
+            cwd: Path,  # noqa: ARG001
+            invocation_context: InvocationContext | None,  # noqa: ARG001
+            idle_timeout_seconds: float | None,  # noqa: ARG001
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001
+        ) -> CommandResult:
+            return results.pop(0)
+
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            self.assertRaises(InvocationFailureError) as caught,
+        ):
+            await invoke_agent_with_runner(
+                config=AgentConfig(
+                    cli_cmd=["provider"],
+                    max_retries=2,
+                    retry_delay_seconds=0,
+                    retry_on_exit_codes=[1],
+                    retry_on_stderr_contains=["HTTP 429"],
+                    quota_reached_retry_delay_seconds=0,
+                ),
+                model=None,
+                prompt="prompt",
+                output_file=Path(tmp_dir) / "output.txt",
+                cwd=Path(tmp_dir),
+                log_file=None,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+
+        last_failure = caught.exception.last_non_quota_failure
+        self.assertIsNotNone(last_failure)
+        assert last_failure is not None
+        self.assertIn("fatal transport", last_failure.message)
+        self.assertIn(
+            "last distinct non-quota failure: fatal transport", str(caught.exception)
+        )
+        self.assertTrue(
+            any(
+                "Last distinct non-quota failure" in note
+                for note in caught.exception.__notes__
+            )
+        )
+
+    async def test_quota_classified_retry_is_not_saved_as_non_quota_failure(
+        self,
+    ) -> None:
+        results = [
+            CommandResult(
+                returncode=0,
+                stdout_text="partial success",
+                stderr_text="HTTP 429 Too Many Requests",
+            ),
+            CommandResult(
+                returncode=1,
+                stdout_text="Quota reached. Your quota will reset after 6h.",
+                stderr_text="",
+            ),
+        ]
+
+        async def runner(
+            cmd: list[str],  # noqa: ARG001
+            stdin_data: bytes | None,  # noqa: ARG001
+            log_file: Path | None,  # noqa: ARG001
+            append_log: bool,  # noqa: ARG001
+            log_header: bytes | None,  # noqa: ARG001
+            cwd: Path,  # noqa: ARG001
+            invocation_context: InvocationContext | None,  # noqa: ARG001
+            idle_timeout_seconds: float | None,  # noqa: ARG001
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001
+        ) -> CommandResult:
+            return results.pop(0)
+
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            self.assertRaises(InvocationFailureError) as caught,
+        ):
+            await invoke_agent_with_runner(
+                config=AgentConfig(
+                    cli_cmd=["provider"],
+                    max_retries=1,
+                    retry_delay_seconds=0,
+                    retry_on_stderr_contains=["HTTP 429"],
+                    quota_reached_retry_delay_seconds=0,
+                ),
+                model=None,
+                prompt="prompt",
+                output_file=Path(tmp_dir) / "output.txt",
+                cwd=Path(tmp_dir),
+                log_file=None,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+
+        self.assertIsNone(caught.exception.last_non_quota_failure)
+        self.assertNotIn("last distinct non-quota failure", str(caught.exception))
+        self.assertFalse(
+            any(
+                "Last distinct non-quota failure" in note
+                for note in getattr(caught.exception, "__notes__", ())
+            )
+        )

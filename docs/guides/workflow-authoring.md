@@ -137,8 +137,14 @@ providers:
   - claude
   - provider: codex
     model: gpt-5.5
+    reasoning: high
     role: reviewer
 ```
+
+Provider objects can request a provider-native `reasoning` value for supported
+CLIs. See
+[Provider entries, models, reasoning, and roles](node-modes.md#provider-entries-models-reasoning-and-roles)
+for usage guidance.
 
 **Roles** are `executor` and `reviewer`. Parallel nodes only allow executor roles.
 Sequential review loops use executor providers followed by reviewer providers.

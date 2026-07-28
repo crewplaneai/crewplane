@@ -59,6 +59,7 @@ def build_invocation_context(
             task_id=metadata.task_id,
             provider=metadata.provider,
             role=metadata.role,
+            requested_reasoning=metadata.requested_reasoning,
             audit_round_num=metadata.audit_round_num,
             round_num=metadata.round_num,
             findings_enabled=metadata.findings_enabled,
@@ -101,6 +102,25 @@ def emit_provider_invocation_failure_event(
         )
     except Exception as telemetry_exc:
         exc.add_note(f"invocation failure telemetry failed: {telemetry_exc}")
+
+
+def emit_artifact_capture_event(
+    telemetry: ExecutionTelemetry | None,
+    invocation_metadata: InvocationMetadata | None,
+    operation: str,
+    message: str,
+    attributes: dict[str, object] | None = None,
+) -> None:
+    if telemetry is None or invocation_metadata is None:
+        return
+    emit_runtime_log(
+        telemetry,
+        "warning",
+        message,
+        operation,
+        context=invocation_metadata.event_context(),
+        attributes=attributes,
+    )
 
 
 def resolve_invocation_usage(

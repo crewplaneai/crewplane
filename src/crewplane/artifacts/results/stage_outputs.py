@@ -14,3 +14,4 @@ class StageOutputAggregation:
     findings_sections: list[tuple[str, str]] = field(default_factory=list)
     generated_file_reference_content: list[str] = field(default_factory=list)
     generated_file_links: list[GeneratedFileLink] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)

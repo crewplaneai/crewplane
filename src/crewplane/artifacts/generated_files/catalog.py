@@ -4,7 +4,9 @@ import json
 import os
 import shutil
 import stat
+import tempfile
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -18,19 +20,35 @@ from .detection import (
     GeneratedFileReferenceDetector,
     is_reserved_workspace_path,
 )
+from .snapshot_policy import (
+    GeneratedFileRejectionLog,
+    GeneratedFileSnapshotCandidate,
+    GeneratedFileSnapshotPolicy,
+    generated_file_rejection_metadata,
+    generated_file_snapshot_candidate_metadata,
+    select_generated_file_snapshot_candidates,
+)
 
 MAX_GENERATED_FILE_SNAPSHOT_FILES = 100
 MAX_GENERATED_FILE_SNAPSHOT_BYTES = 50 * 1024 * 1024
 MAX_GENERATED_FILE_SNAPSHOT_TOTAL_BYTES = 200 * 1024 * 1024
+MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS = 100
 
 
 @dataclass(frozen=True)
-class _GeneratedFileSnapshotCandidate:
-    source_path: Path
-    relative_path: Path
-    relative_label: str
-    size_bytes: int
-    changed: bool | None
+class GeneratedFileLinkResult:
+    links: tuple[GeneratedFileLink, ...]
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GeneratedFileSnapshotRejectionSummary:
+    total_count: int = 0
+    recorded_files: tuple[dict[str, object], ...] = ()
+
+    @property
+    def truncated(self) -> bool:
+        return self.total_count > len(self.recorded_files)
 
 
 def build_generated_files_section(
@@ -75,7 +93,7 @@ def generated_file_links_for_content(
     materialize: bool = False,
     copy_namespace: str | None = None,
     candidate_files: Sequence[Path] | None = None,
-) -> tuple[GeneratedFileLink, ...]:
+) -> GeneratedFileLinkResult:
     resolved_candidate_files = candidate_files
     if resolved_candidate_files is None:
         resolved_candidate_files = _generated_file_snapshot_candidate_files(
@@ -86,6 +104,7 @@ def generated_file_links_for_content(
         source_root=_generated_file_snapshot_source_root(workspace_root),
     )
     links: list[GeneratedFileLink] = []
+    warnings: list[str] = []
     for generated_file in _ordered_generated_files_for_content(
         content,
         detector,
@@ -96,17 +115,24 @@ def generated_file_links_for_content(
         label = relative_path
         target_path = generated_file
         if materialize:
-            target_path = _copy_workspace_generated_file(
-                generated_file,
-                relative_path,
-                result_file,
-                stage_name,
-                copy_namespace,
-            )
             if copy_namespace is not None:
                 label = f"{copy_namespace}/{relative_path}"
+            try:
+                target_path = _copy_workspace_generated_file(
+                    generated_file,
+                    relative_path,
+                    result_file,
+                    stage_name,
+                    copy_namespace,
+                )
+            except OSError as exc:
+                warnings.append(f"Generated-file copy failed for {label!r}: {exc}")
+                continue
         links.append(GeneratedFileLink(label=label, target_path=target_path))
-    return tuple(links)
+    return GeneratedFileLinkResult(
+        links=tuple(links),
+        warnings=tuple(warnings),
+    )
 
 
 def snapshot_generated_file_workspace(
@@ -114,35 +140,62 @@ def snapshot_generated_file_workspace(
     workspace_root: Path,
     changed_paths: set[str] | None = None,
     candidate_files: Sequence[Path] | None = None,
+    explicit_claims_only: bool = False,
 ) -> Path:
     content = output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
     snapshot_root = generated_file_source_root(output_file)
     resolved_workspace_root = workspace_root.resolve(strict=True)
     detector = GeneratedFileReferenceDetector(resolved_workspace_root)
+    explicit_files = detector.detect_explicit_section(content)
+    explicit_labels = {
+        path.relative_to(resolved_workspace_root).as_posix() for path in explicit_files
+    }
     generated_files = _ordered_generated_files_for_content(
         content,
         detector,
         resolved_workspace_root,
         candidate_files,
+        explicit_claims_only,
     )
-    candidates = _generated_file_snapshot_candidates(
+    selection = select_generated_file_snapshot_candidates(
         generated_files,
-        resolved_workspace_root,
-        changed_paths,
+        GeneratedFileSnapshotPolicy(
+            resolved_workspace_root=resolved_workspace_root,
+            changed_paths=changed_paths,
+            explicit_labels=explicit_labels,
+            baseline_supplied=candidate_files is not None,
+            file_count_limit=MAX_GENERATED_FILE_SNAPSHOT_FILES,
+            per_file_size_limit=MAX_GENERATED_FILE_SNAPSHOT_BYTES,
+            total_size_limit=MAX_GENERATED_FILE_SNAPSHOT_TOTAL_BYTES,
+            rejection_detail_limit=MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS,
+        ),
     )
 
     _replace_generated_file_source_root(snapshot_root)
     _write_generated_file_source_metadata(snapshot_root, resolved_workspace_root)
-    for candidate in candidates:
+    copied_candidates: list[GeneratedFileSnapshotCandidate] = []
+    for candidate in selection.candidates:
         target = snapshot_root.joinpath(*candidate.relative_path.parts)
         _ensure_contained_directory(snapshot_root, candidate.relative_path.parent)
-        _copy_generated_file_snapshot_candidate(candidate, target)
+        try:
+            _copy_generated_file_snapshot_candidate(candidate, target)
+        except (OSError, RuntimeError) as exc:
+            selection.rejections.record(
+                generated_file_rejection_metadata(
+                    candidate,
+                    reason="copy_failed",
+                    error=str(exc),
+                )
+            )
+            continue
+        copied_candidates.append(candidate)
     _write_generated_file_snapshot_metadata(
         snapshot_root,
         [
-            _generated_file_snapshot_candidate_metadata(candidate)
-            for candidate in candidates
+            generated_file_snapshot_candidate_metadata(candidate)
+            for candidate in copied_candidates
         ],
+        selection.rejections,
     )
     return snapshot_root
 
@@ -152,17 +205,18 @@ def _ordered_generated_files_for_content(
     detector: GeneratedFileReferenceDetector,
     workspace_root: Path,
     candidate_files: Sequence[Path] | None,
+    explicit_claims_only: bool = False,
 ) -> tuple[Path, ...]:
+    explicit_paths = detector.detect_explicit_section(content)
     if candidate_files is None:
-        return detector.detect(content)
+        return () if explicit_claims_only else detector.detect(content)
 
     resolved_workspace_root = workspace_root.resolve(strict=True)
     candidates = _safe_unique_candidate_files(candidate_files, resolved_workspace_root)
     if not candidates:
         return ()
-    explicit_paths = detector.detect_explicit_section(content)
     if not explicit_paths:
-        return tuple(candidates.values())
+        return () if explicit_claims_only else tuple(candidates.values())
 
     ordered: list[Path] = []
     seen_labels: set[str] = set()
@@ -173,9 +227,10 @@ def _ordered_generated_files_for_content(
             continue
         ordered.append(candidate)
         seen_labels.add(label)
-    ordered.extend(
-        path for label, path in candidates.items() if label not in seen_labels
-    )
+    if not explicit_claims_only:
+        ordered.extend(
+            path for label, path in candidates.items() if label not in seen_labels
+        )
     return tuple(ordered)
 
 
@@ -206,67 +261,21 @@ def _safe_unique_candidate_files(
     return dict(sorted(candidates.items()))
 
 
-def _generated_file_snapshot_candidates(
-    generated_files: Sequence[Path],
-    resolved_workspace_root: Path,
-    changed_paths: set[str] | None,
-) -> tuple[_GeneratedFileSnapshotCandidate, ...]:
-    total_bytes = 0
-    candidates: list[_GeneratedFileSnapshotCandidate] = []
-    for generated_file in generated_files:
-        relative_path = generated_file.relative_to(resolved_workspace_root)
-        relative_label = relative_path.as_posix()
-        if changed_paths is not None and relative_label not in changed_paths:
-            continue
-        if len(candidates) >= MAX_GENERATED_FILE_SNAPSHOT_FILES:
-            raise RuntimeError("Generated-file snapshot rejected too many files.")
-        size_bytes = generated_file.stat().st_size
-        if size_bytes > MAX_GENERATED_FILE_SNAPSHOT_BYTES:
-            raise RuntimeError(
-                f"Generated-file snapshot rejected oversized file: {relative_label}"
-            )
-        next_total_bytes = total_bytes + size_bytes
-        if next_total_bytes > MAX_GENERATED_FILE_SNAPSHOT_TOTAL_BYTES:
-            raise RuntimeError("Generated-file snapshot rejected oversized total.")
-        total_bytes = next_total_bytes
-        candidates.append(
-            _GeneratedFileSnapshotCandidate(
-                source_path=generated_file,
-                relative_path=relative_path,
-                relative_label=relative_label,
-                size_bytes=size_bytes,
-                changed=(
-                    relative_label in changed_paths
-                    if changed_paths is not None
-                    else None
-                ),
-            )
-        )
-    return tuple(candidates)
-
-
-def _generated_file_snapshot_candidate_metadata(
-    candidate: _GeneratedFileSnapshotCandidate,
-) -> dict[str, object]:
-    return {
-        "path": candidate.relative_label,
-        "changed": candidate.changed,
-        "size_bytes": candidate.size_bytes,
-    }
-
-
 def _copy_generated_file_snapshot_candidate(
-    candidate: _GeneratedFileSnapshotCandidate,
+    candidate: GeneratedFileSnapshotCandidate,
     target: Path,
 ) -> None:
-    shutil.copyfile(candidate.source_path, target)
-    if target.stat().st_size == candidate.size_bytes:
-        return
-    target.unlink(missing_ok=True)
-    raise RuntimeError(
-        "Generated-file snapshot source changed while copying: "
-        f"{candidate.relative_label}"
-    )
+    try:
+        shutil.copyfile(candidate.source_path, target)
+        if target.stat().st_size == candidate.size_bytes:
+            return
+        raise RuntimeError(
+            "Generated-file snapshot source changed while copying: "
+            f"{candidate.relative_label}"
+        )
+    except (OSError, RuntimeError):
+        target.unlink(missing_ok=True)
+        raise
 
 
 def generated_file_source_root(output_file: Path) -> Path:
@@ -323,6 +332,39 @@ def _generated_file_snapshot_candidate_files(
     return tuple(candidates)
 
 
+def generated_file_snapshot_rejection_summary(
+    snapshot_root: Path,
+) -> GeneratedFileSnapshotRejectionSummary:
+    metadata_file = contained_regular_file(
+        snapshot_root,
+        GENERATED_FILE_SNAPSHOT_METADATA_NAME,
+    )
+    if metadata_file is None:
+        return GeneratedFileSnapshotRejectionSummary()
+    try:
+        payload = json.loads(metadata_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return GeneratedFileSnapshotRejectionSummary()
+    if not isinstance(payload, dict):
+        return GeneratedFileSnapshotRejectionSummary()
+    raw_rejections = payload.get("rejected_files")
+    if not isinstance(raw_rejections, list):
+        raw_rejections = []
+    recorded_files = tuple(item for item in raw_rejections if isinstance(item, dict))
+    raw_total_count = payload.get("rejected_file_count")
+    total_count = (
+        raw_total_count
+        if isinstance(raw_total_count, int)
+        and not isinstance(raw_total_count, bool)
+        and raw_total_count >= len(recorded_files)
+        else len(recorded_files)
+    )
+    return GeneratedFileSnapshotRejectionSummary(
+        total_count=total_count,
+        recorded_files=recorded_files,
+    )
+
+
 def _write_generated_file_source_metadata(
     snapshot_root: Path,
     source_root: Path,
@@ -337,10 +379,20 @@ def _write_generated_file_source_metadata(
 def _write_generated_file_snapshot_metadata(
     snapshot_root: Path,
     copied_files: Sequence[dict[str, object]],
+    rejections: GeneratedFileRejectionLog,
 ) -> None:
+    payload: dict[str, object] = {"files": list(copied_files)}
+    if rejections.rejected_file_count:
+        payload.update(
+            {
+                "rejected_file_count": rejections.rejected_file_count,
+                "rejected_files": list(rejections.rejected_files),
+                "rejected_files_truncated": rejections.truncated,
+            }
+        )
     metadata_file = snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME
     metadata_file.write_text(
-        json.dumps({"files": list(copied_files)}, sort_keys=True) + "\n",
+        json.dumps(payload, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
@@ -362,7 +414,23 @@ def _copy_workspace_generated_file(
     for part in Path(relative_path).parts:
         target = target / part
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(generated_file, target)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=target.parent,
+            prefix=".generated-file-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+        shutil.copyfile(generated_file, temporary_path)
+        shutil.copymode(generated_file, temporary_path)
+        temporary_path.replace(target)
+    except OSError:
+        if temporary_path is not None:
+            with suppress(OSError):
+                temporary_path.unlink()
+        raise
     return target
 
 

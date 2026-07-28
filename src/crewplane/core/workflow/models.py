@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NotRequired, TypedDict
@@ -41,18 +42,36 @@ from .keywords import (
 )
 from .syntax import INPUT_SOURCE_PATTERN
 
+REASONING_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
 
 class ProviderSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: str
     model: str | None = None
+    reasoning: str | None = None
     role: ProviderRole = ProviderRole.EXECUTOR
 
     @field_validator("provider", mode="before")
     @classmethod
     def _validate_provider(cls, value: object) -> object:
         return normalize_provider_name(value, "provider")
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _validate_reasoning(cls, value: object) -> object:
+        if value is None:
+            return value
+        if (
+            not isinstance(value, str)
+            or REASONING_TOKEN_PATTERN.fullmatch(value) is None
+        ):
+            raise ValueError(
+                "reasoning must be a 1-64 character ASCII token containing only "
+                "letters, digits, underscores, or hyphens"
+            )
+        return value
 
     @field_validator("role", mode="before")
     @classmethod
@@ -68,6 +87,7 @@ class ProviderSpec(BaseModel):
 class WorkflowProviderPayload(TypedDict):
     provider: str
     model: NotRequired[str]
+    reasoning: NotRequired[str]
     role: NotRequired[ProviderRole]
 
 
@@ -207,6 +227,8 @@ def workflow_provider_payload_dict(provider: ProviderSpec) -> WorkflowProviderPa
     provider_payload: WorkflowProviderPayload = {"provider": provider.provider}
     if provider.model is not None:
         provider_payload["model"] = provider.model
+    if provider.reasoning is not None:
+        provider_payload["reasoning"] = provider.reasoning
     if provider.role != ProviderRole.EXECUTOR:
         provider_payload["role"] = provider.role
     return provider_payload

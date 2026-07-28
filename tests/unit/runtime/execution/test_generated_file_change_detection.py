@@ -15,13 +15,14 @@ from crewplane.artifacts.generated_files.catalog import (
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.provider_call.generated_files import (
     GeneratedFileChangeBaseline,
+    capture_generated_file_change_baseline,
     snapshot_invocation_generated_files,
 )
 from crewplane.runtime.execution.provider_call.types import ProviderOutputPolicy
 from crewplane.runtime.workspace import PreparedWorkspace
 
 
-def test_git_project_root_generated_files_do_not_require_provider_claim(
+def test_shared_project_root_does_not_capture_unclaimed_changes(
     tmp_path: Path,
 ) -> None:
     repo = _clean_repo(tmp_path)
@@ -36,11 +37,77 @@ def test_git_project_root_generated_files_do_not_require_provider_claim(
         repo,
         baseline,
         "No generated files were mentioned.\n",
+        explicit_claims_only=True,
     )
 
-    assert "[alpha/src/app.txt]" in result_text or "[src/app.txt]" in result_text
+    assert "## Generated Files" not in result_text
+    assert generated_files == ()
+
+
+def test_shared_project_root_captures_explicit_generated_file_claim(
+    tmp_path: Path,
+) -> None:
+    repo = _clean_repo(tmp_path)
+    baseline = GeneratedFileChangeBaseline.capture(
+        repo,
+        filesystem_fallback_enabled=False,
+    )
+    generated_file = repo / "src" / "created.txt"
+    generated_file.write_text("created\n", encoding="utf-8")
+    unrelated_file = repo / "ambient.tmp"
+    unrelated_file.write_text("ambient\n", encoding="utf-8")
+
+    result_text, generated_files = _finalize_with_snapshot(
+        repo,
+        baseline,
+        "## Generated Files\n\n- `src/created.txt`\n",
+        explicit_claims_only=True,
+    )
+
     assert "[alpha/src/created.txt]" in result_text
-    assert {path.name for path in generated_files} == {"app.txt", "created.txt"}
+    assert {path.name for path in generated_files} == {"created.txt"}
+    assert all(path.name != unrelated_file.name for path in generated_files)
+
+
+def test_shared_project_root_skips_unchanged_explicit_generated_file_claim(
+    tmp_path: Path,
+) -> None:
+    repo = _clean_repo(tmp_path)
+    baseline = GeneratedFileChangeBaseline.capture(
+        repo,
+        filesystem_fallback_enabled=False,
+    )
+
+    result_text, generated_files = _finalize_with_snapshot(
+        repo,
+        baseline,
+        "## Generated Files\n\n- `src/app.txt`\n",
+        explicit_claims_only=True,
+    )
+
+    assert "[alpha/src/app.txt]" not in result_text
+    assert generated_files == ()
+
+
+def test_shared_project_root_uses_git_change_baseline(tmp_path: Path) -> None:
+    repo = _clean_repo(tmp_path)
+    prepared_workspace = PreparedWorkspace(
+        cwd=repo,
+        invocation_context=InvocationContext(
+            node_id="build",
+            task_id="task",
+            provider="provider",
+            role=ProviderRole.EXECUTOR,
+        ),
+    )
+
+    baseline = capture_generated_file_change_baseline(prepared_workspace)
+
+    assert baseline is not None
+    assert baseline.candidate_files() == ()
+    changed_file = repo / "src" / "app.txt"
+    changed_file.write_text("changed\n", encoding="utf-8")
+    assert baseline.candidate_files() == (changed_file,)
 
 
 def test_git_managed_workspace_generated_files_do_not_require_provider_claim(
@@ -223,15 +290,16 @@ def test_non_git_project_root_prose_fallback_still_links_files(tmp_path: Path) -
     assert "[alpha/src/app.txt]" in result_text or "[src/app.txt]" in result_text
 
 
-def test_non_git_project_root_fallback_uses_workspace_cwd_for_snapshot(
-    tmp_path: Path,
-) -> None:
+def test_non_git_project_root_explicit_claim_fails_closed(tmp_path: Path) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.txt").write_text("content", encoding="utf-8")
     stage_dir = output.create_stage_dir("build.node")
     output_file = stage_dir / "alpha_round1.md"
-    output_file.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
+    output_file.write_text(
+        "## Generated Files\n\n- `src/app.txt`\n",
+        encoding="utf-8",
+    )
 
     request = SimpleNamespace(output_file=output_file)
     prepared_workspace = PreparedWorkspace(
@@ -243,18 +311,25 @@ def test_non_git_project_root_fallback_uses_workspace_cwd_for_snapshot(
             role=ProviderRole.EXECUTOR,
         ),
     )
+    baseline = capture_generated_file_change_baseline(prepared_workspace)
+    assert baseline is not None
+    assert baseline.candidate_files() is None
+
     snapshot = snapshot_invocation_generated_files(
         request,
         prepared_workspace,
+        baseline,
     )
     assert snapshot is not None
 
-    output.finalize_stage(
+    result = output.finalize_stage(
         "build.node",
         generated_file_workspace_roots={output_file.resolve(strict=False): snapshot},
     )
     result_text = output.get_stage_output_path("build.node").read_text(encoding="utf-8")
-    assert "[alpha/src/app.txt]" in result_text or "[src/app.txt]" in result_text
+    assert "[alpha/src/app.txt]" not in result_text
+    assert "[src/app.txt]" not in result_text
+    assert result.generated_files == ()
 
 
 def test_snapshot_invocation_generated_files_skips_missing_workspace_cwd(
@@ -323,6 +398,7 @@ def _finalize_with_snapshot(
     repo: Path,
     baseline: GeneratedFileChangeBaseline,
     provider_output: str,
+    explicit_claims_only: bool = False,
 ) -> tuple[str, tuple[Path, ...]]:
     output = OutputManager("Workflow", base_dir=repo)
     stage_dir = output.create_stage_dir("build.node")
@@ -332,6 +408,7 @@ def _finalize_with_snapshot(
         alpha_output,
         baseline.invocation_root,
         candidate_files=baseline.candidate_files(),
+        explicit_claims_only=explicit_claims_only,
     )
 
     result = output.finalize_stage(

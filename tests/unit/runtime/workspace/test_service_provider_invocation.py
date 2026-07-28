@@ -10,6 +10,7 @@ from time import monotonic
 
 import pytest
 
+import crewplane.runtime.execution.provider_call.artifact_capture as provider_invocation_artifact_capture_module
 import crewplane.runtime.execution.provider_call.generated_files as provider_invocation_generated_files_module
 import crewplane.runtime.execution.provider_call.lifecycle as provider_invocation_lifecycle_module
 import crewplane.runtime.execution.provider_call.workspace as provider_invocation_workspace_module
@@ -33,6 +34,7 @@ from crewplane.runtime.execution.provider_call import (
     mark_workspace_succeeded,
     record_generated_file_workspace,
     run_provider_call,
+    run_provider_invocation,
 )
 from crewplane.runtime.execution.provider_call.workspace import (
     prepare_workspace_with_cancellation,
@@ -57,6 +59,42 @@ def test_provider_invocation_uses_snapshot_workspace_cwd(
     tmp_path: Path,
 ) -> None:
     asyncio.run(_run_provider_invocation_uses_snapshot_workspace_cwd(tmp_path))
+
+
+def test_artifact_capture_wrapper_failure_fails_provider_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asyncio.run(
+        _run_artifact_capture_wrapper_failure_fails_provider_invocation(
+            tmp_path,
+            monkeypatch,
+        )
+    )
+
+
+def test_workspace_finalization_failure_fails_provider_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asyncio.run(
+        _run_workspace_finalization_failure_fails_provider_invocation(
+            tmp_path,
+            monkeypatch,
+        )
+    )
+
+
+def test_generated_file_capture_failure_disables_project_root_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asyncio.run(
+        _run_generated_file_capture_failure_disables_project_root_fallback(
+            tmp_path,
+            monkeypatch,
+        )
+    )
 
 
 def test_provider_invocation_cancellation_marks_workspace_state(
@@ -420,6 +458,203 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
     assert workspace_payload.workspace_source_kind == "project"
     assert workspace_payload.worktree_contract_mode == "blob_exact"
     assert workspace_payload.workspace_child_environment_required is False
+
+
+async def _run_artifact_capture_wrapper_failure_fails_provider_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    plan = disabled_workspace_plan(repo)
+    output = workspace_output_manager(tmp_path, repo)
+    node_dir = output.create_stage_dir("implement")
+    runtime_context = CompiledRuntimeContext(
+        plan=plan,
+        secret_context=SecretContext(),
+    )
+    events = []
+    telemetry = ExecutionTelemetry(
+        workflow_name=plan.workflow_name,
+        run_id=plan.run_id,
+        event_sink=events.append,
+        suppress_console_output=True,
+    )
+
+    async def fail_artifact_capture(
+        request: ProviderCallRequest,
+        prepared_workspace: PreparedWorkspace,
+        baseline: object,
+        metadata: object,
+    ) -> None:
+        del request, prepared_workspace, baseline, metadata
+        raise RuntimeError("artifact capture wrapper failed")
+
+    monkeypatch.setattr(
+        provider_invocation_lifecycle_module,
+        "capture_invocation_generated_files",
+        fail_artifact_capture,
+    )
+    output_file = node_dir / "alpha_round1.md"
+
+    result = await run_provider_invocation(
+        ProviderCallRequest(
+            runtime_context=runtime_context,
+            output=output,
+            node_id="implement",
+            provider=plan.nodes[0].provider_records[0],
+            task_id="alpha",
+            audit_round_num=None,
+            round_num=1,
+            prompt="done",
+            output_file=output_file,
+            role_label=ProviderRole.EXECUTOR,
+            invoker=SuccessfulRuntimeInvoker(),
+            telemetry=telemetry,
+        ),
+        capture_exception=True,
+        display=ProviderCallDisplay(telemetry=telemetry),
+    )
+
+    assert output_file.read_text(encoding="utf-8") == "done\n"
+    assert isinstance(result.error, RuntimeError)
+    assert str(result.error) == "artifact capture wrapper failed"
+    assert not any(event.event_type == "invocation_finished" for event in events)
+    assert any(event.event_type == "invocation_failed" for event in events)
+
+
+async def _run_workspace_finalization_failure_fails_provider_invocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    plan = disabled_workspace_plan(repo)
+    output = workspace_output_manager(tmp_path, repo)
+    node_dir = output.create_stage_dir("implement")
+    runtime_context = CompiledRuntimeContext(
+        plan=plan,
+        secret_context=SecretContext(),
+    )
+    events = []
+    telemetry = ExecutionTelemetry(
+        workflow_name=plan.workflow_name,
+        run_id=plan.run_id,
+        event_sink=events.append,
+        suppress_console_output=True,
+    )
+
+    async def fail_workspace_finalization(
+        request: ProviderCallRequest,
+        prepared_workspace: PreparedWorkspace,
+        child_environment_applied: bool | None,
+        generated_file_workspace: Path | None,
+    ) -> None:
+        del request, prepared_workspace, child_environment_applied
+        del generated_file_workspace
+        raise RuntimeError("workspace finalization failed")
+
+    monkeypatch.setattr(
+        provider_invocation_lifecycle_module,
+        "finalize_successful_workspace",
+        fail_workspace_finalization,
+    )
+    output_file = node_dir / "alpha_round1.md"
+
+    result = await run_provider_invocation(
+        ProviderCallRequest(
+            runtime_context=runtime_context,
+            output=output,
+            node_id="implement",
+            provider=plan.nodes[0].provider_records[0],
+            task_id="alpha",
+            audit_round_num=None,
+            round_num=1,
+            prompt="done",
+            output_file=output_file,
+            role_label=ProviderRole.EXECUTOR,
+            invoker=SuccessfulRuntimeInvoker(),
+            telemetry=telemetry,
+        ),
+        capture_exception=True,
+        display=ProviderCallDisplay(telemetry=telemetry),
+    )
+
+    assert isinstance(result.error, RuntimeError)
+    assert str(result.error) == "workspace finalization failed"
+    assert not any(event.event_type == "invocation_finished" for event in events)
+    assert any(event.event_type == "invocation_failed" for event in events)
+
+
+async def _run_generated_file_capture_failure_disables_project_root_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    generated_file = repo / "src" / "app.txt"
+    generated_file.parent.mkdir(parents=True)
+    generated_file.write_text("live project content\n", encoding="utf-8")
+    plan = disabled_workspace_plan(repo)
+    output = workspace_output_manager(tmp_path, repo)
+    node_dir = output.create_stage_dir("implement")
+    runtime_context = CompiledRuntimeContext(
+        plan=plan,
+        secret_context=SecretContext(),
+    )
+    telemetry = ExecutionTelemetry(
+        workflow_name=plan.workflow_name,
+        run_id=plan.run_id,
+        suppress_console_output=True,
+    )
+
+    async def fail_generated_file_capture(
+        request: ProviderCallRequest,
+        prepared_workspace: PreparedWorkspace,
+        baseline: object,
+    ) -> None:
+        del request, prepared_workspace, baseline
+        raise RuntimeError("generated-file capture failed")
+
+    monkeypatch.setattr(
+        provider_invocation_artifact_capture_module,
+        "snapshot_invocation_generated_files_async",
+        fail_generated_file_capture,
+    )
+    output_file = node_dir / "alpha_round1.md"
+    await run_provider_call(
+        ProviderCallRequest(
+            runtime_context=runtime_context,
+            output=output,
+            node_id="implement",
+            provider=plan.nodes[0].provider_records[0],
+            task_id="alpha",
+            audit_round_num=None,
+            round_num=1,
+            prompt="done",
+            output_file=output_file,
+            role_label=ProviderRole.EXECUTOR,
+            invoker=SuccessfulRuntimeInvoker(),
+            telemetry=telemetry,
+        ),
+        display=ProviderCallDisplay(telemetry=telemetry),
+    )
+    output_file.write_text(
+        "Updated `src/app.txt`.\n\n## Generated Files\n\n- `src/app.txt`\n",
+        encoding="utf-8",
+    )
+
+    workspace_roots = runtime_context.generated_file_workspaces.roots_for_node(
+        "implement"
+    )
+    assert workspace_roots[output_file.resolve(strict=False)] is None
+    result = output.finalize_stage(
+        "implement",
+        generated_file_workspace_roots=workspace_roots,
+    )
+    result_text = result.result_file.read_text(encoding="utf-8")
+
+    assert result.generated_files == ()
+    assert "(../../src/app.txt)" not in result_text
 
 
 async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_loop(

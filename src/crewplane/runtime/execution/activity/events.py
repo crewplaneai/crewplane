@@ -38,6 +38,7 @@ class RuntimeEventContext:
     provider: str | None = None
     role: ProviderRole | None = None
     model: str | None = None
+    requested_reasoning: str | None = None
     task_id: str | None = None
     audit_round_num: int | None = None
     round_num: int | None = None
@@ -58,6 +59,7 @@ class RuntimeEventContext:
             provider=self.provider,
             role=self.role,
             model=self.model,
+            requested_reasoning=self.requested_reasoning,
             task_id=self.task_id,
             audit_round_num=self.audit_round_num,
             round_num=self.round_num,
@@ -139,6 +141,7 @@ class InvocationMetadata:
     round_num: int
     output_file: Path
     log_file: Path | None
+    requested_reasoning: str | None = None
     findings_enabled: bool = False
     log_presentation_format: str | None = None
     log_presentation_profile: str | None = None
@@ -150,6 +153,7 @@ class InvocationMetadata:
             provider=self.provider,
             role=self.role,
             model=self.model,
+            requested_reasoning=self.requested_reasoning,
             task_id=self.task_id,
             audit_round_num=self.audit_round_num,
             round_num=self.round_num,

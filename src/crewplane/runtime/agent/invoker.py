@@ -24,6 +24,8 @@ class InvocationPlanBuilder(Protocol):
         model: str | None,
         prompt: str,
         output_file: Path,
+        invocation_context: InvocationContext | None = None,
+        working_directory: Path | None = None,
     ) -> InvocationPlan: ...
 
 
@@ -119,6 +121,24 @@ class PlannedAgentInvoker:
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
+        def build_plan(
+            plan_config: AgentConfig,
+            plan_model: str | None,
+            plan_prompt: str,
+            plan_output_file: Path,
+            _plan_invocation_context: InvocationContext | None = None,
+            _plan_working_directory: Path | None = None,
+        ) -> InvocationPlan:
+            del _plan_invocation_context, _plan_working_directory
+            return self._plan_builder(
+                plan_config,
+                plan_model,
+                plan_prompt,
+                plan_output_file,
+                invocation_context,
+                cwd,
+            )
+
         return await invoke_agent(
             config,
             model,
@@ -127,5 +147,5 @@ class PlannedAgentInvoker:
             cwd,
             log_file,
             invocation_context=invocation_context,
-            plan_builder=self._plan_builder,
+            plan_builder=build_plan,
         )

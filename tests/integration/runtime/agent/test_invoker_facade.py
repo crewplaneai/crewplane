@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -97,3 +98,47 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
             delegated.assert_awaited_once()
             assert delegated.await_args.args[4] == Path(tmp_dir)
             assert delegated.await_args.kwargs["invocation_context"] is context
+
+    async def test_planned_invoker_validates_settings_from_runtime_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            working_directory = Path(tmp_dir)
+            output_file = working_directory / "output.txt"
+            (working_directory / "claude-settings.json").write_text(
+                '{"effortLevel": "low"}',
+                encoding="utf-8",
+            )
+            config = AgentConfig(
+                cli_cmd=["claude", "--settings", "claude-settings.json"],
+                provider_kind="claude",
+            )
+            context = InvocationContext(
+                node_id="node.a",
+                task_id="claude_executor_0",
+                provider="claude",
+                role=ProviderRole.EXECUTOR,
+                requested_reasoning="high",
+            )
+            delegated = AsyncMock()
+
+            with patch(
+                "crewplane.runtime.agent.invoker.invoke_agent",
+                delegated,
+            ):
+                await PlannedAgentInvoker(
+                    plan_builder=build_cli_invocation_plan,
+                    log_presentation_builder=build_cli_log_presentation,
+                ).invoke(
+                    config=config,
+                    model=None,
+                    prompt="prompt",
+                    output_file=output_file,
+                    cwd=working_directory,
+                    invocation_context=context,
+                )
+
+            plan_builder = delegated.await_args.kwargs["plan_builder"]
+            with (
+                patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+                self.assertRaisesRegex(ValueError, "--settings effortLevel"),
+            ):
+                plan_builder(config, None, "prompt", output_file)

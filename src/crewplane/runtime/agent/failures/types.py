@@ -63,6 +63,7 @@ class InvocationFailureError(RuntimeError):
         self.source = summary.source
         self.advice = summary.advice
         self.log_file = log_file
+        self.last_non_quota_failure: InvocationFailureSummary | None = None
         super().__init__(f"{prefix}: {summary.format_for_error(log_file)}")
 
 

@@ -302,3 +302,23 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
             tail_lines = read_log_tail(log_path, 10005)
             self.assertEqual(tail_lines[0], "body-line-0")
             self.assertEqual(len(tail_lines), 10000)
+
+    def test_read_log_tail_strips_optional_reasoning_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            log_path = Path(tmp_dir) / "reasoning.log"
+            log_path.write_text(
+                "\n".join(
+                    [
+                        "started_at: 2026-04-10T12:00:00",
+                        "cli_executable: /usr/bin/echo",
+                        "model: mock-model",
+                        "requested_reasoning: xhigh",
+                        "output_file: output.md",
+                        "---",
+                        "body-line",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(read_log_tail(log_path, 10), ["body-line"])
