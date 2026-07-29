@@ -188,6 +188,16 @@ def test_makefile_delegates_release_targets_to_release_tool() -> None:
     assert "$(RUN_RELEASE) finalize --execute" in release
 
 
+def test_makefile_package_name_lookup_supports_gnu_make_3_81() -> None:
+    makefile = read_text("Makefile")
+    assert ".SHELLSTATUS" not in makefile
+    assert (
+        "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD) || "
+        "printf '%s\\n' __PACKAGE_NAME_LOOKUP_FAILED__)"
+    ) in makefile
+    assert "ifeq ($(PACKAGE_NAME),__PACKAGE_NAME_LOOKUP_FAILED__)" in makefile
+
+
 def test_legacy_release_check_helper_was_replaced() -> None:
     assert not repo_path("packaging", "release_checks.py").exists()
 
@@ -1094,5 +1104,5 @@ def test_package_surfaces_use_crewplane_command() -> None:
     assert "${PACKAGE_NAME} --help" in install_script
     makefile = read_text("Makefile")
     assert "PROJECT_NAME_CMD =" in makefile
-    assert "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD))" in makefile
+    assert "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD)" in makefile
     assert "crewplane" in read_text("packaging", "homebrew", "Formula", "crewplane.rb")
