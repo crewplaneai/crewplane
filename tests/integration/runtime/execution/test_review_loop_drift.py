@@ -465,6 +465,108 @@ def test_unregistered_generated_file_source_snapshots_are_drift(
     assert drift.fatal_paths == ()
 
 
+def test_completed_generated_file_snapshot_allows_only_published_files(
+    tmp_path: Path,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    snapshot_root = generated_file_source_root(request.output_file)
+    published_source = snapshot_root / "src/app.txt"
+    allowance = request.drift_session.generated_file_allowance
+    allowance.start_snapshot(snapshot_root)
+    published_source.parent.mkdir(parents=True)
+    published_source.write_text("generated", encoding="utf-8")
+    allowance.finish_snapshot(snapshot_root, frozenset({published_source}))
+
+    unexpected_source = snapshot_root / "src/unregistered.txt"
+    unexpected_source.write_text("unexpected", encoding="utf-8")
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot=None,
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=None),
+    )
+
+    drift = review_loop_drift_detection.detect_provider_call_drift(
+        request,
+        window,
+        event_log_capture=None,
+        event_log_start_index=0,
+    )
+
+    assert drift.warning_paths == (unexpected_source,)
+    assert drift.fatal_paths == ()
+
+
+def test_generated_file_snapshot_published_during_node_scan_is_allowed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    snapshot_root = generated_file_source_root(request.output_file)
+    generated_source = snapshot_root / "src/app.txt"
+    allowance = request.drift_session.generated_file_allowance
+    original_snapshot_files = review_loop_drift_detection.snapshot_files
+
+    def publish_generated_file(root: Path) -> dict[Path, tuple[int, str]]:
+        allowance.start_snapshot(snapshot_root)
+        generated_source.parent.mkdir(parents=True)
+        generated_source.write_text("generated", encoding="utf-8")
+        allowance.finish_snapshot(snapshot_root, frozenset({generated_source}))
+        return original_snapshot_files(root)
+
+    monkeypatch.setattr(
+        review_loop_drift_detection,
+        "snapshot_files",
+        publish_generated_file,
+    )
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot=None,
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=None),
+    )
+
+    drift = review_loop_drift_detection.detect_node_drift(request, window)
+
+    assert drift.warning_paths == ()
+    assert drift.fatal_paths == ()
+
+
+def test_failed_generated_file_snapshot_does_not_allow_partial_files(
+    tmp_path: Path,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    snapshot_root = generated_file_source_root(request.output_file)
+    partial_source = snapshot_root / "src/partial.txt"
+    allowance = request.drift_session.generated_file_allowance
+    allowance.start_snapshot(snapshot_root)
+    partial_source.parent.mkdir(parents=True)
+    partial_source.write_text("partial", encoding="utf-8")
+    allowance.finish_snapshot(snapshot_root, None)
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot=None,
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=None),
+    )
+
+    drift = review_loop_drift_detection.detect_provider_call_drift(
+        request,
+        window,
+        event_log_capture=None,
+        event_log_start_index=0,
+    )
+
+    assert drift.warning_paths == (partial_source,)
+    assert drift.fatal_paths == ()
+
+
 def test_drift_is_checked_when_provider_call_fails(tmp_path: Path) -> None:
     request, _output, node_dir = _request(tmp_path)
 

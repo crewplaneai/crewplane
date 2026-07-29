@@ -301,7 +301,11 @@ def test_non_git_project_root_explicit_claim_fails_closed(tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    request = SimpleNamespace(output_file=output_file)
+    request = SimpleNamespace(
+        output_file=output_file,
+        on_generated_file_snapshot_started=None,
+        on_generated_file_snapshot_finished=None,
+    )
     prepared_workspace = PreparedWorkspace(
         cwd=tmp_path,
         invocation_context=InvocationContext(
@@ -339,7 +343,11 @@ def test_snapshot_invocation_generated_files_skips_missing_workspace_cwd(
     stage_dir = output.create_stage_dir("build.node")
     output_file = stage_dir / "alpha_round1.md"
     output_file.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-    request = SimpleNamespace(output_file=output_file)
+    request = SimpleNamespace(
+        output_file=output_file,
+        on_generated_file_snapshot_started=None,
+        on_generated_file_snapshot_finished=None,
+    )
     prepared_workspace = PreparedWorkspace(
         cwd=tmp_path / "missing",
         invocation_context=InvocationContext(
@@ -359,6 +367,8 @@ def test_snapshot_invocation_generated_files_rejects_missing_output_by_default(
     request = SimpleNamespace(
         output_file=tmp_path / "missing.md",
         provider_output_policy=ProviderOutputPolicy.REQUIRE_OUTPUT,
+        on_generated_file_snapshot_started=None,
+        on_generated_file_snapshot_finished=None,
     )
     prepared_workspace = PreparedWorkspace(
         cwd=tmp_path,
@@ -380,6 +390,8 @@ def test_snapshot_invocation_generated_files_allows_explicit_missing_output_poli
     request = SimpleNamespace(
         output_file=tmp_path / "missing.md",
         provider_output_policy=ProviderOutputPolicy.ALLOW_MISSING_OUTPUT,
+        on_generated_file_snapshot_started=None,
+        on_generated_file_snapshot_finished=None,
     )
     prepared_workspace = PreparedWorkspace(
         cwd=tmp_path,

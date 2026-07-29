@@ -51,7 +51,8 @@ async def run_provider_call_with_drift_guard(
     except Exception as exc:
         provider_error = exc
 
-    allow_runtime_generated_file_snapshots(request)
+    if request.drift_session is None:
+        allow_runtime_generated_file_snapshots(request)
 
     mixed_error: Exception | None = None
     try:
@@ -157,6 +158,11 @@ async def invoke_provider_under_drift_guard(
     request: DriftGuardCallRequest,
     captured_telemetry: ExecutionTelemetry | None,
 ) -> None:
+    generated_file_allowance = (
+        request.drift_session.generated_file_allowance
+        if request.drift_session is not None
+        else None
+    )
     await run_provider_call(
         ProviderCallRequest(
             runtime_context=request.runtime_context,
@@ -174,6 +180,16 @@ async def invoke_provider_under_drift_guard(
             findings_enabled=request.findings_enabled,
             provider_output_policy=request.provider_output_policy,
             on_log_file_resolved=request.allowed_paths.add,
+            on_generated_file_snapshot_started=(
+                generated_file_allowance.start_snapshot
+                if generated_file_allowance is not None
+                else None
+            ),
+            on_generated_file_snapshot_finished=(
+                generated_file_allowance.finish_snapshot
+                if generated_file_allowance is not None
+                else None
+            ),
             rendered_workspace_files=request.rendered_workspace_files,
         ),
         display=replace(request.display, telemetry=captured_telemetry),

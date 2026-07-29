@@ -130,7 +130,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             with patch(
                 "tests.integration.runtime.execution.workflow."
                 "workflow_execution_helpers.provider_failure",
-                side_effect=lambda message: RuntimeError(message),
+                new=RuntimeError,
             ):
                 await execute_parallel_stage(config, node, output, invoker=invoker)
 

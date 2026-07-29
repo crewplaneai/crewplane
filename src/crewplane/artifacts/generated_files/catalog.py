@@ -5,7 +5,7 @@ import os
 import shutil
 import stat
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from hashlib import sha256
@@ -141,6 +141,7 @@ def snapshot_generated_file_workspace(
     changed_paths: set[str] | None = None,
     candidate_files: Sequence[Path] | None = None,
     explicit_claims_only: bool = False,
+    on_file_published: Callable[[Path], None] | None = None,
 ) -> Path:
     content = output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
     snapshot_root = generated_file_source_root(output_file)
@@ -170,9 +171,10 @@ def snapshot_generated_file_workspace(
             rejection_detail_limit=MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS,
         ),
     )
-
     _replace_generated_file_source_root(snapshot_root)
     _write_generated_file_source_metadata(snapshot_root, resolved_workspace_root)
+    if on_file_published is not None:
+        on_file_published(snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME)
     copied_candidates: list[GeneratedFileSnapshotCandidate] = []
     for candidate in selection.candidates:
         target = snapshot_root.joinpath(*candidate.relative_path.parts)
@@ -189,6 +191,8 @@ def snapshot_generated_file_workspace(
             )
             continue
         copied_candidates.append(candidate)
+        if on_file_published is not None:
+            on_file_published(target)
     _write_generated_file_snapshot_metadata(
         snapshot_root,
         [
@@ -197,6 +201,8 @@ def snapshot_generated_file_workspace(
         ],
         selection.rejections,
     )
+    if on_file_published is not None:
+        on_file_published(snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME)
     return snapshot_root
 
 
