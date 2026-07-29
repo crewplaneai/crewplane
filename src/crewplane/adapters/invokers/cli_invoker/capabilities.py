@@ -12,6 +12,7 @@ from crewplane.architecture.contracts import (
     InvocationPlan,
     LogPresentationDescriptor,
     LogPresentationFormat,
+    OneShotFailureRetryPolicy,
     OutputExtractionMode,
     ProviderKind,
     QuotaParserProfile,
@@ -21,6 +22,22 @@ from crewplane.architecture.contracts import (
 from crewplane.core.config import AgentConfig
 
 from .reasoning import build_reasoning_args
+
+# Codex can sporadically report false model capacity; keep this temporary
+# workaround narrow and adapter-owned so it can be removed independently.
+CODEX_MODEL_CAPACITY_MESSAGE = (
+    "Selected model is at capacity. Please try a different model."
+)
+CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS = 5.0
+CODEX_MODEL_CAPACITY_RETRY_POLICY = OneShotFailureRetryPolicy(
+    output_contains=(CODEX_MODEL_CAPACITY_MESSAGE,),
+    wait_seconds=CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS,
+    reason="codex_model_capacity",
+    notice_message=(
+        f'Codex reported "{CODEX_MODEL_CAPACITY_MESSAGE}" '
+        "Crewplane will retry in five seconds (built-in attempt 1/1)."
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +51,7 @@ class CliProviderCapability:
     log_presentation_profile: str
     model_arg: str | None = "--model"
     structured_output_args: tuple[str, ...] = ()
+    one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
 
 
 CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
@@ -55,6 +73,7 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
         usage_parser="codex",
         log_presentation_format="json_lines",
         log_presentation_profile="codex",
+        one_shot_failure_retry=CODEX_MODEL_CAPACITY_RETRY_POLICY,
     ),
     ProviderKind.COPILOT: CliProviderCapability(
         provider_kind=ProviderKind.COPILOT,
@@ -140,6 +159,7 @@ def build_cli_invocation_plan(
             output_file=output_file,
             requested_reasoning=requested_reasoning,
         ),
+        one_shot_failure_retry=capability.one_shot_failure_retry,
     )
 
 

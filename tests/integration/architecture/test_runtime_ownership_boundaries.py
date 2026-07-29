@@ -72,6 +72,17 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
     assert offenders == []
 
 
+def test_runtime_does_not_own_provider_retry_literals() -> None:
+    retry_literal = "Selected model is at capacity. Please try a different model."
+    offenders = [
+        offender(path, node.lineno, retry_literal)
+        for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "agent")
+        for node in walk_ast(parse_python(path))
+        if isinstance(node, ast.Constant) and node.value == retry_literal
+    ]
+    assert offenders == []
+
+
 def test_runtime_and_tmux_do_not_infer_presentation_from_provider_names() -> None:
     provider_literals = {"claude", "codex", "copilot", "gemini", "kilo"}
     checked_roots = (

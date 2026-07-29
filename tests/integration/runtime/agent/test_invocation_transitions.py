@@ -153,7 +153,54 @@ def test_terminal_failure_prefers_failed_exit_over_retry_exhaustion() -> None:
             quota_retry_count=0,
             quota_retry_started_at=None,
         ),
-        retry_matched=True,
+        failure_retry_decision=NoFailureRetry(
+            retry_count=0,
+            retry_matched=True,
+        ),
     )
 
     assert isinstance(transition, RaiseFailedExitAttemptTransition)
+
+
+def test_terminal_failure_preserves_failed_exit_for_configured_retry() -> None:
+    transition = transition_from_terminal_failure(
+        attempt_result=InvocationAttemptResult(
+            result=CommandResult(returncode=1, stdout_text="retry", stderr_text=""),
+            extracted_output=None,
+            usage_output="retry",
+        ),
+        cursor=InvocationRetryCursor(
+            retry_count=1,
+            quota_retry_count=0,
+            quota_retry_started_at=None,
+        ),
+        failure_retry_decision=NoFailureRetry(
+            retry_count=1,
+            retry_matched=True,
+        ),
+    )
+
+    assert isinstance(transition, RaiseFailedExitAttemptTransition)
+
+
+def test_terminal_failure_reports_retry_exhaustion_for_built_in_failed_exit() -> None:
+    transition = transition_from_terminal_failure(
+        attempt_result=InvocationAttemptResult(
+            result=CommandResult(returncode=1, stdout_text="retry", stderr_text=""),
+            extracted_output=None,
+            usage_output="retry",
+        ),
+        cursor=InvocationRetryCursor(
+            retry_count=1,
+            quota_retry_count=0,
+            quota_retry_started_at=None,
+        ),
+        failure_retry_decision=NoFailureRetry(
+            retry_count=1,
+            retry_matched=True,
+            reports_retry_exhaustion_for_failed_exit=True,
+        ),
+    )
+
+    assert isinstance(transition, RaiseRetryExhaustedAttemptTransition)
+    assert transition.retry_count == 1

@@ -348,6 +348,14 @@ class QuotaClassification:
 
 
 @dataclass(frozen=True)
+class OneShotFailureRetryPolicy:
+    output_contains: tuple[str, ...]
+    wait_seconds: float
+    reason: str
+    notice_message: str
+
+
+@dataclass(frozen=True)
 class InvocationPlan:
     cmd: list[str]
     stdin_data: bytes | None
@@ -359,6 +367,7 @@ class InvocationPlan:
     failure_profile: FailureClassificationProfile
     log_header: bytes
     log_provider_kind: ProviderKind
+    one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
 
 
 @dataclass(frozen=True)

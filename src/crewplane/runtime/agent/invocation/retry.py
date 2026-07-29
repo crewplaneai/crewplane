@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
-from crewplane.architecture.contracts import CommandResult, QuotaParserProfile
+from crewplane.architecture.contracts import (
+    CommandResult,
+    OneShotFailureRetryPolicy,
+    QuotaParserProfile,
+)
 from crewplane.core.config import AgentConfig
 
 from ..quota import classify_quota, compute_quota_wait_seconds
@@ -19,6 +23,7 @@ QUOTA_RETRY_GUARD_SECONDS = QUOTA_RETRY_GUARD_HOURS * 60 * 60
 class NoFailureRetry:
     retry_count: int
     retry_matched: bool
+    reports_retry_exhaustion_for_failed_exit: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,32 +65,63 @@ def evaluate_failure_retry(
     cmd: list[str],
     result: CommandResult,
     retry_count: int,
+    built_in_retry_used: bool = False,
+    one_shot_failure_retry: OneShotFailureRetryPolicy | None = None,
 ) -> FailureRetryDecision:
-    retry_failure = should_retry_failure(config, result)
-    if not retry_failure or retry_count >= config.max_retries:
-        return NoFailureRetry(
-            retry_count=retry_count,
-            retry_matched=retry_failure,
+    one_shot_retry_matched = _matches_one_shot_failure_retry(
+        one_shot_failure_retry,
+        result,
+    )
+    if one_shot_retry_matched and not built_in_retry_used:
+        assert one_shot_failure_retry is not None
+        return _schedule_one_shot_failure_retry(
+            one_shot_failure_retry,
+            result,
+            retry_count,
         )
 
-    retry_count += 1
+    configured_retry_matched = should_retry_failure(config, result)
+    if configured_retry_matched and retry_count < config.max_retries:
+        return _schedule_configured_failure_retry(
+            config,
+            cmd,
+            result,
+            retry_count,
+        )
+
+    return NoFailureRetry(
+        retry_count=retry_count + int(one_shot_retry_matched and built_in_retry_used),
+        retry_matched=configured_retry_matched or one_shot_retry_matched,
+        reports_retry_exhaustion_for_failed_exit=(
+            one_shot_retry_matched and built_in_retry_used
+        ),
+    )
+
+
+def _schedule_configured_failure_retry(
+    config: AgentConfig,
+    cmd: list[str],
+    result: CommandResult,
+    retry_count: int,
+) -> ScheduleFailureRetry:
+    next_retry_count = retry_count + 1
     if result.returncode != 0:
         failure_detail = f"failed with exit code {result.returncode}"
     else:
         failure_detail = "matched configured retry conditions"
     return ScheduleFailureRetry(
-        retry_count=retry_count,
+        retry_count=next_retry_count,
         wait_seconds=config.retry_delay_seconds,
         notice=InvocationDiagnosticNotice(
             level="warning",
             message=(
                 f"{cmd[0]} {failure_detail}; retrying in "
                 f"{config.retry_delay_seconds}s "
-                f"({retry_count}/{config.max_retries})"
+                f"({next_retry_count}/{config.max_retries})"
             ),
             operation="retry_scheduled",
             attributes={
-                "retry_count": retry_count,
+                "retry_count": next_retry_count,
                 "max_retries": config.max_retries,
                 "retry_delay_seconds": round(config.retry_delay_seconds, 3),
                 "returncode": result.returncode,
@@ -94,9 +130,46 @@ def evaluate_failure_retry(
                 "[yellow]WARN[/] "
                 f"{cmd[0]} {failure_detail}; "
                 f"retrying in {config.retry_delay_seconds}s "
-                f"({retry_count}/{config.max_retries})"
+                f"({next_retry_count}/{config.max_retries})"
             ),
         ),
+    )
+
+
+def _schedule_one_shot_failure_retry(
+    policy: OneShotFailureRetryPolicy,
+    result: CommandResult,
+    retry_count: int,
+) -> ScheduleFailureRetry:
+    return ScheduleFailureRetry(
+        retry_count=retry_count,
+        wait_seconds=policy.wait_seconds,
+        notice=InvocationDiagnosticNotice(
+            level="warning",
+            message=policy.notice_message,
+            operation="retry_scheduled",
+            attributes={
+                "reason": policy.reason,
+                "built_in": True,
+                "retry_count": 1,
+                "max_retries": 1,
+                "retry_delay_seconds": policy.wait_seconds,
+                "returncode": result.returncode,
+            },
+            console_message=f"[yellow]WARN[/] {policy.notice_message}",
+        ),
+    )
+
+
+def _matches_one_shot_failure_retry(
+    policy: OneShotFailureRetryPolicy | None,
+    result: CommandResult,
+) -> bool:
+    if policy is None or result.returncode == 0:
+        return False
+    return matches_any(
+        result.iter_combined_lines(),
+        policy.output_contains,
     )
 
 
@@ -108,7 +181,14 @@ def evaluate_quota_retry(
     quota_retry_started_at: float | None,
     quota_retry_count: int,
     quota_retry_wait_seconds: float = 0.0,
+    one_shot_failure_retry: OneShotFailureRetryPolicy | None = None,
 ) -> QuotaRetryDecision:
+    if _matches_one_shot_failure_retry(one_shot_failure_retry, result):
+        return NoQuotaRetry(
+            quota_retry_started_at=quota_retry_started_at,
+            quota_retry_count=quota_retry_count,
+        )
+
     quota = classify_quota(config, result, quota_parser)
     if not quota.is_quota:
         return NoQuotaRetry(
@@ -228,7 +308,7 @@ def should_retry_failure(config: AgentConfig, result: CommandResult) -> bool:
     )
 
 
-def matches_any(lines: Iterable[str], needles: list[str]) -> bool:
+def matches_any(lines: Iterable[str], needles: Collection[str]) -> bool:
     if not needles:
         return False
     normalized_needles = [needle.lower() for needle in needles if needle]
