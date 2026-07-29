@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
@@ -14,15 +15,19 @@ from crewplane.core.workflow.models import (
 )
 from crewplane.observability.persistent import PersistentRunLogger
 from crewplane.observability.types import RunContext
+from crewplane.runtime.execution import NodeExecutionError
 from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from crewplane.runtime.execution.review_loop import drift as review_loop_drift
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     ArtifactDriftInvoker,
     MockAgentInvoker,
+    SelectiveFailInvoker,
     execute_sequential_stage,
+    execute_workflow,
     review_output,
 )
 
@@ -61,8 +66,122 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-            with self.assertRaisesRegex(RuntimeError, "fatal artifacts"):
+            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
                 await execute_sequential_stage(config, node, output, invoker=invoker)
+
+    async def test_workflow_preserves_provider_defect_when_fatal_drift_also_occurs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                },
+            )
+            node = WorkflowNode(
+                id="review.loop.mixed.fatal",
+                mode="sequential",
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
+                depth=1,
+                providers=[
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+                ],
+            )
+            workflow = WorkflowPlan(name="Mixed Fatal Drift", nodes=[node])
+            output = OutputManager(workflow.name, base_dir=tmp_path)
+            stage_result_path = output.get_stage_output_path(node.id)
+
+            class FatalDriftDefectInvoker:
+                def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+                    return None
+
+                async def invoke(  # type: ignore[no-untyped-def]
+                    self,
+                    config,  # noqa: ARG002 - Required by protocol.
+                    model,  # noqa: ARG002 - Required by protocol.
+                    prompt,  # noqa: ARG002 - Required by protocol.
+                    output_file,
+                    cwd,  # noqa: ARG002 - Required by protocol.
+                    log_file=None,  # noqa: ARG002 - Required by protocol.
+                    invocation_context=None,  # noqa: ARG002 - Required by protocol.
+                ) -> None:
+                    output_file.write_text("partial output", encoding="utf-8")
+                    stage_result_path.parent.mkdir(parents=True, exist_ok=True)
+                    stage_result_path.write_text("tampered result", encoding="utf-8")
+                    raise TypeError("simulated provider defect")
+
+            with self.assertRaisesRegex(
+                TypeError, "simulated provider defect"
+            ) as raised:
+                await execute_workflow(
+                    config,
+                    workflow,
+                    output,
+                    invoker=FatalDriftDefectInvoker(),
+                )
+
+            self.assertIs(type(raised.exception), TypeError)
+            notes = getattr(raised.exception, "__notes__", [])
+            self.assertTrue(any("1 fatal path" in note for note in notes))
+
+    async def test_workflow_preserves_drift_detection_defect_after_provider_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                },
+            )
+            node = WorkflowNode(
+                id="review.loop.mixed.detector",
+                mode="sequential",
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
+                depth=1,
+                providers=[
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+                ],
+            )
+            workflow = WorkflowPlan(name="Mixed Drift Detector", nodes=[node])
+            output = OutputManager(workflow.name, base_dir=tmp_path)
+
+            def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
+                del args, kwargs
+                raise TypeError("simulated drift detector defect")
+
+            with (
+                patch.object(
+                    review_loop_drift,
+                    "detect_provider_call_drift",
+                    broken_drift_detection,
+                ),
+                self.assertRaisesRegex(
+                    TypeError,
+                    "simulated drift detector defect",
+                ) as raised,
+            ):
+                await execute_workflow(
+                    config,
+                    workflow,
+                    output,
+                    invoker=SelectiveFailInvoker({"m1"}),
+                )
+
+            self.assertIs(type(raised.exception), TypeError)
+            notes = getattr(raised.exception, "__notes__", [])
+            self.assertTrue(any("simulated failure for m1" in note for note in notes))
 
     async def test_multi_provider_sequential_raises_on_summary_artifact_drift(
         self,
@@ -97,7 +216,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 mutations_by_call={0: [(summary_path, "tampered summary")]},
             )
 
-            with self.assertRaisesRegex(RuntimeError, "fatal artifacts"):
+            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
                 await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_multi_provider_sequential_raises_on_destructive_event_log_drift(
@@ -133,7 +252,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 mutations_by_call={0: [(event_log_path, "tampered event log")]},
             )
 
-            with self.assertRaisesRegex(RuntimeError, "fatal artifacts"):
+            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
                 await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_multi_provider_sequential_raises_on_event_log_append_drift(
@@ -169,7 +288,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 append_mutations_by_call={0: [(event_log_path, "tampered append\n")]},
             )
 
-            with self.assertRaisesRegex(RuntimeError, "fatal artifacts"):
+            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
                 await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_parallel_reviewer_event_log_creation_drift_is_fatal(
@@ -209,7 +328,7 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
                 append_mutations_by_call={1: [(event_log_path, "tampered append\n")]},
             )
 
-            with self.assertRaisesRegex(RuntimeError, "fatal artifacts"):
+            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
                 await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_multi_provider_sequential_allows_runtime_event_log_appends(

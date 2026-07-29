@@ -11,6 +11,10 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent.failures import (
+    InvocationFailureError,
+    build_adapter_invocation_failure_error,
+)
 
 from ..activity.console import execution_console, progress_context, should_print_console
 from ..activity.telemetry import ExecutionTelemetry
@@ -104,14 +108,19 @@ def _build_invoke_callback(
     invocation_context: InvocationContext,
 ) -> Callable[[], Awaitable[None]]:
     async def invoke() -> None:
-        await invoker.invoke(
-            agent_config,
-            model,
-            prompt,
-            output_file,
-            cwd,
-            log_file,
-            invocation_context=invocation_context,
-        )
+        try:
+            await invoker.invoke(
+                agent_config,
+                model,
+                prompt,
+                output_file,
+                cwd,
+                log_file,
+                invocation_context=invocation_context,
+            )
+        except InvocationFailureError:
+            raise
+        except RuntimeError as exc:
+            raise build_adapter_invocation_failure_error(exc, log_file) from exc
 
     return invoke

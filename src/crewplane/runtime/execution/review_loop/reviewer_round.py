@@ -6,6 +6,8 @@ from pathlib import Path
 
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent.failures import InvocationFailureError
+from crewplane.runtime.workspace.setup import WorkspaceSetupError
 
 from ..common import (
     ExecutionTelemetry,
@@ -14,6 +16,7 @@ from ..common import (
     should_print_console,
 )
 from ..consensus import evaluate_review_output
+from ..errors import NodeExecutionError, is_expected_execution_failure
 from .drift import (
     create_drift_guard_session,
     run_provider_call_with_drift_guard,
@@ -37,7 +40,7 @@ from .validation import emit_review_evaluation_warnings, emit_reviewer_failure_w
 from .workspace_state_paths import workspace_artifact_allowed_paths
 
 
-class ReviewerOutputMissingError(RuntimeError):
+class ReviewerOutputMissingError(NodeExecutionError):
     """Raised when a reviewer invocation produced no review text."""
 
 
@@ -179,9 +182,11 @@ def collect_ordered_reviewer_results(
         task_id, output_file = reviewer_output_path(request, provider)
         if isinstance(result, asyncio.CancelledError):
             raise result
-        if isinstance(result, BaseException) and not isinstance(result, Exception):
+        if isinstance(result, BaseException) and not is_expected_execution_failure(
+            result
+        ):
             raise result
-        if isinstance(result, BaseException):
+        if isinstance(result, Exception):
             invocation_failures.append(
                 ReviewerInvocationFailure(
                     index=index,
@@ -189,11 +194,8 @@ def collect_ordered_reviewer_results(
                     task_id=task_id,
                     output_file=output_file,
                     error=result,
-                    failure_kind="invocation_failed",
-                    warning=(
-                        "Reviewer invocation failed. Preserving failure state "
-                        "without treating provider metadata as review feedback."
-                    ),
+                    failure_kind=reviewer_failure_kind(result),
+                    warning=reviewer_failure_warning(result),
                 )
             )
             continue
@@ -206,6 +208,26 @@ def collect_ordered_reviewer_results(
         if index in results_by_index
     ]
     return ordered_results, invocation_failures
+
+
+def reviewer_failure_kind(error: Exception) -> str:
+    if isinstance(error, InvocationFailureError):
+        return "invocation_failed"
+    if isinstance(error, WorkspaceSetupError):
+        return "workspace_setup_failed"
+    return "node_execution_failed"
+
+
+def reviewer_failure_warning(error: Exception) -> str:
+    if isinstance(error, InvocationFailureError):
+        return (
+            "Reviewer invocation failed. Preserving failure state "
+            "without treating provider metadata as review feedback."
+        )
+    return (
+        "Reviewer execution failed. Preserving failure state "
+        "without treating the failure as review feedback."
+    )
 
 
 def evaluate_reviewer_outputs(
@@ -308,7 +330,7 @@ def enforce_reviewer_failure_policy(
     failure_details = "; ".join(
         f"{failure.task_id}: {failure.error}" for failure in failures
     )
-    raise RuntimeError(
+    raise NodeExecutionError(
         f"Reviewer invocation failed for node '{request.node.id}': {failure_details}."
     ) from failures[0].error
 

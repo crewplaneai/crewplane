@@ -21,6 +21,7 @@ from crewplane.observability.types import RunContext
 from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.fragment_assembler import ResolvedPrompt
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
@@ -413,7 +414,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.dict("os.environ", {"EMPTY_EXECUTOR_PROMPT": ""}, clear=False),
                 self.assertRaisesRegex(
-                    RuntimeError,
+                    NodeExecutionError,
                     "Resolved executor prompt for node 'single.provider.empty.prompt' is empty after fragment assembly.",
                 ),
             ):
@@ -463,7 +464,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.dict("os.environ", {"EMPTY_REVIEWER_PROMPT": ""}, clear=False),
                 self.assertRaisesRegex(
-                    RuntimeError,
+                    NodeExecutionError,
                     "Resolved reviewer prompt for node 'review.loop.empty.reviewer.prompt' is empty after fragment assembly.",
                 ),
             ):

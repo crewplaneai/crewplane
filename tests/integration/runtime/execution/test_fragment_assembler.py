@@ -25,6 +25,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
@@ -550,6 +551,28 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
     )
 
     assert prompt == "dynamic\n"
+
+    _git(repo, "rm", "future.md")
+    _git(repo, "commit", "-m", "remove candidate file")
+    missing_file_commit = _git(repo, "rev-parse", "HEAD^{commit}")
+    missing_file_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    _write_lineage_state_with_bundle(
+        repo=repo,
+        stage_dir=upstream_stage,
+        result_commit=missing_file_commit,
+        result_tree=missing_file_tree,
+        result_ref="refs/crewplane/tests/input/missing-file",
+        bundle_name="input-missing-file.bundle",
+        extra_payload={"node_id": "input"},
+    )
+
+    with pytest.raises(
+        NodeExecutionError,
+        match="Runtime-dynamic workspace file locator does not resolve exactly",
+    ):
+        assemble_prompt(
+            plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+        )
 
 
 def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(

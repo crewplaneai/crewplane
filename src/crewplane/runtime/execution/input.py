@@ -11,7 +11,12 @@ from .common import (
     RuntimeEventContext,
     emit_runtime_log,
 )
+from .errors import NodeExecutionError
 from .workspace_files import resolve_project_initial_workspace_file
+
+
+class InputContentError(NodeExecutionError):
+    """Raised when an input node cannot materialize usable content."""
 
 
 def execute_input_stage(
@@ -35,7 +40,7 @@ def execute_input_stage(
         raise ValueError(f"Input node '{stage.id}' is missing source content.")
 
     if not input_content.strip():
-        raise RuntimeError(
+        raise InputContentError(
             f"Resolved input content for node '{stage.id}' is empty after preflight assembly."
         )
 

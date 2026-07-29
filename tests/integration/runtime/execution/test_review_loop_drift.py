@@ -23,10 +23,12 @@ from crewplane.observability.events import (
     invocation_event,
     runtime_log_event,
 )
+from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
     ProviderCallDisplay,
 )
+from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.review_loop import (
     drift as review_loop_drift,
 )
@@ -39,6 +41,9 @@ from crewplane.runtime.execution.review_loop.types import (
     DriftMonitoringWindow,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
+    provider_failure,
+)
 
 
 def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path]:
@@ -551,10 +556,190 @@ def test_fatal_drift_after_provider_call_failure_raises_fatal_error(
         display=request.display,
     )
 
-    with pytest.raises(RuntimeError, match="fatal artifacts") as exc_info:
+    with pytest.raises(NodeExecutionError, match="fatal artifacts") as exc_info:
         asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
 
-    assert isinstance(exc_info.value.__cause__, RuntimeError)
-    assert str(exc_info.value.__cause__) == "provider boom"
+    assert isinstance(exc_info.value.__cause__, InvocationFailureError)
+    assert "provider boom" in str(exc_info.value.__cause__)
     notes = getattr(exc_info.value.__cause__, "__notes__", [])
     assert any("1 fatal path" in note for note in notes)
+
+
+def test_drift_detection_defect_after_expected_provider_failure_propagates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+
+    class FailingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,  # noqa: ARG002 - Required by protocol.
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            raise provider_failure("expected provider failure")
+
+    def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
+        del args, kwargs
+        raise TypeError("simulated drift detector defect")
+
+    monkeypatch.setattr(
+        review_loop_drift,
+        "detect_provider_call_drift",
+        broken_drift_detection,
+    )
+    request = DriftGuardCallRequest(
+        runtime_context=request.runtime_context,
+        output=request.output,
+        node=request.node,
+        node_dir=request.node_dir,
+        invoker=FailingInvoker(),
+        telemetry=request.telemetry,
+        audit_round_num=request.audit_round_num,
+        round_num=request.round_num,
+        provider=request.provider,
+        task_id=request.task_id,
+        prompt=request.prompt,
+        output_file=request.output_file,
+        role_label=request.role_label,
+        findings_enabled=request.findings_enabled,
+        allowed_paths=request.allowed_paths,
+        display=request.display,
+    )
+
+    with pytest.raises(TypeError, match="simulated drift detector defect") as exc_info:
+        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+
+    assert type(exc_info.value) is TypeError
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert any("expected provider failure" in note for note in notes)
+
+
+def test_drift_detection_defect_preserves_unexpected_provider_cause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    original_cause = ValueError("original provider cause")
+
+    class FailingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,  # noqa: ARG002 - Required by protocol.
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            raise TypeError("provider defect") from original_cause
+
+    def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
+        del args, kwargs
+        raise RuntimeError("simulated drift detector defect")
+
+    monkeypatch.setattr(
+        review_loop_drift,
+        "detect_provider_call_drift",
+        broken_drift_detection,
+    )
+    request = DriftGuardCallRequest(
+        runtime_context=request.runtime_context,
+        output=request.output,
+        node=request.node,
+        node_dir=request.node_dir,
+        invoker=FailingInvoker(),
+        telemetry=request.telemetry,
+        audit_round_num=request.audit_round_num,
+        round_num=request.round_num,
+        provider=request.provider,
+        task_id=request.task_id,
+        prompt=request.prompt,
+        output_file=request.output_file,
+        role_label=request.role_label,
+        findings_enabled=request.findings_enabled,
+        allowed_paths=request.allowed_paths,
+        display=request.display,
+    )
+
+    with pytest.raises(TypeError, match="provider defect") as exc_info:
+        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+
+    assert exc_info.value.__cause__ is original_cause
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert any("artifact drift detection failed" in note for note in notes)
+
+
+def test_drift_detection_defect_preserves_unexpected_provider_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    original_context = ValueError("original provider context")
+
+    class FailingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,  # noqa: ARG002 - Required by protocol.
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            try:
+                raise original_context
+            except ValueError:
+                raise TypeError("provider defect")  # noqa: B904 - Regression covers implicit context preservation.
+
+    def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
+        del args, kwargs
+        raise RuntimeError("simulated drift detector defect")
+
+    monkeypatch.setattr(
+        review_loop_drift,
+        "detect_provider_call_drift",
+        broken_drift_detection,
+    )
+    request = DriftGuardCallRequest(
+        runtime_context=request.runtime_context,
+        output=request.output,
+        node=request.node,
+        node_dir=request.node_dir,
+        invoker=FailingInvoker(),
+        telemetry=request.telemetry,
+        audit_round_num=request.audit_round_num,
+        round_num=request.round_num,
+        provider=request.provider,
+        task_id=request.task_id,
+        prompt=request.prompt,
+        output_file=request.output_file,
+        role_label=request.role_label,
+        findings_enabled=request.findings_enabled,
+        allowed_paths=request.allowed_paths,
+        display=request.display,
+    )
+
+    with pytest.raises(TypeError, match="provider defect") as exc_info:
+        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+
+    assert exc_info.value.__context__ is original_context
+    assert exc_info.value.__suppress_context__ is False
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert any("artifact drift detection failed" in note for note in notes)

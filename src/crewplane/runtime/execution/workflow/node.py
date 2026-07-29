@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.results.findings import FindingsExtractionError
 from crewplane.core.preflight.models import PreflightExecutionNode
 
 from ..common import (
@@ -16,6 +17,7 @@ from ..common import (
     safe_error_message,
     should_print_console,
 )
+from ..errors import NodeExecutionError
 from ..input import execute_input_stage
 from ..parallel import execute_parallel_stage
 from ..resume import write_successful_node_state
@@ -74,15 +76,18 @@ async def execute_node(
             invoker=invoker,
             telemetry=telemetry,
         )
-    stage_finalize_result = output.finalize_stage(
-        node.id,
-        findings_enabled=node.findings,
-        task_specs=build_stage_task_specs(node),
-        generated_file_detection_enabled=generated_file_detection_enabled(node),
-        generated_file_workspace_roots=(
-            runtime_context.generated_file_workspaces.roots_for_node(node.id)
-        ),
-    )
+    try:
+        stage_finalize_result = output.finalize_stage(
+            node.id,
+            findings_enabled=node.findings,
+            task_specs=build_stage_task_specs(node),
+            generated_file_detection_enabled=generated_file_detection_enabled(node),
+            generated_file_workspace_roots=(
+                runtime_context.generated_file_workspaces.roots_for_node(node.id)
+            ),
+        )
+    except FindingsExtractionError as exc:
+        raise NodeExecutionError(str(exc)) from exc
     emit_stage_finalize_logs(telemetry, stage_finalize_result)
     cleanup_errors = (
         await runtime_context.generated_file_workspaces.cleanup_node_best_effort_async(

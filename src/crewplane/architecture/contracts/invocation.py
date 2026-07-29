@@ -196,7 +196,11 @@ class AgentInvoker(Protocol):
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
-        """Invoke an agent and write the output to a file."""
+        """Invoke an agent and write the output to a file.
+
+        Raise ``RuntimeError`` for an expected invocation failure. Other
+        exception types are treated as implementation defects.
+        """
 
     def log_presentation_for(
         self,

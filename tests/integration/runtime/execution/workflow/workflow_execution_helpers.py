@@ -23,6 +23,10 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.runtime.agent.failures import (
+    InvocationFailureError,
+    InvocationFailureSummary,
+)
 from crewplane.runtime.execution import (
     execute_parallel_stage as _execute_compiled_parallel_stage,
 )
@@ -48,6 +52,18 @@ class NoPresentationInvoker(AgentInvoker):
         config: AgentConfig,  # noqa: ARG002 - Required by protocol signature.
     ) -> LogPresentationDescriptor | None:
         return None
+
+
+def provider_failure(message: str) -> InvocationFailureError:
+    summary = InvocationFailureSummary(
+        kind="provider_error",
+        phase="provider_transport",
+        source="none",
+        message=message,
+        advice="Test provider reported a deterministic invocation failure.",
+        condensed=False,
+    )
+    return InvocationFailureError("test provider failed", summary, None)
 
 
 class MockAgentInvoker(NoPresentationInvoker):
@@ -344,7 +360,7 @@ class SelectiveFailInvoker(NoPresentationInvoker):
             {"model": model, "prompt": prompt, "output_file": str(output_file)}
         )
         if model in self.failing_models:
-            raise RuntimeError(f"simulated failure for {model}")
+            raise provider_failure(f"simulated failure for {model}")
         output_file.write_text(f"success: {model}", encoding="utf-8")
 
 
@@ -365,7 +381,7 @@ class FindingsSelectiveFailInvoker(NoPresentationInvoker):
     ) -> None:
         self.calls.append({"model": model, "output_file": str(output_file)})
         if model in self.failing_models:
-            raise RuntimeError(f"simulated failure for {model}")
+            raise provider_failure(f"simulated failure for {model}")
         output_file.write_text(
             "\n".join(
                 [

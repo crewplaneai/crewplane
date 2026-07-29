@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.text import Text
 
 from crewplane.artifacts.locks import ResumeLockError
 from crewplane.core.config import Config, load_config
@@ -18,7 +19,7 @@ from crewplane.core.preflight import (
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.observability import ObservabilityHub
-from crewplane.runtime.execution import execute_workflow
+from crewplane.runtime.execution import WorkflowExecutionError, execute_workflow
 
 from . import workflow_runner
 from .cleanup import cleanup_app
@@ -365,6 +366,9 @@ def run(
     except workflow_runner.WorkflowCancelledByUser as exc:
         console.print(f"[yellow]{exc}[/]")
         raise typer.Exit(code=130) from None
+    except WorkflowExecutionError as exc:
+        console.print(Text.assemble(("✗", "red"), f" {exc}"))
+        raise typer.Exit(code=1) from None
     except ResumeLockError as exc:
         console.print(f"[red]✗[/] Run lock unavailable: {exc}")
         console.print(

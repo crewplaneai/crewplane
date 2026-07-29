@@ -11,6 +11,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.runtime.execution import NodeExecutionError
 from crewplane.runtime.execution.parallel import enforce_parallel_failure_policy
 from crewplane.runtime.execution.stage_tasks import ParallelResultSummary
 
@@ -29,7 +30,7 @@ def test_lineage_worktree_parallel_node_rejects_allowed_executor_failure() -> No
         execution_policy=ExecutionPolicy(failure_threshold=1),
     )
 
-    with pytest.raises(RuntimeError, match="lineage-producing worktree"):
+    with pytest.raises(NodeExecutionError, match="lineage-producing worktree"):
         enforce_parallel_failure_policy(
             node,
             ParallelResultSummary(total=2, successful=1, failed=1),

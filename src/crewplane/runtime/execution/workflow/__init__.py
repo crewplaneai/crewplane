@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+from rich.text import Text
+
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import (
@@ -24,6 +26,7 @@ from ..common import (
     safe_error_message,
     should_print_console,
 )
+from ..errors import WorkflowExecutionError, is_expected_execution_failure
 from ..resume import emit_resumed_node_events
 from .cleanup import (
     cleanup_successful_workspace_run_refs,
@@ -124,12 +127,13 @@ async def wait_for_completed_nodes(state: WorkflowExecutionState) -> list[str]:
 
 
 async def _cancel_running_node_tasks(state: WorkflowExecutionState) -> None:
-    pending_tasks = [task for task in state.running.values() if not task.done()]
-    if not pending_tasks:
+    remaining_tasks = list(state.running.values())
+    if not remaining_tasks:
         return
-    for task in pending_tasks:
-        task.cancel()
-    await asyncio.gather(*pending_tasks, return_exceptions=True)
+    for task in remaining_tasks:
+        if not task.done():
+            task.cancel()
+    await asyncio.gather(*remaining_tasks, return_exceptions=True)
 
 
 def _mark_node_failed(
@@ -142,7 +146,9 @@ def _mark_node_failed(
     state.statuses[node_id] = "failed"
     state.node_errors[node_id] = exc
     if should_print_console(telemetry):
-        execution_console(telemetry).print(f"[red]✗[/] Node '{node_id}' failed: {exc}")
+        execution_console(telemetry).print(
+            Text.assemble(("✗", "red"), f" Node '{node_id}' failed: {exc}")
+        )
     emit_workflow_event(
         telemetry,
         "node_failed",
@@ -184,6 +190,8 @@ async def _finalize_completed_node(
         await task
     except Exception as exc:
         _mark_node_failed(node_id, exc, state, telemetry)
+        if not is_expected_execution_failure(exc):
+            raise
         return
     _mark_node_succeeded(node_id, state, telemetry)
 
@@ -272,7 +280,7 @@ def _raise_if_workflow_failed(
         dependencies_by_node=dependencies_by_node,
         statuses=statuses,
     )
-    raise RuntimeError(f"Workflow '{workflow_name}' failed:\n{details}")
+    raise WorkflowExecutionError(f"Workflow '{workflow_name}' failed:\n{details}")
 
 
 async def execute_workflow(
@@ -334,8 +342,15 @@ async def execute_workflow(
                 break
 
             completed_node_ids = await wait_for_completed_nodes(state)
+            unexpected_error: Exception | None = None
             for node_id in completed_node_ids:
-                await _finalize_completed_node(node_id, state, telemetry)
+                try:
+                    await _finalize_completed_node(node_id, state, telemetry)
+                except Exception as exc:
+                    if unexpected_error is None:
+                        unexpected_error = exc
+            if unexpected_error is not None:
+                raise unexpected_error
 
         blocked_nodes = _mark_blocked_nodes(
             state=state,
