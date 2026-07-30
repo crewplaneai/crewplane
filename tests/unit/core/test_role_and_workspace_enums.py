@@ -3,6 +3,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from crewplane.architecture.contracts import (
+    InvocationContext,
+    MockInvokerFailSelector,
+    TopologyProvider,
+)
+from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.core.preflight import render_plans
 from crewplane.core.preflight.models import (
     RenderStream,
@@ -46,6 +52,18 @@ def test_provider_reasoning_null_matches_omission() -> None:
 def test_provider_role_rejects_invalid_or_mixed_case_values(role: str) -> None:
     with pytest.raises(ValidationError):
         ProviderSpec(provider="alpha", role=role)
+
+
+@pytest.mark.parametrize("role", ["Reviewer", " reviewer ", "author"])
+def test_role_typed_boundary_contracts_reject_invalid_values(role: str) -> None:
+    with pytest.raises(ValueError):
+        InvocationContext("node", "task", "alpha", role)
+    with pytest.raises(ValueError):
+        TopologyProvider(provider="alpha", role=role)
+    with pytest.raises(ValueError):
+        StageTaskSpec(task_id="task", role=role)
+    with pytest.raises(ValueError):
+        MockInvokerFailSelector(role=role)
 
 
 def test_prompt_segment_role_preserves_shared_and_canonical_roles() -> None:

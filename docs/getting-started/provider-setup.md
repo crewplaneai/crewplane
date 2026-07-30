@@ -316,4 +316,4 @@ Continue to [Running workflows](../guides/running-workflows.md) to run the
 configured provider workflow and understand preflight, resume, duplicate skips,
 and reruns.
 
-Or browse the [Guides](../index.md#guides).
+Or browse the [Guides](../index.md#guided-tutorial-track).

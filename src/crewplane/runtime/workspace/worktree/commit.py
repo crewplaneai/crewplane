@@ -47,6 +47,7 @@ def commit_message(request: WorktreeCaptureRequest, tree: str) -> str:
     }
     return "crewplane workspace result\n\n" + json.dumps(
         payload,
+        allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
     )

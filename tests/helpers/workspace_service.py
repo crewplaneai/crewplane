@@ -18,6 +18,10 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.preflight.runtime_config import (
+    RuntimeAgentConfigSnapshot,
+    runtime_agent_signature_payload,
+)
 from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole
@@ -300,11 +304,9 @@ def _runtime_snapshot(
 def _agent_signature(runtime_snapshot: dict[str, object]) -> str:
     agents = runtime_snapshot["agents"]
     assert isinstance(agents, dict)
+    agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(agents["alpha"])
     return signature_for_payload(
-        {
-            "agent_config": agents["alpha"],
-            "agent_config_key": "alpha",
-        }
+        runtime_agent_signature_payload("alpha", agent_snapshot, None)
     )
 
 

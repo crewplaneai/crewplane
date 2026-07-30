@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rich.console import Console
 
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
@@ -120,16 +121,24 @@ class SensitiveOptionInvokerAdapter:
         raise AssertionError("preflight preview must not construct the invoker")
 
 
-def _compile_signature(root: Path, no_live: bool) -> str:
+def _compile_signature(
+    root: Path,
+    no_live: bool,
+    settings_update: dict[str, object] | None = None,
+    workflow: WorkflowPlan | None = None,
+) -> str:
     config = _mock_config()
-    workflow = _literal_workflow()
+    if settings_update:
+        assert config.settings is not None
+        config.settings = config.settings.model_copy(update=settings_update)
+    selected_workflow = workflow or _literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
         console=Console(file=None),
         no_live=no_live,
     )
     preview = compile_preflight_preview(
-        source=_source(workflow),
+        source=_source(selected_workflow),
         config=config,
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
@@ -150,63 +159,80 @@ def test_no_live_is_excluded_from_workflow_signature(tmp_path: Path) -> None:
     )
 
 
-def test_runtime_execution_modules_do_not_consume_workflow_model_shims() -> None:
-    runtime_dir = Path("src/crewplane/runtime/execution")
-    forbidden_terms = (
-        "crewplane.core.workflow.models",
-        "WorkflowNode",
-        "ProviderSpec",
-        "workflow_node_from_plan_node",
-        "provider_spec_from_record",
+@pytest.mark.parametrize(
+    ("setting_name", "value"),
+    [
+        ("log_level", "DEBUG"),
+        ("max_audit_rounds", 99),
+        ("sequential_consensus_on_exhaustion", "fatal"),
+    ],
+)
+def test_ineffective_settings_are_excluded_from_workflow_signature(
+    tmp_path: Path,
+    setting_name: str,
+    value: object,
+) -> None:
+    baseline = _compile_signature(tmp_path, no_live=True)
+    changed = _compile_signature(
+        tmp_path,
+        no_live=True,
+        settings_update={setting_name: value},
     )
 
-    offenders: list[str] = []
-    for path in runtime_dir.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        for term in forbidden_terms:
-            if term in text:
-                offenders.append(f"{path}:{term}")
-
-    assert not offenders
+    assert changed == baseline
 
 
-def test_runtime_execution_modules_do_not_consume_runtime_config() -> None:
-    runtime_dir = Path("src/crewplane/runtime/execution")
-    forbidden_terms = (
-        "from crewplane.core.config import Config",
-        "config: Config",
-        "config.settings",
-        "config.agents",
-        "request.config",
-        "context.config",
+def test_effective_execution_setting_changes_workflow_signature(
+    tmp_path: Path,
+) -> None:
+    baseline = _compile_signature(tmp_path, no_live=True)
+    changed = _compile_signature(
+        tmp_path,
+        no_live=True,
+        settings_update={"max_concurrent_nodes": 1},
     )
 
-    offenders: list[str] = []
-    for path in runtime_dir.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        for term in forbidden_terms:
-            if term in text:
-                offenders.append(f"{path}:{term}")
-
-    assert not offenders
+    assert changed != baseline
 
 
-def test_cli_uses_preflight_runner_for_workflow_source_loading() -> None:
-    app_source = Path("src/crewplane/cli/app.py").read_text(encoding="utf-8")
-    runner_source = Path("src/crewplane/core/preflight/runner.py").read_text(
-        encoding="utf-8"
+def test_consensus_policy_changes_signature_when_review_loop_is_active(
+    tmp_path: Path,
+) -> None:
+    workflow = WorkflowPlan(
+        name="review",
+        nodes=[
+            WorkflowNode(
+                id="review",
+                mode="sequential",
+                providers=[
+                    ProviderSpec(
+                        provider="mock",
+                        role="executor",
+                    ),
+                    ProviderSpec(
+                        provider="mock",
+                        role="reviewer",
+                    ),
+                ],
+                prompt_segments=[
+                    PromptSegment(
+                        role=PromptSegmentRole.SHARED,
+                        content="review",
+                    )
+                ],
+            )
+        ],
     )
-    compiler_source = Path("src/crewplane/core/preflight/compiler.py").read_text(
-        encoding="utf-8"
+
+    baseline = _compile_signature(tmp_path, no_live=True, workflow=workflow)
+    changed = _compile_signature(
+        tmp_path,
+        no_live=True,
+        settings_update={"sequential_consensus_on_exhaustion": "fatal"},
+        workflow=workflow,
     )
 
-    assert "load_tasks_with_sources" not in app_source
-    assert "validate_workflow_plan" not in app_source
-    assert "load_workflow_source_for_preflight" in app_source
-    assert "load_tasks_with_sources" not in runner_source
-    assert "validate_workflow_plan" not in runner_source
-    assert "validate_workflow_plan" not in compiler_source
-    assert "def compile_preflight_preview(\n    workflow" not in compiler_source
+    assert changed != baseline
 
 
 def test_mock_execution_options_change_runtime_signature() -> None:

@@ -14,6 +14,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     ProviderRecord,
 )
+from crewplane.core.preflight.runtime_config import (
+    RuntimeAgentConfigSnapshot,
+    runtime_agent_signature_payload,
+)
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole
@@ -28,6 +32,21 @@ from crewplane.runtime.execution.common import (
     resolve_provider_model,
 )
 from crewplane.version import SCHEMA_VERSION
+
+
+def _agent_signature(
+    agent_config_key: str,
+    agent_payload: object,
+    resolved_model: str | None,
+) -> str:
+    agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(agent_payload)
+    return signature_for_payload(
+        runtime_agent_signature_payload(
+            agent_config_key,
+            agent_snapshot,
+            resolved_model,
+        )
+    )
 
 
 class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
@@ -243,11 +262,10 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 task_id="alpha_executor_0",
                 agent_config_key="alpha",
                 invoker_alias="mock",
-                agent_config_signature=signature_for_payload(
-                    {
-                        "agent_config": agent_payload,
-                        "agent_config_key": "alpha",
-                    }
+                agent_config_signature=_agent_signature(
+                    "alpha",
+                    agent_payload,
+                    "workflow-model",
                 ),
                 invoker_config_signature=signature_for_payload(invoker_payload),
             ),

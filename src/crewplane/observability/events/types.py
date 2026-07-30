@@ -1,40 +1,32 @@
 from __future__ import annotations
 
-from typing import Literal
-
-EventType = Literal[
-    "workflow_started",
-    "workflow_finished",
-    "workflow_failed",
-    "node_started",
-    "node_finished",
-    "node_failed",
-    "node_blocked",
-    "invocation_started",
-    "invocation_finished",
-    "invocation_failed",
-    "workspace_context_recorded",
-    "runtime_log",
-]
-WorkflowEventType = Literal[
-    "workflow_started",
-    "workflow_finished",
-    "workflow_failed",
-]
-NodeEventType = Literal[
-    "node_started",
-    "node_finished",
-    "node_failed",
-    "node_blocked",
-]
-InvocationEventType = Literal[
-    "invocation_started",
-    "invocation_finished",
-    "invocation_failed",
-]
-WorkspaceEventType = Literal["workspace_context_recorded"]
-WorkflowStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
-NodeStatus = Literal["pending", "running", "succeeded", "failed", "blocked"]
-InvocationStatus = Literal["pending", "running", "succeeded", "failed"]
-LogLevel = Literal["debug", "info", "warning", "error"]
-RuntimeLogValue = str | int | float | bool | None
+from crewplane.architecture.contracts.execution_event import (
+    EventType as EventType,
+)
+from crewplane.architecture.contracts.execution_event import (
+    InvocationEventType as InvocationEventType,
+)
+from crewplane.architecture.contracts.execution_event import (
+    InvocationStatus as InvocationStatus,
+)
+from crewplane.architecture.contracts.execution_event import (
+    LogLevel as LogLevel,
+)
+from crewplane.architecture.contracts.execution_event import (
+    NodeEventType as NodeEventType,
+)
+from crewplane.architecture.contracts.execution_event import (
+    NodeStatus as NodeStatus,
+)
+from crewplane.architecture.contracts.execution_event import (
+    RuntimeLogValue as RuntimeLogValue,
+)
+from crewplane.architecture.contracts.execution_event import (
+    WorkflowEventType as WorkflowEventType,
+)
+from crewplane.architecture.contracts.execution_event import (
+    WorkflowStatus as WorkflowStatus,
+)
+from crewplane.architecture.contracts.execution_event import (
+    WorkspaceEventType as WorkspaceEventType,
+)

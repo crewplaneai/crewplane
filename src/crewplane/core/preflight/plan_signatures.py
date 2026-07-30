@@ -69,6 +69,7 @@ def effective_runtime_config_signature_for_plan(
     return runtime_config_signature(
         runtime_snapshot,
         semantic_workspace_runtime_payload(runtime_snapshot, nodes),
+        nodes,
     )
 
 

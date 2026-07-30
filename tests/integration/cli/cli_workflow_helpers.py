@@ -4,6 +4,9 @@ from typing import Any
 
 from rich.console import Console
 
+from crewplane.architecture.ports.artifacts import ArtifactStorePort, StageTaskSpec
+from crewplane.core.preflight import PreflightExecutionPlan
+from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -13,6 +16,32 @@ class ConsoleFactory:
 
     def __call__(self) -> Console:
         return Console(**self._kwargs)
+
+
+def write_successful_workflow_outputs(
+    plan: PreflightExecutionPlan,
+    output: ArtifactStorePort,
+    workflow_identity: str,
+) -> None:
+    for node in plan.nodes:
+        task_specs = tuple(
+            StageTaskSpec(record.task_id, record.role)
+            for record in node.provider_records
+        )
+        stage_dir = output.create_stage_dir(node.id)
+        for task_spec in task_specs:
+            (stage_dir / f"{task_spec.task_id}_round1.md").write_text(
+                f"{node.id} completed",
+                encoding="utf-8",
+            )
+        finalize_result = output.finalize_stage(node.id, task_specs=task_specs)
+        write_successful_node_state(
+            node,
+            plan,
+            output,
+            workflow_identity,
+            finalize_result,
+        )
 
 
 def project_pythonpath() -> str:

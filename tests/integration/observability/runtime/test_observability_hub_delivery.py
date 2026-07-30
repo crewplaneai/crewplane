@@ -21,7 +21,7 @@ class ObservabilityHubDeliveryTests(unittest.TestCase):
     def test_observability_hub_exposes_observer_stop_request(self) -> None:
         workflow = single_node_workflow()
         observer = RecordingObserver()
-        observer.stop_requested = True  # type: ignore[attr-defined]
+        observer.stop_requested = True
 
         with ObservabilityHub(
             workflow_topology=topology_from_workflow(workflow),
@@ -82,7 +82,7 @@ class ObservabilityHubDeliveryTests(unittest.TestCase):
             refresh_per_second=0,
         ) as hub:
             self.assertTrue(observer.entered.wait(timeout=1.0))
-            observer.stop_requested = True  # type: ignore[attr-defined]
+            observer.stop_requested = True
             self.assertTrue(hub.stop_requested)
             observer.release.set()
 

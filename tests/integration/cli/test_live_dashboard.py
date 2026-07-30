@@ -6,6 +6,7 @@ import unittest
 import typer
 
 import crewplane.cli.app as cli
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.observability.types import RunContext, RunResult
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.working_directory import temporary_project_cwd
@@ -14,6 +15,23 @@ from tests.integration.cli.cli_workflow_helpers import (
     write_basic_config,
     write_basic_workflow,
 )
+
+
+class _ConformingObserverStub:
+    capabilities = ObserverCapabilities()
+
+    @property
+    def stop_requested(self) -> bool:
+        return False
+
+    def start(self, context: object) -> None:
+        del context
+
+    def on_snapshot(self, event: object | None, snapshot: object) -> None:
+        del event, snapshot
+
+    def stop(self, result: object) -> None:
+        del result
 
 
 class CliLiveDashboardTests(unittest.TestCase):
@@ -137,7 +155,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
 
-            class StubObserver:
+            class StubObserver(_ConformingObserverStub):
                 def __init__(  # type: ignore[no-untyped-def]
                     self,
                     auto_close_session=True,
@@ -375,7 +393,7 @@ class CliLiveDashboardTests(unittest.TestCase):
 
             original_runtime_class = tmux_adapter_module.TmuxCompactRuntime
 
-            class StubObserver:
+            class StubObserver(_ConformingObserverStub):
                 def __init__(  # type: ignore[no-untyped-def]
                     self,
                     auto_close_session=True,
@@ -551,7 +569,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 captured_kwargs.update(kwargs)
 
-            class StubObserver:
+            class StubObserver(_ConformingObserverStub):
                 def __init__(  # type: ignore[no-untyped-def]
                     self,
                     auto_close_session=True,

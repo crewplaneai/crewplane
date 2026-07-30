@@ -4,6 +4,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.core.workspace.policy import (
     WorkspaceCleanStart,
     WorkspaceMaterialization,
@@ -16,16 +17,32 @@ from crewplane.core.workspace.policy import (
 class WorkspaceSetupCommandRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    argv: list[str]
+    argv: list[str | JsonObject]
     command_index: int
 
     @field_validator("argv")
     @classmethod
-    def _validate_argv(cls, value: list[str]) -> list[str]:
+    def _validate_argv(
+        cls,
+        value: list[str | JsonObject],
+    ) -> list[str | JsonObject]:
         if not value:
             raise ValueError("workspace setup command argv cannot be empty")
-        if any(not token.strip() for token in value):
-            raise ValueError("workspace setup command argv cannot contain blank tokens")
+        for token in value:
+            if isinstance(token, str):
+                if not token.strip():
+                    raise ValueError(
+                        "workspace setup command argv cannot contain blank tokens"
+                    )
+                continue
+            if (
+                token.get("redacted") is not True
+                or not isinstance(token.get("value_handle"), str)
+                or set(token) - {"fingerprint", "redacted", "value_handle"}
+            ):
+                raise ValueError(
+                    "workspace setup command argv contains an invalid redacted token"
+                )
         return value
 
 

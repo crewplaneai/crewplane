@@ -19,7 +19,8 @@ configured provider CLIs are available on that platform. Native Windows is not
 supported; use WSL on Windows hosts.
 
 Pull-request CI runs on Linux for Python 3.13 and 3.14. Nightly CI runs on
-Linux and macOS for Python 3.13 and 3.14.
+Linux and macOS for Python 3.13 and 3.14. Tests marked `scale` run in the
+nightly matrix rather than the stable pull-request suite.
 
 The tmux live dashboard requires `tmux` and is intended for Unix-like
 environments. WSL supports the same tmux live mode as Linux.
@@ -36,11 +37,13 @@ make setup
 ## Local Workflows
 
 ```bash
-make test         # project-env pytest -q
+make test         # stable pytest suite with branch coverage
+make typecheck    # typed extension contracts + external consumer fixture
+make docs-check   # Markdown parsing + local-link validation
 make lint         # project-env ruff check src tests scripts
 make format       # project-env ruff import fixes + format src tests scripts
 make format-check # project-env ruff format --check src tests scripts
-make check        # lint + format-check + tests
+make check        # lint + format-check + docs + typing + stable tests
 make help         # list package and release targets
 make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
@@ -242,10 +245,18 @@ exists on TestPyPI.
 
 ## Testing Expectations
 
+Audit closure evidence is recorded in the
+[maintainer audit closure report](docs/maintenance/maintainer-bug-report.md).
+
 - New behavior must include tests.
 - Bug fixes must include regression tests.
 - Keep tests deterministic and filesystem-local.
 - Integration implementations must include contract tests under `tests/integration/architecture/` and adapter tests under `tests/integration/adapters/`.
+- Public extension contracts must pass `make typecheck`; the package job also
+  type-checks the consumer fixture against the built wheel.
+- Stable tests enforce branch coverage. Property tests and multiprocess crash
+  regressions belong in the stable suite; resource-scale regressions use the
+  `scale` marker and run nightly.
 
 ## Mock Invoker Local Validation
 

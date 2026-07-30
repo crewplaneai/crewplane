@@ -11,9 +11,13 @@ class ContextDisplay:
     node_id: str
     task_id: str
     provider: str
-    role: str
+    role: ProviderRole | None
     audit_round_display: str
     round_display: str
+
+    @property
+    def role_display(self) -> str:
+        return self.role.value if self.role is not None else "<unknown>"
 
 
 def _or_na(value: int | None) -> str:
@@ -26,7 +30,7 @@ def context_display(context: InvocationContext | None) -> ContextDisplay:
             node_id="<unknown>",
             task_id="<unknown>",
             provider="<unknown>",
-            role="<unknown>",
+            role=None,
             audit_round_display=_or_na(None),
             round_display=_or_na(None),
         )

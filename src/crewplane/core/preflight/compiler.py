@@ -3,6 +3,7 @@ from __future__ import annotations
 from crewplane.core.config import Config
 from crewplane.core.workflow.graph import topological_waves
 from crewplane.core.workflow.models import WorkflowPlan
+from crewplane.core.workflow.validation.workspace import logical_workspace_selections
 
 from .compile_state import (
     CompileState,
@@ -48,6 +49,9 @@ from .value_fingerprints import (
 from .variables import build_builtin_template_variables
 from .workspace.records import workspace_policy_records
 from .workspace.snapshot_guard import append_missing_workspace_snapshot_diagnostic
+
+_WORKSPACE_SETUP_PROFILE_PATH_PREFIX = "workspace.setup_profiles."
+_AGENT_CONFIG_PATH_PREFIX = "agents."
 
 
 def compile_preflight_preview(
@@ -105,8 +109,15 @@ def compile_preflight_preview(
             execution_order,
         )
 
+    runtime_snapshot = _runtime_snapshot_with_effective_sensitive_paths(
+        workflow,
+        config,
+        runtime_snapshot,
+    )
     runtime_snapshot = _finalize_fingerprints(
-        runtime_snapshot, effective_options, state
+        runtime_snapshot,
+        effective_options,
+        state,
     )
     if has_errors(state):
         return _build_preview(
@@ -178,7 +189,7 @@ def _compile_template_plan(
 ) -> tuple[list[RenderPlan], list[PreflightExecutionNode], list[DependencyEdge]]:
     render_plans: list[RenderPlan] = []
     nodes: list[PreflightExecutionNode] = []
-    workspace_records = workspace_policy_records(workflow, config)
+    workspace_records = workspace_policy_records(workflow, config, runtime_snapshot)
     for node in workflow.nodes:
         for dependency in node.needs:
             append_dependency_edge(
@@ -238,6 +249,110 @@ def _capture_runtime_config_secrets(
         state.secret_context.put(config_value_handle(path), str(value))
 
 
+def _runtime_snapshot_with_effective_sensitive_paths(
+    workflow: WorkflowPlan,
+    config: Config,
+    runtime_snapshot: RuntimeConfigSnapshot,
+) -> RuntimeConfigSnapshot:
+    paths = _effective_sensitive_config_paths(workflow, config, runtime_snapshot)
+    if paths == runtime_snapshot.sensitive_config_paths:
+        return runtime_snapshot
+    return runtime_snapshot.model_copy(update={"sensitive_config_paths": paths})
+
+
+def _effective_sensitive_config_paths(
+    workflow: WorkflowPlan,
+    config: Config,
+    runtime_snapshot: RuntimeConfigSnapshot,
+) -> list[str]:
+    setup_profiles = _selected_workspace_setup_profiles(workflow, config)
+    agent_names = _selected_agent_names(workflow)
+    configured_setup_profiles = _configured_workspace_setup_profiles(runtime_snapshot)
+    configured_agent_names = set(runtime_snapshot.raw_agents)
+    return [
+        path
+        for path in runtime_snapshot.sensitive_config_paths
+        if _sensitive_path_is_effective(
+            path,
+            setup_profiles,
+            configured_setup_profiles,
+            agent_names,
+            configured_agent_names,
+        )
+    ]
+
+
+def _selected_workspace_setup_profiles(
+    workflow: WorkflowPlan,
+    config: Config,
+) -> set[str]:
+    return {
+        selection.setup_profile
+        for selection in logical_workspace_selections(workflow, config).values()
+        if selection.enabled and selection.setup_profile is not None
+    }
+
+
+def _selected_agent_names(workflow: WorkflowPlan) -> set[str]:
+    return {
+        provider.provider
+        for node in workflow.nodes
+        if node.mode != "input"
+        for provider in node.providers
+    }
+
+
+def _configured_workspace_setup_profiles(
+    runtime_snapshot: RuntimeConfigSnapshot,
+) -> set[str]:
+    profiles = runtime_snapshot.raw_workspace.get("setup_profiles")
+    if isinstance(profiles, dict):
+        return set(profiles)
+    return set(runtime_snapshot.workspace.setup_profiles)
+
+
+def _sensitive_path_is_effective(
+    path: str,
+    setup_profiles: set[str],
+    configured_setup_profiles: set[str],
+    agent_names: set[str],
+    configured_agent_names: set[str],
+) -> bool:
+    if path.startswith(_AGENT_CONFIG_PATH_PREFIX):
+        agent_name = _matched_sensitive_path_owner(
+            path,
+            _AGENT_CONFIG_PATH_PREFIX,
+            configured_agent_names,
+            ".",
+        )
+        return agent_name in agent_names
+    if path.startswith(_WORKSPACE_SETUP_PROFILE_PATH_PREFIX):
+        profile_name = _matched_sensitive_path_owner(
+            path,
+            _WORKSPACE_SETUP_PROFILE_PATH_PREFIX,
+            configured_setup_profiles,
+            ".run.",
+        )
+        return profile_name in setup_profiles
+    return True
+
+
+def _matched_sensitive_path_owner(
+    path: str,
+    prefix: str,
+    owner_names: set[str],
+    suffix: str,
+) -> str | None:
+    return next(
+        (
+            owner_name
+            for owner_name in sorted(owner_names, key=len, reverse=True)
+            if path.startswith(f"{prefix}{owner_name}{suffix}")
+        ),
+        None,
+    )
+
+
 def _raw_runtime_config_value(
     runtime_snapshot: RuntimeConfigSnapshot,
     path: str,
@@ -247,6 +362,8 @@ def _raw_runtime_config_value(
         return None
     if parts[0] == "agents":
         return _value_at_path(runtime_snapshot.raw_agents, parts[1:])
+    if parts[0] == "workspace":
+        return _value_at_path(runtime_snapshot.raw_workspace, parts[1:])
     if parts[:3] == ["integrations", "invoker", "options"]:
         raw_invoker = runtime_snapshot.raw_invoker
         return _value_at_path(raw_invoker.options if raw_invoker else {}, parts[3:])

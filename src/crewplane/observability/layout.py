@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from crewplane.observability.types import WorkflowTopology
+from crewplane.architecture.contracts import WorkflowTopology
 
 
 @dataclass(frozen=True)

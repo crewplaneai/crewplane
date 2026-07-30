@@ -9,6 +9,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
+from crewplane.core.workflow.keywords import ProviderRole
+
 from .json import JsonObject
 
 # Config imports these contracts, so keep AgentConfig type-only to avoid a cycle.
@@ -275,7 +277,7 @@ class InvocationContext:
     node_id: str
     task_id: str
     provider: str
-    role: str
+    role: ProviderRole
     audit_round_num: int | None = None
     round_num: int | None = None
     findings_enabled: bool = False
@@ -289,6 +291,9 @@ class InvocationContext:
     )
     workspace: InvocationWorkspaceContext | None = None
     requested_reasoning: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "role", ProviderRole(self.role))
 
 
 @dataclass(frozen=True)

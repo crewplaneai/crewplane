@@ -23,10 +23,12 @@ _SENSITIVE_CONFIG_PATH_PATTERN = re.compile(
     r"(secret|token|password|passwd|api[_-]?key|credential|private)",
     re.IGNORECASE,
 )
-_SENSITIVE_EXTRA_ARG_PATTERN = re.compile(
+_SENSITIVE_ARGV_PATTERN = re.compile(
     r"^--[^=\s]*(?:secret|token|password|passwd|api[_-]?key|credential|private)[^=\s]*(?:=.*)?$",
     re.IGNORECASE,
 )
+_ARGV_FIELD_NAMES = frozenset({"argv", "cli_cmd", "extra_args"})
+_ARGV_SCALAR_FIELD_NAMES = frozenset({"model_arg", "prompt_transport_arg"})
 
 
 def config_value_handle(path: str) -> str:
@@ -35,18 +37,20 @@ def config_value_handle(path: str) -> str:
 
 def redact_sensitive_config(
     payload: JsonObject,
+    root_path: tuple[str, ...] = ("agents",),
 ) -> tuple[JsonObject, list[str]]:
-    redacted, paths = _redact_sensitive_value(payload, ("agents",), None)
+    redacted, paths = _redact_sensitive_value(payload, root_path, None)
     return _ensure_dict(redacted), sorted(paths)
 
 
 def redact_sensitive_config_with_fingerprints(
     payload: JsonObject,
     fingerprint_key: bytes | None,
+    root_path: tuple[str, ...] = ("agents",),
 ) -> tuple[JsonObject, list[dict[str, str]]]:
     redacted, _, fingerprints = _redact_sensitive_value_with_fingerprints(
         payload,
-        ("agents",),
+        root_path,
         fingerprint_key,
     )
     return _ensure_dict(redacted), sorted(fingerprints, key=lambda item: item["path"])
@@ -216,7 +220,7 @@ def _redacted_sensitive_list(
     paths = []
     fingerprints = []
     redacted_list = []
-    sensitive_indices = _sensitive_extra_arg_indices(value, path)
+    sensitive_indices = _sensitive_argv_indices(value, path)
     for index, child in enumerate(value):
         child_path = (*path, str(index))
         if index in sensitive_indices:
@@ -252,8 +256,10 @@ def _is_sensitive_config_value(
         return False
     if any(_SENSITIVE_CONFIG_PATH_PATTERN.search(segment) for segment in path):
         return not isinstance(value, (dict, list))
-    if list_parent == "extra_args" and isinstance(value, str):
-        return "=" in value and _SENSITIVE_EXTRA_ARG_PATTERN.search(value) is not None
+    if path[-1] in _ARGV_SCALAR_FIELD_NAMES and isinstance(value, str):
+        return "=" in value and _SENSITIVE_ARGV_PATTERN.search(value) is not None
+    if list_parent in _ARGV_FIELD_NAMES and isinstance(value, str):
+        return "=" in value and _SENSITIVE_ARGV_PATTERN.search(value) is not None
     return False
 
 
@@ -263,7 +269,7 @@ def _redact_sensitive_list(
 ) -> tuple[list[JsonValue], list[str]]:
     paths = []
     redacted_list = []
-    sensitive_indices = _sensitive_extra_arg_indices(value, path)
+    sensitive_indices = _sensitive_argv_indices(value, path)
     for index, child in enumerate(value):
         child_path = (*path, str(index))
         if index in sensitive_indices:
@@ -280,11 +286,11 @@ def _redact_sensitive_list(
     return redacted_list, paths
 
 
-def _sensitive_extra_arg_indices(
+def _sensitive_argv_indices(
     value: list[JsonValue],
     path: tuple[str, ...],
 ) -> set[int]:
-    if not path or path[-1] != "extra_args":
+    if not _is_argv_token_list(path):
         return set()
 
     sensitive_indices: set[int] = set()
@@ -295,13 +301,21 @@ def _sensitive_extra_arg_indices(
         previous_was_sensitive_split_flag = False
         if not isinstance(child, str):
             continue
-        if _SENSITIVE_EXTRA_ARG_PATTERN.search(child) is None:
+        if _SENSITIVE_ARGV_PATTERN.search(child) is None:
             continue
         if "=" in child:
             sensitive_indices.add(index)
             continue
         previous_was_sensitive_split_flag = True
     return sensitive_indices
+
+
+def _is_argv_token_list(path: tuple[str, ...]) -> bool:
+    if not path:
+        return False
+    if path[-1] in _ARGV_FIELD_NAMES:
+        return True
+    return len(path) >= 2 and path[-2] == "run" and "setup_profiles" in path
 
 
 def _path_label(path: tuple[str, ...]) -> str:

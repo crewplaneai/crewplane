@@ -97,3 +97,20 @@ This is the only built-in artifact backend. Non-dry execution relies on the
 artifact-store port for locks, skip/resume history, full-run output, and
 workspace lineage; a custom backend must implement those port capabilities to be
 usable for executed runs.
+
+## Extension Contract
+
+Every adapter canonicalization result must have an `option_scopes` key set that
+exactly matches its canonical `options` key set. Scope each option as
+`execution`, `artifact`, `observer`, or `validation`; unscoped and unknown
+entries fail composition. Sensitive option names must also refer to canonical
+options, and all option and capability values must be finite JSON-compatible
+data.
+
+Observers implement the architecture `Observer` lifecycle contract and expose
+one immutable `ObserverCapabilities` value. Runtime observers receive the
+architecture `ExecutionEvent`, `DashboardSnapshot`, and `RunResult` contracts.
+Composition validates `capabilities`, `stop_requested`, `start`, `on_snapshot`,
+and `stop` before a run begins. Persistent required observers and best-effort UI
+observers express their delivery and cleanup behavior through that capability
+value rather than dynamic attributes.

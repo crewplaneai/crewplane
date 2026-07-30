@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from crewplane.core.workflow.keywords import ProviderRole
+
 from .json import JsonObject
 
 
@@ -15,9 +17,13 @@ class MockInvokerFailSelector:
     node_id: str | None = None
     task_id: str | None = None
     provider: str | None = None
-    role: str | None = None
+    role: ProviderRole | None = None
     audit_round_num: int | None = None
     round_num: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.role is not None:
+            object.__setattr__(self, "role", ProviderRole(self.role))
 
 
 @dataclass(frozen=True)

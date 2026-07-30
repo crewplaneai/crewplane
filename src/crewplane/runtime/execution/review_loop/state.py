@@ -55,7 +55,12 @@ def persist_review_evaluation(
     metadata_path = _review_metadata_path(output_file)
     raw_output_path.write_text(evaluation.raw_text, encoding="utf-8")
     metadata_path.write_text(
-        json.dumps(evaluation.to_metadata_dict(), indent=2, sort_keys=True),
+        json.dumps(
+            evaluation.to_metadata_dict(),
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        ),
         encoding="utf-8",
     )
     output_file.write_text(evaluation.normalized_markdown, encoding="utf-8")
@@ -163,7 +168,7 @@ def persist_review_state(
     return _write_review_state_file(
         artifact_dir=artifact_dir,
         file_name=state_file_name,
-        content=json.dumps(payload, indent=2, sort_keys=True),
+        content=json.dumps(payload, allow_nan=False, indent=2, sort_keys=True),
     )
 
 
@@ -193,7 +198,7 @@ def persist_reviewer_failure_state(
     return _write_review_state_file(
         artifact_dir=artifact_dir,
         file_name=state_file_name,
-        content=json.dumps(payload, indent=2, sort_keys=True),
+        content=json.dumps(payload, allow_nan=False, indent=2, sort_keys=True),
     )
 
 
@@ -308,7 +313,7 @@ def persist_review_loop_status(
     review_state_dir.mkdir(parents=True, exist_ok=True)
     status_path = review_loop_status_path(node_dir)
     status_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True),
+        json.dumps(payload, allow_nan=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
     return status_path

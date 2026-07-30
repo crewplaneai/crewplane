@@ -36,7 +36,7 @@ from .events import (
 )
 from .generated_files import (
     GeneratedFileChangeBaseline,
-    capture_generated_file_change_baseline,
+    capture_generated_file_change_baseline_async,
     finalize_successful_workspace,
     rendered_workspace_file_descriptors,
 )
@@ -205,8 +205,11 @@ async def _prepare_provider_workspace(
         request.runtime_context.deferred_workspace_cleanups,
     )
     state.prepared_workspace = prepared_workspace
-    state.generated_file_change_baseline = capture_generated_file_change_baseline(
-        prepared_workspace
+    state.generated_file_change_baseline = (
+        await capture_generated_file_change_baseline_async(
+            prepared_workspace,
+            request.runtime_context.deferred_workspace_cleanups,
+        )
     )
     state.invocation_metadata = _require_invocation_metadata(state).with_workspace(
         prepared_workspace.invocation_context.workspace
@@ -235,6 +238,7 @@ def _workspace_invocation_request(
         materialization_limiter=request.runtime_context.workspace_materialization_limiter,
         worktree_reuse_cache=request.runtime_context.worktree_reuse_cache,
         rendered_workspace_files=rendered_workspace_file_descriptors(request),
+        secret_context=request.runtime_context.secret_context,
     )
 
 

@@ -7,6 +7,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    FiniteFloat,
     StrictBool,
     field_validator,
     model_validator,
@@ -104,7 +105,7 @@ class WorkspaceSettings(BaseModel):
     worktree_contract: WorktreeContractMode = "blob_exact"
     clean_start: WorkspaceCleanStart = "strict"
     setup_profiles: dict[str, WorkspaceSetupProfile] = Field(default_factory=dict)
-    setup_timeout_seconds: float = Field(
+    setup_timeout_seconds: FiniteFloat = Field(
         default=DEFAULT_WORKSPACE_SETUP_TIMEOUT_SECONDS,
         gt=0,
     )

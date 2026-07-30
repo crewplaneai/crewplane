@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 from threading import Event, Timer
@@ -20,6 +21,9 @@ from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
+)
+from crewplane.artifacts.generated_files.detection import (
+    GENERATED_FILE_SNAPSHOT_METADATA_NAME,
 )
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.preflight.secrets import SecretContext
@@ -95,6 +99,12 @@ def test_generated_file_capture_failure_disables_project_root_fallback(
             monkeypatch,
         )
     )
+
+
+def test_overlapping_project_root_invocations_do_not_cross_attribute_ambient_files(
+    tmp_path: Path,
+) -> None:
+    asyncio.run(_run_overlapping_project_root_invocations(tmp_path))
 
 
 def test_provider_invocation_cancellation_marks_workspace_state(
@@ -657,6 +667,93 @@ async def _run_generated_file_capture_failure_disables_project_root_fallback(
     assert "(../../src/app.txt)" not in result_text
 
 
+async def _run_overlapping_project_root_invocations(tmp_path: Path) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = disabled_workspace_plan(repo)
+    output = workspace_output_manager(tmp_path, repo)
+    node_dir = output.create_stage_dir("implement")
+    runtime_context = CompiledRuntimeContext(
+        plan=plan,
+        secret_context=SecretContext(),
+    )
+    events = []
+    telemetry = ExecutionTelemetry(
+        workflow_name=plan.workflow_name,
+        run_id=plan.run_id,
+        event_sink=events.append,
+        suppress_console_output=True,
+    )
+    coordinator = OverlapCoordinator()
+    base_provider = plan.nodes[0].provider_records[0]
+    outputs = {
+        "alpha": node_dir / "alpha_round1.md",
+        "beta": node_dir / "beta_round1.md",
+    }
+
+    async def invoke(provider: str) -> object:
+        provider_record = base_provider.model_copy(
+            update={"provider": provider, "task_id": provider}
+        )
+        return await run_provider_invocation(
+            ProviderCallRequest(
+                runtime_context=runtime_context,
+                output=output,
+                node_id="implement",
+                provider=provider_record,
+                task_id=provider,
+                audit_round_num=None,
+                round_num=1,
+                prompt="done",
+                output_file=outputs[provider],
+                role_label=ProviderRole.EXECUTOR,
+                invoker=ClaimingRuntimeInvoker(
+                    repo / f"{provider}.txt",
+                    coordinator,
+                ),
+                telemetry=telemetry,
+            ),
+            capture_exception=True,
+            display=ProviderCallDisplay(telemetry=telemetry),
+        )
+
+    tasks = [
+        asyncio.create_task(invoke("alpha")),
+        asyncio.create_task(invoke("beta")),
+    ]
+    await asyncio.wait_for(coordinator.both_ready.wait(), timeout=5)
+    ambient = repo / "ambient-large.bin"
+    with ambient.open("wb") as stream:
+        stream.truncate(50 * 1024 * 1024 + 1)
+    coordinator.release.set()
+    results = await asyncio.gather(*tasks)
+
+    assert all(result.error is None for result in results)
+    assert not any(event.event_type == "invocation_failed" for event in events)
+    assert {
+        event.context.task_id
+        for event in events
+        if event.event_type == "invocation_finished"
+    } == {"alpha", "beta"}
+    snapshot_roots = runtime_context.generated_file_workspaces.roots_for_node(
+        "implement"
+    )
+    for provider, output_file in outputs.items():
+        snapshot_root = snapshot_roots[output_file.resolve(strict=False)]
+        assert snapshot_root is not None
+        assert (snapshot_root / f"{provider}.txt").read_text(
+            encoding="utf-8"
+        ) == f"{provider} output\n"
+        other_provider = "beta" if provider == "alpha" else "alpha"
+        assert not (snapshot_root / f"{other_provider}.txt").exists()
+        assert not (snapshot_root / ambient.name).exists()
+        assert (snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME).is_file()
+        assert (
+            outputs[provider]
+            .read_text(encoding="utf-8")
+            .endswith(f"- `{provider}.txt`\n")
+        )
+
+
 async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_loop(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -677,8 +774,9 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
         request: ProviderCallRequest,
         prepared_workspace: PreparedWorkspace,
         change_baseline: object | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
-        del request, prepared_workspace, change_baseline
+        del request, prepared_workspace, change_baseline, cancel_requested
         started.set()
         assert release.wait(2)
 
@@ -972,6 +1070,7 @@ async def _run_workspace_success_finalization_waits_after_cancellation() -> None
     assert workspace.finished.is_set()
     assert workspace.child_environment_applied is True
     assert workspace.defer_cleanup is True
+    assert workspace.cancel_requested is True
     assert cleanup_registry.tasks == set()
 
 
@@ -1012,6 +1111,7 @@ async def _run_workspace_success_finalization_records_cleanup_after_cancellation
     with pytest.raises(asyncio.CancelledError):
         await task
     assert workspace.finished.is_set()
+    assert workspace.cancel_requested is True
     assert runtime_context.generated_file_workspaces.roots_for_node("implement") == {}
     callbacks = runtime_context.generated_file_workspaces.cleanup_by_node["implement"]
     assert callbacks == [workspace.cleanup_after_success]
@@ -1068,6 +1168,7 @@ async def _run_workspace_success_finalization_withholds_cleanup_while_pending(
 
     assert errors == ()
     assert workspace.finished.is_set()
+    assert workspace.cancel_requested is True
     assert runtime_context.generated_file_workspaces.roots_for_node("implement") == {}
     assert workspace.cleaned is True
     assert runtime_context.generated_file_workspaces.cleanup_by_node == {}
@@ -1125,6 +1226,7 @@ async def _run_workspace_success_finalization_cleans_after_drain_timeout(
     assert await asyncio.to_thread(workspace.cleaned_event.wait, 2)
 
     assert workspace.cleaned is True
+    assert workspace.cancel_requested is True
     assert runtime_context.generated_file_workspaces.cleanup_by_node == {}
 
 
@@ -1142,6 +1244,7 @@ async def _run_workspace_success_finalization_preserves_cancel_on_failure() -> N
     with pytest.raises(asyncio.CancelledError) as exc_info:
         await task
     assert workspace.finished.is_set()
+    assert workspace.cancel_requested is True
     assert _exception_notes_contain(
         exc_info.value,
         "Workspace success finalization after cancellation failed: "
@@ -1271,6 +1374,7 @@ async def _run_workspace_success_finalization_defers_after_cancellation_timeout(
 
     assert errors == ()
     assert workspace.finished.is_set()
+    assert workspace.cancel_requested is True
     assert cleanup_registry.tasks == set()
 
 
@@ -1292,10 +1396,13 @@ async def _run_generated_file_snapshot_defers_after_cancellation_timeout(
         request: ProviderCallRequest,
         prepared_workspace: object,
         change_baseline: object | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> Path:
         del request, prepared_workspace, change_baseline
         started.set()
         assert release.wait(2)
+        assert cancel_requested is not None
+        assert cancel_requested() is True
         return tmp_path / "snapshot"
 
     monkeypatch.setattr(
@@ -1969,16 +2076,21 @@ class SlowSuccessfulWorkspace:
         self.finished = Event()
         self.child_environment_applied: bool | None = None
         self.defer_cleanup: bool | None = None
+        self.cancel_requested: bool | None = None
 
     def mark_succeeded(
         self,
         child_environment_applied: bool | None = None,
         defer_cleanup: bool = False,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
         self.child_environment_applied = child_environment_applied
         self.defer_cleanup = defer_cleanup
         self.started.set()
         assert self.release.wait(2)
+        self.cancel_requested = (
+            cancel_requested() if cancel_requested is not None else None
+        )
         self.finished.set()
 
 
@@ -2001,8 +2113,13 @@ class FailingSlowSuccessfulWorkspace(SlowSuccessfulWorkspace):
         self,
         child_environment_applied: bool | None = None,
         defer_cleanup: bool = False,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
-        super().mark_succeeded(child_environment_applied, defer_cleanup)
+        super().mark_succeeded(
+            child_environment_applied,
+            defer_cleanup,
+            cancel_requested,
+        )
         raise RuntimeError("workspace mark_succeeded boom")
 
 
@@ -2029,8 +2146,9 @@ class FailingSlowPreparedWorkspace(PreparedWorkspace):
         self,
         child_environment_applied: bool | None = None,
         defer_cleanup: bool = False,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
-        del child_environment_applied, defer_cleanup
+        del child_environment_applied, defer_cleanup, cancel_requested
         self.started.set()
         assert self.release.wait(2)
         self.finished.set()
@@ -2069,6 +2187,47 @@ class SuccessfulRuntimeInvoker:
     ) -> None:
         del config, model, prompt, cwd, log_file, invocation_context
         output_file.write_text("done\n", encoding="utf-8")
+
+    def log_presentation_for(self, config: AgentConfig) -> None:
+        del config
+        return None
+
+
+class OverlapCoordinator:
+    def __init__(self) -> None:
+        self.ready_count = 0
+        self.both_ready = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def wait_for_ambient_writer(self) -> None:
+        self.ready_count += 1
+        if self.ready_count == 2:
+            self.both_ready.set()
+        await self.release.wait()
+
+
+class ClaimingRuntimeInvoker:
+    def __init__(self, claim: Path, coordinator: OverlapCoordinator) -> None:
+        self.claim = claim
+        self.coordinator = coordinator
+
+    async def invoke(
+        self,
+        config: AgentConfig,
+        model: str | None,
+        prompt: str,
+        output_file: Path,
+        cwd: Path,
+        log_file: Path | None = None,
+        invocation_context: InvocationContext | None = None,
+    ) -> None:
+        del config, model, prompt, cwd, log_file, invocation_context
+        self.claim.write_text(f"{self.claim.stem} output\n", encoding="utf-8")
+        output_file.write_text(
+            f"done\n\n## Generated Files\n\n- `{self.claim.name}`\n",
+            encoding="utf-8",
+        )
+        await self.coordinator.wait_for_ambient_writer()
 
     def log_presentation_for(self, config: AgentConfig) -> None:
         del config

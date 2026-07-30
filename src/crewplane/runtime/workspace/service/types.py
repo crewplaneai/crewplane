@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
@@ -10,6 +10,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.materialization import MaterializationLimiter
 from crewplane.runtime.workspace.setup import WorkspaceSetupCancellation
@@ -36,6 +37,7 @@ class WorkspaceInvocationRequest:
     worktree_reuse_cache: WorktreeReuseCache | None = None
     rendered_workspace_files: tuple[RenderedWorkspaceFileDescriptor, ...] = ()
     setup_cancellation: WorkspaceSetupCancellation | None = None
+    secret_context: SecretContext = field(default_factory=SecretContext)
 
 
 @dataclass(frozen=True)

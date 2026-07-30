@@ -259,7 +259,7 @@ def required_resume_artifact_paths(
     node: PreflightExecutionNode,
 ) -> dict[str, str]:
     required = {"output": node.artifact_contract.output_path}
-    findings_required = any(
+    findings_required = node.findings or any(
         edge.source_node == node.id and edge.artifact_name in _FINDINGS_KEYS
         for edge in plan.dependency_graph
     )

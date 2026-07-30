@@ -132,4 +132,4 @@ Continue to [Workflow Composition](workflow-composition.md) to split reusable
 workflow pieces into imports, aliases, parameters, and inputs.
 
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

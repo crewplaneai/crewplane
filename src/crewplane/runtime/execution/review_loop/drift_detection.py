@@ -133,14 +133,32 @@ def detect_artifact_drift(
     output: ArtifactStorePort,
     node_dir: Path,
     in_progress_runtime_roots: set[Path] | None = None,
+    expected_runtime_publications: dict[Path, tuple[int, str]] | None = None,
 ) -> DriftCheckResult:
     runtime_roots = in_progress_runtime_roots or set()
-    changed_paths = sorted({*before_snapshot.keys(), *after_snapshot.keys()})
+    expected_publications = expected_runtime_publications or {}
+    changed_paths = sorted(
+        {
+            *before_snapshot.keys(),
+            *after_snapshot.keys(),
+            *expected_publications.keys(),
+        }
+    )
     unexpected_paths = [
         path
         for path in changed_paths
-        if before_snapshot.get(path) != after_snapshot.get(path)
+        if (
+            before_snapshot.get(path) != after_snapshot.get(path)
+            or (
+                path in expected_publications
+                and after_snapshot.get(path) != expected_publications[path]
+            )
+        )
         and path not in allowed_paths
+        and not (
+            path in expected_publications
+            and after_snapshot.get(path) == expected_publications[path]
+        )
         and not any(root in path.parents for root in runtime_roots)
     ]
     if not unexpected_paths:
@@ -287,14 +305,31 @@ def detect_node_drift(
     request: DriftGuardCallRequest,
     monitoring_window: DriftMonitoringWindow,
 ) -> DriftCheckResult:
-    after_snapshot = snapshot_files(request.node_dir)
     allowed_paths = request.allowed_paths
     in_progress_runtime_roots: set[Path] = set()
-    if request.drift_session is not None:
-        published_paths, in_progress_runtime_roots = (
-            request.drift_session.generated_file_allowance.snapshot()
+    expected_runtime_publications: dict[Path, tuple[int, str]] = {}
+    allowance = request.generated_file_allowance
+    if allowance is None and request.drift_session is not None:
+        allowance = request.drift_session.generated_file_allowance
+    if allowance is None:
+        after_snapshot = snapshot_files(request.node_dir)
+    else:
+        expected_runtime_publications, in_progress_runtime_roots, before_version = (
+            allowance.snapshot()
         )
-        allowed_paths = {*allowed_paths, *published_paths}
+        after_snapshot = snapshot_files(request.node_dir)
+        expected_runtime_publications, in_progress_runtime_roots, after_version = (
+            allowance.snapshot()
+        )
+        if after_version != before_version:
+            after_snapshot = snapshot_files(request.node_dir)
+            expected_runtime_publications, in_progress_runtime_roots, _ = (
+                allowance.snapshot()
+            )
+        after_snapshot = _include_current_runtime_publications(
+            after_snapshot,
+            expected_runtime_publications,
+        )
     return detect_artifact_drift(
         before_snapshot=monitoring_window.node_snapshot,
         after_snapshot=after_snapshot,
@@ -302,7 +337,25 @@ def detect_node_drift(
         output=request.output,
         node_dir=request.node_dir,
         in_progress_runtime_roots=in_progress_runtime_roots,
+        expected_runtime_publications=expected_runtime_publications,
     )
+
+
+def _include_current_runtime_publications(
+    after_snapshot: dict[Path, tuple[int, str]],
+    expected_runtime_publications: dict[Path, tuple[int, str]],
+) -> dict[Path, tuple[int, str]]:
+    snapshot = dict(after_snapshot)
+    for path, expected_signature in expected_runtime_publications.items():
+        if snapshot.get(path) == expected_signature:
+            continue
+        try:
+            current_signature = file_snapshot_signature(path)
+        except OSError:
+            continue
+        if current_signature == expected_signature:
+            snapshot[path] = current_signature
+    return snapshot
 
 
 def detect_shared_reserved_drift(

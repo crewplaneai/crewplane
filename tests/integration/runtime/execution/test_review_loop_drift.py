@@ -1,5 +1,7 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -13,6 +15,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
+)
+from crewplane.core.preflight.runtime_config import (
+    RuntimeAgentConfigSnapshot,
+    runtime_agent_signature_payload,
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
@@ -58,6 +64,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
         "options": {},
         "resolved_identity": "mock",
     }
+    agent_signature = _agent_signature("exec", agent_payload, None)
     node = PreflightExecutionNode(
         id="review.node",
         mode="sequential",
@@ -69,12 +76,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
                 task_id="exec_executor_0",
                 agent_config_key="exec",
                 invoker_alias="mock",
-                agent_config_signature=signature_for_payload(
-                    {
-                        "agent_config": agent_payload,
-                        "agent_config_key": "exec",
-                    }
-                ),
+                agent_config_signature=agent_signature,
                 invoker_config_signature=signature_for_payload(invoker_payload),
             )
         ],
@@ -122,12 +124,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
             task_id="exec_executor_0",
             agent_config_key="exec",
             invoker_alias="mock",
-            agent_config_signature=signature_for_payload(
-                {
-                    "agent_config": agent_payload,
-                    "agent_config_key": "exec",
-                }
-            ),
+            agent_config_signature=agent_signature,
             invoker_config_signature=signature_for_payload(invoker_payload),
         ),
         task_id="exec_executor_0",
@@ -142,6 +139,21 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
         ),
     )
     return request, output, node_dir
+
+
+def _agent_signature(
+    agent_config_key: str,
+    agent_payload: object,
+    resolved_model: str | None,
+) -> str:
+    agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(agent_payload)
+    return signature_for_payload(
+        runtime_agent_signature_payload(
+            agent_config_key,
+            agent_snapshot,
+            resolved_model,
+        )
+    )
 
 
 def test_current_invocation_and_parallel_reviewer_outputs_are_allowed(
@@ -411,12 +423,17 @@ def test_runtime_generated_file_source_snapshots_are_allowed(
     generated_source = snapshot_root / "src/app.txt"
     generated_source.parent.mkdir(parents=True)
     generated_source.write_text("generated", encoding="utf-8")
-    request.runtime_context.generated_file_workspaces.record(
-        request.node.id,
-        request.output_file,
+    allowance = review_loop_drift.GeneratedFileDriftAllowance()
+    allowance.start_snapshot(snapshot_root)
+    allowance.finish_snapshot(
         snapshot_root,
+        {
+            generated_source: (
+                review_loop_drift_detection.file_snapshot_signature(generated_source)
+            )
+        },
     )
-    review_loop_drift.allow_runtime_generated_file_snapshots(request)
+    request.generated_file_allowance = allowance
     window = DriftMonitoringWindow(
         node_snapshot={},
         shared_reserved_snapshot=None,
@@ -432,7 +449,6 @@ def test_runtime_generated_file_source_snapshots_are_allowed(
         event_log_start_index=0,
     )
 
-    assert generated_source in request.allowed_paths
     assert drift.warning_paths == ()
     assert drift.fatal_paths == ()
 
@@ -444,7 +460,6 @@ def test_unregistered_generated_file_source_snapshots_are_drift(
     generated_source = generated_file_source_root(request.output_file) / "src/app.txt"
     generated_source.parent.mkdir(parents=True)
     generated_source.write_text("generated", encoding="utf-8")
-    review_loop_drift.allow_runtime_generated_file_snapshots(request)
     window = DriftMonitoringWindow(
         node_snapshot={},
         shared_reserved_snapshot=None,
@@ -476,7 +491,14 @@ def test_completed_generated_file_snapshot_allows_only_published_files(
     allowance.start_snapshot(snapshot_root)
     published_source.parent.mkdir(parents=True)
     published_source.write_text("generated", encoding="utf-8")
-    allowance.finish_snapshot(snapshot_root, frozenset({published_source}))
+    allowance.finish_snapshot(
+        snapshot_root,
+        {
+            published_source: (
+                review_loop_drift_detection.file_snapshot_signature(published_source)
+            )
+        },
+    )
 
     unexpected_source = snapshot_root / "src/unregistered.txt"
     unexpected_source.write_text("unexpected", encoding="utf-8")
@@ -499,6 +521,83 @@ def test_completed_generated_file_snapshot_allows_only_published_files(
     assert drift.fatal_paths == ()
 
 
+@pytest.mark.parametrize(
+    ("relative_path", "mutation"),
+    [
+        ("generated-files.json", "rewrite"),
+        ("generated-files.json", "delete"),
+        ("src/app.txt", "rewrite"),
+        ("src/app.txt", "delete"),
+    ],
+)
+def test_completed_generated_file_snapshot_detects_publication_drift(
+    tmp_path: Path,
+    relative_path: str,
+    mutation: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    snapshot_root = generated_file_source_root(request.output_file)
+    published_path = snapshot_root / relative_path
+    published_path.parent.mkdir(parents=True, exist_ok=True)
+    published_path.write_text("runtime publication", encoding="utf-8")
+    allowance = request.drift_session.generated_file_allowance
+    allowance.start_snapshot(snapshot_root)
+    allowance.finish_snapshot(
+        snapshot_root,
+        {
+            published_path: (
+                review_loop_drift_detection.file_snapshot_signature(published_path)
+            )
+        },
+    )
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot=None,
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=None),
+    )
+    scan_started = Event()
+    mutation_complete = Event()
+    original_snapshot_files = review_loop_drift_detection.snapshot_files
+
+    def snapshot_after_concurrent_mutation(
+        root: Path,
+        excluded_paths: set[Path] | None = None,
+    ) -> dict[Path, tuple[int, str]]:
+        if root == request.node_dir:
+            scan_started.set()
+            assert mutation_complete.wait(timeout=5)
+        return original_snapshot_files(root, excluded_paths)
+
+    monkeypatch.setattr(
+        review_loop_drift_detection,
+        "snapshot_files",
+        snapshot_after_concurrent_mutation,
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        drift_future = executor.submit(
+            review_loop_drift_detection.detect_provider_call_drift,
+            request,
+            window,
+            None,
+            0,
+        )
+        assert scan_started.wait(timeout=5)
+        if mutation == "rewrite":
+            published_path.write_text("other reviewer", encoding="utf-8")
+        else:
+            published_path.unlink()
+        mutation_complete.set()
+        drift = drift_future.result(timeout=5)
+
+    assert drift.warning_paths == (published_path,)
+    assert drift.fatal_paths == ()
+
+
 def test_generated_file_snapshot_published_during_node_scan_is_allowed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -510,17 +609,36 @@ def test_generated_file_snapshot_published_during_node_scan_is_allowed(
     allowance = request.drift_session.generated_file_allowance
     original_snapshot_files = review_loop_drift_detection.snapshot_files
 
-    def publish_generated_file(root: Path) -> dict[Path, tuple[int, str]]:
+    published = False
+
+    def publish_generated_file_after_scan(
+        root: Path,
+        excluded_paths: set[Path] | None = None,
+    ) -> dict[Path, tuple[int, str]]:
+        nonlocal published
+        snapshot = original_snapshot_files(root, excluded_paths)
+        if root != request.node_dir or published:
+            return snapshot
+        published = True
         allowance.start_snapshot(snapshot_root)
         generated_source.parent.mkdir(parents=True)
         generated_source.write_text("generated", encoding="utf-8")
-        allowance.finish_snapshot(snapshot_root, frozenset({generated_source}))
-        return original_snapshot_files(root)
+        allowance.finish_snapshot(
+            snapshot_root,
+            {
+                generated_source: (
+                    review_loop_drift_detection.file_snapshot_signature(
+                        generated_source
+                    )
+                )
+            },
+        )
+        return snapshot
 
     monkeypatch.setattr(
         review_loop_drift_detection,
         "snapshot_files",
-        publish_generated_file,
+        publish_generated_file_after_scan,
     )
     window = DriftMonitoringWindow(
         node_snapshot={},

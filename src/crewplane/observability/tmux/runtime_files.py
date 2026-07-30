@@ -85,4 +85,4 @@ def write_atomic(path: Path, content: str) -> None:
 
 
 def write_json_atomic(path: Path, value: object) -> None:
-    write_atomic(path, json.dumps(value, sort_keys=True) + "\n")
+    write_atomic(path, json.dumps(value, allow_nan=False, sort_keys=True) + "\n")

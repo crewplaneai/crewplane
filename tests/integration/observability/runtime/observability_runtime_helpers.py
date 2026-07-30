@@ -1,5 +1,6 @@
 from threading import Event
 
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -80,9 +81,12 @@ def provider_label_workflow() -> WorkflowPlan:
 
 
 class RecordingObserver:
+    capabilities = ObserverCapabilities()
+
     def __init__(self) -> None:
         self.started = False
         self.stopped = False
+        self._stop_requested = False
         self.event_types: list[str | None] = []
         self.workflow_statuses: list[str] = []
 
@@ -95,6 +99,14 @@ class RecordingObserver:
 
     def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
         self.stopped = True
+
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_requested
+
+    @stop_requested.setter
+    def stop_requested(self, requested: bool) -> None:
+        self._stop_requested = requested
 
 
 class FailingObserver(RecordingObserver):
@@ -143,36 +155,36 @@ class DelayedStartObserver(RecordingObserver):
 
 
 class NoCleanupDelayedStartObserver(DelayedStartObserver):
-    cleanup_after_start_timeout = False
+    capabilities = ObserverCapabilities(cleanup_after_start_timeout=False)
 
 
 class RequiredFailingObserver(RecordingObserver):
-    required = True
+    capabilities = ObserverCapabilities(required=True)
 
     def on_snapshot(self, event, snapshot) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
         raise RuntimeError("required observer failure")
 
 
 class RequiredStopFailObserver(RecordingObserver):
-    required = True
+    capabilities = ObserverCapabilities(required=True)
 
     def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
         raise RuntimeError("required stop failure")
 
 
 class RequiredStopThreadFailureObserver(RecordingObserver):
-    required = True
+    capabilities = ObserverCapabilities(required=True)
 
 
 class RequiredStopTimeoutObserver(RecordingObserver):
-    required = True
+    capabilities = ObserverCapabilities(required=True)
 
     def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
         Event().wait()
 
 
 class RequiredStartThreadFailureObserver(RecordingObserver):
-    required = True
+    capabilities = ObserverCapabilities(required=True)
 
 
 class BlockingObserver(RecordingObserver):

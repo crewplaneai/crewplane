@@ -243,6 +243,9 @@ Observer-only UI settings do not determine the workflow signature. Branch-export
 fields are intentionally excluded because they affect how verified workspace
 results are exposed, not what providers run. The default workspace cache root is
 excluded unless `settings.workspace.identity.include_cache_root` is `true`.
+Presentation-only `log_level` is also excluded. Review-loop ceilings and
+consensus policy participate only when the compiled plan contains a sequential
+reviewer loop.
 
 ## Duplicate Skip
 
@@ -327,4 +330,4 @@ can replace it.
 Continue to [Watch Runs Live and Inspect Results](watch-runs-live-and-inspect-results.md)
 to understand what you can watch while a workflow runs.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

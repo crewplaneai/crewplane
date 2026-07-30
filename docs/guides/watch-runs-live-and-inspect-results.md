@@ -128,4 +128,4 @@ The options mean:
 Continue to [Inspecting Run Records](inspecting-artifacts.md) to inspect saved
 run records in more detail.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

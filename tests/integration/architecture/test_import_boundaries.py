@@ -25,6 +25,20 @@ IMPORT_RULES = (
         ),
     ),
     ForbiddenImportRule(
+        name="architecture contracts stay below runtime and adapters",
+        roots=(SRC_ROOT / "crewplane" / "architecture" / "contracts",),
+        forbidden_prefixes=(
+            "crewplane.adapters",
+            "crewplane.observability",
+            "crewplane.runtime",
+        ),
+    ),
+    ForbiddenImportRule(
+        name="runtime execution stays independent from workflow authoring models",
+        roots=(SRC_ROOT / "crewplane" / "runtime" / "execution",),
+        forbidden_prefixes=("crewplane.core.workflow.models",),
+    ),
+    ForbiddenImportRule(
         name="review contract stays core neutral",
         roots=(SRC_ROOT / "crewplane" / "core" / "review_contract.py",),
         forbidden_prefixes=(

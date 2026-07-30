@@ -11,6 +11,7 @@ import pytest
 import yaml
 from rich.console import Console
 
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.bootstrap.container import build_runtime_components
 from crewplane.core.config import Config, load_config
 from crewplane.core.workflow.models import WorkflowPlan
@@ -36,6 +37,8 @@ class RecordedSnapshot:
 
 
 class SnapshotRecorder:
+    capabilities = ObserverCapabilities()
+
     def __init__(self) -> None:
         self.context: RunContext | None = None
         self.result: RunResult | None = None
@@ -55,6 +58,10 @@ class SnapshotRecorder:
 
     def stop(self, result: RunResult) -> None:
         self.result = result
+
+    @property
+    def stop_requested(self) -> bool:
+        return False
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ from rich.console import Console
 from crewplane.architecture.contracts import (
     AgentInvoker,
     LogPresentationDescriptor,
+    ObserverCapabilities,
 )
 from crewplane.artifacts import OutputManager, safe_artifact_name
 from crewplane.bootstrap import build_runtime_config_snapshot
@@ -540,6 +541,8 @@ class CleanupOnCancelInvoker(NoPresentationInvoker):
 
 
 class BlockingSnapshotObserver:
+    capabilities = ObserverCapabilities()
+
     def __init__(self) -> None:
         self.entered = Event()
         self.release = Event()
@@ -553,6 +556,10 @@ class BlockingSnapshotObserver:
 
     def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback signature.
         return
+
+    @property
+    def stop_requested(self) -> bool:
+        return False
 
 
 def review_output(

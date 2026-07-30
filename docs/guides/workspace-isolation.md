@@ -244,6 +244,12 @@ Snapshots are disposable. If a snapshot node writes source-looking files,
 Crewplane records drift diagnostics and discards those changes according to the
 cleanup policy.
 
+Workspace state snapshots accept only directories, regular files, and
+symlinks. FIFOs, sockets, devices, disappearing entries, and type changes fail
+closed without blocking on the special file. Each traversal is limited to
+250,000 entries, 4 GiB of aggregate regular-file data, and 30 seconds, with
+cancellation checked during hashing.
+
 Use [workspace cleanup](cleanup.md) to remove generated cache entries:
 
 ```bash
@@ -261,4 +267,4 @@ result artifacts under `.crewplane/`.
 Continue to [Mock Validation](mock-validation.md) to exercise workflows without
 real provider calls while you iterate.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

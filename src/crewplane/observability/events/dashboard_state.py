@@ -4,12 +4,13 @@ from collections import deque
 from dataclasses import dataclass, field
 from time import monotonic
 
+from crewplane.architecture.contracts import LogPresentationFormat, WorkflowTopology
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.types import (
     InvocationStatus,
     NodeStatus,
     WorkflowStatus,
 )
-from crewplane.observability.types import WorkflowTopology
 
 
 @dataclass
@@ -18,7 +19,7 @@ class InvocationRuntimeState:
 
     task_id: str
     provider: str
-    role: str
+    role: ProviderRole
     model: str | None
     audit_round_num: int | None
     round_num: int | None
@@ -29,8 +30,11 @@ class InvocationRuntimeState:
     error: str | None = None
     output_file: str | None = None
     log_file: str | None = None
-    log_presentation_format: str | None = None
+    log_presentation_format: LogPresentationFormat | None = None
     log_presentation_profile: str | None = None
+
+    def __post_init__(self) -> None:
+        self.role = ProviderRole(self.role)
 
 
 @dataclass

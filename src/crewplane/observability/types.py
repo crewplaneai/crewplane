@@ -1,8 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
-
+from crewplane.architecture.contracts import (
+    DashboardInvocationState as DashboardInvocationState,
+)
+from crewplane.architecture.contracts import (
+    DashboardLayout as DashboardLayout,
+)
+from crewplane.architecture.contracts import (
+    DashboardNodePlacement as DashboardNodePlacement,
+)
+from crewplane.architecture.contracts import (
+    DashboardNodeState as DashboardNodeState,
+)
+from crewplane.architecture.contracts import (
+    DashboardSnapshot as _DashboardSnapshot,
+)
+from crewplane.architecture.contracts import (
+    DashboardState as DashboardState,
+)
+from crewplane.architecture.contracts import (
+    RunContext as RunContext,
+)
+from crewplane.architecture.contracts import (
+    RunResult as RunResult,
+)
 from crewplane.architecture.contracts import (
     TopologyNode as TopologyNode,
 )
@@ -12,34 +33,7 @@ from crewplane.architecture.contracts import (
 from crewplane.architecture.contracts import (
     WorkflowTopology as WorkflowTopology,
 )
+from crewplane.observability.events import RunDashboardState
+from crewplane.observability.layout import TopologyLayout
 
-# Snapshot fields point back to observability modules that already import these types.
-if TYPE_CHECKING:
-    from crewplane.observability.events import RunDashboardState
-    from crewplane.observability.layout import TopologyLayout
-
-
-@dataclass(frozen=True)
-class RunContext:
-    """Observer startup context for one workflow run."""
-
-    workflow_topology: WorkflowTopology
-    run_id: str
-    refresh_per_second: int
-
-
-@dataclass(frozen=True)
-class DashboardSnapshot:
-    """Point-in-time dashboard state delivered to observers."""
-
-    state: RunDashboardState
-    layout: TopologyLayout
-    now: float
-
-
-@dataclass(frozen=True)
-class RunResult:
-    """Terminal outcome passed to observers during shutdown."""
-
-    status: Literal["succeeded", "failed", "cancelled"]
-    cancel_reason: str | None = None
+DashboardSnapshot = _DashboardSnapshot[RunDashboardState, TopologyLayout]

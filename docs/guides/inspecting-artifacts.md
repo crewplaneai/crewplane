@@ -206,4 +206,4 @@ redaction guidance.
 Continue to [Workflow Authoring](workflow-authoring.md) to write your own
 Markdown workflow after you understand how runs are executed and recorded.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

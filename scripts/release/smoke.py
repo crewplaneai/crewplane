@@ -404,11 +404,27 @@ def exercise_installed_cli(
     env: dict[str, str] | None = None,
 ) -> None:
     runner.run([str(executable), "--help"], cwd=context.root, env=env)
+    version_result = runner.run(
+        [str(executable), "--version"],
+        cwd=context.root,
+        env=env,
+    )
+    if context.version.project not in version_result.stdout:
+        raise ReleaseError(
+            "installed CLI version output does not contain the package version"
+        )
     project = tmp / "project"
     project.mkdir(exist_ok=True)
     runner.run([str(executable), "init"], cwd=project, env=env)
     write_mock_config(project / ".crewplane" / "config.yml")
     runner.run([str(executable), "validate"], cwd=project, env=env)
+    runner.run([str(executable), "run", "--dry-run"], cwd=project, env=env)
+    runner.run([str(executable), "run"], cwd=project, env=env)
+    runner.run(
+        [str(executable), "run", "--no-live", "--force"],
+        cwd=project,
+        env=env,
+    )
 
 
 def write_mock_config(path: Path) -> None:

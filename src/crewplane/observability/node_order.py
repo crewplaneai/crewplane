@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from crewplane.observability.events import RunDashboardState
-from crewplane.observability.layout import TopologyLayout
+from crewplane.observability.types import DashboardLayout, DashboardState
 
 
 def topological_node_order(
-    state: RunDashboardState,
-    layout: TopologyLayout,
+    state: DashboardState,
+    layout: DashboardLayout,
 ) -> list[str]:
     """Return dashboard node ids in layout wave order, followed by state extras."""
 

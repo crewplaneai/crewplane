@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from time import sleep
+from typing import cast
 
 import pytest
 
-from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
-    PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
 from crewplane.observability.runtime import ObservabilityHub
+from crewplane.observability.tmux.bindings import TmuxCompactKeyBindings
 from crewplane.observability.tmux.compact import TmuxCompactRuntime
-from crewplane.observability.tmux.refresh import RefreshOutcome
+from crewplane.observability.tmux.refresh import (
+    RefreshOutcome,
+    TmuxCompactRefreshController,
+)
 from crewplane.observability.tmux.window import TmuxCompactWindowOptions
 from crewplane.observability.types import RunContext, RunResult
 from tests.helpers.observability import topology_from_workflow
@@ -21,6 +26,12 @@ from tests.integration.observability.tmux_fakes import (
     FakeCompactSessionLifecycle,
     FakeTmuxClient,
 )
+
+
+def test_tmux_compact_runtime_keeps_public_docstring() -> None:
+    assert TmuxCompactRuntime.__doc__ == (
+        "Render a compact tmux dashboard for a running workflow."
+    )
 
 
 def test_create_session_failure_is_downgraded_by_observability_hub() -> None:
@@ -62,8 +73,8 @@ def test_binding_install_failure_rolls_back_session() -> None:
     runtime = TmuxCompactRuntime(
         auto_close_session=False,
         lifecycle=lifecycle,
-        bindings=FailingBindings(),
-        refresh_controller=NoopRefreshController(),
+        bindings=cast(TmuxCompactKeyBindings, FailingBindings()),
+        refresh_controller=cast(TmuxCompactRefreshController, NoopRefreshController()),
     )
 
     with pytest.raises(RuntimeError, match="bindings failed"):
@@ -96,7 +107,7 @@ def test_refresh_loop_warns_and_continues_after_refresh_exception() -> None:
         warning_sink=warnings.append,
         refresh_interval_seconds=0.1,
         lifecycle=lifecycle,
-        refresh_controller=refresh,
+        refresh_controller=cast(TmuxCompactRefreshController, refresh),
     )
 
     runtime.start(run_context("refresh-loop-warning"))
@@ -175,7 +186,7 @@ class FailingOnceRefreshController(NoopRefreshController):
 
 def fake_lifecycle(
     auto_close_session: bool,
-    warning_sink=None,  # type: ignore[no-untyped-def]
+    warning_sink: Callable[[str], None] | None = None,
 ) -> FakeCompactSessionLifecycle:
     return FakeCompactSessionLifecycle(
         auto_close_session=auto_close_session,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from rich.console import Console
@@ -162,6 +163,391 @@ def test_project_root_workflow_excludes_workspace_settings_from_signature(
     )
 
 
+def test_project_root_workflow_excludes_workspace_setup_secrets(
+    tmp_path: Path,
+) -> None:
+    workflow = project_root_workflow()
+    baseline = _compile_workflow(tmp_path, workflow, _config({"enabled": True}))
+    unused_secret = _compile_workflow(
+        tmp_path,
+        workflow,
+        _config(
+            {
+                "enabled": True,
+                "setup_profiles": {
+                    "bootstrap": {
+                        "run": [["setup", "--api-key", "UNUSED_WORKSPACE_SECRET"]]
+                    }
+                },
+            }
+        ),
+    )
+
+    assert baseline.diagnostics == []
+    assert unused_secret.diagnostics == []
+    assert baseline.workflow_signature is not None
+    assert baseline.workflow_signature == unused_secret.workflow_signature
+    assert unused_secret.fingerprint_metadata["sensitive_values_required"] is False
+    assert unused_secret.runtime_config_snapshot is not None
+    assert unused_secret.runtime_config_snapshot.sensitive_config_paths == []
+
+
+def test_unused_agent_config_does_not_change_workflow_signature(
+    tmp_path: Path,
+) -> None:
+    workflow = project_root_workflow()
+    first = _compile_workflow(
+        tmp_path,
+        workflow,
+        two_agent_config(AgentConfig(cli_cmd=["unused-a"])),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        workflow,
+        two_agent_config(AgentConfig(cli_cmd=["unused-b"])),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.workflow_signature is not None
+    assert first.workflow_signature == second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        == second.effective_runtime_config_signature
+    )
+
+
+def test_unused_agent_command_secret_does_not_require_fingerprints(
+    tmp_path: Path,
+) -> None:
+    secret = "UNUSED_AGENT_SECRET"
+    baseline = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        two_agent_config(AgentConfig(cli_cmd=["unused"])),
+    )
+    unused_secret = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        two_agent_config(AgentConfig(cli_cmd=["unused", "--api-key", secret])),
+    )
+
+    assert baseline.diagnostics == []
+    assert unused_secret.diagnostics == []
+    assert baseline.workflow_signature is not None
+    assert baseline.workflow_signature == unused_secret.workflow_signature
+    assert unused_secret.fingerprint_metadata["sensitive_values_required"] is False
+    assert unused_secret.runtime_config_snapshot is not None
+    assert unused_secret.runtime_config_snapshot.sensitive_config_paths == []
+    assert secret not in unused_secret.model_dump_json()
+
+
+def test_selected_agent_scalar_command_secrets_are_absent_from_compiled_plan(
+    tmp_path: Path,
+) -> None:
+    model_arg_secret = "MODEL_ARG_SECRET"
+    prompt_arg_secret = "PROMPT_ARG_SECRET"
+    preview = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                model_arg=f"--api-key={model_arg_secret}",
+                prompt_transport_arg=f"--token={prompt_arg_secret}",
+            )
+        ),
+    )
+
+    serialized = json.dumps(preview.model_dump(mode="json"), sort_keys=True)
+
+    assert preview.diagnostics == []
+    assert preview.runtime_config_snapshot.sensitive_config_paths == [
+        "agents.alpha.model_arg",
+        "agents.alpha.prompt_transport_arg",
+    ]
+    assert model_arg_secret not in serialized
+    assert prompt_arg_secret not in serialized
+
+
+def test_explicit_provider_model_excludes_unused_default_model_from_signatures(
+    tmp_path: Path,
+) -> None:
+    workflow = project_root_workflow(model="fixed-model")
+    first = _compile_workflow(
+        tmp_path,
+        workflow,
+        single_agent_config(AgentConfig(cli_cmd=["echo"], default_model="fallback-a")),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        workflow,
+        single_agent_config(AgentConfig(cli_cmd=["echo"], default_model="fallback-b")),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.nodes[0].provider_records[0].model == "fixed-model"
+    assert second.nodes[0].provider_records[0].model == "fixed-model"
+    assert first.workflow_signature is not None
+    assert first.workflow_signature == second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        == second.effective_runtime_config_signature
+    )
+
+
+def test_inherited_default_model_changes_workflow_signature(tmp_path: Path) -> None:
+    first = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(AgentConfig(cli_cmd=["echo"], default_model="model-a")),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(AgentConfig(cli_cmd=["echo"], default_model="model-b")),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.nodes[0].provider_records[0].model == "model-a"
+    assert second.nodes[0].provider_records[0].model == "model-b"
+    assert first.workflow_signature is not None
+    assert first.workflow_signature != second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        != second.effective_runtime_config_signature
+    )
+
+
+def test_non_generic_model_arg_excludes_ignored_config_field_from_signatures(
+    tmp_path: Path,
+) -> None:
+    workflow = project_root_workflow(model="fixed-model")
+    first = _compile_workflow(
+        tmp_path,
+        workflow,
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                provider_kind="codex",
+                model_arg="--ignored-a",
+            )
+        ),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        workflow,
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                provider_kind="codex",
+                model_arg="--ignored-b",
+            )
+        ),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.workflow_signature is not None
+    assert first.workflow_signature == second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        == second.effective_runtime_config_signature
+    )
+
+
+def test_generic_model_arg_without_resolved_model_does_not_change_signatures(
+    tmp_path: Path,
+) -> None:
+    first = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(AgentConfig(cli_cmd=["echo"], model_arg="--model-a")),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(AgentConfig(cli_cmd=["echo"], model_arg="--model-b")),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.nodes[0].provider_records[0].model is None
+    assert second.nodes[0].provider_records[0].model is None
+    assert first.workflow_signature is not None
+    assert first.workflow_signature == second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        == second.effective_runtime_config_signature
+    )
+
+
+def test_generic_model_arg_with_resolved_model_changes_signatures(
+    tmp_path: Path,
+) -> None:
+    workflow = project_root_workflow(model="fixed-model")
+    first = _compile_workflow(
+        tmp_path,
+        workflow,
+        single_agent_config(AgentConfig(cli_cmd=["echo"], model_arg="--model-a")),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        workflow,
+        single_agent_config(AgentConfig(cli_cmd=["echo"], model_arg="--model-b")),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.nodes[0].provider_records[0].model == "fixed-model"
+    assert second.nodes[0].provider_records[0].model == "fixed-model"
+    assert first.workflow_signature is not None
+    assert first.workflow_signature != second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        != second.effective_runtime_config_signature
+    )
+
+
+def test_retry_delay_without_configured_retries_does_not_change_signatures(
+    tmp_path: Path,
+) -> None:
+    first = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                max_retries=0,
+                retry_delay_seconds=1.0,
+                retry_on_exit_codes=[1],
+            )
+        ),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                max_retries=0,
+                retry_delay_seconds=999.0,
+                retry_on_exit_codes=[1],
+            )
+        ),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.workflow_signature is not None
+    assert first.workflow_signature == second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        == second.effective_runtime_config_signature
+    )
+
+
+def test_retry_settings_without_matchers_do_not_change_signatures(
+    tmp_path: Path,
+) -> None:
+    first = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                max_retries=1,
+                retry_delay_seconds=1.0,
+            )
+        ),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                max_retries=2,
+                retry_delay_seconds=999.0,
+            )
+        ),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.workflow_signature is not None
+    assert first.workflow_signature == second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        == second.effective_runtime_config_signature
+    )
+
+
+def test_retry_delay_with_configured_retries_changes_signatures(
+    tmp_path: Path,
+) -> None:
+    first = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                max_retries=1,
+                retry_delay_seconds=1.0,
+                retry_on_exit_codes=[1],
+            )
+        ),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        project_root_workflow(),
+        single_agent_config(
+            AgentConfig(
+                cli_cmd=["echo"],
+                max_retries=1,
+                retry_delay_seconds=999.0,
+                retry_on_exit_codes=[1],
+            )
+        ),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.workflow_signature is not None
+    assert first.workflow_signature != second.workflow_signature
+    assert (
+        first.effective_runtime_config_signature
+        != second.effective_runtime_config_signature
+    )
+
+
+def test_selected_workspace_setup_secret_remains_sensitive(
+    tmp_path: Path,
+) -> None:
+    preview = _compile_workflow(
+        tmp_path,
+        setup_workflow(),
+        _config(
+            {
+                "enabled": True,
+                "setup_profiles": {
+                    "bootstrap": {"run": [["setup", "--api-key", "WORKSPACE_SECRET"]]}
+                },
+            }
+        ),
+        source_snapshot_for_commit("a" * 40),
+    )
+
+    assert preview.diagnostics == []
+    assert preview.fingerprint_metadata["sensitive_values_required"] is True
+    assert preview.runtime_config_snapshot is not None
+    assert preview.runtime_config_snapshot.sensitive_config_paths == [
+        "workspace.setup_profiles.bootstrap.run.0.2"
+    ]
+
+
 def test_review_starts_with_changes_workflow_signature(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("review context\n", encoding="utf-8")
     config = review_loop_config()
@@ -186,6 +572,43 @@ def test_review_starts_with_changes_workflow_signature(tmp_path: Path) -> None:
     assert "review_starts_with" not in semantic_execution_policy(omitted)
     assert "review_starts_with" not in semantic_execution_policy(explicit_executor)
     assert semantic_execution_policy(reviewer_first)["review_starts_with"] == "reviewer"
+
+
+def test_review_loop_audit_ceiling_does_not_change_execution_identity(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "README.md").write_text("review context\n", encoding="utf-8")
+    first = _compile_workflow(
+        tmp_path,
+        review_loop_workflow(),
+        review_loop_config(max_audit_rounds=5),
+    )
+    second = _compile_workflow(
+        tmp_path,
+        review_loop_workflow(),
+        review_loop_config(max_audit_rounds=6),
+    )
+
+    assert first.diagnostics == []
+    assert second.diagnostics == []
+    assert first.effective_runtime_config_signature == (
+        second.effective_runtime_config_signature
+    )
+    assert first.workflow_signature == second.workflow_signature
+    assert first.runtime_config_snapshot is not None
+    assert second.runtime_config_snapshot is not None
+    assert (
+        first.runtime_config_snapshot.redacted_payload()["execution"][
+            "max_audit_rounds"
+        ]
+        == 5
+    )
+    assert (
+        second.runtime_config_snapshot.redacted_payload()["execution"][
+            "max_audit_rounds"
+        ]
+        == 6
+    )
 
 
 def test_explicit_executor_default_in_markdown_keeps_workflow_signature(
@@ -325,6 +748,33 @@ def test_selected_setup_command_payload_changes_workflow_signature(
     assert uv_sync.workflow_signature != pip_install.workflow_signature
 
 
+def test_selected_setup_command_secrets_are_absent_from_compiled_plan(
+    tmp_path: Path,
+) -> None:
+    secret = "WORKSPACE_SETUP_TEST_SECRET"
+    preview = _compile_workflow(
+        tmp_path,
+        setup_workflow(),
+        setup_config(setup_commands=[["provider", "--api-key", secret]]),
+        source_snapshot_for_commit("a" * 40),
+    )
+
+    assert preview.diagnostics == []
+    policy = preview.nodes[0].workspace_policy
+    assert policy is not None
+    assert policy.setup is not None
+    redacted_token = policy.setup.commands[0].argv[2]
+    assert isinstance(redacted_token, dict)
+    assert redacted_token["redacted"] is True
+    handle = redacted_token["value_handle"]
+    assert isinstance(handle, str)
+    assert preview.secret_context.get(handle) == secret
+    assert secret not in json.dumps(
+        preview.model_dump(mode="json"),
+        sort_keys=True,
+    )
+
+
 def test_cache_root_does_not_change_default_workflow_signature(
     tmp_path: Path,
 ) -> None:
@@ -444,14 +894,19 @@ def setup_workflow() -> WorkflowPlan:
     )
 
 
-def project_root_workflow() -> WorkflowPlan:
+def project_root_workflow(model: str | None = None) -> WorkflowPlan:
+    provider = (
+        ProviderSpec(provider="alpha", model=model)
+        if model is not None
+        else ProviderSpec(provider="alpha")
+    )
     return WorkflowPlan(
         name="project root workflow",
         nodes=[
             WorkflowNode(
                 id="implement",
                 mode="sequential",
-                providers=[ProviderSpec(provider="alpha")],
+                providers=[provider],
                 prompt_segments=[
                     PromptSegment(role=PromptSegmentRole.SHARED, content="run")
                 ],
@@ -559,14 +1014,36 @@ def _config(workspace: dict[str, object]) -> Config:
     )
 
 
-def review_loop_config() -> Config:
+def two_agent_config(beta: AgentConfig) -> Config:
+    return Config(
+        version=SCHEMA_VERSION,
+        agents={
+            "alpha": AgentConfig(cli_cmd=["echo"]),
+            "beta": beta,
+        },
+        settings=Settings(workspace={"enabled": False}),
+    )
+
+
+def single_agent_config(alpha: AgentConfig) -> Config:
+    return Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": alpha},
+        settings=Settings(workspace={"enabled": False}),
+    )
+
+
+def review_loop_config(max_audit_rounds: int = 3) -> Config:
     return Config(
         version=SCHEMA_VERSION,
         agents={
             "alpha": AgentConfig(cli_cmd=["echo"]),
             "beta": AgentConfig(cli_cmd=["echo"]),
         },
-        settings=Settings(workspace={"enabled": False}),
+        settings=Settings(
+            max_audit_rounds=max_audit_rounds,
+            workspace={"enabled": False},
+        ),
     )
 
 

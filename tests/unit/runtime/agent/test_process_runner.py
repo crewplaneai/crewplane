@@ -1,7 +1,10 @@
 import asyncio
 import time
+import tracemalloc
 import unittest
 from unittest.mock import patch
+
+import pytest
 
 from crewplane.runtime.agent.process.runner import (
     collect_process_output,
@@ -87,6 +90,51 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(capture.tail_bytes, b"cdef")
             self.assertEqual(capture.path.read_bytes(), b"abcdef")
         finally:
+            capture.cleanup()
+
+    def test_captured_stream_preserves_exact_tail_across_chunk_boundaries(self) -> None:
+        capture = RealCapturedStream(max_memory_bytes=7)
+        try:
+            for payload in (b"", b"ab", b"cdef", b"ghijklmnop", b"qr"):
+                capture.write(payload)
+            capture.close()
+
+            self.assertEqual(capture.tail_bytes, b"lmnopqr")
+            self.assertEqual(capture.path.read_bytes(), b"abcdefghijklmnopqr")
+        finally:
+            capture.cleanup()
+
+    def test_captured_stream_supports_zero_length_tail(self) -> None:
+        capture = RealCapturedStream(max_memory_bytes=0)
+        try:
+            capture.write(b"full output")
+            capture.close()
+
+            self.assertEqual(capture.tail_bytes, b"")
+            self.assertEqual(capture.path.read_bytes(), b"full output")
+        finally:
+            capture.cleanup()
+
+    @pytest.mark.scale
+    def test_captured_stream_retains_100_mib_with_bounded_memory(self) -> None:
+        capture = RealCapturedStream(max_memory_bytes=1024 * 1024)
+        chunk = b"x" * 4096
+        started = time.monotonic()
+        tracemalloc.start()
+        try:
+            remaining_chunks = (100 * 1024 * 1024) // len(chunk)
+            while remaining_chunks:
+                capture.write(chunk)
+                remaining_chunks -= 1
+            _current, peak = tracemalloc.get_traced_memory()
+            capture.close()
+
+            self.assertEqual(capture.tail_bytes, b"x" * (1024 * 1024))
+            self.assertEqual(capture.path.stat().st_size, 100 * 1024 * 1024)
+            self.assertLess(peak, 8 * 1024 * 1024)
+            self.assertLess(time.monotonic() - started, 20)
+        finally:
+            tracemalloc.stop()
             capture.cleanup()
 
     async def test_collect_process_output_keeps_event_loop_live_with_slow_log_sink(

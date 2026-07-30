@@ -5,6 +5,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    FiniteFloat,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -53,12 +54,12 @@ def _validate_command_token(value: str | None, field_name: str) -> str | None:
 class TokenPricing(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    input: float | None = Field(default=None, ge=0)
-    cached_input: float | None = Field(default=None, ge=0)
-    cache_write: float | None = Field(default=None, ge=0)
-    output: float | None = Field(default=None, ge=0)
-    reasoning: float | None = Field(default=None, ge=0)
-    total: float | None = Field(default=None, ge=0)
+    input: FiniteFloat | None = Field(default=None, ge=0)
+    cached_input: FiniteFloat | None = Field(default=None, ge=0)
+    cache_write: FiniteFloat | None = Field(default=None, ge=0)
+    output: FiniteFloat | None = Field(default=None, ge=0)
+    reasoning: FiniteFloat | None = Field(default=None, ge=0)
+    total: FiniteFloat | None = Field(default=None, ge=0)
 
     @field_validator("total")
     @classmethod
@@ -118,18 +119,18 @@ class AgentConfig(BaseModel):
     prompt_transport_arg: str | None = None
     extra_args: list[str] = Field(default_factory=list)
     max_retries: int = Field(default=0, ge=0)
-    retry_delay_seconds: float = Field(default=300.0, ge=0)
+    retry_delay_seconds: FiniteFloat = Field(default=300.0, ge=0)
     retry_on_exit_codes: list[int] = Field(default_factory=list)
     retry_on_stderr_contains: list[str] = Field(default_factory=list)
     retry_on_output_contains: list[str] = Field(default_factory=list)
     quota_reached_on_contains: list[str] = Field(default_factory=list)
-    quota_reached_retry_delay_seconds: float = Field(default=300.0, ge=0)
-    quota_reset_sleep_floor_seconds: float = Field(default=5.0, ge=0)
-    quota_retry_max_wait_seconds: float | None = Field(default=None, gt=0)
+    quota_reached_retry_delay_seconds: FiniteFloat = Field(default=300.0, ge=0)
+    quota_reset_sleep_floor_seconds: FiniteFloat = Field(default=5.0, ge=0)
+    quota_retry_max_wait_seconds: FiniteFloat | None = Field(default=None, gt=0)
     quota_retry_max_attempts: int | None = Field(default=None, ge=1)
     # A finite wall-clock timeout cancels and reaps the provider process.
-    invocation_timeout_seconds: float | None = DEFAULT_INVOCATION_TIMEOUT_SECONDS
-    invocation_idle_timeout_seconds: float | None = (
+    invocation_timeout_seconds: FiniteFloat | None = DEFAULT_INVOCATION_TIMEOUT_SECONDS
+    invocation_idle_timeout_seconds: FiniteFloat | None = (
         DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS
     )
     pricing: "TokenPricing" = Field(default_factory=lambda: TokenPricing())

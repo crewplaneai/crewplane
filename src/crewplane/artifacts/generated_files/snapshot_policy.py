@@ -11,6 +11,8 @@ class GeneratedFileSnapshotCandidate:
     relative_path: Path
     relative_label: str
     size_bytes: int
+    source_device: int
+    source_inode: int
     changed: bool | None
     discovery_source: str
     explicit: bool
@@ -72,11 +74,14 @@ def select_generated_file_snapshot_candidates(
         if len(candidates) >= policy.file_count_limit and rejections.details_full:
             rejections.record()
             continue
+        source_stat = generated_file.stat()
         candidate = GeneratedFileSnapshotCandidate(
             source_path=generated_file,
             relative_path=relative_path,
             relative_label=relative_label,
-            size_bytes=generated_file.stat().st_size,
+            size_bytes=source_stat.st_size,
+            source_device=source_stat.st_dev,
+            source_inode=source_stat.st_ino,
             changed=(
                 relative_label in policy.changed_paths
                 if policy.changed_paths is not None

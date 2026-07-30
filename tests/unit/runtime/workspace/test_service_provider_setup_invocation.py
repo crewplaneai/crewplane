@@ -177,8 +177,10 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
     output.create_stage_dir("implement")
 
-    def fail_snapshot_entries(path: Path) -> dict[str, str]:
-        del path
+    def fail_snapshot_entries(
+        path: Path, policy: object | None = None
+    ) -> dict[str, str]:
+        del path, policy
         raise RuntimeError("snapshot entries failed")
 
     def fail_cleanup(source: object, workspace_path: Path) -> None:

@@ -217,6 +217,7 @@ def _workspace_state_artifact_descriptor(
     resume_payload = _without_branch_export(payload)
     resume_bytes = json.dumps(
         resume_payload,
+        allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")

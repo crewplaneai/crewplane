@@ -3,18 +3,18 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from crewplane.architecture.contracts import AgentInvoker, Observer
+from crewplane.architecture.contracts import AgentInvoker, RuntimeObserver
 from crewplane.architecture.ports.artifacts import ArtifactStorePort
 
 
 @dataclass(frozen=True, init=False)
 class UIRuntimePlan:
-    observers: tuple[Observer, ...]
+    observers: tuple[RuntimeObserver, ...]
     suppress_progress_output: bool
 
     def __init__(
         self,
-        observers: Iterable[Observer],
+        observers: Iterable[RuntimeObserver],
         suppress_progress_output: bool,
     ) -> None:
         object.__setattr__(self, "observers", tuple(observers))
@@ -25,14 +25,14 @@ class UIRuntimePlan:
 class RuntimeComponents:
     artifact_store: ArtifactStorePort
     base_invoker: AgentInvoker
-    observers: tuple[Observer, ...]
+    observers: tuple[RuntimeObserver, ...]
     suppress_progress_output: bool
 
     def __init__(
         self,
         artifact_store: ArtifactStorePort,
         base_invoker: AgentInvoker,
-        observers: Iterable[Observer],
+        observers: Iterable[RuntimeObserver],
         suppress_progress_output: bool,
     ) -> None:
         object.__setattr__(self, "artifact_store", artifact_store)

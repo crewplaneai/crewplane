@@ -18,6 +18,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
 )
+from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.serialization import to_json_safe
 from crewplane.runtime.agent.workspace_environment import (
     workspace_child_environment,
@@ -87,6 +88,7 @@ def run_workspace_setup(
     state_path: Path,
     checkout_root: Path | None = None,
     cancellation: WorkspaceSetupCancellation | None = None,
+    secret_context: SecretContext | None = None,
 ) -> JsonObject | None:
     setup = policy.setup
     if setup is None or not setup.commands:
@@ -116,7 +118,9 @@ def run_workspace_setup(
                 timed_out = True
                 failure_message = "Workspace setup profile timed out."
                 break
+            resolved_argv = _resolve_setup_argv(command.argv, secret_context)
             record = _run_setup_command(
+                resolved_argv,
                 command.argv,
                 command.command_index,
                 cwd,
@@ -205,6 +209,7 @@ def workspace_setup_artifacts(state_path: Path) -> WorkspaceSetupArtifacts:
 
 def _run_setup_command(
     argv: list[str],
+    recorded_argv: list[str | JsonObject],
     command_index: int,
     cwd: Path,
     timeout_seconds: float,
@@ -214,7 +219,7 @@ def _run_setup_command(
 ) -> JsonObject:
     started_at = datetime.now(UTC).isoformat()
     started = time.monotonic()
-    log_handle.write(f"$ {_display_command(argv)}\n")
+    log_handle.write(f"$ {_display_command(recorded_argv)}\n")
     try:
         with (
             tempfile.TemporaryFile(
@@ -240,7 +245,7 @@ def _run_setup_command(
                 _write_stream(log_handle, "stderr", stderr_file)
                 log_handle.write("[cancelled] true\n\n")
                 record = _setup_command_record(
-                    argv,
+                    recorded_argv,
                     command_index,
                     cwd,
                     started_at,
@@ -255,7 +260,7 @@ def _run_setup_command(
                 _write_stream(log_handle, "stderr", stderr_file)
                 log_handle.write("[timed_out] true\n\n")
                 return _setup_command_record(
-                    argv,
+                    recorded_argv,
                     command_index,
                     cwd,
                     started_at,
@@ -267,7 +272,7 @@ def _run_setup_command(
             _write_stream(log_handle, "stderr", stderr_file)
             log_handle.write(f"[exit_code] {returncode}\n\n")
             return _setup_command_record(
-                argv,
+                recorded_argv,
                 command_index,
                 cwd,
                 started_at,
@@ -278,7 +283,7 @@ def _run_setup_command(
     except OSError as exc:
         log_handle.write(f"[error] {exc}\n\n")
         record = _setup_command_record(
-            argv,
+            recorded_argv,
             command_index,
             cwd,
             started_at,
@@ -350,13 +355,13 @@ def _send_setup_process_group_signal(
     termination_signal: signal.Signals,
 ) -> None:
     try:
-        os.killpg(os.getpgid(process.pid), termination_signal)
+        os.killpg(process.pid, termination_signal)
     except ProcessLookupError:
         return
 
 
 def _setup_command_record(
-    argv: list[str],
+    argv: list[str | JsonObject],
     command_index: int,
     cwd: Path,
     started_at: str,
@@ -405,5 +410,30 @@ def _write_stream(log_handle: TextIO, name: str, stream: TextIO) -> None:
     log_handle.write("\n")
 
 
-def _display_command(argv: list[str]) -> str:
-    return " ".join(argv)
+def _resolve_setup_argv(
+    argv: list[str | JsonObject],
+    secret_context: SecretContext | None,
+) -> list[str]:
+    resolved: list[str] = []
+    for token in argv:
+        if isinstance(token, str):
+            resolved.append(token)
+            continue
+        handle = token.get("value_handle")
+        if not isinstance(handle, str):
+            raise ValueError("Redacted workspace setup argv is missing a value handle.")
+        if secret_context is None:
+            raise ValueError(
+                f"Workspace setup secret handle '{handle}' is unavailable."
+            )
+        try:
+            resolved.append(secret_context.get(handle))
+        except KeyError as exc:
+            raise ValueError(
+                f"Workspace setup secret handle '{handle}' is unavailable."
+            ) from exc
+    return resolved
+
+
+def _display_command(argv: list[str | JsonObject]) -> str:
+    return " ".join(token if isinstance(token, str) else "<redacted>" for token in argv)

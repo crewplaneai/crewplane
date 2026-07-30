@@ -39,6 +39,53 @@ class BrewSmokeRunner:
         return state.CommandResult(command_tuple, 0, "", "")
 
 
+class InstalledCliRecordingRunner:
+    def __init__(self, version: str) -> None:
+        self.version = version
+        self.calls: list[tuple[tuple[str, ...], Path]] = []
+
+    def run(
+        self,
+        command,
+        cwd: Path,
+        env=None,
+        timeout=None,
+        capture_output: bool = True,
+        check: bool = True,
+    ) -> state.CommandResult:
+        del env, timeout, capture_output, check
+        command_tuple = tuple(command)
+        self.calls.append((command_tuple, cwd))
+        if command_tuple[-1:] == ("init",):
+            (cwd / ".crewplane").mkdir()
+        stdout = (
+            f"crewplane {self.version}\n"
+            if command_tuple[-1:] == ("--version",)
+            else ""
+        )
+        return state.CommandResult(command_tuple, 0, stdout, "")
+
+
+def test_installed_cli_smoke_exercises_supported_run_modes(tmp_path: Path) -> None:
+    write_minimal_repo(tmp_path)
+    context = state.read_release_context(tmp_path)
+    runner = InstalledCliRecordingRunner(context.version.project)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    executable = tmp_path / "bin" / "crewplane"
+
+    smoke.exercise_installed_cli(context, runner, executable, scratch)
+
+    project = scratch / "project"
+    assert [call for call, cwd in runner.calls if cwd == project] == [
+        (str(executable), "init"),
+        (str(executable), "validate"),
+        (str(executable), "run", "--dry-run"),
+        (str(executable), "run"),
+        (str(executable), "run", "--no-live", "--force"),
+    ]
+
+
 def test_brew_smoke_uses_built_sdist_sha_for_local_formula(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

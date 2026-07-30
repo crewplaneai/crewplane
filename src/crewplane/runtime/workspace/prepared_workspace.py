@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -7,6 +8,7 @@ from typing import Literal
 from crewplane.architecture.contracts import InvocationContext
 
 from .snapshot import (
+    WorkspaceSnapshotPolicy,
     remove_workspace_path,
     snapshot_drift_summary,
     snapshot_entries,
@@ -51,11 +53,13 @@ class PreparedWorkspace:
     reuse_cache: WorktreeReuseCache | None = None
     reuse_key: str | None = None
     workspace_state_payload: dict[str, object] | None = None
+    snapshot_cancel_requested: Callable[[], bool] | None = None
 
     def mark_succeeded(
         self,
         child_environment_applied: bool | None = None,
         defer_cleanup: bool = False,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
         if self.workspace_path is None or self.state_path is None:
             if self.workspace_kind != "project_root":
@@ -76,7 +80,11 @@ class PreparedWorkspace:
             )
             return
         if self.workspace_kind == "snapshot":
-            self._mark_snapshot_succeeded(child_environment_applied, defer_cleanup)
+            self._mark_snapshot_succeeded(
+                child_environment_applied,
+                defer_cleanup,
+                cancel_requested,
+            )
             return
         raise RuntimeError("Workspace success requires worktree capture metadata.")
 
@@ -84,13 +92,19 @@ class PreparedWorkspace:
         self,
         child_environment_applied: bool | None,
         defer_cleanup: bool,
+        cancel_requested: Callable[[], bool] | None,
     ) -> None:
         workspace_path, state_path = self._require_success_workspace_paths(
             "Snapshot success"
         )
         if self.workspace_kind != "snapshot":
             raise RuntimeError("Snapshot success requires a snapshot workspace.")
-        current_entries = snapshot_entries(workspace_path / "checkout")
+        current_entries = snapshot_entries(
+            workspace_path / "checkout",
+            WorkspaceSnapshotPolicy(
+                cancel_requested=cancel_requested or self.snapshot_cancel_requested,
+            ),
+        )
         diagnostics = []
         summary = snapshot_drift_summary(
             self.initial_snapshot_entries or {},

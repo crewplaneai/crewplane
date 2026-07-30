@@ -25,4 +25,11 @@ def execution_event_log_record(event: ExecutionEvent) -> dict[str, object]:
 
 
 def format_execution_event_log_line(event: ExecutionEvent) -> str:
-    return json.dumps(execution_event_log_record(event), sort_keys=True) + "\n"
+    return (
+        json.dumps(
+            execution_event_log_record(event),
+            allow_nan=False,
+            sort_keys=True,
+        )
+        + "\n"
+    )

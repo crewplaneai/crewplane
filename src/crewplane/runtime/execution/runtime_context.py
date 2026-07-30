@@ -10,6 +10,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
     runtime_agent_execution_payload,
+    runtime_agent_signature_payload,
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
@@ -63,6 +64,7 @@ class CompiledRuntimeContext:
         expected_agent_signature = agent_config_signature_from_plan(
             self.plan,
             provider.agent_config_key,
+            provider.model,
         )
         if expected_agent_signature is None:
             raise ValueError(
@@ -109,15 +111,23 @@ class CompiledRuntimeContext:
 def agent_config_signature_from_plan(
     plan: PreflightExecutionPlan,
     agent_config_key: str,
+    resolved_model: str | None,
 ) -> str | None:
     agents = plan.runtime_config_snapshot.get("agents")
     if not isinstance(agents, dict) or agent_config_key not in agents:
         return None
+    agent_payload = agents.get(agent_config_key)
+    agent_snapshot = (
+        RuntimeAgentConfigSnapshot.model_validate(agent_payload)
+        if isinstance(agent_payload, dict)
+        else None
+    )
     return signature_for_payload(
-        {
-            "agent_config": agents.get(agent_config_key),
-            "agent_config_key": agent_config_key,
-        }
+        runtime_agent_signature_payload(
+            agent_config_key,
+            agent_snapshot,
+            resolved_model,
+        )
     )
 
 

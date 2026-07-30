@@ -190,9 +190,8 @@ def test_workspace_enabled_resume_plan_skips_valid_success(tmp_path) -> None:
     assert resume_plan.decision.successful_run.manifest.run_id == "success"
 
 
-def test_workspace_enabled_project_root_preview_keeps_manifest_only_skip(
+def test_project_root_success_reexecutes_when_node_artifacts_are_missing(
     tmp_path,
-    monkeypatch,
 ) -> None:
     state_dir = tmp_path / ".crewplane"
     plan = make_plan()
@@ -200,17 +199,50 @@ def test_workspace_enabled_project_root_preview_keeps_manifest_only_skip(
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
     write_run_manifest(state_dir, manifest)
 
-    def reject_workspace_frontier_validation(*args: object, **kwargs: object) -> None:
-        del args, kwargs
-        raise AssertionError(
-            "project-root duplicate skip must not use workspace resume"
-        )
-
-    monkeypatch.setattr(
-        resume_module,
-        "validate_resume_frontier",
-        reject_workspace_frontier_validation,
+    resume_plan = build_resume_plan(
+        _workspace_config(),
+        _workflow_source(tmp_path),
+        preview,
+        tmp_path,
+        state_dir,
+        force=False,
     )
+
+    assert resume_plan.decision.kind == "execute_full"
+
+
+def test_project_root_success_uses_older_valid_artifacts_when_newest_is_corrupt(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".crewplane"
+    plan = make_plan()
+    preview = _preview_from_plan(plan)
+    older = make_run_manifest(
+        "older",
+        "workflow--older",
+        status="succeeded",
+        started_offset=0,
+    )
+    newer = make_run_manifest(
+        "newer",
+        "workflow--newer",
+        status="succeeded",
+        started_offset=10,
+    )
+    write_run_manifest(state_dir, older)
+    write_run_manifest(state_dir, newer)
+    older_run_dir = state_dir / "execution-stages" / older.run_key_name
+    older_results_dir = state_dir / "execution-results" / older.run_key_name
+    for node in plan.nodes:
+        descriptor = write_result(
+            older_results_dir,
+            node.artifact_contract.output_path,
+            f"{node.id} output",
+        )
+        write_node_state(
+            older_run_dir,
+            make_node_state(older, node.id, [descriptor]),
+        )
 
     resume_plan = build_resume_plan(
         _workspace_config(),
@@ -223,7 +255,7 @@ def test_workspace_enabled_project_root_preview_keeps_manifest_only_skip(
 
     assert resume_plan.decision.kind == "skip"
     assert resume_plan.decision.successful_run is not None
-    assert resume_plan.decision.successful_run.manifest.run_id == "success"
+    assert resume_plan.decision.successful_run.manifest.run_id == "older"
 
 
 def test_workspace_enabled_resume_plan_skips_branch_only_change(tmp_path) -> None:

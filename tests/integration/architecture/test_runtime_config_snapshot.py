@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -237,6 +238,62 @@ def test_conflicting_invoker_workspace_capabilities_are_rejected() -> None:
                 },
             ),
         )
+
+
+def test_canonical_options_require_exact_signature_scopes() -> None:
+    with pytest.raises(ValueError, match="missing scopes"):
+        CanonicalIntegrationConfig(
+            implementation="custom",
+            resolved_identity="example.Adapter",
+            options={"behavior": "a"},
+            option_scopes={},
+        )
+    with pytest.raises(ValueError, match="scopes without options"):
+        CanonicalIntegrationConfig(
+            implementation="custom",
+            resolved_identity="example.Adapter",
+            options={},
+            option_scopes={"behavior": "execution"},
+        )
+    with pytest.raises(ValueError, match="options.timeout.*finite"):
+        CanonicalIntegrationConfig(
+            implementation="custom",
+            resolved_identity="example.Adapter",
+            options={"timeout": float("nan")},
+            option_scopes={"timeout": "execution"},
+        )
+
+
+def test_command_argv_secrets_are_redacted_across_runtime_snapshot_fields() -> None:
+    snapshot = build_runtime_config_snapshot(
+        config=_config(
+            agent_config=AgentConfig(
+                cli_cmd=["provider", "--api-key", "AGENT_SECRET"],
+            ),
+            workspace={
+                "enabled": True,
+                "setup_profiles": {
+                    "bootstrap": {
+                        "run": [["setup", "--token=WORKSPACE_SECRET"]],
+                    }
+                },
+            },
+        ),
+        console=Console(file=None),
+        no_live=True,
+    ).snapshot
+
+    persisted = json.dumps(snapshot.redacted_payload(), sort_keys=True)
+
+    assert "AGENT_SECRET" not in persisted
+    assert "WORKSPACE_SECRET" not in persisted
+    assert snapshot.agents["alpha"].cli_cmd[-1]["redacted"] is True
+    workspace_secret = snapshot.workspace.setup_profiles["bootstrap"]["run"][0][1]
+    assert workspace_secret["redacted"] is True
+    assert snapshot.sensitive_config_paths == [
+        "agents.alpha.cli_cmd.2",
+        "workspace.setup_profiles.bootstrap.run.0.1",
+    ]
 
 
 class WorkspaceCompatibleAdapter:

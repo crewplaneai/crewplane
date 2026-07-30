@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier, Event, Thread
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +13,9 @@ from crewplane.architecture.contracts import InvocationContext
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
+)
+from crewplane.artifacts.generated_files.detection import (
+    GENERATED_FILE_SOURCE_METADATA_NAME,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.provider_call.generated_files import (
@@ -67,6 +72,80 @@ def test_shared_project_root_captures_explicit_generated_file_claim(
     assert "[alpha/src/created.txt]" in result_text
     assert {path.name for path in generated_files} == {"created.txt"}
     assert all(path.name != unrelated_file.name for path in generated_files)
+
+
+def test_overlapping_shared_root_snapshots_keep_explicit_ownership_isolated(
+    tmp_path: Path,
+) -> None:
+    repo = _clean_repo(tmp_path)
+    baselines = [
+        GeneratedFileChangeBaseline.capture(
+            repo,
+            filesystem_fallback_enabled=False,
+        )
+        for _ in range(2)
+    ]
+    claims = [repo / "alpha.txt", repo / "beta.txt"]
+    for claim in claims:
+        claim.write_text(f"{claim.stem} output\n", encoding="utf-8")
+    output_dir = repo / ".crewplane-test-outputs"
+    output_dir.mkdir()
+    outputs = [output_dir / "alpha.md", output_dir / "beta.md"]
+    for output, claim in zip(outputs, claims, strict=True):
+        output.write_text(
+            f"## Generated Files\n\n- `{claim.name}`\n",
+            encoding="utf-8",
+        )
+    both_snapshots_ready = Event()
+    ambient_written = Event()
+    publication_barrier = Barrier(2, action=both_snapshots_ready.set)
+
+    def snapshot_claim(index: int) -> Path:
+        paused = False
+
+        def pause_after_source_metadata(
+            path: Path,
+            signature: tuple[int, str],
+        ) -> None:
+            nonlocal paused
+            del signature
+            if not paused and path.name == GENERATED_FILE_SOURCE_METADATA_NAME:
+                paused = True
+                publication_barrier.wait(timeout=5)
+                assert ambient_written.wait(timeout=5)
+
+        return snapshot_generated_file_workspace(
+            outputs[index],
+            repo,
+            candidate_files=baselines[index].candidate_files(),
+            explicit_claims_only=True,
+            on_file_published=pause_after_source_metadata,
+        )
+
+    ambient = repo / "ambient-large.bin"
+
+    def write_ambient_file() -> None:
+        assert both_snapshots_ready.wait(timeout=5)
+        with ambient.open("wb") as stream:
+            stream.truncate(50 * 1024 * 1024 + 1)
+        ambient_written.set()
+
+    ambient_thread = Thread(target=write_ambient_file)
+    ambient_thread.start()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        alpha_future = executor.submit(snapshot_claim, 0)
+        beta_future = executor.submit(snapshot_claim, 1)
+        snapshots = (alpha_future.result(), beta_future.result())
+    ambient_thread.join(timeout=5)
+    assert not ambient_thread.is_alive()
+
+    assert outputs[0].read_text(encoding="utf-8").endswith("`alpha.txt`\n")
+    assert outputs[1].read_text(encoding="utf-8").endswith("`beta.txt`\n")
+    assert (snapshots[0] / "alpha.txt").read_text(encoding="utf-8") == "alpha output\n"
+    assert (snapshots[1] / "beta.txt").read_text(encoding="utf-8") == "beta output\n"
+    assert not (snapshots[0] / "beta.txt").exists()
+    assert not (snapshots[1] / "alpha.txt").exists()
+    assert all(not (snapshot / ambient.name).exists() for snapshot in snapshots)
 
 
 def test_shared_project_root_skips_unchanged_explicit_generated_file_claim(

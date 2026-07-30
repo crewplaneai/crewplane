@@ -98,26 +98,36 @@ class EventLogAppendCapture:
 @dataclass(frozen=True)
 class GeneratedFileDriftAllowance:
     _in_progress_roots: set[Path] = field(default_factory=set, repr=False)
-    _published_paths: set[Path] = field(default_factory=set, repr=False)
+    _published_signatures: dict[Path, tuple[int, str]] = field(
+        default_factory=dict,
+        repr=False,
+    )
     _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
+    _version: int = field(default=0, repr=False, compare=False)
 
     def start_snapshot(self, root: Path) -> None:
         with self._lock:
             self._in_progress_roots.add(root)
+            object.__setattr__(self, "_version", self._version + 1)
 
     def finish_snapshot(
         self,
         root: Path,
-        published_paths: frozenset[Path] | None,
+        published_signatures: dict[Path, tuple[int, str]] | None,
     ) -> None:
         with self._lock:
-            if published_paths is not None:
-                self._published_paths.update(published_paths)
+            if published_signatures is not None:
+                self._published_signatures.update(published_signatures)
             self._in_progress_roots.discard(root)
+            object.__setattr__(self, "_version", self._version + 1)
 
-    def snapshot(self) -> tuple[set[Path], set[Path]]:
+    def snapshot(self) -> tuple[dict[Path, tuple[int, str]], set[Path], int]:
         with self._lock:
-            return set(self._published_paths), set(self._in_progress_roots)
+            return (
+                dict(self._published_signatures),
+                set(self._in_progress_roots),
+                self._version,
+            )
 
 
 @dataclass(frozen=True)
@@ -148,6 +158,7 @@ class DriftGuardCallRequest:
     allowed_paths: set[Path]
     display: ProviderCallDisplay
     drift_session: DriftGuardSession | None = None
+    generated_file_allowance: GeneratedFileDriftAllowance | None = None
     provider_output_policy: ProviderOutputPolicy = ProviderOutputPolicy.REQUIRE_OUTPUT
     rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 

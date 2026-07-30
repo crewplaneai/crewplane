@@ -106,4 +106,4 @@ loops, workspace isolation, and cleanup.
 
 When you need exact flags or syntax, see the
 [Command reference](../reference/commands.md). To revisit another walkthrough,
-return to the [Guides](../index.md#guides).
+return to the [Guides](../index.md#guided-tutorial-track).

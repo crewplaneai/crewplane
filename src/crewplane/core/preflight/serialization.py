@@ -29,6 +29,7 @@ def canonical_json(value: object) -> str:
 
     return json.dumps(
         to_json_safe(value),
+        allow_nan=False,
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
@@ -42,6 +43,7 @@ def canonical_json_bytes(value: object) -> bytes:
 def pretty_sorted_json(value: object) -> str:
     return json.dumps(
         to_json_safe(value),
+        allow_nan=False,
         ensure_ascii=False,
         indent=2,
         sort_keys=True,
