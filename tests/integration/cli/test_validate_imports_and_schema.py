@@ -1,13 +1,11 @@
 import io
-import os
-import tempfile
 import unittest
-from pathlib import Path
 
 import typer
 
 import crewplane.cli.app as cli
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -17,8 +15,7 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 class CliValidateImportsAndSchemaTests(unittest.TestCase):
     def test_validate_accepts_workflow_markdown(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "example.task.md"
             write_basic_config(config_path)
@@ -32,12 +29,9 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                 color_system=None,
                 width=120,
             )
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
             try:
                 cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
@@ -50,8 +44,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertIn("Valid:", output_text)
 
     def test_validate_accepts_workflow_with_imports(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             module_path = tmp_path / "module.task.md"
             workflow_path = tmp_path / "workflow.task.md"
@@ -114,12 +107,9 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                 color_system=None,
                 width=120,
             )
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
             try:
                 cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
@@ -127,8 +117,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertIn("Valid:", output_text)
 
     def test_validate_rejects_unused_import_parameter(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             module_path = tmp_path / "module.task.md"
             workflow_path = tmp_path / "workflow.task.md"
@@ -191,13 +180,10 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                 color_system=None,
                 width=120,
             )
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
@@ -205,8 +191,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertIn("unused parameter", output_text)
 
     def test_validate_fails_fast_for_unknown_provider(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -238,13 +223,10 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                 color_system=None,
                 width=120,
             )
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
@@ -253,8 +235,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertNotIn("Invalid:", output_text)
 
     def test_validate_surfaces_strict_workflow_schema_errors(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -288,13 +269,10 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
                 color_system=None,
                 width=120,
             )
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()

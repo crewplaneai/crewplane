@@ -13,6 +13,7 @@ from crewplane.cli.run.workspace.git_source import (
     parse_git_version,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     project_pythonpath,
@@ -151,8 +152,7 @@ class CliDryRunTests(unittest.TestCase):
         self,
     ) -> None:
         self._skip_without_workspace_git()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
             _commit_workspace_project(tmp_path)
             stream = io.StringIO()
@@ -163,12 +163,9 @@ class CliDryRunTests(unittest.TestCase):
                 color_system=None,
                 width=120,
             )
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
             try:
                 cli.validate(tasks_file=workflow_path, config_file=config_path)
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             self.assertIn("✓ Valid", stream.getvalue())

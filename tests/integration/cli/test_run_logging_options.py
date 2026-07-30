@@ -1,10 +1,8 @@
 import io
-import os
-import tempfile
 import unittest
-from pathlib import Path
 
 import crewplane.cli.app as cli
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -15,8 +13,7 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 class CliRunLoggingOptionTests(unittest.TestCase):
     def test_run_logs_enabled_when_settings_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -25,7 +22,6 @@ class CliRunLoggingOptionTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 return None
@@ -37,7 +33,6 @@ class CliRunLoggingOptionTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -46,7 +41,6 @@ class CliRunLoggingOptionTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -54,8 +48,7 @@ class CliRunLoggingOptionTests(unittest.TestCase):
             self.assertIn("Logs:", output_text)
 
     def test_run_respects_explicit_log_disable(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config_with_settings(config_path, log_cli_output=False)
@@ -64,7 +57,6 @@ class CliRunLoggingOptionTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 return None
@@ -76,7 +68,6 @@ class CliRunLoggingOptionTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -85,7 +76,6 @@ class CliRunLoggingOptionTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 

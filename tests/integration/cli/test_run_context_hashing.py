@@ -1,11 +1,10 @@
 import io
 import os
-import tempfile
 import unittest
-from pathlib import Path
 
 import crewplane.cli.app as cli
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -15,8 +14,7 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 class CliRunContextHashingTests(unittest.TestCase):
     def test_failed_run_writes_failure_manifest_and_does_not_trigger_skip(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -25,7 +23,6 @@ class CliRunContextHashingTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             calls = {"count": 0}
 
             async def flaky_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -40,7 +37,6 @@ class CliRunContextHashingTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = flaky_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 with self.assertRaisesRegex(RuntimeError, "simulated failure"):
                     cli.run(
@@ -74,7 +70,6 @@ class CliRunContextHashingTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -82,8 +77,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             self.assertNotIn("Identical context detected", stream.getvalue())
 
     def test_run_skips_duplicate_context_across_previous_run_folders(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -92,7 +86,6 @@ class CliRunContextHashingTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             calls = {"count": 0}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -105,7 +98,6 @@ class CliRunContextHashingTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -126,7 +118,6 @@ class CliRunContextHashingTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -138,8 +129,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             self.assertGreaterEqual(len(stage_runs), 2)
 
     def test_run_reexecutes_when_env_template_value_changes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -166,7 +156,6 @@ class CliRunContextHashingTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             original_branch = os.environ.get("BRANCH_NAME")
             calls = {"count": 0}
 
@@ -180,7 +169,6 @@ class CliRunContextHashingTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 os.environ["BRANCH_NAME"] = "feature/one"
                 cli.run(
@@ -202,7 +190,6 @@ class CliRunContextHashingTests(unittest.TestCase):
                     os.environ.pop("BRANCH_NAME", None)
                 else:
                     os.environ["BRANCH_NAME"] = original_branch
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 

@@ -1,16 +1,14 @@
 import asyncio
 import io
 import json
-import os
-import tempfile
 import unittest
-from pathlib import Path
 
 import typer
 
 import crewplane.cli.app as cli
 from crewplane.observability.types import RunContext, RunResult
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -20,14 +18,8 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 class CliLiveDashboardTests(unittest.TestCase):
     def test_init_creates_workflow_template_without_legacy_tasks_yaml(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
-            try:
-                cli.init()
-            finally:
-                os.chdir(original_cwd)
+        with temporary_project_cwd() as tmp_path:
+            cli.init()
 
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
@@ -88,8 +80,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 self.assertNotIn(f'\n      - "{flag}"', config_text)
 
     def test_non_tty_run_uses_compact_fallback_without_live_dashboard(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -98,7 +89,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -111,7 +101,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -120,7 +109,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -129,8 +117,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("run_id", captured_kwargs)
 
     def test_tty_run_enables_live_dashboard_by_default(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -141,7 +128,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_execute_workflow = cli.execute_workflow
             original_hub = cli.ObservabilityHub
             original_which = cli.shutil.which
-            original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
             captured_live_config: dict[str, object] = {}
             import crewplane.adapters.ui.tmux as tmux_adapter_module
@@ -192,7 +178,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     "/usr/bin/tmux" if value == "tmux" else original_which(value)
                 )
             )
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -201,7 +186,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
@@ -215,8 +199,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIsNone(captured_live_config["log_tail_lines"])
 
     def test_run_exits_cleanly_when_live_dashboard_requests_cancel(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -225,7 +208,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow_run = cli.workflow_runner.execute_workflow_run
-            original_cwd = Path.cwd()
 
             async def fake_execute_workflow_run(**kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 raise cli.workflow_runner.WorkflowCancelledByUser(
@@ -234,7 +216,6 @@ class CliLiveDashboardTests(unittest.TestCase):
 
             cli.Console = ConsoleFactory(file=stream, force_terminal=False)
             cli.workflow_runner.execute_workflow_run = fake_execute_workflow_run  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit) as raised:
                     cli.run(
@@ -244,7 +225,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                         force=False,
                     )
             finally:
-                os.chdir(original_cwd)
                 cli.workflow_runner.execute_workflow_run = original_execute_workflow_run  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -257,8 +237,7 @@ class CliLiveDashboardTests(unittest.TestCase):
     def test_run_finalizes_manifest_and_summary_when_dashboard_requests_cancel(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -268,7 +247,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_hub = cli.ObservabilityHub
-            original_cwd = Path.cwd()
             hub_instances = []
 
             class StopRequestedHub:
@@ -322,7 +300,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             cli.Console = ConsoleFactory(file=stream, force_terminal=False)
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
             cli.ObservabilityHub = StopRequestedHub  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit) as raised:
                     cli.run(
@@ -332,7 +309,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                         force=False,
                     )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 cli.Console = original_console_cls
@@ -363,8 +339,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             )
 
     def test_tty_live_dashboard_uses_configured_tmux_auto_close(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             config_path.write_text(
@@ -395,7 +370,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_hub = cli.ObservabilityHub
             original_which = cli.shutil.which
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             captured_live_config: dict[str, object] = {}
             import crewplane.adapters.ui.tmux as tmux_adapter_module
 
@@ -455,7 +429,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                 )
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -464,7 +437,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]
                 cli.shutil.which = original_which  # type: ignore[assignment]
@@ -478,8 +450,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertEqual(captured_live_config["log_tail_lines"], 25)
 
     def test_tty_run_no_live_flag_disables_dashboard(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -488,7 +459,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -502,7 +472,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                 height=40,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -512,7 +481,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     no_live=True,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -521,8 +489,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("run_id", captured_kwargs)
 
     def test_tty_run_falls_back_when_tmux_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -532,7 +499,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
             original_which = cli.shutil.which
-            original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -549,7 +515,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             cli.shutil.which = (  # type: ignore[assignment]
                 lambda value: None if value == "tmux" else original_which(value)
             )
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -558,7 +523,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.shutil.which = original_which  # type: ignore[assignment]
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
@@ -568,8 +532,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("tmux not found", stream.getvalue())
 
     def test_tty_run_falls_back_when_no_live_observers_start(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -580,7 +543,6 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_execute_workflow = cli.execute_workflow
             original_hub = cli.ObservabilityHub
             original_which = cli.shutil.which
-            original_cwd = Path.cwd()
             captured_kwargs: dict[str, object] = {}
             import crewplane.adapters.ui.tmux as tmux_adapter_module
 
@@ -629,7 +591,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     "/usr/bin/tmux" if value == "tmux" else original_which(value)
                 )
             )
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -638,7 +599,6 @@ class CliLiveDashboardTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.shutil.which = original_which  # type: ignore[assignment]
                 tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
                 cli.ObservabilityHub = original_hub  # type: ignore[assignment]

@@ -9,6 +9,7 @@ import typer
 import crewplane.cli.app as cli
 from crewplane.artifacts.locks import ResumeLockError, SameContextLock
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     repo_task_workflow_stage_names,
@@ -50,8 +51,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 )
 
     def test_run_preflight_shows_warning_for_argv_prompt_transport(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -81,7 +81,6 @@ class CliRunPreflightFailureTests(unittest.TestCase):
 
             stream = io.StringIO()
             original_console_cls = cli.Console
-            original_cwd = Path.cwd()
             cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
@@ -89,14 +88,12 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 width=120,
             )
             try:
-                os.chdir(tmp_path)
                 cli.run(
                     tasks_file=workflow_path,
                     config_file=config_path,
                     dry_run=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
@@ -421,8 +418,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             self.assertNotIn("Dry run mode", output_text)
 
     def test_mock_invoker_run_skips_cli_executable_validation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
 
@@ -469,7 +465,6 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             calls = {"count": 0}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -482,7 +477,6 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -490,7 +484,6 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                     dry_run=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 

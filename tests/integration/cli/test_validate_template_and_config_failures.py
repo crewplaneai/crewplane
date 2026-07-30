@@ -8,6 +8,7 @@ import typer
 
 import crewplane.cli.app as cli
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -480,8 +481,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             self.assertNotIn("Invalid:", output_text)
 
     def test_validate_uses_default_config_and_writes_no_run_artifacts(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -490,19 +490,13 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             write_basic_config(config_path)
             write_basic_workflow(workflow_path)
 
-            original_cwd = Path.cwd()
-            os.chdir(tmp_path)
-            try:
-                cli.validate(tasks_file=workflow_path, config_file=None)
-            finally:
-                os.chdir(original_cwd)
+            cli.validate(tasks_file=workflow_path, config_file=None)
 
             self.assertFalse((state_dir / "execution-stages").exists())
             self.assertFalse((state_dir / "execution-results").exists())
 
     def test_validate_requires_default_config_when_omitted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -511,19 +505,16 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
 
             stream = io.StringIO()
             original_console_cls = cli.Console
-            original_cwd = Path.cwd()
             cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
                 width=120,
             )
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit):
                     cli.validate(tasks_file=workflow_path, config_file=None)
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()

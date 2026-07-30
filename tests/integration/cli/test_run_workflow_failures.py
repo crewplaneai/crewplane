@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -22,6 +20,7 @@ from crewplane.runtime.agent.failures import (
     InvocationFailureSummary,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import ConsoleFactory
 
 
@@ -222,8 +221,7 @@ def _write_findings_failure_workflow(path: Path) -> None:
 
 class CliRunWorkflowFailureTests(unittest.TestCase):
     def test_expected_workflow_failure_is_concise_and_finalized(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -234,14 +232,12 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
 
             stream = io.StringIO()
             original_console_cls = cli.Console
-            original_cwd = Path.cwd()
             cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
                 width=120,
             )
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit) as raised:
                     cli.run(
@@ -252,7 +248,6 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
                         no_live=True,
                     )
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             self.assertEqual(raised.exception.exit_code, 1)
@@ -296,8 +291,7 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
             self.assertIn(f"Logs: {run_dirs[0] / 'logs'}", output_text)
 
     def test_reviewer_workflow_failure_is_concise_and_finalized(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -308,14 +302,12 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
 
             stream = io.StringIO()
             original_console_cls = cli.Console
-            original_cwd = Path.cwd()
             cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
                 width=120,
             )
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit) as raised:
                     cli.run(
@@ -326,7 +318,6 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
                         no_live=True,
                     )
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             self.assertEqual(raised.exception.exit_code, 1)
@@ -358,8 +349,7 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
             self.assertIn("summarize.review", manifest["failure_message"])
 
     def test_findings_extraction_failure_is_concise_and_finalized(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -370,14 +360,12 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
 
             stream = io.StringIO()
             original_console_cls = cli.Console
-            original_cwd = Path.cwd()
             cli.Console = ConsoleFactory(
                 file=stream,
                 force_terminal=False,
                 color_system=None,
                 width=120,
             )
-            os.chdir(tmp_path)
             try:
                 with self.assertRaises(typer.Exit) as raised:
                     cli.run(
@@ -388,7 +376,6 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
                         no_live=True,
                     )
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             self.assertEqual(raised.exception.exit_code, 1)
