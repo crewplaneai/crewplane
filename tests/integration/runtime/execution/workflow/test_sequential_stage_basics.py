@@ -1,6 +1,7 @@
 import asyncio
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -21,7 +22,12 @@ from crewplane.observability.types import RunContext
 from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.fragment_assembler import ResolvedPrompt
+from crewplane.runtime.execution.provider_call import (
+    generated_files as provider_generated_files,
+)
+from crewplane.runtime.execution.review_loop import drift as review_loop_drift
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
@@ -413,7 +419,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.dict("os.environ", {"EMPTY_EXECUTOR_PROMPT": ""}, clear=False),
                 self.assertRaisesRegex(
-                    RuntimeError,
+                    NodeExecutionError,
                     "Resolved executor prompt for node 'single.provider.empty.prompt' is empty after fragment assembly.",
                 ),
             ):
@@ -463,7 +469,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.dict("os.environ", {"EMPTY_REVIEWER_PROMPT": ""}, clear=False),
                 self.assertRaisesRegex(
-                    RuntimeError,
+                    NodeExecutionError,
                     "Resolved reviewer prompt for node 'review.loop.empty.reviewer.prompt' is empty after fragment assembly.",
                 ),
             ):
@@ -639,7 +645,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             review_b_started = invoker.started_at["review-b_reviewer_1"]
             self.assertLess(abs(review_a_started - review_b_started), 0.05)
 
-    async def test_parallel_reviewer_metadata_persistence_does_not_warn_as_drift(
+    async def test_parallel_reviewer_snapshot_detects_unregistered_concurrent_write(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -695,32 +701,94 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 events.append(event)
                 persistent_logger.record_event(event)
 
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id=output.run_id,
-                    event_sink=record_event,
-                ),
+            review_a_snapshot_created = threading.Event()
+            release_review_a_snapshot = threading.Event()
+            coordination_timed_out = threading.Event()
+            review_a_snapshot_root: Path | None = None
+            unexpected_snapshot_file: Path | None = None
+            original_snapshot = (
+                provider_generated_files.snapshot_generated_file_workspace
             )
+            original_detect_drift = review_loop_drift.detect_provider_call_drift
 
+            def coordinate_snapshot(*args, **kwargs):  # type: ignore[no-untyped-def]
+                nonlocal review_a_snapshot_root, unexpected_snapshot_file
+                snapshot_root = original_snapshot(*args, **kwargs)
+                output_file = args[0]
+                if output_file.stem == "review-a_reviewer_0_round1":
+                    review_a_snapshot_root = snapshot_root
+                    review_a_snapshot_created.set()
+                    if not release_review_a_snapshot.wait(timeout=5):
+                        coordination_timed_out.set()
+                elif output_file.stem == "review-b_reviewer_1_round1":
+                    if not review_a_snapshot_created.wait(timeout=5):
+                        coordination_timed_out.set()
+                    if review_a_snapshot_root is not None:
+                        unexpected_snapshot_file = (
+                            review_a_snapshot_root / "provider-injected.txt"
+                        )
+                        unexpected_snapshot_file.write_text(
+                            "provider mutation",
+                            encoding="utf-8",
+                        )
+                return snapshot_root
+
+            def detect_drift_and_release_review_a(*args, **kwargs):  # type: ignore[no-untyped-def]
+                try:
+                    return original_detect_drift(*args, **kwargs)
+                finally:
+                    if args[0].task_id == "review-b_reviewer_1":
+                        release_review_a_snapshot.set()
+
+            with (
+                patch.object(
+                    provider_generated_files,
+                    "snapshot_generated_file_workspace",
+                    side_effect=coordinate_snapshot,
+                ),
+                patch.object(
+                    review_loop_drift,
+                    "detect_provider_call_drift",
+                    side_effect=detect_drift_and_release_review_a,
+                ),
+            ):
+                await execute_sequential_stage(
+                    config,
+                    node,
+                    output,
+                    invoker=invoker,
+                    telemetry=ExecutionTelemetry(
+                        workflow_name="workflow",
+                        run_id=output.run_id,
+                        event_sink=record_event,
+                    ),
+                )
+
+            self.assertFalse(coordination_timed_out.is_set())
             drift_events = [
                 event
                 for event in events
                 if event.event_type == "runtime_log"
                 and event.payload.operation == "review_loop_artifact_drift"
             ]
-            self.assertEqual(drift_events, [])
+            self.assertEqual(len(drift_events), 1)
+            self.assertEqual(
+                drift_events[0].payload.attributes["unexpected_path_count"],
+                1,
+            )
+            self.assertIsNotNone(unexpected_snapshot_file)
+            assert unexpected_snapshot_file is not None
+            self.assertIn(
+                unexpected_snapshot_file.name,
+                drift_events[0].payload.message,
+            )
             node_dir = output.get_stage_dir(node.id)
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
                 review_loop_status_path(node_dir).read_text(encoding="utf-8")
             )
-            self.assertEqual(status_payload["artifact_drift_warning_count"], 0)
+            self.assertEqual(status_payload["artifact_drift_warning_count"], 1)
 
     async def test_parallel_reviewer_log_setup_failure_uses_invocation_lifecycle(
         self,

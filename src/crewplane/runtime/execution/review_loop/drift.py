@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Never
 
 from ..common import (
     ExecutionTelemetry,
     ProviderCallRequest,
     run_provider_call,
 )
+from ..errors import NodeExecutionError, is_expected_execution_failure
 from .drift_detection import (
     capture_drift_monitoring_window,
     detect_provider_call_drift,
@@ -49,8 +51,10 @@ async def run_provider_call_with_drift_guard(
     except Exception as exc:
         provider_error = exc
 
-    allow_runtime_generated_file_snapshots(request)
+    if request.drift_session is None:
+        allow_runtime_generated_file_snapshots(request)
 
+    mixed_error: Exception | None = None
     try:
         drift = detect_provider_call_drift(
             request,
@@ -60,10 +64,17 @@ async def run_provider_call_with_drift_guard(
         )
     except Exception as drift_exc:
         if provider_error is not None:
-            provider_error.add_note(f"artifact drift detection failed: {drift_exc}")
-            raise provider_error from drift_exc
-        raise
+            mixed_error = mixed_provider_and_drift_guard_error(
+                provider_error,
+                drift_exc,
+                "artifact drift detection failed",
+            )
+        else:
+            raise
+    if mixed_error is not None:
+        raise_preserving_cause(mixed_error)
 
+    mixed_error = None
     try:
         emit_artifact_drift(
             telemetry=request.telemetry,
@@ -78,11 +89,15 @@ async def run_provider_call_with_drift_guard(
         )
     except Exception as drift_emit_exc:
         if provider_error is not None:
-            provider_error.add_note(
-                f"artifact drift telemetry failed: {drift_emit_exc}"
+            mixed_error = mixed_provider_and_drift_guard_error(
+                provider_error,
+                drift_emit_exc,
+                "artifact drift telemetry failed",
             )
-            raise provider_error from drift_emit_exc
-        raise
+        else:
+            raise
+    if mixed_error is not None:
+        raise_preserving_cause(mixed_error)
 
     if provider_error is not None:
         if drift.warning_paths or drift.fatal_paths:
@@ -92,6 +107,8 @@ async def run_provider_call_with_drift_guard(
                 f"{len(drift.fatal_paths)} fatal path(s)"
             )
         if drift.fatal_paths:
+            if not is_expected_execution_failure(provider_error):
+                raise provider_error
             raise fatal_artifact_drift_error(request) from provider_error
         raise provider_error
     if drift.fatal_paths:
@@ -99,8 +116,26 @@ async def run_provider_call_with_drift_guard(
     return 1 if drift.warning_paths else 0
 
 
-def fatal_artifact_drift_error(request: DriftGuardCallRequest) -> RuntimeError:
-    return RuntimeError(
+def mixed_provider_and_drift_guard_error(
+    provider_error: Exception,
+    drift_guard_error: Exception,
+    context: str,
+) -> Exception:
+    if is_expected_execution_failure(provider_error):
+        drift_guard_error.add_note(f"provider call failed first: {provider_error}")
+        return drift_guard_error
+    provider_error.add_note(f"{context}: {drift_guard_error}")
+    return provider_error
+
+
+def raise_preserving_cause(exc: Exception) -> Never:
+    if exc.__cause__ is not None:
+        raise exc from exc.__cause__
+    raise exc
+
+
+def fatal_artifact_drift_error(request: DriftGuardCallRequest) -> NodeExecutionError:
+    return NodeExecutionError(
         f"Invocation for node '{request.node.id}' task "
         f"'{request.task_id}' modified fatal artifacts."
     )
@@ -123,6 +158,11 @@ async def invoke_provider_under_drift_guard(
     request: DriftGuardCallRequest,
     captured_telemetry: ExecutionTelemetry | None,
 ) -> None:
+    generated_file_allowance = (
+        request.drift_session.generated_file_allowance
+        if request.drift_session is not None
+        else None
+    )
     await run_provider_call(
         ProviderCallRequest(
             runtime_context=request.runtime_context,
@@ -140,6 +180,16 @@ async def invoke_provider_under_drift_guard(
             findings_enabled=request.findings_enabled,
             provider_output_policy=request.provider_output_policy,
             on_log_file_resolved=request.allowed_paths.add,
+            on_generated_file_snapshot_started=(
+                generated_file_allowance.start_snapshot
+                if generated_file_allowance is not None
+                else None
+            ),
+            on_generated_file_snapshot_finished=(
+                generated_file_allowance.finish_snapshot
+                if generated_file_allowance is not None
+                else None
+            ),
             rendered_workspace_files=request.rendered_workspace_files,
         ),
         display=replace(request.display, telemetry=captured_telemetry),

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from rich.text import Text
+
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.failure_artifacts import (
@@ -24,6 +26,7 @@ from .common import (
     run_provider_invocation,
     should_print_console,
 )
+from .errors import NodeExecutionError, is_expected_execution_failure
 from .workspace_files import ResolvedWorkspaceFile
 
 type ParallelInvocationResult = Path | Exception
@@ -148,10 +151,16 @@ def _record_parallel_failure(
         return 0
     if should_print_console(telemetry):
         execution_console(telemetry).print(
-            f"[red]✗[/] {invocation.task_id} failed: {result}"
+            Text.assemble(("✗", "red"), f" {invocation.task_id} failed: {result}")
         )
     _write_parallel_failure_artifact(invocation, result)
     return 1
+
+
+def _raise_unexpected_parallel_failure(results: list[ParallelInvocationResult]) -> None:
+    for result in results:
+        if isinstance(result, Exception) and not is_expected_execution_failure(result):
+            raise result
 
 
 def enforce_parallel_failure_policy(
@@ -160,7 +169,7 @@ def enforce_parallel_failure_policy(
     telemetry: ExecutionTelemetry | None,
 ) -> bool:
     if summary.failed and _lineage_worktree_node(node):
-        raise RuntimeError(
+        raise NodeExecutionError(
             f"Parallel node '{node.id}' uses a lineage-producing worktree and "
             "cannot continue after executor failure."
         )
@@ -174,7 +183,7 @@ def enforce_parallel_failure_policy(
         f"{summary.failed}/{summary.total} failed (allowed {allowed_failures})."
     )
     if not continue_on_failure:
-        raise RuntimeError(message)
+        raise NodeExecutionError(message)
     if should_print_console(telemetry):
         execution_console(telemetry).print(
             f"[yellow]WARN[/] {message} Continuing due to continue_on_failure=true."
@@ -213,6 +222,7 @@ def _handle_parallel_results(
     invocations: list[ParallelInvocation],
     telemetry: ExecutionTelemetry | None,
 ) -> ParallelResultSummary:
+    _raise_unexpected_parallel_failure(results)
     failed_count = sum(
         _record_parallel_failure(invocation, result, telemetry)
         for invocation, result in zip(invocations, results, strict=True)

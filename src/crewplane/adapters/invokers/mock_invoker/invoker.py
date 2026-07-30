@@ -10,6 +10,10 @@ from crewplane.architecture.contracts import (
     MockInvokerFailSelector,
 )
 from crewplane.core.config import AgentConfig
+from crewplane.runtime.agent.failures import (
+    InvocationFailureError,
+    InvocationFailureSummary,
+)
 
 from .context import ContextDisplay, context_display, is_reviewer_context
 from .fixtures import fixture_candidates
@@ -21,6 +25,18 @@ from .outputs import (
     build_findings_lines,
     review_contract_resolution,
 )
+
+
+def _mock_invocation_failure(message: str) -> InvocationFailureError:
+    summary = InvocationFailureSummary(
+        kind="provider_error",
+        phase="provider_transport",
+        source="none",
+        message=message,
+        advice="The mock invoker reported a deterministic provider failure.",
+        condensed=False,
+    )
+    return InvocationFailureError("mock invoker failed", summary, None)
 
 
 class MockAgentInvoker:
@@ -69,9 +85,8 @@ class MockAgentInvoker:
     def _raise_if_forced_failure(self, context: InvocationContext | None) -> None:
         for selector in self._options.fail_when:
             if _selector_matches(selector, context):
-                raise RuntimeError(
-                    "mock invoker forced failure by selector: "
-                    f"{_selector_summary(selector)}"
+                raise _mock_invocation_failure(
+                    f"forced failure by selector: {_selector_summary(selector)}"
                 )
 
     async def _resolve_output(
@@ -116,8 +131,8 @@ class MockAgentInvoker:
                     fixture_path=candidate,
                 )
         if self._options.strict_file_mode:
-            raise RuntimeError(
-                "mock invoker file mode could not resolve fixture; looked in "
+            raise _mock_invocation_failure(
+                "file mode could not resolve fixture; looked in "
                 f"{output_dir_path.resolve()}"
             )
         if is_reviewer_context(context):

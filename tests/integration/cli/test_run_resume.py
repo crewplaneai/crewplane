@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -29,6 +27,7 @@ from crewplane.core.workflow.models import (
 from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 
 
 def config() -> Config:
@@ -120,10 +119,8 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_run_resumes_validated_node_boundary_into_fresh_run(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
-            original_cwd = Path.cwd()
             calls: list[tuple[str, ...]] = []
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
@@ -149,19 +146,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     "B result",
                 )
 
-            os.chdir(root)
-            try:
-                with self.assertRaisesRegex(RuntimeError, "B failed"):
-                    await execute_workflow_run(
-                        config=config(),
-                        source=source(root),
-                        force=False,
-                        no_live=True,
-                        console=console,
-                        execute_workflow_impl=fake_execute_workflow,
-                        project_root=root,
-                        state_dir=root / ".crewplane",
-                    )
+            with self.assertRaisesRegex(RuntimeError, "B failed"):
                 await execute_workflow_run(
                     config=config(),
                     source=source(root),
@@ -172,8 +157,16 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     project_root=root,
                     state_dir=root / ".crewplane",
                 )
-            finally:
-                os.chdir(original_cwd)
+            await execute_workflow_run(
+                config=config(),
+                source=source(root),
+                force=False,
+                no_live=True,
+                console=console,
+                execute_workflow_impl=fake_execute_workflow,
+                project_root=root,
+                state_dir=root / ".crewplane",
+            )
 
             self.assertEqual(calls, [(), ("a",)])
             run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
@@ -190,10 +183,8 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancelled_run_resumes_validated_node_boundary_into_fresh_run(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
-            original_cwd = Path.cwd()
             calls: list[tuple[str, ...]] = []
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
@@ -219,19 +210,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     "B result",
                 )
 
-            os.chdir(root)
-            try:
-                with self.assertRaises(asyncio.CancelledError):
-                    await execute_workflow_run(
-                        config=config(),
-                        source=source(root),
-                        force=False,
-                        no_live=True,
-                        console=console,
-                        execute_workflow_impl=fake_execute_workflow,
-                        project_root=root,
-                        state_dir=root / ".crewplane",
-                    )
+            with self.assertRaises(asyncio.CancelledError):
                 await execute_workflow_run(
                     config=config(),
                     source=source(root),
@@ -242,8 +221,16 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     project_root=root,
                     state_dir=root / ".crewplane",
                 )
-            finally:
-                os.chdir(original_cwd)
+            await execute_workflow_run(
+                config=config(),
+                source=source(root),
+                force=False,
+                no_live=True,
+                console=console,
+                execute_workflow_impl=fake_execute_workflow,
+                project_root=root,
+                state_dir=root / ".crewplane",
+            )
 
             self.assertEqual(calls, [(), ("a",)])
             run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
@@ -272,10 +259,8 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_live_dashboard_cancelled_run_resumes_validated_node_boundary(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
-            original_cwd = Path.cwd()
             calls: list[tuple[str, ...]] = []
             hub_instances = []
 
@@ -348,20 +333,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     "B result",
                 )
 
-            os.chdir(root)
-            try:
-                with self.assertRaises(WorkflowCancelledByUser):
-                    await execute_workflow_run(
-                        config=config(),
-                        source=source(root),
-                        force=False,
-                        no_live=True,
-                        console=console,
-                        execute_workflow_impl=fake_execute_workflow,
-                        observability_hub_cls=StopRequestedHub,
-                        project_root=root,
-                        state_dir=root / ".crewplane",
-                    )
+            with self.assertRaises(WorkflowCancelledByUser):
                 await execute_workflow_run(
                     config=config(),
                     source=source(root),
@@ -369,11 +341,20 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     no_live=True,
                     console=console,
                     execute_workflow_impl=fake_execute_workflow,
+                    observability_hub_cls=StopRequestedHub,
                     project_root=root,
                     state_dir=root / ".crewplane",
                 )
-            finally:
-                os.chdir(original_cwd)
+            await execute_workflow_run(
+                config=config(),
+                source=source(root),
+                force=False,
+                no_live=True,
+                console=console,
+                execute_workflow_impl=fake_execute_workflow,
+                project_root=root,
+                state_dir=root / ".crewplane",
+            )
 
             self.assertEqual(calls, [(), ("a",)])
             run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())

@@ -31,6 +31,7 @@ from crewplane.runtime.workspace.worktree import (
 )
 from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
 
+from ..errors import NodeExecutionError
 from .source_resolution import (
     WorkspaceCandidateSourceContext,
     candidate_source_ref_from_state,
@@ -267,18 +268,18 @@ def read_dynamic_locator_blob(
         locator.git_top_relative_path,
     )
     if record is None or record.path != locator.git_top_relative_path:
-        raise RuntimeError(
+        raise NodeExecutionError(
             "Runtime-dynamic workspace file locator does not resolve exactly: "
             f"{locator.locator_id}."
         )
     if record.object_type != "blob" or record.mode not in SUPPORTED_FILE_MODES:
-        raise RuntimeError(
+        raise NodeExecutionError(
             "Runtime-dynamic workspace file locator must resolve to a regular "
             f"Git blob: {locator.locator_id}."
         )
     payload = git_cat_blob(plan.workspace_source.git_top_level, record.object_id)
     if not valid_utf8_without_nul(payload):
-        raise RuntimeError(
+        raise NodeExecutionError(
             "Runtime-dynamic workspace file locator content must be UTF-8 text "
             f"without NUL bytes: {locator.locator_id}."
         )

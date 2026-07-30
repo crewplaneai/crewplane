@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 from typing import TypedDict
 
 from crewplane.architecture.contracts import AgentInvoker
@@ -95,9 +96,37 @@ class EventLogAppendCapture:
 
 
 @dataclass(frozen=True)
+class GeneratedFileDriftAllowance:
+    _in_progress_roots: set[Path] = field(default_factory=set, repr=False)
+    _published_paths: set[Path] = field(default_factory=set, repr=False)
+    _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
+
+    def start_snapshot(self, root: Path) -> None:
+        with self._lock:
+            self._in_progress_roots.add(root)
+
+    def finish_snapshot(
+        self,
+        root: Path,
+        published_paths: frozenset[Path] | None,
+    ) -> None:
+        with self._lock:
+            if published_paths is not None:
+                self._published_paths.update(published_paths)
+            self._in_progress_roots.discard(root)
+
+    def snapshot(self) -> tuple[set[Path], set[Path]]:
+        with self._lock:
+            return set(self._published_paths), set(self._in_progress_roots)
+
+
+@dataclass(frozen=True)
 class DriftGuardSession:
     telemetry: ExecutionTelemetry | None
     event_log_capture: EventLogAppendCapture | None
+    generated_file_allowance: GeneratedFileDriftAllowance = field(
+        default_factory=GeneratedFileDriftAllowance
+    )
 
 
 @dataclass

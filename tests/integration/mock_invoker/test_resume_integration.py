@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import typer
 import yaml
 
 import crewplane.cli.app as cli
@@ -198,7 +199,7 @@ def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
     _write_workflow(workflow_path)
     _write_fixture(fixture_dir, "a", "A result\n")
 
-    with pytest.raises(RuntimeError, match="could not resolve fixture"):
+    with pytest.raises(typer.Exit) as raised:
         cli.run(
             tasks_file=workflow_path,
             config_file=config_path,
@@ -206,6 +207,8 @@ def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
             force=False,
             no_live=True,
         )
+    assert raised.value.exit_code == 1
+    assert "could not resolve fixture" in console_stream.getvalue()
     first_run = _run_dirs(tmp_path)[0]
     assert _manifest(first_run)["status"] == "failed"
 
@@ -275,7 +278,7 @@ def test_cli_force_rerun_bypasses_failed_run_resume_frontier(
     _write_workflow(workflow_path)
     _write_fixture(fixture_dir, "a", "A original result\n")
 
-    with pytest.raises(RuntimeError, match="could not resolve fixture"):
+    with pytest.raises(typer.Exit) as raised:
         cli.run(
             tasks_file=workflow_path,
             config_file=config_path,
@@ -283,6 +286,8 @@ def test_cli_force_rerun_bypasses_failed_run_resume_frontier(
             force=False,
             no_live=True,
         )
+    assert raised.value.exit_code == 1
+    assert "could not resolve fixture" in console_stream.getvalue()
     first_run = _run_dirs(tmp_path)[0]
     first_results_dir = tmp_path / ".crewplane" / "execution-results" / first_run.name
     first_a_result = (first_results_dir / "a-result.md").read_text("utf-8")
@@ -339,7 +344,7 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
     _write_review_loop_workflow(workflow_path)
     _write_review_loop_fixtures(fixture_dir)
 
-    with pytest.raises(RuntimeError, match="could not resolve fixture"):
+    with pytest.raises(typer.Exit) as raised:
         cli.run(
             tasks_file=workflow_path,
             config_file=config_path,
@@ -347,6 +352,8 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
             force=False,
             no_live=True,
         )
+    assert raised.value.exit_code == 1
+    assert "could not resolve fixture" in console_stream.getvalue()
     first_run = _run_dirs(tmp_path)[0]
     first_results_dir = tmp_path / ".crewplane" / "execution-results" / first_run.name
     assert _manifest(first_run)["status"] == "failed"

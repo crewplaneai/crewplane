@@ -1,6 +1,5 @@
 import asyncio
 import io
-import os
 import subprocess
 import tempfile
 import unittest
@@ -21,6 +20,7 @@ from crewplane.core.preflight import load_workflow_source_for_preflight
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
+from tests.helpers.working_directory import temporary_project_cwd
 
 
 def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
@@ -550,13 +550,12 @@ class ExampleTemplateTests(unittest.TestCase):
     def test_advanced_code_review_example_runs_with_mock_and_records_estimated_usage(
         self,
     ) -> None:
-        config_path = self.template_dir / "config.yml"
+        config_path = (self.template_dir / "config.yml").resolve()
         workflow_path = (
             self.template_dir / "example-templates" / "code-review-example.task.md"
-        )
+        ).resolve()
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
+        with temporary_project_cwd() as rendered_root:
             state_dir = rendered_root / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True, exist_ok=True)
@@ -593,21 +592,16 @@ class ExampleTemplateTests(unittest.TestCase):
             )
             validate_workflow_plan(source.workflow)
 
-            original_cwd = Path.cwd()
             stream = io.StringIO()
-            try:
-                os.chdir(rendered_root)
-                asyncio.run(
-                    workflow_runner.execute_workflow_run(
-                        config=config,
-                        source=source,
-                        force=False,
-                        no_live=True,
-                        console=Console(file=stream, force_terminal=False),
-                    )
+            asyncio.run(
+                workflow_runner.execute_workflow_run(
+                    config=config,
+                    source=source,
+                    force=False,
+                    no_live=True,
+                    console=Console(file=stream, force_terminal=False),
                 )
-            finally:
-                os.chdir(original_cwd)
+            )
 
             execution_stage_root = next(
                 (rendered_root / ".crewplane" / "execution-stages").iterdir()

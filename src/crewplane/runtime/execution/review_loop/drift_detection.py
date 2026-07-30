@@ -132,13 +132,16 @@ def detect_artifact_drift(
     allowed_paths: set[Path],
     output: ArtifactStorePort,
     node_dir: Path,
+    in_progress_runtime_roots: set[Path] | None = None,
 ) -> DriftCheckResult:
+    runtime_roots = in_progress_runtime_roots or set()
     changed_paths = sorted({*before_snapshot.keys(), *after_snapshot.keys()})
     unexpected_paths = [
         path
         for path in changed_paths
         if before_snapshot.get(path) != after_snapshot.get(path)
         and path not in allowed_paths
+        and not any(root in path.parents for root in runtime_roots)
     ]
     if not unexpected_paths:
         return DriftCheckResult()
@@ -284,12 +287,21 @@ def detect_node_drift(
     request: DriftGuardCallRequest,
     monitoring_window: DriftMonitoringWindow,
 ) -> DriftCheckResult:
+    after_snapshot = snapshot_files(request.node_dir)
+    allowed_paths = request.allowed_paths
+    in_progress_runtime_roots: set[Path] = set()
+    if request.drift_session is not None:
+        published_paths, in_progress_runtime_roots = (
+            request.drift_session.generated_file_allowance.snapshot()
+        )
+        allowed_paths = {*allowed_paths, *published_paths}
     return detect_artifact_drift(
         before_snapshot=monitoring_window.node_snapshot,
-        after_snapshot=snapshot_files(request.node_dir),
-        allowed_paths=request.allowed_paths,
+        after_snapshot=after_snapshot,
+        allowed_paths=allowed_paths,
         output=request.output,
         node_dir=request.node_dir,
+        in_progress_runtime_roots=in_progress_runtime_roots,
     )
 
 

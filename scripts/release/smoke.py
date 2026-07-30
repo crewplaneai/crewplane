@@ -10,6 +10,7 @@ from pathlib import Path
 from . import build
 from .state import (
     COMMAND_TIMEOUT_SECONDS,
+    NPM_RETRY_INITIAL_DELAY_SECONDS,
     CommandRunner,
     ReleaseContext,
     ReleaseError,
@@ -329,6 +330,7 @@ def run_bounded_post_publish_check(
     attempts: int,
     label: str,
     check,
+    initial_delay_seconds: int = NPM_RETRY_INITIAL_DELAY_SECONDS,
 ) -> None:
     last_error = ""
     for attempt in range(1, attempts + 1):
@@ -342,7 +344,7 @@ def run_bounded_post_publish_check(
             print(
                 f"{label} post-publish check failed; retrying ({attempt}/{attempts})."
             )
-            time.sleep(2 ** (attempt - 1))
+            time.sleep(initial_delay_seconds * 2 ** (attempt - 1))
     raise ReleaseError(
         f"{label} post-publish install check did not pass after {attempts} attempts. "
         f"Manual recovery may be needed: {last_error}"

@@ -16,6 +16,7 @@ from ..common import (
     resolve_prompt_with_output_budget_details,
     should_print_console,
 )
+from ..errors import NodeExecutionError
 from ..fragment_assembler import (
     ResolvedPrompt,
     stream_has_runtime_dynamic_workspace_locator,
@@ -178,7 +179,7 @@ async def execute_review_loop_stage(
         progress.mark_consensus_exhausted(continued=False)
         _persist_review_loop_status(context, progress)
         _emit_no_canonical_candidate(context.telemetry, context.stage.id)
-        raise RuntimeError(
+        raise NodeExecutionError(
             f"Sequential node '{context.stage.id}' did not produce a valid canonical candidate."
         )
 
@@ -195,7 +196,7 @@ async def execute_review_loop_stage(
             executed_audit_rounds=progress.executed_audit_rounds,
             continuation_reason=None,
         )
-        raise RuntimeError(
+        raise NodeExecutionError(
             f"Sequential node '{context.stage.id}' failed to reach consensus after "
             f"{progress.executed_audit_rounds} audit rounds."
         )

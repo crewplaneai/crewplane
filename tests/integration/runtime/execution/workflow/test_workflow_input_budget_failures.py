@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,9 @@ from crewplane.adapters.invokers.cli_invoker import (
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
+    InvocationContext,
+    JsonObject,
+    LogPresentationDescriptor,
 )
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
@@ -23,6 +27,8 @@ from crewplane.core.workflow.models import (
 )
 from crewplane.observability.events import ExecutionEvent
 from crewplane.runtime.agent.invoker import PlannedAgentInvoker
+from crewplane.runtime.execution import WorkflowExecutionError
+from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
@@ -253,12 +259,130 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
             output = OutputManager(workflow.name, base_dir=tmp_path)
 
             with self.assertRaisesRegex(
-                RuntimeError,
+                WorkflowExecutionError,
                 "Resolved input content for node 'empty-input' is empty after preflight assembly.",
             ):
                 await execute_workflow(config, workflow, output, invoker=invoker)
 
             self.assertEqual(invoker.calls, [])
+
+    async def test_empty_resolved_executor_prompt_is_workflow_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
+                },
+            )
+            workflow = WorkflowPlan(
+                name="dag.empty.prompt",
+                nodes=[
+                    WorkflowNode(
+                        id="empty-prompt",
+                        mode="parallel",
+                        prompt_segments=[
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED,
+                                content="{{env:EMPTY_EXECUTOR_PROMPT}}",
+                            )
+                        ],
+                        providers=[ProviderSpec(provider="alpha")],
+                    ),
+                    WorkflowNode(
+                        id="blocked",
+                        mode="sequential",
+                        needs=["empty-prompt"],
+                        prompt_segments=[
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED,
+                                content="Use {{empty-prompt.output}}",
+                            )
+                        ],
+                        providers=[
+                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                        ],
+                    ),
+                ],
+            )
+            invoker = MockAgentInvoker(outputs=["unused"])
+            output = OutputManager(workflow.name, base_dir=tmp_path)
+
+            with (
+                patch.dict("os.environ", {"EMPTY_EXECUTOR_PROMPT": ""}, clear=False),
+                self.assertRaises(WorkflowExecutionError) as raised,
+            ):
+                await execute_workflow(config, workflow, output, invoker=invoker)
+
+            failure_message = str(raised.exception)
+            self.assertIn("Workflow 'dag.empty.prompt' failed:", failure_message)
+            self.assertIn("- failed: empty-prompt", failure_message)
+            self.assertIn(
+                "Resolved executor prompt for node 'empty-prompt' is empty",
+                failure_message,
+            )
+            self.assertIn(
+                "- blocked: blocked (unsatisfied dependencies: empty-prompt)",
+                failure_message,
+            )
+            self.assertEqual(invoker.calls, [])
+
+    async def test_invalid_findings_output_is_workflow_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
+                },
+            )
+            workflow = WorkflowPlan(
+                name="dag.invalid.findings",
+                nodes=[
+                    WorkflowNode(
+                        id="findings-node",
+                        mode="parallel",
+                        findings=True,
+                        prompt_segments=[
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED,
+                                content="produce findings",
+                            )
+                        ],
+                        providers=[ProviderSpec(provider="alpha")],
+                    ),
+                    WorkflowNode(
+                        id="blocked",
+                        mode="parallel",
+                        needs=["findings-node"],
+                        prompt_segments=[
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED,
+                                content="Use {{findings-node.output}}",
+                            )
+                        ],
+                        providers=[ProviderSpec(provider="alpha")],
+                    ),
+                ],
+            )
+            invoker = MockAgentInvoker(outputs=["missing findings block"])
+            output = OutputManager(workflow.name, base_dir=tmp_path)
+
+            with self.assertRaises(WorkflowExecutionError) as raised:
+                await execute_workflow(config, workflow, output, invoker=invoker)
+
+            failure_message = str(raised.exception)
+            self.assertIn("Workflow 'dag.invalid.findings' failed:", failure_message)
+            self.assertIn("- failed: findings-node", failure_message)
+            self.assertIn("Expected exactly one findings block", failure_message)
+            self.assertIn(
+                "- blocked: blocked (unsatisfied dependencies: findings-node)",
+                failure_message,
+            )
 
     async def test_failed_node_blocks_dependents_but_independent_nodes_continue(
         self,
@@ -277,13 +401,12 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 nodes=[
                     WorkflowNode(
                         id="node.root.fail",
-                        mode="sequential",
+                        mode="parallel",
                         prompt_segments=[
                             PromptSegment(role=PromptSegmentRole.SHARED, content="fail")
                         ],
-                        providers=[
-                            ProviderSpec(provider="fail", role=ProviderRole.EXECUTOR)
-                        ],
+                        providers=[ProviderSpec(provider="fail")],
+                        failure_threshold=0,
                     ),
                     WorkflowNode(
                         id="node.root.ok",
@@ -313,12 +436,302 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
             invoker = SelectiveFailInvoker(failing_models={"fail"})
             output = OutputManager(workflow.name, base_dir=tmp_path)
 
-            with self.assertRaisesRegex(RuntimeError, "blocked: node.dep"):
+            with self.assertRaises(WorkflowExecutionError) as raised:
                 await execute_workflow(config, workflow, output, invoker=invoker)
 
+            failure_message = str(raised.exception)
+            self.assertIn("Workflow 'dag.failure' failed:", failure_message)
+            self.assertIn("- failed: node.root.fail", failure_message)
+            self.assertIn("exceeded failure threshold", failure_message)
+            self.assertIn(
+                "- blocked: node.dep (unsatisfied dependencies: node.root.fail)",
+                failure_message,
+            )
             executed_models = sorted(call["model"] for call in invoker.calls)
             self.assertIn("ok", executed_models)
             self.assertIn("fail", executed_models)
+
+    async def test_unexpected_node_task_exception_propagates_without_aggregation(
+        self,
+    ) -> None:
+        class DefectiveOutputManager(OutputManager):
+            def finalize_stage(self, *args: object, **kwargs: object) -> object:
+                del args, kwargs
+                raise RuntimeError("simulated finalize defect")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            input_file = tmp_path / ".crewplane" / "inputs" / "source.md"
+            input_file.parent.mkdir(parents=True, exist_ok=True)
+            input_file.write_text("source", encoding="utf-8")
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
+                },
+            )
+            workflow = WorkflowPlan(
+                name="dag.unexpected.node.defect",
+                nodes=[
+                    WorkflowNode(
+                        id="input",
+                        mode="input",
+                        source="{{file:.crewplane/inputs/source.md}}",
+                    )
+                ],
+            )
+            invoker = MockAgentInvoker()
+            output = DefectiveOutputManager(workflow.name, base_dir=tmp_path)
+            events: list[ExecutionEvent] = []
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "simulated finalize defect",
+            ) as raised:
+                await execute_workflow(
+                    config,
+                    workflow,
+                    output,
+                    invoker=invoker,
+                    event_sink=events.append,
+                )
+
+            self.assertIs(type(raised.exception), RuntimeError)
+            node_failed_events = [
+                event
+                for event in events
+                if event.event_type == "node_failed"
+                and event.context.node_id == "input"
+            ]
+            self.assertEqual(len(node_failed_events), 1)
+
+    async def test_concurrent_unexpected_node_failures_are_drained(
+        self,
+    ) -> None:
+        class DefectiveOutputManager(OutputManager):
+            def finalize_stage(self, *args: object, **kwargs: object) -> object:
+                del args, kwargs
+                raise RuntimeError("simulated finalize defect")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            for file_name in ("first.md", "second.md"):
+                input_file = tmp_path / ".crewplane" / "inputs" / file_name
+                input_file.parent.mkdir(parents=True, exist_ok=True)
+                input_file.write_text("source", encoding="utf-8")
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="alpha"),
+                },
+            )
+            workflow = WorkflowPlan(
+                name="dag.concurrent.unexpected.node.defects",
+                nodes=[
+                    WorkflowNode(
+                        id="first",
+                        mode="input",
+                        source="{{file:.crewplane/inputs/first.md}}",
+                    ),
+                    WorkflowNode(
+                        id="second",
+                        mode="input",
+                        source="{{file:.crewplane/inputs/second.md}}",
+                    ),
+                ],
+            )
+            invoker = MockAgentInvoker()
+            output = DefectiveOutputManager(workflow.name, base_dir=tmp_path)
+            events: list[ExecutionEvent] = []
+            loop = asyncio.get_running_loop()
+            original_handler = loop.get_exception_handler()
+            loop_exception_contexts: list[dict[str, object]] = []
+
+            def capture_loop_exception(
+                loop: asyncio.AbstractEventLoop,
+                context: dict[str, object],
+            ) -> None:
+                del loop
+                loop_exception_contexts.append(context)
+
+            loop.set_exception_handler(capture_loop_exception)
+            try:
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "simulated finalize defect",
+                ):
+                    await execute_workflow(
+                        config,
+                        workflow,
+                        output,
+                        invoker=invoker,
+                        event_sink=events.append,
+                    )
+                await asyncio.sleep(0)
+            finally:
+                loop.set_exception_handler(original_handler)
+
+            failed_node_ids = [
+                event.context.node_id
+                for event in events
+                if event.event_type == "node_failed"
+            ]
+            self.assertEqual(failed_node_ids, ["first", "second"])
+            never_retrieved_contexts = [
+                context
+                for context in loop_exception_contexts
+                if "exception was never retrieved" in str(context.get("message", ""))
+            ]
+            self.assertEqual(never_retrieved_contexts, [])
+
+    async def test_unexpected_parallel_invoker_exception_propagates_without_aggregation(
+        self,
+    ) -> None:
+        class DefectiveInvoker:
+            def log_presentation_for(
+                self,
+                config: AgentConfig,  # noqa: ARG002 - Required by invoker protocol.
+            ) -> LogPresentationDescriptor | None:
+                return None
+
+            async def invoke(
+                self,
+                config: AgentConfig,  # noqa: ARG002 - Required by invoker protocol.
+                model: str | None,
+                prompt: str,  # noqa: ARG002 - Required by invoker protocol.
+                output_file: Path,
+                cwd: Path,  # noqa: ARG002 - Required by invoker protocol.
+                log_file: Path | None = None,  # noqa: ARG002 - Required by invoker protocol.
+                invocation_context: InvocationContext | None = None,  # noqa: ARG002 - Required by invoker protocol.
+            ) -> None:
+                if model == "defective":
+                    raise TypeError("simulated invoker defect")
+                output_file.write_text("success", encoding="utf-8")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "ok": AgentConfig(cli_cmd=["mock"], default_model="ok"),
+                    "defective": AgentConfig(
+                        cli_cmd=["mock"], default_model="defective"
+                    ),
+                },
+            )
+            workflow = WorkflowPlan(
+                name="dag.unexpected.invoker.defect",
+                nodes=[
+                    WorkflowNode(
+                        id="parallel",
+                        mode="parallel",
+                        prompt_segments=[
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED,
+                                content="run defective provider",
+                            )
+                        ],
+                        providers=[
+                            ProviderSpec(provider="ok"),
+                            ProviderSpec(provider="defective"),
+                        ],
+                        failure_threshold=1,
+                    )
+                ],
+            )
+            output = OutputManager(workflow.name, base_dir=tmp_path)
+
+            with self.assertRaisesRegex(
+                TypeError, "simulated invoker defect"
+            ) as raised:
+                await execute_workflow(
+                    config,
+                    workflow,
+                    output,
+                    invoker=DefectiveInvoker(),
+                )
+
+            self.assertIs(type(raised.exception), TypeError)
+
+    async def test_workspace_setup_failure_is_aggregated_as_workflow_failure(
+        self,
+    ) -> None:
+        class SetupFailureInvoker:
+            def log_presentation_for(
+                self,
+                config: AgentConfig,  # noqa: ARG002 - Required by invoker protocol.
+            ) -> LogPresentationDescriptor | None:
+                return None
+
+            async def invoke(
+                self,
+                config: AgentConfig,  # noqa: ARG002 - Required by invoker protocol.
+                model: str | None,  # noqa: ARG002 - Required by invoker protocol.
+                prompt: str,  # noqa: ARG002 - Required by invoker protocol.
+                output_file: Path,  # noqa: ARG002 - Required by invoker protocol.
+                cwd: Path,  # noqa: ARG002 - Required by invoker protocol.
+                log_file: Path | None = None,  # noqa: ARG002 - Required by invoker protocol.
+                invocation_context: InvocationContext | None = None,  # noqa: ARG002 - Required by invoker protocol.
+            ) -> None:
+                summary: JsonObject = {"status": "failed"}
+                raise WorkspaceSetupError("workspace setup command failed", summary)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "setup": AgentConfig(cli_cmd=["mock"], default_model="setup"),
+                    "dependent": AgentConfig(
+                        cli_cmd=["mock"], default_model="dependent"
+                    ),
+                },
+            )
+            workflow = WorkflowPlan(
+                name="dag.workspace.setup.failure",
+                nodes=[
+                    WorkflowNode(
+                        id="node.setup",
+                        mode="sequential",
+                        prompt_segments=[
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED,
+                                content="run setup",
+                            )
+                        ],
+                        providers=[ProviderSpec(provider="setup")],
+                    ),
+                    WorkflowNode(
+                        id="node.dep",
+                        mode="parallel",
+                        needs=["node.setup"],
+                        prompt_segments=[
+                            PromptSegment(
+                                role=PromptSegmentRole.SHARED,
+                                content="blocked by setup",
+                            )
+                        ],
+                        providers=[ProviderSpec(provider="dependent")],
+                    ),
+                ],
+            )
+            output = OutputManager(workflow.name, base_dir=tmp_path)
+
+            with self.assertRaises(WorkflowExecutionError) as raised:
+                await execute_workflow(
+                    config,
+                    workflow,
+                    output,
+                    invoker=SetupFailureInvoker(),
+                )
+
+            failure_message = str(raised.exception)
+            self.assertIn("- failed: node.setup", failure_message)
+            self.assertIn("workspace setup command failed", failure_message)
+            self.assertIn(
+                "- blocked: node.dep (unsatisfied dependencies: node.setup)",
+                failure_message,
+            )
 
     async def test_blocked_nodes_emit_node_blocked_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -362,7 +775,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
             output = OutputManager(workflow.name, base_dir=tmp_path)
             events = []
 
-            with self.assertRaisesRegex(RuntimeError, "blocked: node.dep"):
+            with self.assertRaisesRegex(WorkflowExecutionError, "blocked: node.dep"):
                 await execute_workflow(
                     config,
                     workflow,

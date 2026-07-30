@@ -1,11 +1,9 @@
 import io
-import os
 import re
-import tempfile
 import unittest
-from pathlib import Path
 
 import crewplane.cli.app as cli
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
@@ -16,8 +14,7 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 class CliRunManifestDedupeTests(unittest.TestCase):
     def test_run_skips_duplicate_context_without_force(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -26,7 +23,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             calls = {"count": 0}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
@@ -39,7 +35,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -54,7 +49,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 
@@ -70,22 +64,19 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             self.assertEqual(result_runs, [])
 
     def test_run_force_executes_duplicate_context(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
             write_basic_workflow(workflow_path)
 
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
             calls = {"count": 0}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 calls["count"] += 1
 
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -100,14 +91,12 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                     force=True,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
 
             self.assertEqual(calls["count"], 2)
 
     def test_run_prints_artifact_paths_with_sanitized_workflow_key(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
+        with temporary_project_cwd() as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -116,7 +105,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             stream = io.StringIO()
             original_console_cls = cli.Console
             original_execute_workflow = cli.execute_workflow
-            original_cwd = Path.cwd()
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 return None
@@ -128,7 +116,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                 width=120,
             )
             cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            os.chdir(tmp_path)
             try:
                 cli.run(
                     tasks_file=workflow_path,
@@ -137,7 +124,6 @@ class CliRunManifestDedupeTests(unittest.TestCase):
                     force=False,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
                 cli.Console = original_console_cls
 

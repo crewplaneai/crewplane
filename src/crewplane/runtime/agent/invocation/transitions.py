@@ -132,20 +132,27 @@ def transition_from_retryable_failure(
 def transition_from_terminal_failure(
     attempt_result: InvocationAttemptResult,
     cursor: InvocationRetryCursor,
-    retry_matched: bool,
+    failure_retry_decision: FailureRetryDecision,
 ) -> (
     ContinueAttemptTransition
     | RaiseFailedExitAttemptTransition
     | RaiseRetryExhaustedAttemptTransition
 ):
     if attempt_result.result.returncode != 0:
+        if _reports_retry_exhaustion_for_failed_exit(failure_retry_decision):
+            return RaiseRetryExhaustedAttemptTransition(
+                retry_count=cursor.retry_count,
+                quota_retry_count=cursor.quota_retry_count,
+                quota_retry_started_at=cursor.quota_retry_started_at,
+                attempt_output_for_usage=attempt_result.usage_output,
+            )
         return RaiseFailedExitAttemptTransition(
             retry_count=cursor.retry_count,
             quota_retry_count=cursor.quota_retry_count,
             quota_retry_started_at=cursor.quota_retry_started_at,
             attempt_output_for_usage=attempt_result.usage_output,
         )
-    if retry_matched:
+    if _retry_decision_matched(failure_retry_decision):
         return RaiseRetryExhaustedAttemptTransition(
             retry_count=cursor.retry_count,
             quota_retry_count=cursor.quota_retry_count,
@@ -158,6 +165,26 @@ def transition_from_terminal_failure(
         quota_retry_started_at=cursor.quota_retry_started_at,
         attempt_output_for_usage=attempt_result.usage_output,
     )
+
+
+def _reports_retry_exhaustion_for_failed_exit(
+    failure_retry_decision: FailureRetryDecision,
+) -> bool:
+    if isinstance(failure_retry_decision, ScheduleFailureRetry):
+        return False
+    if isinstance(failure_retry_decision, NoFailureRetry):
+        return failure_retry_decision.reports_retry_exhaustion_for_failed_exit
+    assert_never(failure_retry_decision)
+
+
+def _retry_decision_matched(
+    failure_retry_decision: FailureRetryDecision,
+) -> bool:
+    if isinstance(failure_retry_decision, ScheduleFailureRetry):
+        return True
+    if isinstance(failure_retry_decision, NoFailureRetry):
+        return failure_retry_decision.retry_matched
+    assert_never(failure_retry_decision)
 
 
 def transition_from_final_extraction(

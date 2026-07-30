@@ -8,6 +8,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from .activity.events import RuntimeEventContext, emit_runtime_log
 from .activity.telemetry import ExecutionTelemetry
+from .errors import NodeExecutionError
 from .fragment_assembler import (
     ResolvedPrompt,
     assemble_prompt_details,
@@ -17,7 +18,7 @@ from .runtime_context import CompiledRuntimeContext
 from .workspace_files import ResolvedWorkspaceFile, WorkspaceCandidateSourceContext
 
 
-class PromptBudgetExceededError(RuntimeError):
+class PromptBudgetExceededError(NodeExecutionError):
     """Raised when a prompt exceeds the configured node artifact budget."""
 
 
@@ -120,7 +121,7 @@ def resolve_prompt_with_output_budget_details(
     ):
         _enforce_prompt_budget(node, inspection, thresholds, telemetry)
     if not resolved_prompt.text.strip():
-        raise RuntimeError(
+        raise NodeExecutionError(
             f"Resolved {role} prompt for node '{node.id}' is empty after fragment assembly."
         )
     return resolved_prompt

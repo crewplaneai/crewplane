@@ -17,6 +17,7 @@ from crewplane.observability.events import ExecutionEvent
 from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     DelayByModelInvoker,
@@ -55,7 +56,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.dict("os.environ", {"EMPTY_PARALLEL_PROMPT": ""}, clear=False),
                 self.assertRaisesRegex(
-                    RuntimeError,
+                    NodeExecutionError,
                     "Resolved executor prompt for node 'parallel.empty.prompt' is empty after fragment assembly.",
                 ),
             ):
@@ -126,7 +127,12 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             invoker = SelectiveFailInvoker(failing_models={"fail"})
             output = OutputManager("workflow", base_dir=tmp_path)
 
-            await execute_parallel_stage(config, node, output, invoker=invoker)
+            with patch(
+                "tests.integration.runtime.execution.workflow."
+                "workflow_execution_helpers.provider_failure",
+                new=RuntimeError,
+            ):
+                await execute_parallel_stage(config, node, output, invoker=invoker)
 
             node_dir = output.get_stage_dir(node.id)
             if node_dir is None:
@@ -367,7 +373,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("simulated failure for fail", failed_text)
             self.assertNotIn("failed-event sink boom", failed_text)
 
-    async def test_parallel_log_setup_failure_is_captured_by_failure_policy(
+    async def test_parallel_log_setup_failure_propagates_as_unexpected_error(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -398,24 +404,10 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                 failing_provider="beta",
             )
 
-            await execute_parallel_stage(config, node, output, invoker=invoker)
+            with self.assertRaisesRegex(RuntimeError, "log setup failed"):
+                await execute_parallel_stage(config, node, output, invoker=invoker)
 
-            node_dir = output.get_stage_dir(node.id)
-            if node_dir is None:
-                self.fail("Expected node directory to be created")
-            failed_file = (
-                node_dir / f"{safe_artifact_name('beta')}_executor_1_round1.md"
-            )
-            success_file = (
-                node_dir / f"{safe_artifact_name('alpha')}_executor_0_round1.md"
-            )
-            self.assertTrue(failed_file.exists())
-            self.assertTrue(success_file.exists())
-            failed_text = failed_file.read_text(encoding="utf-8")
-            self.assertIn("Invocation Failed", failed_text)
-            self.assertIn("log setup failed", failed_text)
-
-    async def test_parallel_started_event_failure_is_captured_by_failure_policy(
+    async def test_parallel_started_event_failure_propagates_as_unexpected_error(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -458,31 +450,14 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                 suppress_console_output=True,
             )
 
-            await execute_parallel_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=telemetry,
-            )
-
-            node_dir = output.get_stage_dir(node.id)
-            if node_dir is None:
-                self.fail("Expected node directory to be created")
-            failed_file = (
-                node_dir / f"{safe_artifact_name('beta')}_executor_1_round1.md"
-            )
-            failed_text = failed_file.read_text(encoding="utf-8")
-            self.assertIn("Invocation Failed", failed_text)
-            self.assertIn("event sink boom", failed_text)
-            failed_events = [
-                event
-                for event in events
-                if event.event_type == "invocation_failed"
-                and event.context.provider == "beta"
-            ]
-            self.assertEqual(len(failed_events), 1)
-            self.assertIn("event sink boom", failed_events[0].payload.error or "")
+            with self.assertRaisesRegex(RuntimeError, "event sink boom"):
+                await execute_parallel_stage(
+                    config,
+                    node,
+                    output,
+                    invoker=invoker,
+                    telemetry=telemetry,
+                )
 
     async def test_parallel_max_invocations_queues_before_started_event(
         self,

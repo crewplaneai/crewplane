@@ -1,20 +1,16 @@
 import io
-import os
-import tempfile
 import unittest
-from pathlib import Path
 
 import crewplane.cli.app as cli
 from crewplane.core.config import load_config
+from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import ConsoleFactory
 
 
 class FreshInitMockFirstRunTests(unittest.TestCase):
     def test_fresh_init_validate_and_run_no_live_succeeds_with_mock(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             stream = io.StringIO()
-            original_cwd = Path.cwd()
             original_console_cls = cli.Console
             cli.Console = ConsoleFactory(
                 file=stream,
@@ -23,7 +19,6 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                 width=120,
             )
             try:
-                os.chdir(root)
                 cli.init()
                 cli.validate(tasks_file=None, config_file=None)
                 cli.run(
@@ -34,7 +29,6 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                     no_live=True,
                 )
             finally:
-                os.chdir(original_cwd)
                 cli.Console = original_console_cls
 
             config = load_config(root / ".crewplane" / "config.yml")

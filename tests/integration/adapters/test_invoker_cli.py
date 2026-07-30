@@ -10,8 +10,15 @@ from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from crewplane.adapters.invokers.cli_invoker.capabilities import CAPABILITIES
-from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KINDS, InvocationContext
+from crewplane.adapters.invokers.cli_invoker.capabilities import (
+    CAPABILITIES,
+    CODEX_MODEL_CAPACITY_MESSAGE,
+)
+from crewplane.architecture.contracts import (
+    SUPPORTED_PROVIDER_KINDS,
+    InvocationContext,
+    ProviderKind,
+)
 from crewplane.core.config import AgentConfig, Config
 from crewplane.version import SCHEMA_VERSION
 
@@ -59,6 +66,15 @@ class CliInvokerAdapterTests(unittest.TestCase):
 
     def test_builtin_provider_capabilities_cover_supported_provider_kinds(self) -> None:
         self.assertEqual(set(CAPABILITIES), set(SUPPORTED_PROVIDER_KINDS))
+
+    def test_codex_capability_owns_one_shot_capacity_retry(self) -> None:
+        policy = CAPABILITIES[ProviderKind.CODEX].one_shot_failure_retry
+
+        self.assertIsNotNone(policy)
+        assert policy is not None
+        self.assertEqual(policy.output_contains, (CODEX_MODEL_CAPACITY_MESSAGE,))
+        self.assertEqual(policy.wait_seconds, 5.0)
+        self.assertIsNone(CAPABILITIES[ProviderKind.GENERIC].one_shot_failure_retry)
 
     def test_invocation_plan_resolves_cli_executable_before_workspace_cwd(
         self,

@@ -135,6 +135,7 @@ def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:
         cmd=plan.cmd,
         stdin_data=plan.stdin_data,
         log_header=plan.log_header,
+        one_shot_failure_retry=plan.one_shot_failure_retry,
     )
 
 

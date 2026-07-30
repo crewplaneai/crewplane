@@ -7,8 +7,8 @@ NPM_DIST_TAG_OTP ?=
 NPM_PUBLISH_ARGS ?=
 HAVE_UV := $(shell if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2>&1; then echo 1; else echo 0; fi)
 PROJECT_NAME_CMD = $(PYTHON) -c 'import sys, tomllib; project = tomllib.load(open("pyproject.toml", "rb"))["project"]; name = project["name"]; scripts = list(project.get("scripts", {})); sys.exit(f"expected one [project.scripts] key matching project.name {name!r}, got {scripts!r}") if scripts != [name] else print(name)'
-PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD))
-ifneq ($(.SHELLSTATUS),0)
+PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD) || printf '%s\n' __PACKAGE_NAME_LOOKUP_FAILED__)
+ifeq ($(PACKAGE_NAME),__PACKAGE_NAME_LOOKUP_FAILED__)
 $(error failed to derive package name from pyproject.toml)
 endif
 

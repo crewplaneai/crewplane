@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from crewplane.artifacts.generated_files.catalog import (
+    generated_file_source_root,
     snapshot_generated_file_workspace,
 )
 from crewplane.runtime.workspace import PreparedWorkspace
@@ -312,12 +313,27 @@ def snapshot_invocation_generated_files(
             )
         except RuntimeError:
             return None
-    return snapshot_generated_file_workspace(
-        request.output_file,
-        workspace_root,
-        candidate_files=candidate_files,
-        explicit_claims_only=prepared_workspace.workspace_kind == "project_root",
-    )
+    snapshot_root = generated_file_source_root(request.output_file)
+    if request.on_generated_file_snapshot_started is not None:
+        request.on_generated_file_snapshot_started(snapshot_root)
+    succeeded = False
+    published_paths: set[Path] = set()
+    try:
+        result = snapshot_generated_file_workspace(
+            request.output_file,
+            workspace_root,
+            candidate_files=candidate_files,
+            explicit_claims_only=prepared_workspace.workspace_kind == "project_root",
+            on_file_published=published_paths.add,
+        )
+        succeeded = True
+        return result
+    finally:
+        if request.on_generated_file_snapshot_finished is not None:
+            request.on_generated_file_snapshot_finished(
+                snapshot_root,
+                frozenset(published_paths) if succeeded else None,
+            )
 
 
 def validated_generated_file_workspace_root(

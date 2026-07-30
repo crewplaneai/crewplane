@@ -1,4 +1,5 @@
 from .consensus import check_consensus
+from .errors import NodeExecutionError, WorkflowExecutionError
 from .input import execute_input_stage
 from .parallel import execute_parallel_stage
 from .sequential import execute_sequential_stage
@@ -10,4 +11,6 @@ __all__ = [
     "execute_parallel_stage",
     "execute_sequential_stage",
     "execute_workflow",
+    "NodeExecutionError",
+    "WorkflowExecutionError",
 ]

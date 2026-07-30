@@ -37,6 +37,10 @@ class ProviderCallRequest:
     findings_enabled: bool = False
     provider_output_policy: ProviderOutputPolicy = ProviderOutputPolicy.REQUIRE_OUTPUT
     on_log_file_resolved: Callable[[Path], None] | None = None
+    on_generated_file_snapshot_started: Callable[[Path], None] | None = None
+    on_generated_file_snapshot_finished: (
+        Callable[[Path, frozenset[Path] | None], None] | None
+    ) = None
     rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 

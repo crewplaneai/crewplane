@@ -5,7 +5,6 @@ import io
 import json
 import os
 import subprocess
-import tempfile
 import unittest
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -40,6 +39,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 
 DESCRIPTOR_LEAK_TOKENS = (
     "log_presentation_format",
@@ -331,20 +331,14 @@ async def _run_workflow(
 
 class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_duplicate_signature_skips_without_run_allocation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
             workflow = _workflow()
             config = _mock_config()
-            original_cwd = Path.cwd()
-            os.chdir(root)
-            try:
-                await _run_workflow(workflow, config, console)
-                run_count = len(_run_dirs(root))
-                await _run_workflow(workflow, config, console)
-            finally:
-                os.chdir(original_cwd)
+            await _run_workflow(workflow, config, console)
+            run_count = len(_run_dirs(root))
+            await _run_workflow(workflow, config, console)
 
             self.assertEqual(len(_run_dirs(root)), run_count)
             self.assertIn("Identical context detected", stream.getvalue())
@@ -352,8 +346,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_filesystem_artifact_real_run_fails_before_run_allocation(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
             workflow = _workflow()
@@ -363,17 +356,12 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 artifact_options={"marker": "duplicate"},
             )
-            original_cwd = Path.cwd()
             DuplicateReportingArtifactsAdapter.reset()
-            os.chdir(root)
-            try:
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    "Real execution requires the built-in filesystem artifacts backend",
-                ):
-                    await _run_workflow(workflow, config, console)
-            finally:
-                os.chdir(original_cwd)
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Real execution requires the built-in filesystem artifacts backend",
+            ):
+                await _run_workflow(workflow, config, console)
 
             self.assertEqual(DuplicateReportingArtifactsAdapter.create_store_calls, 0)
             self.assertEqual(_run_dirs(root), [])
@@ -383,8 +371,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_reasoning_validation_stops_real_run_before_execution_setup(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd():
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
             workflow = _workflow()
@@ -392,32 +379,25 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 update={"providers": [ProviderSpec(provider="alpha", reasoning="high")]}
             )
             execute_workflow_mock = AsyncMock()
-            original_cwd = Path.cwd()
-            os.chdir(root)
-            try:
-                with (
-                    patch(
-                        "crewplane.cli.run.execution.acquire_same_context_lock",
-                        side_effect=AssertionError(
-                            "reasoning validation reached locking"
-                        ),
-                    ) as acquire_lock,
-                    patch(
-                        "crewplane.cli.run.execution.allocate_run_output",
-                        side_effect=AssertionError(
-                            "reasoning validation reached allocation"
-                        ),
-                    ) as allocate_output,
-                    self.assertRaises(typer.Exit) as raised,
-                ):
-                    await _run_workflow(
-                        workflow,
-                        _mock_config(),
-                        console,
-                        execute_workflow_impl=execute_workflow_mock,
-                    )
-            finally:
-                os.chdir(original_cwd)
+            with (
+                patch(
+                    "crewplane.cli.run.execution.acquire_same_context_lock",
+                    side_effect=AssertionError("reasoning validation reached locking"),
+                ) as acquire_lock,
+                patch(
+                    "crewplane.cli.run.execution.allocate_run_output",
+                    side_effect=AssertionError(
+                        "reasoning validation reached allocation"
+                    ),
+                ) as allocate_output,
+                self.assertRaises(typer.Exit) as raised,
+            ):
+                await _run_workflow(
+                    workflow,
+                    _mock_config(),
+                    console,
+                    execute_workflow_impl=execute_workflow_mock,
+                )
 
             self.assertEqual(raised.exception.exit_code, 1)
             self.assertIn(
@@ -429,26 +409,19 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             execute_workflow_mock.assert_not_called()
 
     async def test_force_ignores_duplicate_signature(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = _workflow()
             config = _mock_config()
-            original_cwd = Path.cwd()
-            os.chdir(root)
-            try:
-                await _run_workflow(workflow, config, console)
-                await _run_workflow(workflow, config, console, force=True)
-            finally:
-                os.chdir(original_cwd)
+            await _run_workflow(workflow, config, console)
+            await _run_workflow(workflow, config, console, force=True)
 
             self.assertEqual(len(_run_dirs(root)), 2)
 
     async def test_successful_run_writes_preflight_bundle_and_redacted_manifest(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = _workflow("{{env:API_TOKEN}}")
             config = _mock_config()
@@ -460,9 +433,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             raw_config_yaml_signature = hashlib.sha256(
                 config_yaml_content.encode("utf-8")
             ).hexdigest()
-            original_cwd = Path.cwd()
             original_api_token = os.environ.get("API_TOKEN")
-            os.chdir(root)
             os.environ["API_TOKEN"] = "env-secret"
             try:
                 await _run_workflow(workflow, config, console)
@@ -471,7 +442,6 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                     os.environ.pop("API_TOKEN", None)
                 else:
                     os.environ["API_TOKEN"] = original_api_token
-                os.chdir(original_cwd)
 
             run_dirs = _run_dirs(root)
             result_dirs = _result_dirs(root)
@@ -551,8 +521,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         if not _local_git_supports_workspace_policy():
             self.skipTest("Git 2.34.1+ is required for workspace source policy")
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             cache_root = root.parent / f"{root.name}-workspace-cache"
             (root / "docs").mkdir()
             (root / "docs" / "input.md").write_text(
@@ -569,12 +538,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             config = _mock_config()
             config.settings.workspace.enabled = True
             config.settings.workspace.cache_root = cache_root.as_posix()
-            original_cwd = Path.cwd()
-            os.chdir(root)
-            try:
-                await _run_workflow(workflow, config, console)
-            finally:
-                os.chdir(original_cwd)
+            await _run_workflow(workflow, config, console)
 
             run_dirs = _run_dirs(root)
             result_dirs = _result_dirs(root)
@@ -585,8 +549,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(cache_root.exists())
 
     async def test_runtime_receives_preflight_plan_agent_configs_only(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd():
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = _workflow()
             config = _mock_config()
@@ -611,36 +574,27 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                     plan.runtime_config_snapshot["agents"]["alpha"]["cli_cmd"]
                 )
 
-            original_cwd = Path.cwd()
-            os.chdir(root)
-            try:
-                await _run_workflow(
-                    workflow,
-                    config,
-                    console,
-                    execute_workflow_impl=fake_execute_workflow,
-                )
-            finally:
-                os.chdir(original_cwd)
+            await _run_workflow(
+                workflow,
+                config,
+                console,
+                execute_workflow_impl=fake_execute_workflow,
+            )
 
             self.assertEqual(captured_command, ["preflight-command"])
 
     async def test_preflight_failure_writes_failure_bundle(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = _workflow("{{env:MISSING_REQUIRED_ENV}}")
             config = _mock_config()
             original_env = os.environ.pop("MISSING_REQUIRED_ENV", None)
-            original_cwd = Path.cwd()
-            os.chdir(root)
             try:
                 with self.assertRaises(typer.Exit):
                     await _run_workflow(workflow, config, console)
             finally:
                 if original_env is not None:
                     os.environ["MISSING_REQUIRED_ENV"] = original_env
-                os.chdir(original_cwd)
 
             run_dirs = _run_dirs(root)
             self.assertEqual(len(run_dirs), 1)
@@ -656,29 +610,23 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(_result_dirs(root), [])
 
     async def test_cli_availability_failure_writes_preflight_bundle(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False)
             workflow = _workflow()
             config = _mock_config(invoker_implementation="cli")
-            original_cwd = Path.cwd()
 
             def missing_cli(command: str) -> str | None:
                 self.assertTrue(command)
                 return None
 
-            os.chdir(root)
-            try:
-                with self.assertRaises(typer.Exit):
-                    await _run_workflow(
-                        workflow,
-                        config,
-                        console,
-                        which_fn=missing_cli,
-                    )
-            finally:
-                os.chdir(original_cwd)
+            with self.assertRaises(typer.Exit):
+                await _run_workflow(
+                    workflow,
+                    config,
+                    console,
+                    which_fn=missing_cli,
+                )
 
             run_dirs = _run_dirs(root)
             self.assertEqual(len(run_dirs), 1)
@@ -702,18 +650,12 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(failure_manifest["status"], "preflight_failed")
 
     async def test_runtime_config_snapshot_failure_writes_failure_bundle(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = _workflow()
             config = _mock_config({"unknown_option": True})
-            original_cwd = Path.cwd()
-            os.chdir(root)
-            try:
-                with self.assertRaises(typer.Exit):
-                    await _run_workflow(workflow, config, console)
-            finally:
-                os.chdir(original_cwd)
+            with self.assertRaises(typer.Exit):
+                await _run_workflow(workflow, config, console)
 
             run_dirs = _run_dirs(root)
             self.assertEqual(len(run_dirs), 1)
@@ -734,38 +676,26 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_preflight_plan_is_materialized_before_invoker_construction(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
+        with temporary_project_cwd():
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = _workflow()
             config = _mock_config(
                 invoker_implementation=(f"{__name__}:PreflightOrderingInvokerAdapter"),
                 options={},
             )
-            original_cwd = Path.cwd()
             PreflightOrderingInvokerAdapter.reset()
-            os.chdir(root)
-            try:
-                await _run_workflow(workflow, config, console)
-            finally:
-                os.chdir(original_cwd)
+            await _run_workflow(workflow, config, console)
 
             self.assertTrue(
                 PreflightOrderingInvokerAdapter.preflight_plan_exists_at_create
             )
 
     def test_early_preflight_failure_uses_fallback_run_key(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            original_cwd = Path.cwd()
-            os.chdir(root)
-            try:
-                write_early_preflight_failure_run(
-                    root / "bad workflow.task.md",
-                    "frontmatter failed",
-                )
-            finally:
-                os.chdir(original_cwd)
+        with temporary_project_cwd() as root:
+            write_early_preflight_failure_run(
+                root / "bad workflow.task.md",
+                "frontmatter failed",
+            )
 
             run_dirs = _run_dirs(root)
             self.assertEqual(len(run_dirs), 1)

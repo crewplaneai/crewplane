@@ -7,6 +7,7 @@ from crewplane.architecture.contracts import (
     CommandResult,
     FailureClassificationProfile,
     InvocationLogLevel,
+    OneShotFailureRetryPolicy,
     OutputExtractionMode,
     QuotaParserProfile,
     RuntimeLogValue,
@@ -52,6 +53,7 @@ class InvocationCommandRuntime:
     cmd: list[str]
     stdin_data: bytes | None
     log_header: bytes
+    one_shot_failure_retry: OneShotFailureRetryPolicy | None
 
 
 @dataclass

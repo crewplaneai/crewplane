@@ -22,11 +22,27 @@ __all__ = [
     "FailureSource",
     "InvocationFailureError",
     "InvocationFailureSummary",
+    "build_adapter_invocation_failure_error",
     "build_invocation_failure_error",
     "build_output_extraction_failure_error",
     "build_quota_failure_error",
     "classify_invocation_failure",
 ]
+
+
+def build_adapter_invocation_failure_error(
+    error: RuntimeError,
+    log_file: Path | None,
+) -> InvocationFailureError:
+    summary = InvocationFailureSummary(
+        kind="provider_error",
+        phase="provider_transport",
+        source="none",
+        message=str(error),
+        advice="The configured invoker reported a provider failure.",
+        condensed=False,
+    )
+    return InvocationFailureError("provider invocation failed", summary, log_file)
 
 
 def build_invocation_failure_error(

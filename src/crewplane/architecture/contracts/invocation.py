@@ -196,7 +196,11 @@ class AgentInvoker(Protocol):
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
-        """Invoke an agent and write the output to a file."""
+        """Invoke an agent and write the output to a file.
+
+        Raise ``RuntimeError`` for an expected invocation failure. Other
+        exception types are treated as implementation defects.
+        """
 
     def log_presentation_for(
         self,
@@ -344,6 +348,14 @@ class QuotaClassification:
 
 
 @dataclass(frozen=True)
+class OneShotFailureRetryPolicy:
+    output_contains: tuple[str, ...]
+    wait_seconds: float
+    reason: str
+    notice_message: str
+
+
+@dataclass(frozen=True)
 class InvocationPlan:
     cmd: list[str]
     stdin_data: bytes | None
@@ -355,6 +367,7 @@ class InvocationPlan:
     failure_profile: FailureClassificationProfile
     log_header: bytes
     log_provider_kind: ProviderKind
+    one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
 
 
 @dataclass(frozen=True)

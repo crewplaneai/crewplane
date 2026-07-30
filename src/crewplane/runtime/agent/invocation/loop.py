@@ -35,8 +35,6 @@ from .output import (
 )
 from .retry import (
     FailureRetryDecision,
-    NoFailureRetry,
-    ScheduleFailureRetry,
     evaluate_failure_retry,
     evaluate_quota_retry,
 )
@@ -120,6 +118,9 @@ async def run_invocation_loop(
                     attempt_result=attempt_result,
                     cursor=cursor,
                     quota_retry_wait_seconds=quota_retry_wait_seconds,
+                    built_in_retry_used=(
+                        attempt > cursor.retry_count + cursor.quota_retry_count
+                    ),
                 )
                 if _is_non_quota_retry(transition):
                     failure_summary = classify_invocation_failure(
@@ -174,12 +175,14 @@ def _select_attempt_transition(
     attempt_result: InvocationAttemptResult,
     cursor: InvocationRetryCursor,
     quota_retry_wait_seconds: float,
+    built_in_retry_used: bool,
 ) -> InvocationAttemptTransition:
     structured_retry_decision = _evaluate_structured_retry(
         config,
         runtime,
         attempt_result,
         cursor,
+        built_in_retry_used,
     )
     transition = transition_from_structured_output(
         attempt_result=attempt_result,
@@ -198,6 +201,7 @@ def _select_attempt_transition(
         quota_retry_started_at=cursor.quota_retry_started_at,
         quota_retry_count=cursor.quota_retry_count,
         quota_retry_wait_seconds=quota_retry_wait_seconds,
+        one_shot_failure_retry=runtime.one_shot_failure_retry,
     )
     transition = transition_from_quota_retry(
         attempt_result=attempt_result,
@@ -213,6 +217,8 @@ def _select_attempt_transition(
         cmd=runtime.cmd,
         result=attempt_result.result,
         retry_count=cursor.retry_count,
+        built_in_retry_used=built_in_retry_used,
+        one_shot_failure_retry=runtime.one_shot_failure_retry,
     )
     transition = transition_from_retryable_failure(
         attempt_result=attempt_result,
@@ -226,7 +232,7 @@ def _select_attempt_transition(
     transition = transition_from_terminal_failure(
         attempt_result=attempt_result,
         cursor=cursor,
-        retry_matched=_retry_decision_matched(retry_decision),
+        failure_retry_decision=retry_decision,
     )
     if not isinstance(transition, ContinueAttemptTransition):
         return transition
@@ -251,6 +257,7 @@ def _evaluate_structured_retry(
     runtime: InvocationCommandRuntime,
     attempt_result: InvocationAttemptResult,
     cursor: InvocationRetryCursor,
+    built_in_retry_used: bool,
 ) -> FailureRetryDecision | None:
     if attempt_result.extracted_output is None:
         return None
@@ -259,6 +266,8 @@ def _evaluate_structured_retry(
         cmd=runtime.cmd,
         result=attempt_result.result,
         retry_count=cursor.retry_count,
+        built_in_retry_used=built_in_retry_used,
+        one_shot_failure_retry=runtime.one_shot_failure_retry,
     )
 
 
@@ -343,14 +352,6 @@ async def _sleep_before_next_attempt(wait_seconds: float, attempt: int) -> int:
     return attempt + 1
 
 
-def _retry_decision_matched(retry_decision: FailureRetryDecision) -> bool:
-    if isinstance(retry_decision, ScheduleFailureRetry):
-        return True
-    if isinstance(retry_decision, NoFailureRetry):
-        return retry_decision.retry_matched
-    assert_never(retry_decision)
-
-
 def _cleanup_transition_extracted_output(
     transition: InvocationAttemptTransition,
 ) -> None:
@@ -392,8 +393,7 @@ def _raise_retry_exhausted(
     log_file: Path | None,
 ) -> None:
     raise build_invocation_failure_error(
-        "Command output matched configured retry conditions after "
-        f"{retry_count} retries",
+        f"Command output matched retry conditions after {retry_count} retries",
         runtime.failure_profile,
         result,
         log_file,
