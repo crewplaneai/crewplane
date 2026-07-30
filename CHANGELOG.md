@@ -4,6 +4,20 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-07-29
+
+### Changed
+
+- Added one automatic retry for transient Codex model-capacity failures.
+
+### Fixed
+
+- Expected workflow failures now exit cleanly with concise diagnostics without
+  masking unexpected runtime defects.
+- Prevented concurrent reviewer-generated-file snapshots from causing false
+  artifact-drift failures.
+- Improved release reliability on macOS and during registry propagation.
+
 ## [0.1.5] - 2026-07-28
 
 ### Changed
