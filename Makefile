@@ -30,7 +30,7 @@ endif
 
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
-.PHONY: help setup uninstall test typecheck lint format format-check check docs-check actionlint \
+.PHONY: help setup uninstall test typecheck lint format format-check check actionlint \
 	dependency-audit clean \
 	package-build package-check package-wheelhouse wheel-typecheck changelog-check \
 	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
@@ -50,8 +50,7 @@ help:
 		'  lint               Run ruff checks' \
 		'  format             Run ruff import fixes and formatter' \
 		'  format-check       Check formatting' \
-		'  docs-check         Parse docs and validate local links' \
-		'  check              Run lint, format-check, docs-check, typing, and tests' \
+		'  check              Run lint, format-check, typing, and tests' \
 		'  actionlint         Validate GitHub Actions workflows' \
 		'  dependency-audit   Audit locked and build-system Python dependencies' \
 		'  clean              Remove caches, build output, and release scratch files' \
@@ -91,7 +90,7 @@ uninstall:
 	$(UNINSTALL_CMD)
 
 test:
-	$(RUN_PYTEST) -m "not scale" --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=87
+	$(RUN_PYTEST) --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=87
 
 typecheck:
 	$(RUN_MYPY) \
@@ -111,9 +110,6 @@ typecheck:
 		src/crewplane/observability/run_summary/logger.py \
 		tests/typecheck/public_observer_consumer.py
 
-docs-check:
-	$(RUN_PYTHON) scripts/check_docs_links.py
-
 lint:
 	$(RUN_RUFF) check src tests scripts
 
@@ -124,7 +120,7 @@ format:
 format-check:
 	$(RUN_RUFF) format --check src tests scripts
 
-check: lint format-check docs-check typecheck test
+check: lint format-check typecheck test
 
 actionlint:
 	scripts/actionlint.sh

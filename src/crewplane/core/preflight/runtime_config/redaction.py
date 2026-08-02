@@ -24,7 +24,9 @@ _SENSITIVE_CONFIG_PATH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _SENSITIVE_ARGV_PATTERN = re.compile(
-    r"^--[^=\s]*(?:secret|token|password|passwd|api[_-]?key|credential|private)[^=\s]*(?:=.*)?$",
+    r"^(?:--|(?=[A-Za-z_][A-Za-z0-9_]*=))"
+    r"[^=\s]*(?:secret|token|password|passwd|api[_-]?key|credential|private)"
+    r"[^=\s]*(?:=.*)?$",
     re.IGNORECASE,
 )
 _ARGV_FIELD_NAMES = frozenset({"argv", "cli_cmd", "extra_args"})
@@ -148,6 +150,13 @@ def _redact_sensitive_value(
             )
             redacted[str(key)] = child_value
             paths.extend(child_paths)
+        boundary_secret = _command_field_boundary_secret(value, path)
+        if boundary_secret is not None:
+            secret_path = boundary_secret[1]
+            path_label = _path_label(secret_path)
+            if path_label not in paths:
+                _replace_first_extra_arg(redacted, {"redacted": True})
+                paths.append(path_label)
         return redacted, paths
     if isinstance(value, list):
         return _redact_sensitive_list(value, path)
@@ -209,6 +218,17 @@ def _redacted_sensitive_dict(
         redacted[str(key)] = child_value
         paths.extend(child_paths)
         fingerprints.extend(child_fingerprints)
+    boundary_secret = _command_field_boundary_secret(value, path)
+    if boundary_secret is not None:
+        secret_value, secret_path = boundary_secret
+        path_label = _path_label(secret_path)
+        if path_label not in paths:
+            redacted_value, child_paths, child_fingerprints = _redacted_sensitive_leaf(
+                secret_value, secret_path, fingerprint_key
+            )
+            _replace_first_extra_arg(redacted, redacted_value)
+            paths.extend(child_paths)
+            fingerprints.extend(child_fingerprints)
     return redacted, paths, fingerprints
 
 
@@ -261,6 +281,35 @@ def _is_sensitive_config_value(
     if list_parent in _ARGV_FIELD_NAMES and isinstance(value, str):
         return "=" in value and _SENSITIVE_ARGV_PATTERN.search(value) is not None
     return False
+
+
+def _command_field_boundary_secret(
+    value: dict[str, JsonValue],
+    path: tuple[str, ...],
+) -> tuple[str, tuple[str, ...]] | None:
+    cli_cmd = value.get("cli_cmd")
+    extra_args = value.get("extra_args")
+    if not isinstance(cli_cmd, list) or not cli_cmd:
+        return None
+    if not isinstance(extra_args, list) or not extra_args:
+        return None
+    split_flag = cli_cmd[-1]
+    secret_value = extra_args[0]
+    if not isinstance(split_flag, str) or not isinstance(secret_value, str):
+        return None
+    if "=" in split_flag or _SENSITIVE_ARGV_PATTERN.search(split_flag) is None:
+        return None
+    return secret_value, (*path, "extra_args", "0")
+
+
+def _replace_first_extra_arg(
+    redacted: JsonObject,
+    value: JsonObject,
+) -> None:
+    extra_args = redacted.get("extra_args")
+    if not isinstance(extra_args, list) or not extra_args:
+        raise TypeError("Redacted agent extra_args must remain a non-empty list.")
+    extra_args[0] = value
 
 
 def _redact_sensitive_list(

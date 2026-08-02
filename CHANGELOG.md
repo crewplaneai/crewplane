@@ -10,9 +10,6 @@ All notable user-facing changes are recorded here.
   can fall back to an older valid matching success.
 - Adapter option scopes and observer capabilities are now explicit validated
   extension contracts.
-- CI now enforces typed public contracts, branch coverage, documentation links,
-  property and crash regressions, installed-wheel workflows, and scheduled
-  scale tests.
 
 ### Fixed
 

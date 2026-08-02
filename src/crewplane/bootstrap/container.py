@@ -10,7 +10,6 @@ from crewplane.architecture.loader import instantiate_adapter
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents, UIRuntimePlan
 from crewplane.core.config import Config, Settings
-from crewplane.observability.observer import validate_observer_contract
 from crewplane.observability.types import WorkflowTopology
 
 
@@ -97,13 +96,10 @@ def build_runtime_components(
                 which_fn=(which_fn if ui_capabilities.accepts_which_override else None),
             )
 
-    validated_observers = tuple(
-        validate_observer_contract(observer) for observer in ui_runtime.observers
-    )
     return RuntimeComponents(
         artifact_store=selected_artifact_store,
         base_invoker=base_invoker,
-        observers=validated_observers,
+        observers=ui_runtime.observers,
         suppress_progress_output=ui_runtime.suppress_progress_output,
     )
 

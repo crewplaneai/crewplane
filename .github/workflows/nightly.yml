@@ -43,10 +43,7 @@ jobs:
         run: uv sync --locked --extra dev
 
       - name: Run tests
-        run: uv run --extra dev python -m pytest -q -m "not scale"
+        run: uv run --extra dev python -m pytest -q
 
       - name: CLI smoke test
         run: uv run --extra dev crewplane --help
-
-      - name: Run scale regressions
-        run: uv run --extra dev python -m pytest -q -m scale

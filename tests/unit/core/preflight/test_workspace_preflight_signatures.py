@@ -270,6 +270,30 @@ def test_selected_agent_scalar_command_secrets_are_absent_from_compiled_plan(
     assert prompt_arg_secret not in serialized
 
 
+def test_selected_dotted_agent_command_secret_is_captured(tmp_path: Path) -> None:
+    agent_name = "alpha.v2"
+    secret = "DOTTED_AGENT_SECRET"
+    preview = _compile_workflow(
+        tmp_path,
+        project_root_workflow(provider_name=agent_name),
+        Config(
+            version=SCHEMA_VERSION,
+            agents={
+                agent_name: AgentConfig(
+                    cli_cmd=["echo", "--api-key", secret],
+                )
+            },
+            settings=Settings(workspace={"enabled": False}),
+        ),
+    )
+
+    assert preview.diagnostics == []
+    assert preview.runtime_config_snapshot is not None
+    sensitive_path = f"agents.{agent_name}.cli_cmd.2"
+    assert preview.runtime_config_snapshot.sensitive_config_paths == [sensitive_path]
+    assert preview.secret_context.get(f"config:{sensitive_path}") == secret
+
+
 def test_explicit_provider_model_excludes_unused_default_model_from_signatures(
     tmp_path: Path,
 ) -> None:
@@ -526,14 +550,16 @@ def test_retry_delay_with_configured_retries_changes_signatures(
 def test_selected_workspace_setup_secret_remains_sensitive(
     tmp_path: Path,
 ) -> None:
+    profile_name = "bootstrap.v2"
+    secret = "WORKSPACE_SECRET"
     preview = _compile_workflow(
         tmp_path,
-        setup_workflow(),
+        setup_workflow(profile_name),
         _config(
             {
                 "enabled": True,
                 "setup_profiles": {
-                    "bootstrap": {"run": [["setup", "--api-key", "WORKSPACE_SECRET"]]}
+                    profile_name: {"run": [["setup", "--api-key", secret]]}
                 },
             }
         ),
@@ -543,9 +569,9 @@ def test_selected_workspace_setup_secret_remains_sensitive(
     assert preview.diagnostics == []
     assert preview.fingerprint_metadata["sensitive_values_required"] is True
     assert preview.runtime_config_snapshot is not None
-    assert preview.runtime_config_snapshot.sensitive_config_paths == [
-        "workspace.setup_profiles.bootstrap.run.0.2"
-    ]
+    sensitive_path = "workspace.setup_profiles.bootstrap.v2.run.0.2"
+    assert preview.runtime_config_snapshot.sensitive_config_paths == [sensitive_path]
+    assert preview.secret_context.get(f"config:{sensitive_path}") == secret
 
 
 def test_review_starts_with_changes_workflow_signature(tmp_path: Path) -> None:
@@ -877,10 +903,10 @@ def branch_export_workflow(
     )
 
 
-def setup_workflow() -> WorkflowPlan:
+def setup_workflow(setup_profile: str = "bootstrap") -> WorkflowPlan:
     return WorkflowPlan(
         name="workspace setup",
-        worktrees={"primary": {"kind": "worktree", "setup_profile": "bootstrap"}},
+        worktrees={"primary": {"kind": "worktree", "setup_profile": setup_profile}},
         nodes=[
             WorkflowNode(
                 id="implement",
@@ -894,11 +920,14 @@ def setup_workflow() -> WorkflowPlan:
     )
 
 
-def project_root_workflow(model: str | None = None) -> WorkflowPlan:
+def project_root_workflow(
+    model: str | None = None,
+    provider_name: str = "alpha",
+) -> WorkflowPlan:
     provider = (
-        ProviderSpec(provider="alpha", model=model)
+        ProviderSpec(provider=provider_name, model=model)
         if model is not None
-        else ProviderSpec(provider="alpha")
+        else ProviderSpec(provider=provider_name)
     )
     return WorkflowPlan(
         name="project root workflow",

@@ -4,8 +4,6 @@ import tracemalloc
 import unittest
 from unittest.mock import patch
 
-import pytest
-
 from crewplane.runtime.agent.process.runner import (
     collect_process_output,
     reap_failed_process,
@@ -115,7 +113,6 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         finally:
             capture.cleanup()
 
-    @pytest.mark.scale
     def test_captured_stream_retains_100_mib_with_bounded_memory(self) -> None:
         capture = RealCapturedStream(max_memory_bytes=1024 * 1024)
         chunk = b"x" * 4096

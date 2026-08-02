@@ -15,10 +15,6 @@ from .execution_event import (
 )
 from .invocation import LogPresentationFormat
 
-_ObserverStartT = TypeVar("_ObserverStartT", contravariant=True)
-_ObserverLifecycleEventT = TypeVar("_ObserverLifecycleEventT", contravariant=True)
-_ObserverSnapshotT = TypeVar("_ObserverSnapshotT", contravariant=True)
-_ObserverResultT = TypeVar("_ObserverResultT", contravariant=True)
 _DashboardStateT = TypeVar(
     "_DashboardStateT",
     bound="DashboardState",
@@ -270,35 +266,23 @@ class RunResult:
     cancel_reason: str | None = None
 
 
-class Observer(
-    Protocol[
-        _ObserverStartT,
-        _ObserverLifecycleEventT,
-        _ObserverSnapshotT,
-        _ObserverResultT,
-    ]
-):
-    """Typed lifecycle contract specialized by each observability runtime."""
+class Observer(Protocol):
+    """Typed lifecycle contract for runtime observers."""
 
     capabilities: ObserverCapabilities
 
     @property
     def stop_requested(self) -> bool: ...
 
-    def start(self, context: _ObserverStartT) -> None: ...
+    def start(self, context: RunContext) -> None: ...
 
     def on_snapshot(
         self,
-        event: _ObserverLifecycleEventT | None,
-        snapshot: _ObserverSnapshotT,
+        event: ExecutionEvent | None,
+        snapshot: DashboardSnapshot,
     ) -> None: ...
 
-    def stop(self, result: _ObserverResultT) -> None: ...
+    def stop(self, result: RunResult) -> None: ...
 
 
-type RuntimeObserver = Observer[
-    RunContext,
-    ExecutionEvent,
-    DashboardSnapshot,
-    RunResult,
-]
+type RuntimeObserver = Observer

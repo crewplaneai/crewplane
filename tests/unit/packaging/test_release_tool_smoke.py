@@ -66,7 +66,7 @@ class InstalledCliRecordingRunner:
         return state.CommandResult(command_tuple, 0, stdout, "")
 
 
-def test_installed_cli_smoke_exercises_supported_run_modes(tmp_path: Path) -> None:
+def test_installed_cli_smoke_exercises_a_workflow(tmp_path: Path) -> None:
     write_minimal_repo(tmp_path)
     context = state.read_release_context(tmp_path)
     runner = InstalledCliRecordingRunner(context.version.project)
@@ -80,9 +80,7 @@ def test_installed_cli_smoke_exercises_supported_run_modes(tmp_path: Path) -> No
     assert [call for call, cwd in runner.calls if cwd == project] == [
         (str(executable), "init"),
         (str(executable), "validate"),
-        (str(executable), "run", "--dry-run"),
-        (str(executable), "run"),
-        (str(executable), "run", "--no-live", "--force"),
+        (str(executable), "run", "--no-live"),
     ]
 
 

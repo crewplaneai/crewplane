@@ -357,11 +357,14 @@ def _raw_runtime_config_value(
     runtime_snapshot: RuntimeConfigSnapshot,
     path: str,
 ) -> object | None:
+    if path.startswith(_AGENT_CONFIG_PATH_PREFIX):
+        return _raw_agent_config_value(runtime_snapshot, path)
+    if path.startswith(_WORKSPACE_SETUP_PROFILE_PATH_PREFIX):
+        return _raw_workspace_setup_profile_value(runtime_snapshot, path)
+
     parts = path.split(".")
     if len(parts) < 2:
         return None
-    if parts[0] == "agents":
-        return _value_at_path(runtime_snapshot.raw_agents, parts[1:])
     if parts[0] == "workspace":
         return _value_at_path(runtime_snapshot.raw_workspace, parts[1:])
     if parts[:3] == ["integrations", "invoker", "options"]:
@@ -377,6 +380,46 @@ def _raw_runtime_config_value(
         raw_ui = runtime_snapshot.raw_ui
         return _value_at_path(raw_ui.options if raw_ui else {}, parts[3:])
     return None
+
+
+def _raw_agent_config_value(
+    runtime_snapshot: RuntimeConfigSnapshot,
+    path: str,
+) -> object | None:
+    agent_name = _matched_sensitive_path_owner(
+        path,
+        _AGENT_CONFIG_PATH_PREFIX,
+        set(runtime_snapshot.raw_agents),
+        ".",
+    )
+    if agent_name is None:
+        return None
+    relative_path = path.removeprefix(f"{_AGENT_CONFIG_PATH_PREFIX}{agent_name}.")
+    return _value_at_path(
+        runtime_snapshot.raw_agents.get(agent_name),
+        relative_path.split("."),
+    )
+
+
+def _raw_workspace_setup_profile_value(
+    runtime_snapshot: RuntimeConfigSnapshot,
+    path: str,
+) -> object | None:
+    profiles = runtime_snapshot.raw_workspace.get("setup_profiles")
+    if not isinstance(profiles, dict):
+        return None
+    profile_name = _matched_sensitive_path_owner(
+        path,
+        _WORKSPACE_SETUP_PROFILE_PATH_PREFIX,
+        set(profiles),
+        ".run.",
+    )
+    if profile_name is None:
+        return None
+    relative_path = path.removeprefix(
+        f"{_WORKSPACE_SETUP_PROFILE_PATH_PREFIX}{profile_name}."
+    )
+    return _value_at_path(profiles.get(profile_name), relative_path.split("."))
 
 
 def _value_at_path(payload: object, parts: list[str]) -> object | None:

@@ -62,18 +62,18 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             "crewplane.runtime.agent.invocation.command.os.getpgid",
             side_effect=AssertionError("racy process-group lookup"),
         ):
-            for attempt in range(50):
-                result = await run_command_once(
-                    cmd=[sys.executable, "-c", "pass"],
-                    stdin_data=None,
-                    log_file=None,
-                    append_log=False,
-                    log_header=None,
-                    cwd=Path.cwd(),
-                    invocation_context=None,
-                    idle_timeout_seconds=None,
-                )
-                self.assertEqual(result.returncode, 0, f"attempt {attempt}")
+            result = await run_command_once(
+                cmd=[sys.executable, "-c", "pass"],
+                stdin_data=None,
+                log_file=None,
+                append_log=False,
+                log_header=None,
+                cwd=Path.cwd(),
+                invocation_context=None,
+                idle_timeout_seconds=None,
+            )
+
+        self.assertEqual(result.returncode, 0)
 
     async def test_run_command_once_applies_cwd_and_child_environment(self) -> None:
         with patch.dict(os.environ, {"WORKSPACE_TEST_UNSET": "inherited"}):

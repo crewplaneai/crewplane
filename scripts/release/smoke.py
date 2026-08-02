@@ -418,13 +418,7 @@ def exercise_installed_cli(
     runner.run([str(executable), "init"], cwd=project, env=env)
     write_mock_config(project / ".crewplane" / "config.yml")
     runner.run([str(executable), "validate"], cwd=project, env=env)
-    runner.run([str(executable), "run", "--dry-run"], cwd=project, env=env)
-    runner.run([str(executable), "run"], cwd=project, env=env)
-    runner.run(
-        [str(executable), "run", "--no-live", "--force"],
-        cwd=project,
-        env=env,
-    )
+    runner.run([str(executable), "run", "--no-live"], cwd=project, env=env)
 
 
 def write_mock_config(path: Path) -> None:

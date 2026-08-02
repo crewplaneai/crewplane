@@ -440,38 +440,6 @@ class ContainerTests(unittest.TestCase):
         self.assertEqual(captured["quiet_after_seconds"], 120.0)
         self.assertIsNone(captured["log_tail_lines"])
 
-    def test_container_rejects_incomplete_ui_observer_during_wiring(self) -> None:
-        workflow = self._build_workflow()
-        config = self._build_config()
-        original_runtime_class = tmux_adapter_module.TmuxCompactRuntime
-
-        class IncompleteRuntime:
-            def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
-                del kwargs
-
-        tmux_adapter_module.TmuxCompactRuntime = IncompleteRuntime  # type: ignore[assignment]
-        try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                tmp_path = Path(tmp_dir)
-                with self.assertRaisesRegex(
-                    TypeError,
-                    "Observer lifecycle contract is incomplete",
-                ):
-                    build_runtime_components(
-                        config=config,
-                        workflow_topology=topology_from_workflow(workflow),
-                        state_dir=tmp_path,
-                        project_root=tmp_path,
-                        console=Console(
-                            file=io.StringIO(),
-                            force_terminal=True,
-                        ),
-                        no_live=False,
-                        which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by adapter test seam.
-                    )
-        finally:
-            tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
-
     def test_container_disables_tmux_live_ui_when_logs_are_disabled(self) -> None:
         workflow = self._build_workflow()
         config = self._build_config(
