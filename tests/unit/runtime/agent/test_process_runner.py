@@ -2,6 +2,7 @@ import asyncio
 import time
 import tracemalloc
 import unittest
+from threading import Event
 from unittest.mock import patch
 
 from crewplane.runtime.agent.process.runner import (
@@ -17,18 +18,34 @@ from crewplane.runtime.agent.process.streams import (
 )
 
 
-class _SlowLogHandle:
-    def __init__(self, delay_seconds: float) -> None:
-        self.delay_seconds = delay_seconds
+class _RecordingLogHandle:
+    def __init__(self) -> None:
         self.writes: list[bytes] = []
 
     def write(self, payload: bytes) -> int:
-        time.sleep(self.delay_seconds)
         self.writes.append(payload)
         return len(payload)
 
     def flush(self) -> None:
-        time.sleep(self.delay_seconds)
+        return
+
+
+class _BlockingLogHandle:
+    def __init__(self) -> None:
+        self.write_started = Event()
+        self.release_write = Event()
+        self.writes: list[bytes] = []
+
+    def write(self, payload: bytes) -> int:
+        self.write_started.set()
+        if not self.release_write.wait(timeout=2.0):
+            raise TimeoutError("Test log write was not released.")
+        self.writes.append(payload)
+        return len(payload)
+
+    def flush(self) -> None:
+        if not self.release_write.wait(timeout=2.0):
+            raise TimeoutError("Test log flush was not released.")
 
 
 class _FailingLogHandle:
@@ -39,10 +56,20 @@ class _FailingLogHandle:
         return None
 
 
+class _SignallingStreamReader(asyncio.StreamReader):
+    def __init__(self) -> None:
+        super().__init__()
+        self.read_started = asyncio.Event()
+
+    async def read(self, n: int = -1) -> bytes:
+        self.read_started.set()
+        return await super().read(n)
+
+
 class _ProcessDouble:
     def __init__(self) -> None:
-        self.stdout = asyncio.StreamReader()
-        self.stderr = asyncio.StreamReader()
+        self.stdout = _SignallingStreamReader()
+        self.stderr = _SignallingStreamReader()
         self.returncode: int | None = None
         self.kill_calls = 0
         self.terminate_calls = 0
@@ -141,21 +168,39 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         process.stdout.feed_data(b"".join(f"out {i}\n".encode() for i in range(20)))
         process.stderr.feed_data(b"".join(f"err {i}\n".encode() for i in range(20)))
         process.complete()
-        log_handle = _SlowLogHandle(delay_seconds=0.05)
+        log_handle = _BlockingLogHandle()
         ticks = 0
+        heartbeat_progressed = asyncio.Event()
 
         async def heartbeat() -> None:
             nonlocal ticks
             while not collector_task.done():
                 ticks += 1
-                await asyncio.sleep(0.01)
+                if ticks >= 5:
+                    heartbeat_progressed.set()
+                await asyncio.sleep(0)
 
         collector_task = asyncio.create_task(
             collect_process_output(process, log_handle)
         )
         heartbeat_task = asyncio.create_task(heartbeat())
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(collector_task, timeout=5.0)
-        await heartbeat_task
+        try:
+            self.assertTrue(await asyncio.to_thread(log_handle.write_started.wait, 1.0))
+            await asyncio.wait_for(heartbeat_progressed.wait(), timeout=1.0)
+        finally:
+            log_handle.release_write.set()
+            task_results = await asyncio.wait_for(
+                asyncio.gather(
+                    collector_task,
+                    heartbeat_task,
+                    return_exceptions=True,
+                ),
+                timeout=5.0,
+            )
+        collection_result = task_results[0]
+        if isinstance(collection_result, BaseException):
+            raise collection_result
+        stdout_bytes, stderr_bytes = collection_result
 
         self.assertIn(b"out 0", stdout_bytes)
         self.assertIn(b"out 19", stdout_bytes)
@@ -189,7 +234,7 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         process = _ProcessDouble()
-        log_handle = _SlowLogHandle(delay_seconds=0)
+        log_handle = _RecordingLogHandle()
         process.stdout.feed_data(b"partial stdout")
         process.stderr.feed_data(b"partial stderr")
         process.exit_without_stream_eof()
@@ -284,7 +329,7 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_collect_process_output_reaps_process_when_cancelled(self) -> None:
         process = _ProcessDouble()
         collector_task = asyncio.create_task(collect_process_output(process, None))
-        await asyncio.sleep(0)
+        await asyncio.wait_for(process.stdout.read_started.wait(), timeout=1.0)
 
         collector_task.cancel()
 

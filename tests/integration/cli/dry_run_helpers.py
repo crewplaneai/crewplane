@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -22,7 +21,7 @@ from crewplane.core.preflight.source import load_workflow_source_for_preflight
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_run_manifest, write_run_manifest
 from tests.integration.cli.cli_workflow_helpers import (
-    ConsoleFactory,
+    cli_process_state,
     write_basic_config,
     write_basic_workflow,
 )
@@ -132,25 +131,14 @@ def run_dry_run(
     force: bool = False,
 ) -> str:
     stream = io.StringIO()
-    original_console_cls = cli.Console
-    cli.Console = ConsoleFactory(
-        file=stream,
-        force_terminal=False,
-        color_system=None,
-        width=120,
-    )
-    original_cwd = Path.cwd()
-    os.chdir(root)
-    try:
+    with cli_process_state(stream) as process_state:
+        process_state.chdir(root)
         cli.run(
             tasks_file=workflow_path,
             config_file=config_path,
             dry_run=True,
             force=force,
         )
-    finally:
-        os.chdir(original_cwd)
-        cli.Console = original_console_cls
     return stream.getvalue()
 
 

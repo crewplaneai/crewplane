@@ -3,7 +3,13 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import ModuleType
+from uuid import uuid4
+
+import pytest
 
 from scripts.release import state
 
@@ -366,17 +372,33 @@ def write_manifest(root: Path, manifest: state.ReleaseManifest) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def load_release_script():
-    scripts_path = str(ROOT / "scripts")
-    if scripts_path not in sys.path:
-        sys.path.insert(0, scripts_path)
-    module_path = ROOT / "scripts" / "release.py"
-    spec = importlib.util.spec_from_file_location(
-        "release_script_under_test", module_path
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+def _pop_top_level_release_modules() -> dict[str, ModuleType]:
+    return {
+        name: sys.modules.pop(name)
+        for name in tuple(sys.modules)
+        if name == "release" or name.startswith("release.")
+    }
+
+
+@contextmanager
+def loaded_release_script(
+    module_path: Path | None = None,
+) -> Iterator[ModuleType]:
+    release_path = module_path or ROOT / "scripts" / "release.py"
+    module_name = f"_crewplane_release_test_{uuid4().hex}"
+    with pytest.MonkeyPatch.context() as import_state:
+        masked_release_modules = _pop_top_level_release_modules()
+        initial_module_names = frozenset(sys.modules)
+        try:
+            import_state.syspath_prepend(str(release_path.parent))
+            spec = importlib.util.spec_from_file_location(module_name, release_path)
+            if spec is None or spec.loader is None:
+                raise RuntimeError(f"could not load release module from {release_path}")
+            module = importlib.util.module_from_spec(spec)
+            import_state.setitem(sys.modules, module_name, module)
+            spec.loader.exec_module(module)
+            yield module
+        finally:
+            for imported_name in sys.modules.keys() - initial_module_names:
+                sys.modules.pop(imported_name, None)
+            sys.modules.update(masked_release_modules)

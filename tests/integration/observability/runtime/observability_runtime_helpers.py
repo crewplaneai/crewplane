@@ -133,10 +133,16 @@ class BlockingStartObserver(RecordingObserver):
     def __init__(self) -> None:
         super().__init__()
         self.entered = Event()
+        self.release = Event()
+        self.completed = Event()
 
     def start(self, context) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
         self.entered.set()
-        Event().wait()
+        try:
+            if not self.release.wait(timeout=2.0):
+                raise TimeoutError("Blocking observer start was not released.")
+        finally:
+            self.completed.set()
 
 
 class DelayedStartObserver(RecordingObserver):
@@ -144,11 +150,16 @@ class DelayedStartObserver(RecordingObserver):
         super().__init__()
         self.entered = Event()
         self.release = Event()
+        self.start_completed = Event()
         self.cleaned_up = Event()
 
     def start(self, context) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
         self.entered.set()
-        self.release.wait()
+        try:
+            if not self.release.wait(timeout=2.0):
+                raise TimeoutError("Delayed observer start was not released.")
+        finally:
+            self.start_completed.set()
 
     def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
         self.cleaned_up.set()
@@ -179,8 +190,19 @@ class RequiredStopThreadFailureObserver(RecordingObserver):
 class RequiredStopTimeoutObserver(RecordingObserver):
     capabilities = ObserverCapabilities(required=True)
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = Event()
+        self.release = Event()
+        self.completed = Event()
+
     def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.
-        Event().wait()
+        self.entered.set()
+        try:
+            if not self.release.wait(timeout=2.0):
+                raise TimeoutError("Blocking observer stop was not released.")
+        finally:
+            self.completed.set()
 
 
 class RequiredStartThreadFailureObserver(RecordingObserver):
@@ -192,11 +214,16 @@ class BlockingObserver(RecordingObserver):
         super().__init__()
         self.entered = Event()
         self.release = Event()
+        self.completed = Event()
 
     def on_snapshot(self, event, snapshot) -> None:  # type: ignore[no-untyped-def]
         self.entered.set()
-        self.release.wait()
-        super().on_snapshot(event, snapshot)
+        try:
+            if not self.release.wait(timeout=2.0):
+                raise TimeoutError("Blocking observer delivery was not released.")
+            super().on_snapshot(event, snapshot)
+        finally:
+            self.completed.set()
 
 
 def status_option_write_count(calls: list[tuple[list[str], bool, bool]]) -> int:

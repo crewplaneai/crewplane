@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-# ruff: noqa: E402, I001
-
 import json
-from pathlib import Path
 import sys
 import urllib.error
-
-_LOCAL_TEST_DIR = Path(__file__).resolve().parent
-if str(_LOCAL_TEST_DIR) not in sys.path:
-    sys.path.insert(0, str(_LOCAL_TEST_DIR))
+from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from scripts.release import build, state
-from test_release_tool_fixtures import (
+from tests.unit.packaging.release_tool_support import (
     FakeRunner,
     append_uv_lock_package,
     constant,
+    loaded_release_script,
     no_op,
     release_state_fixture,
     write_minimal_repo,
@@ -137,15 +133,19 @@ def test_registry_http_errors_are_classified_for_retry(
     status_code: int,
     error_type: type[state.ReleaseError],
 ) -> None:
+    raised_error: urllib.error.HTTPError | None = None
+
     def fail_request(*args, **kwargs):
+        nonlocal raised_error
         del args, kwargs
-        raise urllib.error.HTTPError(
+        raised_error = urllib.error.HTTPError(
             "https://registry.example.test/package",
             status_code,
             "failure",
             None,
             None,
         )
+        raise raised_error
 
     monkeypatch.setattr(state.state_types.urllib.request, "urlopen", fail_request)
 
@@ -153,6 +153,51 @@ def test_registry_http_errors_are_classified_for_retry(
         state.fetch_registry_json("https://registry.example.test/package")
 
     assert type(caught.value) is error_type
+    assert raised_error is not None
+    assert raised_error.closed
+
+
+def test_failed_release_script_load_restores_import_state(tmp_path: Path) -> None:
+    imported_module_name = "_release_load_side_effect"
+    (tmp_path / f"{imported_module_name}.py").write_text(
+        "VALUE = 'loaded'\n",
+        encoding="utf-8",
+    )
+    failing_script = tmp_path / "release_failure.py"
+    failing_script.write_text(
+        f"import {imported_module_name}\nraise RuntimeError('load failed')\n",
+        encoding="utf-8",
+    )
+    original_path = sys.path.copy()
+    original_modules = set(sys.modules)
+
+    with (
+        pytest.raises(RuntimeError, match="load failed"),
+        loaded_release_script(failing_script),
+    ):
+        pytest.fail("the failing module must not load")
+
+    assert sys.path == original_path
+    assert set(sys.modules) == original_modules
+    assert imported_module_name not in sys.modules
+
+
+def test_release_script_load_masks_and_restores_ambient_release_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient_release = ModuleType("release")
+    ambient_release.VALUE = "ambient"
+    monkeypatch.setitem(sys.modules, "release", ambient_release)
+    original_path = sys.path.copy()
+    original_modules = set(sys.modules)
+
+    with loaded_release_script() as release_script:
+        assert release_script.dispatch.__module__ == release_script.__name__
+        assert sys.modules["release"] is not ambient_release
+
+    assert sys.path == original_path
+    assert set(sys.modules) == original_modules
+    assert sys.modules["release"] is ambient_release
 
 
 def test_metadata_sync_refreshes_and_reads_back_generated_files(

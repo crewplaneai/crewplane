@@ -1,10 +1,11 @@
 import asyncio
-import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
 from crewplane.adapters.invokers.cli_invoker.capabilities import (
@@ -52,9 +53,8 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-            original_state = os.environ.get("STATE_FILE")
-            os.environ["STATE_FILE"] = str(state_file)
-            try:
+            with pytest.MonkeyPatch.context() as process_state:
+                process_state.setenv("STATE_FILE", str(state_file))
                 config = AgentConfig(
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
@@ -73,11 +73,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
-            finally:
-                if original_state is None:
-                    os.environ.pop("STATE_FILE", None)
-                else:
-                    os.environ["STATE_FILE"] = original_state
 
             self.assertEqual(output_file.read_text().strip(), "success")
             self.assertEqual(state_file.read_text().strip(), "2")
@@ -200,37 +195,41 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
     async def test_log_setup_failure_reaps_spawned_process(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            marker_path = tmp_path / "marker.txt"
             script_path = tmp_path / "long_running.py"
             script_path.write_text(
                 "\n".join(
                     [
-                        "import os",
                         "import time",
-                        "from pathlib import Path",
                         "",
-                        "marker = Path(os.environ['MARKER_PATH'])",
-                        "time.sleep(0.3)",
-                        "marker.write_text('child survived', encoding='utf-8')",
-                        "time.sleep(3)",
+                        "time.sleep(10)",
                         "",
                     ]
                 ),
                 encoding="utf-8",
             )
 
-            original_marker = os.environ.get("MARKER_PATH")
-            os.environ["MARKER_PATH"] = str(marker_path)
-            try:
-                config = AgentConfig(
-                    cli_cmd=[sys.executable, str(script_path)],
-                    default_model="test-model",
-                    model_arg=None,
-                )
-                output_file = tmp_path / "output.txt"
-                log_file = tmp_path / "agent.log"
+            created_processes: list[asyncio.subprocess.Process] = []
+            original_create_subprocess_exec = asyncio.create_subprocess_exec
 
+            async def tracking_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+                process = await original_create_subprocess_exec(*args, **kwargs)
+                created_processes.append(process)
+                return process
+
+            config = AgentConfig(
+                cli_cmd=[sys.executable, str(script_path)],
+                default_model="test-model",
+                model_arg=None,
+            )
+            output_file = tmp_path / "output.txt"
+            log_file = tmp_path / "agent.log"
+
+            try:
                 with (
+                    patch(
+                        "crewplane.runtime.agent.invocation.command.asyncio.create_subprocess_exec",
+                        new=tracking_create_subprocess_exec,
+                    ),
                     patch(
                         "crewplane.runtime.agent.invocation.command.open_log_handle",
                         side_effect=OSError("cannot open log"),
@@ -247,13 +246,15 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                         plan_builder=build_cli_invocation_plan,
                     )
 
-                await asyncio.sleep(0.6)
-                self.assertFalse(marker_path.exists())
+                self.assertEqual(len(created_processes), 1)
+                process = created_processes[0]
+                await asyncio.wait_for(process.wait(), timeout=1.0)
+                self.assertIsNotNone(process.returncode)
             finally:
-                if original_marker is None:
-                    os.environ.pop("MARKER_PATH", None)
-                else:
-                    os.environ["MARKER_PATH"] = original_marker
+                for process in created_processes:
+                    if process.returncode is None:
+                        process.kill()
+                    await asyncio.wait_for(process.wait(), timeout=1.0)
 
     async def test_quota_retry_guard_stops_after_five_hours(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -322,9 +323,8 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-            original_state = os.environ.get("STATE_FILE")
-            os.environ["STATE_FILE"] = str(state_file)
-            try:
+            with pytest.MonkeyPatch.context() as process_state:
+                process_state.setenv("STATE_FILE", str(state_file))
                 config = AgentConfig(
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
@@ -342,11 +342,6 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                     output_file.parent,
                     plan_builder=build_cli_invocation_plan,
                 )
-            finally:
-                if original_state is None:
-                    os.environ.pop("STATE_FILE", None)
-                else:
-                    os.environ["STATE_FILE"] = original_state
 
             self.assertEqual(output_file.read_text().strip(), "success")
             self.assertEqual(state_file.read_text().strip(), "2")

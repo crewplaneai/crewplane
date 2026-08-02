@@ -1,3 +1,4 @@
+COVERAGE_FLOOR := 90
 PYTHON ?= python
 PYPI_REPOSITORY ?= pypi
 TWINE_UPLOAD_ARGS ?=
@@ -90,7 +91,7 @@ uninstall:
 	$(UNINSTALL_CMD)
 
 test:
-	$(RUN_PYTEST) --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=87
+	$(RUN_PYTEST) -p pytest_cov --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=$(COVERAGE_FLOOR)
 
 # Strict mypy adoption currently covers public extension contracts and their
 # direct consumers; the rest of the package is not yet strict-mypy clean.

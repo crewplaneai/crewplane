@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,6 +76,7 @@ class VisualizationCase:
     unexpected_fragments: tuple[str, ...] = ()
     mock_options: Mapping[str, object] = field(default_factory=dict)
     expect_error: str | None = None
+    expect_error_type: type[Exception] = RuntimeError
     render_width: int = 120
 
 
@@ -166,21 +168,6 @@ def _select_snapshot(
     )
 
 
-def _assert_expected_outcome(case: VisualizationCase, error: Exception | None) -> None:
-    if case.expect_error is None and error is None:
-        return
-    if case.expect_error is None and error is not None:
-        raise AssertionError(
-            f"Case '{case.case_id}' failed unexpectedly: {error}"
-        ) from error
-    if error is None:
-        raise AssertionError(f"Case '{case.case_id}' was expected to fail.")
-    if case.expect_error not in str(error):
-        raise AssertionError(
-            f"Case '{case.case_id}' failed with unexpected message: {error}"
-        ) from error
-
-
 @pytest.fixture
 def run_visualization_case() -> Callable[
     [Path, Mapping[str, Any]], ObservabilityRunResult
@@ -219,9 +206,8 @@ def run_visualization_case() -> Callable[
         )
         recorder = SnapshotRecorder()
         persistent_logger = PersistentRunLogger(components.artifact_store)
-        error: Exception | None = None
 
-        try:
+        def execute_case() -> None:
             with ObservabilityHub(
                 workflow_topology=topology_from_workflow(workflow),
                 run_id=components.artifact_store.run_id,
@@ -245,10 +231,17 @@ def run_visualization_case() -> Callable[
                         suppress_progress_output=True,
                     )
                 )
-        except Exception as exc:  # pragma: no cover - exercised by failure cases
-            error = exc
 
-        _assert_expected_outcome(case, error)
+        error: Exception | None = None
+        if case.expect_error is None:
+            execute_case()
+        else:
+            with pytest.raises(
+                case.expect_error_type,
+                match=re.escape(case.expect_error),
+            ) as raised:
+                execute_case()
+            error = raised.value
 
         snapshots = tuple(recorder.snapshots)
         event_log_path = components.artifact_store.get_run_event_log_path()

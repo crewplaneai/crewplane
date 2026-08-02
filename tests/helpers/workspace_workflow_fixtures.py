@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 from crewplane.core.review_contract import ParsedReviewResult
 from crewplane.runtime.execution.consensus import render_review_contract
+from tests.helpers.isolated_git import IsolatedGit
 
 BASE_APP_TEXT = "base application\n"
 CANDIDATE_ROUND_1_APP_TEXT = "candidate round 1 application\n"
@@ -129,7 +129,7 @@ def review_output(verdict: str, major: str) -> str:
     )
 
 
-def assert_workspace_e2e_artifacts(run_dir: Path) -> None:
+def assert_workspace_e2e_artifacts(run_dir: Path, workspace_git: IsolatedGit) -> None:
     manifest = read_json(run_dir / "manifests" / "run.json")
     assert manifest["resumed_nodes"] == ["requirements", "snapshot.read"]
     assert not (run_dir / "requirements" / "workspace-state.json").exists()
@@ -164,7 +164,9 @@ def assert_workspace_e2e_artifacts(run_dir: Path) -> None:
     assert isinstance(result_commit, str)
     project_root = run_dir.parents[2]
     assert (
-        git_text(project_root, "cat-file", "-p", f"{result_commit}:src/app.txt")
+        workspace_git.run_text(
+            project_root, "cat-file", "-p", f"{result_commit}:src/app.txt"
+        )
         == CANDIDATE_ROUND_2_APP_TEXT.strip()
     )
 
@@ -220,17 +222,23 @@ def workspace_states(stage_dir: Path) -> list[dict[str, object]]:
     return [read_json(path) for path in sorted(stage_dir.glob("workspace-state*.json"))]
 
 
-def latest_succeeded_run(project_root: Path) -> Path:
-    succeeded = []
+def resumed_succeeded_run(project_root: Path) -> Path:
+    resumed_succeeded_runs = []
     for run_dir in run_dirs(project_root):
         manifest_path = run_dir / "manifests" / "run.json"
         if not manifest_path.exists():
             continue
         manifest = read_json(manifest_path)
-        if manifest.get("status") == "succeeded":
-            succeeded.append(run_dir)
-    assert succeeded
-    return succeeded[-1]
+        if (
+            manifest.get("status") == "succeeded"
+            and manifest.get("resume_source_run_id") is not None
+        ):
+            resumed_succeeded_runs.append(run_dir)
+    assert len(resumed_succeeded_runs) == 1, (
+        "Expected exactly one succeeded resumed run, found "
+        f"{[path.name for path in resumed_succeeded_runs]!r}."
+    )
+    return resumed_succeeded_runs[0]
 
 
 def run_dirs(project_root: Path) -> list[Path]:
@@ -244,12 +252,3 @@ def read_json(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
-
-
-def git_text(root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", root.as_posix(), *args],
-        check=True,
-        capture_output=True,
-    )
-    return result.stdout.decode("utf-8").strip()

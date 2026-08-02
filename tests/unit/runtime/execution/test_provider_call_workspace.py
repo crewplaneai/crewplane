@@ -157,6 +157,7 @@ async def _run_deferred_workspace_snapshot_cancellation_is_not_cleanup_failure(
         workspace_path=repo,
     )
     snapshot_started = Event()
+    release_snapshot = Event()
 
     def slow_snapshot_cancellation(
         request: ProviderCallRequest,
@@ -166,7 +167,8 @@ async def _run_deferred_workspace_snapshot_cancellation_is_not_cleanup_failure(
     ) -> None:
         del request, prepared_workspace, change_baseline, cancel_requested
         snapshot_started.set()
-        sleep(0.05)
+        if not release_snapshot.wait(timeout=2.0):
+            raise TimeoutError("Snapshot worker was not released.")
         raise WorkspaceSnapshotCancelled("Snapshot worker observed cancellation.")
 
     monkeypatch.setattr(
@@ -188,8 +190,11 @@ async def _run_deferred_workspace_snapshot_cancellation_is_not_cleanup_failure(
     )
     assert await asyncio.to_thread(snapshot_started.wait, 2)
     snapshot_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await snapshot_task
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await snapshot_task
+    finally:
+        release_snapshot.set()
 
     assert await request.runtime_context.deferred_workspace_cleanups.drain(1.0) == ()
 
@@ -233,11 +238,13 @@ async def _run_pre_invocation_generated_file_baseline_observes_task_cancellation
     ) -> generated_files_module.GeneratedFileChangeBaseline:
         del cls, filesystem_fallback_enabled
         baseline_started.set()
+        if cancel_requested is None:
+            raise AssertionError("Baseline capture requires a cancellation callback.")
         deadline = monotonic() + 1.0
-        while cancel_requested is None or not cancel_requested():
+        while not cancel_requested():
             if monotonic() >= deadline:
                 raise TimeoutError("Baseline capture did not observe cancellation.")
-            sleep(0.01)
+            sleep(0.001)
         del invocation_root
         baseline_cancelled.set()
         raise WorkspaceSnapshotCancelled("Baseline snapshot was cancelled.")
@@ -272,6 +279,11 @@ async def _run_pre_invocation_generated_file_baseline_observes_task_cancellation
             await preparation_task
     finally:
         cancellation_thread.join(timeout=2)
+        assert not cancellation_thread.is_alive(), (
+            f"Cancellation thread {cancellation_thread.name!r} remained alive "
+            f"after join; baseline_started={baseline_started.is_set()}, "
+            f"baseline_cancelled={baseline_cancelled.is_set()}."
+        )
 
     assert baseline_cancelled.wait(timeout=2)
     assert await request.runtime_context.deferred_workspace_cleanups.drain(2.0) == ()

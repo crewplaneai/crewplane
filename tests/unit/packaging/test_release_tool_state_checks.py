@@ -1,25 +1,22 @@
 from __future__ import annotations
 
-# ruff: noqa: E402, I001
-
 from dataclasses import replace
 from pathlib import Path
-import subprocess
-import sys
-from packaging.version import InvalidVersion, Version
-
-_LOCAL_TEST_DIR = Path(__file__).resolve().parent
-if str(_LOCAL_TEST_DIR) not in sys.path:
-    sys.path.insert(0, str(_LOCAL_TEST_DIR))
+from types import ModuleType
 
 import pytest
+from packaging.version import InvalidVersion, Version
 
 from scripts.release import publish, state
-from test_release_tool_fixtures import (
+from tests.helpers.isolated_git import (
+    IsolatedGit,
+    configure_isolated_git_environment,
+    require_git,
+)
+from tests.unit.packaging.release_tool_support import (
     FakeRunner,
     append_uv_lock_package,
     constant,
-    load_release_script,
     matching_npm,
     matching_pypi,
     no_op,
@@ -27,6 +24,15 @@ from test_release_tool_fixtures import (
     write_manifest,
     write_minimal_repo,
 )
+
+
+@pytest.fixture
+def release_git(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> IsolatedGit:
+    environment = configure_isolated_git_environment(monkeypatch, tmp_path)
+    return require_git(environment, required=False)
 
 
 def test_release_state_derivation_ready_complete_partial_and_blocked(
@@ -259,9 +265,10 @@ def test_declared_formula_build_resources_prefer_wheels_when_available(
 
 
 def test_release_check_allows_tag_missing_partial_without_pre_publish_smokes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_script: ModuleType,
 ) -> None:
-    release_script = load_release_script()
     context, manifest, formula, git = release_state_fixture(tmp_path)
     pypi = matching_pypi(context, manifest)
     npm = matching_npm(context, manifest, latest=context.version.npm)
@@ -291,9 +298,10 @@ def test_release_check_allows_tag_missing_partial_without_pre_publish_smokes(
 
 
 def test_release_check_does_not_treat_partial_pypi_as_tag_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_script: ModuleType,
 ) -> None:
-    release_script = load_release_script()
     context, manifest, formula, git = release_state_fixture(tmp_path)
     sdist = manifest.artifact("pypi_sdist")
     partial_pypi = state.PypiRelease(
@@ -321,9 +329,10 @@ def test_release_check_does_not_treat_partial_pypi_as_tag_only(
 
 
 def test_release_check_requires_current_changelog_section_before_suite(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_script: ModuleType,
 ) -> None:
-    release_script = load_release_script()
     context, manifest, formula, git = release_state_fixture(tmp_path)
     missing_pypi = state.PypiRelease(False, "", {})
     missing_npm = state.NpmRelease(False, "", "", "", "", "", "", "", "")
@@ -352,9 +361,10 @@ def test_release_check_requires_current_changelog_section_before_suite(
 
 
 def test_release_check_accepts_dated_current_changelog_heading(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_script: ModuleType,
 ) -> None:
-    release_script = load_release_script()
     context, manifest, formula, git = release_state_fixture(tmp_path)
     missing_pypi = state.PypiRelease(False, "", {})
     missing_npm = state.NpmRelease(False, "", "", "", "", "", "", "", "")
@@ -387,8 +397,10 @@ def test_release_check_accepts_dated_current_changelog_heading(
     assert suites == [tmp_path]
 
 
-def test_changelog_check_accepts_linked_version_heading(tmp_path: Path) -> None:
-    release_script = load_release_script()
+def test_changelog_check_accepts_linked_version_heading(
+    tmp_path: Path,
+    release_script: ModuleType,
+) -> None:
     context, _manifest, _formula, _git = release_state_fixture(tmp_path)
     (tmp_path / "CHANGELOG.md").write_text(
         f"# Changelog\n\n## [{context.version.project}]"
@@ -401,9 +413,10 @@ def test_changelog_check_accepts_linked_version_heading(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("indentation", ("", " ", "  ", "   "))
 def test_changelog_check_accepts_valid_heading_indentation(
-    tmp_path: Path, indentation: str
+    tmp_path: Path,
+    indentation: str,
+    release_script: ModuleType,
 ) -> None:
-    release_script = load_release_script()
     context, _manifest, _formula, _git = release_state_fixture(tmp_path)
     (tmp_path / "CHANGELOG.md").write_text(
         f"# Changelog\n\n{indentation}## [{context.version.project}] - 2026-07-27\n",
@@ -421,9 +434,10 @@ def test_changelog_check_accepts_valid_heading_indentation(
     ),
 )
 def test_changelog_check_rejects_hidden_version_headings(
-    tmp_path: Path, hidden_section: str
+    tmp_path: Path,
+    hidden_section: str,
+    release_script: ModuleType,
 ) -> None:
-    release_script = load_release_script()
     context, _manifest, _formula, _git = release_state_fixture(tmp_path)
     changelog = "# Changelog\n\n" + hidden_section.format(
         version=context.version.project
@@ -866,25 +880,28 @@ def test_pypi_artifact_verification_reports_missing_file_once(
 
 def test_release_notes_predecessor_uses_target_history_for_delayed_release(
     tmp_path: Path,
+    release_git: IsolatedGit,
 ) -> None:
     origin = tmp_path / "origin.git"
     repository = tmp_path / "repository"
     repository.mkdir()
 
-    run_git(tmp_path, "init", "--bare", str(origin))
-    run_git(repository, "init", "-b", "master")
-    run_git(repository, "config", "user.name", "Release Test")
-    run_git(repository, "config", "user.email", "release@example.com")
-    run_git(repository, "remote", "add", "origin", str(origin))
+    release_git.run_text(tmp_path, "init", "--bare", str(origin))
+    release_git.run_text(repository, "init", "-b", "master")
+    release_git.run_text(repository, "config", "user.name", "Release Test")
+    release_git.run_text(repository, "config", "user.email", "release@example.com")
+    release_git.run_text(repository, "remote", "add", "origin", str(origin))
 
     for version in ("1.0.0", "1.1.0", "1.2.0"):
         (repository / "version.txt").write_text(version, encoding="utf-8")
-        run_git(repository, "add", "version.txt")
-        run_git(repository, "commit", "-m", f"Release {version}")
-        run_git(repository, "tag", "-a", f"v{version}", "-m", f"Release {version}")
+        release_git.run_text(repository, "add", "version.txt")
+        release_git.run_text(repository, "commit", "-m", f"Release {version}")
+        release_git.run_text(
+            repository, "tag", "-a", f"v{version}", "-m", f"Release {version}"
+        )
 
-    run_git(repository, "push", "origin", "master", "--tags")
-    run_git(repository, "checkout", "--detach", "v1.1.0")
+    release_git.run_text(repository, "push", "origin", "master", "--tags")
+    release_git.run_text(repository, "checkout", "--detach", "v1.1.0")
 
     delayed_context = state.ReleaseContext(
         root=repository,
@@ -900,7 +917,7 @@ def test_release_notes_predecessor_uses_target_history_for_delayed_release(
         == "v1.0.0"
     )
 
-    run_git(repository, "checkout", "--detach", "v1.0.0")
+    release_git.run_text(repository, "checkout", "--detach", "v1.0.0")
     first_context = state.ReleaseContext(
         root=repository,
         package_name="crewplane",
@@ -918,50 +935,40 @@ def test_release_notes_predecessor_uses_target_history_for_delayed_release(
 
 def test_release_commit_ancestry_allows_a_delayed_release_checkout(
     tmp_path: Path,
+    release_git: IsolatedGit,
 ) -> None:
     origin = tmp_path / "origin.git"
     repository = tmp_path / "repository"
     repository.mkdir()
 
-    run_git(tmp_path, "init", "--bare", str(origin))
-    run_git(repository, "init", "-b", "master")
-    run_git(repository, "config", "user.name", "Release Test")
-    run_git(repository, "config", "user.email", "release@example.com")
-    run_git(repository, "remote", "add", "origin", str(origin))
+    release_git.run_text(tmp_path, "init", "--bare", str(origin))
+    release_git.run_text(repository, "init", "-b", "master")
+    release_git.run_text(repository, "config", "user.name", "Release Test")
+    release_git.run_text(repository, "config", "user.email", "release@example.com")
+    release_git.run_text(repository, "remote", "add", "origin", str(origin))
 
     for version in ("1.0.0", "1.1.0"):
         (repository / "version.txt").write_text(version, encoding="utf-8")
-        run_git(repository, "add", "version.txt")
-        run_git(repository, "commit", "-m", f"Release {version}")
+        release_git.run_text(repository, "add", "version.txt")
+        release_git.run_text(repository, "commit", "-m", f"Release {version}")
 
-    run_git(repository, "push", "origin", "master")
-    run_git(repository, "checkout", "--detach", "HEAD^")
+    release_git.run_text(repository, "push", "origin", "master")
+    release_git.run_text(repository, "checkout", "--detach", "HEAD^")
 
     assert state.head_reachable_from_origin_master(
         state.CommandRunner(),
         repository,
     )
 
-    run_git(repository, "checkout", "-b", "unreleased-change")
+    release_git.run_text(repository, "checkout", "-b", "unreleased-change")
     (repository / "version.txt").write_text("unreleased", encoding="utf-8")
-    run_git(repository, "add", "version.txt")
-    run_git(repository, "commit", "-m", "Unreleased change")
+    release_git.run_text(repository, "add", "version.txt")
+    release_git.run_text(repository, "commit", "-m", "Unreleased change")
 
     assert not state.head_reachable_from_origin_master(
         state.CommandRunner(),
         repository,
     )
-
-
-def run_git(root: Path, *arguments: str) -> str:
-    completed = subprocess.run(
-        ["git", *arguments],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return completed.stdout.strip()
 
 
 def test_local_artifact_identity_rejects_paths_outside_repo(
@@ -1139,9 +1146,10 @@ def test_release_commit_reachability_uses_fresh_origin_master(
 
 
 def test_completed_release_check_skips_pre_publish_suite(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    release_script: ModuleType,
 ) -> None:
-    release_script = load_release_script()
     context, manifest, formula, git = release_state_fixture(tmp_path)
     pypi = matching_pypi(context, manifest)
     npm = matching_npm(context, manifest, latest=context.version.npm)

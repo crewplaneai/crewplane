@@ -70,6 +70,11 @@ def read_text(*parts: str) -> str:
     return repo_path(*parts).read_text(encoding="utf-8")
 
 
+def workflow_step_run(job: dict[str, object], name: str) -> str:
+    steps = {step.get("name"): step for step in job["steps"] if isinstance(step, dict)}
+    return str(steps[name].get("run", ""))
+
+
 def load_pyproject() -> dict[str, object]:
     return PYPROJECT
 
@@ -148,6 +153,41 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
         if dep.name in {"typer", "click", "shellingham", "rich"}
     )
     assert not dependencies["typer"].extras
+
+
+def test_pytest_reliability_contract_is_explicit() -> None:
+    pyproject = load_pyproject()
+    pytest_config = pyproject["tool"]["pytest"]["ini_options"]
+    assert pytest_config == {
+        "minversion": "9.1",
+        "testpaths": ["tests"],
+        "addopts": [
+            "-ra",
+            "--import-mode=importlib",
+            "--disable-plugin-autoload",
+        ],
+        "strict_config": True,
+        "strict_markers": True,
+        "strict_parametrization_ids": True,
+        "collect_imported_tests": False,
+        "empty_parameter_set_mark": "fail_at_collect",
+        "tmp_path_retention_policy": "failed",
+        "filterwarnings": ["error"],
+    }
+
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+    dev_dependencies = parse_requirement_map(optional_dependencies["dev"])
+    stress_dependencies = parse_requirement_map(optional_dependencies["stress"])
+    assert str(dev_dependencies["pytest"].specifier) == ">=9.1"
+    assert set(stress_dependencies) == {"pytest-randomly"}
+
+    makefile = read_text("Makefile")
+    assert makefile.startswith("COVERAGE_FLOOR := 90\n")
+    test_target = make_target_body("test")
+    assert "-p pytest_cov" in test_target
+    assert '-m "not scale"' not in test_target
+    assert "--cov=crewplane --cov-branch" in test_target
+    assert "--cov-fail-under=$(COVERAGE_FLOOR)" in test_target
 
 
 def test_uv_lock_tracks_editable_crewplane_package() -> None:
@@ -239,6 +279,84 @@ def test_ci_package_job_smoke_tests_wheel_before_inspection_and_upload() -> None
     assert package_steps[smoke_index]["run"] == "make install-smoke-pip"
     assert smoke_index < inspect_index < upload_index
     assert all(step.get("run") != "uv build" for step in package_steps)
+
+
+def test_ci_git_floor_lane_is_verified_required_mode_and_skip_free() -> None:
+    workflow = yaml.load(
+        read_text(".github", "workflows", "ci.yml"), Loader=yaml.BaseLoader
+    )
+    jobs = workflow["jobs"]
+    git_floor = jobs["git-floor"]
+    steps = {step.get("name"): step for step in git_floor["steps"]}
+
+    assert git_floor["name"] == "git floor (2.34.1)"
+    assert git_floor["runs-on"] == "ubuntu-latest"
+    package = jobs["package"]
+    assert "git-floor" in package["needs"]
+    assert package["if"] == "${{ always() }}"
+    prerequisite_guard = workflow_step_run(package, "Verify required prerequisite jobs")
+    for fragment in (
+        "test '${{ needs.git-floor.result }}' = 'success'",
+        "test '${{ needs.lint.result }}' = 'success'",
+        "test '${{ needs.test.result }}' = 'success'",
+    ):
+        assert fragment in prerequisite_guard
+
+    build_step = steps["Build verified Git 2.34.1"]
+    assert build_step["env"]["GIT_VERSION"] == "2.34.1"
+    assert (
+        build_step["env"]["GIT_ARCHIVE_SHA256"]
+        == "3a0755dd1cfab71a24dd96df3498c29cd0acd13b04f3d08bf933e81286db802c"
+    )
+    for fragment in (
+        "curl --fail --location --proto '=https' --tlsv1.2",
+        "sha256sum --check -",
+        'printf \'%s\\n\' "$prefix/bin" >> "$GITHUB_PATH"',
+        'printf \'GIT_FLOOR_BIN=%s\\n\' "$prefix/bin" >> "$GITHUB_ENV"',
+    ):
+        assert fragment in build_step["run"]
+
+    report_step = steps["Report floor environment"]
+    assert "command -v git" in report_step["run"]
+    assert 'test "$(git --version)" = "git version 2.34.1"' in report_step["run"]
+    assert steps["Install dependencies"]["run"] == (
+        "uv sync --locked --python 3.13 --extra dev"
+    )
+
+    floor_step = steps["Run exact Git floor tests"]
+    assert floor_step["env"]["CREWPLANE_REQUIRED_GIT"] == "1"
+    assert '--junitxml="$GIT_REPORT"' in floor_step["run"]
+    assert "tests/unit/cli/test_workspace_source_policy_git.py" in floor_step["run"]
+    assert (
+        "tests/integration/cli/test_workspace_workflow_runner.py" in floor_step["run"]
+    )
+
+    zero_skip_step = steps["Enforce zero skips"]
+    assert 'root.iter("testsuite")' in zero_skip_step["run"]
+    assert "Git floor lane skipped {skipped} tests" in zero_skip_step["run"]
+
+
+def test_ci_test_jobs_select_supported_python_versions_explicitly() -> None:
+    workflow = yaml.load(
+        read_text(".github", "workflows", "ci.yml"), Loader=yaml.BaseLoader
+    )
+    test_job = workflow["jobs"]["test"]
+
+    assert test_job["strategy"]["matrix"]["python-version"] == ["3.13", "3.14"]
+    commands = "\n".join(
+        step.get("run", "") for step in test_job["steps"] if isinstance(step, dict)
+    )
+    assert "uv sync --locked --python ${{ matrix.python-version }} --extra dev" in (
+        commands
+    )
+    assert (
+        "uv run --locked --python ${{ matrix.python-version }} --extra dev make test"
+        in commands
+    )
+    assert (
+        "uv run --locked --python ${{ matrix.python-version }} --extra dev "
+        "crewplane --help"
+    ) in commands
 
 
 def test_production_release_workflow_reuses_release_tool_without_pypi_publish() -> None:
@@ -602,6 +720,85 @@ def test_repository_automation_matches_supported_platform_and_publish_policy() -
         "ubuntu-latest",
         "macos-latest",
     ]
+    assert nightly["jobs"]["cross-platform"]["strategy"]["matrix"][
+        "python-version"
+    ] == ["3.13", "3.14"]
+    cross_platform_commands = "\n".join(
+        step.get("run", "")
+        for step in nightly["jobs"]["cross-platform"]["steps"]
+        if isinstance(step, dict)
+    )
+    assert "uv sync --locked --python ${{ matrix.python-version }} --extra dev" in (
+        cross_platform_commands
+    )
+    assert (
+        "uv run --locked --python ${{ matrix.python-version }} --extra dev "
+        "python -m pytest -q"
+    ) in cross_platform_commands
+    assert '-m "not scale"' not in cross_platform_commands
+    shuffled = nightly["jobs"]["shuffled-suite"]
+    assert shuffled["runs-on"] == "ubuntu-latest"
+    assert shuffled["env"]["CREWPLANE_RANDOM_SEED"] == "${{ github.run_id }}"
+    shuffled_diagnostics = workflow_step_run(
+        shuffled, "Print reliability canary diagnostics"
+    )
+    for fragment in (
+        "OS:",
+        "Architecture:",
+        "python --version",
+        "python -m pytest --version",
+        "uv --version",
+        "git --version",
+        "locale",
+        "Timezone:",
+        "pytest-randomly seed:",
+        "Selection: full test suite",
+        "Iteration count: 1",
+        "Skip summary: reported by pytest -ra",
+    ):
+        assert fragment in shuffled_diagnostics
+
+    shuffled_commands = "\n".join(
+        step.get("run", "") for step in shuffled["steps"] if isinstance(step, dict)
+    )
+    assert "uv sync --locked --python 3.13 --extra dev --extra stress" in (
+        shuffled_commands
+    )
+    assert "python -m pytest -p randomly" in shuffled_commands
+    assert '--randomly-seed="$seed"' in shuffled_commands
+    assert '-m "not scale"' not in shuffled_commands
+    assert "Reproduce locally:" in shuffled_commands
+
+    focused = nightly["jobs"]["focused-race-loop"]
+    assert focused["runs-on"] == "ubuntu-latest"
+    assert focused["env"]["FOCUSED_RACE_ITERATIONS"] == "5"
+    assert focused["env"]["FOCUSED_RACE_SELECTION"].endswith(
+        "::ExecutorSequentialStageBasicsTests"
+        "::test_multi_provider_reviewers_run_in_parallel_within_local_round"
+    )
+    focused_commands = "\n".join(
+        step.get("run", "") for step in focused["steps"] if isinstance(step, dict)
+    )
+    focused_diagnostics = workflow_step_run(focused, "Print focused race diagnostics")
+    for fragment in (
+        "OS:",
+        "Architecture:",
+        "python --version",
+        "python -m pytest --version",
+        "uv --version",
+        "git --version",
+        "locale",
+        "Timezone:",
+        "Selection:",
+        "Iteration count:",
+        "Skip summary: reported by pytest -ra for each iteration",
+        "Reproduce locally:",
+        "FOCUSED_RACE_SELECTION=%q FOCUSED_RACE_ITERATIONS=%q",
+    ):
+        assert fragment in focused_diagnostics
+
+    assert 'while [ "$iteration" -le "$FOCUSED_RACE_ITERATIONS" ]' in (focused_commands)
+    assert 'python -m pytest -q -ra "$FOCUSED_RACE_SELECTION"' in focused_commands
     assert "windows-latest" not in nightly_text
     assert "skip-existing" not in testpypi
 

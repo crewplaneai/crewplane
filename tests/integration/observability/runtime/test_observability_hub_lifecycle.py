@@ -1,8 +1,10 @@
 import unittest
+from threading import Event
 from time import monotonic
 from unittest.mock import patch
 
 from crewplane.architecture.contracts import ObserverCapabilities
+from crewplane.observability import observer_lifecycle
 from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
     make_execution_event,
@@ -219,21 +221,29 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         observer = BlockingStartObserver()
         warnings: list[str] = []
 
-        with patch(
-            "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
-            0.01,
-        ):
-            started_at = monotonic()
-            with ObservabilityHub(
-                workflow_topology=topology_from_workflow(workflow),
-                run_id="run-start-blocked",
-                observers=[observer],
-                refresh_per_second=0,
-                warning_sink=warnings.append,
-            ) as hub:
-                self.assertEqual(hub.active_observer_count, 0)
+        try:
+            with patch(
+                "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+                0.01,
+            ):
+                started_at = monotonic()
+                with ObservabilityHub(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id="run-start-blocked",
+                    observers=[observer],
+                    refresh_per_second=0,
+                    warning_sink=warnings.append,
+                ) as hub:
+                    self.assertEqual(hub.active_observer_count, 0)
+                elapsed = monotonic() - started_at
+        finally:
+            observer.release.set()
+            self.assertTrue(
+                observer.completed.wait(timeout=1.0),
+                "Timed-out observer start did not finish after release.",
+            )
 
-        self.assertLess(monotonic() - started_at, 0.1)
+        self.assertLess(elapsed, 0.1)
         self.assertTrue(observer.entered.is_set())
         self.assertTrue(any("start timed out" in warning for warning in warnings))
 
@@ -243,45 +253,77 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         workflow = single_node_workflow()
         observer = DelayedStartObserver()
 
-        with (
-            patch(
-                "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
-                0.01,
-            ),
-            ObservabilityHub(
-                workflow_topology=topology_from_workflow(workflow),
-                run_id="run-delayed-start",
-                observers=[observer],
-                refresh_per_second=0,
-            ) as hub,
-        ):
-            self.assertTrue(observer.entered.wait(timeout=1.0))
-            self.assertEqual(hub.active_observer_count, 0)
+        try:
+            with (
+                patch(
+                    "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+                    0.01,
+                ),
+                ObservabilityHub(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id="run-delayed-start",
+                    observers=[observer],
+                    refresh_per_second=0,
+                ) as hub,
+            ):
+                self.assertTrue(observer.entered.wait(timeout=1.0))
+                self.assertEqual(hub.active_observer_count, 0)
+        finally:
             observer.release.set()
+            self.assertTrue(
+                observer.start_completed.wait(timeout=1.0),
+                "Delayed observer start did not finish after release.",
+            )
 
         self.assertTrue(observer.cleaned_up.wait(timeout=1.0))
 
     def test_observability_hub_respects_start_timeout_cleanup_opt_out(self) -> None:
         workflow = single_node_workflow()
         observer = NoCleanupDelayedStartObserver()
+        cleanup_decision_reached = Event()
+        original_cleanup = observer_lifecycle.stop_timed_out_observer
 
-        with (
-            patch(
-                "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
-                0.01,
-            ),
-            ObservabilityHub(
-                workflow_topology=topology_from_workflow(workflow),
-                run_id="run-delayed-start-no-cleanup",
-                observers=[observer],
-                refresh_per_second=0,
-            ) as hub,
+        def record_cleanup_decision(
+            cleanup_observer: observer_lifecycle.Observer,
+            warn: observer_lifecycle.WarningSink,
+        ) -> None:
+            try:
+                original_cleanup(cleanup_observer, warn)
+            finally:
+                if cleanup_observer is observer:
+                    cleanup_decision_reached.set()
+
+        with patch(
+            "crewplane.observability.observer_lifecycle.stop_timed_out_observer",
+            record_cleanup_decision,
         ):
-            self.assertTrue(observer.entered.wait(timeout=1.0))
-            self.assertEqual(hub.active_observer_count, 0)
-            observer.release.set()
+            try:
+                with (
+                    patch(
+                        "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+                        0.01,
+                    ),
+                    ObservabilityHub(
+                        workflow_topology=topology_from_workflow(workflow),
+                        run_id="run-delayed-start-no-cleanup",
+                        observers=[observer],
+                        refresh_per_second=0,
+                    ) as hub,
+                ):
+                    self.assertTrue(observer.entered.wait(timeout=1.0))
+                    self.assertEqual(hub.active_observer_count, 0)
+            finally:
+                observer.release.set()
+                self.assertTrue(
+                    observer.start_completed.wait(timeout=1.0),
+                    "Delayed observer start did not finish after release.",
+                )
+                self.assertTrue(
+                    cleanup_decision_reached.wait(timeout=1.0),
+                    "Delayed observer start did not reach cleanup decision.",
+                )
 
-        self.assertFalse(observer.cleaned_up.wait(timeout=0.05))
+        self.assertFalse(observer.cleaned_up.is_set())
 
     def test_observability_hub_continues_when_start_thread_fails(self) -> None:
         workflow = single_node_workflow()

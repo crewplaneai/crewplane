@@ -40,10 +40,129 @@ jobs:
           prune-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --python ${{ matrix.python-version }} --extra dev
 
       - name: Run tests
-        run: uv run --extra dev python -m pytest -q
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev python -m pytest -q
 
       - name: CLI smoke test
-        run: uv run --extra dev crewplane --help
+        run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
+
+  shuffled-suite:
+    name: shuffled suite (ubuntu py3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CREWPLANE_RANDOM_SEED: ${{ github.run_id }}
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.10.9"
+          enable-cache: true
+          prune-cache: true
+
+      - name: Install test and stress dependencies
+        run: uv sync --locked --python 3.13 --extra dev --extra stress
+
+      - name: Print reliability canary diagnostics
+        shell: bash
+        run: |
+          set -eu
+          printf 'OS: %s\n' '${{ runner.os }}'
+          printf 'Architecture: %s\n' "$(uname -m)"
+          uv run --locked --python 3.13 --extra dev --extra stress python --version
+          uv run --locked --python 3.13 --extra dev --extra stress \
+            python -m pytest --version
+          uv --version
+          git --version
+          locale
+          printf 'Timezone: %s\n' "$(date +%Z)"
+          printf 'pytest-randomly seed: %s\n' "$CREWPLANE_RANDOM_SEED"
+          printf 'Selection: full test suite\n'
+          printf 'Iteration count: 1\n'
+          printf 'Skip summary: reported by pytest -ra\n'
+
+      - name: Run shuffled test suite
+        shell: bash
+        run: |
+          set -eu
+          seed="${CREWPLANE_RANDOM_SEED:?set CREWPLANE_RANDOM_SEED}"
+          printf 'Reproduce locally:\n'
+          printf 'CREWPLANE_RANDOM_SEED=%s uv run --locked --python 3.13 --extra dev --extra stress python -m pytest -p randomly --randomly-seed=%s -q -ra\n' \
+            "$seed" "$seed"
+          uv run --locked --python 3.13 --extra dev --extra stress \
+            python -m pytest -p randomly \
+            --randomly-seed="$seed" \
+            -q -ra
+
+  focused-race-loop:
+    name: focused race loop (ubuntu py3.13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FOCUSED_RACE_ITERATIONS: "5"
+      FOCUSED_RACE_SELECTION: "tests/integration/runtime/execution/workflow/test_sequential_stage_basics.py::ExecutorSequentialStageBasicsTests::test_multi_provider_reviewers_run_in_parallel_within_local_round"
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.10.9"
+          enable-cache: true
+          prune-cache: true
+
+      - name: Install test dependencies
+        run: uv sync --locked --python 3.13 --extra dev
+
+      - name: Print focused race diagnostics
+        shell: bash
+        run: |
+          set -eu
+          printf 'OS: %s\n' '${{ runner.os }}'
+          printf 'Architecture: %s\n' "$(uname -m)"
+          uv run --locked --python 3.13 --extra dev python --version
+          uv run --locked --python 3.13 --extra dev python -m pytest --version
+          uv --version
+          git --version
+          locale
+          printf 'Timezone: %s\n' "$(date +%Z)"
+          printf 'Selection: %s\n' "$FOCUSED_RACE_SELECTION"
+          printf 'Iteration count: %s fresh pytest processes\n' \
+            "$FOCUSED_RACE_ITERATIONS"
+          printf 'Skip summary: reported by pytest -ra for each iteration\n'
+          printf 'Reproduce locally:\n'
+          printf 'FOCUSED_RACE_SELECTION=%q FOCUSED_RACE_ITERATIONS=%q bash -c '\''iteration=1; while [ "$iteration" -le "$FOCUSED_RACE_ITERATIONS" ]; do uv run --locked --python 3.13 --extra dev python -m pytest -q -ra "$FOCUSED_RACE_SELECTION"; iteration=$((iteration + 1)); done'\''\n' \
+            "$FOCUSED_RACE_SELECTION" "$FOCUSED_RACE_ITERATIONS"
+
+      - name: Run focused race regression in fresh processes
+        shell: bash
+        run: |
+          set -eu
+          iteration=1
+          while [ "$iteration" -le "$FOCUSED_RACE_ITERATIONS" ]; do
+            printf 'Starting iteration %s of %s\n' \
+              "$iteration" "$FOCUSED_RACE_ITERATIONS"
+            uv run --locked --python 3.13 --extra dev \
+              python -m pytest -q -ra "$FOCUSED_RACE_SELECTION"
+            iteration=$((iteration + 1))
+          done

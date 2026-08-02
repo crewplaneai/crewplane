@@ -20,9 +20,9 @@ from crewplane.runtime.execution.common import (
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
-    DelayByModelInvoker,
     FailingLogOutputManager,
     FindingsSelectiveFailInvoker,
+    GatedModelInvoker,
     MockAgentInvoker,
     SelectiveFailInvoker,
     execute_parallel_stage,
@@ -483,7 +483,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                     ProviderSpec(provider="beta"),
                 ],
             )
-            invoker = DelayByModelInvoker(delays={"slow": 0.05, "fast": 0.0})
+            invoker = GatedModelInvoker(gates_by_model={})
             output = OutputManager("workflow", base_dir=tmp_path)
             events: list[ExecutionEvent] = []
             telemetry = ExecutionTelemetry(
@@ -524,7 +524,3 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreaterEqual(beta_started.timestamp, alpha_finished.timestamp)
             self.assertIsNotNone(alpha_finished.payload.duration_ms)
             self.assertIsNotNone(beta_finished.payload.duration_ms)
-            self.assertLess(
-                beta_finished.payload.duration_ms or 0,
-                alpha_finished.payload.duration_ms or 0,
-            )

@@ -47,6 +47,19 @@ make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
 ```
 
+### Test suite contract
+
+`make test` runs the full suite with pytest entry-point plugin autoload
+disabled. It loads pytest-cov explicitly and enforces 90% branch coverage.
+
+Workspace-enabled Git tests require Git 2.34.1 or newer. CI runs the relevant
+source-policy tests against exactly Git 2.34.1 and fails if any selected test
+skips.
+
+Nightly CI covers Linux and macOS on Python 3.13 and 3.14, shuffles the full
+suite with a reproducible seed, and repeats the focused reviewer-parallelism
+regression in fresh processes.
+
 ## Repository Automation
 
 GitHub Actions, issue templates, label automation, and community files are

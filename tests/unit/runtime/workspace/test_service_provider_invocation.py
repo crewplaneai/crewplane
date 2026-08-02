@@ -1063,6 +1063,7 @@ async def _run_workspace_success_finalization_waits_after_cancellation() -> None
     assert await asyncio.to_thread(workspace.started.wait, 2)
 
     task.cancel()
+    await wait_for_workspace_cancellation(workspace.cancel_requested_check)
     workspace.release.set()
 
     with pytest.raises(asyncio.CancelledError):
@@ -1106,6 +1107,7 @@ async def _run_workspace_success_finalization_records_cleanup_after_cancellation
     )
     assert await asyncio.to_thread(workspace.started.wait, 2)
     task.cancel()
+    await wait_for_workspace_cancellation(workspace.cancel_requested_check)
     workspace.release.set()
 
     with pytest.raises(asyncio.CancelledError):
@@ -1239,6 +1241,7 @@ async def _run_workspace_success_finalization_preserves_cancel_on_failure() -> N
     assert await asyncio.to_thread(workspace.started.wait, 2)
 
     task.cancel()
+    await wait_for_workspace_cancellation(workspace.cancel_requested_check)
     workspace.release.set()
 
     with pytest.raises(asyncio.CancelledError) as exc_info:
@@ -1336,6 +1339,7 @@ async def _run_lifecycle_cancellation_after_finalization_failure_records_termina
     assert await asyncio.to_thread(workspace.started.wait, 2)
 
     task.cancel()
+    await wait_for_workspace_cancellation(workspace.cancel_requested_check)
     workspace.release.set()
 
     with pytest.raises(asyncio.CancelledError):
@@ -2076,6 +2080,7 @@ class SlowSuccessfulWorkspace:
         self.finished = Event()
         self.child_environment_applied: bool | None = None
         self.defer_cleanup: bool | None = None
+        self.cancel_requested_check: Callable[[], bool] | None = None
         self.cancel_requested: bool | None = None
 
     def mark_succeeded(
@@ -2086,12 +2091,22 @@ class SlowSuccessfulWorkspace:
     ) -> None:
         self.child_environment_applied = child_environment_applied
         self.defer_cleanup = defer_cleanup
+        self.cancel_requested_check = cancel_requested
         self.started.set()
         assert self.release.wait(2)
         self.cancel_requested = (
             cancel_requested() if cancel_requested is not None else None
         )
         self.finished.set()
+
+
+async def wait_for_workspace_cancellation(
+    cancel_requested: Callable[[], bool] | None,
+) -> None:
+    assert cancel_requested is not None
+    async with asyncio.timeout(2):
+        while not cancel_requested():
+            await asyncio.sleep(0)
 
 
 class SlowSuccessfulPreparedWorkspace(SlowSuccessfulWorkspace):
@@ -2141,6 +2156,7 @@ class FailingSlowPreparedWorkspace(PreparedWorkspace):
         self.started = Event()
         self.release = Event()
         self.finished = Event()
+        self.cancel_requested_check: Callable[[], bool] | None = None
 
     def mark_succeeded(
         self,
@@ -2148,7 +2164,8 @@ class FailingSlowPreparedWorkspace(PreparedWorkspace):
         defer_cleanup: bool = False,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
-        del child_environment_applied, defer_cleanup, cancel_requested
+        del child_environment_applied, defer_cleanup
+        self.cancel_requested_check = cancel_requested
         self.started.set()
         assert self.release.wait(2)
         self.finished.set()
