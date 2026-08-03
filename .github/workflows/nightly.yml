@@ -151,6 +151,8 @@ jobs:
             "$FOCUSED_RACE_ITERATIONS"
           printf 'Skip summary: reported by pytest -ra for each iteration\n'
           printf 'Reproduce locally:\n'
+          # Variables must remain literal in the copyable bash -c command.
+          # shellcheck disable=SC2016
           printf 'FOCUSED_RACE_SELECTION=%q FOCUSED_RACE_ITERATIONS=%q bash -c '\''iteration=1; while [ "$iteration" -le "$FOCUSED_RACE_ITERATIONS" ]; do uv run --locked --python 3.13 --extra dev python -m pytest -q -ra "$FOCUSED_RACE_SELECTION"; iteration=$((iteration + 1)); done'\''\n' \
             "$FOCUSED_RACE_SELECTION" "$FOCUSED_RACE_ITERATIONS"
 
