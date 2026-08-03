@@ -121,14 +121,16 @@ class _ConformingObserverRuntime:
     def stop_requested(self) -> bool:
         return False
 
-    def start(self, context: object) -> None:
-        del context
+    def start(self, context: object) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
 
-    def on_snapshot(self, event: object | None, snapshot: object) -> None:
-        del event, snapshot
+    def on_snapshot(  # noqa: ARG002 - Observer protocol.
+        self, event: object | None, snapshot: object
+    ) -> None:
+        pass
 
-    def stop(self, result: object) -> None:
-        del result
+    def stop(self, result: object) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
 
 
 class ContainerTests(unittest.TestCase):

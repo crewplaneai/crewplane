@@ -92,6 +92,8 @@ uninstall:
 test:
 	$(RUN_PYTEST) --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=87
 
+# Strict mypy adoption currently covers public extension contracts and their
+# direct consumers; the rest of the package is not yet strict-mypy clean.
 typecheck:
 	$(RUN_MYPY) \
 		src/crewplane/architecture/contracts \

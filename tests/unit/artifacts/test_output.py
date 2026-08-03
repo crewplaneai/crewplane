@@ -852,8 +852,6 @@ class OutputManagerTests(unittest.TestCase):
             def swap_before_source_open(
                 path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
                 flags: int,
-                mode: int = 0o777,
-                *,
                 dir_fd: int | None = None,
             ) -> int:
                 nonlocal swapped
@@ -865,8 +863,8 @@ class OutputManagerTests(unittest.TestCase):
                         self.skipTest(f"symlinks are unavailable: {exc}")
                     swapped = True
                 if dir_fd is None:
-                    return original_open(path, flags, mode)
-                return original_open(path, flags, mode, dir_fd=dir_fd)
+                    return original_open(path, flags)
+                return original_open(path, flags, dir_fd=dir_fd)
 
             with patch(
                 "crewplane.artifacts.generated_files.snapshot_io.os.open",

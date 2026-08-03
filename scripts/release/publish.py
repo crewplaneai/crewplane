@@ -504,7 +504,7 @@ def require_npm_auth() -> None:
         raise ReleaseError("npm authentication is required before publishing")
 
 
-def resolve_npm_otp(*, npm_exists: bool, needs_dist_tag: bool) -> NpmOtp:
+def resolve_npm_otp(npm_exists: bool, needs_dist_tag: bool) -> NpmOtp:
     single = os.environ.get("NPM_OTP", "") or os.environ.get("NPM_CONFIG_OTP", "")
     publish = os.environ.get("NPM_PUBLISH_OTP", "")
     dist_tag = os.environ.get("NPM_DIST_TAG_OTP", "")

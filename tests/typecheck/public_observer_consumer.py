@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import assert_type
+
 from crewplane.architecture.contracts import (
     DashboardSnapshot,
     ExecutionEvent,
@@ -18,15 +20,14 @@ class ExternalObserver:
     def stop_requested(self) -> bool:
         return False
 
-    def start(self, context: RunContext) -> None:
-        del context
+    def start(self, context: RunContext) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
 
     def on_snapshot(
         self,
-        event: ExecutionEvent | None,
+        event: ExecutionEvent | None,  # noqa: ARG002 - Observer protocol.
         snapshot: DashboardSnapshot,
     ) -> None:
-        del event
         workflow_name: str = snapshot.state.workflow_name
         workflow_status: str = snapshot.state.workflow_status
         ordered_nodes: list[str] = [
@@ -47,11 +48,15 @@ class ExternalObserver:
                 break
             if first_log is not None:
                 break
-        del workflow_name, workflow_status, ordered_nodes, lane_count, placements
-        del first_log
+        assert_type(workflow_name, str)
+        assert_type(workflow_status, str)
+        assert_type(ordered_nodes, list[str])
+        assert_type(lane_count, int)
+        assert_type(placements, list[tuple[str, int]])
+        assert_type(first_log, str | None)
 
-    def stop(self, result: RunResult) -> None:
-        del result
+    def stop(self, result: RunResult) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
 
 
 class IncompatibleObserver:
@@ -61,18 +66,22 @@ class IncompatibleObserver:
     def stop_requested(self) -> bool:
         return False
 
-    def start(self, context: int) -> None:
-        del context
+    def start(self, context: int) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
 
-    def on_snapshot(self, event: str | None, snapshot: bytes) -> None:
-        del event, snapshot
+    def on_snapshot(  # noqa: ARG002 - Observer protocol.
+        self, event: str | None, snapshot: bytes
+    ) -> None:
+        pass
 
-    def stop(self, result: float) -> None:
-        del result
+    def stop(self, result: float) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
 
 
-def install_observer(observer: RuntimeObserver) -> None:
-    del observer
+def install_observer(
+    observer: RuntimeObserver,  # noqa: ARG001 - Static compatibility fixture.
+) -> None:
+    pass
 
 
 install_observer(ExternalObserver())

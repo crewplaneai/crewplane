@@ -34,7 +34,6 @@ def exact_assets() -> list[dict[str, object]]:
 
 
 def release_state(
-    *,
     exists: bool = True,
     draft: bool = False,
     prerelease: bool = False,
@@ -274,7 +273,6 @@ print(f"notes_start_tag={notes_start_tag}")
 def run_release(
     tmp_path: Path,
     initial_state: dict[str, object],
-    *,
     expected_prerelease: str = "false",
     expected_latest: str = "true",
     expected_notes_start_tag: str = "",
