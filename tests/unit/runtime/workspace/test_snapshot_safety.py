@@ -78,13 +78,12 @@ def test_snapshot_entries_rejects_file_type_change_before_open(
     def replace_with_fifo(
         target: str | bytes | os.PathLike[str] | os.PathLike[bytes],
         flags: int,
-        mode: int = 0o777,
         dir_fd: int | None = None,
     ) -> int:
         if target == path.name:
             path.unlink()
             os.mkfifo(path)
-        return real_open(target, flags, mode, dir_fd=dir_fd)
+        return real_open(target, flags, dir_fd=dir_fd)
 
     with (
         patch(
@@ -111,14 +110,13 @@ def test_snapshot_entries_rejects_directory_swap_before_descent(
     def replace_with_symlink(
         target: str | bytes | os.PathLike[str] | os.PathLike[bytes],
         flags: int,
-        mode: int = 0o777,
         dir_fd: int | None = None,
     ) -> int:
         if target == directory.name:
             (directory / "inside.txt").unlink()
             directory.rmdir()
             directory.symlink_to(outside, target_is_directory=True)
-        return real_open(target, flags, mode, dir_fd=dir_fd)
+        return real_open(target, flags, dir_fd=dir_fd)
 
     with (
         patch(
