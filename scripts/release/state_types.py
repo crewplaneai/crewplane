@@ -424,6 +424,7 @@ def fetch_registry_json(url: str) -> dict[str, Any] | None:
         ) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as error:
+        error.close()
         if error.code == 404:
             return None
         error_type = (

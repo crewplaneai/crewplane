@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from crewplane.cli.run.workspace import source_policy as policy
@@ -66,15 +65,6 @@ def git_source_context(tmp_path: Path) -> GitSourceContext:
         common_git_dir=git_dir,
         git_version="git version 2.34.1",
     )
-
-
-def run_git_text(root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", root.as_posix(), *args],
-        check=True,
-        capture_output=True,
-    )
-    return result.stdout.decode("utf-8").strip()
 
 
 def apply_patched_git_policy(monkeypatch, tmp_path: Path) -> None:

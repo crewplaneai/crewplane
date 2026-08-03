@@ -23,7 +23,7 @@ from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     OptionalOutputInvoker,
-    TimedTaskOutputInvoker,
+    TaskOutputInvoker,
     execute_sequential_stage,
     review_inbox_path,
     review_loop_status_path,
@@ -330,7 +330,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 config,
                 node,
                 output,
-                invoker=TimedTaskOutputInvoker(
+                invoker=TaskOutputInvoker(
                     outputs_by_task_id={
                         "exec_executor_0": "executor output",
                         "review-a_reviewer_0": review_output(verdict="NO_FINDINGS"),

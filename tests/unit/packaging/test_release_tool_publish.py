@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-# ruff: noqa: E402, I001
-
-from dataclasses import replace
 import sys
+from dataclasses import replace
 from pathlib import Path
-
-_LOCAL_TEST_DIR = Path(__file__).resolve().parent
-if str(_LOCAL_TEST_DIR) not in sys.path:
-    sys.path.insert(0, str(_LOCAL_TEST_DIR))
 
 import pytest
 
 from scripts.release import publish, state
-from test_release_tool_fixtures import (
+from tests.unit.packaging.release_tool_support import (
     FakeRunner,
     constant,
     matching_npm,

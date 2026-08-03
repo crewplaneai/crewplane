@@ -21,10 +21,13 @@ dev = [
     "build>=1.3",
     "mypy>=1.18",
     "packaging>=24.0",
-    "pytest>=7.4",
+    "pytest>=9.1",
     "pytest-cov>=7.0",
     "ruff>=0.6",
     "twine>=6.0",
+]
+stress = [
+    "pytest-randomly>=4.0.1",
 ]
 
 [project.scripts]
@@ -69,7 +72,20 @@ ignore = ["E501", "B008"]
 dummy-variable-rgx = "^$"
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib"]
+minversion = "9.1"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--import-mode=importlib",
+    "--disable-plugin-autoload",
+]
+strict_config = true
+strict_markers = true
+strict_parametrization_ids = true
+collect_imported_tests = false
+empty_parameter_set_mark = "fail_at_collect"
+tmp_path_retention_policy = "failed"
+filterwarnings = ["error"]
 
 [tool.mypy]
 python_version = "3.13"

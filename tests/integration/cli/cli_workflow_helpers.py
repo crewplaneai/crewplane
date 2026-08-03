@@ -1,9 +1,12 @@
-import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
+import pytest
 from rich.console import Console
 
+import crewplane.cli.app as cli
 from crewplane.architecture.ports.artifacts import ArtifactStorePort, StageTaskSpec
 from crewplane.core.preflight import PreflightExecutionPlan
 from crewplane.runtime.execution.resume import write_successful_node_state
@@ -16,6 +19,22 @@ class ConsoleFactory:
 
     def __call__(self) -> Console:
         return Console(**self._kwargs)
+
+
+@contextmanager
+def cli_process_state(stream: TextIO) -> Iterator[pytest.MonkeyPatch]:
+    with pytest.MonkeyPatch.context() as process_state:
+        process_state.setattr(
+            cli,
+            "Console",
+            ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            ),
+        )
+        yield process_state
 
 
 def write_successful_workflow_outputs(
@@ -42,14 +61,6 @@ def write_successful_workflow_outputs(
             workflow_identity,
             finalize_result,
         )
-
-
-def project_pythonpath() -> str:
-    project_root = Path(__file__).resolve().parent.parent
-    existing_pythonpath = os.environ.get("PYTHONPATH")
-    return os.pathsep.join(
-        part for part in (str(project_root / "src"), existing_pythonpath) if part
-    )
 
 
 def write_basic_config(path: Path) -> None:
@@ -109,10 +120,8 @@ def write_basic_config_with_settings(path: Path, log_cli_output: bool) -> None:
     )
 
 
-def repo_task_workflow_stage_names() -> set[str]:
-    stages_root = (
-        Path(__file__).resolve().parent.parent / ".crewplane" / "execution-stages"
-    )
+def repo_task_workflow_stage_names(repo_root: Path) -> set[str]:
+    stages_root = repo_root / ".crewplane" / "execution-stages"
     if not stages_root.exists():
         return set()
     return {

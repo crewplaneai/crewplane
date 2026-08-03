@@ -18,6 +18,14 @@ from tests.unit.artifacts.test_review_loop_status import (
 StatusWriter = Callable[[Path], None]
 
 
+def write_malformed_json_status(stage_dir: Path) -> None:
+    write_status(stage_dir, "{")
+
+
+def write_non_object_json_status(stage_dir: Path) -> None:
+    write_status(stage_dir, "[]")
+
+
 def build_writer(result_file: Path, findings_file: Path) -> ResultWriter:
     def result_resolver(stage_name: str) -> Path:
         return result_file if stage_name else result_file
@@ -74,8 +82,14 @@ def test_invalid_status_does_not_overwrite_existing_outputs(
 @pytest.mark.parametrize(
     "status_writer",
     (
-        lambda stage_dir: write_status(stage_dir, "{"),
-        lambda stage_dir: write_status(stage_dir, "[]"),
+        pytest.param(
+            write_malformed_json_status,
+            id="malformed-json",
+        ),
+        pytest.param(
+            write_non_object_json_status,
+            id="non-object-json",
+        ),
     ),
 )
 def test_invalid_json_status_does_not_overwrite_existing_outputs(
@@ -102,8 +116,8 @@ def make_invalid_status_writer(mutator: StatusMutator) -> StatusWriter:
 
 
 INVALID_FINALIZER_STATUS_WRITERS: tuple[tuple[str, StatusWriter], ...] = (
-    ("malformed-json", lambda stage_dir: write_status(stage_dir, "{")),
-    ("non-object-json", lambda stage_dir: write_status(stage_dir, "[]")),
+    ("malformed-json", write_malformed_json_status),
+    ("non-object-json", write_non_object_json_status),
     *(
         (case_name, make_invalid_status_writer(mutator))
         for case_name, mutator in INVALID_STATUS_CASES
@@ -111,7 +125,11 @@ INVALID_FINALIZER_STATUS_WRITERS: tuple[tuple[str, StatusWriter], ...] = (
 )
 
 
-@pytest.mark.parametrize("case_name,status_writer", INVALID_FINALIZER_STATUS_WRITERS)
+@pytest.mark.parametrize(
+    "case_name,status_writer",
+    INVALID_FINALIZER_STATUS_WRITERS,
+    ids=[case_name for case_name, _ in INVALID_FINALIZER_STATUS_WRITERS],
+)
 def test_invalid_status_does_not_create_outputs_when_absent(
     tmp_path: Path,
     case_name: str,

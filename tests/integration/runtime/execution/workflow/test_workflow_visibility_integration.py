@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,8 +23,8 @@ from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     BlockingSnapshotObserver,
-    DelayByModelInvoker,
-    TimedTaskOutputInvoker,
+    GatedModelInvoker,
+    TaskOutputInvoker,
     execute_workflow,
     review_output,
 )
@@ -56,18 +57,27 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ],
             )
-            invoker = DelayByModelInvoker(
-                delays={"slow-model": 0.05, "fast-model": 0.0}
+            release_slow_model = asyncio.Event()
+            invoker = GatedModelInvoker(
+                gates_by_model={"slow-model": release_slow_model}
             )
             output = OutputManager(workflow.name, base_dir=tmp_path)
             events: list[ExecutionEvent] = []
+
+            def record_event(event: ExecutionEvent) -> None:
+                events.append(event)
+                if (
+                    event.event_type == "invocation_finished"
+                    and event.context.provider == "fast"
+                ):
+                    release_slow_model.set()
 
             await execute_workflow(
                 config,
                 workflow,
                 output,
                 invoker=invoker,
-                event_sink=events.append,
+                event_sink=record_event,
                 run_id=output.run_id,
                 suppress_progress_output=True,
             )
@@ -126,7 +136,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ],
             )
-            invoker = DelayByModelInvoker(delays={"alpha": 0})
+            invoker = GatedModelInvoker(gates_by_model={})
             output = OutputManager(workflow.name, base_dir=tmp_path)
             events: list[ExecutionEvent] = []
 
@@ -183,7 +193,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ],
             )
-            invoker = TimedTaskOutputInvoker(
+            invoker = TaskOutputInvoker(
                 outputs_by_task_id={
                     "exec_executor_0": "review-loop executor output",
                     "review_reviewer_0": review_output(verdict="NO_FINDINGS"),
@@ -213,6 +223,10 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     blocking_observer.release.set()
 
+            self.assertTrue(
+                blocking_observer.completed.wait(timeout=1.0),
+                "Blocking observer did not finish after release.",
+            )
             event_log = output.get_run_event_log_path().read_text(encoding="utf-8")
             self.assertIn('"event_type": "invocation_started"', event_log)
             self.assertIn('"event_type": "invocation_finished"', event_log)
@@ -262,13 +276,16 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ],
             )
-            invoker = TimedTaskOutputInvoker(
+            release_review_executor = asyncio.Event()
+            invoker = TaskOutputInvoker(
                 outputs_by_task_id={
                     "exec_executor_0": "review-loop executor output",
                     "review_reviewer_0": review_output(verdict="NO_FINDINGS"),
                     "aux_executor_0": "auxiliary output",
                 },
-                delays_by_task_id={"exec_executor_0": 0.05},
+                gates_by_task_id={
+                    "exec_executor_0": release_review_executor,
+                },
             )
             output = OutputManager(workflow.name, base_dir=tmp_path)
             persistent_logger = PersistentRunLogger(output)
@@ -284,6 +301,11 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             def record_event(event: ExecutionEvent) -> None:
                 events.append(event)
                 persistent_logger.record_event(event)
+                if (
+                    event.event_type == "node_finished"
+                    and event.context.node_id == "aux.node"
+                ):
+                    release_review_executor.set()
 
             await execute_workflow(
                 config,

@@ -5,18 +5,22 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
+
 import crewplane.cli.app as cli
-from crewplane.cli.run.workspace.git_source import (
-    GIT_MIN_VERSION,
-    parse_git_version,
-)
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import (
+    IsolatedGit,
+    configure_isolated_git_environment,
+    require_git,
+)
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
-    ConsoleFactory,
-    project_pythonpath,
+    cli_process_state,
     write_basic_config_without_default_model,
     write_basic_workflow_with_provider_model,
     write_review_workflow,
@@ -29,6 +33,10 @@ from tests.integration.cli.dry_run_helpers import (
 
 
 class CliDryRunTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def _repository_root(self, pytestconfig: pytest.Config) -> None:
+        self.repository_root = pytestconfig.rootpath
+
     def test_cli_command_runtime_defaults_are_plain_values(self) -> None:
         run_signature = inspect.signature(cli.run)
         validate_signature = inspect.signature(cli.validate)
@@ -42,23 +50,50 @@ class CliDryRunTests(unittest.TestCase):
         self.assertIsNone(validate_signature.parameters["config_file"].default)
 
     def test_cli_module_imports_in_fresh_interpreter(self) -> None:
+        source_root = (self.repository_root / "src").resolve()
+        child_environment = os.environ.copy()
+        for name in ("PYTHONHOME", "PYTHONPATH", "PYTHONUSERBASE"):
+            child_environment.pop(name, None)
+        child_environment.update(
+            {
+                "LC_ALL": "C",
+                "PYTHONNOUSERSITE": "1",
+                "TZ": "UTC",
+            }
+        )
+        probe = "\n".join(
+            (
+                "import sys",
+                "from pathlib import Path",
+                f"source_root = Path({str(source_root)!r}).resolve()",
+                "sys.path.insert(0, str(source_root))",
+                "import crewplane",
+                "from crewplane.cli.app import app",
+                "package_path = Path(crewplane.__file__).resolve()",
+                "if not package_path.is_relative_to(source_root):",
+                "    raise RuntimeError(f'unexpected crewplane import: {package_path}')",
+                "print(type(app).__name__, package_path)",
+            )
+        )
         result = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "from crewplane.cli.app import app; print(type(app).__name__)",
-            ],
+            [sys.executable, "-I", "-c", probe],
             capture_output=True,
             check=False,
-            cwd=Path(__file__).resolve().parent.parent,
-            env={**os.environ, "PYTHONPATH": project_pythonpath()},
+            cwd=self.repository_root,
+            env=child_environment,
             text=True,
+            timeout=30,
         )
 
         self.assertEqual(
             result.returncode,
             0,
-            msg=result.stderr or result.stdout,
+            msg=(
+                f"command={result.args!r}\n"
+                f"cwd={self.repository_root}\n"
+                f"stdout={result.stdout}\n"
+                f"stderr={result.stderr}"
+            ),
         )
         self.assertIn("Typer", result.stdout)
 
@@ -124,13 +159,13 @@ class CliDryRunTests(unittest.TestCase):
     def test_workspace_enabled_dry_run_succeeds_without_artifacts(
         self,
     ) -> None:
-        self._skip_without_workspace_git()
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
-            _commit_workspace_project(tmp_path)
+            with _isolated_workspace_git() as workspace_git:
+                config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
+                _commit_workspace_project(tmp_path, workspace_git)
 
-            output_text = run_dry_run(tmp_path, config_path, workflow_path)
+                output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
             self.assertIn("Dry run mode", output_text)
             self.assertIn("Workspace: enabled", output_text)
@@ -151,38 +186,16 @@ class CliDryRunTests(unittest.TestCase):
     def test_workspace_enabled_validate_succeeds_without_artifacts(
         self,
     ) -> None:
-        self._skip_without_workspace_git()
         with temporary_project_cwd() as tmp_path:
-            config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
-            _commit_workspace_project(tmp_path)
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+            with _isolated_workspace_git() as workspace_git:
+                config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
+                _commit_workspace_project(tmp_path, workspace_git)
+                stream = io.StringIO()
+                with cli_process_state(stream):
+                    cli.validate(tasks_file=workflow_path, config_file=config_path)
 
             self.assertIn("✓ Valid", stream.getvalue())
             self.assertEqual(artifact_tree(tmp_path / ".crewplane"), ())
-
-    def _skip_without_workspace_git(self) -> None:
-        try:
-            version_text = subprocess.run(
-                ["git", "--version"],
-                check=True,
-                capture_output=True,
-            ).stdout.decode("utf-8")
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            self.skipTest("git is unavailable")
-        version = parse_git_version(version_text)
-        if version is None or version < GIT_MIN_VERSION:
-            self.skipTest("Git 2.34.1+ is required for workspace source policy")
 
 
 def _write_workflow_provider_model(path: Path) -> None:
@@ -292,18 +305,21 @@ def _write_workspace_file_workflow(path: Path) -> None:
     )
 
 
-def _commit_workspace_project(root: Path) -> None:
-    _git(root, "init")
-    _git(root, "config", "user.name", "Crewplane Test")
-    _git(root, "config", "user.email", "crewplane-test@example.invalid")
-    _git(root, "add", ".")
-    _git(root, "commit", "-m", "initial")
+@contextmanager
+def _isolated_workspace_git() -> Iterator[IsolatedGit]:
+    with (
+        tempfile.TemporaryDirectory(prefix="crewplane-dry-run-git-") as tmp_dir,
+        pytest.MonkeyPatch.context() as process_state,
+    ):
+        environment = configure_isolated_git_environment(process_state, Path(tmp_dir))
+        yield require_git(environment, required=False)
 
 
-def _git(root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", root.as_posix(), *args],
-        check=True,
-        capture_output=True,
+def _commit_workspace_project(root: Path, workspace_git: IsolatedGit) -> None:
+    workspace_git.run_text(root, "init")
+    workspace_git.run_text(root, "config", "user.name", "Crewplane Test")
+    workspace_git.run_text(
+        root, "config", "user.email", "crewplane-test@example.invalid"
     )
-    return result.stdout.decode("utf-8").strip()
+    workspace_git.run_text(root, "add", ".")
+    workspace_git.run_text(root, "commit", "-m", "initial")

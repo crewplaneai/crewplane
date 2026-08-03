@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -17,6 +15,10 @@ from crewplane.artifacts.workspace import (
 from crewplane.artifacts.workspace import (
     git_blob_hash as workspace_git_blob_hash,
 )
+from tests.helpers import isolated_git as _isolated_git_support
+from tests.helpers.isolated_git import IsolatedGit
+
+isolated_git = _isolated_git_support.isolated_git
 
 
 @dataclass(frozen=True)
@@ -32,26 +34,37 @@ class BlobDescriptor:
     object_format: str
 
 
-def test_workspace_blob_descriptor_matches_repo_blob(tmp_path: Path) -> None:
-    descriptor = _blob_descriptor(tmp_path)
+def test_workspace_blob_descriptor_matches_repo_blob(
+    tmp_path: Path,
+    isolated_git: IsolatedGit,
+) -> None:
+    descriptor = _blob_descriptor(tmp_path, isolated_git)
 
     assert _descriptor_matches(descriptor) is True
 
 
 def test_workspace_blob_descriptor_matches_pathspec_magic_repo_path(
     tmp_path: Path,
+    isolated_git: IsolatedGit,
 ) -> None:
-    descriptor = _blob_descriptor(tmp_path, git_path=":(literal)magic.txt")
+    descriptor = _blob_descriptor(
+        tmp_path, isolated_git, git_path=":(literal)magic.txt"
+    )
 
     assert _descriptor_matches(descriptor) is True
 
 
 def test_workspace_blob_descriptor_matches_pathspec_magic_bundle_path(
     tmp_path: Path,
+    isolated_git: IsolatedGit,
 ) -> None:
-    descriptor = _blob_descriptor(tmp_path, git_path=":(literal)magic.txt")
+    descriptor = _blob_descriptor(
+        tmp_path, isolated_git, git_path=":(literal)magic.txt"
+    )
     bundle_path = descriptor.repo / "workspace.bundle"
-    _git(descriptor.repo, "bundle", "create", bundle_path.as_posix(), "HEAD")
+    isolated_git.run_text(
+        descriptor.repo, "bundle", "create", bundle_path.as_posix(), "HEAD"
+    )
 
     assert _descriptor_matches(descriptor, bundle_path=bundle_path) is True
 
@@ -59,18 +72,22 @@ def test_workspace_blob_descriptor_matches_pathspec_magic_bundle_path(
 def test_workspace_blob_descriptor_times_out_while_stdout_is_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    isolated_git: IsolatedGit,
 ) -> None:
-    descriptor = _blob_descriptor(tmp_path)
+    descriptor = _blob_descriptor(tmp_path, isolated_git)
     original_popen = subprocess.Popen
+    stalled_processes: list[subprocess.Popen[bytes]] = []
 
     def stalled_cat_file_blob(command, stdout, stderr, env):
         del command
-        return original_popen(
+        process = original_popen(
             [sys.executable, "-c", "import time; time.sleep(10)"],
             stdout=stdout,
             stderr=stderr,
             env=env,
         )
+        stalled_processes.append(process)
+        return process
 
     monkeypatch.setattr(
         workspace_git_blob_hash.subprocess,
@@ -84,9 +101,16 @@ def test_workspace_blob_descriptor_times_out_while_stdout_is_open(
     )
 
     started = monotonic()
-
-    assert _descriptor_matches(descriptor) is False
-    assert monotonic() - started < 1.0
+    try:
+        assert _descriptor_matches(descriptor) is False
+        assert monotonic() - started < 1.0
+        assert len(stalled_processes) == 1
+        assert stalled_processes[0].poll() is not None
+    finally:
+        for process in stalled_processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=1.0)
 
 
 def test_git_stdout_sha256_raises_and_reaps_when_stdout_pipe_missing(
@@ -188,29 +212,35 @@ def test_git_stdout_sha256_reaps_process_when_stdout_setup_fails(
     assert selector.closed is True
 
 
-def _blob_descriptor(tmp_path: Path, git_path: str = "file.txt") -> BlobDescriptor:
-    if shutil.which("git") is None:
-        pytest.skip("git is unavailable")
+def _blob_descriptor(
+    tmp_path: Path,
+    isolated_git: IsolatedGit,
+    git_path: str = "file.txt",
+) -> BlobDescriptor:
     repo = tmp_path / "repo"
     payload = b"workspace-payload"
     repo.mkdir()
-    _git(repo, "init")
-    _git(repo, "config", "user.name", "Crewplane Test")
-    _git(repo, "config", "user.email", "crewplane-test@example.invalid")
+    isolated_git.run_text(repo, "init")
+    isolated_git.run_text(repo, "config", "user.name", "Crewplane Test")
+    isolated_git.run_text(
+        repo, "config", "user.email", "crewplane-test@example.invalid"
+    )
     (repo / git_path).write_bytes(payload)
-    _git(repo, "--literal-pathspecs", "add", git_path)
-    _git(repo, "commit", "-m", "initial")
-    mode, object_id = _tree_blob_entry(repo, git_path)
+    isolated_git.run_text(repo, "--literal-pathspecs", "add", git_path)
+    isolated_git.run_text(repo, "commit", "-m", "initial")
+    mode, object_id = _tree_blob_entry(repo, isolated_git, git_path)
     return BlobDescriptor(
         repo=repo,
-        source_commit=_git(repo, "rev-parse", "HEAD"),
-        source_tree=_git(repo, "rev-parse", "HEAD^{tree}"),
+        source_commit=isolated_git.run_text(repo, "rev-parse", "HEAD"),
+        source_tree=isolated_git.run_text(repo, "rev-parse", "HEAD^{tree}"),
         git_path=git_path,
         git_blob=object_id,
         git_file_mode=mode,
         byte_size=len(payload),
         canonical_sha256=hashlib.sha256(payload).hexdigest(),
-        object_format=_git(repo, "rev-parse", "--show-object-format=storage"),
+        object_format=isolated_git.run_text(
+            repo, "rev-parse", "--show-object-format=storage"
+        ),
     )
 
 
@@ -232,8 +262,12 @@ def _descriptor_matches(
     )
 
 
-def _tree_blob_entry(repo: Path, git_path: str) -> tuple[str, str]:
-    header = _git(
+def _tree_blob_entry(
+    repo: Path,
+    isolated_git: IsolatedGit,
+    git_path: str,
+) -> tuple[str, str]:
+    header = isolated_git.run_text(
         repo,
         "--literal-pathspecs",
         "ls-tree",
@@ -243,13 +277,3 @@ def _tree_blob_entry(repo: Path, git_path: str) -> tuple[str, str]:
     ).splitlines()[0]
     parts = header.split()
     return parts[0], parts[2]
-
-
-def _git(repo: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", repo.as_posix(), *args],
-        check=True,
-        capture_output=True,
-        env=dict(os.environ),
-    )
-    return result.stdout.decode("utf-8", errors="replace").strip()

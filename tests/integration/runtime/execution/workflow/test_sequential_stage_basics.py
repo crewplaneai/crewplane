@@ -33,8 +33,8 @@ from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     FailingLogOutputManager,
     MockAgentInvoker,
-    ParallelReviewerTimingInvoker,
-    TimedTaskOutputInvoker,
+    ParallelReviewerBarrierInvoker,
+    TaskOutputInvoker,
     execute_sequential_stage,
     review_loop_status_path,
     review_output,
@@ -633,17 +633,15 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                     ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
                 ],
             )
-            invoker = ParallelReviewerTimingInvoker(reviewer_delay=0.1)
+            invoker = ParallelReviewerBarrierInvoker()
             output = OutputManager("workflow", base_dir=tmp_path)
 
-            started_at = asyncio.get_running_loop().time()
             await execute_sequential_stage(config, node, output, invoker=invoker)
-            elapsed = asyncio.get_running_loop().time() - started_at
 
-            self.assertLess(elapsed, 0.18)
-            review_a_started = invoker.started_at["review-a_reviewer_0"]
-            review_b_started = invoker.started_at["review-b_reviewer_1"]
-            self.assertLess(abs(review_a_started - review_b_started), 0.05)
+            self.assertEqual(
+                invoker.started_reviewer_task_ids,
+                {"review-a_reviewer_0", "review-b_reviewer_1"},
+            )
 
     async def test_parallel_reviewer_snapshot_detects_unregistered_concurrent_write(
         self,
@@ -676,13 +674,12 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                     ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
                 ],
             )
-            invoker = TimedTaskOutputInvoker(
+            invoker = TaskOutputInvoker(
                 outputs_by_task_id={
                     "exec_executor_0": "executor output",
                     "review-a_reviewer_0": review_output(verdict="NO_FINDINGS"),
                     "review-b_reviewer_1": review_output(verdict="NO_FINDINGS"),
                 },
-                delays_by_task_id={"review-a_reviewer_0": 0.05},
             )
             output = OutputManager("workflow", base_dir=tmp_path)
             persistent_logger = PersistentRunLogger(output)
@@ -740,29 +737,32 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                     if args[0].task_id == "review-b_reviewer_1":
                         release_review_a_snapshot.set()
 
-            with (
-                patch.object(
-                    provider_generated_files,
-                    "snapshot_generated_file_workspace",
-                    side_effect=coordinate_snapshot,
-                ),
-                patch.object(
-                    review_loop_drift,
-                    "detect_provider_call_drift",
-                    side_effect=detect_drift_and_release_review_a,
-                ),
-            ):
-                await execute_sequential_stage(
-                    config,
-                    node,
-                    output,
-                    invoker=invoker,
-                    telemetry=ExecutionTelemetry(
-                        workflow_name="workflow",
-                        run_id=output.run_id,
-                        event_sink=record_event,
+            try:
+                with (
+                    patch.object(
+                        provider_generated_files,
+                        "snapshot_generated_file_workspace",
+                        side_effect=coordinate_snapshot,
                     ),
-                )
+                    patch.object(
+                        review_loop_drift,
+                        "detect_provider_call_drift",
+                        side_effect=detect_drift_and_release_review_a,
+                    ),
+                ):
+                    await execute_sequential_stage(
+                        config,
+                        node,
+                        output,
+                        invoker=invoker,
+                        telemetry=ExecutionTelemetry(
+                            workflow_name="workflow",
+                            run_id=output.run_id,
+                            event_sink=record_event,
+                        ),
+                    )
+            finally:
+                release_review_a_snapshot.set()
 
             self.assertFalse(coordination_timed_out.is_set())
             drift_events = [
@@ -821,32 +821,46 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                     ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
                 ],
             )
-            invoker = TimedTaskOutputInvoker(
+            release_review_a = asyncio.Event()
+            invoker = TaskOutputInvoker(
                 outputs_by_task_id={
                     "exec_executor_0": "executor output",
                     "review-a_reviewer_0": review_output(verdict="NO_FINDINGS"),
                 },
-                delays_by_task_id={"review-a_reviewer_0": 0.01},
+                gates_by_task_id={"review-a_reviewer_0": release_review_a},
             )
+
+            def release_in_flight_reviewer() -> None:
+                self.assertIn(
+                    "review-a",
+                    output.log_setup_providers,
+                    "review-a lifecycle had not started when review-b setup failed",
+                )
+                release_review_a.set()
+
             output = FailingLogOutputManager(
                 "workflow",
                 base_dir=tmp_path,
                 failing_provider="review-b",
+                on_failure=release_in_flight_reviewer,
             )
             events: list[ExecutionEvent] = []
 
-            with self.assertRaisesRegex(RuntimeError, "log setup failed"):
-                await execute_sequential_stage(
-                    config,
-                    node,
-                    output,
-                    invoker=invoker,
-                    telemetry=ExecutionTelemetry(
-                        workflow_name="workflow",
-                        run_id="run-1",
-                        event_sink=events.append,
-                    ),
-                )
+            try:
+                with self.assertRaisesRegex(RuntimeError, "log setup failed"):
+                    await execute_sequential_stage(
+                        config,
+                        node,
+                        output,
+                        invoker=invoker,
+                        telemetry=ExecutionTelemetry(
+                            workflow_name="workflow",
+                            run_id="run-1",
+                            event_sink=events.append,
+                        ),
+                    )
+            finally:
+                release_review_a.set()
 
             node_dir = output.get_stage_dir(node.id)
             if node_dir is None:

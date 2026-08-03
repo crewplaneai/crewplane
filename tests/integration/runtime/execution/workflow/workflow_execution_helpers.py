@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from threading import Event
@@ -397,9 +398,9 @@ class FindingsSelectiveFailInvoker(NoPresentationInvoker):
         )
 
 
-class DelayByModelInvoker(NoPresentationInvoker):
-    def __init__(self, delays: dict[str, float]) -> None:
-        self.delays = delays
+class GatedModelInvoker(NoPresentationInvoker):
+    def __init__(self, gates_by_model: dict[str, asyncio.Event]) -> None:
+        self.gates_by_model = gates_by_model
         self.calls: list[str] = []
 
     async def invoke(
@@ -413,7 +414,14 @@ class DelayByModelInvoker(NoPresentationInvoker):
         invocation_context=None,  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
     ) -> None:
         self.calls.append(model)
-        await asyncio.sleep(self.delays.get(model, 0))
+        gate = self.gates_by_model.get(model)
+        if gate is not None:
+            try:
+                await asyncio.wait_for(gate.wait(), timeout=1.0)
+            except TimeoutError as exc:
+                raise AssertionError(
+                    f"Model {model!r} was not released by its causal gate."
+                ) from exc
         output_file.write_text(f"done: {model}", encoding="utf-8")
 
 
@@ -423,9 +431,12 @@ class FailingLogOutputManager(OutputManager):
         task_name: str,
         base_dir: Path,
         failing_provider: str,
+        on_failure: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(task_name, base_dir=base_dir, log_cli_output=True)
         self.failing_provider = failing_provider
+        self.on_failure = on_failure
+        self.log_setup_providers: list[str] = []
 
     def get_log_file(
         self,
@@ -435,7 +446,10 @@ class FailingLogOutputManager(OutputManager):
         audit_round_num: int | None = None,
         round_num: int | None = None,
     ) -> Path | None:
+        self.log_setup_providers.append(provider)
         if provider == self.failing_provider:
+            if self.on_failure is not None:
+                self.on_failure()
             raise RuntimeError("log setup failed")
         return super().get_log_file(
             stage_name,
@@ -446,14 +460,14 @@ class FailingLogOutputManager(OutputManager):
         )
 
 
-class TimedTaskOutputInvoker(NoPresentationInvoker):
+class TaskOutputInvoker(NoPresentationInvoker):
     def __init__(
         self,
         outputs_by_task_id: dict[str, str],
-        delays_by_task_id: dict[str, float] | None = None,
+        gates_by_task_id: dict[str, asyncio.Event] | None = None,
     ) -> None:
         self.outputs_by_task_id = outputs_by_task_id
-        self.delays_by_task_id = delays_by_task_id or {}
+        self.gates_by_task_id = gates_by_task_id or {}
         self.calls: list[dict[str, str | int | None]] = []
 
     async def invoke(
@@ -476,7 +490,14 @@ class TimedTaskOutputInvoker(NoPresentationInvoker):
                 "round_num": invocation_context.round_num,
             }
         )
-        await asyncio.sleep(self.delays_by_task_id.get(task_id, 0))
+        gate = self.gates_by_task_id.get(task_id)
+        if gate is not None:
+            try:
+                await asyncio.wait_for(gate.wait(), timeout=1.0)
+            except TimeoutError as exc:
+                raise AssertionError(
+                    f"Task {task_id!r} was not released by its causal gate."
+                ) from exc
         content = self.outputs_by_task_id.get(task_id)
         if content is None:
             content = (
@@ -487,10 +508,10 @@ class TimedTaskOutputInvoker(NoPresentationInvoker):
         output_file.write_text(content, encoding="utf-8")
 
 
-class ParallelReviewerTimingInvoker(NoPresentationInvoker):
-    def __init__(self, reviewer_delay: float) -> None:
-        self.reviewer_delay = reviewer_delay
-        self.started_at: dict[str, float] = {}
+class ParallelReviewerBarrierInvoker(NoPresentationInvoker):
+    def __init__(self) -> None:
+        self.started_reviewer_task_ids: set[str] = set()
+        self._all_reviewers_started = asyncio.Event()
 
     async def invoke(
         self,
@@ -503,9 +524,19 @@ class ParallelReviewerTimingInvoker(NoPresentationInvoker):
         invocation_context=None,  # type: ignore[no-untyped-def]
     ) -> None:
         assert invocation_context is not None
-        self.started_at[invocation_context.task_id] = asyncio.get_running_loop().time()
         if invocation_context.role == ProviderRole.REVIEWER:
-            await asyncio.sleep(self.reviewer_delay)
+            self.started_reviewer_task_ids.add(invocation_context.task_id)
+            if len(self.started_reviewer_task_ids) == 2:
+                self._all_reviewers_started.set()
+            try:
+                await asyncio.wait_for(
+                    self._all_reviewers_started.wait(),
+                    timeout=1.0,
+                )
+            except TimeoutError as exc:
+                raise AssertionError(
+                    "Reviewers did not reach the parallel invocation barrier."
+                ) from exc
             output_file.write_text(
                 review_output(verdict="NO_FINDINGS"), encoding="utf-8"
             )
@@ -546,13 +577,18 @@ class BlockingSnapshotObserver:
     def __init__(self) -> None:
         self.entered = Event()
         self.release = Event()
+        self.completed = Event()
 
     def start(self, context) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback signature.
         return
 
     def on_snapshot(self, event, snapshot) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback signature.
         self.entered.set()
-        self.release.wait()
+        try:
+            if not self.release.wait(timeout=2.0):
+                raise TimeoutError("Blocking snapshot observer was not released.")
+        finally:
+            self.completed.set()
 
     def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback signature.
         return

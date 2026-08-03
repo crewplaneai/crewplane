@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -10,10 +8,6 @@ import pytest
 from rich.console import Console
 
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
-from crewplane.cli.run.workspace.git_source import (
-    GIT_MIN_VERSION,
-    parse_git_version,
-)
 from crewplane.cli.workflow_runner import execute_workflow_run
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight import PreflightWorkflowSource
@@ -26,12 +20,12 @@ from crewplane.core.workflow.models import (
     workflow_payload_dict,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import IsolatedGit
 from tests.helpers.workspace_cli_cleanup import assert_cleanup_dry_run
 from tests.helpers.workspace_workflow_fixtures import (
     BASE_APP_TEXT,
     assert_workspace_e2e_artifacts,
-    git_text,
-    latest_succeeded_run,
+    resumed_succeeded_run,
     run_dirs,
     write_initial_failure_fixtures,
     write_success_fixtures,
@@ -66,16 +60,18 @@ class WorkspaceUnavailableArtifactsAdapter:
         raise AssertionError("workspace real run must fail before store allocation")
 
 
-async def run_workspace_enabled_mock_e2e(tmp_path: Path) -> None:
-    project_root = _workspace_project(tmp_path)
+async def run_workspace_enabled_mock_e2e(
+    tmp_path: Path,
+    workspace_git: IsolatedGit,
+) -> None:
+    project_root = _workspace_project(tmp_path, workspace_git)
     fixtures_dir = tmp_path / "fixtures"
     cache_root = tmp_path / "workspace-cache"
     config = _workspace_config(cache_root, fixtures_dir)
     workflow = _workspace_workflow()
-    original_cwd = Path.cwd()
     resumed_run: Path | None = None
-    os.chdir(project_root)
-    try:
+    with pytest.MonkeyPatch.context() as process_state:
+        process_state.chdir(project_root)
         write_initial_failure_fixtures(fixtures_dir)
         first_stream = io.StringIO()
         with pytest.raises(RuntimeError, match="valid canonical candidate"):
@@ -85,7 +81,7 @@ async def run_workspace_enabled_mock_e2e(tmp_path: Path) -> None:
         second_stream = io.StringIO()
         await _run_workflow(workflow, config, Console(file=second_stream))
         assert "Resuming workflow" in second_stream.getvalue()
-        resumed_run = latest_succeeded_run(project_root)
+        resumed_run = resumed_succeeded_run(project_root)
 
         run_count_after_resume = len(run_dirs(project_root))
         duplicate_stream = io.StringIO()
@@ -96,18 +92,17 @@ async def run_workspace_enabled_mock_e2e(tmp_path: Path) -> None:
         force_stream = io.StringIO()
         await _run_workflow(workflow, config, Console(file=force_stream), force=True)
         assert len(run_dirs(project_root)) == run_count_after_resume + 1
-    finally:
-        os.chdir(original_cwd)
 
     assert resumed_run is not None
-    assert_workspace_e2e_artifacts(resumed_run)
+    assert_workspace_e2e_artifacts(resumed_run, workspace_git)
     assert_cleanup_dry_run(project_root, cache_root)
 
 
 async def run_workspace_real_run_rejects_non_filesystem_artifacts(
     tmp_path: Path,
+    workspace_git: IsolatedGit,
 ) -> None:
-    project_root = _workspace_project(tmp_path)
+    project_root = _workspace_project(tmp_path, workspace_git)
     fixtures_dir = tmp_path / "fixtures"
     cache_root = tmp_path / "workspace-cache"
     config = _workspace_config(
@@ -119,31 +114,19 @@ async def run_workspace_real_run_rejects_non_filesystem_artifacts(
         ),
     )
     workflow = _workspace_workflow()
-    original_cwd = Path.cwd()
-    WorkspaceUnavailableArtifactsAdapter.create_store_calls = 0
-    os.chdir(project_root)
-    try:
+    with pytest.MonkeyPatch.context() as process_state:
+        process_state.chdir(project_root)
+        process_state.setattr(
+            WorkspaceUnavailableArtifactsAdapter,
+            "create_store_calls",
+            0,
+        )
         with pytest.raises(RuntimeError, match="filesystem artifacts backend"):
             await _run_workflow(workflow, config, Console(file=io.StringIO()))
-    finally:
-        os.chdir(original_cwd)
-    assert WorkspaceUnavailableArtifactsAdapter.create_store_calls == 0
+        assert WorkspaceUnavailableArtifactsAdapter.create_store_calls == 0
 
 
-def local_git_supports_workspace_policy() -> bool:
-    try:
-        version_text = subprocess.run(
-            ["git", "--version"],
-            check=True,
-            capture_output=True,
-        ).stdout.decode("utf-8")
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return False
-    version = parse_git_version(version_text)
-    return version is not None and version >= GIT_MIN_VERSION
-
-
-def _workspace_project(tmp_path: Path) -> Path:
+def _workspace_project(tmp_path: Path, workspace_git: IsolatedGit) -> Path:
     project_root = tmp_path / "project"
     (project_root / "docs").mkdir(parents=True)
     (project_root / "src").mkdir()
@@ -156,11 +139,22 @@ def _workspace_project(tmp_path: Path) -> Path:
         "workspace workflow source\n",
         encoding="utf-8",
     )
-    git_text(project_root, "init")
-    git_text(project_root, "config", "user.name", "Crewplane Test")
-    git_text(project_root, "config", "user.email", "crewplane-test@example.invalid")
-    git_text(project_root, "add", "docs/input.md", "src/app.txt", "workflow.task.md")
-    git_text(project_root, "commit", "-m", "initial")
+    workspace_git.run_text(project_root, "init")
+    workspace_git.run_text(project_root, "config", "user.name", "Crewplane Test")
+    workspace_git.run_text(
+        project_root,
+        "config",
+        "user.email",
+        "crewplane-test@example.invalid",
+    )
+    workspace_git.run_text(
+        project_root,
+        "add",
+        "docs/input.md",
+        "src/app.txt",
+        "workflow.task.md",
+    )
+    workspace_git.run_text(project_root, "commit", "-m", "initial")
     return project_root
 
 

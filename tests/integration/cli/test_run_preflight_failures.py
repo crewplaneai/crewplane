@@ -1,9 +1,9 @@
 import io
-import os
 import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
 import typer
 
 import crewplane.cli.app as cli
@@ -11,7 +11,7 @@ from crewplane.artifacts.locks import ResumeLockError, SameContextLock
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
-    ConsoleFactory,
+    cli_process_state,
     repo_task_workflow_stage_names,
     write_basic_config,
     write_basic_workflow,
@@ -19,6 +19,10 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 
 class CliRunPreflightFailureTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def _repository_root(self, pytestconfig: pytest.Config) -> None:
+        self.repository_root = pytestconfig.rootpath
+
     def test_run_fails_fast_for_unknown_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -80,21 +84,12 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
+            with cli_process_state(stream):
                 cli.run(
                     tasks_file=workflow_path,
                     config_file=config_path,
                     dry_run=False,
                 )
-            finally:
-                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight warnings:", output_text)
@@ -131,22 +126,12 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.run(
-                        tasks_file=workflow_path,
-                        config_file=config_path,
-                        dry_run=False,
-                    )
-            finally:
-                cli.Console = original_console_cls
+            with cli_process_state(stream), self.assertRaises(typer.Exit):
+                cli.run(
+                    tasks_file=workflow_path,
+                    config_file=config_path,
+                    dry_run=False,
+                )
 
             output_text = stream.getvalue()
             self.assertIn("Preflight PREFLIGHT-VALIDATION", output_text)
@@ -165,21 +150,17 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             write_basic_workflow(workflow_path)
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_update_run = SameContextLock.update_run
 
             def fail_update_run(self, run_id: str, run_key_name: str) -> None:
                 del self, run_id, run_key_name
                 raise ResumeLockError("Cannot update a lock owned by another process.")
 
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            SameContextLock.update_run = fail_update_run
-            try:
+            with cli_process_state(stream) as process_state:
+                process_state.setattr(
+                    SameContextLock,
+                    "update_run",
+                    fail_update_run,
+                )
                 with self.assertRaises(typer.Exit):
                     cli.run(
                         tasks_file=workflow_path,
@@ -187,9 +168,6 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                         dry_run=False,
                         no_live=True,
                     )
-            finally:
-                SameContextLock.update_run = original_update_run
-                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Run lock unavailable", output_text)
@@ -224,29 +202,17 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_env = os.environ.get("ORCH_REQUIRED_ENV")
-            original_repo_stage_names = repo_task_workflow_stage_names()
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
+            original_repo_stage_names = repo_task_workflow_stage_names(
+                self.repository_root
             )
-            try:
-                os.environ.pop("ORCH_REQUIRED_ENV", None)
+            with cli_process_state(stream) as process_state:
+                process_state.delenv("ORCH_REQUIRED_ENV", raising=False)
                 with self.assertRaises(typer.Exit):
                     cli.run(
                         tasks_file=workflow_path,
                         config_file=config_path,
                         dry_run=False,
                     )
-            finally:
-                if original_env is None:
-                    os.environ.pop("ORCH_REQUIRED_ENV", None)
-                else:
-                    os.environ["ORCH_REQUIRED_ENV"] = original_env
-                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight TEMPLATE-VALUE", output_text)
@@ -254,7 +220,7 @@ class CliRunPreflightFailureTests(unittest.TestCase):
                 "Environment variable not set: ORCH_REQUIRED_ENV", output_text
             )
             self.assertEqual(
-                repo_task_workflow_stage_names(),
+                repo_task_workflow_stage_names(self.repository_root),
                 original_repo_stage_names,
             )
             self.assertTrue((tmp_path / ".crewplane" / "execution-stages").exists())
@@ -299,17 +265,8 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
+            with cli_process_state(stream):
                 cli.run(tasks_file=workflow_path, config_file=config_path, dry_run=True)
-            finally:
-                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Dry run mode", output_text)
@@ -342,22 +299,12 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.run(
-                        tasks_file=workflow_path,
-                        config_file=config_path,
-                        dry_run=True,
-                    )
-            finally:
-                cli.Console = original_console_cls
+            with cli_process_state(stream), self.assertRaises(typer.Exit):
+                cli.run(
+                    tasks_file=workflow_path,
+                    config_file=config_path,
+                    dry_run=True,
+                )
 
             output_text = stream.getvalue()
             self.assertIn("Provider validation failed", output_text)
@@ -390,28 +337,14 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_env = os.environ.get("ORCH_REQUIRED_ENV")
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                os.environ.pop("ORCH_REQUIRED_ENV", None)
+            with cli_process_state(stream) as process_state:
+                process_state.delenv("ORCH_REQUIRED_ENV", raising=False)
                 with self.assertRaises(typer.Exit):
                     cli.run(
                         tasks_file=workflow_path,
                         config_file=config_path,
                         dry_run=True,
                     )
-            finally:
-                if original_env is None:
-                    os.environ.pop("ORCH_REQUIRED_ENV", None)
-                else:
-                    os.environ["ORCH_REQUIRED_ENV"] = original_env
-                cli.Console = original_console_cls
 
             output_text = stream.getvalue()
             self.assertIn("Preflight compilation failed", output_text)
@@ -463,29 +396,22 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_execute_workflow = cli.execute_workflow
             calls = {"count": 0}
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 calls["count"] += 1
 
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            cli.execute_workflow = fake_execute_workflow  # type: ignore[assignment]
-            try:
+            with cli_process_state(stream) as process_state:
+                process_state.setattr(
+                    cli,
+                    "execute_workflow",
+                    fake_execute_workflow,
+                )
                 cli.run(
                     tasks_file=workflow_path,
                     config_file=config_path,
                     dry_run=False,
                 )
-            finally:
-                cli.execute_workflow = original_execute_workflow  # type: ignore[assignment]
-                cli.Console = original_console_cls
 
             self.assertEqual(calls["count"], 1)
             output_text = stream.getvalue()
@@ -545,22 +471,12 @@ class CliRunPreflightFailureTests(unittest.TestCase):
             )
 
             stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.run(
-                        tasks_file=workflow_path,
-                        config_file=config_path,
-                        dry_run=True,
-                    )
-            finally:
-                cli.Console = original_console_cls
+            with cli_process_state(stream), self.assertRaises(typer.Exit):
+                cli.run(
+                    tasks_file=workflow_path,
+                    config_file=config_path,
+                    dry_run=True,
+                )
 
             output_text = stream.getvalue()
             self.assertIn("Audit rounds validation failed", output_text)
