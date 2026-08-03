@@ -3,16 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from crewplane.architecture.contracts import (
-    InvocationUsage as InvocationUsage,
-)
+import crewplane.architecture.contracts as _contracts
 from crewplane.architecture.contracts import (
     ProviderKind,
     UsageParserProfile,
 )
-from crewplane.architecture.contracts import (
-    ProviderTokenUsage as ProviderTokenUsage,
-)
+
+InvocationUsage = _contracts.InvocationUsage
+ProviderTokenUsage = _contracts.ProviderTokenUsage
 
 VisibleEstimateMethod = Literal["char-count-lower-bound"]
 UsageParser = UsageParserProfile
