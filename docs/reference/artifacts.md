@@ -151,9 +151,17 @@ Corrupt or untrusted manifests are treated as unusable history for skip/resume
 decisions.
 
 Duplicate skip decisions reuse a previous successful run only when the recorded
-`workflow_signature` and required artifacts are usable. Resume decisions hydrate
-completed node-boundary artifacts from a failed or cancelled run into a new run.
+`workflow_signature`, node states, results, findings, retained generated files,
+sizes, digests, containment, and dependency closure are usable. Crewplane
+searches older matching successes if the newest success is incomplete or
+corrupt. Resume decisions use the same artifact validation before hydrating
+completed node boundaries from a failed or cancelled run into a new run.
 `crewplane run --force` bypasses both behaviors and records a new run.
+
+Atomic artifact publication propagates file-data, replacement, and supported
+directory-sync failures. Crewplane suppresses only platform errors that
+explicitly mean directory synchronization is unsupported, so an integrity
+failure is not reported as a successful publication.
 
 ## Logs
 

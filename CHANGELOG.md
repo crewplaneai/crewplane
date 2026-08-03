@@ -4,6 +4,25 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Duplicate skip now validates required node and generated-file artifacts and
+  can fall back to an older valid matching success.
+- Adapter option scopes and observer capabilities are now explicit validated
+  extension contracts.
+
+### Fixed
+
+- Redacted secrets across provider and workspace command fields before plans,
+  metadata, diagnostics, and observability records are persisted.
+- Rejected nonfinite configuration and JSON, unsafe or unbounded workspace
+  snapshots, racy process-group discovery, and suppressed artifact durability
+  failures.
+- Prevented concurrent generated-file publication drift and unrelated
+  project-root writes from being attributed to provider invocations.
+- Excluded presentation-only and inactive review settings from semantic
+  execution identity and made stream-tail retention incrementally bounded.
+
 ## [0.1.6] - 2026-07-29
 
 ### Changed

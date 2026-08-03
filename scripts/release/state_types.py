@@ -355,7 +355,8 @@ def load_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.write_text(
-        json.dumps(payload, indent=2, sort_keys=False) + "\n", encoding="utf-8"
+        json.dumps(payload, allow_nan=False, indent=2, sort_keys=False) + "\n",
+        encoding="utf-8",
     )
 
 

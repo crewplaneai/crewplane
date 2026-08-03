@@ -51,6 +51,7 @@ class WorkspaceUnavailableArtifactsAdapter:
             implementation=implementation,
             resolved_identity=resolved_identity,
             options=dict(options or {}),
+            option_scopes={key: "artifact" for key in dict(options or {})},
         )
 
     def create_store(

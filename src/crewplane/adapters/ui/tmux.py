@@ -9,6 +9,7 @@ from rich.console import Console
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     JsonObject,
+    JsonValue,
     TmuxUiOptions,
 )
 from crewplane.architecture.ports import UIAdapterCapabilities
@@ -81,7 +82,7 @@ class TmuxUIAdapter:
         options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         runtime_options = _resolve_tmux_options(dict(options or {}))
-        canonical_options = {
+        canonical_options: dict[str, JsonValue] = {
             "auto_close_session": runtime_options.auto_close_session,
             "log_tail_lines": runtime_options.log_tail_lines,
             "quiet_after_seconds": runtime_options.quiet_after_seconds,

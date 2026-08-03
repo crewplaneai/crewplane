@@ -18,19 +18,21 @@ UNINSTALL_CMD = uv pip uninstall $(PACKAGE_NAME)
 RUN_PYTHON = uv run --extra dev python
 RUN_PYTEST = uv run --extra dev python -m pytest -q
 RUN_RUFF = uv run --extra dev python -m ruff
+RUN_MYPY = uv run --extra dev python -m mypy
 else
 INSTALL_CMD = $(PYTHON) -m pip install -e '.[dev]'
 UNINSTALL_CMD = $(PYTHON) -m pip uninstall $(PACKAGE_NAME)
 RUN_PYTHON = $(PYTHON)
 RUN_PYTEST = $(PYTHON) -m pytest -q
 RUN_RUFF = $(PYTHON) -m ruff
+RUN_MYPY = $(PYTHON) -m mypy
 endif
 
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
-.PHONY: help setup uninstall test lint format format-check check actionlint \
+.PHONY: help setup uninstall test typecheck lint format format-check check actionlint \
 	dependency-audit clean \
-	package-build package-check package-wheelhouse changelog-check \
+	package-build package-check package-wheelhouse wheel-typecheck changelog-check \
 	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
 	install-script-smoke npm-pack npm-smoke brew-smoke install-check \
 	release-prepare release-check release-confirm release-pypi release-npm release
@@ -44,10 +46,11 @@ help:
 		'Development:' \
 		'  setup              Install editable dev environment' \
 		'  test               Run pytest' \
+		'  typecheck          Check typed extension contracts and a public consumer' \
 		'  lint               Run ruff checks' \
 		'  format             Run ruff import fixes and formatter' \
 		'  format-check       Check formatting' \
-		'  check              Run lint, format-check, and tests' \
+		'  check              Run lint, format-check, typing, and tests' \
 		'  actionlint         Validate GitHub Actions workflows' \
 		'  dependency-audit   Audit locked and build-system Python dependencies' \
 		'  clean              Remove caches, build output, and release scratch files' \
@@ -56,6 +59,7 @@ help:
 		'Package validation:' \
 		'  package-build      Build wheel and sdist into dist/' \
 		'  package-check      Build artifacts, run twine check, verify Homebrew sdist SHA' \
+		'  wheel-typecheck    Type-check an external consumer against the built wheel' \
 		'  install-smoke      Exercise pip, uv tool, and pipx installs where available' \
 		'  install-check      Build once, then run package, installer, npm, and Homebrew smokes' \
 		'' \
@@ -86,7 +90,27 @@ uninstall:
 	$(UNINSTALL_CMD)
 
 test:
-	$(RUN_PYTEST)
+	$(RUN_PYTEST) --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=87
+
+# Strict mypy adoption currently covers public extension contracts and their
+# direct consumers; the rest of the package is not yet strict-mypy clean.
+typecheck:
+	$(RUN_MYPY) \
+		src/crewplane/architecture/contracts \
+		src/crewplane/architecture/ports \
+		src/crewplane/bootstrap/container.py \
+		src/crewplane/adapters/ui \
+		src/crewplane/adapters/invokers/mock_invoker/context.py \
+		src/crewplane/observability/observer.py \
+		src/crewplane/observability/runtime.py \
+		src/crewplane/observability/tmux/selection.py \
+		src/crewplane/observability/tmux/compact.py \
+		src/crewplane/observability/tmux/rendering.py \
+		src/crewplane/observability/tmux/refresh.py \
+		src/crewplane/observability/tmux/selected_invocation.py \
+		src/crewplane/observability/run_summary/builder.py \
+		src/crewplane/observability/run_summary/logger.py \
+		tests/typecheck/public_observer_consumer.py
 
 lint:
 	$(RUN_RUFF) check src tests scripts
@@ -98,7 +122,7 @@ format:
 format-check:
 	$(RUN_RUFF) format --check src tests scripts
 
-check: lint format-check test
+check: lint format-check typecheck test
 
 actionlint:
 	scripts/actionlint.sh
@@ -114,6 +138,9 @@ package-check:
 
 package-wheelhouse:
 	$(RUN_RELEASE) package-wheelhouse
+
+wheel-typecheck:
+	$(RUN_PYTHON) scripts/check_wheel_consumer_types.py $$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)
 
 changelog-check:
 	$(RUN_RELEASE) changelog-check

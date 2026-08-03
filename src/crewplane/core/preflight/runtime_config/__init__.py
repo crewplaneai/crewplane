@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
@@ -17,14 +17,13 @@ from crewplane.core.config import (
     TokenPricing,
 )
 from crewplane.core.token_budget import TokenBudgetSettings
-from crewplane.core.workflow.keywords import SequentialConsensusPolicy
+from crewplane.core.workflow.keywords import ProviderRole, SequentialConsensusPolicy
 from crewplane.core.workspace.cache import workspace_cache_root
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.core.workspace.settings import (
     WorkspaceDiskGuardrails,
     WorkspaceIdentitySettings,
     WorkspaceSettings,
-    WorkspaceSetupProfile,
 )
 from crewplane.version import SCHEMA_VERSION
 
@@ -35,6 +34,9 @@ from .redaction import (
     redact_sensitive_config_with_fingerprints,
     sensitive_integration_option_paths,
 )
+
+if TYPE_CHECKING:
+    from ..models import PreflightExecutionNode
 
 
 class RuntimeConfigSnapshotOptions(BaseModel):
@@ -63,8 +65,8 @@ class RuntimeWorkspaceSettingsSnapshot(BaseModel):
     cleanup_on_success: bool = True
     worktree_contract: WorktreeContract = Field(default_factory=WorktreeContract)
     clean_start: str = "strict"
-    setup_profiles: dict[str, WorkspaceSetupProfile] = Field(default_factory=dict)
-    setup_timeout_seconds: float = 600.0
+    setup_profiles: JsonObject = Field(default_factory=dict)
+    setup_timeout_seconds: FiniteFloat = 600.0
     identity: WorkspaceIdentitySettings = Field(
         default_factory=WorkspaceIdentitySettings
     )
@@ -75,25 +77,25 @@ class RuntimeWorkspaceSettingsSnapshot(BaseModel):
 class RuntimeAgentConfigSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    cli_cmd: list[str]
+    cli_cmd: list[str | JsonObject]
     provider_kind: ProviderKind = ProviderKind.GENERIC
     default_model: str | None = None
-    model_arg: str | None = "--model"
+    model_arg: str | JsonObject | None = "--model"
     prompt_transport: PromptTransport = "stdin"
-    prompt_transport_arg: str | None = None
+    prompt_transport_arg: str | JsonObject | None = None
     extra_args: list[str | JsonObject] = Field(default_factory=list)
     max_retries: int = 0
-    retry_delay_seconds: float = 300.0
+    retry_delay_seconds: FiniteFloat = 300.0
     retry_on_exit_codes: list[int] = Field(default_factory=list)
     retry_on_stderr_contains: list[str] = Field(default_factory=list)
     retry_on_output_contains: list[str] = Field(default_factory=list)
     quota_reached_on_contains: list[str] = Field(default_factory=list)
-    quota_reached_retry_delay_seconds: float = 300.0
-    quota_reset_sleep_floor_seconds: float = 5.0
-    quota_retry_max_wait_seconds: float | None = Field(default=None, gt=0)
+    quota_reached_retry_delay_seconds: FiniteFloat = 300.0
+    quota_reset_sleep_floor_seconds: FiniteFloat = 5.0
+    quota_retry_max_wait_seconds: FiniteFloat | None = Field(default=None, gt=0)
     quota_retry_max_attempts: int | None = Field(default=None, ge=1)
-    invocation_timeout_seconds: float | None = None
-    invocation_idle_timeout_seconds: float | None = 1800.0
+    invocation_timeout_seconds: FiniteFloat | None = None
+    invocation_idle_timeout_seconds: FiniteFloat | None = 1800.0
     pricing: TokenPricing = Field(default_factory=TokenPricing)
 
 
@@ -145,6 +147,61 @@ def runtime_agent_snapshot_payload(config: RuntimeAgentConfigSnapshot) -> JsonOb
     return _model_payload_preserving_non_default_nulls(config)
 
 
+def _failure_retry_can_schedule(config: RuntimeAgentConfigSnapshot) -> bool:
+    return config.max_retries > 0 and (
+        bool(config.retry_on_exit_codes)
+        or bool(config.retry_on_stderr_contains)
+        or bool(config.retry_on_output_contains)
+    )
+
+
+def execution_effective_payload(execution: RuntimeExecutionSnapshot) -> JsonObject:
+    payload = cast(JsonObject, execution.model_dump(mode="json"))
+    payload.pop("log_level", None)
+    payload.pop("max_audit_rounds", None)
+    return payload
+
+
+def runtime_agent_effective_payload(config: RuntimeAgentConfigSnapshot) -> JsonObject:
+    payload = runtime_agent_snapshot_payload(config)
+    payload.pop("default_model", None)
+    if not _failure_retry_can_schedule(config):
+        payload.pop("max_retries", None)
+        payload.pop("retry_delay_seconds", None)
+    if config.provider_kind != ProviderKind.GENERIC:
+        payload.pop("model_arg", None)
+    return payload
+
+
+def runtime_agent_invocation_effective_payload(
+    config: RuntimeAgentConfigSnapshot,
+    resolved_model: str | None,
+) -> JsonObject:
+    payload = runtime_agent_effective_payload(config)
+    if resolved_model is None:
+        payload.pop("model_arg", None)
+    return payload
+
+
+def runtime_agent_signature_payload(
+    agent_config_key: str,
+    agent_snapshot: RuntimeAgentConfigSnapshot | None,
+    resolved_model: str | None,
+) -> JsonObject:
+    return {
+        "agent_config": (
+            runtime_agent_invocation_effective_payload(
+                agent_snapshot,
+                resolved_model,
+            )
+            if agent_snapshot is not None
+            else None
+        ),
+        "agent_config_key": agent_config_key,
+        "model": resolved_model,
+    }
+
+
 def runtime_agent_execution_payload(config: RuntimeAgentConfigSnapshot) -> JsonObject:
     return cast(JsonObject, config.model_dump(mode="json", exclude_none=False))
 
@@ -154,6 +211,15 @@ def runtime_agent_snapshot_payloads(
 ) -> dict[str, JsonObject]:
     return {
         name: runtime_agent_snapshot_payload(agent)
+        for name, agent in sorted(agents.items())
+    }
+
+
+def runtime_agent_effective_payloads(
+    agents: Mapping[str, RuntimeAgentConfigSnapshot],
+) -> dict[str, JsonObject]:
+    return {
+        name: runtime_agent_effective_payload(agent)
         for name, agent in sorted(agents.items())
     }
 
@@ -180,6 +246,7 @@ class RuntimeConfigSnapshot(BaseModel):
     config_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     effective_runtime_config_signature: str
     raw_agents: JsonObject = Field(default_factory=dict, exclude=True)
+    raw_workspace: JsonObject = Field(default_factory=dict, exclude=True)
     raw_invoker: CanonicalIntegrationConfig | None = Field(
         default=None,
         exclude=True,
@@ -214,9 +281,22 @@ class RuntimeConfigSnapshot(BaseModel):
         }
         agents, sensitive_agent_paths = redact_sensitive_config(raw_agents)
         agent_snapshots = runtime_agent_snapshots(agents)
+        raw_workspace = cast(
+            JsonObject,
+            {
+                "setup_profiles": settings.workspace.model_dump(mode="json")[
+                    "setup_profiles"
+                ]
+            },
+        )
+        redacted_workspace, sensitive_workspace_paths = redact_sensitive_config(
+            raw_workspace,
+            ("workspace",),
+        )
         sensitive_paths = sorted(
             [
                 *sensitive_agent_paths,
+                *sensitive_workspace_paths,
                 *sensitive_integration_option_paths("invoker", invoker),
                 *sensitive_integration_option_paths("artifacts", artifacts),
                 *sensitive_integration_option_paths("ui", ui),
@@ -226,7 +306,10 @@ class RuntimeConfigSnapshot(BaseModel):
             console_is_terminal=options.console_is_terminal,
             no_live=options.no_live,
         )
-        workspace = runtime_workspace_snapshot(settings.workspace)
+        workspace = runtime_workspace_snapshot(
+            settings.workspace,
+            cast(JsonObject, redacted_workspace["setup_profiles"]),
+        )
         redacted_invoker, _ = integration_with_sensitive_option_fingerprints(
             invoker,
             "invoker",
@@ -245,7 +328,7 @@ class RuntimeConfigSnapshot(BaseModel):
         payload = {
             "agents": runtime_agent_snapshot_payloads(agent_snapshots),
             "artifacts": redacted_artifacts.scoped_payload({"artifact", "execution"}),
-            "execution": execution,
+            "execution": execution_effective_payload(execution),
             "invoker": redacted_invoker.scoped_payload({"execution", "artifact"}),
             "schema_version": config.version,
             "workspace": workspace_signature_payload(workspace),
@@ -262,6 +345,7 @@ class RuntimeConfigSnapshot(BaseModel):
             workspace=workspace,
             sensitive_config_paths=sensitive_paths,
             raw_agents=raw_agents,
+            raw_workspace=raw_workspace,
             raw_invoker=invoker,
             raw_artifacts=artifacts,
             raw_ui=ui,
@@ -292,6 +376,21 @@ class RuntimeConfigSnapshot(BaseModel):
             fingerprint_key,
         )
         agent_snapshots = runtime_agent_snapshots(agents)
+        workspace_payload, workspace_fingerprints = (
+            redact_sensitive_config_with_fingerprints(
+                self.raw_workspace or {"setup_profiles": self.workspace.setup_profiles},
+                fingerprint_key,
+                ("workspace",),
+            )
+        )
+        workspace = self.workspace.model_copy(
+            update={
+                "setup_profiles": cast(
+                    JsonObject,
+                    workspace_payload["setup_profiles"],
+                )
+            }
+        )
         invoker, invoker_fingerprints = integration_with_sensitive_option_fingerprints(
             self.raw_invoker or self.invoker,
             "invoker",
@@ -312,6 +411,7 @@ class RuntimeConfigSnapshot(BaseModel):
         all_fingerprints = sorted(
             [
                 *fingerprints,
+                *workspace_fingerprints,
                 *invoker_fingerprints,
                 *artifact_fingerprints,
                 *ui_fingerprints,
@@ -324,11 +424,13 @@ class RuntimeConfigSnapshot(BaseModel):
                 "invoker": invoker,
                 "artifacts": artifacts,
                 "ui": ui,
+                "workspace": workspace,
                 "config_fingerprints": all_fingerprints,
                 "effective_runtime_config_signature": self._effective_signature(
                     agent_snapshots,
                     invoker,
                     artifacts,
+                    workspace,
                 ),
             }
         )
@@ -338,22 +440,24 @@ class RuntimeConfigSnapshot(BaseModel):
         agents: Mapping[str, RuntimeAgentConfigSnapshot],
         invoker: CanonicalIntegrationConfig | None = None,
         artifacts: CanonicalIntegrationConfig | None = None,
+        workspace: RuntimeWorkspaceSettingsSnapshot | None = None,
     ) -> str:
         signature_invoker = invoker or self.invoker
         signature_artifacts = artifacts or self.artifacts
         payload = {
-            "agents": runtime_agent_snapshot_payloads(agents),
+            "agents": runtime_agent_effective_payloads(agents),
             "artifacts": signature_artifacts.scoped_payload({"artifact", "execution"}),
-            "execution": self.execution,
+            "execution": execution_effective_payload(self.execution),
             "invoker": signature_invoker.scoped_payload({"execution", "artifact"}),
             "schema_version": self.schema_version,
-            "workspace": workspace_signature_payload(self.workspace),
+            "workspace": workspace_signature_payload(workspace or self.workspace),
         }
         return signature_for_payload(payload)
 
 
 def runtime_workspace_snapshot(
     workspace: WorkspaceSettings,
+    setup_profiles: JsonObject | None = None,
 ) -> RuntimeWorkspaceSettingsSnapshot:
     if not workspace.enabled:
         return RuntimeWorkspaceSettingsSnapshot()
@@ -366,7 +470,12 @@ def runtime_workspace_snapshot(
             schema_version=SCHEMA_VERSION,
         ),
         clean_start=workspace.clean_start,
-        setup_profiles=dict(sorted(workspace.setup_profiles.items())),
+        setup_profiles=setup_profiles
+        if setup_profiles is not None
+        else cast(
+            JsonObject,
+            workspace.model_dump(mode="json")["setup_profiles"],
+        ),
         setup_timeout_seconds=workspace.setup_timeout_seconds,
         identity=workspace.identity,
         max_concurrent_materializations=workspace.max_concurrent_materializations,
@@ -393,13 +502,54 @@ def workspace_signature_payload(
 def runtime_config_signature(
     snapshot: RuntimeConfigSnapshot,
     workspace_payload: JsonObject,
+    nodes: list[PreflightExecutionNode],
 ) -> str:
     payload = {
-        "agents": runtime_agent_snapshot_payloads(snapshot.agents),
+        "agent_invocations": runtime_agent_invocation_payloads(
+            snapshot.agents,
+            nodes,
+        ),
         "artifacts": snapshot.artifacts.scoped_payload({"artifact", "execution"}),
-        "execution": snapshot.execution,
+        "execution": execution_signature_payload(snapshot.execution, nodes),
         "invoker": snapshot.invoker.scoped_payload({"execution", "artifact"}),
         "schema_version": snapshot.schema_version,
         "workspace": workspace_payload,
     }
     return signature_for_payload(payload)
+
+
+def runtime_agent_invocation_payloads(
+    agents: Mapping[str, RuntimeAgentConfigSnapshot],
+    nodes: list[PreflightExecutionNode],
+) -> list[JsonObject]:
+    return [
+        {
+            "agent_config": runtime_agent_signature_payload(
+                provider.agent_config_key,
+                agents.get(provider.agent_config_key),
+                provider.model,
+            ),
+            "node_id": node.id,
+            "requested_reasoning": provider.requested_reasoning,
+            "task_id": provider.task_id,
+        }
+        for node in nodes
+        for provider in node.provider_records
+    ]
+
+
+def execution_signature_payload(
+    execution: RuntimeExecutionSnapshot,
+    nodes: list[PreflightExecutionNode],
+) -> JsonObject:
+    payload = execution_effective_payload(execution)
+    has_review_loop = any(
+        node.mode == "sequential"
+        and any(
+            provider.role == ProviderRole.REVIEWER for provider in node.provider_records
+        )
+        for node in nodes
+    )
+    if not has_review_loop:
+        payload.pop("sequential_consensus_on_exhaustion", None)
+    return payload

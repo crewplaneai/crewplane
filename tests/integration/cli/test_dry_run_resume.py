@@ -39,12 +39,22 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             config_path, workflow_path = write_standard_project(tmp_path)
             preview = compile_preview(tmp_path, config_path, workflow_path)
-            write_run_history(
+            manifest = write_run_history(
                 tmp_path,
                 preview,
                 workflow_path,
                 run_id="success-run",
                 status="succeeded",
+            )
+            node = preview.nodes[0]
+            result_descriptor = write_result(
+                tmp_path / ".crewplane" / "execution-results" / manifest.run_key_name,
+                node.artifact_contract.output_path,
+                "completed node output",
+            )
+            write_node_state(
+                tmp_path / ".crewplane" / "execution-stages" / manifest.run_key_name,
+                make_node_state(manifest, node.id, [result_descriptor]),
             )
             before = artifact_tree(tmp_path / ".crewplane")
 

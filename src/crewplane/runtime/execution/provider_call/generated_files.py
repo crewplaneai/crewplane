@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 from crewplane.artifacts.generated_files.catalog import (
@@ -10,6 +12,7 @@ from crewplane.artifacts.generated_files.catalog import (
 )
 from crewplane.runtime.workspace import PreparedWorkspace
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
+from crewplane.runtime.workspace.snapshot import WorkspaceSnapshotCancelled
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 
 from ..runtime_context import DeferredAsyncCleanupRegistry
@@ -24,6 +27,7 @@ from .types import ProviderCallRequest, ProviderOutputPolicy
 __all__ = (
     "GeneratedFileChangeBaseline",
     "capture_generated_file_change_baseline",
+    "capture_generated_file_change_baseline_async",
     "changed_generated_file_paths",
     "finalize_successful_workspace",
     "record_generated_file_workspace",
@@ -75,6 +79,7 @@ def record_generated_file_workspace(
 
 def capture_generated_file_change_baseline(
     prepared_workspace: PreparedWorkspace,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> GeneratedFileChangeBaseline | None:
     try:
         invocation_root = resolved_real_directory(
@@ -86,7 +91,33 @@ def capture_generated_file_change_baseline(
     return GeneratedFileChangeBaseline.capture(
         invocation_root,
         filesystem_fallback_enabled=prepared_workspace.workspace_path is not None,
+        cancel_requested=cancel_requested,
     )
+
+
+async def capture_generated_file_change_baseline_async(
+    prepared_workspace: PreparedWorkspace,
+    cleanup_registry: DeferredAsyncCleanupRegistry,
+) -> GeneratedFileChangeBaseline | None:
+    cancel_requested = Event()
+    baseline_task = asyncio.create_task(
+        asyncio.to_thread(
+            capture_generated_file_change_baseline,
+            prepared_workspace,
+            cancel_requested.is_set,
+        )
+    )
+    try:
+        return await asyncio.shield(baseline_task)
+    except asyncio.CancelledError as cancel:
+        cancel_requested.set()
+        await _handle_cancelled_workspace_thread_task(
+            baseline_task,
+            cleanup_registry,
+            "Workspace generated-file baseline after cancellation",
+            cancel,
+        )
+        raise
 
 
 async def mark_workspace_succeeded(
@@ -94,16 +125,19 @@ async def mark_workspace_succeeded(
     child_environment_applied: bool | None,
     cleanup_registry: DeferredAsyncCleanupRegistry,
 ) -> None:
+    cancel_requested = Event()
     finalization = asyncio.create_task(
         asyncio.to_thread(
             prepared_workspace.mark_succeeded,
             child_environment_applied,
             True,
+            cancel_requested.is_set,
         )
     )
     try:
         await asyncio.shield(finalization)
     except asyncio.CancelledError as cancel:
+        cancel_requested.set()
         await _handle_cancelled_workspace_thread_task(
             finalization,
             cleanup_registry,
@@ -119,16 +153,19 @@ async def finalize_successful_workspace(
     child_environment_applied: bool | None,
     generated_file_workspace: Path | None,
 ) -> None:
+    cancel_requested = Event()
     finalization = asyncio.create_task(
         asyncio.to_thread(
             prepared_workspace.mark_succeeded,
             child_environment_applied,
             True,
+            cancel_requested.is_set,
         )
     )
     try:
         await asyncio.shield(finalization)
     except asyncio.CancelledError as cancel:
+        cancel_requested.set()
         await _handle_cancelled_success_finalization(
             request,
             prepared_workspace,
@@ -246,10 +283,11 @@ async def snapshot_invocation_generated_files_async(
     prepared_workspace: PreparedWorkspace,
     change_baseline: GeneratedFileChangeBaseline | None = None,
 ) -> Path | None:
+    cancel_requested = Event()
     snapshot_args = (
-        (request, prepared_workspace, change_baseline)
+        (request, prepared_workspace, change_baseline, cancel_requested.is_set)
         if change_baseline is not None
-        else (request, prepared_workspace)
+        else (request, prepared_workspace, None, cancel_requested.is_set)
     )
     snapshot_task = asyncio.create_task(
         asyncio.to_thread(
@@ -260,6 +298,7 @@ async def snapshot_invocation_generated_files_async(
     try:
         return await asyncio.shield(snapshot_task)
     except asyncio.CancelledError as cancel:
+        cancel_requested.set()
         await _handle_cancelled_workspace_thread_task(
             snapshot_task,
             request.runtime_context.deferred_workspace_cleanups,
@@ -282,18 +321,24 @@ async def _handle_cancelled_workspace_thread_task(
         )
     except TimeoutError:
         cleanup_registry.register(_await_workspace_thread_task(task), False)
+    except WorkspaceSnapshotCancelled:
+        return
     except Exception as exc:
         note_cleanup_failure(cancel, failure_context, exc)
 
 
 async def _await_workspace_thread_task(task: asyncio.Task[Any]) -> None:
-    await asyncio.shield(task)
+    try:
+        await asyncio.shield(task)
+    except WorkspaceSnapshotCancelled:
+        return
 
 
 def snapshot_invocation_generated_files(
     request: ProviderCallRequest,
     prepared_workspace: PreparedWorkspace,
     change_baseline: GeneratedFileChangeBaseline | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Path | None:
     if not request.output_file.is_file():
         if request.provider_output_policy == ProviderOutputPolicy.ALLOW_MISSING_OUTPUT:
@@ -304,7 +349,9 @@ def snapshot_invocation_generated_files(
         )
     workspace_root = validated_generated_file_workspace_root(prepared_workspace)
     candidate_files = (
-        change_baseline.candidate_files() if change_baseline is not None else None
+        change_baseline.candidate_files(cancel_requested)
+        if change_baseline is not None
+        else None
     )
     if workspace_root is None:
         try:
@@ -317,14 +364,14 @@ def snapshot_invocation_generated_files(
     if request.on_generated_file_snapshot_started is not None:
         request.on_generated_file_snapshot_started(snapshot_root)
     succeeded = False
-    published_paths: set[Path] = set()
+    published_signatures: dict[Path, tuple[int, str]] = {}
     try:
         result = snapshot_generated_file_workspace(
             request.output_file,
             workspace_root,
             candidate_files=candidate_files,
             explicit_claims_only=prepared_workspace.workspace_kind == "project_root",
-            on_file_published=published_paths.add,
+            on_file_published=published_signatures.__setitem__,
         )
         succeeded = True
         return result
@@ -332,7 +379,7 @@ def snapshot_invocation_generated_files(
         if request.on_generated_file_snapshot_finished is not None:
             request.on_generated_file_snapshot_finished(
                 snapshot_root,
-                frozenset(published_paths) if succeeded else None,
+                dict(published_signatures) if succeeded else None,
             )
 
 

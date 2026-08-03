@@ -320,6 +320,7 @@ def _validate_workspace_state_resume_payload(
         return False
     resume_bytes = json.dumps(
         _without_branch_export(state),
+        allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
@@ -374,7 +375,10 @@ def _hydrated_workspace_state_payload(
     state["run_id"] = output.run_id
     state["run_key_name"] = output.run_key_name
     state["updated_at"] = hydrated_at
-    return json.dumps(state, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    return (
+        json.dumps(state, allow_nan=False, indent=2, sort_keys=True).encode("utf-8")
+        + b"\n"
+    )
 
 
 def _workspace_state_resume_origin(

@@ -41,6 +41,18 @@ def test_runtime_code_uses_event_builders_instead_of_direct_construction() -> No
     assert offenders == []
 
 
+def test_runtime_execution_does_not_consume_top_level_config() -> None:
+    offenders = [
+        offender(path, node.lineno, alias.name)
+        for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "execution")
+        for node in walk_ast(parse_python(path))
+        if isinstance(node, ast.ImportFrom) and node.module == "crewplane.core.config"
+        for alias in node.names
+        if alias.name == "Config"
+    ]
+    assert offenders == []
+
+
 def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> None:
     forbidden_names = {
         "AUTO_QUOTA_PARSER_PROVIDER_BY_EXECUTABLE",
@@ -48,15 +60,17 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
     }
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "agent"):
-        source = path.read_text(encoding="utf-8")
-        for line_number, line in enumerate(source.splitlines(), start=1):
-            offenders.extend(
-                offender(path, line_number, forbidden_name)
-                for forbidden_name in forbidden_names
-                if forbidden_name in line
-            )
         module = parse_python(path)
         for node in walk_ast(module):
+            referenced_name: str | None = None
+            if isinstance(node, ast.Name):
+                referenced_name = node.id
+            elif isinstance(node, ast.Attribute):
+                referenced_name = node.attr
+            elif isinstance(node, ast.alias):
+                referenced_name = node.name.rsplit(".", 1)[-1]
+            if referenced_name in forbidden_names:
+                offenders.append(offender(path, node.lineno, referenced_name))
             if isinstance(node, ast.ImportFrom) and node.module == "os.path":
                 for alias in node.names:
                     if alias.name == "basename":

@@ -10,6 +10,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     ProviderRecord,
 )
+from crewplane.core.preflight.runtime_config import (
+    RuntimeAgentConfigSnapshot,
+    runtime_agent_signature_payload,
+)
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole
@@ -45,7 +49,7 @@ def _provider_record(
         task_id=f"{provider}_executor_0",
         agent_config_key=selected_key,
         invoker_alias="mock",
-        agent_config_signature=_agent_signature(selected_key, selected_config),
+        agent_config_signature=_agent_signature(selected_key, selected_config, model),
         invoker_config_signature=_invoker_signature(),
     )
 
@@ -320,12 +324,20 @@ def test_generated_file_workspace_registry_node_cleanup_can_retain_workspace(
     assert registry.cleanup_all_best_effort() == ()
 
 
-def _agent_signature(agent_config_key: str, agent_config: AgentConfig) -> str:
+def _agent_signature(
+    agent_config_key: str,
+    agent_config: AgentConfig,
+    resolved_model: str | None,
+) -> str:
+    agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(
+        agent_config.model_dump(mode="json", exclude_none=True)
+    )
     return signature_for_payload(
-        {
-            "agent_config": agent_config.model_dump(mode="json", exclude_none=True),
-            "agent_config_key": agent_config_key,
-        }
+        runtime_agent_signature_payload(
+            agent_config_key,
+            agent_snapshot,
+            resolved_model,
+        )
     )
 
 

@@ -43,7 +43,7 @@ def write_invocation_log(
         "workspace": _workspace_record(context),
     }
     with log_file.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
+        handle.write(json.dumps(record, allow_nan=False, sort_keys=True) + "\n")
 
 
 def _workspace_record(context: InvocationContext | None) -> JsonObject | None:

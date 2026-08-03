@@ -17,6 +17,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupCommandRecord,
     WorkspaceSetupRecord,
 )
+from crewplane.core.preflight.secrets import SecretContext
 from crewplane.runtime.workspace import setup as workspace_setup
 from crewplane.runtime.workspace.setup import (
     WorkspaceSetupCancellation,
@@ -62,6 +63,65 @@ def test_run_workspace_setup_writes_success_metadata_and_log(tmp_path: Path) -> 
     assert "$ " in log_text
     assert "[stdout]\nsetup stdout\n" in log_text
     assert "[stderr]\nsetup stderr\n" in log_text
+
+
+def test_workspace_setup_resolves_secret_argv_without_persisting_it(
+    tmp_path: Path,
+) -> None:
+    secret = "WORKSPACE_SETUP_TEST_SECRET"
+    handle = "config:workspace.setup_profiles.bootstrap.run.0.3"
+    secret_context = SecretContext()
+    secret_context.put(handle, secret)
+    cwd = tmp_path / "workspace"
+    cwd.mkdir()
+    state_path = tmp_path / "stage" / "workspace-state.json"
+    state_path.parent.mkdir()
+    policy = WorkspaceSelectionRecord(
+        enabled=True,
+        logical_worktree_name="primary",
+        declaration_kind="worktree",
+        materialization="worktree_checkout",
+        worktree_contract=WORKTREE_CONTRACT,
+        setup=WorkspaceSetupRecord(
+            profile_name="bootstrap",
+            commands=[
+                WorkspaceSetupCommandRecord(
+                    argv=[
+                        sys.executable,
+                        "-c",
+                        (
+                            "import pathlib, sys; "
+                            "pathlib.Path('resolved.txt').write_text(sys.argv[1])"
+                        ),
+                        {"redacted": True, "value_handle": handle},
+                    ],
+                    command_index=0,
+                )
+            ],
+        ),
+        writable=True,
+        lineage_producer=True,
+    )
+
+    run_workspace_setup(
+        _plan(),
+        policy,
+        cwd,
+        state_path,
+        secret_context=secret_context,
+    )
+
+    assert (cwd / "resolved.txt").read_text(encoding="utf-8") == secret
+    metadata = (state_path.parent / "workspace-setup" / "setup.json").read_text(
+        encoding="utf-8"
+    )
+    setup_log = (state_path.parent / "workspace-setup" / "setup.log").read_text(
+        encoding="utf-8"
+    )
+    assert secret not in metadata
+    assert secret not in setup_log
+    assert "<redacted>" in setup_log
+    assert json.loads(metadata)["commands"][0]["argv"][3]["redacted"] is True
 
 
 def test_run_workspace_setup_raises_and_records_failed_command(
@@ -236,11 +296,6 @@ def test_setup_cancellation_uses_process_group_signals(
         lambda: True,
     )
 
-    def fake_getpgid(pid: int) -> int:
-        del pid
-        return 456
-
-    monkeypatch.setattr(workspace_setup.os, "getpgid", fake_getpgid)
     monkeypatch.setattr(
         workspace_setup.os,
         "killpg",
@@ -250,7 +305,7 @@ def test_setup_cancellation_uses_process_group_signals(
     assert cancellation.register_process(cast(subprocess.Popen[str], process)) is True
     cancellation.cancel()
 
-    assert signals == [(456, signal.SIGTERM), (456, signal.SIGKILL)]
+    assert signals == [(123, signal.SIGTERM), (123, signal.SIGKILL)]
     assert process.terminate_calls == 0
     assert process.kill_calls == 0
 

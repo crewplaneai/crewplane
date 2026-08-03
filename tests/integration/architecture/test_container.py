@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.console import Console
 
 import crewplane.adapters.ui.tmux as tmux_adapter_module
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.architecture.errors import AdapterLoadError
 from crewplane.architecture.ports.runtime import UIRuntimePlan
 from crewplane.bootstrap import (
@@ -111,6 +112,25 @@ class MissingPresentationInvokerAdapter:
         options: object | None = None,  # noqa: ARG002 - Required by adapter protocol.
     ) -> object:
         return _MissingPresentationInvoker()
+
+
+class _ConformingObserverRuntime:
+    capabilities = ObserverCapabilities()
+
+    @property
+    def stop_requested(self) -> bool:
+        return False
+
+    def start(self, context: object) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
+
+    def on_snapshot(  # noqa: ARG002 - Observer protocol.
+        self, event: object | None, snapshot: object
+    ) -> None:
+        pass
+
+    def stop(self, result: object) -> None:  # noqa: ARG002 - Observer protocol.
+        pass
 
 
 class ContainerTests(unittest.TestCase):
@@ -385,7 +405,7 @@ class ContainerTests(unittest.TestCase):
         components = None
         original_runtime_class = tmux_adapter_module.TmuxCompactRuntime
 
-        class StubRuntime:
+        class StubRuntime(_ConformingObserverRuntime):
             def __init__(  # type: ignore[no-untyped-def]
                 self,
                 auto_close_session=True,
@@ -484,7 +504,7 @@ class ContainerTests(unittest.TestCase):
         components = None
         original_runtime_class = tmux_adapter_module.TmuxCompactRuntime
 
-        class StubRuntime:
+        class StubRuntime(_ConformingObserverRuntime):
             def __init__(  # type: ignore[no-untyped-def]
                 self,
                 auto_close_session=True,

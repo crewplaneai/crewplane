@@ -27,6 +27,7 @@ from crewplane.runtime.workspace.materialization import (
 )
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
 from crewplane.runtime.workspace.snapshot import (
+    WorkspaceSnapshotPolicy,
     create_snapshot_workspace,
     materialize_snapshot,
     runtime_workspace_cache_root,
@@ -160,7 +161,16 @@ def materialize_snapshot_workspace(
                     checkout_root,
                     Path(index_dir) / "snapshot.index",
                 )
-            initial_snapshot_entries = snapshot_entries(checkout_root)
+            initial_snapshot_entries = snapshot_entries(
+                checkout_root,
+                WorkspaceSnapshotPolicy(
+                    cancel_requested=(
+                        request.setup_cancellation.is_cancelled
+                        if request.setup_cancellation is not None
+                        else None
+                    ),
+                ),
+            )
         except Exception as exc:
             removed = remove_workspace_after_failure(workspace_path, exc)
             record_failed_preparation_state(
@@ -245,4 +255,9 @@ def prepared_snapshot_workspace(
         initial_snapshot_entries=materialized.initial_snapshot_entries,
         cleanup_on_success=workspace_cleanup_on_success(request.plan),
         workspace_state_payload=trusted_workspace_state_payload(plan.state_path),
+        snapshot_cancel_requested=(
+            request.setup_cancellation.is_cancelled
+            if request.setup_cancellation is not None
+            else None
+        ),
     )

@@ -28,7 +28,7 @@ from .models import (
     RenderPlan,
     WorkspaceSelectionRecord,
 )
-from .runtime_config import RuntimeConfigSnapshot, runtime_agent_snapshot_payload
+from .runtime_config import RuntimeConfigSnapshot, runtime_agent_signature_payload
 from .signatures import signature_for_payload
 
 
@@ -41,6 +41,9 @@ def compile_execution_node(
     state: CompileState,
     workspace_policy: WorkspaceSelectionRecord | None = None,
 ) -> PreflightExecutionNode:
+    uses_review_loop = node.mode == "sequential" and any(
+        provider.role == ProviderRole.REVIEWER for provider in node.providers
+    )
     policy = ExecutionPolicy(
         depth=node.depth,
         audit_rounds=node.audit_rounds,
@@ -50,7 +53,7 @@ def compile_execution_node(
         token_budget=resolved_token_budget_payload(node, config),
         consensus_on_exhaustion=(
             config.settings.sequential_consensus_on_exhaustion
-            if config.settings is not None
+            if config.settings is not None and uses_review_loop
             else None
         ),
         concurrency_policy={
@@ -122,12 +125,14 @@ def provider_records(
         role_index = role_indices[provider.role]
         role_indices[provider.role] += 1
         agent_config = config.agents.get(provider.provider)
+        resolved_model = provider.model or (
+            agent_config.default_model if agent_config is not None else None
+        )
         records.append(
             ProviderRecord(
                 provider=provider.provider,
                 role=provider.role,
-                model=provider.model
-                or (agent_config.default_model if agent_config is not None else None),
+                model=resolved_model,
                 requested_reasoning=provider.reasoning,
                 task_id=artifact_task_id(provider, role_index),
                 agent_config_key=provider.provider,
@@ -135,6 +140,7 @@ def provider_records(
                 agent_config_signature=agent_config_signature(
                     provider.provider,
                     runtime_snapshot,
+                    resolved_model,
                 ),
                 invoker_config_signature=invoker_signature,
             )
@@ -145,19 +151,17 @@ def provider_records(
 def agent_config_signature(
     agent_config_key: str,
     runtime_snapshot: RuntimeConfigSnapshot,
+    resolved_model: str | None,
 ) -> str:
     """Sign the redacted, fingerprinted agent config captured by preflight."""
 
     agent_snapshot = runtime_snapshot.agents.get(agent_config_key)
     return signature_for_payload(
-        {
-            "agent_config": (
-                runtime_agent_snapshot_payload(agent_snapshot)
-                if agent_snapshot is not None
-                else None
-            ),
-            "agent_config_key": agent_config_key,
-        }
+        runtime_agent_signature_payload(
+            agent_config_key,
+            agent_snapshot,
+            resolved_model,
+        )
     )
 
 

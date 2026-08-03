@@ -52,22 +52,18 @@ def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:
 
 
 class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
-    async def test_run_command_once_uses_spawned_process_group_id(self) -> None:
+    async def test_run_command_once_does_not_look_up_spawned_process_group(
+        self,
+    ) -> None:
         if os.name != "posix":
-            self.skipTest("process group lookup is POSIX-only")
-
-        observed_pids: list[int] = []
-
-        def fake_getpgid(pid: int) -> int:
-            observed_pids.append(pid)
-            return pid
+            self.skipTest("process groups are POSIX-only")
 
         with patch(
             "crewplane.runtime.agent.invocation.command.os.getpgid",
-            side_effect=fake_getpgid,
+            side_effect=AssertionError("racy process-group lookup"),
         ):
             result = await run_command_once(
-                cmd=[sys.executable, "-c", "print('ok')"],
+                cmd=[sys.executable, "-c", "pass"],
                 stdin_data=None,
                 log_file=None,
                 append_log=False,
@@ -78,9 +74,6 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout_text.strip(), "ok")
-        self.assertEqual(len(observed_pids), 1)
-        self.assertGreater(observed_pids[0], 0)
 
     async def test_run_command_once_applies_cwd_and_child_environment(self) -> None:
         with patch.dict(os.environ, {"WORKSPACE_TEST_UNSET": "inherited"}):

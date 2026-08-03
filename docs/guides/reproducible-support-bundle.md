@@ -73,4 +73,4 @@ run without `--force` and the forced run.
 Continue to [Cleaning Up Workspace Caches](cleanup.md) to remove generated
 workspace cache entries after workspace-isolated runs.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

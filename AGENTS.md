@@ -53,6 +53,11 @@ When changing behavior, preserve these properties:
 - Validate inputs at system boundaries: CLI, config, workflow files, template resolution, and adapter interfaces.
 - Fail explicitly on invalid state. Do not swallow exceptions or silently continue when correctness is at risk.
 - Keep functions focused and readable. Make illegal states hard to represent.
+- Do not use same-name import aliases such as
+  `from module import Symbol as Symbol`. In facade modules, use grouped imports
+  with an explicit `__all__`. In mixed modules where adding `__all__` would
+  narrow existing wildcard behavior, import the owning module privately and
+  bind the re-exported symbol explicitly.
 - New behavior requires deterministic tests. Bug fixes require regression coverage.
 - Avoid hidden fallback behavior unless it is deliberate, documented, and covered by tests.
 

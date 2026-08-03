@@ -195,4 +195,4 @@ context instead of an executor candidate.
 
 Continue to [Review Loops](review-loops.md) when a node uses executor and reviewer providers.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

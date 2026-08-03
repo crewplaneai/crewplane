@@ -10,6 +10,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.workflow.keywords import ProviderRole
 
 
 @dataclass(frozen=True)
@@ -30,8 +31,11 @@ class StageTaskSpec:
     """Ordered task metadata used to finalize stage artifacts deterministically."""
 
     task_id: str
-    role: str
+    role: ProviderRole
     display_name: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "role", ProviderRole(self.role))
 
 
 class ArtifactStorePort(Protocol):

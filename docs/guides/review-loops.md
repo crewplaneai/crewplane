@@ -413,4 +413,4 @@ workspaces.
 Continue to [Findings Artifacts](findings.md) to create
 structured issue handoffs for downstream workflow nodes.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

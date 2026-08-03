@@ -24,7 +24,7 @@ from .worktree import WorktreeSourceRef
 class RenderedWorkspaceFileDescriptor(TypedDict):
     occurrence_id: str
     invocation_id: str
-    role: str
+    role: ProviderRole
     round_num: int | None
     audit_round_num: int | None
     source_kind: str | None

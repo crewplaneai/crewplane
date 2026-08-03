@@ -8,10 +8,7 @@ from rich.console import Console
 
 from crewplane.architecture.errors import IntegrationResolutionError
 from crewplane.architecture.loader import resolve_implementation_path
-from crewplane.artifacts.resume.decision import (
-    ResumeDecision,
-    decide_same_context_action,
-)
+from crewplane.artifacts.resume.decision import ResumeDecision
 from crewplane.artifacts.resume.validation import (
     ValidatedResumeFrontier,
     validate_resume_frontier,
@@ -27,7 +24,6 @@ from crewplane.core.preflight import (
     PreflightExecutionPlan,
 )
 from crewplane.core.preflight.source import PreflightWorkflowSource
-from crewplane.core.preflight.workspace.observability import workspace_enabled
 from crewplane.runtime.workspace.branch_export import (
     preview_branch_exports_from_history,
 )
@@ -105,38 +101,17 @@ def build_resume_plan(
             workflow_identity=workflow_identity,
             decision=ResumeDecision(kind="execute_full"),
         )
-    if workspace_enabled(preview):
-        records = find_same_context_runs(
-            state_dir=state_dir,
-            workflow_identity=workflow_identity,
-            workflow_name=preview.workflow_name,
-            workflow_signature=preview.workflow_signature,
-        )
-        return _workspace_resume_plan(
-            workflow_identity,
-            records,
-            _preview_plan_for_validation(preview, project_root),
-        )
     records = find_same_context_runs(
         state_dir=state_dir,
         workflow_identity=workflow_identity,
         workflow_name=preview.workflow_name,
         workflow_signature=preview.workflow_signature,
     )
-    decision = decide_same_context_action(records, force)
-    if decision.kind != "resume" or decision.resume_source is None:
-        return ResumePlan(workflow_identity=workflow_identity, decision=decision)
     validation_plan = _preview_plan_for_validation(preview, project_root)
-    frontier = validate_resume_frontier(decision.resume_source, validation_plan)
-    if not frontier.resumed_node_ids:
-        return ResumePlan(
-            workflow_identity=workflow_identity,
-            decision=ResumeDecision(kind="execute_full"),
-        )
-    return ResumePlan(
-        workflow_identity=workflow_identity,
-        decision=decision,
-        frontier=frontier,
+    return _artifact_valid_history_plan(
+        workflow_identity,
+        records,
+        validation_plan,
     )
 
 
@@ -251,7 +226,7 @@ def _preview_plan_for_run(
     )
 
 
-def _workspace_resume_plan(
+def _artifact_valid_history_plan(
     workflow_identity: str,
     records: tuple[RunHistoryRecord, ...],
     validation_plan: PreflightExecutionPlan,

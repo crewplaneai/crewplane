@@ -114,4 +114,4 @@ Supported selector keys are `node_id`, `task_id`, `provider`, `role`,
 Continue to [Troubleshooting](troubleshooting.md) to debug command, provider,
 template, skip/resume, workspace, or cleanup failures.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

@@ -626,3 +626,40 @@ class ConfigTests(unittest.TestCase):
             Settings(max_concurrent_nodes=0)
         with self.assertRaisesRegex(ValueError, "greater than or equal to 1"):
             Settings(max_parallel_invocations=0)
+
+    def test_numeric_runtime_controls_reject_nonfinite_values(self) -> None:
+        for value in (float("inf"), float("-inf"), float("nan")):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError):
+                    AgentConfig(cli_cmd=["echo"], retry_delay_seconds=value)
+                with self.assertRaises(ValidationError):
+                    AgentConfig(
+                        cli_cmd=["echo"],
+                        invocation_timeout_seconds=value,
+                    )
+                with self.assertRaises(ValidationError):
+                    AgentConfig(
+                        cli_cmd=["echo"],
+                        pricing={"input": value},
+                    )
+                with self.assertRaises(ValidationError):
+                    Settings(workspace={"setup_timeout_seconds": value})
+
+    def test_load_config_rejects_yaml_nonfinite_runtime_control(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yml"
+            path.write_text(
+                "\n".join(
+                    [
+                        f'version: "{SCHEMA_VERSION}"',
+                        "agents:",
+                        "  alpha:",
+                        '    cli_cmd: ["echo"]',
+                        "    retry_delay_seconds: .inf",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValidationError):
+                load_config(path)

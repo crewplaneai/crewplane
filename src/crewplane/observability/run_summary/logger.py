@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from collections import deque
 from threading import Lock
+from typing import cast
 
+from crewplane.architecture.contracts import (
+    DashboardSnapshot as PublicDashboardSnapshot,
+)
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.observability.events import (
     ExecutionEvent,
@@ -26,9 +31,15 @@ MAX_RETAINED_SUMMARY_EVENTS = 2_000
 class PersistentRunLogger:
     """Persist execution events and a compact summary for each workflow run."""
 
-    required = True
-    cleanup_after_start_timeout = False
-    synchronous_snapshot_delivery = True
+    capabilities = ObserverCapabilities(
+        required=True,
+        cleanup_after_start_timeout=False,
+        synchronous_snapshot_delivery=True,
+    )
+
+    @property
+    def stop_requested(self) -> bool:
+        return False
 
     def __init__(self, artifact_store: ArtifactStorePort) -> None:
         self._artifact_store = artifact_store
@@ -108,12 +119,12 @@ class PersistentRunLogger:
     def on_snapshot(
         self,
         event: ExecutionEvent | None,
-        snapshot: DashboardSnapshot,
+        snapshot: PublicDashboardSnapshot,
     ) -> None:
         with self._lock:
             if self._lifecycle != PersistentLoggerLifecycle.RUNNING:
                 return
-            self._latest_snapshot = snapshot
+            self._latest_snapshot = cast(DashboardSnapshot, snapshot)
             if event is None:
                 return
             self._record_event_summary(event)

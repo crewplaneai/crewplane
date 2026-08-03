@@ -69,7 +69,7 @@ def start_observer_with_timeout(
             "observability observer start thread failed: "
             f"{observer.__class__.__name__}: {exc}"
         )
-        if bool(getattr(observer, "required", False)):
+        if observer.capabilities.required:
             raise
         return False
     start_thread.join(timeout=timeout_seconds)
@@ -78,21 +78,21 @@ def start_observer_with_timeout(
         if not start_thread.is_alive() and not failure:
             cleanup_after_timeout()
         warn(f"observability observer start timed out: {observer.__class__.__name__}")
-        if bool(getattr(observer, "required", False)):
+        if observer.capabilities.required:
             raise TimeoutError(
                 f"observability observer start timed out: {observer.__class__.__name__}"
             )
         return False
     if failure:
         warn(f"observability observer start failed: {failure[0]}")
-        if bool(getattr(observer, "required", False)):
+        if observer.capabilities.required:
             raise failure[0]
         return False
     return True
 
 
 def stop_timed_out_observer(observer: Observer, warn: WarningSink) -> None:
-    if not bool(getattr(observer, "cleanup_after_start_timeout", True)):
+    if not observer.capabilities.cleanup_after_start_timeout:
         return
     try:
         observer.stop(RunResult(status="failed"))
@@ -135,7 +135,7 @@ def stop_observers_with_timeout(
                 "observability observer stop thread failed: "
                 f"{observer.__class__.__name__}: {exc}"
             )
-            if bool(getattr(observer, "required", False)):
+            if observer.capabilities.required:
                 required_failures.append(exc)
             continue
         stop_thread.join(timeout=timeout_seconds)
@@ -144,12 +144,12 @@ def stop_observers_with_timeout(
                 f"observability observer stop timed out: {observer.__class__.__name__}"
             )
             warn(message)
-            if bool(getattr(observer, "required", False)):
+            if observer.capabilities.required:
                 required_failures.append(TimeoutError(message))
             continue
         if failure:
             warn(f"observability observer stop failed: {failure[0]}")
-            if bool(getattr(observer, "required", False)):
+            if observer.capabilities.required:
                 required_failures.append(failure[0])
 
     if required_failures:

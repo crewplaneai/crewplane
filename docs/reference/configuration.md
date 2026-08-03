@@ -122,6 +122,14 @@ settings use dotted paths in the left column.
 | `invocation_idle_timeout_seconds` | Optional idle-output timeout. Defaults to `1800.0`. |
 | `pricing` | Optional token pricing buckets. |
 
+Command arguments are audited in preflight artifacts, so credentials should
+normally come from the provider CLI's environment or credential store. If a
+secret-bearing flag is present in `cli_cmd`, `extra_args`, or a workspace setup
+command, Crewplane replaces split and `--flag=value` values with an in-memory
+secret handle before persisting runtime snapshots, plans, setup metadata,
+diagnostics, or observability records. A keyed fingerprint still participates
+in execution identity without storing the cleartext value.
+
 ## `agents.<name>.pricing`
 
 Pricing values are per million tokens.
@@ -176,6 +184,10 @@ run from the project root. `settings.default_workspace` is not supported.
 | `settings.workspace.max_concurrent_materializations` | Maximum workspace materializations at once. Defaults to `1`. |
 | `settings.workspace.disk.warn_free_bytes` | Optional free-space warning threshold. |
 | `settings.workspace.disk.fail_free_bytes` | Optional free-space failure threshold. Must not exceed `warn_free_bytes`. |
+
+Prices, delays, timeouts, and other floating-point controls must be finite.
+YAML infinity and NaN values are rejected, and persisted JSON is emitted in
+strict RFC-compatible form.
 
 Workspace-enabled runs require a supported ordinary Git repository, POSIX or WSL
 filesystem behavior, and an invoker adapter that honors runtime-supplied `cwd`.
@@ -257,4 +269,7 @@ options.
 ### Dotted-Path Adapters
 
 External adapters can be selected with a dotted path. Their `options` payload
-must be JSON-compatible and is validated by the adapter.
+must be finite JSON-compatible data and is validated by the adapter. The
+canonical result must assign exactly one `execution`, `artifact`, `observer`,
+or `validation` signature scope to every canonical option; missing scopes and
+scopes for unknown options are rejected during adapter wiring.

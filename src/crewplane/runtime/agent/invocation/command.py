@@ -76,9 +76,8 @@ async def run_command_once(
             invocation_context,
             child_environment,
         )
-        # start_new_session=True makes the child a session leader on POSIX; read
-        # the actual process group after spawn so cleanup does not assume pid==pgid.
-        process_group_id = os.getpgid(process.pid) if os.name == "posix" else None
+        # start_new_session=True makes the child both session and process-group leader.
+        process_group_id = process.pid if os.name == "posix" else None
         log_handle = open_log_handle(
             log_file,
             append=append_log,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
@@ -724,7 +725,7 @@ class OutputManagerTests(unittest.TestCase):
             self.assertEqual(len(summary.recorded_files), 2)
             self.assertTrue(summary.truncated)
 
-    def test_workspace_generated_file_snapshot_records_size_change_during_copy(
+    def test_workspace_generated_file_snapshot_records_size_growth_during_copy(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -737,13 +738,19 @@ class OutputManagerTests(unittest.TestCase):
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
 
-            def write_expanded_copy(source: Path, target: Path) -> Path:
-                target.write_bytes(source.read_bytes() + b"expanded")
-                return target
+            def expanded_source(
+                descriptor: int,
+                mode: str,
+                closefd: bool = True,
+            ) -> io.BytesIO:
+                self.assertGreaterEqual(descriptor, 0)
+                self.assertEqual(mode, "rb")
+                self.assertFalse(closefd)
+                return io.BytesIO(b"expanded")
 
             with patch(
-                "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
-                side_effect=write_expanded_copy,
+                "crewplane.artifacts.generated_files.snapshot_io.os.fdopen",
+                new=expanded_source,
             ):
                 snapshot_root = snapshot_generated_file_workspace(
                     alpha_output, workspace
@@ -759,7 +766,7 @@ class OutputManagerTests(unittest.TestCase):
             self.assertEqual(metadata["rejected_files"][0]["path"], "src/app.txt")
             self.assertFalse((snapshot_root / "src" / "app.txt").exists())
 
-    def test_workspace_generated_file_snapshot_removes_partial_failed_copy(
+    def test_workspace_generated_file_snapshot_removes_truncated_copy(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -775,13 +782,19 @@ class OutputManagerTests(unittest.TestCase):
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
 
-            def write_partial_copy_then_fail(source: Path, target: Path) -> None:
-                target.write_bytes(source.read_bytes()[:3])
-                raise OSError("copy failed")
+            def truncated_source(
+                descriptor: int,
+                mode: str,
+                closefd: bool = True,
+            ) -> io.BytesIO:
+                self.assertGreaterEqual(descriptor, 0)
+                self.assertEqual(mode, "rb")
+                self.assertFalse(closefd)
+                return io.BytesIO(b"par")
 
             with patch(
-                "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
-                side_effect=write_partial_copy_then_fail,
+                "crewplane.artifacts.generated_files.snapshot_io.os.fdopen",
+                new=truncated_source,
             ):
                 snapshot_root = snapshot_generated_file_workspace(
                     alpha_output,
@@ -817,6 +830,61 @@ class OutputManagerTests(unittest.TestCase):
             snapshot = snapshot_generated_file_workspace(alpha_output, workspace)
 
             self.assertFalse((snapshot / "src" / "leak.txt").exists())
+
+    def test_workspace_generated_file_snapshot_rejects_symlink_swap_during_copy(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            workspace = base_dir / "workspace"
+            (workspace / "src").mkdir(parents=True)
+            source = workspace / "src" / "app.txt"
+            source.write_text("inside", encoding="utf-8")
+            outside = base_dir / "outside.txt"
+            outside.write_text("escape", encoding="utf-8")
+            stage_dir = output.create_stage_dir("build.node")
+            alpha_output = stage_dir / "alpha_round1.md"
+            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
+            original_open = os.open
+            swapped = False
+
+            def swap_before_source_open(
+                path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+                flags: int,
+                dir_fd: int | None = None,
+            ) -> int:
+                nonlocal swapped
+                if path == "app.txt" and dir_fd is not None and not swapped:
+                    source.unlink()
+                    try:
+                        source.symlink_to(outside)
+                    except OSError as exc:
+                        self.skipTest(f"symlinks are unavailable: {exc}")
+                    swapped = True
+                if dir_fd is None:
+                    return original_open(path, flags)
+                return original_open(path, flags, dir_fd=dir_fd)
+
+            with patch(
+                "crewplane.artifacts.generated_files.snapshot_io.os.open",
+                new=swap_before_source_open,
+            ):
+                snapshot_root = snapshot_generated_file_workspace(
+                    alpha_output,
+                    workspace,
+                )
+
+            metadata = json.loads(
+                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(metadata["files"], [])
+            self.assertEqual(metadata["rejected_files"][0]["reason"], "copy_failed")
+            self.assertEqual(metadata["rejected_files"][0]["path"], "src/app.txt")
+            self.assertFalse((snapshot_root / "src" / "app.txt").exists())
+            self.assertEqual(outside.read_text(encoding="utf-8"), "escape")
 
     def test_generated_file_snapshot_rejects_symlinked_source_parent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

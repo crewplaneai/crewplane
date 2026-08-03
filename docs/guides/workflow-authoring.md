@@ -211,4 +211,4 @@ These terms appear after you validate or run a workflow:
 Continue to [Node Modes And Provider Roles](node-modes.md) to choose how each
 node runs providers and combines their outputs.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

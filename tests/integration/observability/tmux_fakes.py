@@ -4,6 +4,7 @@ import subprocess
 from collections.abc import Callable
 from time import monotonic, time
 
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.observability.tmux.client import tmux_result_timed_out
 from crewplane.observability.tmux.compact import TmuxCompactRuntime
 from crewplane.observability.tmux.refresh import RefreshOutcome
@@ -235,6 +236,8 @@ class FakeCompactSessionLifecycle:
 
 
 class SimulatedTmuxRuntime:
+    capabilities = ObserverCapabilities()
+
     def __init__(
         self,
         auto_close_session: bool = False,

@@ -14,14 +14,18 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from threading import Event, Lock, Thread
 from time import monotonic
+from typing import cast
 
+from crewplane.architecture.contracts import (
+    DashboardSnapshot as PublicDashboardSnapshot,
+)
 from crewplane.observability.events import (
     ExecutionEvent,
     apply_event,
     build_initial_state,
 )
 from crewplane.observability.layout import compute_topology_layout
-from crewplane.observability.observer import Observer
+from crewplane.observability.observer import Observer, validate_observer_contract
 from crewplane.observability.observer_lifecycle import (
     start_observer_with_timeout,
     stop_observers_with_timeout,
@@ -67,7 +71,9 @@ class ObservabilityHub:
             refresh_per_second=refresh_per_second,
         )
         self._warning_sink = warning_sink
-        self._observers = list(observers)
+        self._observers = [
+            validate_observer_contract(observer) for observer in observers
+        ]
         self._active_observers: list[Observer] = []
         self._started_observers: list[Observer] = []
         self._refresh_per_second = max(0, refresh_per_second)
@@ -92,7 +98,7 @@ class ObservabilityHub:
                 observer=observer,
                 context=self._context,
                 warn=self._warn,
-                thread_factory=Thread,
+                thread_factory=_new_lifecycle_thread,
                 timeout_seconds=OBSERVER_START_TIMEOUT_SECONDS,
             ):
                 active.append(observer)
@@ -130,7 +136,7 @@ class ObservabilityHub:
                 observers=started_observers,
                 result=result,
                 warn=self._warn,
-                thread_factory=Thread,
+                thread_factory=_new_lifecycle_thread,
                 timeout_seconds=OBSERVER_STOP_TIMEOUT_SECONDS,
             )
         except Exception as stop_exc:
@@ -156,9 +162,7 @@ class ObservabilityHub:
     def stop_requested(self) -> bool:
         with self._lock:
             observers = list(self._active_observers)
-        return any(
-            bool(getattr(observer, "stop_requested", False)) for observer in observers
-        )
+        return any(observer.stop_requested for observer in observers)
 
     def set_terminal_result(self, result: RunResult) -> None:
         with self._lock:
@@ -211,7 +215,7 @@ class ObservabilityHub:
             if not self.observer_is_active(observer):
                 continue
             try:
-                observer.on_snapshot(event, snapshot)
+                observer.on_snapshot(event, cast(PublicDashboardSnapshot, snapshot))
             except Exception as exc:
                 self._warn(f"observability observer disabled after error: {exc}")
                 failed.append(observer)
@@ -237,15 +241,15 @@ class ObservabilityHub:
         for observer in observers:
             if not self.observer_is_active(observer):
                 continue
-            if not bool(getattr(observer, "synchronous_snapshot_delivery", False)):
+            if not observer.capabilities.synchronous_snapshot_delivery:
                 remaining.append(observer)
                 continue
             try:
-                observer.on_snapshot(event, snapshot)
+                observer.on_snapshot(event, cast(PublicDashboardSnapshot, snapshot))
             except Exception as exc:
                 self._warn(f"observability observer disabled after error: {exc}")
                 failed.append(observer)
-                if bool(getattr(observer, "required", False)):
+                if observer.capabilities.required:
                     with self._lock:
                         self._active_observers = [
                             existing
@@ -374,3 +378,11 @@ class ObservabilityHub:
             warning_thread.start()
         except RuntimeError:
             return
+
+
+def _new_lifecycle_thread(
+    target: Callable[[], None],
+    name: str,
+    daemon: bool,
+) -> Thread:
+    return Thread(target=target, name=name, daemon=daemon)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import stat
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,7 +13,10 @@ from crewplane.core.workspace.git_policy import (
     workspace_git_config_args,
 )
 from crewplane.runtime.workspace import PreparedWorkspace
-from crewplane.runtime.workspace.snapshot import snapshot_entries
+from crewplane.runtime.workspace.snapshot import (
+    WorkspaceSnapshotPolicy,
+    snapshot_entries,
+)
 
 GENERATED_FILE_GIT_TIMEOUT_SECONDS = 30.0
 FILE_HASH_CHUNK_BYTES = 1024 * 1024
@@ -29,6 +33,7 @@ class GeneratedFileChangeBaseline:
         cls,
         invocation_root: Path,
         filesystem_fallback_enabled: bool,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> GeneratedFileChangeBaseline:
         resolved_root = invocation_root.resolve(strict=True)
         git = _GitGeneratedFileBaseline.capture(resolved_root)
@@ -39,15 +44,24 @@ class GeneratedFileChangeBaseline:
         if filesystem_fallback_enabled:
             return cls(
                 invocation_root=resolved_root,
-                filesystem_entries=snapshot_entries(resolved_root),
+                filesystem_entries=snapshot_entries(
+                    resolved_root,
+                    WorkspaceSnapshotPolicy(cancel_requested=cancel_requested),
+                ),
             )
         return cls(invocation_root=resolved_root)
 
-    def candidate_files(self) -> tuple[Path, ...] | None:
+    def candidate_files(
+        self,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> tuple[Path, ...] | None:
         if self.git is not None:
             return self.git.changed_files()
         if self.filesystem_entries is not None:
-            current_entries = snapshot_entries(self.invocation_root)
+            current_entries = snapshot_entries(
+                self.invocation_root,
+                WorkspaceSnapshotPolicy(cancel_requested=cancel_requested),
+            )
             return _filesystem_changed_files(
                 self.invocation_root,
                 self.filesystem_entries,
@@ -139,7 +153,12 @@ def _changed_checkout_paths(
 ) -> tuple[str, ...]:
     if prepared_workspace.workspace_kind not in {"snapshot", "worktree"}:
         return ()
-    current_entries = snapshot_entries(checkout_root)
+    current_entries = snapshot_entries(
+        checkout_root,
+        WorkspaceSnapshotPolicy(
+            cancel_requested=prepared_workspace.snapshot_cancel_requested,
+        ),
+    )
     initial_entries = prepared_workspace.initial_snapshot_entries or {}
     return tuple(
         sorted(

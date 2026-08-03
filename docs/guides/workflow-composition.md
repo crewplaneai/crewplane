@@ -125,4 +125,4 @@ when workflows need isolated source-tree edits.
 Otherwise, skip to
 [Mock Validation](mock-validation.md).
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

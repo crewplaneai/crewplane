@@ -110,7 +110,6 @@ class AgentInvoker(Protocol):
         model: str | None,
         prompt: str,
         output_file: Path,
-        *,
         cwd: Path,
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
@@ -140,7 +139,6 @@ class CommandRunner(Protocol):
         log_header: bytes | None,
         invocation_context: InvocationContext | None,
         idle_timeout_seconds: float | None,
-        *,
         cwd: Path,
         child_environment: ChildProcessEnvironment | None = None,
     ) -> CommandResult: ...

@@ -194,4 +194,4 @@ that cache root.
 Continue to [Reproducible Support Bundle](reproducible-support-bundle.md) to
 collect a redacted set of files when someone else needs to inspect a run.
 
-Or return to the [Guides](../index.md#guides).
+Or return to the [Guides](../index.md#guided-tutorial-track).

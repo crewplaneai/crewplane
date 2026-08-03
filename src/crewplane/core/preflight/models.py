@@ -18,21 +18,13 @@ from .plan_contract import (
 )
 from .runtime_config import RuntimeConfigSnapshot
 from .secrets import SecretContext
-from .workspace.models import (
-    WorkspaceBranchExportRecord as WorkspaceBranchExportRecord,
-)
-from .workspace.models import (
-    WorkspaceSelectionRecord as WorkspaceSelectionRecord,
-)
-from .workspace.models import (
-    WorkspaceSetupCommandRecord as WorkspaceSetupCommandRecord,
-)
-from .workspace.models import (
-    WorkspaceSetupRecord as WorkspaceSetupRecord,
-)
-from .workspace.models import (
-    WorkspaceSourceSnapshot as WorkspaceSourceSnapshot,
-)
+from .workspace import models as _workspace_models
+
+WorkspaceBranchExportRecord = _workspace_models.WorkspaceBranchExportRecord
+WorkspaceSelectionRecord = _workspace_models.WorkspaceSelectionRecord
+WorkspaceSetupCommandRecord = _workspace_models.WorkspaceSetupCommandRecord
+WorkspaceSetupRecord = _workspace_models.WorkspaceSetupRecord
+WorkspaceSourceSnapshot = _workspace_models.WorkspaceSourceSnapshot
 
 PREFLIGHT_STATUS_FAILED = "preflight_failed"
 PREFLIGHT_STATUS_SUCCEEDED = "preflight_succeeded"

@@ -46,10 +46,6 @@ def python_files(root: Path) -> tuple[Path, ...]:
     return tuple(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
 
 
-def physical_line_count(path: Path) -> int:
-    return len(path.read_text(encoding="utf-8").splitlines())
-
-
 def parse_python(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 

@@ -9,6 +9,7 @@ from tests.integration.cli.cli_workflow_helpers import (
     ConsoleFactory,
     write_basic_config,
     write_basic_workflow,
+    write_successful_workflow_outputs,
 )
 
 
@@ -88,8 +89,13 @@ class CliRunContextHashingTests(unittest.TestCase):
             original_execute_workflow = cli.execute_workflow
             calls = {"count": 0}
 
-            async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
+            async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
                 calls["count"] += 1
+                write_successful_workflow_outputs(
+                    plan,
+                    output,
+                    kwargs["workflow_identity"],
+                )
 
             cli.Console = ConsoleFactory(
                 file=stream,

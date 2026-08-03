@@ -18,6 +18,7 @@ from .types import (
     DriftGuardCallRequest,
     DriftGuardSession,
     EventLogAppendCapture,
+    GeneratedFileDriftAllowance,
 )
 
 
@@ -50,9 +51,6 @@ async def run_provider_call_with_drift_guard(
         await invoke_provider_under_drift_guard(request, captured_telemetry)
     except Exception as exc:
         provider_error = exc
-
-    if request.drift_session is None:
-        allow_runtime_generated_file_snapshots(request)
 
     mixed_error: Exception | None = None
     try:
@@ -161,8 +159,9 @@ async def invoke_provider_under_drift_guard(
     generated_file_allowance = (
         request.drift_session.generated_file_allowance
         if request.drift_session is not None
-        else None
+        else GeneratedFileDriftAllowance()
     )
+    request.generated_file_allowance = generated_file_allowance
     await run_provider_call(
         ProviderCallRequest(
             runtime_context=request.runtime_context,
@@ -180,30 +179,9 @@ async def invoke_provider_under_drift_guard(
             findings_enabled=request.findings_enabled,
             provider_output_policy=request.provider_output_policy,
             on_log_file_resolved=request.allowed_paths.add,
-            on_generated_file_snapshot_started=(
-                generated_file_allowance.start_snapshot
-                if generated_file_allowance is not None
-                else None
-            ),
-            on_generated_file_snapshot_finished=(
-                generated_file_allowance.finish_snapshot
-                if generated_file_allowance is not None
-                else None
-            ),
+            on_generated_file_snapshot_started=generated_file_allowance.start_snapshot,
+            on_generated_file_snapshot_finished=generated_file_allowance.finish_snapshot,
             rendered_workspace_files=request.rendered_workspace_files,
         ),
         display=replace(request.display, telemetry=captured_telemetry),
-    )
-
-
-def allow_runtime_generated_file_snapshots(request: DriftGuardCallRequest) -> None:
-    snapshot_root = request.runtime_context.generated_file_workspaces.roots_for_node(
-        request.node.id
-    ).get(request.output_file.resolve(strict=False))
-    if snapshot_root is None:
-        return
-    if not snapshot_root.exists():
-        return
-    request.allowed_paths.update(
-        path for path in snapshot_root.rglob("*") if path.is_file()
     )

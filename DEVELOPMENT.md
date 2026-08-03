@@ -36,11 +36,12 @@ make setup
 ## Local Workflows
 
 ```bash
-make test         # project-env pytest -q
+make test         # pytest suite with branch coverage
+make typecheck    # typed extension contracts + external consumer fixture
 make lint         # project-env ruff check src tests scripts
 make format       # project-env ruff import fixes + format src tests scripts
 make format-check # project-env ruff format --check src tests scripts
-make check        # lint + format-check + tests
+make check        # lint + format-check + typing + tests
 make help         # list package and release targets
 make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
@@ -246,6 +247,9 @@ exists on TestPyPI.
 - Bug fixes must include regression tests.
 - Keep tests deterministic and filesystem-local.
 - Integration implementations must include contract tests under `tests/integration/architecture/` and adapter tests under `tests/integration/adapters/`.
+- Public extension contracts must pass `make typecheck`; the package job also
+  type-checks the consumer fixture against the built wheel.
+- Tests enforce branch coverage.
 
 ## Mock Invoker Local Validation
 

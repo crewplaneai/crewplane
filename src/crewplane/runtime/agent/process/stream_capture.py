@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from collections import deque
 from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass
@@ -42,21 +43,42 @@ class CapturedStream:
     """Bounded in-memory tail plus disk-backed stream file."""
 
     def __init__(self, max_memory_bytes: int = MAX_CAPTURE_MEMORY_BYTES) -> None:
+        if max_memory_bytes < 0:
+            raise ValueError("max_memory_bytes must be nonnegative")
         descriptor, raw_path = tempfile.mkstemp()
         close_descriptor(descriptor)
         self._path = Path(raw_path)
         self._persist_handle: BinaryIO = self._path.open("wb")  # noqa: SIM115
-        self._tail = b""
+        self._tail_chunks: deque[bytes] = deque()
+        self._tail_size = 0
         self._max_memory_bytes = max_memory_bytes
         self._closed = False
 
     def write(self, payload: bytes) -> None:
         self._persist_handle.write(payload)
-        if payload:
-            self._tail += payload
-            overflow = len(self._tail) - self._max_memory_bytes
-            if overflow > 0:
-                self._tail = self._tail[overflow:]
+        if not payload or self._max_memory_bytes == 0:
+            return
+        if len(payload) >= self._max_memory_bytes:
+            self._tail_chunks.clear()
+            self._tail_chunks.append(payload[-self._max_memory_bytes :])
+            self._tail_size = self._max_memory_bytes
+            return
+        self._tail_chunks.append(payload)
+        self._tail_size += len(payload)
+        self._discard_tail_overflow()
+
+    def _discard_tail_overflow(self) -> None:
+        overflow = self._tail_size - self._max_memory_bytes
+        while overflow > 0:
+            first = self._tail_chunks[0]
+            if len(first) <= overflow:
+                self._tail_chunks.popleft()
+                self._tail_size -= len(first)
+                overflow -= len(first)
+                continue
+            self._tail_chunks[0] = first[overflow:]
+            self._tail_size -= overflow
+            overflow = 0
 
     @property
     def path(self) -> Path:
@@ -64,7 +86,7 @@ class CapturedStream:
 
     @property
     def tail_bytes(self) -> bytes:
-        return self._tail
+        return b"".join(self._tail_chunks)
 
     def close(self) -> None:
         if self._closed:

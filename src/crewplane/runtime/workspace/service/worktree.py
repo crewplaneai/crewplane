@@ -18,6 +18,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
@@ -36,6 +37,7 @@ from crewplane.runtime.workspace.setup import (
     run_workspace_setup,
 )
 from crewplane.runtime.workspace.snapshot import (
+    WorkspaceSnapshotPolicy,
     runtime_workspace_cache_root,
     snapshot_entries,
 )
@@ -275,6 +277,7 @@ def prepared_worktree_workspace(
         plan.state_path,
         worktree.checkout_root,
         trusted_state_payload,
+        request.secret_context,
     )
     effective_context = replace(
         invocation_context,
@@ -291,7 +294,16 @@ def prepared_worktree_workspace(
         worktree.checkout_root,
         trusted_state_payload,
     )
-    initial_snapshot_entries = snapshot_entries(worktree.checkout_root)
+    initial_snapshot_entries = snapshot_entries(
+        worktree.checkout_root,
+        WorkspaceSnapshotPolicy(
+            cancel_requested=(
+                request.setup_cancellation.is_cancelled
+                if request.setup_cancellation is not None
+                else None
+            ),
+        ),
+    )
     return PreparedWorkspace(
         cwd=worktree.cwd,
         invocation_context=effective_context,
@@ -305,6 +317,11 @@ def prepared_worktree_workspace(
         reuse_cache=request.worktree_reuse_cache,
         reuse_key=plan.policy.logical_worktree_name,
         workspace_state_payload=trusted_state_payload,
+        snapshot_cancel_requested=(
+            request.setup_cancellation.is_cancelled
+            if request.setup_cancellation is not None
+            else None
+        ),
     )
 
 
@@ -354,6 +371,7 @@ def run_worktree_setup(
         plan.state_path,
         checkout_root,
         request.setup_cancellation,
+        request.secret_context,
     )
     if setup_summary is None:
         return
@@ -373,6 +391,7 @@ def worktree_retry_reset_with_setup(
     state_path: Path,
     checkout_root: Path,
     trusted_state_payload: dict[str, object],
+    secret_context: SecretContext,
 ) -> Callable[[], None]:
     reset = worktree_retry_reset(capture_request)
     if policy.setup is None:
@@ -385,6 +404,7 @@ def worktree_retry_reset_with_setup(
         state_path=state_path,
         checkout_root=checkout_root,
         trusted_state_payload=trusted_state_payload,
+        secret_context=secret_context,
     )
 
 
@@ -397,6 +417,7 @@ class _WorktreeRetryResetWithSetup:
     state_path: Path
     checkout_root: Path
     trusted_state_payload: dict[str, object]
+    secret_context: SecretContext
     _lock: Lock = field(default_factory=Lock)
     _cancelled: bool = False
     _setup_cancellation: WorkspaceSetupCancellation | None = None
@@ -427,6 +448,7 @@ class _WorktreeRetryResetWithSetup:
                 self.state_path,
                 self.checkout_root,
                 setup_cancellation,
+                self.secret_context,
             )
         except WorkspaceSetupError as exc:
             update_workspace_setup(

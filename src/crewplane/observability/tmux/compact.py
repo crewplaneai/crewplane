@@ -3,7 +3,12 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from threading import Event, Thread
+from typing import cast
 
+from crewplane.architecture.contracts import (
+    DashboardSnapshot as PublicDashboardSnapshot,
+)
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.observability.events import ExecutionEvent
 from crewplane.observability.tmux.bindings import TmuxCompactKeyBindings
 from crewplane.observability.tmux.client import (
@@ -40,6 +45,8 @@ __all__ = [
 
 class TmuxCompactRuntime:
     """Render a compact tmux dashboard for a running workflow."""
+
+    capabilities = ObserverCapabilities()
 
     def __init__(
         self,
@@ -113,9 +120,9 @@ class TmuxCompactRuntime:
     def on_snapshot(
         self,
         event: ExecutionEvent | None,
-        snapshot: DashboardSnapshot,
+        snapshot: PublicDashboardSnapshot,
     ) -> None:
-        self._refresh.on_snapshot(event, snapshot)
+        self._refresh.on_snapshot(event, cast(DashboardSnapshot, snapshot))
 
     def refresh_once(self) -> RefreshOutcome:
         session = self._session

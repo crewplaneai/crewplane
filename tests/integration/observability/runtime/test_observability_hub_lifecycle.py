@@ -2,6 +2,7 @@ import unittest
 from time import monotonic
 from unittest.mock import patch
 
+from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
     make_execution_event,
@@ -23,6 +24,86 @@ from tests.integration.observability.runtime.observability_runtime_helpers impor
 
 
 class ObservabilityHubLifecycleTests(unittest.TestCase):
+    def test_observability_hub_rejects_incomplete_observer_contract(self) -> None:
+        class IncompleteObserver:
+            def start(self, context) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+            def on_snapshot(self, event, snapshot) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+            def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+        with self.assertRaisesRegex(TypeError, "contract is incomplete"):
+            ObservabilityHub(
+                workflow_topology=topology_from_workflow(single_node_workflow()),
+                run_id="run-1",
+                observers=[IncompleteObserver()],  # type: ignore[list-item]
+                refresh_per_second=0,
+            )
+
+    def test_observability_hub_rejects_wrong_lifecycle_arity(self) -> None:
+        class BadStartObserver:
+            capabilities = ObserverCapabilities()
+
+            @property
+            def stop_requested(self) -> bool:
+                return False
+
+            def start(self) -> None:
+                return None
+
+            def on_snapshot(self, event, snapshot) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+            def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+        class BadSnapshotObserver:
+            capabilities = ObserverCapabilities()
+
+            @property
+            def stop_requested(self) -> bool:
+                return False
+
+            def start(self, context) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+            def on_snapshot(self) -> None:
+                return None
+
+            def stop(self, result) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+        class BadStopObserver:
+            capabilities = ObserverCapabilities()
+
+            @property
+            def stop_requested(self) -> bool:
+                return False
+
+            def start(self, context) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+            def on_snapshot(self, event, snapshot) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+                return None
+
+            def stop(self) -> None:
+                return None
+
+        for observer in (BadStartObserver(), BadSnapshotObserver(), BadStopObserver()):
+            with (
+                self.subTest(observer=observer.__class__.__name__),
+                self.assertRaisesRegex(TypeError, "incompatible signature"),
+            ):
+                ObservabilityHub(
+                    workflow_topology=topology_from_workflow(single_node_workflow()),
+                    run_id="run-wrong-arity",
+                    observers=[observer],  # type: ignore[list-item]
+                    refresh_per_second=0,
+                )
+
     def test_observability_hub_fanout_and_snapshot_state(self) -> None:
         workflow = single_node_workflow()
         observer = RecordingObserver()

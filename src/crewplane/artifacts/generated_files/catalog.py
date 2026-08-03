@@ -20,6 +20,7 @@ from .detection import (
     GeneratedFileReferenceDetector,
     is_reserved_workspace_path,
 )
+from .snapshot_io import copy_generated_file_snapshot_candidate
 from .snapshot_policy import (
     GeneratedFileRejectionLog,
     GeneratedFileSnapshotCandidate,
@@ -141,7 +142,7 @@ def snapshot_generated_file_workspace(
     changed_paths: set[str] | None = None,
     candidate_files: Sequence[Path] | None = None,
     explicit_claims_only: bool = False,
-    on_file_published: Callable[[Path], None] | None = None,
+    on_file_published: Callable[[Path, tuple[int, str]], None] | None = None,
 ) -> Path:
     content = output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
     snapshot_root = generated_file_source_root(output_file)
@@ -172,15 +173,25 @@ def snapshot_generated_file_workspace(
         ),
     )
     _replace_generated_file_source_root(snapshot_root)
-    _write_generated_file_source_metadata(snapshot_root, resolved_workspace_root)
+    source_metadata_signature = _write_generated_file_source_metadata(
+        snapshot_root,
+        resolved_workspace_root,
+    )
     if on_file_published is not None:
-        on_file_published(snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME)
+        on_file_published(
+            snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME,
+            source_metadata_signature,
+        )
     copied_candidates: list[GeneratedFileSnapshotCandidate] = []
     for candidate in selection.candidates:
         target = snapshot_root.joinpath(*candidate.relative_path.parts)
         _ensure_contained_directory(snapshot_root, candidate.relative_path.parent)
         try:
-            _copy_generated_file_snapshot_candidate(candidate, target)
+            target_signature = copy_generated_file_snapshot_candidate(
+                candidate,
+                target,
+                resolved_workspace_root,
+            )
         except (OSError, RuntimeError) as exc:
             selection.rejections.record(
                 generated_file_rejection_metadata(
@@ -192,8 +203,8 @@ def snapshot_generated_file_workspace(
             continue
         copied_candidates.append(candidate)
         if on_file_published is not None:
-            on_file_published(target)
-    _write_generated_file_snapshot_metadata(
+            on_file_published(target, target_signature)
+    snapshot_metadata_signature = _write_generated_file_snapshot_metadata(
         snapshot_root,
         [
             generated_file_snapshot_candidate_metadata(candidate)
@@ -202,7 +213,10 @@ def snapshot_generated_file_workspace(
         selection.rejections,
     )
     if on_file_published is not None:
-        on_file_published(snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME)
+        on_file_published(
+            snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME,
+            snapshot_metadata_signature,
+        )
     return snapshot_root
 
 
@@ -265,23 +279,6 @@ def _safe_unique_candidate_files(
             continue
         candidates.setdefault(relative_label, contained)
     return dict(sorted(candidates.items()))
-
-
-def _copy_generated_file_snapshot_candidate(
-    candidate: GeneratedFileSnapshotCandidate,
-    target: Path,
-) -> None:
-    try:
-        shutil.copyfile(candidate.source_path, target)
-        if target.stat().st_size == candidate.size_bytes:
-            return
-        raise RuntimeError(
-            "Generated-file snapshot source changed while copying: "
-            f"{candidate.relative_label}"
-        )
-    except (OSError, RuntimeError):
-        target.unlink(missing_ok=True)
-        raise
 
 
 def generated_file_source_root(output_file: Path) -> Path:
@@ -374,19 +371,26 @@ def generated_file_snapshot_rejection_summary(
 def _write_generated_file_source_metadata(
     snapshot_root: Path,
     source_root: Path,
-) -> None:
+) -> tuple[int, str]:
     metadata_file = snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME
-    metadata_file.write_text(
-        json.dumps({"source_root": source_root.as_posix()}, sort_keys=True) + "\n",
-        encoding="utf-8",
+    content = (
+        json.dumps(
+            {"source_root": source_root.as_posix()},
+            allow_nan=False,
+            sort_keys=True,
+        )
+        + "\n"
     )
+    metadata_file.write_text(content, encoding="utf-8")
+    payload = content.encode("utf-8")
+    return len(payload), sha256(payload).hexdigest()
 
 
 def _write_generated_file_snapshot_metadata(
     snapshot_root: Path,
     copied_files: Sequence[dict[str, object]],
     rejections: GeneratedFileRejectionLog,
-) -> None:
+) -> tuple[int, str]:
     payload: dict[str, object] = {"files": list(copied_files)}
     if rejections.rejected_file_count:
         payload.update(
@@ -397,10 +401,10 @@ def _write_generated_file_snapshot_metadata(
             }
         )
     metadata_file = snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME
-    metadata_file.write_text(
-        json.dumps(payload, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    content = json.dumps(payload, allow_nan=False, sort_keys=True) + "\n"
+    metadata_file.write_text(content, encoding="utf-8")
+    encoded = content.encode("utf-8")
+    return len(encoded), sha256(encoded).hexdigest()
 
 
 def _copy_workspace_generated_file(

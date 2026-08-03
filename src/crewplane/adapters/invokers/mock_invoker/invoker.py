@@ -154,7 +154,7 @@ class MockAgentInvoker:
             f"- Node: {display.node_id}",
             f"- Task: {display.task_id}",
             f"- Provider: {display.provider}",
-            f"- Role: {display.role}",
+            f"- Role: {display.role_display}",
             f"- Audit Round: {display.audit_round_display}",
             f"- Round: {display.round_display}",
         ]
@@ -214,7 +214,8 @@ class MockAgentInvoker:
         digest = hashlib.sha256(
             (
                 f"{seed_value}|{display.node_id}|{display.task_id}|{display.provider}|"
-                f"{display.role}|{display.audit_round_display}|{display.round_display}"
+                f"{display.role_display}|{display.audit_round_display}|"
+                f"{display.round_display}"
             ).encode()
         ).hexdigest()
         return digest[:12]

@@ -38,7 +38,12 @@ def compact_json_line(
 ) -> str:
     redacted = redact_json_value(value)
     try:
-        rendered = json.dumps(redacted, sort_keys=True, ensure_ascii=False)
+        rendered = json.dumps(
+            redacted,
+            allow_nan=False,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
     except (TypeError, ValueError):
         rendered = repr(redacted)
     return clip_text(rendered, limits.max_display_chars_per_record)

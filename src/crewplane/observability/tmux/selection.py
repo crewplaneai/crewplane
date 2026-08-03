@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import overload
 
 from crewplane.observability.events import (
     InvocationRuntimeState,
     NodeRuntimeState,
 )
 from crewplane.observability.node_order import topological_node_order
-from crewplane.observability.types import DashboardSnapshot
+from crewplane.observability.types import (
+    DashboardInvocationState,
+    DashboardNodeState,
+    DashboardSnapshot,
+)
 
 
 @dataclass(frozen=True)
@@ -47,7 +52,7 @@ def resolve_dashboard_selection(
 
 
 def selected_invocation_log_path(
-    nodes: Mapping[str, NodeRuntimeState],
+    nodes: Mapping[str, DashboardNodeState],
     selected_node_id: str | None,
 ) -> str | None:
     if selected_node_id is None:
@@ -58,7 +63,17 @@ def selected_invocation_log_path(
     return invocation.log_file
 
 
-def select_invocation(node: NodeRuntimeState) -> InvocationRuntimeState | None:
+@overload
+def select_invocation(node: NodeRuntimeState) -> InvocationRuntimeState | None: ...
+
+
+@overload
+def select_invocation(node: DashboardNodeState) -> DashboardInvocationState | None: ...
+
+
+def select_invocation(
+    node: DashboardNodeState,
+) -> DashboardInvocationState | None:
     if not node.invocations:
         return None
 
@@ -83,7 +98,7 @@ def select_invocation(node: NodeRuntimeState) -> InvocationRuntimeState | None:
 
 def _default_selected_node_id(
     ordered_node_ids: list[str],
-    nodes: Mapping[str, NodeRuntimeState],
+    nodes: Mapping[str, DashboardNodeState],
 ) -> str:
     for node_id in ordered_node_ids:
         if nodes[node_id].status == "running":
@@ -92,7 +107,7 @@ def _default_selected_node_id(
 
 
 def _running_invocation_sort_key(
-    invocation: InvocationRuntimeState,
+    invocation: DashboardInvocationState,
 ) -> tuple[float, int, int, str]:
     return (
         _timestamp_sort_value(invocation.started_at),
@@ -103,7 +118,7 @@ def _running_invocation_sort_key(
 
 
 def _completed_invocation_sort_key(
-    invocation: InvocationRuntimeState,
+    invocation: DashboardInvocationState,
 ) -> tuple[float, float, int, int, str]:
     return (
         _timestamp_sort_value(invocation.finished_at),

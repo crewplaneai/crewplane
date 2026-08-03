@@ -56,11 +56,14 @@ def make_execution_event(**fields: Any) -> ExecutionEvent:
     if event_type == "runtime_log":
         context = event_context(workflow_name, run_id, fields)
         return runtime_log_event(workflow_name, run_id, context=context, **fields)
+    context = event_context(workflow_name, run_id, fields)
+    if context is None:
+        context = ExecutionEventContext(workflow_name=workflow_name, run_id=run_id)
     return invocation_event(
         event_type,
         workflow_name,
         run_id,
-        context=event_context(workflow_name, run_id, fields),
+        context=context,
         **fields,
     )
 
