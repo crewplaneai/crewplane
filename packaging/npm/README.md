@@ -2,9 +2,7 @@
 
 **Turn AI agent calls into structured, repeatable workflows.**
 
-Crewplane is the control plane for AI coding CLIs. Define a multi-stage
-workflow in Markdown, assign each stage to Claude Code, Codex, Gemini, Copilot,
-Kilo, or another command-line tool, and let Crewplane handle ordering,
+Crewplane is a provider-neutral control plane for human-designed coding-agent workflows. Define a multi-stage workflow in Markdown, assign each stage to Claude Code, Codex, Gemini, Copilot, Kilo, or another command-line tool, and let Crewplane handle ordering,
 parallelism, handoffs, and resume.
 
 Every rendered input, provider output, log, manifest, and final result stays on
@@ -17,22 +15,63 @@ shows what did run.
 
 ## Why Crewplane?
 
-Agent CLIs work well for a quick question or one-off patch. Crewplane is for
-the point where agent work becomes a process: planning, implementation,
-parallel review, revision, and synthesis across multiple calls.
+You already have the pieces: repo instructions, skills, MCP servers,
+provider settings, internal conventions. **The agents know how to work.
+What's missing is the control plane: _when_ to work, _in what order_,
+and _what to do when something breaks._**
 
-| Without a workflow layer | With Crewplane |
+Define the DAG in Markdown, assign each stage to Claude Code, Codex, Gemini,
+Copilot, or any CLI. Crewplane runs exactly the plan you wrote, saves every
+stage to disk, and picks up where a failed run left off. No SDK, no framework
+lock-in, no autonomous loop deciding what happens next.
+
+### What changes when you add Crewplane
+
+| Agent work today | With Crewplane |
 | --- | --- |
-| One long agent session | Explicit Markdown DAG |
-| Copy-pasted handoffs | Upstream outputs referenced by downstream stages |
-| One provider at a time | Multiple CLI providers in one workflow |
-| Terminal scrollback | Readable run records on disk |
-| Restart after a failure | Resume from validated completed stages |
-| Process hidden in a chat | Workflow files you can review and version |
+| One long session | Markdown DAG with sequential and parallel stages |
+| One provider at a time | Claude Code, Codex, Gemini, Copilot, or any CLI |
+| Copy-pasted prompts | Rendered inputs saved under `.crewplane/` |
+| Terminal scrollback | Outputs, logs, manifests, and final results on disk |
+| Start over after failure | Resume from validated stage boundaries |
+| Hard-to-follow progress | Optional tmux dashboard |
+| Edits in the project root | Optional Git-backed worktrees and snapshots |
 
-Crewplane invokes provider CLIs directly. Your existing provider
-authentication, permissions, models, repo instructions, skills, and tools stay
-in charge—Crewplane coordinates the process around them.
+> ***The result is a run record you can inspect, diff, archive, attach to a review, or delete like any other build output.***
+
+> **CLI-first by design.**
+> Crewplane invokes provider CLIs directly instead of wrapping them in a vendor SDK or agent framework. If a tool has a command line, Crewplane can run it.
+
+<details>
+<summary><strong>When should you just use one agent CLI?</strong></summary>
+
+For a quick question, a one-off patch, or exploratory work that fits in a single session — use the provider directly. Crewplane is for the moment agent work becomes a **process**: multiple stages, provider handoffs, review loops, or runs that need to survive failure and remain auditable.
+
+</details>
+
+### Where it fits in your stack
+
+```
+┌──────────────────────────────────────────────┐
+│ Developer / Team Intent                      │
+│ Markdown workflow · policies · approvals     │  ← Markdown defines the workflow.
+└──────────────────────────────────────────────┘
+                    ↓
+┌──────────────────────────────────────────────┐
+│ Crewplane - Control Plane                    │
+│ preflight · DAG · routing · resume · receipts│  ← Crewplane enforces the graph.
+└──────────────────────────────────────────────┘
+                    ↓
+┌──────────────────────────────────────────────┐
+│ Agent Execution Plane                        │
+│ Claude Code · Codex · Copilot CLI · Gemini   │  ← Agents execute the stages.
+└──────────────────────────────────────────────┘
+                    ↕ read/write
+┌──────────────────────────────────────────────┐
+│ Repo / Filesystem / CI                       │
+│ source · tests · logs · manifests · results  │  ← Artifacts stay on disk.
+└──────────────────────────────────────────────┘
+```
 
 ## Install With npm
 
@@ -155,7 +194,7 @@ wheelhouse:
 ```bash
 CREWPLANE_INSTALL_FIND_LINKS=/path/to/wheelhouse \
 CREWPLANE_INSTALL_NO_INDEX=1 \
-npm install -g ./crewplane-0.1.6.tgz
+npm install -g ./crewplane-0.1.7.tgz
 ```
 
 ## Learn More

@@ -3,9 +3,9 @@ class Crewplane < Formula
 
   desc "Markdown-native control plane for AI coding CLIs"
   homepage "https://github.com/crewplaneai/crewplane"
-  url "https://files.pythonhosted.org/packages/source/c/crewplane/crewplane-0.1.6.tar.gz"
-  version "0.1.6"
-  sha256 "ed9e7690fb18bf0ea4549971b5a0b22291bd591e24414c90be9fd860f60cfc77"
+  url "https://files.pythonhosted.org/packages/source/c/crewplane/crewplane-0.1.7.tar.gz"
+  version "0.1.7"
+  sha256 "7b91da941f067c3bca663baa90c0e081f436b15b72ddd11375e67a093918a5b5"
   license "Apache-2.0"
   head "https://github.com/crewplaneai/crewplane.git", branch: "master"
 

@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-08-02
+
 ### Changed
 
 - Duplicate skip now validates required node and generated-file artifacts and
