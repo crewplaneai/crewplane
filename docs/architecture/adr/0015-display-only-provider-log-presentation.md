@@ -62,7 +62,9 @@ Descriptor selection belongs to invoker adapters:
 | --- | --- |
 | CLI `claude` | `json_object`, profile `claude` |
 | CLI `codex` | `json_lines`, profile `codex` |
-| CLI `copilot`, `gemini`, `kilo`, `generic` | `plain`, profile `generic` |
+| CLI `gemini` | `json_object`, profile `gemini` |
+| CLI `kilo` | `json_lines`, profile `kilo` |
+| CLI `copilot`, `generic` | `plain`, profile `generic` |
 | `mock` | `json_lines`, profile `mock` |
 
 Runtime and tmux must not infer presentation from provider labels, executable

@@ -12,6 +12,7 @@ from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.observability.events import (
     ExecutionEvent,
     format_execution_event_log_line,
+    read_event_log,
     runtime_log_event,
 )
 from crewplane.observability.types import (
@@ -23,7 +24,12 @@ from crewplane.observability.types import (
 from .accumulator import RunSummaryAccumulator
 from .builder import build_run_summary
 from .markdown import render_run_summary_markdown
-from .models import PersistentLoggerLifecycle, RunSummary
+from .models import (
+    PersistentLoggerLifecycle,
+    ProviderTokenAggregates,
+    RunSummary,
+)
+from .spend import provider_token_aggregates
 
 MAX_RETAINED_SUMMARY_EVENTS = 2_000
 
@@ -46,6 +52,8 @@ class PersistentRunLogger:
         self._event_log_path = artifact_store.get_run_event_log_path()
         self._summary_path = artifact_store.get_run_summary_path()
         self._lock = Lock()
+        self._summary_publication_lock = Lock()
+        self._exact_token_summary_published = False
         self._events: deque[ExecutionEvent] = deque(maxlen=MAX_RETAINED_SUMMARY_EVENTS)
         self._dropped_event_count = 0
         self._latest_snapshot: DashboardSnapshot | None = None
@@ -93,6 +101,22 @@ class PersistentRunLogger:
         with self._lock:
             if self._lifecycle == PersistentLoggerLifecycle.NEW:
                 return None
+        durable_events = read_event_log(self._event_log_path)
+        return self._write_summary(
+            result,
+            provider_token_aggregates(durable_events),
+            exact_token_summary=True,
+        )
+
+    def _write_summary(
+        self,
+        result: RunResult,
+        token_aggregates: ProviderTokenAggregates,
+        exact_token_summary: bool,
+    ) -> RunSummary | None:
+        with self._lock:
+            if self._lifecycle == PersistentLoggerLifecycle.NEW:
+                return None
             snapshot = self._latest_snapshot
             events = list(self._events)
             dropped_event_count = self._dropped_event_count
@@ -106,14 +130,19 @@ class PersistentRunLogger:
             fallback_workflow_name=self._workflow_name,
             fallback_run_id=self._run_id,
             summary_facts=summary_facts,
+            token_aggregates=token_aggregates,
         )
-        self._summary_path.parent.mkdir(parents=True, exist_ok=True)
-        self._summary_path.write_text(
-            render_run_summary_markdown(summary),
-            encoding="utf-8",
-        )
-        with self._lock:
-            self._last_summary = summary
+        summary_text = render_run_summary_markdown(summary)
+        with self._summary_publication_lock:
+            if not exact_token_summary and self._exact_token_summary_published:
+                with self._lock:
+                    return self._last_summary
+            self._summary_path.parent.mkdir(parents=True, exist_ok=True)
+            self._summary_path.write_text(summary_text, encoding="utf-8")
+            with self._lock:
+                self._last_summary = summary
+            if exact_token_summary:
+                self._exact_token_summary_published = True
         return summary
 
     def on_snapshot(
@@ -137,7 +166,11 @@ class PersistentRunLogger:
         if self._lifecycle == PersistentLoggerLifecycle.STOPPED:
             return
         try:
-            self.refresh_summary(result)
+            self._write_summary(
+                result,
+                ProviderTokenAggregates(),
+                exact_token_summary=False,
+            )
         finally:
             with self._lock:
                 self._lifecycle = PersistentLoggerLifecycle.STOPPED

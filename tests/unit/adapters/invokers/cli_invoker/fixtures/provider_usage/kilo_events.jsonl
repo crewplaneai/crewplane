@@ -1,0 +1,4 @@
+{"type":"text","part":{"type":"text","text":"Kilo "}}
+{"type":"step_finish","part":{"tokens":{"input":100,"output":40,"reasoning":5,"cache":{"read":20,"write":3}}}}
+{"type":"text","part":{"type":"text","text":"response"}}
+{"type":"step_finish","part":{"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}}}}

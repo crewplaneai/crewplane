@@ -13,15 +13,27 @@ from crewplane.architecture.contracts import (
     LogPresentationDescriptor,
     LogPresentationFormat,
     OneShotFailureRetryPolicy,
-    OutputExtractionMode,
+    OutputExtractor,
     ProviderKind,
     QuotaParserProfile,
     StructuredOutputMode,
-    UsageParserProfile,
+    UsageDecoder,
 )
 from crewplane.core.config import AgentConfig
 
+from .machine_json import (
+    extract_claude_output,
+    extract_codex_output,
+    extract_gemini_output,
+    extract_kilo_output,
+)
 from .reasoning import build_reasoning_args
+from .usage_decoders import (
+    decode_claude_usage,
+    decode_codex_usage,
+    decode_gemini_usage,
+    decode_kilo_usage,
+)
 
 # Codex can sporadically report false model capacity; keep this temporary
 # workaround narrow and adapter-owned so it can be removed independently.
@@ -44,23 +56,24 @@ CODEX_MODEL_CAPACITY_RETRY_POLICY = OneShotFailureRetryPolicy(
 class CliProviderCapability:
     provider_kind: ProviderKind
     structured_output_mode: StructuredOutputMode
-    output_extraction_mode: OutputExtractionMode
+    output_extractor: OutputExtractor | None
+    usage_decoder: UsageDecoder | None
     quota_parser: QuotaParserProfile
-    usage_parser: UsageParserProfile
     log_presentation_format: LogPresentationFormat
     log_presentation_profile: str
     model_arg: str | None = "--model"
     structured_output_args: tuple[str, ...] = ()
     one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
+    supports_output_idle_timeout: bool = True
 
 
 CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
     ProviderKind.CLAUDE: CliProviderCapability(
         provider_kind=ProviderKind.CLAUDE,
         structured_output_mode="claude_json",
-        output_extraction_mode="claude_json",
+        output_extractor=extract_claude_output,
+        usage_decoder=decode_claude_usage,
         quota_parser="claude",
-        usage_parser="claude",
         log_presentation_format="json_object",
         log_presentation_profile="claude",
         structured_output_args=("--output-format", "json"),
@@ -68,9 +81,9 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
     ProviderKind.CODEX: CliProviderCapability(
         provider_kind=ProviderKind.CODEX,
         structured_output_mode="codex_last_message_file",
-        output_extraction_mode="codex_last_message_file",
+        output_extractor=extract_codex_output,
+        usage_decoder=decode_codex_usage,
         quota_parser="codex",
-        usage_parser="codex",
         log_presentation_format="json_lines",
         log_presentation_profile="codex",
         one_shot_failure_retry=CODEX_MODEL_CAPACITY_RETRY_POLICY,
@@ -78,36 +91,39 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
     ProviderKind.COPILOT: CliProviderCapability(
         provider_kind=ProviderKind.COPILOT,
         structured_output_mode="none",
-        output_extraction_mode="visible",
+        output_extractor=None,
+        usage_decoder=None,
         quota_parser="copilot",
-        usage_parser="none",
         log_presentation_format="plain",
         log_presentation_profile="generic",
     ),
     ProviderKind.GEMINI: CliProviderCapability(
         provider_kind=ProviderKind.GEMINI,
-        structured_output_mode="none",
-        output_extraction_mode="visible",
+        structured_output_mode="gemini_json",
+        output_extractor=extract_gemini_output,
+        usage_decoder=decode_gemini_usage,
         quota_parser="gemini",
-        usage_parser="none",
-        log_presentation_format="plain",
-        log_presentation_profile="generic",
+        log_presentation_format="json_object",
+        log_presentation_profile="gemini",
+        structured_output_args=("--output-format", "json"),
+        supports_output_idle_timeout=False,
     ),
     ProviderKind.KILO: CliProviderCapability(
         provider_kind=ProviderKind.KILO,
-        structured_output_mode="none",
-        output_extraction_mode="visible",
+        structured_output_mode="kilo_json",
+        output_extractor=extract_kilo_output,
+        usage_decoder=decode_kilo_usage,
         quota_parser="kilo",
-        usage_parser="none",
-        log_presentation_format="plain",
-        log_presentation_profile="generic",
+        log_presentation_format="json_lines",
+        log_presentation_profile="kilo",
+        structured_output_args=("--format", "json"),
     ),
     ProviderKind.GENERIC: CliProviderCapability(
         provider_kind=ProviderKind.GENERIC,
         structured_output_mode="none",
-        output_extraction_mode="visible",
+        output_extractor=None,
+        usage_decoder=None,
         quota_parser="generic",
-        usage_parser="none",
         log_presentation_format="plain",
         log_presentation_profile="generic",
     ),
@@ -148,9 +164,9 @@ def build_cli_invocation_plan(
         stdin_data=stdin_data,
         structured_output_file=structured_output_file,
         structured_output_mode=capability.structured_output_mode,
-        output_extraction_mode=capability.output_extraction_mode,
+        output_extractor=capability.output_extractor,
+        usage_decoder=capability.usage_decoder,
         quota_parser=capability.quota_parser,
-        usage_parser=capability.usage_parser,
         failure_profile=capability.provider_kind,
         log_provider_kind=capability.provider_kind,
         log_header=_build_log_header(
@@ -160,6 +176,7 @@ def build_cli_invocation_plan(
             requested_reasoning=requested_reasoning,
         ),
         one_shot_failure_retry=capability.one_shot_failure_retry,
+        supports_output_idle_timeout=capability.supports_output_idle_timeout,
     )
 
 

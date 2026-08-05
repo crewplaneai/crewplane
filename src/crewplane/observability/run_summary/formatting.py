@@ -4,7 +4,7 @@ from collections.abc import Mapping
 
 from crewplane.observability.timing import format_elapsed_seconds
 
-from .models import InvocationUsageSummary
+from .models import InvocationUsageSummary, ProviderTokenAggregate
 
 
 def format_count(value: int) -> str:
@@ -23,6 +23,35 @@ def format_provider_tokens(provider_tokens: Mapping[str, int | None]) -> str:
         for bucket, value in provider_tokens.items()
     ]
     return ", ".join(parts)
+
+
+def format_provider_token_aggregate_lines(
+    aggregate: ProviderTokenAggregate,
+    label: str = "Provider-reported tokens",
+) -> tuple[str, ...]:
+    total = format_count(aggregate.total) if aggregate.total is not None else "n/a"
+    lines = [f"{label}: {total} across {aggregate.report_count} reports"]
+    if aggregate.input is not None:
+        cached = (
+            f" (cached input: {format_count(aggregate.cached_input)})"
+            if aggregate.cached_input is not None
+            else ""
+        )
+        lines.append(f"Input: {format_count(aggregate.input)}{cached}")
+    elif aggregate.cached_input is not None:
+        lines.append(f"Cached input: {format_count(aggregate.cached_input)}")
+    if aggregate.output is not None:
+        reasoning = (
+            f" (reasoning output: {format_count(aggregate.reasoning)})"
+            if aggregate.reasoning is not None
+            else ""
+        )
+        lines.append(f"Output: {format_count(aggregate.output)}{reasoning}")
+    if aggregate.cache_write is not None:
+        lines.append(f"Cache write: {format_count(aggregate.cache_write)}")
+    if aggregate.reasoning is not None and aggregate.output is None:
+        lines.append(f"Reasoning output: {format_count(aggregate.reasoning)}")
+    return tuple(lines)
 
 
 def format_visible_estimate(invocation_usage: InvocationUsageSummary) -> str:

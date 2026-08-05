@@ -184,7 +184,7 @@ class ExampleTemplateTests(unittest.TestCase):
         self.assertIn('#   cli_cmd: ["codex", "exec"]', rendered)
         self.assertIn('#   cli_cmd: ["gemini"]', rendered)
         self.assertIn('#   cli_cmd: ["copilot"]', rendered)
-        self.assertIn('#   cli_cmd: ["kilo"]', rendered)
+        self.assertIn('#   cli_cmd: ["kilo", "run"]', rendered)
         for flag in (
             "--dangerously-skip-permissions",
             "--dangerously-bypass-approvals-and-sandbox",

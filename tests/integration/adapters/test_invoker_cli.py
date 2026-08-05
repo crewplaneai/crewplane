@@ -58,14 +58,69 @@ class CliInvokerAdapterTests(unittest.TestCase):
         codex = build_cli_log_presentation(
             AgentConfig(cli_cmd=["codex"], provider_kind="codex")
         )
+        gemini = build_cli_log_presentation(
+            AgentConfig(cli_cmd=["gemini"], provider_kind="gemini")
+        )
+        kilo = build_cli_log_presentation(
+            AgentConfig(cli_cmd=["kilo", "run"], provider_kind="kilo")
+        )
         generic = build_cli_log_presentation(AgentConfig(cli_cmd=["echo"]))
 
         self.assertEqual((claude.format, claude.profile), ("json_object", "claude"))
         self.assertEqual((codex.format, codex.profile), ("json_lines", "codex"))
+        self.assertEqual((gemini.format, gemini.profile), ("json_object", "gemini"))
+        self.assertEqual((kilo.format, kilo.profile), ("json_lines", "kilo"))
         self.assertEqual((generic.format, generic.profile), ("plain", "generic"))
 
     def test_builtin_provider_capabilities_cover_supported_provider_kinds(self) -> None:
         self.assertEqual(set(CAPABILITIES), set(SUPPORTED_PROVIDER_KINDS))
+
+    def test_machine_readable_provider_capabilities_supply_decoder_and_extractor(
+        self,
+    ) -> None:
+        for provider in (ProviderKind.CLAUDE, ProviderKind.CODEX):
+            capability = CAPABILITIES[provider]
+            self.assertIsNotNone(capability.output_extractor)
+            self.assertIsNotNone(capability.usage_decoder)
+        for provider in (ProviderKind.GEMINI, ProviderKind.KILO):
+            capability = CAPABILITIES[provider]
+            self.assertIsNotNone(capability.output_extractor)
+            self.assertIsNotNone(capability.usage_decoder)
+        for provider in (ProviderKind.COPILOT, ProviderKind.GENERIC):
+            capability = CAPABILITIES[provider]
+            self.assertIsNone(capability.output_extractor)
+            self.assertIsNone(capability.usage_decoder)
+
+    def test_gemini_and_kilo_plans_enable_machine_readable_output(self) -> None:
+        with patch.dict(os.environ, {"PATH": ""}):
+            gemini_plan = build_cli_invocation_plan(
+                AgentConfig(cli_cmd=["gemini"], provider_kind="gemini"),
+                model=None,
+                prompt="prompt",
+                output_file=Path("output.md"),
+            )
+            kilo_plan = build_cli_invocation_plan(
+                AgentConfig(cli_cmd=["kilo", "run"], provider_kind="kilo"),
+                model="auto",
+                prompt="prompt",
+                output_file=Path("output.md"),
+            )
+
+        self.assertEqual(gemini_plan.cmd, ["gemini", "--output-format", "json"])
+        self.assertEqual(
+            kilo_plan.cmd,
+            ["kilo", "run", "--model", "auto", "--format", "json"],
+        )
+        self.assertEqual(gemini_plan.structured_output_mode, "gemini_json")
+        self.assertEqual(kilo_plan.structured_output_mode, "kilo_json")
+        self.assertFalse(gemini_plan.supports_output_idle_timeout)
+        self.assertTrue(kilo_plan.supports_output_idle_timeout)
+
+    def test_only_gemini_disables_output_idle_timeout(self) -> None:
+        self.assertFalse(CAPABILITIES[ProviderKind.GEMINI].supports_output_idle_timeout)
+        for provider in set(SUPPORTED_PROVIDER_KINDS) - {ProviderKind.GEMINI}:
+            with self.subTest(provider=provider):
+                self.assertTrue(CAPABILITIES[provider].supports_output_idle_timeout)
 
     def test_codex_capability_owns_one_shot_capacity_retry(self) -> None:
         policy = CAPABILITIES[ProviderKind.CODEX].one_shot_failure_retry

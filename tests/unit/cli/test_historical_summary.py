@@ -6,13 +6,14 @@ from typing import get_args
 
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.cli.run import historical_summary
+from crewplane.observability.events.reader import EVENT_TYPES, LOG_LEVELS
 from crewplane.observability.events.types import EventType, LogLevel
 from tests.helpers.resume import make_plan, make_run_manifest
 
 
 def test_historical_event_constants_track_observability_literals() -> None:
-    assert frozenset(get_args(EventType)) == historical_summary.HISTORICAL_EVENT_TYPES
-    assert frozenset(get_args(LogLevel)) == historical_summary.HISTORICAL_LOG_LEVELS
+    assert frozenset(get_args(EventType)) == EVENT_TYPES
+    assert frozenset(get_args(LogLevel)) == LOG_LEVELS
 
 
 def test_refresh_historical_summary_replays_valid_historical_events(

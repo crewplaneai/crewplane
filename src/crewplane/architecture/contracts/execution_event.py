@@ -101,6 +101,7 @@ class InvocationEventPayload(EventPayload):
     failure_phase: str | None = None
     failure_source: str | None = None
     failure_advice: str | None = None
+    provider_usage_report_count: int | None = None
 
     def __post_init__(self) -> None:
         if self.provider_tokens is not None:
@@ -116,6 +117,7 @@ class InvocationEventPayload(EventPayload):
             "cli_captured": self.cli_captured,
             "output_extraction_status": self.output_extraction_status,
             "provider_usage_status": self.provider_usage_status,
+            "provider_usage_report_count": self.provider_usage_report_count,
             "provider_tokens": (
                 cast(JsonObject, dict(self.provider_tokens))
                 if self.provider_tokens is not None

@@ -3,6 +3,7 @@ from __future__ import annotations
 from .formatting import (
     format_cost,
     format_count,
+    format_provider_token_aggregate_lines,
     format_provider_tokens,
     format_visible_estimate,
     invocation_label,
@@ -42,13 +43,16 @@ def render_run_summary_markdown(summary: RunSummary) -> str:
 
 
 def spend_markdown_lines(summary: RunSummary) -> list[str]:
+    lines = exact_provider_token_markdown_lines(summary)
     if summary.spend is None:
-        return ["No spend observability captured.\n"]
+        return lines or ["No spend observability captured.\n"]
 
-    lines = [
-        f"- {row.label}: {row.markdown_value()}\n"
-        for row in spend_overview_rows(summary.spend)
-    ]
+    lines.extend(
+        [
+            f"- {row.label}: {row.markdown_value()}\n"
+            for row in spend_overview_rows(summary.spend)
+        ]
+    )
     if summary.omitted_invocation_usage_count > 0:
         lines.append(invocation_usage_retention_line(summary))
 
@@ -62,6 +66,10 @@ def spend_markdown_lines(summary: RunSummary) -> list[str]:
             f"configured cost: {format_cost(invocation_usage.configured_cost_usd)}",
             f"confidence: {invocation_usage.invocation_cost_confidence}",
         ]
+        if invocation_usage.provider_usage_report_count is not None:
+            details.append(
+                f"provider report count: {invocation_usage.provider_usage_report_count}"
+            )
         details.append(
             "provider tokens: "
             f"{format_provider_tokens(invocation_usage.provider_tokens)}"
@@ -77,6 +85,28 @@ def spend_markdown_lines(summary: RunSummary) -> list[str]:
             round_num=invocation_usage.round_num,
         )
         lines.append(f"- {label}: {'; '.join(details)}\n")
+    return lines
+
+
+def exact_provider_token_markdown_lines(summary: RunSummary) -> list[str]:
+    aggregates = summary.provider_token_aggregates
+    if aggregates.overall is None:
+        return []
+    lines = [
+        f"- {line}\n"
+        for line in format_provider_token_aggregate_lines(aggregates.overall)
+    ]
+    for aggregate in aggregates.providers:
+        if aggregate.provider is None:
+            continue
+        lines.append(f"- Provider `{aggregate.provider}`:\n")
+        lines.extend(
+            f"  - {line}\n"
+            for line in format_provider_token_aggregate_lines(
+                aggregate,
+                label="Provider-reported tokens",
+            )
+        )
     return lines
 
 

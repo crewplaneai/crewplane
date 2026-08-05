@@ -4,6 +4,19 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Run summaries now report normalized Codex, Claude, Gemini, and Kilo token
+  totals and report counts from durable terminal invocation events, separately
+  from the visible-text lower-bound estimate.
+
+### Fixed
+
+- Prevented completion-buffered Gemini JSON invocations from being terminated
+  by output-idle timeouts while preserving configured wall-clock limits.
+- Kept complete event-log scans out of bounded observer shutdown so large
+  successful runs are not reported as observability failures.
+
 ## [0.1.7] - 2026-08-02
 
 ### Changed

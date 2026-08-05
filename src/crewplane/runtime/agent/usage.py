@@ -6,6 +6,8 @@ from crewplane.architecture.contracts import (
     CommandResult,
     OutputExtractionStatus,
     ProviderKind,
+    ProviderTokenUsage,
+    UsageDecodeResult,
 )
 from crewplane.core.config import AgentConfig
 
@@ -15,31 +17,20 @@ from .usage_costs import (
     estimate_token_count,
     roll_up_cost_confidence,
 )
-from .usage_parsing import (
-    parse_provider_usage,
-    parse_provider_usage_from_result,
-)
 from .usage_types import (
     VISIBLE_ESTIMATE_METHOD,
     InvocationUsage,
-    ParsedProviderUsage,
-    ProviderTokenUsage,
-    UsageParser,
 )
 
 __all__ = [
     "InvocationUsage",
     "InvocationUsageAccumulator",
-    "ParsedProviderUsage",
     "ProviderTokenUsage",
-    "UsageParser",
     "build_fallback_usage",
     "build_fallback_usage_from_output_file",
     "classify_provider_usage_status",
     "estimate_token_count",
-    "parse_provider_usage_from_result",
     "output_text_for_usage",
-    "parse_provider_usage",
     "provider_kind_for_config",
     "roll_up_cost_confidence",
 ]
@@ -99,6 +90,7 @@ def build_fallback_usage_from_output_chars(
         cli_captured=True,
         output_extraction_status="success",
         provider_usage_status="none",
+        provider_usage_report_count=0,
         provider_tokens=ProviderTokenUsage().as_dict(),
         visible_estimate_tokens=visible_estimate_tokens,
         visible_estimate_method=VISIBLE_ESTIMATE_METHOD,
@@ -147,6 +139,9 @@ class InvocationUsageAccumulator:
         self._prompt_chars_per_attempt = len(prompt)
         self._attempt_count = 0
         self._visible_output_chars_total = 0
+        self._provider_tokens: ProviderTokenUsage | None = None
+        self._provider_usage_report_count = 0
+        self._usage_parse_error: str | None = None
 
     @property
     def provider_kind(self) -> ProviderKind:
@@ -161,18 +156,28 @@ class InvocationUsageAccumulator:
     def record_attempt_output_chars(self, char_count: int) -> None:
         self._visible_output_chars_total += max(0, char_count)
 
+    def record_provider_usage(self, result: UsageDecodeResult) -> None:
+        if result.tokens is not None:
+            self._provider_tokens = (
+                result.tokens
+                if self._provider_tokens is None
+                else self._provider_tokens.add_exact(result.tokens)
+            )
+            self._provider_usage_report_count += result.valid_report_count
+        if result.error is not None:
+            self._usage_parse_error = result.error
+
     def build_usage(
         self,
         config: AgentConfig,
         output_extraction_status: OutputExtractionStatus,
-        parsed_usage: ParsedProviderUsage,
     ) -> InvocationUsage:
         visible_input_tokens = estimate_token_count(
             self._prompt_chars_per_attempt * self._attempt_count
         )
         visible_output_tokens = estimate_token_count(self._visible_output_chars_total)
         visible_estimate_tokens = visible_input_tokens + visible_output_tokens
-        provider_tokens = parsed_usage.tokens or ProviderTokenUsage()
+        provider_tokens = self._provider_tokens or ProviderTokenUsage()
         configured_cost_usd, confidence = derive_configured_cost(
             config=config,
             provider_tokens=provider_tokens,
@@ -187,15 +192,18 @@ class InvocationUsageAccumulator:
             provider_usage_status=classify_provider_usage_status(
                 config=config,
                 provider_kind=self._provider_kind,
-                parsed_usage=parsed_usage,
+                provider_tokens=provider_tokens,
+                provider_usage_report_count=self._provider_usage_report_count,
+                usage_parse_error=self._usage_parse_error,
             ),
+            provider_usage_report_count=self._provider_usage_report_count,
             provider_tokens=provider_tokens.as_dict(),
             visible_estimate_tokens=visible_estimate_tokens,
             visible_estimate_method=VISIBLE_ESTIMATE_METHOD,
             visible_estimate_is_lower_bound=True,
             configured_cost_usd=configured_cost_usd,
             invocation_cost_confidence=confidence,
-            usage_parse_error=parsed_usage.error,
+            usage_parse_error=self._usage_parse_error,
         )
 
 

@@ -20,7 +20,6 @@ from crewplane.runtime.agent.invocation.transitions import (
     transition_from_structured_output,
     transition_from_terminal_failure,
 )
-from crewplane.runtime.agent.usage import ParsedProviderUsage
 
 
 def test_structured_output_retry_maps_to_sleep_action() -> None:
@@ -29,7 +28,6 @@ def test_structured_output_retry_maps_to_sleep_action() -> None:
         extracted_output=ExtractedInvocationOutput(
             output_text="retry",
             output_extraction_status="success",
-            parsed_provider_usage=ParsedProviderUsage(status="none"),
         ),
         usage_output="retry",
     )
@@ -65,7 +63,6 @@ def test_structured_output_exhausted_match_maps_to_retry_exhausted() -> None:
         extracted_output=ExtractedInvocationOutput(
             output_text="retry",
             output_extraction_status="success",
-            parsed_provider_usage=ParsedProviderUsage(status="none"),
         ),
         usage_output="retry",
     )

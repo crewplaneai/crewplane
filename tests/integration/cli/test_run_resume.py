@@ -24,9 +24,11 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.observability.events import format_execution_event_log_line
 from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.observability import make_execution_event
 from tests.helpers.working_directory import temporary_project_cwd
 
 
@@ -198,6 +200,23 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                         0,
                         "A result",
                     )
+                    event_sink = kwargs["event_sink"]
+                    assert event_sink is not None
+                    event_sink(
+                        make_execution_event(
+                            event_type="invocation_finished",
+                            workflow_name=plan.workflow_name,
+                            run_id=output.run_id,
+                            node_id="a",
+                            provider="alpha",
+                            role=ProviderRole.EXECUTOR,
+                            task_id="alpha_executor_0",
+                            attempt_count=1,
+                            provider_usage_status="full",
+                            provider_usage_report_count=1,
+                            provider_tokens={"input": 7, "output": 3, "total": 10},
+                        )
+                    )
                     raise asyncio.CancelledError()
                 assert resumed_node_ids == ("a",)
                 assert output.get_stage_output_path("a").exists()
@@ -248,6 +267,10 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8"
             )
             self.assertIn("- Status: cancelled", first_summary)
+            self.assertIn(
+                "Provider-reported tokens: 10 across 1 reports",
+                first_summary,
+            )
             second_run = run_dirs[1]
             self.assertTrue((second_run / "a" / "resume-source.json").exists())
             second_manifest = json.loads(
@@ -319,6 +342,24 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                         0,
                         "A result",
                     )
+                    usage_event = make_execution_event(
+                        event_type="invocation_finished",
+                        workflow_name=plan.workflow_name,
+                        run_id=output.run_id,
+                        node_id="a",
+                        provider="alpha",
+                        role=ProviderRole.EXECUTOR,
+                        task_id="alpha_executor_0",
+                        attempt_count=1,
+                        provider_usage_status="full",
+                        provider_usage_report_count=1,
+                        provider_tokens={"input": 7, "output": 3, "total": 10},
+                    )
+                    with output.get_run_event_log_path().open(
+                        "a",
+                        encoding="utf-8",
+                    ) as handle:
+                        handle.write(format_execution_event_log_line(usage_event))
                     hub_instances[-1].request_stop()
                     await asyncio.sleep(5)
                     raise AssertionError("Stop request did not cancel workflow.")
@@ -364,6 +405,13 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(first_manifest["status"], "cancelled")
             self.assertEqual(first_manifest["cancel_reason"], "ui_stop_requested")
+            first_summary = (run_dirs[0] / "logs" / "summary.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(
+                "Provider-reported tokens: 10 across 1 reports",
+                first_summary,
+            )
             second_run = run_dirs[1]
             self.assertTrue((second_run / "a" / "resume-source.json").exists())
             second_manifest = json.loads(

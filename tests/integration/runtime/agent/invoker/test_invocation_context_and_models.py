@@ -118,7 +118,11 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 captured["cmd"] = cmd
                 captured["stdin_data"] = stdin_data
-                return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                return CommandResult(
+                    returncode=0,
+                    stdout_text='{"response":"ok"}',
+                    stderr_text="",
+                )
 
             config = AgentConfig(
                 cli_cmd=["./gemini"],
@@ -147,6 +151,8 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                     "--model",
                     "auto",
                     "--approval-mode=yolo",
+                    "--output-format",
+                    "json",
                 ],
             )
             self.assertEqual(captured["stdin_data"], b"review the repository")
@@ -171,7 +177,11 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 captured["cmd"] = cmd
                 captured["stdin_data"] = stdin_data
-                return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                return CommandResult(
+                    returncode=0,
+                    stdout_text='{"response":"ok"}',
+                    stderr_text="",
+                )
 
             config = AgentConfig(
                 cli_cmd=["./gemini"],
@@ -197,6 +207,8 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 [
                     "./gemini",
                     "--approval-mode=yolo",
+                    "--output-format",
+                    "json",
                 ],
             )
             self.assertEqual(captured["stdin_data"], b"review the repository")

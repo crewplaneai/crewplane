@@ -43,7 +43,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 captured["stdin_data"] = stdin_data
                 return CommandResult(
                     returncode=0,
-                    stdout_text='{"result":"done","usage":{"input_tokens":120,"output_tokens":30}}',
+                    stdout_text='{"result":"done","modelUsage":{"sonnet":{"inputTokens":120,"outputTokens":30}}}',
                     stderr_text="",
                 )
 
@@ -108,7 +108,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 return CommandResult(
                     returncode=0,
-                    stdout_text='{"result":"done","usage":{"input_tokens":"bad"}}',
+                    stdout_text='{"result":"done","modelUsage":{"sonnet":{"inputTokens":"bad"}}}',
                     stderr_text="",
                 )
 
@@ -162,7 +162,7 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 return CommandResult(
                     returncode=0,
-                    stdout_text='{"usage":{"input_tokens":120,"output_tokens":30}}',
+                    stdout_text='{"modelUsage":{"sonnet":{"inputTokens":120,"outputTokens":30}}}',
                     stderr_text="",
                 )
 
@@ -222,21 +222,28 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 return CommandResult(
                     returncode=0,
                     stdout_text="",
-                    stderr_text="payload on stderr",
+                    stderr_text=(
+                        '{"result":"payload on stderr","modelUsage":{'
+                        '"sonnet":{"inputTokens":12,"outputTokens":4}}}'
+                    ),
                 )
 
             context = InvocationContext(
                 node_id="node.a",
-                task_id="alpha_executor_0",
-                provider="alpha",
+                task_id="claude_executor_0",
+                provider="claude",
                 role=ProviderRole.EXECUTOR,
                 round_num=1,
                 usage_recorder=usages.append,
             )
-            config = AgentConfig(cli_cmd=["echo"], default_model="test")
+            config = AgentConfig(
+                cli_cmd=["./claude"],
+                provider_kind="claude",
+                default_model="sonnet",
+            )
             await invoke_agent_with_runner(
                 config=config,
-                model="test-model",
+                model="sonnet",
                 prompt="prompt",
                 output_file=output_file,
                 cwd=output_file.parent,
@@ -250,7 +257,10 @@ class InvocationUsageTelemetryClaudeTests(unittest.IsolatedAsyncioTestCase):
                 output_file.read_text(encoding="utf-8"), "payload on stderr"
             )
             self.assertEqual(len(usages), 1)
-            self.assertEqual(usages[0].visible_estimate_tokens, 7)
+            self.assertEqual(usages[0].provider_usage_status, "full")
+            self.assertEqual(usages[0].provider_usage_report_count, 1)
+            self.assertEqual(usages[0].provider_tokens["input"], 12)
+            self.assertEqual(usages[0].provider_tokens["output"], 4)
 
     async def test_invoke_agent_with_runner_records_usage_before_failure(
         self,

@@ -69,6 +69,24 @@ class ProviderUsageRollup:
 
 
 @dataclass(frozen=True)
+class ProviderTokenAggregate:
+    provider: str | None
+    report_count: int
+    input: int | None = None
+    cached_input: int | None = None
+    cache_write: int | None = None
+    output: int | None = None
+    reasoning: int | None = None
+    total: int | None = None
+
+
+@dataclass(frozen=True)
+class ProviderTokenAggregates:
+    overall: ProviderTokenAggregate | None = None
+    providers: tuple[ProviderTokenAggregate, ...] = ()
+
+
+@dataclass(frozen=True)
 class UsageRollupValues:
     terminal_invocations: int
     total_attempts: int
@@ -92,6 +110,7 @@ class InvocationUsageSummary:
     cli_captured: bool
     output_extraction_status: OutputExtractionStatus
     provider_usage_status: ProviderUsageStatus
+    provider_usage_report_count: int | None
     provider_tokens: Mapping[str, int | None]
     visible_estimate_tokens: int | None
     visible_estimate_method: str | None
@@ -281,6 +300,9 @@ class RunSummary:
     artifact_references: tuple[ArtifactReferenceSummary, ...]
     event_log_path: Path
     summary_path: Path
+    provider_token_aggregates: ProviderTokenAggregates = field(
+        default_factory=ProviderTokenAggregates
+    )
 
 
 @dataclass(frozen=True)

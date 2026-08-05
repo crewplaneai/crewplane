@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from crewplane.architecture.contracts import (
@@ -11,11 +12,65 @@ from crewplane.observability.events import ExecutionEvent, InvocationEventPayloa
 from .formatting import format_cost, format_count
 from .models import (
     InvocationUsageSummary,
+    ProviderTokenAggregate,
+    ProviderTokenAggregates,
     ProviderUsageRollup,
     SpendOverviewRow,
     SpendTotals,
     UsageRollupValues,
 )
+
+TOKEN_BUCKETS = (
+    "input",
+    "cached_input",
+    "cache_write",
+    "output",
+    "reasoning",
+    "total",
+)
+
+
+@dataclass
+class _MutableProviderTokenAggregate:
+    provider: str | None
+    report_count: int = 0
+    values: dict[str, int | None] = field(
+        default_factory=lambda: dict.fromkeys(TOKEN_BUCKETS)
+    )
+
+    def record(self, payload: InvocationEventPayload) -> None:
+        report_count = payload.provider_usage_report_count
+        if report_count is None or report_count < 0:
+            return
+        had_reports = self.report_count > 0
+        self.report_count += report_count
+        if report_count == 0:
+            return
+        provider_tokens = payload.provider_tokens or {}
+        for bucket in TOKEN_BUCKETS:
+            value = provider_tokens.get(bucket)
+            current = self.values[bucket]
+            valid_value = (
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            )
+            if not had_reports:
+                self.values[bucket] = value if valid_value else None
+            elif current is None or not valid_value:
+                self.values[bucket] = None
+            else:
+                self.values[bucket] = current + value
+
+    def freeze(self) -> ProviderTokenAggregate:
+        return ProviderTokenAggregate(
+            provider=self.provider,
+            report_count=self.report_count,
+            input=self.values["input"],
+            cached_input=self.values["cached_input"],
+            cache_write=self.values["cache_write"],
+            output=self.values["output"],
+            reasoning=self.values["reasoning"],
+            total=self.values["total"],
+        )
 
 
 @dataclass
@@ -124,6 +179,34 @@ def invocation_usage_summaries(
     return tuple(summaries)
 
 
+def provider_token_aggregates(
+    events: Iterable[ExecutionEvent],
+) -> ProviderTokenAggregates:
+    overall: _MutableProviderTokenAggregate | None = None
+    providers: dict[str, _MutableProviderTokenAggregate] = {}
+    for event in events:
+        if event.event_type not in {"invocation_finished", "invocation_failed"}:
+            continue
+        payload = invocation_payload(event)
+        if (
+            payload.provider_usage_report_count is None
+            or payload.provider_usage_report_count < 0
+        ):
+            continue
+        if overall is None:
+            overall = _MutableProviderTokenAggregate(provider=None)
+        overall.record(payload)
+        provider = event.context.provider or "unknown"
+        providers.setdefault(
+            provider,
+            _MutableProviderTokenAggregate(provider=provider),
+        ).record(payload)
+    return ProviderTokenAggregates(
+        overall=overall.freeze() if overall is not None else None,
+        providers=tuple(providers[provider].freeze() for provider in sorted(providers)),
+    )
+
+
 def invocation_usage_summary_from_event(
     event: ExecutionEvent,
 ) -> InvocationUsageSummary | None:
@@ -143,6 +226,7 @@ def invocation_usage_summary_from_event(
         cli_captured=bool(payload.cli_captured),
         output_extraction_status=payload.output_extraction_status or "missing",
         provider_usage_status=payload.provider_usage_status or "none",
+        provider_usage_report_count=payload.provider_usage_report_count,
         provider_tokens=dict(payload.provider_tokens or {}),
         visible_estimate_tokens=payload.visible_estimate_tokens,
         visible_estimate_method=payload.visible_estimate_method,
@@ -221,7 +305,7 @@ def spend_overview_rows(spend: SpendTotals) -> tuple[SpendOverviewRow, ...]:
             value=f"{spend.cli_captured_invocations}/{spend.terminal_invocations}",
         ),
         SpendOverviewRow(
-            label="Provider token reports",
+            label="Provider usage status",
             value=(
                 f"{spend.provider_usage_full_invocations}/"
                 f"{spend.terminal_invocations} full, "

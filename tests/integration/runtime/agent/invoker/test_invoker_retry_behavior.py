@@ -771,7 +771,7 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 attempts["count"] += 1
                 return CommandResult(
                     returncode=0,
-                    stdout_text="review complete",
+                    stdout_text='{"response":"review complete"}',
                     stderr_text=(
                         "Attempt 1 failed: You have exhausted your capacity on this model. "
                         "Your quota will reset after 1s."
@@ -827,7 +827,11 @@ class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):
                             "Your quota will reset after 1s."
                         ),
                     )
-                return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                return CommandResult(
+                    returncode=0,
+                    stdout_text='{"response":"ok"}',
+                    stderr_text="",
+                )
 
             config = AgentConfig(
                 cli_cmd=["echo"],

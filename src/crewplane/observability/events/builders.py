@@ -93,6 +93,7 @@ def invocation_event(
     failure_advice: str | None = None,
     timestamp: float | None = None,
     timestamp_utc: str | None = None,
+    provider_usage_report_count: int | None = None,
 ) -> ExecutionEvent:
     _validate_invocation_context(context)
     return _build_event(
@@ -107,6 +108,7 @@ def invocation_event(
             cli_captured=cli_captured,
             output_extraction_status=output_extraction_status,
             provider_usage_status=provider_usage_status,
+            provider_usage_report_count=provider_usage_report_count,
             provider_tokens=provider_tokens,
             visible_estimate_tokens=visible_estimate_tokens,
             visible_estimate_method=visible_estimate_method,

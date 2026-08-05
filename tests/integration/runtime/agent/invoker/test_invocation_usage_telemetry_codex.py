@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
@@ -20,7 +21,6 @@ from crewplane.runtime.agent.invoker import (
     invoke_agent,
     invoke_agent_with_runner,
 )
-from crewplane.runtime.agent.usage import parse_provider_usage
 
 
 class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
@@ -153,8 +153,8 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 [
                     '{"type":"response.output_text.delta","delta":"done"}',
                     (
-                        '{"type":"response.completed","response":'
-                        '{"usage":{"input_tokens":120,"output_tokens":30}}}'
+                        '{"type":"turn.completed",'
+                        '"usage":{"input_tokens":120,"output_tokens":30}}'
                     ),
                 ]
             )
@@ -463,8 +463,8 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                         '"README says usage limit reset after 5h."}}'
                     ),
                     (
-                        '{"type":"response.completed","response":'
-                        '{"usage":{"input_tokens":12,"output_tokens":3}}}'
+                        '{"type":"turn.completed",'
+                        '"usage":{"input_tokens":12,"output_tokens":3}}'
                     ),
                 ]
             )
@@ -583,24 +583,26 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(sleep_mock.await_count, 1)
             self.assertEqual(output_file.read_text(encoding="utf-8"), "final")
 
-    def test_parse_codex_usage_prefers_valid_terminal_usage_over_malformed_candidate(
+    def test_decode_codex_usage_prefers_valid_terminal_usage_over_malformed_candidate(
         self,
     ) -> None:
-        parsed_usage = parse_provider_usage(
-            "codex",
-            "\n".join(
-                [
-                    '{"usage":{"input_tokens":"bad"}}',
-                    (
-                        '{"type":"response.completed","response":'
-                        '{"usage":{"input_tokens":120,"output_tokens":30}}}'
-                    ),
-                ]
-            ),
-            "",
+        parsed_usage = decode_codex_usage(
+            CommandResult(
+                returncode=0,
+                stdout_text="\n".join(
+                    [
+                        '{"type":"turn.completed","usage":{"input_tokens":"bad"}}',
+                        (
+                            '{"type":"turn.completed",'
+                            '"usage":{"input_tokens":120,"output_tokens":30}}'
+                        ),
+                    ]
+                ),
+                stderr_text="",
+            )
         )
 
-        self.assertEqual(parsed_usage.status, "parsed")
+        self.assertIsNone(parsed_usage.error)
         assert parsed_usage.tokens is not None
         self.assertEqual(parsed_usage.tokens.input, 120)
         self.assertEqual(parsed_usage.tokens.output, 30)
@@ -612,7 +614,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             tmp_path = Path(tmp_dir)
             output_file = tmp_path / "output.txt"
             usages = []
-            payload = '{"type":"response.completed","response":{"usage":{"input_tokens":120}}}'
+            payload = '{"type":"turn.completed","usage":{"input_tokens":120}}'
 
             async def runner(
                 cmd: list[str],
@@ -674,7 +676,7 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
             tmp_path = Path(tmp_dir)
             output_file = tmp_path / "output.txt"
             usages = []
-            payload = '{"type":"response.completed","response":{"usage":{"input_tokens":120,"output_tokens":30}}}'
+            payload = '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":30}}'
 
             async def runner(
                 cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.

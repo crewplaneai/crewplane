@@ -13,7 +13,6 @@ from crewplane.core.config import AgentConfig
 from .usage_types import (
     STRUCTURED_PROVIDER_KINDS,
     InvocationUsage,
-    ParsedProviderUsage,
     ProviderTokenUsage,
     TokenBucket,
 )
@@ -45,7 +44,7 @@ def derive_configured_cost(
     computed_bucket_count = 0
     missing_bucket_count = 0
     fallback_bucket_count = 0
-    provider_token_map = provider_tokens.as_dict()
+    provider_token_map = _billable_provider_tokens(pricing, provider_tokens)
     for bucket in configured_buckets:
         token_count = provider_token_map[bucket]
         if token_count is None:
@@ -71,6 +70,43 @@ def derive_configured_cost(
     if missing_bucket_count == 0 and fallback_bucket_count == 0:
         return total_cost, "full"
     return total_cost, "partial"
+
+
+def _billable_provider_tokens(
+    pricing: dict[str, float | None],
+    provider_tokens: ProviderTokenUsage,
+) -> dict[str, int | None]:
+    token_counts = provider_tokens.as_dict()
+    input_sub_buckets = tuple(
+        token_counts[bucket]
+        for bucket in ("cached_input", "cache_write")
+        if pricing[bucket] is not None
+    )
+    reasoning_sub_bucket = (
+        (token_counts["reasoning"],) if pricing["reasoning"] is not None else ()
+    )
+    token_counts["input"] = _exclusive_token_count(
+        token_counts["input"], input_sub_buckets
+    )
+    token_counts["output"] = _exclusive_token_count(
+        token_counts["output"], reasoning_sub_bucket
+    )
+    return token_counts
+
+
+def _exclusive_token_count(
+    inclusive_count: int | None,
+    separately_priced_counts: tuple[int | None, ...],
+) -> int | None:
+    if inclusive_count is None or any(
+        count is None for count in separately_priced_counts
+    ):
+        return None
+    separately_priced_total = sum(
+        count for count in separately_priced_counts if count is not None
+    )
+    exclusive_count = inclusive_count - separately_priced_total
+    return exclusive_count if exclusive_count >= 0 else None
 
 
 def visible_cost_token_count(
@@ -107,17 +143,19 @@ def provider_usage_buckets(config: AgentConfig) -> tuple[TokenBucket, ...]:
 def classify_provider_usage_status(
     config: AgentConfig,
     provider_kind: ProviderKind,
-    parsed_usage: ParsedProviderUsage,
+    provider_tokens: ProviderTokenUsage,
+    provider_usage_report_count: int,
+    usage_parse_error: str | None,
 ) -> ProviderUsageStatus:
     if provider_kind not in STRUCTURED_PROVIDER_KINDS:
         return "none"
-    if parsed_usage.status == "malformed":
-        return "malformed"
-    if parsed_usage.status != "parsed" or parsed_usage.tokens is None:
+    if provider_usage_report_count == 0:
+        if usage_parse_error is not None:
+            return "malformed"
         return "none"
 
     required_buckets = provider_usage_buckets(config)
-    known_tokens = parsed_usage.tokens.as_dict()
+    known_tokens = provider_tokens.as_dict()
     known_required_buckets = [
         bucket for bucket in required_buckets if known_tokens[bucket] is not None
     ]

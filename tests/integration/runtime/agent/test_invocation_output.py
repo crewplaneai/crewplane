@@ -1,3 +1,8 @@
+from crewplane.adapters.invokers.cli_invoker.machine_json import (
+    extract_claude_output,
+    extract_codex_output,
+)
+from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
 from crewplane.architecture.contracts import CommandResult
 from crewplane.core.config import AgentConfig
 from crewplane.runtime.agent.invocation.output import (
@@ -10,9 +15,6 @@ from crewplane.runtime.agent.usage import (
     estimate_token_count,
     output_text_for_usage,
 )
-from crewplane.runtime.agent.usage_parsing import (
-    parse_provider_usage_from_result,
-)
 
 
 def test_extract_codex_output_reads_structured_file_and_usage(tmp_path) -> None:
@@ -21,15 +23,13 @@ def test_extract_codex_output_reads_structured_file_and_usage(tmp_path) -> None:
     result = CommandResult(
         returncode=0,
         stdout_text=(
-            '{"type":"response.completed","response":'
-            '{"usage":{"input_tokens":10,"output_tokens":2}}}'
+            '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":2}}'
         ),
         stderr_text="",
     )
 
     extracted = extract_invocation_output(
-        output_extraction_mode="codex_last_message_file",
-        usage_parser="codex",
+        output_extractor=extract_codex_output,
         cmd=["codex", "exec"],
         result=result,
         structured_output_file=output_path,
@@ -39,9 +39,6 @@ def test_extract_codex_output_reads_structured_file_and_usage(tmp_path) -> None:
     assert extracted.output_path == output_path
     assert extracted.output_char_count == len("final answer")
     assert extracted.output_extraction_status == "success"
-    assert extracted.parsed_provider_usage.status == "parsed"
-    assert extracted.parsed_provider_usage.tokens is not None
-    assert extracted.parsed_provider_usage.tokens.input == 10
 
 
 def test_extract_codex_output_keeps_usage_parse_failure_telemetry_only(
@@ -51,13 +48,12 @@ def test_extract_codex_output_keeps_usage_parse_failure_telemetry_only(
     output_path.write_text("final answer", encoding="utf-8")
     result = CommandResult(
         returncode=0,
-        stdout_text='{"usage":{"input_tokens":"bad"}}',
+        stdout_text='{"type":"turn.completed","usage":{"input_tokens":"bad"}}',
         stderr_text="",
     )
 
     extracted = extract_invocation_output(
-        output_extraction_mode="codex_last_message_file",
-        usage_parser="codex",
+        output_extractor=extract_codex_output,
         cmd=["codex", "exec"],
         result=result,
         structured_output_file=output_path,
@@ -67,13 +63,15 @@ def test_extract_codex_output_keeps_usage_parse_failure_telemetry_only(
     assert extracted.output_path == output_path
     assert extracted.output_char_count == len("final answer")
     assert extracted.output_extraction_status == "success"
-    assert extracted.parsed_provider_usage.status == "malformed"
+    usage = decode_codex_usage(result)
+    assert usage.tokens is None
+    assert usage.error is not None
 
 
 def test_extract_claude_output_streams_result_to_owned_file(tmp_path) -> None:
     stream_path = tmp_path / "claude-stdout.json"
     stream_path.write_text(
-        '{"result":"final answer","usage":{"input_tokens":12,"output_tokens":4}}',
+        '{"result":"final answer","modelUsage":{"model":{"inputTokens":12,"outputTokens":4}}}',
         encoding="utf-8",
     )
     result = CommandResult(
@@ -84,8 +82,7 @@ def test_extract_claude_output_streams_result_to_owned_file(tmp_path) -> None:
     )
 
     extracted = extract_invocation_output(
-        output_extraction_mode="claude_json",
-        usage_parser="claude",
+        output_extractor=extract_claude_output,
         cmd=["claude"],
         result=result,
         structured_output_file=None,
@@ -98,9 +95,6 @@ def test_extract_claude_output_streams_result_to_owned_file(tmp_path) -> None:
     assert extracted.output_char_count == len("final answer")
     assert extracted.output_path.read_text(encoding="utf-8") == "final answer"
     assert extracted.output_extraction_status == "success"
-    assert extracted.parsed_provider_usage.status == "parsed"
-    assert extracted.parsed_provider_usage.tokens is not None
-    assert extracted.parsed_provider_usage.tokens.input == 12
 
     output_file = tmp_path / "final.md"
     write_extracted_invocation_output(extracted, output_file)
@@ -111,8 +105,7 @@ def test_extract_claude_output_streams_result_to_owned_file(tmp_path) -> None:
 
 def test_extract_visible_output_returns_stderr_fallback_notice() -> None:
     extracted = extract_invocation_output(
-        output_extraction_mode="visible",
-        usage_parser="none",
+        output_extractor=None,
         cmd=["tool"],
         result=CommandResult(
             returncode=0,
@@ -135,8 +128,7 @@ def test_extract_visible_output_uses_persisted_stdout_without_materializing(
     stream_path.write_text("line 1\nline 2", encoding="utf-8")
 
     extracted = extract_invocation_output(
-        output_extraction_mode="visible",
-        usage_parser="none",
+        output_extractor=None,
         cmd=["tool"],
         result=CommandResult(
             returncode=0,
@@ -158,8 +150,7 @@ def test_extract_visible_output_uses_persisted_stdout_without_materializing(
 
 def test_extract_claude_output_reports_malformed_json() -> None:
     extracted = extract_invocation_output(
-        output_extraction_mode="claude_json",
-        usage_parser="claude",
+        output_extractor=extract_claude_output,
         cmd=["claude"],
         result=CommandResult(returncode=0, stdout_text="{bad", stderr_text=""),
         structured_output_file=None,
@@ -171,8 +162,7 @@ def test_extract_claude_output_reports_malformed_json() -> None:
 
 def test_extract_claude_output_reports_missing_result_for_empty_object() -> None:
     extracted = extract_invocation_output(
-        output_extraction_mode="claude_json",
-        usage_parser="claude",
+        output_extractor=extract_claude_output,
         cmd=["claude"],
         result=CommandResult(returncode=0, stdout_text="{ }", stderr_text=""),
         structured_output_file=None,
@@ -182,21 +172,22 @@ def test_extract_claude_output_reports_missing_result_for_empty_object() -> None
     assert extracted.output_extraction_status == "missing"
 
 
-def test_parse_provider_usage_from_result_reads_persisted_stdout_tail(tmp_path) -> None:
+def test_decode_codex_usage_reads_persisted_stdout_tail(tmp_path) -> None:
     output_path = tmp_path / "usage-stream.txt"
-    payload = '{"type":"response.completed","response":{"usage":{"input_tokens":120,"output_tokens":30}}}'
+    payload = (
+        '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":30}}'
+    )
     repeated = "\n".join(["noise"] * 500)
     output_path.write_text(f"{repeated}\n{payload}", encoding="utf-8")
-    usage = parse_provider_usage_from_result(
-        "codex",
+    usage = decode_codex_usage(
         CommandResult(
             returncode=0,
             stdout_text="",
             stderr_text="",
             stdout_path=output_path,
-        ),
+        )
     )
-    assert usage.status == "parsed"
+    assert usage.error is None
     assert usage.tokens is not None
     assert usage.tokens.input == 120
     assert usage.tokens.output == 30

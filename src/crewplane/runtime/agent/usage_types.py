@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal
 
 import crewplane.architecture.contracts as _contracts
 from crewplane.architecture.contracts import (
     ProviderKind,
-    UsageParserProfile,
 )
 
 InvocationUsage = _contracts.InvocationUsage
 ProviderTokenUsage = _contracts.ProviderTokenUsage
 
 VisibleEstimateMethod = Literal["char-count-lower-bound"]
-UsageParser = UsageParserProfile
 TokenBucket = Literal[
     "input",
     "cached_input",
@@ -22,30 +19,12 @@ TokenBucket = Literal[
     "reasoning",
     "total",
 ]
-TOKEN_BUCKETS: tuple[TokenBucket, ...] = (
-    "input",
-    "cached_input",
-    "cache_write",
-    "output",
-    "reasoning",
-    "total",
-)
 VISIBLE_ESTIMATE_METHOD: VisibleEstimateMethod = "char-count-lower-bound"
 STRUCTURED_PROVIDER_KINDS: frozenset[ProviderKind] = frozenset(
-    {ProviderKind.CLAUDE, ProviderKind.CODEX}
+    {
+        ProviderKind.CLAUDE,
+        ProviderKind.CODEX,
+        ProviderKind.GEMINI,
+        ProviderKind.KILO,
+    }
 )
-TOKEN_KEY_ALIASES: dict[TokenBucket, tuple[str, ...]] = {
-    "input": ("input_tokens", "prompt_tokens", "input"),
-    "cached_input": ("cached_input_tokens", "cache_read_input_tokens"),
-    "cache_write": ("cache_write_tokens",),
-    "output": ("output_tokens", "completion_tokens", "output"),
-    "reasoning": ("reasoning_tokens",),
-    "total": ("total_tokens", "total"),
-}
-
-
-@dataclass(frozen=True)
-class ParsedProviderUsage:
-    status: Literal["parsed", "none", "malformed"]
-    tokens: ProviderTokenUsage | None = None
-    error: str | None = None
