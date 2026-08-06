@@ -121,22 +121,24 @@ class PlannedAgentInvoker:
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
+        bound_invocation_context = invocation_context
+        bound_working_directory = cwd
+
         def build_plan(
-            plan_config: AgentConfig,
-            plan_model: str | None,
-            plan_prompt: str,
-            plan_output_file: Path,
-            _plan_invocation_context: InvocationContext | None = None,
-            _plan_working_directory: Path | None = None,
+            config: AgentConfig,
+            model: str | None,
+            prompt: str,
+            output_file: Path,
+            invocation_context: InvocationContext | None = None,  # noqa: ARG001 - Required by InvocationPlanBuilder.
+            working_directory: Path | None = None,  # noqa: ARG001 - Required by InvocationPlanBuilder.
         ) -> InvocationPlan:
-            del _plan_invocation_context, _plan_working_directory
             return self._plan_builder(
-                plan_config,
-                plan_model,
-                plan_prompt,
-                plan_output_file,
-                invocation_context,
-                cwd,
+                config,
+                model,
+                prompt,
+                output_file,
+                bound_invocation_context,
+                bound_working_directory,
             )
 
         return await invoke_agent(

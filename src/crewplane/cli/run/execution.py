@@ -74,6 +74,36 @@ from .resume import (
 from .topology import workflow_topology_from_plan, workflow_topology_from_preview
 
 
+def _finalize_cancelled_run(
+    context: WorkflowRunContext,
+    output: ArtifactStorePort,
+    warning_recorder: WorkflowWarningRecorder,
+    cancel_reason: str,
+) -> None:
+    finalize_run_manifest(output, "cancelled", cancel_reason=cancel_reason)
+    summary_logger = refresh_cancelled_run_summary(
+        warning_recorder.persistent_logger,
+        cancel_reason,
+    )
+    print_end_of_run_summary(context.console, summary_logger)
+
+
+def _finalize_failed_run(
+    context: WorkflowRunContext,
+    output: ArtifactStorePort,
+    warning_recorder: WorkflowWarningRecorder,
+    exc: Exception,
+) -> None:
+    finalize_run_manifest(output, "failed", failure_message=str(exc))
+    summary_logger = refresh_failed_run_summary(
+        warning_recorder.persistent_logger,
+        context.workflow,
+        warning_recorder.run_id,
+        exc,
+    )
+    print_end_of_run_summary(context.console, summary_logger)
+
+
 async def run_and_finalize_workflow(
     context: WorkflowRunContext,
     output: ArtifactStorePort,
@@ -103,59 +133,29 @@ async def run_and_finalize_workflow(
             resumed_node_ids=resumed_node_ids,
         )
     except asyncio.CancelledError:
-        finalize_run_manifest(
+        _finalize_cancelled_run(
+            context,
             output,
-            "cancelled",
-            cancel_reason=EXTERNAL_CANCEL_REASON,
-        )
-        summary_logger = refresh_cancelled_run_summary(
-            warning_recorder.persistent_logger,
+            warning_recorder,
             EXTERNAL_CANCEL_REASON,
         )
-        print_end_of_run_summary(context.console, summary_logger)
         raise
     except WorkflowCancelledByUser:
-        finalize_run_manifest(
+        _finalize_cancelled_run(
+            context,
             output,
-            "cancelled",
-            cancel_reason=UI_STOP_CANCEL_REASON,
-        )
-        summary_logger = refresh_cancelled_run_summary(
-            warning_recorder.persistent_logger,
+            warning_recorder,
             UI_STOP_CANCEL_REASON,
         )
-        print_end_of_run_summary(context.console, summary_logger)
         raise
     except Exception as exc:
-        finalize_run_manifest(
-            output,
-            "failed",
-            failure_message=str(exc),
-        )
-        summary_logger = refresh_failed_run_summary(
-            warning_recorder.persistent_logger,
-            context.workflow,
-            warning_recorder.run_id,
-            exc,
-        )
-        print_end_of_run_summary(context.console, summary_logger)
+        _finalize_failed_run(context, output, warning_recorder, exc)
         raise
 
     try:
         branch_export_records = fulfill_branch_exports(plan, output)
     except Exception as exc:
-        finalize_run_manifest(
-            output,
-            "failed",
-            failure_message=str(exc),
-        )
-        summary_logger = refresh_failed_run_summary(
-            warning_recorder.persistent_logger,
-            context.workflow,
-            warning_recorder.run_id,
-            exc,
-        )
-        print_end_of_run_summary(context.console, summary_logger)
+        _finalize_failed_run(context, output, warning_recorder, exc)
         raise
     finalize_run_manifest(
         output,

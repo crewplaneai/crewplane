@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from enum import Enum, auto
 from pathlib import Path
 from typing import assert_never
 
@@ -203,6 +204,13 @@ def _is_non_quota_retry(transition: InvocationAttemptTransition) -> bool:
     )
 
 
+class _AttemptTransitionPhase(Enum):
+    STRUCTURED_OUTPUT = auto()
+    QUOTA_RETRY = auto()
+    RETRYABLE_FAILURE = auto()
+    TERMINAL_FAILURE = auto()
+
+
 def _select_attempt_transition(
     config: AgentConfig,
     runtime: InvocationCommandRuntime,
@@ -211,66 +219,68 @@ def _select_attempt_transition(
     quota_retry_wait_seconds: float,
     built_in_retry_used: bool,
 ) -> InvocationAttemptTransition:
-    structured_retry_decision = _evaluate_structured_retry(
-        config,
-        runtime,
-        attempt_result,
-        cursor,
-        built_in_retry_used,
-    )
-    transition = transition_from_structured_output(
-        attempt_result=attempt_result,
-        cursor=cursor,
-        failure_retry_decision=structured_retry_decision,
-    )
-    if not isinstance(transition, ContinueAttemptTransition):
-        return transition
-    cursor = transition.cursor()
-
-    quota_retry_decision = evaluate_quota_retry(
-        config=config,
-        cmd=runtime.cmd,
-        quota_parser=runtime.quota_parser,
-        result=attempt_result.result,
-        quota_retry_started_at=cursor.quota_retry_started_at,
-        quota_retry_count=cursor.quota_retry_count,
-        quota_retry_wait_seconds=quota_retry_wait_seconds,
-        one_shot_failure_retry=runtime.one_shot_failure_retry,
-    )
-    transition = transition_from_quota_retry(
-        attempt_result=attempt_result,
-        cursor=cursor,
-        quota_retry_decision=quota_retry_decision,
-    )
-    if not isinstance(transition, ContinueAttemptTransition):
-        return transition
-    cursor = transition.cursor()
-
-    retry_decision = evaluate_failure_retry(
-        config=config,
-        cmd=runtime.cmd,
-        result=attempt_result.result,
-        retry_count=cursor.retry_count,
-        built_in_retry_used=built_in_retry_used,
-        one_shot_failure_retry=runtime.one_shot_failure_retry,
-    )
-    transition = transition_from_retryable_failure(
-        attempt_result=attempt_result,
-        cursor=cursor,
-        failure_retry_decision=retry_decision,
-    )
-    if not isinstance(transition, ContinueAttemptTransition):
-        return transition
-    cursor = transition.cursor()
-
-    transition = transition_from_terminal_failure(
-        attempt_result=attempt_result,
-        cursor=cursor,
-        failure_retry_decision=retry_decision,
-    )
-    if not isinstance(transition, ContinueAttemptTransition):
-        return transition
-    cursor = transition.cursor()
+    retry_decision: FailureRetryDecision | None = None
+    transition: InvocationAttemptTransition
+    for phase in _AttemptTransitionPhase:
+        match phase:
+            case _AttemptTransitionPhase.STRUCTURED_OUTPUT:
+                structured_retry_decision = _evaluate_structured_retry(
+                    config,
+                    runtime,
+                    attempt_result,
+                    cursor,
+                    built_in_retry_used,
+                )
+                transition = transition_from_structured_output(
+                    attempt_result=attempt_result,
+                    cursor=cursor,
+                    failure_retry_decision=structured_retry_decision,
+                )
+            case _AttemptTransitionPhase.QUOTA_RETRY:
+                quota_retry_decision = evaluate_quota_retry(
+                    config=config,
+                    cmd=runtime.cmd,
+                    quota_parser=runtime.quota_parser,
+                    result=attempt_result.result,
+                    quota_retry_started_at=cursor.quota_retry_started_at,
+                    quota_retry_count=cursor.quota_retry_count,
+                    quota_retry_wait_seconds=quota_retry_wait_seconds,
+                    one_shot_failure_retry=runtime.one_shot_failure_retry,
+                )
+                transition = transition_from_quota_retry(
+                    attempt_result=attempt_result,
+                    cursor=cursor,
+                    quota_retry_decision=quota_retry_decision,
+                )
+            case _AttemptTransitionPhase.RETRYABLE_FAILURE:
+                retry_decision = evaluate_failure_retry(
+                    config=config,
+                    cmd=runtime.cmd,
+                    result=attempt_result.result,
+                    retry_count=cursor.retry_count,
+                    built_in_retry_used=built_in_retry_used,
+                    one_shot_failure_retry=runtime.one_shot_failure_retry,
+                )
+                transition = transition_from_retryable_failure(
+                    attempt_result=attempt_result,
+                    cursor=cursor,
+                    failure_retry_decision=retry_decision,
+                )
+            case _AttemptTransitionPhase.TERMINAL_FAILURE:
+                if retry_decision is None:
+                    raise RuntimeError(
+                        "Terminal failure transition requires a retry decision."
+                    )
+                transition = transition_from_terminal_failure(
+                    attempt_result=attempt_result,
+                    cursor=cursor,
+                    failure_retry_decision=retry_decision,
+                )
+            case _:
+                assert_never(phase)
+        if not isinstance(transition, ContinueAttemptTransition):
+            return transition
+        cursor = transition.cursor()
 
     extracted_output = extract_invocation_output(
         output_extractor=runtime.output_extractor,
@@ -330,11 +340,13 @@ async def _execute_transition_action(
     last_non_quota_failure: InvocationFailureSummary | None = None,
 ) -> tuple[int, InvocationRetryCursor] | None:
     try:
+        if isinstance(transition, ContinueAttemptTransition):
+            raise RuntimeError("Invocation loop cannot execute a continue transition.")
+        record_transition_outputs(transition, usage_state, invocation_context)
         match transition:
             case SleepAndRetryAttemptTransition(
                 retry_delay_seconds=retry_delay_seconds
             ):
-                record_transition_outputs(transition, usage_state, invocation_context)
                 emit_notice(invocation_context, transition.notice)
                 await reset_before_retry(invocation_context)
                 next_attempt = await _sleep_before_next_attempt(
@@ -343,7 +355,6 @@ async def _execute_transition_action(
                 )
                 return next_attempt, transition.cursor()
             case FinalizeSuccessAttemptTransition(extracted_output=extracted_output):
-                record_transition_outputs(transition, usage_state, invocation_context)
                 _finalize_successful_invocation(
                     output_file=output_file,
                     extracted_output=extracted_output,
@@ -353,7 +364,6 @@ async def _execute_transition_action(
                 )
                 return None
             case RaiseRetryExhaustedAttemptTransition():
-                record_transition_outputs(transition, usage_state, invocation_context)
                 _raise_retry_exhausted(
                     runtime=runtime,
                     result=attempt_result.result,
@@ -361,14 +371,12 @@ async def _execute_transition_action(
                     log_file=log_file,
                 )
             case RaiseFailedExitAttemptTransition():
-                record_transition_outputs(transition, usage_state, invocation_context)
                 _raise_failed_exit(
                     runtime=runtime,
                     result=attempt_result.result,
                     log_file=log_file,
                 )
             case RaiseQuotaFailureAttemptTransition(message=message):
-                record_transition_outputs(transition, usage_state, invocation_context)
                 _raise_quota_failure(
                     runtime=runtime,
                     result=attempt_result.result,
@@ -378,17 +386,13 @@ async def _execute_transition_action(
             case RaiseOutputExtractionFailureAttemptTransition(
                 extracted_output=extracted_output
             ):
-                record_transition_outputs(transition, usage_state, invocation_context)
                 raise build_output_extraction_failure_error(
                     runtime.cmd[0],
                     extracted_output.output_extraction_status,
                 )
-            case ContinueAttemptTransition():
-                raise RuntimeError(
-                    "Invocation loop cannot execute a continue transition."
-                )
             case _:
                 assert_never(transition)
+        return None
     finally:
         _cleanup_transition_extracted_output(transition)
 
