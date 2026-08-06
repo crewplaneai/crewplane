@@ -146,39 +146,3 @@ brew upgrade crewplane
 Crewplane is open source under the Apache-2.0 license. Questions and workflow
 ideas are welcome in
 [GitHub Discussions](https://github.com/crewplaneai/crewplane/discussions).
-
-## Tap Maintainer Notes
-
-This directory contains the formula source intended for the external tap at
-`https://github.com/crewplaneai/homebrew-crewplane`. This repository does not
-create or push that external tap.
-
-Before publishing the tap, use the exact canonical PyPI artifact and dependency
-resources that will be served publicly:
-
-1. Run `make release-prepare` for a coordinated new version.
-2. Confirm the prepared formula points at the canonical PyPI sdist and SHA.
-3. Run `make release-check`.
-4. Copy `packaging/homebrew/Formula/crewplane.rb` into the tap repository.
-5. Run `brew audit --strict crewplane` and `brew test crewplane` from the tap.
-6. Push the tap update after PyPI and npm are live.
-
-For local validation before publication:
-
-```bash
-make brew-smoke
-```
-
-Release and smoke targets read the version from `pyproject.toml`.
-`make release-prepare` verifies that the exact version is not already on PyPI
-or npm before it rewrites local release scratch state. `make release-pypi` and
-`make release-npm` run registry-specific remote checks so a partial release can
-be completed without being blocked by a version that already exists in the
-other registry.
-
-The local smoke target creates a temporary formula copy that points at the
-local sdist. It skips clearly when Homebrew is unavailable or a `crewplane`
-formula is already installed. The formula declares `maturin` for the
-`pydantic-core` runtime sdist, installs declared runtime resources first, and
-then builds the `crewplane` sdist with build isolation disabled so the
-Hatchling backend comes only from the pinned formula resources.

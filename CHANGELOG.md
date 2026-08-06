@@ -4,6 +4,11 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Allowed file-backed input nodes to consume result files from prior terminal
+  runs while keeping running-run results and other runtime-owned paths blocked.
+
 ## [0.1.8] - 2026-08-05
 
 ### Changed

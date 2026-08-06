@@ -111,8 +111,7 @@ def write_minimal_repo(root: Path, version: str = "1.2.3-alpha.4") -> None:
     (root / "packaging" / "npm" / "README.md").write_text(
         "This alpha npm package exposes Crewplane.\n"
         "npm install -g crewplane@alpha\n"
-        "npx crewplane@alpha --help\n"
-        "npm install -g ./crewplane-0.0.0.tgz\n",
+        "npx crewplane@alpha --help\n",
         encoding="utf-8",
     )
     (root / "packaging" / "homebrew" / "Formula" / "crewplane.rb").write_text(

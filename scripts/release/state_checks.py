@@ -396,10 +396,6 @@ def verify_docs_snippets(context: ReleaseContext) -> list[str]:
             issues.append(
                 f"{path.relative_to(context.root)} still references main install URL"
             )
-    npm_readme = public_docs[-1].read_text(encoding="utf-8")
-    expected_tarball = f"./{context.npm_filename}"
-    if expected_tarball not in npm_readme:
-        issues.append("packaging/npm/README.md has a stale local tarball example")
     return issues
 
 

@@ -95,7 +95,7 @@ class EventLogAppendCapture:
         return len(self.events)
 
 
-@dataclass(frozen=True)
+@dataclass
 class GeneratedFileDriftAllowance:
     _in_progress_roots: set[Path] = field(default_factory=set, repr=False)
     _published_signatures: dict[Path, tuple[int, str]] = field(
@@ -108,7 +108,7 @@ class GeneratedFileDriftAllowance:
     def start_snapshot(self, root: Path) -> None:
         with self._lock:
             self._in_progress_roots.add(root)
-            object.__setattr__(self, "_version", self._version + 1)
+            self._version += 1
 
     def finish_snapshot(
         self,
@@ -119,7 +119,7 @@ class GeneratedFileDriftAllowance:
             if published_signatures is not None:
                 self._published_signatures.update(published_signatures)
             self._in_progress_roots.discard(root)
-            object.__setattr__(self, "_version", self._version + 1)
+            self._version += 1
 
     def snapshot(self) -> tuple[dict[Path, tuple[int, str]], set[Path], int]:
         with self._lock:

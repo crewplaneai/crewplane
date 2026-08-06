@@ -18,7 +18,12 @@ from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .models import WorkspaceFileTarget
 from .references import TemplateReference, iter_template_references
 from .signatures import signature_for_payload
-from .static_resources import append_static_resource, resolve_static_file
+from .static_resources import (
+    StaticFileResult,
+    append_static_resource,
+    resolve_static_file,
+    resolve_terminal_result_file,
+)
 from .token_catalog import append_token_catalog
 from .workspace.files.locators import (
     resolve_workspace_file_reference,
@@ -51,6 +56,20 @@ def resolve_input_source(
         return
     reference = references[0]
     occurrence_id = f"{node.id}:input:0"
+    terminal_result = resolve_terminal_result_file(
+        reference.key or "",
+        source_root(node, options),
+        options.state_dir,
+    )
+    if terminal_result is not None:
+        record_static_input_source(
+            node,
+            reference,
+            occurrence_id,
+            terminal_result,
+            state,
+        )
+        return
     if should_use_input_workspace_file_locator(workflow, reference, options):
         resolve_workspace_input_source(
             workflow,
@@ -118,6 +137,16 @@ def resolve_static_input_source(
         project_root=options.project_root.resolve(),
         allowed_paths=allowed_template_paths(options),
     )
+    record_static_input_source(node, reference, occurrence_id, result, state)
+
+
+def record_static_input_source(
+    node: WorkflowNode,
+    reference: TemplateReference,
+    occurrence_id: str,
+    result: StaticFileResult,
+    state: CompileState,
+) -> None:
     extend_diagnostics(state, result.diagnostics)
     if result.resource is None or result.payload is None:
         return

@@ -291,12 +291,11 @@ def _reject_unsafe_artifact_dir(path: Path) -> None:
 
 
 def worktree_protected_ref_scopes(
-    plan: PreflightExecutionPlan,
-    source_ref: WorktreeSourceRef,
-    node_id: str,
-    slug: str,
+    plan: PreflightExecutionPlan,  # noqa: ARG001 - Reserved for source-specific scope policy.
+    source_ref: WorktreeSourceRef,  # noqa: ARG001 - Reserved for source-specific scope policy.
+    node_id: str,  # noqa: ARG001 - Reserved for node-specific scope policy.
+    slug: str,  # noqa: ARG001 - Reserved for invocation-specific scope policy.
 ) -> tuple[str, ...]:
-    del plan, source_ref, node_id, slug
     return (PROTECTED_REF_PREFIX,)
 
 

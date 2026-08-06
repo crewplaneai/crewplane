@@ -7,9 +7,10 @@
     every input, output, and decision on disk.
   </p>
   <p>
-    <a href="https://pypi.org/project/crewplane/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/crewplane?color=0f766e"></a>
-    <a href="https://github.com/crewplaneai/crewplane/blob/master/pyproject.toml"><img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776AB.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/crewplaneai/crewplane/actions/workflows/ci.yml/badge.svg?branch=master"></a>
+    <a href="https://www.bestpractices.dev/projects/13966"><img src="https://www.bestpractices.dev/projects/13966/badge"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+    <a href="https://github.com/crewplaneai/crewplane/blob/master/pyproject.toml"><img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776AB.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/blob/master/docs/index.md"><img alt="Docs" src="https://img.shields.io/badge/docs-read-0f766e.svg"></a>
     <a href="https://github.com/crewplaneai/crewplane/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/crewplaneai/crewplane?style=social"></a>
   </p>

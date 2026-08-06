@@ -62,31 +62,35 @@ def normalize_object_path(implementation: str) -> str:
     return implementation
 
 
-def uses_cli_invoker(config: Config) -> bool:
+def _uses_invoker_implementation(
+    config: Config,
+    shorthand: str,
+    implementation_path: str,
+) -> bool:
     settings = config.settings if config.settings is not None else Settings()
     implementation = settings.integrations.invoker.implementation
-    if implementation == "cli":
+    if implementation == shorthand:
         return True
     try:
         resolved = resolve_implementation_path("invoker", implementation)
     except IntegrationResolutionError:
         return False
-    return normalize_object_path(resolved) == normalize_object_path(
-        "crewplane.adapters.invokers.cli:CliInvokerAdapter"
+    return normalize_object_path(resolved) == normalize_object_path(implementation_path)
+
+
+def uses_cli_invoker(config: Config) -> bool:
+    return _uses_invoker_implementation(
+        config,
+        "cli",
+        "crewplane.adapters.invokers.cli:CliInvokerAdapter",
     )
 
 
 def uses_mock_invoker(config: Config) -> bool:
-    settings = config.settings if config.settings is not None else Settings()
-    implementation = settings.integrations.invoker.implementation
-    if implementation == "mock":
-        return True
-    try:
-        resolved = resolve_implementation_path("invoker", implementation)
-    except IntegrationResolutionError:
-        return False
-    return normalize_object_path(resolved) == normalize_object_path(
-        "crewplane.adapters.invokers.mock:MockInvokerAdapter"
+    return _uses_invoker_implementation(
+        config,
+        "mock",
+        "crewplane.adapters.invokers.mock:MockInvokerAdapter",
     )
 
 
