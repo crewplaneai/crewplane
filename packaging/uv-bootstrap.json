@@ -1,0 +1,11 @@
+{
+  "version": "0.12.2",
+  "checksums": {
+    "aarch64-apple-darwin": "fa909fea3bc06f460db79017030a221fdbc43ec4478f089cb554d8335c090817",
+    "x86_64-apple-darwin": "a6e6506a9109801222d65d17461abf4ed13bdecc5d2b13af0495418a82972c6b",
+    "aarch64-unknown-linux-gnu": "19b7f1f66895261fbaa07f8ea91da0f86337ad4e47efa594e87641c1718ffc52",
+    "x86_64-unknown-linux-gnu": "d66e96b5f1ca3b99806eee283a8125d33a0bd669e6e6d9bc4ab7ffda63c41bf4",
+    "aarch64-unknown-linux-musl": "73b87f0d65d7dfcd39753a51ce65592360b02c29f8e1bc2c85cc4190fe914499",
+    "x86_64-unknown-linux-musl": "2dbe8209c9592f6d1009b8565f4bf29813427907bee2236023c013101ede343f"
+  }
+}

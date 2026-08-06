@@ -89,9 +89,12 @@ You can also try the command without a global install:
 npx crewplane --help
 ```
 
-The npm postinstall step bootstraps `uv` when needed, creates a private Python
-3.13 environment inside the package, and installs the matching Crewplane
-release. This keeps Crewplane isolated from your project dependencies.
+During installation, npm creates a private Python 3.13 environment and
+installs the matching Crewplane release. If `uv` is not already available,
+npm downloads a version-pinned, checksum-verified release first. Automatic
+setup supports computers with 64-bit Intel, AMD, or Arm processors. For other
+processor types, install `uv` first. This keeps Crewplane isolated from your
+project dependencies.
 
 ## Run Your First Workflow
 

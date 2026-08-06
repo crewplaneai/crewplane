@@ -65,6 +65,11 @@ curl -fsSL https://raw.githubusercontent.com/crewplaneai/crewplane/master/instal
 crewplane --help
 ```
 
+If `uv` is not already installed, the script downloads a version-pinned,
+checksum-verified release. Automatic setup supports computers with 64-bit
+Intel, AMD, or Arm processors. For other processor types, install `uv` first,
+then rerun the script.
+
 ## Install With Homebrew
 
 On macOS, use the Crewplane Homebrew tap:
@@ -97,6 +102,10 @@ crewplane --help
 ```
 
 > Note: the npm wrapper does not support native Windows. Use WSL on Windows.
+
+On computers with 64-bit Intel, AMD, or Arm processors, npm downloads and
+verifies `uv` automatically when needed. For other processor types, install
+`uv` before installing the npm package.
 
 <details>
 <summary>npm PATH troubleshooting</summary>

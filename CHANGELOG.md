@@ -4,10 +4,17 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Added automatic pinned `uv` metadata updates to the existing `ci-tooling` PR
+  lane, including synchronized installer checksums and workflow versions.
+
 ### Fixed
 
 - Allowed file-backed input nodes to consume result files from prior terminal
   runs while keeping running-run results and other runtime-owned paths blocked.
+- Replaced executable network installer pipes in the shell and npm bootstrap
+  paths with version-pinned, checksum-verified `uv` release archives.
 
 ## [0.1.8] - 2026-08-05
 

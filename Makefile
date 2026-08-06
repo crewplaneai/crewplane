@@ -6,6 +6,7 @@ NPM_OTP ?=
 NPM_PUBLISH_OTP ?=
 NPM_DIST_TAG_OTP ?=
 NPM_PUBLISH_ARGS ?=
+UV_BOOTSTRAP_VERSION ?= latest
 HAVE_UV := $(shell if command -v uv >/dev/null 2>&1 && uv --version >/dev/null 2>&1; then echo 1; else echo 0; fi)
 PROJECT_NAME_CMD = $(PYTHON) -c 'import sys, tomllib; project = tomllib.load(open("pyproject.toml", "rb"))["project"]; name = project["name"]; scripts = list(project.get("scripts", {})); sys.exit(f"expected one [project.scripts] key matching project.name {name!r}, got {scripts!r}") if scripts != [name] else print(name)'
 PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD) || printf '%s\n' __PACKAGE_NAME_LOOKUP_FAILED__)
@@ -32,7 +33,7 @@ endif
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
 .PHONY: help setup uninstall test typecheck lint format format-check check actionlint \
-	dependency-audit clean \
+	dependency-audit uv-bootstrap-check uv-bootstrap-update clean \
 	package-build package-check package-wheelhouse wheel-typecheck changelog-check \
 	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
 	install-script-smoke npm-pack npm-smoke brew-smoke install-check \
@@ -51,9 +52,11 @@ help:
 		'  lint               Run ruff checks' \
 		'  format             Run ruff import fixes and formatter' \
 		'  format-check       Check formatting' \
-		'  check              Run lint, format-check, typing, and tests' \
+		'  check              Run all development checks' \
 		'  actionlint         Validate GitHub Actions workflows' \
 		'  dependency-audit   Audit locked and build-system Python dependencies' \
+		'  uv-bootstrap-check Verify pinned uv metadata is synchronized' \
+		'  uv-bootstrap-update Update pinned uv metadata (default: latest)' \
 		'  clean              Remove caches, build output, and release scratch files' \
 		'  uninstall          Uninstall the package from the active environment' \
 		'' \
@@ -123,13 +126,19 @@ format:
 format-check:
 	$(RUN_RUFF) format --check src tests scripts
 
-check: lint format-check typecheck test
+check: lint format-check typecheck uv-bootstrap-check test
 
 actionlint:
 	scripts/actionlint.sh
 
 dependency-audit:
 	$(PYTHON) scripts/dependency_audit.py
+
+uv-bootstrap-check:
+	$(RUN_PYTHON) scripts/update_uv_bootstrap.py check
+
+uv-bootstrap-update:
+	$(RUN_PYTHON) scripts/update_uv_bootstrap.py update $(UV_BOOTSTRAP_VERSION)
 
 package-build:
 	$(RUN_RELEASE) package-build

@@ -41,7 +41,9 @@ make typecheck    # typed extension contracts + external consumer fixture
 make lint         # project-env ruff check src tests scripts
 make format       # project-env ruff import fixes + format src tests scripts
 make format-check # project-env ruff format --check src tests scripts
-make check        # lint + format-check + typing + tests
+make check        # lint + format-check + typing + uv pin check + tests
+make uv-bootstrap-check  # verify all pinned uv versions and checksums agree
+make uv-bootstrap-update # update all uv pins and checksums to the latest release
 make help         # list package and release targets
 make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
@@ -85,9 +87,10 @@ Current CI policy:
 - Production publishing is local-only. Follow the
   [Release Workflow](#release-workflow). GitHub Actions does not publish
   production PyPI or npm packages and does not need their credentials.
-- Workflow actions are pinned to immutable commits, with version comments kept
-  beside each pin for dependency automation and review. Workflow `uv`
-  installations are also version-pinned.
+- Workflow actions and `uv` are version-pinned. `packaging/uv-bootstrap.json`
+  is the source of truth for the `uv` version and installer checksums.
+- Nightly automation proposes `uv` updates through the shared `ci-tooling` PR
+  lane.
 
 Operational notes:
 
