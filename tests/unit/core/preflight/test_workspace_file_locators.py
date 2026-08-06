@@ -21,6 +21,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.terminal_results import RESULT_SOURCE_TOKEN, write_result_source
 from tests.helpers.workspace_preflight import (
     compile_workflow_with_source_snapshot,
     init_git_repo,
@@ -575,6 +576,47 @@ def test_workspace_enabled_input_node_uses_workspace_file_locator(
     assert preview.nodes[1].workspace_policy is not None
     assert preview.token_catalog[0].canonical_locator == locator.locator_id
     assert preview.token_catalog[0].resolved["kind"] == "workspace_file_locator"
+
+
+def test_workspace_enabled_input_node_keeps_terminal_result_static(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "README.md").write_text("project\n", encoding="utf-8")
+    source_snapshot = init_git_repo(tmp_path)
+    write_result_source(tmp_path, status="failed")
+    workflow = WorkflowPlan(
+        name="workspace terminal input",
+        worktrees={"primary": {"kind": "worktree"}},
+        nodes=[
+            WorkflowNode(
+                id="prior-result",
+                mode="input",
+                source=RESULT_SOURCE_TOKEN,
+            ),
+            WorkflowNode(
+                id="implement",
+                mode="sequential",
+                needs=["prior-result"],
+                providers=[ProviderSpec(provider="alpha")],
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="run")
+                ],
+            ),
+        ],
+    )
+
+    preview = compile_workflow_with_source_snapshot(
+        tmp_path,
+        workflow,
+        source_snapshot,
+    )
+
+    assert preview.diagnostics == []
+    assert preview.workspace_file_locators == []
+    assert len(preview.static_resources) == 1
+    assert preview.nodes[0].input_content_ref is not None
+    assert preview.nodes[0].input_workspace_file_locator_id is None
+    assert preview.nodes[1].workspace_policy is not None
 
 
 def test_worktree_node_after_input_uses_project_initial_file_locator(

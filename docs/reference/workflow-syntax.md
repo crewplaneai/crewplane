@@ -278,6 +278,10 @@ nodes:
 Rules:
 
 - `source` must be exactly one raw `{{file:...}}` template.
+- A source may read a file under `.crewplane/execution-results/<run-key>/` when
+  the source run is `succeeded`, `failed`, or `cancelled`. Running-run results
+  remain blocked, and other file-template contexts cannot read runtime-owned
+  paths.
 - No Markdown body section is allowed.
 - No `providers`, `needs`, `findings`, `depth`, `audit_rounds`,
   `review_starts_with`,

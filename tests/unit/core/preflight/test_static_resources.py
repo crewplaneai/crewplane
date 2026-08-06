@@ -1,6 +1,7 @@
 import hashlib
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
 from crewplane.bootstrap import build_runtime_config_snapshot
@@ -11,10 +12,12 @@ from crewplane.core.config import (
     IntegrationSpec,
     Settings,
 )
+from crewplane.core.execution_state import RunStatus
 from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightWorkflowSource,
     compile_preflight_preview,
+    load_workflow_source_for_preflight,
 )
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
@@ -23,6 +26,11 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.terminal_results import (
+    FINDINGS_SOURCE_TOKEN,
+    RESULT_SOURCE_TOKEN,
+    write_result_source,
+)
 
 
 def _config() -> Config:
@@ -59,6 +67,10 @@ def _compile_file_prompt(root: Path, prompt: str):
             )
         ],
     )
+    return _compile_source(root, PreflightWorkflowSource.from_workflow(workflow))
+
+
+def _compile_source(root: Path, source: PreflightWorkflowSource):
     config = _config()
     snapshot = build_runtime_config_snapshot(
         config=config,
@@ -66,7 +78,7 @@ def _compile_file_prompt(root: Path, prompt: str):
         no_live=True,
     )
     return compile_preflight_preview(
-        source=PreflightWorkflowSource.from_workflow(workflow),
+        source=source,
         config=config,
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
@@ -75,6 +87,14 @@ def _compile_file_prompt(root: Path, prompt: str):
             fingerprint_key_policy="read_only",
         ),
     )
+
+
+def _compile_input_source(root: Path, source: str):
+    workflow = WorkflowPlan(
+        name="demo",
+        nodes=[WorkflowNode(id="context", mode="input", source=source)],
+    )
+    return _compile_source(root, PreflightWorkflowSource.from_workflow(workflow))
 
 
 def test_file_token_is_materialized_as_static_resource(tmp_path: Path) -> None:
@@ -177,6 +197,173 @@ def test_file_token_rejects_runtime_owned_crewplane_root(tmp_path: Path) -> None
     runtime_file.write_text("runtime", encoding="utf-8")
 
     preview = _compile_file_prompt(
+        tmp_path,
+        "{{file:.crewplane/execution-stages/run/log.md}}",
+    )
+
+    assert preview.workflow_signature is None
+    assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-POLICY"]
+    assert "runtime-owned path" in preview.diagnostics[0].message
+
+
+def test_file_token_rejects_execution_result_in_provider_prompt(
+    tmp_path: Path,
+) -> None:
+    write_result_source(tmp_path)
+
+    preview = _compile_file_prompt(tmp_path, RESULT_SOURCE_TOKEN)
+
+    assert preview.workflow_signature is None
+    assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-POLICY"]
+    assert "runtime-owned path" in preview.diagnostics[0].message
+
+
+@pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled"])
+def test_input_node_allows_terminal_execution_result_as_static_resource(
+    tmp_path: Path,
+    status: RunStatus,
+) -> None:
+    write_result_source(tmp_path, status=status)
+
+    preview = _compile_input_source(tmp_path, RESULT_SOURCE_TOKEN)
+
+    assert preview.diagnostics == []
+    assert len(preview.static_resources) == 1
+    resource = preview.static_resources[0]
+    assert preview.nodes[0].input_content_ref == resource.content_ref
+    assert set(preview.static_file_payloads.values()) == {b"prior result"}
+
+
+def test_input_node_rejects_running_execution_result(tmp_path: Path) -> None:
+    write_result_source(tmp_path, status="running")
+
+    preview = _compile_input_source(tmp_path, RESULT_SOURCE_TOKEN)
+
+    assert preview.workflow_signature is None
+    assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-POLICY"]
+    assert "still running" in preview.diagnostics[0].message
+
+
+@pytest.mark.parametrize("manifest_payload", [None, "not-json"])
+def test_input_node_rejects_result_without_valid_run_manifest(
+    tmp_path: Path,
+    manifest_payload: str | None,
+) -> None:
+    write_result_source(tmp_path)
+    manifest_path = (
+        tmp_path
+        / ".crewplane"
+        / "execution-stages"
+        / "workflow--prior-run"
+        / "manifests"
+        / "run.json"
+    )
+    if manifest_payload is None:
+        manifest_path.unlink()
+    else:
+        manifest_path.write_text(manifest_payload, encoding="utf-8")
+
+    preview = _compile_input_source(tmp_path, RESULT_SOURCE_TOKEN)
+
+    assert preview.workflow_signature is None
+    assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-POLICY"]
+    assert "manifest" in preview.diagnostics[0].message
+
+
+def test_input_node_rejects_symlinked_execution_result(tmp_path: Path) -> None:
+    result_path = write_result_source(tmp_path)
+    external_path = tmp_path / "external-result.md"
+    external_path.write_text("external", encoding="utf-8")
+    result_path.unlink()
+    result_path.symlink_to(external_path)
+
+    preview = _compile_input_source(tmp_path, RESULT_SOURCE_TOKEN)
+
+    assert preview.workflow_signature is None
+    assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-POLICY"]
+    assert "safe regular file" in preview.diagnostics[0].message
+
+
+def test_input_node_allows_terminal_findings_as_static_resource(
+    tmp_path: Path,
+) -> None:
+    write_result_source(
+        tmp_path,
+        content=b"prior findings",
+        artifact_kind="findings",
+    )
+
+    preview = _compile_input_source(tmp_path, FINDINGS_SOURCE_TOKEN)
+
+    assert preview.diagnostics == []
+    assert set(preview.static_file_payloads.values()) == {b"prior findings"}
+
+
+def test_imported_input_node_resolves_terminal_result_from_project_root(
+    tmp_path: Path,
+) -> None:
+    write_result_source(tmp_path)
+    module_path = tmp_path / "module.task.md"
+    module_path.write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Result Consumer",
+                "nodes:",
+                "  - id: context",
+                "    mode: input",
+                f'    source: "{RESULT_SOURCE_TOKEN}"',
+                "  - id: use-context",
+                "    mode: sequential",
+                "    needs: [context]",
+                "    providers: [alpha]",
+                "---",
+                "",
+                "## use-context",
+                "",
+                "Use {{context.output}}.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    root_path = tmp_path / "root.task.md"
+    root_path.write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Root",
+                "imports:",
+                "  - path: module.task.md",
+                "    as: archive",
+                "nodes: []",
+                "---",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    source = load_workflow_source_for_preflight(root_path, project_root=tmp_path)
+
+    preview = _compile_source(tmp_path, source)
+
+    assert preview.diagnostics == []
+    input_node = next(node for node in preview.nodes if node.id == "archive.context")
+    assert input_node.input_content_ref is not None
+    assert input_node.source_file == module_path.as_posix()
+    assert input_node.source_root == tmp_path.as_posix()
+    assert [record.path for record in source.referenced_workflows] == [
+        root_path.resolve(),
+        module_path.resolve(),
+    ]
+
+
+def test_input_node_rejects_other_runtime_owned_path(tmp_path: Path) -> None:
+    runtime_file = tmp_path / ".crewplane" / "execution-stages" / "run" / "log.md"
+    runtime_file.parent.mkdir(parents=True)
+    runtime_file.write_text("runtime", encoding="utf-8")
+
+    preview = _compile_input_source(
         tmp_path,
         "{{file:.crewplane/execution-stages/run/log.md}}",
     )
