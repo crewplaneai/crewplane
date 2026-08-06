@@ -139,7 +139,7 @@ def test_claude_usage_parser_uses_stderr_when_stdout_is_empty() -> None:
 
 
 def test_claude_usage_parser_bounds_captured_model_usage(monkeypatch) -> None:
-    monkeypatch.setattr(machine_json, "MAX_CAPTURED_USAGE_BYTES", 1)
+    monkeypatch.setattr(machine_json, "MAX_CAPTURED_CLAUDE_USAGE_BYTES", 1)
 
     usage, error = machine_json.read_claude_model_usage(
         CommandResult(0, '{"modelUsage":{"model":{"inputTokens":1}}}', "")
@@ -163,7 +163,7 @@ def test_claude_usage_parser_ignores_non_string_result() -> None:
 
 
 def test_claude_output_extractor_ignores_oversized_model_usage(monkeypatch) -> None:
-    monkeypatch.setattr(machine_json, "MAX_CAPTURED_USAGE_BYTES", 1)
+    monkeypatch.setattr(machine_json, "MAX_CAPTURED_CLAUDE_USAGE_BYTES", 1)
 
     extracted = extract_claude_output(
         CommandResult(

@@ -4,24 +4,29 @@ import json
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import TypeGuard, cast, get_args
+from typing import TypeGuard, get_args
 
 from crewplane.architecture.contracts import OutputExtractionStatus
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
     ExecutionEventContext,
 )
 from crewplane.observability.events.payloads import (
+    EventPayload,
     InvocationEventPayload,
     NodeEventPayload,
     RuntimeLogEventPayload,
     WorkflowEventPayload,
     WorkspaceEventPayload,
 )
-from crewplane.observability.events.types import EventType, LogLevel
+from crewplane.observability.events.types import EventType, LogLevel, RuntimeLogValue
 
 EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))
 LOG_LEVELS: frozenset[str] = frozenset(get_args(LogLevel))
+_OUTPUT_EXTRACTION_STATUSES: frozenset[str] = frozenset(
+    get_args(OutputExtractionStatus)
+)
 
 
 def read_event_log(event_log_path: Path) -> list[ExecutionEvent]:
@@ -79,82 +84,96 @@ def event_from_record(record: Mapping[str, object]) -> ExecutionEvent | None:
 def _payload_from_record(
     event_type: EventType,
     record: Mapping[str, object],
-) -> (
-    WorkflowEventPayload
-    | NodeEventPayload
-    | InvocationEventPayload
-    | RuntimeLogEventPayload
-    | WorkspaceEventPayload
-    | None
-):
-    if event_type in {"workflow_started", "workflow_finished", "workflow_failed"}:
-        return WorkflowEventPayload(error=_string(record.get("error")))
-    if event_type in {"node_started", "node_finished", "node_failed", "node_blocked"}:
-        return NodeEventPayload(error=_string(record.get("error")))
-    if event_type in {"invocation_started", "invocation_finished", "invocation_failed"}:
-        if (
-            "provider_usage_report_count" in record
-            and record["provider_usage_report_count"] is not None
-            and _report_count(record["provider_usage_report_count"]) is None
-        ):
-            return None
-        return InvocationEventPayload(
-            duration_ms=_integer(record.get("duration_ms")),
-            error=_string(record.get("error")),
-            attempt_count=_integer(record.get("attempt_count")),
-            cli_captured=_boolean(record.get("cli_captured")),
-            output_extraction_status=cast(
-                OutputExtractionStatus | None,
-                _string(record.get("output_extraction_status")),
-            ),
-            provider_usage_status=_string(record.get("provider_usage_status")),
-            provider_usage_report_count=_report_count(
-                record.get("provider_usage_report_count")
-            ),
-            provider_tokens=_integer_mapping(record.get("provider_tokens")),
-            visible_estimate_tokens=_integer(record.get("visible_estimate_tokens")),
-            visible_estimate_method=_string(record.get("visible_estimate_method")),
-            visible_estimate_is_lower_bound=_boolean(
-                record.get("visible_estimate_is_lower_bound")
-            ),
-            configured_cost_usd=_float(record.get("configured_cost_usd")),
-            invocation_cost_confidence=_string(
-                record.get("invocation_cost_confidence")
-            ),
-            usage_parse_error=_string(record.get("usage_parse_error")),
-            failure_kind=_string(record.get("failure_kind")),
-            failure_phase=_string(record.get("failure_phase")),
-            failure_source=_string(record.get("failure_source")),
-            failure_advice=_string(record.get("failure_advice")),
-        )
-    if event_type == "workspace_context_recorded":
-        return WorkspaceEventPayload(
-            status=_string(record.get("status")),
-            workspace_kind=_string(record.get("workspace_kind")),
-            workspace_logical_worktree_name=_string(
-                record.get("workspace_logical_worktree_name")
-            ),
-            workspace_materialization=_string(record.get("workspace_materialization")),
-            workspace_source_kind=_string(record.get("workspace_source_kind")),
-            workspace_source_node_id=_string(record.get("workspace_source_node_id")),
-            workspace_source_commit=_string(record.get("workspace_source_commit")),
-            workspace_source_tree=_string(record.get("workspace_source_tree")),
-            worktree_contract_mode=_string(record.get("worktree_contract_mode")),
-            worktree_contract_schema_version=_string(
-                record.get("worktree_contract_schema_version")
-            ),
-            workspace_state_path=_string(record.get("workspace_state_path")),
-            workspace_writable=_boolean(record.get("workspace_writable")),
-            workspace_lineage_producer=_boolean(
-                record.get("workspace_lineage_producer")
-            ),
-            workspace_child_environment_required=_boolean(
-                record.get("workspace_child_environment_required")
-            ),
-            workspace_child_environment_applied=_boolean(
-                record.get("workspace_child_environment_applied")
-            ),
-        )
+) -> EventPayload | None:
+    match event_type:
+        case "workflow_started" | "workflow_finished" | "workflow_failed":
+            return _workflow_payload_from_record(record)
+        case "node_started" | "node_finished" | "node_failed" | "node_blocked":
+            return _node_payload_from_record(record)
+        case "invocation_started" | "invocation_finished" | "invocation_failed":
+            return _invocation_payload_from_record(record)
+        case "workspace_context_recorded":
+            return _workspace_payload_from_record(record)
+        case "runtime_log":
+            return _runtime_log_payload_from_record(record)
+
+
+def _workflow_payload_from_record(
+    record: Mapping[str, object],
+) -> WorkflowEventPayload:
+    return WorkflowEventPayload(error=_string(record.get("error")))
+
+
+def _node_payload_from_record(record: Mapping[str, object]) -> NodeEventPayload:
+    return NodeEventPayload(error=_string(record.get("error")))
+
+
+def _invocation_payload_from_record(
+    record: Mapping[str, object],
+) -> InvocationEventPayload | None:
+    raw_report_count = record.get("provider_usage_report_count")
+    report_count = _report_count(raw_report_count)
+    if raw_report_count is not None and report_count is None:
+        return None
+    return InvocationEventPayload(
+        duration_ms=_integer(record.get("duration_ms")),
+        error=_string(record.get("error")),
+        attempt_count=_integer(record.get("attempt_count")),
+        cli_captured=_boolean(record.get("cli_captured")),
+        output_extraction_status=_output_extraction_status(
+            record.get("output_extraction_status")
+        ),
+        provider_usage_status=_string(record.get("provider_usage_status")),
+        provider_usage_report_count=report_count,
+        provider_tokens=_integer_mapping(record.get("provider_tokens")),
+        visible_estimate_tokens=_integer(record.get("visible_estimate_tokens")),
+        visible_estimate_method=_string(record.get("visible_estimate_method")),
+        visible_estimate_is_lower_bound=_boolean(
+            record.get("visible_estimate_is_lower_bound")
+        ),
+        configured_cost_usd=_float(record.get("configured_cost_usd")),
+        invocation_cost_confidence=_string(record.get("invocation_cost_confidence")),
+        usage_parse_error=_string(record.get("usage_parse_error")),
+        failure_kind=_string(record.get("failure_kind")),
+        failure_phase=_string(record.get("failure_phase")),
+        failure_source=_string(record.get("failure_source")),
+        failure_advice=_string(record.get("failure_advice")),
+    )
+
+
+def _workspace_payload_from_record(
+    record: Mapping[str, object],
+) -> WorkspaceEventPayload:
+    return WorkspaceEventPayload(
+        status=_string(record.get("status")),
+        workspace_kind=_string(record.get("workspace_kind")),
+        workspace_logical_worktree_name=_string(
+            record.get("workspace_logical_worktree_name")
+        ),
+        workspace_materialization=_string(record.get("workspace_materialization")),
+        workspace_source_kind=_string(record.get("workspace_source_kind")),
+        workspace_source_node_id=_string(record.get("workspace_source_node_id")),
+        workspace_source_commit=_string(record.get("workspace_source_commit")),
+        workspace_source_tree=_string(record.get("workspace_source_tree")),
+        worktree_contract_mode=_string(record.get("worktree_contract_mode")),
+        worktree_contract_schema_version=_string(
+            record.get("worktree_contract_schema_version")
+        ),
+        workspace_state_path=_string(record.get("workspace_state_path")),
+        workspace_writable=_boolean(record.get("workspace_writable")),
+        workspace_lineage_producer=_boolean(record.get("workspace_lineage_producer")),
+        workspace_child_environment_required=_boolean(
+            record.get("workspace_child_environment_required")
+        ),
+        workspace_child_environment_applied=_boolean(
+            record.get("workspace_child_environment_applied")
+        ),
+    )
+
+
+def _runtime_log_payload_from_record(
+    record: Mapping[str, object],
+) -> RuntimeLogEventPayload | None:
     level = _string(record.get("level"))
     message = _string(record.get("message"))
     operation = _string(record.get("operation"))
@@ -180,7 +199,7 @@ def _context_from_record(
         run_id=run_id,
         node_id=_string(record.get("node_id")),
         provider=_string(record.get("provider")),
-        role=_string(record.get("role")),
+        role=_provider_role(record.get("role")),
         model=_string(record.get("model")),
         task_id=_string(record.get("task_id")),
         audit_round_num=_integer(record.get("audit_round_num")),
@@ -207,8 +226,25 @@ def _is_log_level(value: str | None) -> TypeGuard[LogLevel]:
     return isinstance(value, str) and value in LOG_LEVELS
 
 
+def _output_extraction_status(value: object) -> OutputExtractionStatus | None:
+    if _is_output_extraction_status(value):
+        return value
+    return None
+
+
+def _is_output_extraction_status(
+    value: object,
+) -> TypeGuard[OutputExtractionStatus]:
+    return isinstance(value, str) and value in _OUTPUT_EXTRACTION_STATUSES
+
+
 def _string(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _provider_role(value: object) -> ProviderRole | None:
+    role = _string(value)
+    return ProviderRole(role) if role is not None else None
 
 
 def _integer(value: object) -> int | None:
@@ -253,10 +289,12 @@ def _integer_mapping(value: object) -> Mapping[str, int | None] | None:
     return result
 
 
-def _runtime_log_attributes(value: object) -> Mapping[str, object] | None:
+def _runtime_log_attributes(
+    value: object,
+) -> Mapping[str, RuntimeLogValue] | None:
     if not isinstance(value, dict):
         return None
-    result: dict[str, object] = {}
+    result: dict[str, RuntimeLogValue] = {}
     for key, item in value.items():
         if not isinstance(key, str) or not _is_runtime_log_value(item):
             return None
@@ -264,5 +302,5 @@ def _runtime_log_attributes(value: object) -> Mapping[str, object] | None:
     return result
 
 
-def _is_runtime_log_value(value: object) -> bool:
+def _is_runtime_log_value(value: object) -> TypeGuard[RuntimeLogValue]:
     return value is None or isinstance(value, str | int | float | bool)

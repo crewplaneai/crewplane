@@ -8,6 +8,7 @@ from unittest.mock import patch
 from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
 from crewplane.architecture.contracts import CommandResult, ProviderKind
 from crewplane.artifacts import OutputManager
+from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.config import AgentConfig
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
@@ -1137,6 +1138,36 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             assert aggregate is not None
             self.assertEqual(aggregate.report_count, 1)
             self.assertEqual(aggregate.total, 10)
+
+    def test_summary_publication_uses_atomic_write(self) -> None:
+        workflow = single_node_workflow()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            published_paths: list[Path] = []
+
+            def record_atomic_write(
+                path: Path,
+                content: str,
+                ensure_parent: bool = True,
+            ) -> Path:
+                published_paths.append(path)
+                return atomic_write_text(path, content, ensure_parent)
+
+            with patch(
+                "crewplane.observability.run_summary.logger.atomic_write_text",
+                new=record_atomic_write,
+            ):
+                persistent_logger.stop(RunResult(status="succeeded"))
+
+            self.assertEqual(published_paths, [output.get_run_summary_path()])
 
     def test_exact_summary_wins_over_late_bounded_stop_write(self) -> None:
         workflow = single_node_workflow()

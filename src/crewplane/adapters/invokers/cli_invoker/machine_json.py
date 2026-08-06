@@ -469,7 +469,7 @@ class _ClaudeJsonParser:
         if captured is None:
             return
         char_bytes = len(char.encode("utf-8"))
-        if self._captured_size + char_bytes > MAX_CAPTURED_USAGE_BYTES:
+        if self._captured_size + char_bytes > MAX_CAPTURED_CLAUDE_USAGE_BYTES:
             self._capture_overflow = True
             return
         captured.append(char)

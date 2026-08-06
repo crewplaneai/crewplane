@@ -9,6 +9,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.observability.events import (
     ExecutionEvent,
     format_execution_event_log_line,
@@ -105,14 +106,24 @@ class PersistentRunLogger:
         return self._write_summary(
             result,
             provider_token_aggregates(durable_events),
-            exact_token_summary=True,
+            token_aggregates_are_exact=True,
         )
 
     def _write_summary(
         self,
         result: RunResult,
         token_aggregates: ProviderTokenAggregates,
-        exact_token_summary: bool,
+        token_aggregates_are_exact: bool,
+    ) -> RunSummary | None:
+        summary = self._build_summary(result, token_aggregates)
+        if summary is None:
+            return None
+        return self._publish_summary(summary, token_aggregates_are_exact)
+
+    def _build_summary(
+        self,
+        result: RunResult,
+        token_aggregates: ProviderTokenAggregates,
     ) -> RunSummary | None:
         with self._lock:
             if self._lifecycle == PersistentLoggerLifecycle.NEW:
@@ -121,7 +132,7 @@ class PersistentRunLogger:
             events = list(self._events)
             dropped_event_count = self._dropped_event_count
             summary_facts = self._summary_accumulator.snapshot()
-        summary = build_run_summary(
+        return build_run_summary(
             artifact_store=self._artifact_store,
             snapshot=snapshot,
             events=events,
@@ -132,16 +143,20 @@ class PersistentRunLogger:
             summary_facts=summary_facts,
             token_aggregates=token_aggregates,
         )
+
+    def _publish_summary(
+        self,
+        summary: RunSummary,
+        token_aggregates_are_exact: bool,
+    ) -> RunSummary | None:
         summary_text = render_run_summary_markdown(summary)
         with self._summary_publication_lock:
-            if not exact_token_summary and self._exact_token_summary_published:
-                with self._lock:
-                    return self._last_summary
-            self._summary_path.parent.mkdir(parents=True, exist_ok=True)
-            self._summary_path.write_text(summary_text, encoding="utf-8")
+            if self._exact_token_summary_published and not token_aggregates_are_exact:
+                return self.last_summary
+            atomic_write_text(self._summary_path, summary_text)
             with self._lock:
                 self._last_summary = summary
-            if exact_token_summary:
+            if token_aggregates_are_exact:
                 self._exact_token_summary_published = True
         return summary
 
@@ -169,7 +184,7 @@ class PersistentRunLogger:
             self._write_summary(
                 result,
                 ProviderTokenAggregates(),
-                exact_token_summary=False,
+                token_aggregates_are_exact=False,
             )
         finally:
             with self._lock:

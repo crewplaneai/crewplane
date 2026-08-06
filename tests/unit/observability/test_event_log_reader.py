@@ -151,6 +151,18 @@ def test_event_reader_rejects_invalid_token_and_log_attribute_values() -> None:
     assert event_from_record(invalid_attributes).payload.attributes is None
 
 
+def test_event_reader_ignores_invalid_output_extraction_status() -> None:
+    event = event_from_record(
+        {
+            **invocation_record(),
+            "output_extraction_status": "invalid",
+        }
+    )
+
+    assert event is not None
+    assert event.payload.output_extraction_status is None
+
+
 def test_event_reader_returns_empty_for_missing_or_symlinked_logs(
     tmp_path: Path,
 ) -> None:
