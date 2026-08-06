@@ -985,15 +985,14 @@ def test_npm_wrapper_metadata_and_scripts_pin_python_package() -> None:
     assert "process.argv.slice(2)" in shim
 
 
-def test_npm_install_docs_explain_global_bin_path() -> None:
-    npm_readme = read_text("packaging", "npm", "README.md")
+def test_installation_docs_explain_npm_global_bin_path() -> None:
     installation_doc = read_text("docs", "getting-started", "installation.md")
-    for content in (npm_readme, installation_doc):
-        assert "npm config get prefix" in content
-        assert "PATH" in content
-        assert "command -v crewplane" in content
-        assert "node" in content
-        assert "crewplane@alpha" not in content
+
+    assert "npm config get prefix" in installation_doc
+    assert "PATH" in installation_doc
+    assert "command -v crewplane" in installation_doc
+    assert "node" in installation_doc
+    assert "crewplane@alpha" not in installation_doc
 
 
 def test_update_docs_keep_package_managers_in_charge() -> None:

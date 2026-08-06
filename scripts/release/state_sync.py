@@ -85,7 +85,6 @@ def sync_public_docs(context: ReleaseContext) -> None:
             (r"This alpha npm package exposes", "This npm package exposes", False),
             (r"npm install -g crewplane@alpha", "npm install -g crewplane", False),
             (r"npx crewplane@alpha --help", "npx crewplane --help", False),
-            (r"\./crewplane-[^/\s]+\.tgz", f"./{context.npm_filename}", True),
         ],
     }
     for path, path_replacements in replacements.items():

@@ -155,48 +155,6 @@ For a quick question, exploratory work, or a patch that fits in one session,
 keep using the provider CLI directly. Use Crewplane when the ordering,
 handoffs, failure recovery, or audit trail matter.
 
-## npm Wrapper Notes
-
-This npm package exposes the Python `crewplane` application through a Node.js
-shim. Both `crewplane` and `npx crewplane` delegate to the same console command
-inside the package's private environment.
-
-Global npm installs create shims under `$(npm config get prefix)/bin`. If npm
-reports a successful install but your shell cannot find `crewplane`, add that
-directory to `PATH` and confirm Node.js remains available:
-
-```bash
-npm_prefix="$(npm config get prefix)"
-export PATH="$npm_prefix/bin:$PATH"
-command -v node
-command -v crewplane
-```
-
-If npm lifecycle scripts are disabled, the private environment is not created.
-Enable lifecycle scripts and recover with:
-
-```bash
-npm rebuild --global crewplane
-```
-
-Update a global npm installation with:
-
-```bash
-npm update --global crewplane
-```
-
-### Maintainer smoke check
-
-Set `CREWPLANE_INSTALL_PYTHON` only when a local smoke check must use a specific
-Python executable. To install a locally packed wrapper against a local
-wheelhouse:
-
-```bash
-CREWPLANE_INSTALL_FIND_LINKS=/path/to/wheelhouse \
-CREWPLANE_INSTALL_NO_INDEX=1 \
-npm install -g ./crewplane-0.1.8.tgz
-```
-
 ## Learn More
 
 - [Why Crewplane?](https://github.com/crewplaneai/crewplane/blob/master/docs/getting-started/why-crewplane.md)
