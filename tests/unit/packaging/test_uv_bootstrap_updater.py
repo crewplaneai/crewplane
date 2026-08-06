@@ -11,12 +11,12 @@ import pytest
 from scripts import update_uv_bootstrap as updater
 
 ROOT = Path(__file__).resolve().parents[3]
+ARCHIVE_TARGETS = tuple(target.archive_target for target in updater.UV_TARGETS)
 
 
 def make_release(version: str) -> updater.UvRelease:
     checksums = {
-        target: f"{index:064x}"
-        for index, target in enumerate(updater.SUPPORTED_TARGETS, start=1)
+        target: f"{index:064x}" for index, target in enumerate(ARCHIVE_TARGETS, start=1)
     }
     return updater.UvRelease(version, checksums)
 
@@ -39,7 +39,7 @@ def test_repository_uv_bootstrap_metadata_is_synchronized() -> None:
     release = updater.validate_repository(ROOT)
 
     assert updater.VERSION_PATTERN.fullmatch(release.version)
-    assert set(release.checksums) == set(updater.SUPPORTED_TARGETS)
+    assert set(release.checksums) == set(ARCHIVE_TARGETS)
 
 
 def test_fetch_latest_release_collects_every_platform_checksum() -> None:
@@ -50,14 +50,14 @@ def test_fetch_latest_release_collects_every_platform_checksum() -> None:
         requested_urls.append(url)
         if url == updater.LATEST_RELEASE_URL:
             return '{"tag_name":"9.8.7","draft":false,"prerelease":false}'
-        target = next(target for target in updater.SUPPORTED_TARGETS if target in url)
+        target = next(target for target in ARCHIVE_TARGETS if target in url)
         filename = f"uv-{target}.tar.gz"
         return f"{release.checksums[target]}  {filename}\n"
 
     fetched = updater.fetch_latest_release(fetch_text)
 
     assert fetched == release
-    assert len(requested_urls) == len(updater.SUPPORTED_TARGETS) + 1
+    assert len(requested_urls) == len(ARCHIVE_TARGETS) + 1
 
 
 @pytest.mark.parametrize(

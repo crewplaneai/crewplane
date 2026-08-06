@@ -23,14 +23,6 @@ ROOT = Path(
 ).resolve()
 LATEST_RELEASE_URL = "https://api.github.com/repos/astral-sh/uv/releases/latest"
 RELEASE_BASE_URL = "https://github.com/astral-sh/uv/releases/download"
-SUPPORTED_TARGETS = (
-    "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
-    "aarch64-unknown-linux-gnu",
-    "x86_64-unknown-linux-gnu",
-    "aarch64-unknown-linux-musl",
-    "x86_64-unknown-linux-musl",
-)
 MANIFEST_PATH = Path("packaging/uv-bootstrap.json")
 INSTALLER_PATH = Path("install.sh")
 POSTINSTALL_PATH = Path("packaging/npm/scripts/postinstall.js")
@@ -53,10 +45,78 @@ class UvRelease:
     checksums: dict[str, str]
 
 
+@dataclass(frozen=True)
+class UvTarget:
+    archive_target: str
+    shell_platforms: tuple[str, ...]
+    node_platforms: tuple[str, ...]
+
+
+UV_TARGETS: tuple[UvTarget, ...] = (
+    UvTarget(
+        "aarch64-apple-darwin",
+        ("Darwin:arm64",),
+        ("darwin:arm64",),
+    ),
+    UvTarget(
+        "x86_64-apple-darwin",
+        ("Darwin:x86_64",),
+        ("darwin:x64",),
+    ),
+    UvTarget(
+        "aarch64-unknown-linux-gnu",
+        ("Linux:aarch64:gnu", "Linux:arm64:gnu"),
+        ("linux:arm64:gnu",),
+    ),
+    UvTarget(
+        "aarch64-unknown-linux-musl",
+        ("Linux:aarch64:musl", "Linux:arm64:musl"),
+        ("linux:arm64:musl",),
+    ),
+    UvTarget(
+        "x86_64-unknown-linux-gnu",
+        ("Linux:x86_64:gnu", "Linux:amd64:gnu"),
+        ("linux:x64:gnu",),
+    ),
+    UvTarget(
+        "x86_64-unknown-linux-musl",
+        ("Linux:x86_64:musl", "Linux:amd64:musl"),
+        ("linux:x64:musl",),
+    ),
+)
+
+
+def validate_uv_targets() -> None:
+    archive_targets = tuple(target.archive_target for target in UV_TARGETS)
+    shell_platforms = tuple(
+        platform for target in UV_TARGETS for platform in target.shell_platforms
+    )
+    node_platforms = tuple(
+        platform for target in UV_TARGETS for platform in target.node_platforms
+    )
+    if any(
+        not target.archive_target
+        or not target.shell_platforms
+        or not target.node_platforms
+        for target in UV_TARGETS
+    ):
+        raise UvBootstrapError(
+            "uv targets require an archive target and shell and Node platform selectors"
+        )
+    for label, values in (
+        ("archive target", archive_targets),
+        ("shell platform", shell_platforms),
+        ("Node platform", node_platforms),
+    ):
+        if len(values) != len(set(values)):
+            raise UvBootstrapError(f"duplicate {label} in uv target matrix")
+
+
 def validate_release(release: UvRelease) -> None:
+    validate_uv_targets()
     if VERSION_PATTERN.fullmatch(release.version) is None:
         raise UvBootstrapError(f"invalid uv version: {release.version!r}")
-    expected_targets = set(SUPPORTED_TARGETS)
+    expected_targets = {target.archive_target for target in UV_TARGETS}
     actual_targets = set(release.checksums)
     if actual_targets != expected_targets:
         missing = sorted(expected_targets - actual_targets)
@@ -94,14 +154,27 @@ def render_manifest(release: UvRelease) -> str:
     manifest = {
         "version": release.version,
         "checksums": {
-            target: release.checksums[target] for target in SUPPORTED_TARGETS
+            target.archive_target: release.checksums[target.archive_target]
+            for target in UV_TARGETS
         },
     }
     return f"{json.dumps(manifest, indent=2)}\n"
 
 
+def render_shell_target(target: UvTarget, checksum: str) -> str:
+    platforms = "|".join(target.shell_platforms)
+    return f'''        {platforms})
+            printf '%s|%s\\n' \\
+                "{target.archive_target}" \\
+                "{checksum}"
+            ;;'''
+
+
 def render_shell_metadata(release: UvRelease) -> str:
-    checksums = release.checksums
+    target_cases = "\n".join(
+        render_shell_target(target, release.checksums[target.archive_target])
+        for target in UV_TARGETS
+    )
     return f'''UV_VERSION="{release.version}"
 UV_RELEASE_BASE_URL="https://github.com/astral-sh/uv/releases/download/${{UV_VERSION}}"
 
@@ -117,36 +190,7 @@ uv_archive_details() {{
             ;;
     esac
     case "$uv_platform" in
-        Darwin:arm64)
-            printf '%s|%s\\n' \\
-                "aarch64-apple-darwin" \\
-                "{checksums["aarch64-apple-darwin"]}"
-            ;;
-        Darwin:x86_64)
-            printf '%s|%s\\n' \\
-                "x86_64-apple-darwin" \\
-                "{checksums["x86_64-apple-darwin"]}"
-            ;;
-        Linux:aarch64:gnu|Linux:arm64:gnu)
-            printf '%s|%s\\n' \\
-                "aarch64-unknown-linux-gnu" \\
-                "{checksums["aarch64-unknown-linux-gnu"]}"
-            ;;
-        Linux:aarch64:musl|Linux:arm64:musl)
-            printf '%s|%s\\n' \\
-                "aarch64-unknown-linux-musl" \\
-                "{checksums["aarch64-unknown-linux-musl"]}"
-            ;;
-        Linux:x86_64:gnu|Linux:amd64:gnu)
-            printf '%s|%s\\n' \\
-                "x86_64-unknown-linux-gnu" \\
-                "{checksums["x86_64-unknown-linux-gnu"]}"
-            ;;
-        Linux:x86_64:musl|Linux:amd64:musl)
-            printf '%s|%s\\n' \\
-                "x86_64-unknown-linux-musl" \\
-                "{checksums["x86_64-unknown-linux-musl"]}"
-            ;;
+{target_cases}
         *)
             fail "unsupported platform for automatic uv installation: $uv_platform"
             ;;
@@ -154,35 +198,25 @@ uv_archive_details() {{
 }}'''
 
 
+def render_javascript_target(target: UvTarget, checksum: str) -> str:
+    return "\n".join(
+        f'''  "{platform}": {{
+    target: "{target.archive_target}",
+    sha256: "{checksum}",
+  }},'''
+        for platform in target.node_platforms
+    )
+
+
 def render_javascript_metadata(release: UvRelease) -> str:
-    checksums = release.checksums
+    archive_entries = "\n".join(
+        render_javascript_target(target, release.checksums[target.archive_target])
+        for target in UV_TARGETS
+    )
     return f'''const UV_VERSION = "{release.version}";
 const UV_RELEASE_BASE_URL = `https://github.com/astral-sh/uv/releases/download/${{UV_VERSION}}`;
 const UV_ARCHIVES = {{
-  "darwin:arm64": {{
-    target: "aarch64-apple-darwin",
-    sha256: "{checksums["aarch64-apple-darwin"]}",
-  }},
-  "darwin:x64": {{
-    target: "x86_64-apple-darwin",
-    sha256: "{checksums["x86_64-apple-darwin"]}",
-  }},
-  "linux:arm64:gnu": {{
-    target: "aarch64-unknown-linux-gnu",
-    sha256: "{checksums["aarch64-unknown-linux-gnu"]}",
-  }},
-  "linux:arm64:musl": {{
-    target: "aarch64-unknown-linux-musl",
-    sha256: "{checksums["aarch64-unknown-linux-musl"]}",
-  }},
-  "linux:x64:gnu": {{
-    target: "x86_64-unknown-linux-gnu",
-    sha256: "{checksums["x86_64-unknown-linux-gnu"]}",
-  }},
-  "linux:x64:musl": {{
-    target: "x86_64-unknown-linux-musl",
-    sha256: "{checksums["x86_64-unknown-linux-musl"]}",
-  }},
+{archive_entries}
 }};'''
 
 
@@ -357,8 +391,8 @@ def fetch_release(version: str, fetch_text: TextFetcher) -> UvRelease:
     if VERSION_PATTERN.fullmatch(version) is None:
         raise UvBootstrapError(f"invalid uv version: {version!r}")
     checksums: dict[str, str] = {}
-    for target in SUPPORTED_TARGETS:
-        filename = f"uv-{target}.tar.gz"
+    for target in UV_TARGETS:
+        filename = f"uv-{target.archive_target}.tar.gz"
         checksum_url = f"{RELEASE_BASE_URL}/{version}/{filename}.sha256"
         checksum_text = fetch_text(checksum_url).strip()
         match = re.fullmatch(
@@ -367,9 +401,10 @@ def fetch_release(version: str, fetch_text: TextFetcher) -> UvRelease:
         )
         if match is None:
             raise UvBootstrapError(
-                f"invalid checksum response for uv {version} target {target}"
+                "invalid checksum response for uv "
+                f"{version} target {target.archive_target}"
             )
-        checksums[target] = match.group(1)
+        checksums[target.archive_target] = match.group(1)
     release = UvRelease(version, checksums)
     validate_release(release)
     return release
