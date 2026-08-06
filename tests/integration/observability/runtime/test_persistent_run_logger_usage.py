@@ -111,7 +111,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             terminal_summary = render_run_summary_terminal(last_summary)
             self.assertIn("Status: failed", terminal_summary)
             self.assertIn(
-                "Provider token reports: 0/1 full, 0/1 partial, 0/1 malformed",
+                "Provider usage status: 0/1 full, 0/1 partial, 0/1 malformed",
                 terminal_summary,
             )
             self.assertIn(
@@ -248,7 +248,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
 
             summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
             self.assertIn(
-                "Provider token reports: 0/1 full, 1/1 partial, 0/1 malformed",
+                "Provider usage status: 0/1 full, 1/1 partial, 0/1 malformed",
                 summary_text,
             )
             self.assertIn(
@@ -260,7 +260,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             assert last_summary is not None
             terminal_summary = render_run_summary_terminal(last_summary)
             self.assertIn(
-                "Provider token reports: 0/1 full, 1/1 partial, 0/1 malformed",
+                "Provider usage status: 0/1 full, 1/1 partial, 0/1 malformed",
                 terminal_summary,
             )
             self.assertIn("cost $0.000025 (partial)", terminal_summary)
@@ -352,7 +352,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             assert last_summary is not None
             terminal_summary = render_run_summary_terminal(last_summary)
             self.assertIn(
-                "Provider token reports: 0/1 full, 1/1 partial, 0/1 malformed",
+                "Provider usage status: 0/1 full, 1/1 partial, 0/1 malformed",
                 terminal_summary,
             )
             self.assertIn("cost $0.000025 (partial)", terminal_summary)

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from .formatting import format_cost, format_count, invocation_label
+from .formatting import (
+    format_cost,
+    format_count,
+    format_provider_token_aggregate_lines,
+    invocation_label,
+)
 from .models import RunSummary
 from .spend import spend_overview_rows
 
@@ -45,8 +50,27 @@ def render_run_summary_terminal(summary: RunSummary) -> str:
 
 def terminal_spend_lines(summary: RunSummary) -> list[str]:
     lines = ["Spend Observability"]
+    if summary.provider_token_aggregates.overall is not None:
+        lines.extend(
+            f"  {line}"
+            for line in format_provider_token_aggregate_lines(
+                summary.provider_token_aggregates.overall
+            )
+        )
+        for aggregate in summary.provider_token_aggregates.providers:
+            if aggregate.provider is None:
+                continue
+            lines.append(f"  Provider {aggregate.provider}")
+            lines.extend(
+                f"    {line}"
+                for line in format_provider_token_aggregate_lines(
+                    aggregate,
+                    label="Provider-reported tokens",
+                )
+            )
     if summary.spend is None:
-        lines.append("  No spend observability captured.")
+        if summary.provider_token_aggregates.overall is None:
+            lines.append("  No spend observability captured.")
         return lines
 
     lines.extend(
@@ -71,7 +95,7 @@ def terminal_spend_lines(summary: RunSummary) -> list[str]:
                     f"{provider_rollup.terminal_invocations}"
                 ),
                 (
-                    "reports "
+                    "usage "
                     f"{provider_rollup.provider_usage_full_invocations}/"
                     f"{provider_rollup.terminal_invocations} full, "
                     f"{provider_rollup.provider_usage_partial_invocations}/"

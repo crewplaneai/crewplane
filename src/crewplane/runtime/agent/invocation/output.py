@@ -6,16 +6,11 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import (
     CommandResult,
-    OutputExtractionMode,
-    UsageParserProfile,
+    OutputExtractionResult,
+    OutputExtractor,
 )
 
-from ..usage import (
-    ParsedProviderUsage,
-    output_text_for_usage,
-    parse_provider_usage_from_result,
-)
-from .claude_json import extract_claude_json_result
+from ..usage import output_text_for_usage
 from .state import (
     ExtractedInvocationOutput,
     InvocationAttemptResult,
@@ -31,8 +26,7 @@ def build_invocation_attempt_result(
     result: CommandResult,
 ) -> InvocationAttemptResult:
     extracted_output = _extract_successful_structured_output(
-        output_extraction_mode=runtime.output_extraction_mode,
-        usage_parser=runtime.usage_parser,
+        output_extractor=runtime.output_extractor,
         cmd=runtime.cmd,
         result=result,
         structured_output_file=runtime.structured_output_file,
@@ -54,38 +48,28 @@ def build_invocation_attempt_result(
 
 
 def extract_invocation_output(
-    output_extraction_mode: OutputExtractionMode,
-    usage_parser: UsageParserProfile,
+    output_extractor: OutputExtractor | None,
     cmd: list[str],
     result: CommandResult,
     structured_output_file: Path | None,
 ) -> ExtractedInvocationOutput:
-    if output_extraction_mode == "codex_last_message_file":
-        return _extract_codex_output(
-            result=result,
-            structured_output_file=structured_output_file,
-            usage_parser=usage_parser,
+    if output_extractor is not None:
+        return _adapt_output_extraction(
+            output_extractor(result, structured_output_file)
         )
-    if output_extraction_mode == "claude_json":
-        return _extract_claude_output(result=result, usage_parser=usage_parser)
-    return _extract_visible_output(
-        cmd=cmd,
-        result=result,
-    )
+    return _extract_visible_output(cmd=cmd, result=result)
 
 
 def _extract_successful_structured_output(
-    output_extraction_mode: OutputExtractionMode,
-    usage_parser: UsageParserProfile,
+    output_extractor: OutputExtractor | None,
     cmd: list[str],
     result: CommandResult,
     structured_output_file: Path | None,
 ) -> ExtractedInvocationOutput | None:
-    if output_extraction_mode == "visible" or result.returncode != 0:
+    if output_extractor is None or result.returncode != 0:
         return None
     extracted_output = extract_invocation_output(
-        output_extraction_mode=output_extraction_mode,
-        usage_parser=usage_parser,
+        output_extractor=output_extractor,
         cmd=cmd,
         result=result,
         structured_output_file=structured_output_file,
@@ -93,6 +77,18 @@ def _extract_successful_structured_output(
     if extracted_output.output_extraction_status != "success":
         return None
     return extracted_output
+
+
+def _adapt_output_extraction(
+    extracted_output: OutputExtractionResult,
+) -> ExtractedInvocationOutput:
+    return ExtractedInvocationOutput(
+        output_text=extracted_output.output_text,
+        output_extraction_status=extracted_output.output_extraction_status,
+        output_path=extracted_output.output_path,
+        output_char_count=extracted_output.output_char_count,
+        owns_output_path=extracted_output.owns_output_path,
+    )
 
 
 def _retry_result_from_extracted_output(
@@ -105,65 +101,6 @@ def _retry_result_from_extracted_output(
         stderr_text=result.stderr_text,
         stdout_path=extracted_output.output_path,
         stderr_path=result.stderr_path,
-    )
-
-
-def _extract_codex_output(
-    result: CommandResult,
-    structured_output_file: Path | None,
-    usage_parser: UsageParserProfile,
-) -> ExtractedInvocationOutput:
-    parsed_provider_usage = parse_provider_usage_from_result(usage_parser, result)
-    if structured_output_file is None or not structured_output_file.exists():
-        return ExtractedInvocationOutput(
-            output_text="",
-            output_extraction_status="missing",
-            parsed_provider_usage=parsed_provider_usage,
-        )
-    if not _path_has_non_whitespace_text(structured_output_file):
-        return ExtractedInvocationOutput(
-            output_text="",
-            output_extraction_status="missing",
-            parsed_provider_usage=parsed_provider_usage,
-        )
-    return ExtractedInvocationOutput(
-        output_text="",
-        output_extraction_status="success",
-        parsed_provider_usage=parsed_provider_usage,
-        output_path=structured_output_file,
-        output_char_count=_path_decoded_character_count(structured_output_file),
-    )
-
-
-def _extract_claude_output(
-    result: CommandResult,
-    usage_parser: UsageParserProfile,
-) -> ExtractedInvocationOutput:
-    extraction = extract_claude_json_result(result)
-    if extraction.output_extraction_status != "success":
-        return ExtractedInvocationOutput(
-            output_text="",
-            output_extraction_status=extraction.output_extraction_status,
-            parsed_provider_usage=extraction.parsed_provider_usage,
-        )
-    if extraction.output_path is None or not _path_has_non_whitespace_text(
-        extraction.output_path
-    ):
-        cleanup_extracted_invocation_output(extraction)
-        return ExtractedInvocationOutput(
-            output_text="",
-            output_extraction_status="missing",
-            parsed_provider_usage=extraction.parsed_provider_usage,
-        )
-    return ExtractedInvocationOutput(
-        output_text="",
-        output_extraction_status="success",
-        parsed_provider_usage=extraction.parsed_provider_usage
-        if usage_parser == "claude"
-        else ParsedProviderUsage(status="none"),
-        output_path=extraction.output_path,
-        output_char_count=extraction.output_char_count,
-        owns_output_path=extraction.owns_output_path,
     )
 
 
@@ -213,13 +150,11 @@ def _extract_visible_output(
         return ExtractedInvocationOutput(
             output_text="",
             output_extraction_status="missing",
-            parsed_provider_usage=ParsedProviderUsage(status="none"),
             notice=notice,
         )
     return ExtractedInvocationOutput(
         output_text=output_text,
         output_extraction_status="success",
-        parsed_provider_usage=ParsedProviderUsage(status="none"),
         notice=notice,
         output_path=output_path,
         output_char_count=output_char_count,

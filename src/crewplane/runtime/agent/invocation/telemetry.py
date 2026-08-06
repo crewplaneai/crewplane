@@ -86,7 +86,6 @@ def record_usage_from_state_once(
         usage_state.accumulator.build_usage(
             config=config,
             output_extraction_status=usage_state.output_extraction_status,
-            parsed_usage=usage_state.parsed_provider_usage,
         ),
     )
 

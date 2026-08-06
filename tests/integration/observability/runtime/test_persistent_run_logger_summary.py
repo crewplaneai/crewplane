@@ -2,8 +2,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from threading import Event, Thread
+from unittest.mock import patch
 
+from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
+from crewplane.architecture.contracts import CommandResult, ProviderKind
 from crewplane.artifacts import OutputManager
+from crewplane.artifacts.atomic import atomic_write_text
+from crewplane.core.config import AgentConfig
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -16,8 +22,12 @@ from crewplane.observability import PersistentRunLogger
 from crewplane.observability.events import (
     apply_event,
     build_initial_state,
+    format_execution_event_log_line,
 )
-from crewplane.observability.persistent import render_run_summary_terminal
+from crewplane.observability.persistent import (
+    render_run_summary_markdown,
+    render_run_summary_terminal,
+)
 from crewplane.observability.run_summary.accumulator import (
     MAX_RETAINED_INVOCATION_USAGE_DETAILS,
 )
@@ -25,6 +35,7 @@ from crewplane.observability.run_summary.logger import (
     MAX_RETAINED_SUMMARY_EVENTS,
 )
 from crewplane.observability.run_summary.models import (
+    RunSummary,
     WorkspaceInvocationExecutionSummary,
     WorkspaceInvocationSummary,
 )
@@ -37,6 +48,7 @@ from crewplane.observability.types import (
     RunContext,
     RunResult,
 )
+from crewplane.runtime.agent.usage import InvocationUsageAccumulator
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import (
     make_execution_event,
@@ -155,6 +167,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                         cli_captured=True,
                         output_extraction_status="success",
                         provider_usage_status="full",
+                        provider_usage_report_count=2,
                         provider_tokens={
                             "input": 90,
                             "cached_input": None,
@@ -220,7 +233,22 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             assert last_summary is not None
             terminal_summary = render_run_summary_terminal(last_summary)
             self.assertIn(
-                "Provider token reports: 1/1 full, 0/1 partial, 0/1 malformed",
+                "Provider usage status: 1/1 full, 0/1 partial, 0/1 malformed",
+                terminal_summary,
+            )
+            self.assertNotIn("Provider-reported tokens:", terminal_summary)
+            durable_summary = persistent_logger.refresh_summary(
+                RunResult(status="succeeded")
+            )
+            self.assertIsNotNone(durable_summary)
+            assert durable_summary is not None
+            durable_terminal_summary = render_run_summary_terminal(durable_summary)
+            self.assertIn(
+                "Provider-reported tokens: n/a across 2 reports",
+                durable_terminal_summary,
+            )
+            self.assertIn(
+                "usage 1/1 full, 0/1 partial, 0/1 malformed",
                 terminal_summary,
             )
             self.assertIn("alpha: 1 invocation(s)", terminal_summary)
@@ -910,6 +938,439 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 f"{overflow_count} earlier omitted",
                 terminal_summary,
             )
+
+    def test_exact_provider_totals_include_all_terminal_events_beyond_detail_cap(
+        self,
+    ) -> None:
+        workflow = single_node_workflow()
+        invocation_count = MAX_RETAINED_INVOCATION_USAGE_DETAILS + 5
+        codex_count = sum(index % 3 != 0 for index in range(invocation_count))
+        claude_count = invocation_count - codex_count
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            for index in range(invocation_count):
+                provider = "codex" if index % 3 != 0 else "claude"
+                input_tokens = 10 if provider == "codex" else 20
+                output_tokens = 2 if provider == "codex" else 4
+                persistent_logger.record_event(
+                    make_execution_event(
+                        event_type=(
+                            "invocation_failed" if index % 2 else "invocation_finished"
+                        ),
+                        workflow_name=workflow.name,
+                        run_id=output.run_id,
+                        node_id="node.a",
+                        provider=provider,
+                        role=ProviderRole.EXECUTOR,
+                        task_id=f"task_{index:04d}",
+                        attempt_count=1,
+                        cli_captured=True,
+                        output_extraction_status="success",
+                        provider_usage_status="full",
+                        provider_usage_report_count=1,
+                        provider_tokens={
+                            "input": input_tokens,
+                            "cached_input": 3 if provider == "codex" else None,
+                            "cache_write": None,
+                            "output": output_tokens,
+                            "reasoning": None,
+                            "total": input_tokens + output_tokens,
+                        },
+                    )
+                )
+            persistent_logger.record_event(
+                make_execution_event(
+                    event_type="invocation_finished",
+                    workflow_name=workflow.name,
+                    run_id=output.run_id,
+                    node_id="node.a",
+                    provider="legacy",
+                    role=ProviderRole.EXECUTOR,
+                    task_id="legacy",
+                    attempt_count=1,
+                    provider_tokens={"input": 999_999},
+                )
+            )
+
+            persistent_logger.stop(RunResult(status="succeeded"))
+
+            summary = persistent_logger.refresh_summary(RunResult(status="succeeded"))
+            self.assertIsNotNone(summary)
+            assert summary is not None
+            aggregate = summary.provider_token_aggregates.overall
+            self.assertIsNotNone(aggregate)
+            assert aggregate is not None
+            self.assertEqual(aggregate.report_count, invocation_count)
+            self.assertEqual(aggregate.input, codex_count * 10 + claude_count * 20)
+            self.assertIsNone(aggregate.cached_input)
+            self.assertEqual(aggregate.output, codex_count * 2 + claude_count * 4)
+            self.assertEqual(
+                aggregate.total,
+                codex_count * 12 + claude_count * 24,
+            )
+            self.assertEqual(
+                [
+                    (item.provider, item.report_count)
+                    for item in summary.provider_token_aggregates.providers
+                ],
+                [("claude", claude_count), ("codex", codex_count)],
+            )
+            provider_aggregates = {
+                item.provider: item
+                for item in summary.provider_token_aggregates.providers
+            }
+            self.assertIsNone(provider_aggregates["claude"].cached_input)
+            self.assertEqual(
+                provider_aggregates["codex"].cached_input,
+                codex_count * 3,
+            )
+            markdown = render_run_summary_markdown(summary)
+            terminal = render_run_summary_terminal(summary)
+            self.assertIn(
+                f"Provider-reported tokens: {aggregate.total:,} across {invocation_count} reports",
+                markdown,
+            )
+            self.assertIn(
+                f"Provider-reported tokens: {aggregate.total:,} across {invocation_count} reports",
+                terminal,
+            )
+            self.assertNotIn(
+                "legacy",
+                [item.provider for item in summary.provider_token_aggregates.providers],
+            )
+
+    def test_refresh_summary_reloads_exact_totals_from_disk(self) -> None:
+        workflow = single_node_workflow()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            context = RunContext(
+                workflow_topology=topology_from_workflow(workflow),
+                run_id=output.run_id,
+                refresh_per_second=0,
+            )
+            persistent_logger.start(context)
+            disk_only_event = make_execution_event(
+                event_type="invocation_failed",
+                workflow_name=workflow.name,
+                run_id=output.run_id,
+                node_id="node.a",
+                provider="gemini",
+                role=ProviderRole.EXECUTOR,
+                task_id="disk-only",
+                attempt_count=2,
+                provider_usage_status="full",
+                provider_usage_report_count=2,
+                provider_tokens={"input": 7, "output": 3, "total": 10},
+            )
+            with output.get_run_event_log_path().open("a", encoding="utf-8") as handle:
+                handle.write(format_execution_event_log_line(disk_only_event))
+
+            summary = persistent_logger.refresh_summary(RunResult(status="failed"))
+
+            self.assertIsNotNone(summary)
+            assert summary is not None
+            aggregate = summary.provider_token_aggregates.overall
+            self.assertIsNotNone(aggregate)
+            assert aggregate is not None
+            self.assertEqual(aggregate.report_count, 2)
+            self.assertEqual(aggregate.input, 7)
+            self.assertEqual(aggregate.output, 3)
+            self.assertEqual(summary.workflow_status, "failed")
+            terminal = render_run_summary_terminal(summary)
+            self.assertIn("Provider-reported tokens: 10 across 2 reports", terminal)
+
+    def test_stop_writes_bounded_summary_without_reading_event_log(self) -> None:
+        workflow = single_node_workflow()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            persistent_logger.record_event(
+                make_execution_event(
+                    event_type="invocation_finished",
+                    workflow_name=workflow.name,
+                    run_id=output.run_id,
+                    node_id="node.a",
+                    provider="codex",
+                    role=ProviderRole.EXECUTOR,
+                    task_id="bounded-stop",
+                    attempt_count=1,
+                    provider_usage_report_count=1,
+                    provider_tokens={"input": 7, "output": 3, "total": 10},
+                )
+            )
+
+            with patch(
+                "crewplane.observability.run_summary.logger.read_event_log",
+                side_effect=AssertionError("stop must not read the event log"),
+            ):
+                persistent_logger.stop(RunResult(status="succeeded"))
+
+            bounded_summary = persistent_logger.last_summary
+            self.assertIsNotNone(bounded_summary)
+            assert bounded_summary is not None
+            self.assertEqual(bounded_summary.workflow_status, "succeeded")
+            self.assertIsNone(bounded_summary.provider_token_aggregates.overall)
+
+            durable_summary = persistent_logger.refresh_summary(
+                RunResult(status="succeeded")
+            )
+
+            self.assertIsNotNone(durable_summary)
+            assert durable_summary is not None
+            aggregate = durable_summary.provider_token_aggregates.overall
+            self.assertIsNotNone(aggregate)
+            assert aggregate is not None
+            self.assertEqual(aggregate.report_count, 1)
+            self.assertEqual(aggregate.total, 10)
+
+    def test_summary_publication_uses_atomic_write(self) -> None:
+        workflow = single_node_workflow()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            published_paths: list[Path] = []
+
+            def record_atomic_write(
+                path: Path,
+                content: str,
+                ensure_parent: bool = True,
+            ) -> Path:
+                published_paths.append(path)
+                return atomic_write_text(path, content, ensure_parent)
+
+            with patch(
+                "crewplane.observability.run_summary.logger.atomic_write_text",
+                new=record_atomic_write,
+            ):
+                persistent_logger.stop(RunResult(status="succeeded"))
+
+            self.assertEqual(published_paths, [output.get_run_summary_path()])
+
+    def test_exact_summary_wins_over_late_bounded_stop_write(self) -> None:
+        workflow = single_node_workflow()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            persistent_logger.record_event(
+                make_execution_event(
+                    event_type="invocation_finished",
+                    workflow_name=workflow.name,
+                    run_id=output.run_id,
+                    node_id="node.a",
+                    provider="codex",
+                    role=ProviderRole.EXECUTOR,
+                    task_id="late-stop",
+                    attempt_count=1,
+                    provider_usage_report_count=1,
+                    provider_tokens={"input": 7, "output": 3, "total": 10},
+                )
+            )
+            bounded_render_started = Event()
+            release_bounded_render = Event()
+
+            def delay_bounded_summary_render(summary: RunSummary) -> str:
+                if summary.provider_token_aggregates.overall is None:
+                    bounded_render_started.set()
+                    if not release_bounded_render.wait(timeout=5):
+                        raise TimeoutError("Bounded summary render was not released.")
+                return render_run_summary_markdown(summary)
+
+            stop_thread = Thread(
+                target=persistent_logger.stop,
+                args=(RunResult(status="succeeded"),),
+                name="crewplane-test-late-summary-stop",
+                daemon=True,
+            )
+            with patch(
+                "crewplane.observability.run_summary.logger."
+                "render_run_summary_markdown",
+                new=delay_bounded_summary_render,
+            ):
+                stop_thread.start()
+                self.assertTrue(bounded_render_started.wait(timeout=5))
+                try:
+                    exact_summary = persistent_logger.refresh_summary(
+                        RunResult(status="succeeded")
+                    )
+                finally:
+                    release_bounded_render.set()
+                stop_thread.join(timeout=5)
+
+            self.assertFalse(stop_thread.is_alive())
+            self.assertIsNotNone(exact_summary)
+            assert exact_summary is not None
+            exact_aggregate = exact_summary.provider_token_aggregates.overall
+            self.assertIsNotNone(exact_aggregate)
+            assert exact_aggregate is not None
+            self.assertEqual(exact_aggregate.total, 10)
+
+            final_summary = persistent_logger.last_summary
+            self.assertIsNotNone(final_summary)
+            assert final_summary is not None
+            final_aggregate = final_summary.provider_token_aggregates.overall
+            self.assertIsNotNone(final_aggregate)
+            assert final_aggregate is not None
+            self.assertEqual(final_aggregate.total, 10)
+            summary_text = output.get_run_summary_path().read_text(encoding="utf-8")
+            self.assertIn("Provider-reported tokens: 10 across 1 reports", summary_text)
+
+    def test_codex_fixture_totals_render_for_success_and_failure(self) -> None:
+        fixture_path = (
+            Path(__file__).resolve().parents[3]
+            / "unit"
+            / "adapters"
+            / "invokers"
+            / "cli_invoker"
+            / "fixtures"
+            / "provider_usage"
+            / "codex_24_reports.jsonl"
+        )
+        usage_accumulator = InvocationUsageAccumulator(
+            ProviderKind.CODEX,
+            prompt="prompt",
+        )
+        for line in fixture_path.read_text(encoding="utf-8").splitlines():
+            usage_accumulator.record_provider_usage(
+                decode_codex_usage(CommandResult(0, line, ""))
+            )
+        usage = usage_accumulator.build_usage(
+            config=AgentConfig(cli_cmd=["codex"]),
+            output_extraction_status="success",
+        )
+
+        workflow = single_node_workflow()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            persistent_logger.record_event(
+                make_execution_event(
+                    event_type="invocation_finished",
+                    workflow_name=workflow.name,
+                    run_id=output.run_id,
+                    node_id="node.a",
+                    provider="codex",
+                    role=ProviderRole.EXECUTOR,
+                    task_id="codex_fixture",
+                    attempt_count=1,
+                    cli_captured=True,
+                    output_extraction_status="success",
+                    provider_usage_status="full",
+                    provider_usage_report_count=usage.provider_usage_report_count,
+                    provider_tokens=dict(usage.provider_tokens),
+                    visible_estimate_tokens=1,
+                    visible_estimate_method="char-count-lower-bound",
+                    visible_estimate_is_lower_bound=True,
+                )
+            )
+
+            persistent_logger.stop(RunResult(status="succeeded"))
+            succeeded_summary = persistent_logger.refresh_summary(
+                RunResult(status="succeeded")
+            )
+            failed_summary = persistent_logger.refresh_summary(
+                RunResult(status="failed")
+            )
+
+            self.assertIsNotNone(succeeded_summary)
+            self.assertIsNotNone(failed_summary)
+            assert succeeded_summary is not None
+            assert failed_summary is not None
+            self.assertEqual(succeeded_summary.workflow_status, "succeeded")
+            self.assertEqual(failed_summary.workflow_status, "failed")
+            self.assertEqual(
+                succeeded_summary.provider_token_aggregates,
+                failed_summary.provider_token_aggregates,
+            )
+
+            expected_lines = (
+                "Provider-reported tokens: 7,598,612 across 24 reports",
+                "Input: 7,359,384 (cached input: 6,124,416)",
+                "Output: 239,228 (reasoning output: 108,672)",
+            )
+            for summary in (succeeded_summary, failed_summary):
+                markdown = render_run_summary_markdown(summary)
+                terminal = render_run_summary_terminal(summary)
+                for expected_line in expected_lines:
+                    self.assertIn(expected_line, markdown)
+                    self.assertIn(expected_line, terminal)
+                self.assertIn("Provider `codex`", markdown)
+                self.assertIn("Provider codex", terminal)
+                self.assertNotIn("Cache write:", markdown)
+                self.assertNotIn("Cache write:", terminal)
+
+    def test_standalone_cached_input_total_renders_in_both_formats(self) -> None:
+        workflow = single_node_workflow()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager(workflow.name, base_dir=Path(tmp_dir))
+            persistent_logger = PersistentRunLogger(output)
+            persistent_logger.start(
+                RunContext(
+                    workflow_topology=topology_from_workflow(workflow),
+                    run_id=output.run_id,
+                    refresh_per_second=0,
+                )
+            )
+            persistent_logger.record_event(
+                make_execution_event(
+                    event_type="invocation_finished",
+                    workflow_name=workflow.name,
+                    run_id=output.run_id,
+                    node_id="node.a",
+                    provider="codex",
+                    role=ProviderRole.EXECUTOR,
+                    task_id="cached-input-only",
+                    attempt_count=1,
+                    provider_usage_report_count=1,
+                    provider_tokens={"cached_input": 42},
+                )
+            )
+            persistent_logger.stop(RunResult(status="succeeded"))
+
+            summary = persistent_logger.refresh_summary(RunResult(status="succeeded"))
+            self.assertIsNotNone(summary)
+            assert summary is not None
+            markdown = render_run_summary_markdown(summary)
+            terminal = render_run_summary_terminal(summary)
+
+            self.assertIn("Cached input: 42", markdown)
+            self.assertIn("Cached input: 42", terminal)
 
     def test_persistent_run_logger_is_one_shot(self) -> None:
         workflow = single_node_workflow()

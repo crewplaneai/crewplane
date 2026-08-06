@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
@@ -8,18 +8,13 @@ from crewplane.architecture.contracts import (
     FailureClassificationProfile,
     InvocationLogLevel,
     OneShotFailureRetryPolicy,
-    OutputExtractionMode,
+    OutputExtractor,
     QuotaParserProfile,
     RuntimeLogValue,
-    StructuredOutputMode,
-    UsageParserProfile,
+    UsageDecoder,
 )
 
-from ..usage import (
-    InvocationUsageAccumulator,
-    OutputExtractionStatus,
-    ParsedProviderUsage,
-)
+from ..usage import InvocationUsageAccumulator, OutputExtractionStatus
 
 
 @dataclass(frozen=True)
@@ -35,7 +30,6 @@ class InvocationDiagnosticNotice:
 class ExtractedInvocationOutput:
     output_text: str
     output_extraction_status: OutputExtractionStatus
-    parsed_provider_usage: ParsedProviderUsage
     notice: InvocationDiagnosticNotice | None = None
     output_path: Path | None = None
     output_char_count: int | None = None
@@ -45,10 +39,9 @@ class ExtractedInvocationOutput:
 @dataclass(frozen=True)
 class InvocationCommandRuntime:
     failure_profile: FailureClassificationProfile
-    structured_output_mode: StructuredOutputMode
-    output_extraction_mode: OutputExtractionMode
+    output_extractor: OutputExtractor | None
+    usage_decoder: UsageDecoder | None
     quota_parser: QuotaParserProfile
-    usage_parser: UsageParserProfile
     structured_output_file: Path | None
     cmd: list[str]
     stdin_data: bytes | None
@@ -60,9 +53,6 @@ class InvocationCommandRuntime:
 class InvocationUsageState:
     accumulator: InvocationUsageAccumulator
     output_extraction_status: OutputExtractionStatus = "missing"
-    parsed_provider_usage: ParsedProviderUsage = field(
-        default_factory=lambda: ParsedProviderUsage(status="none")
-    )
     usage_recorded: bool = False
 
     def record_attempt_output(self, output_text: str) -> None:
@@ -76,7 +66,6 @@ class InvocationUsageState:
         extracted_output: ExtractedInvocationOutput,
     ) -> None:
         self.output_extraction_status = extracted_output.output_extraction_status
-        self.parsed_provider_usage = extracted_output.parsed_provider_usage
         if extracted_output.output_char_count is not None:
             self.record_attempt_output_chars(extracted_output.output_char_count)
             return

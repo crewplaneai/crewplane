@@ -119,7 +119,7 @@ settings use dotted paths in the left column.
 | `quota_retry_max_wait_seconds` | Optional cumulative quota-wait ceiling for one invocation. Quota retries stop before the next sleep would reach this value. |
 | `quota_retry_max_attempts` | Optional quota-retry attempt ceiling for one invocation. Quota retries are independent of `max_retries`. |
 | `invocation_timeout_seconds` | Optional wall-clock timeout. Defaults to `null`. |
-| `invocation_idle_timeout_seconds` | Optional idle-output timeout. Defaults to `1800.0`. |
+| `invocation_idle_timeout_seconds` | Optional idle-output timeout. Defaults to `1800.0`. Gemini's completion-buffered JSON mode cannot enforce it; use `invocation_timeout_seconds` for a hard limit. |
 | `pricing` | Optional token pricing buckets. |
 
 Command arguments are audited in preflight artifacts, so credentials should

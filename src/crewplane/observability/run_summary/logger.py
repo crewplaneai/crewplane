@@ -9,9 +9,11 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.observability.events import (
     ExecutionEvent,
     format_execution_event_log_line,
+    read_event_log,
     runtime_log_event,
 )
 from crewplane.observability.types import (
@@ -23,7 +25,12 @@ from crewplane.observability.types import (
 from .accumulator import RunSummaryAccumulator
 from .builder import build_run_summary
 from .markdown import render_run_summary_markdown
-from .models import PersistentLoggerLifecycle, RunSummary
+from .models import (
+    PersistentLoggerLifecycle,
+    ProviderTokenAggregates,
+    RunSummary,
+)
+from .spend import provider_token_aggregates
 
 MAX_RETAINED_SUMMARY_EVENTS = 2_000
 
@@ -46,6 +53,8 @@ class PersistentRunLogger:
         self._event_log_path = artifact_store.get_run_event_log_path()
         self._summary_path = artifact_store.get_run_summary_path()
         self._lock = Lock()
+        self._summary_publication_lock = Lock()
+        self._exact_token_summary_published = False
         self._events: deque[ExecutionEvent] = deque(maxlen=MAX_RETAINED_SUMMARY_EVENTS)
         self._dropped_event_count = 0
         self._latest_snapshot: DashboardSnapshot | None = None
@@ -93,11 +102,37 @@ class PersistentRunLogger:
         with self._lock:
             if self._lifecycle == PersistentLoggerLifecycle.NEW:
                 return None
+        durable_events = read_event_log(self._event_log_path)
+        return self._write_summary(
+            result,
+            provider_token_aggregates(durable_events),
+            token_aggregates_are_exact=True,
+        )
+
+    def _write_summary(
+        self,
+        result: RunResult,
+        token_aggregates: ProviderTokenAggregates,
+        token_aggregates_are_exact: bool,
+    ) -> RunSummary | None:
+        summary = self._build_summary(result, token_aggregates)
+        if summary is None:
+            return None
+        return self._publish_summary(summary, token_aggregates_are_exact)
+
+    def _build_summary(
+        self,
+        result: RunResult,
+        token_aggregates: ProviderTokenAggregates,
+    ) -> RunSummary | None:
+        with self._lock:
+            if self._lifecycle == PersistentLoggerLifecycle.NEW:
+                return None
             snapshot = self._latest_snapshot
             events = list(self._events)
             dropped_event_count = self._dropped_event_count
             summary_facts = self._summary_accumulator.snapshot()
-        summary = build_run_summary(
+        return build_run_summary(
             artifact_store=self._artifact_store,
             snapshot=snapshot,
             events=events,
@@ -106,14 +141,23 @@ class PersistentRunLogger:
             fallback_workflow_name=self._workflow_name,
             fallback_run_id=self._run_id,
             summary_facts=summary_facts,
+            token_aggregates=token_aggregates,
         )
-        self._summary_path.parent.mkdir(parents=True, exist_ok=True)
-        self._summary_path.write_text(
-            render_run_summary_markdown(summary),
-            encoding="utf-8",
-        )
-        with self._lock:
-            self._last_summary = summary
+
+    def _publish_summary(
+        self,
+        summary: RunSummary,
+        token_aggregates_are_exact: bool,
+    ) -> RunSummary | None:
+        summary_text = render_run_summary_markdown(summary)
+        with self._summary_publication_lock:
+            if self._exact_token_summary_published and not token_aggregates_are_exact:
+                return self.last_summary
+            atomic_write_text(self._summary_path, summary_text)
+            with self._lock:
+                self._last_summary = summary
+            if token_aggregates_are_exact:
+                self._exact_token_summary_published = True
         return summary
 
     def on_snapshot(
@@ -137,7 +181,11 @@ class PersistentRunLogger:
         if self._lifecycle == PersistentLoggerLifecycle.STOPPED:
             return
         try:
-            self.refresh_summary(result)
+            self._write_summary(
+                result,
+                ProviderTokenAggregates(),
+                token_aggregates_are_exact=False,
+            )
         finally:
             with self._lock:
                 self._lifecycle = PersistentLoggerLifecycle.STOPPED

@@ -1,0 +1,1 @@
+{"result":"Claude response","modelUsage":{"claude-sonnet":{"inputTokens":100,"cacheReadInputTokens":20,"cacheCreationInputTokens":3,"outputTokens":40},"subagent":{"inputTokens":0,"cacheReadInputTokens":7,"cacheCreationInputTokens":0,"outputTokens":0}}}

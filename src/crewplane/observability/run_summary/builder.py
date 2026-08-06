@@ -13,9 +13,11 @@ from .models import (
     IssueSummary,
     NodeCounts,
     NodeOutcomeSummary,
+    ProviderTokenAggregates,
     RunSummary,
     RunSummaryFacts,
 )
+from .spend import provider_token_aggregates as build_provider_token_aggregates
 from .workspace import build_workspace_run_summary
 
 
@@ -28,12 +30,14 @@ def build_run_summary(
     fallback_run_id: str,
     dropped_event_count: int = 0,
     summary_facts: RunSummaryFacts | None = None,
+    token_aggregates: ProviderTokenAggregates | None = None,
 ) -> RunSummary:
     workflow_name = (
         snapshot.state.workflow_name if snapshot is not None else fallback_workflow_name
     )
     run_id = snapshot.state.run_id if snapshot is not None else fallback_run_id
     facts = summary_facts or run_summary_facts_from_events(events)
+    exact_token_aggregates = token_aggregates or build_provider_token_aggregates(events)
     invocation_usages = facts.invocation_usages
     return RunSummary(
         workflow_name=workflow_name,
@@ -61,6 +65,7 @@ def build_run_summary(
         artifact_references=artifact_reference_summaries(snapshot),
         event_log_path=artifact_store.get_run_event_log_path(),
         summary_path=artifact_store.get_run_summary_path(),
+        provider_token_aggregates=exact_token_aggregates,
     )
 
 

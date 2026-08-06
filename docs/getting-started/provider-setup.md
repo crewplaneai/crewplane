@@ -297,6 +297,9 @@ agents:
 > Crewplane to terminate a provider CLI after a fixed amount of elapsed time.
 > For quiet or stalled processes, prefer `invocation_idle_timeout_seconds`; it
 > cancels only after the provider stops producing output for that interval.
+> Gemini's machine-readable JSON response is emitted only after completion, so
+> Crewplane cannot enforce an output-idle timeout for Gemini invocations. Use
+> `invocation_timeout_seconds` when those invocations need a hard limit.
 
 See the [configuration reference](../reference/configuration.md) for every
 config field.

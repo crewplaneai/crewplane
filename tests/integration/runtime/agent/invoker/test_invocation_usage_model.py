@@ -12,6 +12,7 @@ class InvocationUsageModelTests(unittest.IsolatedAsyncioTestCase):
             cli_captured=True,
             output_extraction_status="success",
             provider_usage_status="full",
+            provider_usage_report_count=1,
             provider_tokens=provider_tokens,
             visible_estimate_tokens=16,
             visible_estimate_method="char-count-lower-bound",

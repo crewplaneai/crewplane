@@ -34,7 +34,6 @@ EXTERNAL_CANCEL_REASON = "external_cancellation"
 UI_STOP_CANCEL_REASON = "ui_stop_requested"
 WORKFLOW_CANCELLED_MESSAGE = "Workflow cancelled by live dashboard quit request."
 WARNING_RECORD_TIMEOUT_SECONDS = 0.1
-SUMMARY_REFRESH_TIMEOUT_SECONDS = 1.0
 
 
 class WorkflowCancelledByUser(RuntimeError):
@@ -253,23 +252,11 @@ def refresh_failed_run_summary(
     if persistent_logger is None:
         return None
 
-    def refresh_summary() -> None:
+    try:
         record_failure_summary_event(persistent_logger, workflow, run_id, exc)
         persistent_logger.refresh_summary(RunResult(status="failed"))
-
-    result = run_best_effort_thread(
-        refresh_summary,
-        name="crewplane-failed-summary-refresh",
-        timeout_seconds=SUMMARY_REFRESH_TIMEOUT_SECONDS,
-    )
-    if result.start_error is not None:
-        exc.add_note(f"end-of-run summary refresh failed: {result.start_error}")
-        return failed_summary_logger(persistent_logger)
-    if result.timed_out:
-        exc.add_note("end-of-run summary refresh timed out")
-        return failed_summary_logger(persistent_logger)
-    if result.operation_error is not None:
-        exc.add_note(f"end-of-run summary refresh failed: {result.operation_error}")
+    except Exception as refresh_error:
+        exc.add_note(f"end-of-run summary refresh failed: {refresh_error}")
     return failed_summary_logger(persistent_logger)
 
 
@@ -279,14 +266,25 @@ def refresh_successful_run_summary(
     if persistent_logger is None:
         return None
 
-    result = run_best_effort_thread(
-        lambda: persistent_logger.refresh_summary(RunResult(status="succeeded")),
-        name="crewplane-success-summary-refresh",
-        timeout_seconds=SUMMARY_REFRESH_TIMEOUT_SECONDS,
-    )
-    if result.start_error is not None or result.timed_out:
+    try:
+        persistent_logger.refresh_summary(RunResult(status="succeeded"))
+    except Exception:
         return persistent_logger
-    if result.operation_error is not None:
+    return persistent_logger
+
+
+def refresh_cancelled_run_summary(
+    persistent_logger: PersistentRunLogger | None,
+    cancel_reason: str,
+) -> PersistentRunLogger | None:
+    if persistent_logger is None:
+        return None
+
+    try:
+        persistent_logger.refresh_summary(
+            RunResult(status="cancelled", cancel_reason=cancel_reason)
+        )
+    except Exception:
         return persistent_logger
     return persistent_logger
 

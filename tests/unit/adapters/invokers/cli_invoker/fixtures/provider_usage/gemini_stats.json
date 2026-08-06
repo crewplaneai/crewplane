@@ -1,0 +1,1 @@
+{"response":"Gemini response","stats":{"models":{"gemini-main":{"tokens":{"prompt":100,"cached":20,"candidates":10,"thoughts":5,"tool":2,"total":117}},"gemini-subagent":{"tokens":{"prompt":0,"cached":0,"candidates":0,"thoughts":0,"tool":0,"total":0}}}}}

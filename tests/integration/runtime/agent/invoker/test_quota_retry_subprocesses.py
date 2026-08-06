@@ -95,7 +95,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                         "if count < 2:",
                         "    print('You have exhausted your capacity on this model. Your quota will reset after 2s.')",
                         "    sys.exit(0)",
-                        "print('ok')",
+                        'print(\'{"response":"ok"}\')',
                     ]
                 ),
                 encoding="utf-8",
@@ -157,7 +157,7 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
                         "if count < 2:",
                         "    print('You have exhausted your capacity on this model. Your quota will reset after 2s.')",
                         "    sys.exit(0)",
-                        "print('ok')",
+                        'print(\'{"response":"ok"}\')',
                     ]
                 ),
                 encoding="utf-8",
@@ -265,7 +265,11 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
-                    return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                    return CommandResult(
+                        returncode=0,
+                        stdout_text='{"response":"ok"}',
+                        stderr_text="",
+                    )
                 return CommandResult(
                     returncode=1,
                     stdout_text="",
@@ -325,7 +329,11 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
-                    return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                    return CommandResult(
+                        returncode=0,
+                        stdout_text='{"response":"ok"}',
+                        stderr_text="",
+                    )
                 return CommandResult(
                     returncode=1,
                     stdout_text="",
@@ -387,7 +395,11 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
-                    return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                    return CommandResult(
+                        returncode=0,
+                        stdout_text='{"response":"ok"}',
+                        stderr_text="",
+                    )
                 return CommandResult(
                     returncode=1,
                     stdout_text="",
@@ -447,7 +459,11 @@ class QuotaRetrySubprocessTests(unittest.IsolatedAsyncioTestCase):
             ) -> CommandResult:
                 attempts["count"] += 1
                 if attempts["count"] > 1:
-                    return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                    return CommandResult(
+                        returncode=0,
+                        stdout_text='{"response":"ok"}',
+                        stderr_text="",
+                    )
                 return CommandResult(
                     returncode=1,
                     stdout_text="",

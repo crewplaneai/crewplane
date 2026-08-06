@@ -1,6 +1,10 @@
 import pytest
 
-from crewplane.architecture.contracts import InvocationUsage, ProviderKind
+from crewplane.architecture.contracts import (
+    InvocationUsage,
+    ProviderKind,
+    ProviderTokenUsage,
+)
 from crewplane.core.config import AgentConfig, TokenPricing
 from crewplane.runtime.agent.usage_costs import (
     classify_provider_usage_status,
@@ -10,7 +14,6 @@ from crewplane.runtime.agent.usage_costs import (
     roll_up_cost_confidence,
     visible_cost_token_count,
 )
-from crewplane.runtime.agent.usage_types import ParsedProviderUsage, ProviderTokenUsage
 
 
 def agent_config(**pricing: float) -> AgentConfig:
@@ -44,6 +47,44 @@ def test_configured_cost_uses_provider_tokens_with_full_confidence() -> None:
 
     assert cost == pytest.approx(4.0)
     assert confidence == "full"
+
+
+def test_configured_cost_does_not_reprice_inclusive_token_sub_buckets() -> None:
+    cost, confidence = derive_configured_cost(
+        agent_config(
+            input=3.0,
+            cached_input=0.3,
+            cache_write=3.75,
+            output=15.0,
+            reasoning=5.0,
+        ),
+        ProviderTokenUsage(
+            input=130,
+            cached_input=20,
+            cache_write=10,
+            output=60,
+            reasoning=10,
+        ),
+        visible_input_tokens=1,
+        visible_output_tokens=1,
+        visible_estimate_tokens=2,
+    )
+
+    assert cost == pytest.approx(0.0011435)
+    assert confidence == "full"
+
+
+def test_configured_cost_uses_fallback_when_priced_sub_bucket_is_unknown() -> None:
+    cost, confidence = derive_configured_cost(
+        agent_config(input=1_000_000.0, cached_input=1_000_000.0),
+        ProviderTokenUsage(input=100),
+        visible_input_tokens=2,
+        visible_output_tokens=0,
+        visible_estimate_tokens=2,
+    )
+
+    assert cost == pytest.approx(2.0)
+    assert confidence == "partial"
 
 
 def test_configured_cost_uses_visible_fallback_with_partial_confidence() -> None:
@@ -100,45 +141,53 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
 
 
 @pytest.mark.parametrize(
-    ("provider", "parsed", "expected"),
+    ("provider", "tokens", "report_count", "error", "expected"),
     [
         pytest.param(
             ProviderKind.GENERIC,
-            ParsedProviderUsage(
-                status="parsed", tokens=ProviderTokenUsage(input=1, output=1)
-            ),
+            ProviderTokenUsage(input=1, output=1),
+            1,
+            None,
             "none",
             id="unstructured-provider",
         ),
         pytest.param(
             ProviderKind.CODEX,
-            ParsedProviderUsage(status="malformed"),
+            ProviderTokenUsage(),
+            0,
+            "bad",
             "malformed",
             id="malformed",
         ),
         pytest.param(
             ProviderKind.CODEX,
-            ParsedProviderUsage(status="none"),
+            ProviderTokenUsage(),
+            0,
+            None,
             "none",
             id="absent",
         ),
         pytest.param(
             ProviderKind.CLAUDE,
-            ParsedProviderUsage(status="parsed", tokens=ProviderTokenUsage()),
+            ProviderTokenUsage(),
+            1,
+            None,
             "none",
             id="no-required-values",
         ),
         pytest.param(
             ProviderKind.CLAUDE,
-            ParsedProviderUsage(
-                status="parsed", tokens=ProviderTokenUsage(input=1, output=2)
-            ),
+            ProviderTokenUsage(input=1, output=2),
+            1,
+            None,
             "full",
             id="full",
         ),
         pytest.param(
             ProviderKind.CLAUDE,
-            ParsedProviderUsage(status="parsed", tokens=ProviderTokenUsage(input=1)),
+            ProviderTokenUsage(input=1),
+            1,
+            None,
             "partial",
             id="partial",
         ),
@@ -146,10 +195,21 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
 )
 def test_provider_usage_status_classification(
     provider: ProviderKind,
-    parsed: ParsedProviderUsage,
+    tokens: ProviderTokenUsage,
+    report_count: int,
+    error: str | None,
     expected: str,
 ) -> None:
-    assert classify_provider_usage_status(agent_config(), provider, parsed) == expected
+    assert (
+        classify_provider_usage_status(
+            agent_config(),
+            provider,
+            tokens,
+            report_count,
+            error,
+        )
+        == expected
+    )
 
 
 def invocation_usage(confidence: str) -> InvocationUsage:
@@ -158,6 +218,7 @@ def invocation_usage(confidence: str) -> InvocationUsage:
         cli_captured=True,
         output_extraction_status="success",
         provider_usage_status="none",
+        provider_usage_report_count=0,
         provider_tokens={},
         visible_estimate_tokens=None,
         visible_estimate_method=None,

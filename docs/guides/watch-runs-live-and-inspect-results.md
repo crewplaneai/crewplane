@@ -67,9 +67,39 @@ is only a live view on top of those same records.
 | Provider output | Each node's stage directory under `.crewplane/execution-stages/<run-key>/`. |
 | Final results | `.crewplane/execution-results/<run-key>/`. |
 
-Start with the run summary. It includes run status and visible-text usage/spend
-estimates when the provider output contains enough information or pricing is
-configured.
+Start with the run summary. It includes run status and a **Spend Observability**
+section. When available, this section shows provider-reported token totals, a
+lower-bound estimate based on visible text, and an estimated cost when pricing
+is configured.
+
+## Understand Usage And Spend
+
+Use provider-reported totals when they are available. Crewplane can read usage
+reports from Codex, Claude, Gemini, and Kilo. The totals cover every valid report
+returned during the run, including reports from failed or retried calls, and
+the summary also breaks them down by provider.
+
+The provider report count tells you how many reports contributed to a total. It
+can be higher than the invocation count when a provider returns several usage
+records or a call is retried. If a provider does not report a token category,
+Crewplane leaves that value unavailable instead of treating it as zero.
+
+For Copilot and unknown CLIs, use the visible-text estimate instead. This value
+only counts text Crewplane can see, so it is always labeled as a lower bound and
+should not be treated as the provider's full token usage.
+
+When you configure token pricing, Crewplane also estimates cost and labels how
+complete the calculation is:
+
+- `full` means provider-reported tokens cover every configured price.
+- `partial` or `mixed` means some usage was estimated or unavailable.
+- `none` means Crewplane could not calculate a configured cost.
+
+Usage reporting does not determine whether a run succeeds. If a provider
+returns usable output but its usage report cannot be read, the run can still
+complete and the summary records the usage problem. Crewplane saves valid
+reports with the run records, so the totals remain available even when raw
+provider logs are disabled.
 
 ## Troubleshooting
 

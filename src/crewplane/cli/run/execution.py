@@ -54,6 +54,7 @@ from .observability import (
     WorkflowWarningRecorder,
     execute_workflow_with_observability,
     print_end_of_run_summary,
+    refresh_cancelled_run_summary,
     refresh_failed_run_summary,
     refresh_successful_run_summary,
 )
@@ -107,7 +108,11 @@ async def run_and_finalize_workflow(
             "cancelled",
             cancel_reason=EXTERNAL_CANCEL_REASON,
         )
-        print_end_of_run_summary(context.console, warning_recorder.persistent_logger)
+        summary_logger = refresh_cancelled_run_summary(
+            warning_recorder.persistent_logger,
+            EXTERNAL_CANCEL_REASON,
+        )
+        print_end_of_run_summary(context.console, summary_logger)
         raise
     except WorkflowCancelledByUser:
         finalize_run_manifest(
@@ -115,7 +120,11 @@ async def run_and_finalize_workflow(
             "cancelled",
             cancel_reason=UI_STOP_CANCEL_REASON,
         )
-        print_end_of_run_summary(context.console, warning_recorder.persistent_logger)
+        summary_logger = refresh_cancelled_run_summary(
+            warning_recorder.persistent_logger,
+            UI_STOP_CANCEL_REASON,
+        )
+        print_end_of_run_summary(context.console, summary_logger)
         raise
     except Exception as exc:
         finalize_run_manifest(

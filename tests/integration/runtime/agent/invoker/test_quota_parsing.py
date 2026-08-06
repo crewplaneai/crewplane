@@ -137,7 +137,11 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                             "if count < 2:",
                             "    print('rate limit reached, retry after 3s')",
                             "    sys.exit(0)",
-                            "print('ok')",
+                            (
+                                'print(\'{"type":"text","part":{"text":"ok"}}\')'
+                                if parser_name == "kilo"
+                                else "print('ok')"
+                            ),
                         ]
                     ),
                     encoding="utf-8",

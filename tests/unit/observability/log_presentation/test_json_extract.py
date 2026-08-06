@@ -138,6 +138,31 @@ def test_claude_object_renders_results_metadata_and_non_string_errors() -> None:
     ]
 
 
+def test_gemini_object_renders_response_without_machine_metadata() -> None:
+    record = {
+        "response": "first\nsecond",
+        "stats": {"models": {"gemini-main": {"tokens": {"total": 2}}}},
+    }
+
+    assert render_json_object(record, "gemini", LIMITS) == ["first", "  second"]
+
+
+def test_kilo_records_render_content_without_machine_event_envelopes() -> None:
+    assert render_json_record(
+        {"type": "text", "part": {"type": "text", "text": "response"}},
+        "kilo",
+        LIMITS,
+    ) == ["response"]
+    assert (
+        render_json_record(
+            {"type": "step_finish", "part": {"tokens": {"input": 1}}},
+            "kilo",
+            LIMITS,
+        )
+        == []
+    )
+
+
 def test_claude_and_generic_objects_fall_back_when_content_is_empty() -> None:
     assert render_json_object({}, "claude", LIMITS) == ["{}"]
     assert render_json_object({"message": "visible"}, "generic", LIMITS) == [

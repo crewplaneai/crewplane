@@ -18,6 +18,7 @@ from crewplane.observability.events import (
     WorkspaceEventPayload,
     apply_event,
     build_initial_state,
+    event_from_record,
     execution_event_log_record,
     invocation_event,
     node_event,
@@ -193,6 +194,79 @@ def test_invocation_event_records_log_presentation_context() -> None:
 
     assert record["log_presentation_format"] == "json_lines"
     assert record["log_presentation_profile"] == "mock"
+
+
+def test_invocation_payload_preserves_existing_positional_contract() -> None:
+    payload = InvocationEventPayload(
+        10,
+        "error",
+        2,
+        True,
+        "success",
+        "full",
+        {"input": 3},
+        4,
+        "estimate",
+        False,
+        1.5,
+        "full",
+        "parse error",
+        "provider",
+        "execution",
+        "adapter",
+        "retry",
+    )
+
+    assert payload.provider_tokens == {"input": 3}
+    assert payload.failure_advice == "retry"
+    assert payload.provider_usage_report_count is None
+
+
+def test_invocation_event_preserves_existing_positional_contract_and_round_trip() -> (
+    None
+):
+    context = ExecutionEventContext(
+        workflow_name="workflow",
+        run_id="run-1",
+        node_id="node.a",
+        provider="codex",
+        role=ProviderRole.EXECUTOR,
+        task_id="codex_executor_0",
+    )
+    event = invocation_event(
+        "invocation_finished",
+        "workflow",
+        "run-1",
+        context,
+        10,
+        "error",
+        2,
+        True,
+        "success",
+        "full",
+        {"input": 3},
+        4,
+        "estimate",
+        False,
+        1.5,
+        "full",
+        "parse error",
+        "provider",
+        "execution",
+        "adapter",
+        "retry",
+        12.5,
+        "2026-08-04T00:00:00+00:00",
+    )
+
+    restored = event_from_record(execution_event_log_record(event))
+
+    assert restored is not None
+    assert restored.payload.provider_tokens == {"input": 3}
+    assert restored.payload.failure_advice == "retry"
+    assert restored.payload.provider_usage_report_count is None
+    assert event.timestamp == 12.5
+    assert restored.timestamp_utc == "2026-08-04T00:00:00+00:00"
 
 
 def test_workspace_event_records_workspace_payload() -> None:

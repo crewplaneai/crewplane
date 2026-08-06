@@ -126,10 +126,9 @@ async def run_command_once(
 def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:
     return InvocationCommandRuntime(
         failure_profile=plan.failure_profile,
-        structured_output_mode=plan.structured_output_mode,
-        output_extraction_mode=plan.output_extraction_mode,
+        output_extractor=plan.output_extractor,
+        usage_decoder=plan.usage_decoder,
         quota_parser=plan.quota_parser,
-        usage_parser=plan.usage_parser,
         structured_output_file=plan.structured_output_file,
         cmd=plan.cmd,
         stdin_data=plan.stdin_data,

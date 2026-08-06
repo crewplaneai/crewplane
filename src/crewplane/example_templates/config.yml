@@ -14,8 +14,9 @@ agents:
   # Spend observability notes:
   # - CLI capture, provider token reports, visible lower-bound estimates, and configured
   #   cost confidence are recorded in events.ndjson and summary.md
-  # - Codex and Claude use structured output for extraction and provider usage parsing
-  # - Copilot and Kilo remain visible-estimate-only until they expose machine-readable usage
+  # - Codex, Claude, Gemini, and Kilo use structured output for extraction and
+  #   provider usage parsing
+  # - Copilot remains visible-estimate-only until it exposes machine-readable usage
   #
   # Optional: omit default_model to use the provider CLI's configured default.
   #
@@ -83,11 +84,11 @@ agents:
   #   # pricing:
   #   #   input: 0.35
   #   #   output: 1.05
-  #   # Wall-clock kill is opt-in. By default, active provider CLIs may run past
-  #   # 30 minutes; the idle timeout below only kills processes that stop producing
-  #   # stdout/stderr. Set a finite value for CI, disposable runners, or strict ops caps.
+  #   # Gemini's machine-readable JSON response is emitted only after completion,
+  #   # so Crewplane cannot enforce an output-idle timeout for this provider. Set a
+  #   # finite wall-clock value for CI, disposable runners, or strict ops caps.
   #   invocation_timeout_seconds: null
-  #   invocation_idle_timeout_seconds: 1800
+  #   invocation_idle_timeout_seconds: null
   #   extra_args:
   #     - "--approval-mode=yolo"
   #   quota_reset_sleep_floor_seconds: 5
@@ -128,11 +129,10 @@ agents:
   #   quota_retry_max_attempts: null
   #
   # kilo:
-  #   cli_cmd: ["kilo"]
+  #   cli_cmd: ["kilo", "run"]
   #   provider_kind: "kilo"
   #   prompt_transport: "stdin"
   #   default_model: "auto"
-  #   # Visible-estimate-only in spend observability v2.
   #   # pricing:
   #   #   total: 2.0
   #   # Optional hard wall-clock kill for special cases such as CI or disposable runners.

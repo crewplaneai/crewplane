@@ -39,11 +39,15 @@ SUPPORTED_PROVIDER_KIND_VALUES = tuple(kind.value for kind in SUPPORTED_PROVIDER
 SUPPORTED_PROVIDER_KIND_VALUE_SET = frozenset(SUPPORTED_PROVIDER_KIND_VALUES)
 
 PromptTransport = Literal["stdin", "argv"]
-StructuredOutputMode = Literal["none", "codex_last_message_file", "claude_json"]
-OutputExtractionMode = Literal["visible", "codex_last_message_file", "claude_json"]
+StructuredOutputMode = Literal[
+    "none",
+    "codex_last_message_file",
+    "claude_json",
+    "gemini_json",
+    "kilo_json",
+]
 OutputExtractionStatus = Literal["success", "missing", "malformed"]
 QuotaParserProfile = Literal["codex", "copilot", "claude", "kilo", "gemini", "generic"]
-UsageParserProfile = Literal["none", "codex", "claude"]
 type FailureClassificationProfile = ProviderKind
 ProviderUsageStatus = Literal["full", "partial", "none", "malformed"]
 InvocationCostConfidence = Literal["full", "partial", "none"]
@@ -68,6 +72,12 @@ _LOG_PRESENTATION_PROFILE_PATTERN = re.compile(r"^[a-z0-9_.-]+$")
 _MAX_LOG_PRESENTATION_PROFILE_LENGTH = 64
 
 
+def _add_exact_counter(current: int | None, additional: int | None) -> int | None:
+    if current is None or additional is None:
+        return None
+    return current + additional
+
+
 @dataclass(frozen=True)
 class ProviderTokenUsage:
     input: int | None = None
@@ -90,6 +100,23 @@ class ProviderTokenUsage:
     def has_any_value(self) -> bool:
         return any(value is not None for value in self.as_dict().values())
 
+    def add_exact(self, additional: ProviderTokenUsage) -> ProviderTokenUsage:
+        """Return exact bucket sums, preserving unknown contributions."""
+        return ProviderTokenUsage(
+            input=_add_exact_counter(self.input, additional.input),
+            cached_input=_add_exact_counter(
+                self.cached_input,
+                additional.cached_input,
+            ),
+            cache_write=_add_exact_counter(
+                self.cache_write,
+                additional.cache_write,
+            ),
+            output=_add_exact_counter(self.output, additional.output),
+            reasoning=_add_exact_counter(self.reasoning, additional.reasoning),
+            total=_add_exact_counter(self.total, additional.total),
+        )
+
 
 @dataclass(frozen=True)
 class InvocationUsage:
@@ -104,8 +131,18 @@ class InvocationUsage:
     configured_cost_usd: float | None
     invocation_cost_confidence: InvocationCostConfidence
     usage_parse_error: str | None
+    provider_usage_report_count: int | None = None
 
     def __post_init__(self) -> None:
+        report_count = self.provider_usage_report_count
+        if report_count is not None and (
+            isinstance(report_count, bool)
+            or not isinstance(report_count, int)
+            or report_count < 0
+        ):
+            raise ValueError(
+                "provider_usage_report_count must be a non-negative integer"
+            )
         object.__setattr__(
             self,
             "provider_tokens",
@@ -118,6 +155,7 @@ class InvocationUsage:
             "cli_captured": self.cli_captured,
             "output_extraction_status": self.output_extraction_status,
             "provider_usage_status": self.provider_usage_status,
+            "provider_usage_report_count": self.provider_usage_report_count,
             "provider_tokens": dict(self.provider_tokens),
             "visible_estimate_tokens": self.visible_estimate_tokens,
             "visible_estimate_method": self.visible_estimate_method,
@@ -332,6 +370,30 @@ class CommandResult:
                 self.stderr_path.unlink(missing_ok=True)
 
 
+@dataclass(frozen=True)
+class UsageDecodeResult:
+    """Provider-neutral result returned by one usage decoder invocation."""
+
+    tokens: ProviderTokenUsage | None = None
+    error: str | None = None
+    valid_report_count: int = 0
+
+
+@dataclass(frozen=True)
+class OutputExtractionResult:
+    """Provider-neutral machine-output extraction result."""
+
+    output_text: str
+    output_extraction_status: OutputExtractionStatus
+    output_path: Path | None = None
+    output_char_count: int | None = None
+    owns_output_path: bool = False
+
+
+type UsageDecoder = Callable[[CommandResult], UsageDecodeResult]
+type OutputExtractor = Callable[[CommandResult, Path | None], OutputExtractionResult]
+
+
 def _iter_lines_from_file(path: Path) -> Iterator[str]:
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         while True:
@@ -366,13 +428,14 @@ class InvocationPlan:
     stdin_data: bytes | None
     structured_output_file: Path | None
     structured_output_mode: StructuredOutputMode
-    output_extraction_mode: OutputExtractionMode
+    output_extractor: OutputExtractor | None
+    usage_decoder: UsageDecoder | None
     quota_parser: QuotaParserProfile
-    usage_parser: UsageParserProfile
     failure_profile: FailureClassificationProfile
     log_header: bytes
     log_provider_kind: ProviderKind
     one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
+    supports_output_idle_timeout: bool = True
 
 
 @dataclass(frozen=True)

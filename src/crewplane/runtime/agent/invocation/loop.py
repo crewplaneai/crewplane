@@ -10,6 +10,7 @@ from crewplane.architecture.contracts import (
     CommandRunner,
     InvocationContext,
     InvocationPlan,
+    UsageDecodeResult,
 )
 from crewplane.core.config import AgentConfig
 
@@ -55,6 +56,7 @@ from .state import (
     SleepAndRetryAttemptTransition,
 )
 from .telemetry import (
+    emit_invocation_diagnostic,
     emit_notice,
     record_transition_outputs,
     record_usage_from_state_once,
@@ -91,6 +93,11 @@ async def run_invocation_loop(
         accumulator=InvocationUsageAccumulator(plan.log_provider_kind, prompt)
     )
     last_non_quota_failure: InvocationFailureSummary | None = None
+    idle_timeout_seconds = _resolve_output_idle_timeout(
+        config,
+        plan,
+        invocation_context,
+    )
 
     try:
         while True:
@@ -104,8 +111,11 @@ async def run_invocation_loop(
                 cwd=cwd,
                 invocation_context=invocation_context,
                 timeout_seconds=config.invocation_timeout_seconds,
-                idle_timeout_seconds=config.invocation_idle_timeout_seconds,
+                idle_timeout_seconds=idle_timeout_seconds,
                 child_environment=child_environment,
+            )
+            usage_state.accumulator.record_provider_usage(
+                _decode_provider_usage(runtime, result)
             )
             attempt_result = build_invocation_attempt_result(
                 runtime=runtime,
@@ -159,6 +169,30 @@ async def run_invocation_loop(
         raise
     finally:
         cleanup_structured_output_file(runtime.structured_output_file)
+
+
+def _resolve_output_idle_timeout(
+    config: AgentConfig,
+    plan: InvocationPlan,
+    invocation_context: InvocationContext | None,
+) -> float | None:
+    configured_timeout = config.invocation_idle_timeout_seconds
+    if configured_timeout is None or plan.supports_output_idle_timeout:
+        return configured_timeout
+    if "invocation_idle_timeout_seconds" in config.model_fields_set:
+        emit_invocation_diagnostic(
+            invocation_context,
+            level="warning",
+            message=(
+                "Configured output-idle timeout cannot be enforced because this "
+                "invocation emits output only after completion; continuing without an "
+                "output-idle timeout. Configure invocation_timeout_seconds for a hard "
+                "wall-clock limit."
+            ),
+            operation="invocation_idle_timeout_unavailable",
+            attributes={"configured_idle_timeout_seconds": configured_timeout},
+        )
+    return None
 
 
 def _is_non_quota_retry(transition: InvocationAttemptTransition) -> bool:
@@ -239,8 +273,7 @@ def _select_attempt_transition(
     cursor = transition.cursor()
 
     extracted_output = extract_invocation_output(
-        output_extraction_mode=runtime.output_extraction_mode,
-        usage_parser=runtime.usage_parser,
+        output_extractor=runtime.output_extractor,
         cmd=runtime.cmd,
         result=attempt_result.result,
         structured_output_file=runtime.structured_output_file,
@@ -269,6 +302,19 @@ def _evaluate_structured_retry(
         built_in_retry_used=built_in_retry_used,
         one_shot_failure_retry=runtime.one_shot_failure_retry,
     )
+
+
+def _decode_provider_usage(
+    runtime: InvocationCommandRuntime,
+    result: CommandResult,
+) -> UsageDecodeResult:
+    if runtime.usage_decoder is None:
+        return UsageDecodeResult()
+    try:
+        return runtime.usage_decoder(result)
+    except Exception as exc:
+        message = str(exc).strip() or exc.__class__.__name__
+        return UsageDecodeResult(error=f"Provider usage decoding failed: {message}")
 
 
 async def _execute_transition_action(

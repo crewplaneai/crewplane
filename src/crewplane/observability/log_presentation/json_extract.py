@@ -62,6 +62,8 @@ def render_json_record(
         return render_mock_record(redacted, limits)
     if profile == "codex":
         return render_codex_record(redacted, limits)
+    if profile == "kilo":
+        return render_kilo_record(redacted, limits)
     return render_generic_record(redacted, limits)
 
 
@@ -75,6 +77,8 @@ def render_json_object(
     redacted = redact_json_value(value)
     if profile == "claude":
         return render_claude_object(redacted, limits)
+    if profile == "gemini":
+        return render_gemini_object(redacted, limits)
     return render_generic_record(redacted, limits)
 
 
@@ -114,6 +118,33 @@ def render_codex_record(
         detail = _codex_item_detail(record, item, limits)
         if detail:
             return [sanitize_line(f"item: {detail}", limits)]
+    return render_generic_record(record, limits)
+
+
+def render_kilo_record(
+    record: Mapping[str, Any],
+    limits: LogPresentationLimits,
+) -> list[str]:
+    event_type = _string_field(record, "type")
+    if event_type == "step_finish":
+        return []
+
+    part = record.get("part")
+    if not isinstance(part, Mapping):
+        return render_generic_record(record, limits)
+    text = _string_field(part, "text")
+    if event_type == "text" and text:
+        return display_string_lines(text, limits)
+    return render_generic_record(record, limits)
+
+
+def render_gemini_object(
+    record: Mapping[str, Any],
+    limits: LogPresentationLimits,
+) -> list[str]:
+    response = _string_field(record, "response")
+    if response:
+        return display_string_lines(response, limits)
     return render_generic_record(record, limits)
 
 

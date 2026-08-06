@@ -297,6 +297,9 @@ Per invocation telemetry records:
 - `cli_captured`
 - `output_extraction_status`: `success | missing | malformed`
 - `provider_usage_status`: `full | partial | none | malformed`
+- `provider_usage_report_count`: number of valid provider reports summed for
+  the invocation; `0` is a real current-format value and `null` means the
+  event predates this field or has no current-format report marker
 - `provider_tokens`: `input`, `cached_input`, `cache_write`, `output`,
   `reasoning`, `total`
 - `visible_estimate_tokens`
@@ -310,10 +313,20 @@ Aggregate summaries render:
 
 - terminal invocations and attempts
 - `CLI invocations captured: X/Y`
-- provider token reports as full, partial, and malformed counts
+- provider-reported token totals and report counts, overall and per provider,
+  reconstructed from terminal invocation events in `events.ndjson`
+- per-invocation provider usage status as full, partial, and malformed counts
 - visible-text estimate, always labeled lower-bound
 - configured cost estimate with aggregate confidence:
   `full | partial | none | mixed`
+
+Provider-reported totals and visible-text estimates are intentionally separate.
+The aggregate sums only normalized numeric counters persisted on current-format
+`invocation_finished` and `invocation_failed` events. It does not rescan raw
+provider logs, and historical terminal events without
+`provider_usage_report_count` remain readable but are excluded from the exact
+aggregate. Missing buckets remain unknown rather than being inferred from the
+visible estimate.
 
 Provider profiles:
 
@@ -322,25 +335,32 @@ Provider profiles:
   parsed from JSONL output. Missing or malformed last-message output is fatal.
 - Claude commands use `-p` as the effective prompt argument and add
   `--output-format json`. The node artifact is extracted from the JSON `result`
-  field. Provider usage is parsed from the JSON `usage` field. Missing or
-  malformed result output is fatal. Generated automation templates prefer
-  `--bare`, but that flag remains config/template policy rather than a runtime
-  invariant.
-- Copilot and Kilo are visible-estimate-only until their CLIs expose documented
-  machine-readable usage payloads.
+  field. Provider usage is summed across rows in the JSON `modelUsage` map.
+  Missing or malformed result output is fatal. Generated automation templates
+  prefer `--bare`, but that flag remains config/template policy rather than a
+  runtime invariant.
+- Gemini uses `--output-format json` and maps `stats.models[*].tokens`; its
+  top-level `response` is the visible result.
+- Kilo uses `kilo run --format json`, sums `step_finish.part.tokens`, and joins
+  trimmed completed text blocks with newline boundaries for the visible result.
+- Copilot remains visible-estimate-only in this change because its documented
+  counters are emitted through OpenTelemetry rather than a stdout usage
+  record.
 - Unknown CLIs use the generic visible-output path.
 
 Classification rules:
 
 - Provider process failure and output extraction failure are invocation failures.
 - Usage parsing failures are non-fatal telemetry failures and set
-  `provider_usage_status = malformed` with `usage_parse_error`.
+  `usage_parse_error`. `provider_usage_status` is `malformed` only when no valid
+  report was retained; otherwise retained reports determine `full` or `partial`.
 - Visible estimates use `ceil(char_count / 4)` and are always lower-bound
   estimates because crewplane-visible text excludes provider system prompts,
   repo instructions, tool schemas and results, cached context, and reasoning
   tokens.
-- For Codex and Claude, required provider buckets are `input` and `output`, plus
-  `cached_input`, `cache_write`, or `reasoning` when those prices are configured.
+- For structured providers, required provider buckets are `input` and `output`,
+  plus `cached_input`, `cache_write`, or `reasoning` when those prices are
+  configured.
   If `pricing.total` is configured, it is exclusive and becomes the only
   required bucket.
 - Missing provider buckets are unknown, not zero, unless a provider contract
@@ -747,9 +767,10 @@ Negative consequences:
 - The spend observability v2 schema and rendered summaries are intentionally
   single-path; there is no compatibility layer or dual rendering path for older
   spend-summary framing.
-- Codex and Claude fixtures must track structured CLI output changes.
-- Copilot and Kilo remain estimate-only until their CLIs expose documented usage
-  payloads.
+- Codex, Claude, Gemini, and Kilo fixtures must track structured CLI output
+  changes.
+- Copilot remains estimate-only until a separately scoped per-invocation
+  OpenTelemetry capture path exists.
 - Workflow schema and validation are stricter because role segments, findings,
   audit rounds, and token budgets are first-class.
 - Findings quality depends on prompt authors requiring the block and on providers
@@ -922,6 +943,9 @@ because they are easy to misread from the high-level workflow:
   Reviewer-first loops run a round-0 reviewer pass against explicit existing
   context, hand that result to the local-round-1 executor, and still finalize
   through the canonical executor output selected by review-loop status.
+- **2026-08-05**: Added retry-aware provider usage accumulation and exact
+  run-level token totals reconstructed from durable terminal invocation events.
+  Structured usage reporting now covers Codex, Claude, Gemini, and Kilo.
 
 ## References
 - [ADR 0001: Ports + Adapters Runtime Integrations](0001-ports-adapters-runtime-integrations.md)

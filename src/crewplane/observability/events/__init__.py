@@ -31,6 +31,11 @@ from crewplane.observability.events.payloads import (
     WorkflowEventPayload,
     WorkspaceEventPayload,
 )
+from crewplane.observability.events.reader import (
+    event_from_line,
+    event_from_record,
+    read_event_log,
+)
 from crewplane.observability.events.reducer import apply_event
 from crewplane.observability.events.types import (
     EventType,
@@ -72,9 +77,12 @@ __all__ = [
     "build_initial_state",
     "emit_event",
     "execution_event_log_record",
+    "event_from_line",
+    "event_from_record",
     "format_execution_event_log_line",
     "invocation_event",
     "node_event",
+    "read_event_log",
     "runtime_log_event",
     "workspace_event",
     "workflow_event",

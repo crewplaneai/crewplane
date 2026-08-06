@@ -275,7 +275,11 @@ class InvokerQuotaDiagnosticTests(unittest.IsolatedAsyncioTestCase):
                         stdout_text="You have exhausted your capacity on this model. Your quota will reset after 2s.",
                         stderr_text="",
                     )
-                return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+                return CommandResult(
+                    returncode=0,
+                    stdout_text='{"response":"ok"}',
+                    stderr_text="",
+                )
 
             context = InvocationContext(
                 node_id="node.a",
