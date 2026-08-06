@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-05
+
 ### Changed
 
 - Run summaries now report normalized Codex, Claude, Gemini, and Kilo token

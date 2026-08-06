@@ -194,7 +194,7 @@ wheelhouse:
 ```bash
 CREWPLANE_INSTALL_FIND_LINKS=/path/to/wheelhouse \
 CREWPLANE_INSTALL_NO_INDEX=1 \
-npm install -g ./crewplane-0.1.7.tgz
+npm install -g ./crewplane-0.1.8.tgz
 ```
 
 ## Learn More

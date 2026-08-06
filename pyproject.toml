@@ -1,6 +1,6 @@
 [project]
 name = "crewplane"
-version = "0.1.7"
+version = "0.1.8"
 description = "A provider-neutral CLI-first control plane for human-designed coding-agent workflows"
 readme = "README.md"
 requires-python = ">=3.13"
