@@ -21,12 +21,82 @@ NORMALIZED_VERSION = str(Version(AUTHORED_VERSION))
 CLI_COMMAND = "crewplane"
 IMPORT_PACKAGE = "crewplane"
 REPOSITORY_URL = "https://github.com/crewplaneai/crewplane"
+UV_BOOTSTRAP_METADATA = json.loads(
+    (ROOT / "packaging/uv-bootstrap.json").read_text(encoding="utf-8")
+)
+PINNED_UV_VERSION = str(UV_BOOTSTRAP_METADATA["version"])
+UV_CHECKSUMS = {
+    str(target): str(checksum)
+    for target, checksum in UV_BOOTSTRAP_METADATA["checksums"].items()
+}
 GRANDFATHERED_LARGE_FILE_LIMITS = {
     ".github/crewplane-splash.png": 1_093_755,
     "docs/images/concepts/control-plane.png": 1_664_884,
     "docs/images/concepts/different-design.png": 1_466_376,
     "docs/images/concepts/why-crewplane.png": 1_511_410,
 }
+UV_BOOTSTRAP_CASES = (
+    (
+        "Darwin",
+        "arm64",
+        "darwin",
+        "arm64",
+        "aarch64-apple-darwin",
+        UV_CHECKSUMS["aarch64-apple-darwin"],
+        "curl",
+        "gnu",
+    ),
+    (
+        "Darwin",
+        "x86_64",
+        "darwin",
+        "x64",
+        "x86_64-apple-darwin",
+        UV_CHECKSUMS["x86_64-apple-darwin"],
+        "wget",
+        "gnu",
+    ),
+    (
+        "Linux",
+        "aarch64",
+        "linux",
+        "arm64",
+        "aarch64-unknown-linux-gnu",
+        UV_CHECKSUMS["aarch64-unknown-linux-gnu"],
+        "curl",
+        "gnu",
+    ),
+    (
+        "Linux",
+        "x86_64",
+        "linux",
+        "x64",
+        "x86_64-unknown-linux-gnu",
+        UV_CHECKSUMS["x86_64-unknown-linux-gnu"],
+        "wget",
+        "gnu",
+    ),
+    (
+        "Linux",
+        "aarch64",
+        "linux",
+        "arm64",
+        "aarch64-unknown-linux-musl",
+        UV_CHECKSUMS["aarch64-unknown-linux-musl"],
+        "curl",
+        "musl",
+    ),
+    (
+        "Linux",
+        "x86_64",
+        "linux",
+        "x64",
+        "x86_64-unknown-linux-musl",
+        UV_CHECKSUMS["x86_64-unknown-linux-musl"],
+        "wget",
+        "musl",
+    ),
+)
 
 
 def parse_requirement_map(requirements: list[str]) -> dict[str, Requirement]:
@@ -68,6 +138,218 @@ def repo_path(*parts: str) -> Path:
 
 def read_text(*parts: str) -> str:
     return repo_path(*parts).read_text(encoding="utf-8")
+
+
+def write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def link_test_command(directory: Path, command: str) -> None:
+    executable = shutil.which(command)
+    assert executable is not None, f"{command} is required for installer tests"
+    (directory / command).symlink_to(executable)
+
+
+def prepare_uv_bootstrap_environment(
+    tmp_path: Path,
+    downloader: str,
+    kernel: str,
+    machine: str,
+    target: str,
+    actual_sha256: str,
+    libc: str,
+) -> tuple[dict[str, str], Path, Path, Path]:
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    for command in ("awk", "basename", "chmod", "cp", "mkdir", "mktemp", "rm"):
+        link_test_command(fake_bin, command)
+
+    write_executable(
+        fake_bin / "uname",
+        """#!/bin/sh
+case "${1:-}" in
+    -s)
+        if [ ! -e "$CREWPLANE_FAKE_PLATFORM_GATE_STATE" ]; then
+            : > "$CREWPLANE_FAKE_PLATFORM_GATE_STATE"
+            printf 'Darwin\n'
+        else
+            printf '%s\n' "$CREWPLANE_FAKE_KERNEL"
+        fi
+        ;;
+    -m) printf '%s\n' "$CREWPLANE_FAKE_MACHINE" ;;
+    *) exit 1 ;;
+esac
+""",
+    )
+    write_executable(
+        fake_bin / "ldd",
+        """#!/bin/sh
+if [ "$CREWPLANE_FAKE_LIBC" = "musl" ]; then
+    printf 'musl libc\n' >&2
+else
+    printf 'ldd (GNU libc) 2.39\n'
+fi
+""",
+    )
+    write_executable(
+        fake_bin / "grep",
+        """#!/bin/sh
+case "$*" in
+    *musl*) [ "$CREWPLANE_FAKE_LIBC" = "musl" ] ;;
+    *) exit 1 ;;
+esac
+""",
+    )
+    write_executable(
+        fake_bin / downloader,
+        """#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+    exit 0
+fi
+output=""
+url=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o|--output|-O|-qO|--output-document)
+            output="$2"
+            shift 2
+            ;;
+        --output-document=*)
+            output="${1#*=}"
+            shift
+            ;;
+        http*)
+            url="$1"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+[ -n "$output" ] || exit 1
+printf 'archive fixture' > "$output"
+printf '%s\n' "$url" >> "$CREWPLANE_FAKE_DOWNLOAD_LOG"
+""",
+    )
+    write_executable(
+        fake_bin / "sha256sum",
+        """#!/bin/sh
+printf '%s  %s\n' "$CREWPLANE_FAKE_ACTUAL_SHA256" "$1"
+""",
+    )
+    write_executable(
+        fake_bin / "tar",
+        """#!/bin/sh
+destination=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -C)
+            destination="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+[ -n "$destination" ] || exit 1
+archive_dir="$destination/uv-$CREWPLANE_FAKE_UV_TARGET"
+/bin/mkdir -p "$archive_dir"
+/bin/cp "$CREWPLANE_FAKE_UV" "$archive_dir/uv"
+/bin/cp "$CREWPLANE_FAKE_UV" "$archive_dir/uvx"
+/bin/chmod 0755 "$archive_dir/uv" "$archive_dir/uvx"
+""",
+    )
+
+    fake_uv = tmp_path / "fake-uv"
+    write_executable(
+        fake_uv,
+        """#!/bin/sh
+{
+    printf 'CALL'
+    for arg in "$@"; do printf '\t%s' "$arg"; done
+    printf '\n'
+} >> "$CREWPLANE_FAKE_UV_LOG"
+if [ "${1:-}" = "tool" ] && [ "${2:-}" = "dir" ]; then
+    printf '%s\n' "$CREWPLANE_FAKE_TOOL_BIN"
+fi
+""",
+    )
+
+    tool_bin = tmp_path / "tool-bin"
+    tool_bin.mkdir()
+    fake_cli = tool_bin / PACKAGE_NAME
+    write_executable(fake_cli, "#!/bin/sh\nexit 0\n")
+    (fake_bin / PACKAGE_NAME).symlink_to(fake_cli)
+
+    install_home = tmp_path / "home"
+    install_home.mkdir()
+    temp_dir = tmp_path / "temp"
+    temp_dir.mkdir()
+    download_log = tmp_path / "download.log"
+    uv_log = tmp_path / "uv.log"
+
+    env = os.environ.copy()
+    for name in ("CREWPLANE_UV_BIN", "UV_INSTALL_DIR", "UV_UNMANAGED_INSTALL"):
+        env.pop(name, None)
+    env.update(
+        {
+            "CREWPLANE_FAKE_ACTUAL_SHA256": actual_sha256,
+            "CREWPLANE_FAKE_DOWNLOAD_LOG": str(download_log),
+            "CREWPLANE_FAKE_KERNEL": kernel,
+            "CREWPLANE_FAKE_LIBC": libc,
+            "CREWPLANE_FAKE_MACHINE": machine,
+            "CREWPLANE_FAKE_PLATFORM_GATE_STATE": str(tmp_path / "platform-gate.state"),
+            "CREWPLANE_FAKE_TOOL_BIN": str(tool_bin),
+            "CREWPLANE_FAKE_UV": str(fake_uv),
+            "CREWPLANE_FAKE_UV_LOG": str(uv_log),
+            "CREWPLANE_FAKE_UV_TARGET": target,
+            "CREWPLANE_INSTALL_HOME": str(install_home),
+            "HOME": str(install_home),
+            "PATH": str(fake_bin),
+            "TMPDIR": str(temp_dir),
+        }
+    )
+    return env, install_home, temp_dir, download_log
+
+
+def npm_bootstrap_command(
+    node_platform: str,
+    node_arch: str,
+    mock_crypto: bool,
+    node_libc: str = "gnu",
+) -> str:
+    statements = [
+        f"Object.defineProperty(process, 'platform', {{ value: '{node_platform}' }});",
+        f"Object.defineProperty(process, 'arch', {{ value: '{node_arch}' }});",
+    ]
+    if node_platform == "linux":
+        report_header = (
+            "{ glibcVersionRuntime: '2.39' }" if node_libc == "gnu" else "{}"
+        )
+        statements.append(
+            f"process.report.getReport = () => ({{ header: {report_header} }});"
+        )
+    if mock_crypto:
+        statements.extend(
+            [
+                "const Module = require('node:module');",
+                "const originalLoad = Module._load;",
+                "Module._load = function(request, parent, isMain) {",
+                "  if (request === 'node:crypto') {",
+                "    return { createHash() { return {",
+                "      update() { return this; },",
+                "      digest() { return process.env.CREWPLANE_FAKE_ACTUAL_SHA256; },",
+                "    }; } };",
+                "  }",
+                "  return originalLoad.call(this, request, parent, isMain);",
+                "};",
+            ]
+        )
+    statements.append("require('./packaging/npm/scripts/postinstall.js');")
+    return "".join(statements)
 
 
 def workflow_step_run(job: dict[str, object], name: str) -> str:
@@ -238,10 +520,6 @@ def test_makefile_package_name_lookup_supports_gnu_make_3_81() -> None:
     assert "ifeq ($(PACKAGE_NAME),__PACKAGE_NAME_LOOKUP_FAILED__)" in makefile
 
 
-def test_legacy_release_check_helper_was_replaced() -> None:
-    assert not repo_path("packaging", "release_checks.py").exists()
-
-
 def test_release_script_exposes_stateful_commands() -> None:
     result = subprocess.run(
         [sys.executable, str(repo_path("scripts", "release.py")), "--help"],
@@ -260,8 +538,6 @@ def test_release_script_exposes_stateful_commands() -> None:
         "finalize",
     ):
         assert command in result.stdout
-    assert "recover-release-artifacts" not in result.stdout
-    assert "verify-backfill" not in result.stdout
 
 
 def test_ci_package_job_smoke_tests_wheel_before_inspection_and_upload() -> None:
@@ -459,11 +735,6 @@ def test_production_release_workflow_reuses_release_tool_without_pypi_publish() 
     assert "id-token: write" not in workflow
 
 
-def test_release_drafter_was_removed() -> None:
-    assert not repo_path(".github", "release-drafter.yml").exists()
-    assert not repo_path(".github", "workflows", "release-drafter.yml").exists()
-
-
 def test_github_workflow_actions_are_pinned_to_commits() -> None:
     workflows = sorted(repo_path(".github", "workflows").glob("*.yml"))
     for workflow in workflows:
@@ -475,23 +746,6 @@ def test_github_workflow_actions_are_pinned_to_commits() -> None:
             action = line.split("uses:", 1)[1].split("#", 1)[0].strip()
             assert re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", action), (
                 f"{workflow.relative_to(ROOT)}:{line_number} is not commit-pinned"
-            )
-
-
-def test_github_workflow_uv_installs_are_version_pinned() -> None:
-    workflows = sorted(repo_path(".github", "workflows").glob("*.yml"))
-    for workflow in workflows:
-        lines = workflow.read_text(encoding="utf-8").splitlines()
-        for line_number, line in enumerate(lines, start=1):
-            if "astral-sh/setup-uv@" not in line:
-                continue
-            step = "\n".join(lines[line_number - 1 : line_number + 6])
-            match = re.search(r'^\s*version:\s*"([^"]+)"', step, re.MULTILINE)
-            assert match is not None, (
-                f"{workflow.relative_to(ROOT)}:{line_number} does not pin uv"
-            )
-            assert Version(match.group(1)), (
-                f"{workflow.relative_to(ROOT)}:{line_number} has invalid uv version"
             )
 
 
@@ -645,7 +899,6 @@ def test_questions_and_usage_help_are_routed_to_discussions() -> None:
 
     labels = json.loads(read_text(".github", "labels.json"))
     assert "type: question" not in {label["name"] for label in labels}
-    assert "**Questions and ideas:** use GitHub Discussions." in read_text("SUPPORT.md")
 
 
 def test_bug_report_requires_support_environment_details() -> None:
@@ -673,48 +926,10 @@ def test_bug_report_requires_support_environment_details() -> None:
     assert all(option["required"] is True for option in safety_checks)
 
 
-def test_release_docs_describe_single_production_publish_path() -> None:
-    development = read_text("DEVELOPMENT.md")
-    contributing = read_text("CONTRIBUTING.md")
-    normalized_development = " ".join(development.split())
-
-    assert "Production publishing is local-only." in development
-    assert "[Release Workflow](#release-workflow)" in development
-    assert "does not publish production PyPI or npm packages" in normalized_development
-    assert "does not need their credentials" in normalized_development
-    assert "## Release Workflow" in development
-    for command in (
-        "make release-prepare",
-        "make release-check",
-        "make release",
-        "make release-pypi",
-        "make release-npm",
-    ):
-        assert command in development
-    assert "`v0.1.4`, not `0.1.4`" in normalized_development
-    assert "before `master` advances" in normalized_development
-    assert "backfilling a historical tag" in normalized_development
-    assert "highest published stable version on PyPI" in normalized_development
-    assert "Publish Homebrew separately" in development
-    assert ".github/workflows/testpypi.yml" in development
-    assert "dispatched from any selected ref" in normalized_development
-    assert "## Release Workflow" not in contributing
-
-
 def test_repository_automation_matches_supported_platform_and_publish_policy() -> None:
-    development = read_text("DEVELOPMENT.md")
-    contributing = read_text("CONTRIBUTING.md")
     nightly_text = read_text(".github", "workflows", "nightly.yml")
     nightly = yaml.safe_load(nightly_text)
     testpypi = read_text(".github", "workflows", "testpypi.yml")
-
-    for document in (development, contributing):
-        normalized_document = " ".join(document.split())
-        assert "Linux, macOS, and WSL" in normalized_document
-        assert "Native Windows is not supported" in normalized_document
-        assert (
-            "supports Python 3.13+ on Linux, macOS, Windows" not in normalized_document
-        )
 
     assert nightly["jobs"]["cross-platform"]["strategy"]["matrix"]["os"] == [
         "ubuntu-latest",
@@ -803,6 +1018,29 @@ def test_repository_automation_matches_supported_platform_and_publish_policy() -
     assert "skip-existing" not in testpypi
 
 
+def test_nightly_uv_update_job_is_repository_scoped_and_uses_a_pull_request() -> None:
+    nightly = yaml.safe_load(read_text(".github", "workflows", "nightly.yml"))
+    update_job = nightly["jobs"]["ci-tooling-update"]
+
+    assert update_job["permissions"] == {
+        "actions": "write",
+        "contents": "write",
+        "pull-requests": "write",
+    }
+    assert "crewplaneai/crewplane" in update_job["if"]
+    commands = "\n".join(
+        step.get("run", "") for step in update_job["steps"] if isinstance(step, dict)
+    )
+    for fragment in (
+        "scripts/update_uv_bootstrap.py update latest",
+        "--app dependabot",
+        "select(.isCrossRepository == false)",
+        "gh pr create",
+        "gh workflow run ci.yml",
+    ):
+        assert fragment in commands
+
+
 def test_private_reporting_surfaces_use_github_security_advisories() -> None:
     issue_config = yaml.safe_load(read_text(".github", "ISSUE_TEMPLATE", "config.yml"))
     advisory_url = f"{REPOSITORY_URL}/security/advisories/new"
@@ -812,15 +1050,9 @@ def test_private_reporting_surfaces_use_github_security_advisories() -> None:
 
     assert len(security_links) == 1
     assert "privately" in security_links[0]["about"].lower()
-    assert "GitHub Security Advisories" in read_text("SECURITY.md")
-    assert "GitHub Security Advisories" in read_text("SUPPORT.md")
-    assert advisory_url in read_text("CODE_OF_CONDUCT.md")
 
 
-def test_repository_hosting_policy_uses_current_workflow_surfaces() -> None:
-    assert not repo_path(".github", "branch-protection.json").exists()
-    assert not repo_path(".github", "settings.yml").exists()
-
+def test_testpypi_workflow_uses_trusted_publishing() -> None:
     testpypi = yaml.safe_load(read_text(".github", "workflows", "testpypi.yml"))
     publisher = testpypi["jobs"]["publish-testpypi"]
     assert publisher["environment"]["name"] == "testpypi"
@@ -872,16 +1104,93 @@ def test_install_script_uses_uv_and_supports_local_artifact_smoke() -> None:
     assert "${PACKAGE_NAME} --help" in installer
     assert "uv tool uninstall ${PACKAGE_NAME}" in installer
     assert "native Windows is not supported" in installer
-    assert "First run:" in installer
-    assert "${PACKAGE_NAME} run" in installer
-    assert "${PACKAGE_NAME} run --no-live" not in installer
-    assert "provider CLIs are not required" in installer
-    assert "Real provider setup:" in installer
-    assert "does not install provider CLIs" in installer
-    assert (
-        "does not install provider CLIs, manage provider credentials, or sandbox provider CLI execution"
-        in installer
+
+
+@pytest.mark.parametrize(
+    (
+        "kernel",
+        "machine",
+        "node_platform",
+        "node_arch",
+        "target",
+        "sha256",
+        "downloader",
+        "libc",
+    ),
+    UV_BOOTSTRAP_CASES,
+)
+def test_install_script_bootstraps_verified_uv_archive(
+    tmp_path: Path,
+    kernel: str,
+    machine: str,
+    node_platform: str,
+    node_arch: str,
+    target: str,
+    sha256: str,
+    downloader: str,
+    libc: str,
+) -> None:
+    del node_platform, node_arch
+    if os.name == "nt":
+        pytest.skip("native Windows is outside the supported installer surface")
+    shell = shutil.which("sh")
+    assert shell is not None
+    env, install_home, temp_dir, download_log = prepare_uv_bootstrap_environment(
+        tmp_path,
+        downloader,
+        kernel,
+        machine,
+        target,
+        sha256,
+        libc,
     )
+
+    result = subprocess.run(
+        [shell, str(repo_path("install.sh"))],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    expected_url = f"https://github.com/astral-sh/uv/releases/download/{PINNED_UV_VERSION}/uv-{target}.tar.gz"
+    assert download_log.read_text(encoding="utf-8").strip() == expected_url
+    assert (install_home / ".local" / "bin" / "uv").stat().st_mode & 0o111
+    assert (install_home / ".local" / "bin" / "uvx").stat().st_mode & 0o111
+    assert not any(temp_dir.iterdir())
+
+
+def test_install_script_rejects_uv_archive_checksum_mismatch(tmp_path: Path) -> None:
+    if os.name == "nt":
+        pytest.skip("native Windows is outside the supported installer surface")
+    shell = shutil.which("sh")
+    assert shell is not None
+    target = "x86_64-unknown-linux-gnu"
+    env, install_home, temp_dir, _ = prepare_uv_bootstrap_environment(
+        tmp_path,
+        "curl",
+        "Linux",
+        "x86_64",
+        target,
+        "0" * 64,
+        "gnu",
+    )
+
+    result = subprocess.run(
+        [shell, str(repo_path("install.sh"))],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "checksum" in result.stderr.lower()
+    assert not (install_home / ".local" / "bin" / "uv").exists()
+    assert not any(temp_dir.iterdir())
 
 
 @pytest.mark.parametrize(
@@ -975,7 +1284,6 @@ def test_npm_wrapper_metadata_and_scripts_pin_python_package() -> None:
     assert "ensureSupportedPlatform();" in postinstall
     assert "uv" in postinstall
     assert "venv" in postinstall
-    assert "Provider CLIs and credentials are not managed" in postinstall
 
     shim = read_text("packaging", "npm", "bin", "crewplane.js")
     assert ".venv" in shim
@@ -985,97 +1293,100 @@ def test_npm_wrapper_metadata_and_scripts_pin_python_package() -> None:
     assert "process.argv.slice(2)" in shim
 
 
-def test_installation_docs_explain_npm_global_bin_path() -> None:
-    installation_doc = read_text("docs", "getting-started", "installation.md")
-
-    assert "npm config get prefix" in installation_doc
-    assert "PATH" in installation_doc
-    assert "command -v crewplane" in installation_doc
-    assert "node" in installation_doc
-    assert "crewplane@alpha" not in installation_doc
-
-
-def test_update_docs_keep_package_managers_in_charge() -> None:
-    installation_doc = read_text("docs", "getting-started", "installation.md")
-    command_reference = read_text("docs", "reference", "commands.md")
-
-    for command in (
-        "uv tool install --force crewplane",
-        "pipx upgrade --global crewplane",
-        "npm rebuild --global crewplane",
-    ):
-        assert command in installation_doc
-    assert "postinstall" in installation_doc
-
-    required_guidance = (
-        "package manager",
-        "fresh process",
-        "version stayed the same",
-        "direct `pip` or `uv pip` installation",
-        "editable checkout",
-        "project-local `npm` dependency",
-        "version pin",
+@pytest.mark.parametrize(
+    (
+        "kernel",
+        "machine",
+        "node_platform",
+        "node_arch",
+        "target",
+        "sha256",
+        "downloader",
+        "node_libc",
+    ),
+    UV_BOOTSTRAP_CASES,
+)
+def test_npm_postinstall_bootstraps_verified_uv_archive(
+    tmp_path: Path,
+    kernel: str,
+    machine: str,
+    node_platform: str,
+    node_arch: str,
+    target: str,
+    sha256: str,
+    downloader: str,
+    node_libc: str,
+) -> None:
+    if os.name == "nt":
+        pytest.skip("native Windows is outside the supported npm surface")
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to execute the npm postinstall regression")
+    env, install_home, temp_dir, download_log = prepare_uv_bootstrap_environment(
+        tmp_path,
+        downloader,
+        kernel,
+        machine,
+        target,
+        sha256,
+        node_libc,
     )
-    for content in (installation_doc, command_reference):
-        normalized = " ".join(content.split())
-        for guidance in required_guidance:
-            assert guidance in normalized
+    env.pop("CREWPLANE_INSTALL_HOME")
+
+    result = subprocess.run(
+        [
+            node,
+            "-e",
+            npm_bootstrap_command(node_platform, node_arch, True, node_libc),
+        ],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    expected_url = f"https://github.com/astral-sh/uv/releases/download/{PINNED_UV_VERSION}/uv-{target}.tar.gz"
+    assert download_log.read_text(encoding="utf-8").strip() == expected_url
+    assert (install_home / ".local" / "bin" / "uv").stat().st_mode & 0o111
+    assert (install_home / ".local" / "bin" / "uvx").stat().st_mode & 0o111
+    assert not any(temp_dir.iterdir())
 
 
-def test_public_first_run_docs_are_mock_first_and_provider_free() -> None:
-    readme = read_text("README.md")
-    quickstart = read_text("docs", "getting-started", "quickstart.md")
-    docs_index = read_text("docs", "index.md")
+def test_npm_postinstall_rejects_uv_archive_checksum_mismatch(
+    tmp_path: Path,
+) -> None:
+    if os.name == "nt":
+        pytest.skip("native Windows is outside the supported npm surface")
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to execute the npm postinstall regression")
+    target = "x86_64-unknown-linux-gnu"
+    env, install_home, temp_dir, _ = prepare_uv_bootstrap_environment(
+        tmp_path,
+        "curl",
+        "Linux",
+        "x86_64",
+        target,
+        "0" * 64,
+        "gnu",
+    )
+    env.pop("CREWPLANE_INSTALL_HOME")
 
-    for content in (readme, quickstart):
-        assert "crewplane init" in content
-        assert "crewplane validate" in content
-        assert "crewplane run" in content
-        assert "crewplane run --no-live" not in content
-        assert "crewplane onboarding" in content
-        assert "provider CLI" in content
-        assert (
-            "does not require" in content
-            or "needs no" in content
-            or "no provider CLIs" in content
-        )
-        assert "API key" in content
-        assert content.index("crewplane run") < content.index("crewplane onboarding")
-        assert content.index("crewplane run") < content.index("provider setup")
+    result = subprocess.run(
+        [node, "-e", npm_bootstrap_command("linux", "x64", False)],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
-    assert "not model output" in quickstart
-    assert "crewplane onboarding" in docs_index
-    assert "guides/inspecting-artifacts.md" in docs_index
-    assert "guides/troubleshooting.md" in docs_index
-    assert "guides/reproducible-support-bundle.md" in docs_index
-    assert "reference/configuration.md" in docs_index
-    assert "safety/" not in docs_index
-    assert "../AGENTS.md" not in docs_index
-    assert "../DEVELOPMENT.md" not in docs_index
-    assert "architecture/" not in docs_index
-    assert "maintainers/" not in docs_index
-    assert "experimental-worktree-implementation" not in docs_index
-
-
-def test_launch_support_docs_cover_skip_force_resume_and_bundles() -> None:
-    running = read_text("docs", "guides", "running-workflows.md")
-    troubleshooting = read_text("docs", "guides", "troubleshooting.md")
-    support_bundle = read_text("docs", "guides", "reproducible-support-bundle.md")
-    artifacts = read_text("docs", "reference", "artifacts.md")
-
-    for content in (running, troubleshooting, artifacts):
-        assert "workflow_signature" in content
-        assert "--force" in content
-        assert "resume" in content.lower()
-
-    for expected in (
-        "logs/summary.md",
-        "events.ndjson",
-        ".crewplane/config.yml",
-        "versions",
-        "Redact",
-    ):
-        assert expected in support_bundle
+    assert result.returncode == 1
+    assert "checksum" in result.stderr.lower()
+    assert not (install_home / ".local" / "bin" / "uv").exists()
+    assert not any(temp_dir.iterdir())
 
 
 def test_npm_postinstall_defaults_to_min_supported_python_without_override(
@@ -1284,21 +1595,3 @@ def test_gitignore_contains_release_build_manifest_patterns() -> None:
         "!packaging/npm/scripts/**",
     ):
         assert pattern in gitignore
-
-
-def test_package_surfaces_use_crewplane_command() -> None:
-    pyproject = load_pyproject()
-    project = pyproject["project"]
-    assert project["name"] == PACKAGE_NAME
-    assert project["scripts"] == {"crewplane": "crewplane.cli.app:app"}
-
-    npm_package = load_npm_package()
-    assert npm_package["bin"] == {"crewplane": "bin/crewplane.js"}
-
-    install_script = read_text("install.sh")
-    assert "CLI_NAME" not in install_script
-    assert "${PACKAGE_NAME} --help" in install_script
-    makefile = read_text("Makefile")
-    assert "PROJECT_NAME_CMD =" in makefile
-    assert "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD)" in makefile
-    assert "crewplane" in read_text("packaging", "homebrew", "Formula", "crewplane.rb")

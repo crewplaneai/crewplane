@@ -3,6 +3,58 @@ set -eu
 
 PACKAGE_NAME="crewplane"
 CREWPLANE_VERSION="${CREWPLANE_VERSION:-}"
+# BEGIN GENERATED UV BOOTSTRAP METADATA
+UV_VERSION="0.12.2"
+UV_RELEASE_BASE_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
+
+uv_archive_details() {
+    uv_platform="$(uname -s 2>/dev/null || printf unknown):$(uname -m 2>/dev/null || printf unknown)"
+    case "$uv_platform" in
+        Linux:*)
+            uv_libc="gnu"
+            if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -qi musl; then
+                uv_libc="musl"
+            fi
+            uv_platform="${uv_platform}:${uv_libc}"
+            ;;
+    esac
+    case "$uv_platform" in
+        Darwin:arm64)
+            printf '%s|%s\n' \
+                "aarch64-apple-darwin" \
+                "fa909fea3bc06f460db79017030a221fdbc43ec4478f089cb554d8335c090817"
+            ;;
+        Darwin:x86_64)
+            printf '%s|%s\n' \
+                "x86_64-apple-darwin" \
+                "a6e6506a9109801222d65d17461abf4ed13bdecc5d2b13af0495418a82972c6b"
+            ;;
+        Linux:aarch64:gnu|Linux:arm64:gnu)
+            printf '%s|%s\n' \
+                "aarch64-unknown-linux-gnu" \
+                "19b7f1f66895261fbaa07f8ea91da0f86337ad4e47efa594e87641c1718ffc52"
+            ;;
+        Linux:aarch64:musl|Linux:arm64:musl)
+            printf '%s|%s\n' \
+                "aarch64-unknown-linux-musl" \
+                "73b87f0d65d7dfcd39753a51ce65592360b02c29f8e1bc2c85cc4190fe914499"
+            ;;
+        Linux:x86_64:gnu|Linux:amd64:gnu)
+            printf '%s|%s\n' \
+                "x86_64-unknown-linux-gnu" \
+                "d66e96b5f1ca3b99806eee283a8125d33a0bd669e6e6d9bc4ab7ffda63c41bf4"
+            ;;
+        Linux:x86_64:musl|Linux:amd64:musl)
+            printf '%s|%s\n' \
+                "x86_64-unknown-linux-musl" \
+                "2dbe8209c9592f6d1009b8565f4bf29813427907bee2236023c013101ede343f"
+            ;;
+        *)
+            fail "unsupported platform for automatic uv installation: $uv_platform"
+            ;;
+    esac
+}
+# END GENERATED UV BOOTSTRAP METADATA
 
 fail() {
     printf '%s\n' "error: $*" >&2
@@ -58,23 +110,67 @@ find_uv() {
     return 1
 }
 
-install_uv() {
-    info "uv was not found; installing uv for the current user without sudo."
+download_file() {
+    download_url="$1"
+    download_path="$2"
     if command -v curl >/dev/null 2>&1; then
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        curl --proto '=https' --tlsv1.2 -LsSf -o "$download_path" "$download_url"
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO- https://astral.sh/uv/install.sh | sh
+        wget -qO "$download_path" "$download_url"
     else
         fail "curl or wget is required to install uv automatically"
     fi
+}
 
-    for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
-        if [ -x "$candidate" ]; then
-            printf '%s\n' "$candidate"
-            return 0
-        fi
-    done
-    fail "uv installation completed but uv was not found under $HOME/.local/bin or $HOME/.cargo/bin"
+file_sha256() {
+    checksum_path="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$checksum_path" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$checksum_path" | awk '{print $1}'
+    else
+        fail "sha256sum or shasum is required to verify the uv download"
+    fi
+}
+
+install_uv() {
+    info "uv was not found; installing uv for the current user without sudo." >&2
+    uv_details="$(uv_archive_details)"
+    uv_target="${uv_details%%|*}"
+    uv_sha256="${uv_details#*|}"
+    uv_archive="uv-${uv_target}.tar.gz"
+    uv_url="${UV_RELEASE_BASE_URL}/${uv_archive}"
+    tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/crewplane-uv.XXXXXX")"
+    cleanup_uv_install() {
+        rm -rf "$tmp_dir"
+    }
+    trap cleanup_uv_install 0
+    trap 'exit 1' 1 2 15
+
+    archive_path="$tmp_dir/$uv_archive"
+    if ! download_file "$uv_url" "$archive_path"; then
+        fail "failed to download uv ${UV_VERSION}"
+    fi
+    actual_sha256="$(file_sha256 "$archive_path")"
+    if [ "$actual_sha256" != "$uv_sha256" ]; then
+        fail "uv archive checksum mismatch"
+    fi
+    if ! tar -xzf "$archive_path" -C "$tmp_dir"; then
+        fail "failed to extract uv ${UV_VERSION}"
+    fi
+
+    archive_dir="$tmp_dir/uv-$uv_target"
+    [ -f "$archive_dir/uv" ] || fail "uv archive did not contain the uv executable"
+    [ -f "$archive_dir/uvx" ] || fail "uv archive did not contain the uvx executable"
+    install_dir="$HOME/.local/bin"
+    mkdir -p "$install_dir"
+    cp "$archive_dir/uv" "$install_dir/uv"
+    cp "$archive_dir/uvx" "$install_dir/uvx"
+    chmod 0755 "$install_dir/uv" "$install_dir/uvx"
+
+    cleanup_uv_install
+    trap - 0 1 2 15
+    printf '%s\n' "$install_dir/uv"
 }
 
 install_crewplane() {

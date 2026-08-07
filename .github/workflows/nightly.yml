@@ -35,7 +35,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: "0.10.9"
+          version: "0.12.2"
           enable-cache: true
           prune-cache: true
 
@@ -68,7 +68,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: "0.10.9"
+          version: "0.12.2"
           enable-cache: true
           prune-cache: true
 
@@ -127,7 +127,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: "0.10.9"
+          version: "0.12.2"
           enable-cache: true
           prune-cache: true
 
@@ -168,3 +168,200 @@ jobs:
               python -m pytest -q -ra "$FOCUSED_RACE_SELECTION"
             iteration=$((iteration + 1))
           done
+
+  ci-tooling-update:
+    name: update pinned uv metadata
+    if: github.repository == 'crewplaneai/crewplane' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    env:
+      CI_TOOLING_BRANCH: automation/ci-tooling
+      CREWPLANE_UV_BOOTSTRAP_ROOT: ${{ github.workspace }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Preserve the trusted updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/scripts"
+          cp scripts/update_uv_bootstrap.py \
+            "$RUNNER_TEMP/scripts/update_uv_bootstrap.py"
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Select the ci-tooling PR lane
+        id: lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          dependabot_pr="$(
+              gh pr list --state open --base master --app dependabot \
+                --json number,headRefName \
+                --jq '[.[] | select(.headRefName | startswith("dependabot/")) | select(.headRefName | contains("ci-tooling"))][0].number // empty'
+          )"
+          automation_pr="$(
+              gh pr list --state open --base master \
+                --head "$CI_TOOLING_BRANCH" \
+                --json number,isCrossRepository \
+                --jq '[.[] | select(.isCrossRepository == false)][0].number // empty'
+          )"
+
+          if [ -n "$dependabot_pr" ]; then
+            head_ref="$(
+              gh pr view "$dependabot_pr" --json headRefName \
+                --jq '.headRefName'
+            )"
+            case "$head_ref" in
+              dependabot/*ci-tooling*) ;;
+              *) printf 'Unexpected Dependabot head: %s\n' "$head_ref" >&2; exit 1 ;;
+            esac
+            mode=dependabot
+            pr_number="$dependabot_pr"
+            git fetch --no-tags origin master "$head_ref"
+            git checkout -B "$head_ref" "origin/$head_ref"
+            git rebase origin/master
+          else
+            head_ref="$CI_TOOLING_BRANCH"
+            mode=automation
+            pr_number="$automation_pr"
+            git fetch --no-tags origin master
+            git checkout -B "$head_ref" origin/master
+          fi
+
+          {
+            printf 'head_ref=%s\n' "$head_ref"
+            printf 'mode=%s\n' "$mode"
+            printf 'pr_number=%s\n' "$pr_number"
+            printf 'automation_pr=%s\n' "$automation_pr"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update and validate pinned uv metadata
+        id: update
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(
+            cd "$RUNNER_TEMP"
+            python scripts/update_uv_bootstrap.py update latest
+          )"
+          (
+            cd "$RUNNER_TEMP"
+            python scripts/update_uv_bootstrap.py check
+          )
+          sh -n install.sh
+          node --check packaging/npm/scripts/postinstall.js
+
+          if git diff --quiet; then
+            changed=false
+          else
+            changed=true
+            git add \
+              .github/workflows \
+              install.sh \
+              packaging/npm/scripts/postinstall.js \
+              packaging/uv-bootstrap.json
+            git commit -m "build(deps): update uv bootstrap to $version [dependabot skip]"
+          fi
+
+          {
+            printf 'changed=%s\n' "$changed"
+            printf 'version=%s\n' "$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the ci-tooling branch
+        id: publish
+        shell: bash
+        env:
+          CHANGED: ${{ steps.update.outputs.changed }}
+          HEAD_REF: ${{ steps.lane.outputs.head_ref }}
+          MODE: ${{ steps.lane.outputs.mode }}
+        run: |
+          set -euo pipefail
+          published=false
+          if [ "$MODE" = automation ] && [ "$CHANGED" = false ]; then
+            printf 'The automation lane has no uv update to publish.\n'
+          elif ! git diff --quiet "origin/$HEAD_REF" HEAD 2>/dev/null; then
+            if git show-ref --verify --quiet "refs/remotes/origin/$HEAD_REF"; then
+              git push --force-with-lease origin "HEAD:$HEAD_REF"
+            else
+              git push --set-upstream origin "HEAD:$HEAD_REF"
+            fi
+            published=true
+          fi
+          printf 'published=%s\n' "$published" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update the ci-tooling PR
+        if: steps.update.outputs.changed == 'true' || steps.lane.outputs.mode == 'dependabot'
+        shell: bash
+        env:
+          HEAD_REF: ${{ steps.lane.outputs.head_ref }}
+          MODE: ${{ steps.lane.outputs.mode }}
+          PR_NUMBER: ${{ steps.lane.outputs.pr_number }}
+          UV_VERSION: ${{ steps.update.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PR_NUMBER" ]; then
+            gh pr create \
+              --base master \
+              --head "$HEAD_REF" \
+              --title "build(deps): update ci-tooling" \
+              --body "Daily repository automation updated the pinned, checksum-verified uv bootstrap metadata to $UV_VERSION. This PR uses the same ci-tooling lane as grouped GitHub Actions and pre-commit updates." \
+              --label "dependencies" \
+              --label "status: needs-triage" \
+              --label "area: ci" \
+              --label "area: packaging"
+            PR_NUMBER="$(
+              gh pr list --state open --base master --head "$HEAD_REF" \
+                --json number,isCrossRepository \
+                --jq '[.[] | select(.isCrossRepository == false)][0].number'
+            )"
+          else
+            gh pr edit "$PR_NUMBER" \
+              --add-label "dependencies" \
+              --add-label "area: ci" \
+              --add-label "area: packaging"
+          fi
+          printf 'Using ci-tooling PR #%s (%s).\n' "$PR_NUMBER" "$MODE"
+
+      - name: Close a superseded automation PR
+        if: steps.lane.outputs.mode == 'dependabot' && steps.lane.outputs.automation_pr != ''
+        shell: bash
+        env:
+          AUTOMATION_PR: ${{ steps.lane.outputs.automation_pr }}
+          DEPENDABOT_PR: ${{ steps.lane.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr close "$AUTOMATION_PR" \
+            --comment "Superseded by the active Dependabot ci-tooling PR #$DEPENDABOT_PR. The uv metadata update was moved there."
+
+      - name: Close an empty automation PR
+        if: steps.lane.outputs.mode == 'automation' && steps.update.outputs.changed == 'false' && steps.lane.outputs.pr_number != ''
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.lane.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh pr close "$PR_NUMBER" \
+            --comment "The pinned uv metadata is now current on master, so this automation PR no longer contains an update."
+
+      - name: Dispatch CI for the bot-authored push
+        if: steps.publish.outputs.published == 'true'
+        shell: bash
+        env:
+          HEAD_REF: ${{ steps.lane.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          gh workflow run ci.yml --ref "$HEAD_REF"

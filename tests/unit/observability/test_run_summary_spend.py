@@ -10,7 +10,6 @@ from crewplane.observability.run_summary.spend import (
 
 
 def invocation_record(
-    *,
     event_type: str = "invocation_finished",
     provider: str | None = "codex",
     report_count: int | None = 1,
