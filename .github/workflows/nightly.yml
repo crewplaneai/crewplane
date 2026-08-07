@@ -241,10 +241,12 @@ jobs:
             git checkout -B "$head_ref" origin/master
           fi
 
-          printf 'head_ref=%s\n' "$head_ref" >> "$GITHUB_OUTPUT"
-          printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
-          printf 'pr_number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
-          printf 'automation_pr=%s\n' "$automation_pr" >> "$GITHUB_OUTPUT"
+          {
+            printf 'head_ref=%s\n' "$head_ref"
+            printf 'mode=%s\n' "$mode"
+            printf 'pr_number=%s\n' "$pr_number"
+            printf 'automation_pr=%s\n' "$automation_pr"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Update and validate pinned uv metadata
         id: update
@@ -274,8 +276,10 @@ jobs:
             git commit -m "build(deps): update uv bootstrap to $version [dependabot skip]"
           fi
 
-          printf 'changed=%s\n' "$changed" >> "$GITHUB_OUTPUT"
-          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          {
+            printf 'changed=%s\n' "$changed"
+            printf 'version=%s\n' "$version"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish the ci-tooling branch
         id: publish
