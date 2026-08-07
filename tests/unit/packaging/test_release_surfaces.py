@@ -1041,6 +1041,20 @@ def test_nightly_uv_update_job_is_repository_scoped_and_uses_a_pull_request() ->
         assert fragment in commands
 
 
+def test_security_scanning_write_permissions_are_job_scoped() -> None:
+    for workflow_name, job_name in (
+        ("scorecard.yml", "scorecard"),
+        ("codeql.yml", "analyze"),
+    ):
+        workflow = yaml.safe_load(read_text(".github", "workflows", workflow_name))
+
+        assert workflow["permissions"] == {"contents": "read"}
+        assert workflow["jobs"][job_name]["permissions"] == {
+            "contents": "read",
+            "security-events": "write",
+        }
+
+
 def test_private_reporting_surfaces_use_github_security_advisories() -> None:
     issue_config = yaml.safe_load(read_text(".github", "ISSUE_TEMPLATE", "config.yml"))
     advisory_url = f"{REPOSITORY_URL}/security/advisories/new"
