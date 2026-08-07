@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-06
+
 ### Changed
 
 - Added automatic pinned `uv` metadata updates to the existing `ci-tooling` PR
