@@ -125,6 +125,40 @@ def _contains_path_separator(value: str) -> bool:
 class CliInvokerAdapter:
     """Create the default CLI-backed agent invoker."""
 
+    def collect_availability_errors(
+        self,
+        workflow: WorkflowPlan,
+        config: Config,
+        project_root: Path,
+        executable_lookup: Callable[[str], str | None] | None = None,
+    ) -> tuple[str, ...]:
+        """Collect read-only executable availability diagnostics."""
+
+        return tuple(
+            collect_cli_availability_errors(
+                workflow,
+                config,
+                which_fn=executable_lookup,
+                project_root=project_root,
+            )
+        )
+
+    def collect_reasoning_errors(
+        self,
+        workflow: WorkflowPlan,
+        config: Config,
+        working_directory: Path | None = None,
+    ) -> tuple[str, ...]:
+        """Collect built-in CLI reasoning eligibility diagnostics."""
+
+        return tuple(
+            collect_cli_reasoning_errors(
+                workflow,
+                config,
+                working_directory=working_directory,
+            )
+        )
+
     def workspace_capabilities(self) -> InvokerAdapterCapabilities:
         return InvokerAdapterCapabilities.workspace_supported(
             launch_mode="runtime_command_runner",

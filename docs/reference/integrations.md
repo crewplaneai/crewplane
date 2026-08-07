@@ -93,10 +93,9 @@ Options:
 - `log_cli_output`
 - `allowed_template_paths`
 
-This is the only built-in artifact backend. Non-dry execution relies on the
-artifact-store port for locks, skip/resume history, full-run output, and
-workspace lineage; a custom backend must implement those port capabilities to be
-usable for executed runs.
+Real runs currently require the built-in `filesystem` adapter. External
+artifact adapters can be used only with `crewplane validate` and
+`crewplane run --dry-run`.
 
 ## Extension Contract
 

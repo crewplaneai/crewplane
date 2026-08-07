@@ -67,6 +67,11 @@ IMPORT_RULES = (
             "crewplane.adapters.invokers.cli_invoker.usage_decoders",
         ),
     ),
+    ForbiddenImportRule(
+        name="run preflight dispatches invoker diagnostics through adapters",
+        roots=(SRC_ROOT / "crewplane" / "cli" / "run" / "preflight.py",),
+        forbidden_prefixes=("crewplane.adapters.invokers",),
+    ),
 )
 
 

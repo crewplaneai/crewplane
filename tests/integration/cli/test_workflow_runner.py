@@ -673,6 +673,59 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(failure_manifest["status"], "preflight_failed")
 
+    async def test_invoker_preflight_contract_failure_writes_failure_bundle(
+        self,
+    ) -> None:
+        with temporary_project_cwd() as root:
+            stream = io.StringIO()
+            console = Console(file=stream, force_terminal=False)
+            workflow = _workflow()
+            config = _mock_config(invoker_implementation="cli")
+
+            def failing_availability_errors(
+                adapter: object,
+                checked_workflow: WorkflowPlan,
+                checked_config: Config,
+                project_root: Path,
+                executable_lookup: Callable[[str], str | None] | None = None,
+            ) -> tuple[str, ...]:
+                del (
+                    adapter,
+                    checked_workflow,
+                    checked_config,
+                    project_root,
+                    executable_lookup,
+                )
+                raise RuntimeError("probe failed")
+
+            with (
+                patch(
+                    "crewplane.adapters.invokers.cli.CliInvokerAdapter."
+                    "collect_availability_errors",
+                    new=failing_availability_errors,
+                ),
+                self.assertRaises(typer.Exit),
+            ):
+                await _run_workflow(workflow, config, console)
+
+            run_dirs = _run_dirs(root)
+            self.assertEqual(len(run_dirs), 1)
+            self.assertEqual(_result_dirs(root), [])
+            diagnostics = json.loads(
+                (run_dirs[0] / "preflight" / "diagnostics.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(diagnostics[0]["code"], "RUNTIME-CONFIG")
+            self.assertIn("probe failed", diagnostics[0]["message"])
+            self.assertIn("Preflight RUNTIME-CONFIG", stream.getvalue())
+            failure_manifest = json.loads(
+                (run_dirs[0] / "preflight" / "manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(failure_manifest["status"], "preflight_failed")
+
     async def test_preflight_plan_is_materialized_before_invoker_construction(
         self,
     ) -> None:

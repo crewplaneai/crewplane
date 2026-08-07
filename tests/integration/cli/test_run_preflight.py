@@ -2,8 +2,12 @@ from pathlib import Path
 
 from rich.console import Console
 
+from crewplane.adapters.invokers.cli import CliInvokerAdapter
 from crewplane.bootstrap import build_runtime_config_snapshot
-from crewplane.cli.run.preflight import run_reasoning_control_errors
+from crewplane.cli.run.preflight import (
+    BUILTIN_CLI_INVOKER_IDENTITY,
+    run_reasoning_control_errors,
+)
 from crewplane.core.config import (
     AgentConfig,
     Config,
@@ -337,7 +341,12 @@ def test_reasoning_control_rejects_non_cli_invoker() -> None:
         ],
     )
 
-    errors = run_reasoning_control_errors(workflow, _config())
+    errors = run_reasoning_control_errors(
+        workflow,
+        _config(),
+        CliInvokerAdapter(),
+        "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+    )
 
     assert errors == (
         "workflow 'demo' -> node 'build' -> provider 'alpha': first-class "
@@ -385,7 +394,13 @@ def test_reasoning_control_checks_relative_claude_settings_file(
         ),
     )
 
-    errors = run_reasoning_control_errors(workflow, config, tmp_path)
+    errors = run_reasoning_control_errors(
+        workflow,
+        config,
+        CliInvokerAdapter(),
+        BUILTIN_CLI_INVOKER_IDENTITY,
+        tmp_path,
+    )
 
     assert errors == (
         "workflow 'demo' -> node 'build' -> provider 'alpha': --settings "

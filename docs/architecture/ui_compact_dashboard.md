@@ -254,18 +254,11 @@ Mouse support remains pane-level only (`tmux mouse on`):
 
 ## Log Path Refactor (Node-Local, Per Invocation)
 
-The compact dashboard **keeps logs per invocation** (for correctness and parallel safety), but relocates them under each node directory for better discoverability in compact mode.
-
-### Current
-
-```
-.crewplane/execution-stages/<workflow>-<run_id>/logs/<provider>/<stage>_<task_id>_round<r>_<run_id>.log
-```
-
-### Node-local layout
+The compact dashboard keeps logs per invocation for correctness and parallel
+safety. Provider logs use this complete node-local grammar:
 
 ```
-.crewplane/execution-stages/<run-key>/<node-id>/logs/<provider>/<task-id>-round<r>.log
+.crewplane/execution-stages/<run-key>/<node-id>/logs/<provider>/<task-id>[-audit<audit-round>][-round<round>].log
 ```
 
 ### Example
