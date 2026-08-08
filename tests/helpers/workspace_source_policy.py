@@ -93,5 +93,6 @@ def apply_patched_git_policy(monkeypatch, tmp_path: Path) -> None:
         "validate_clean_start",
         "validate_source_tree",
         "warn_storage_pressure",
+        "validate_git_head_unchanged",
     ):
         monkeypatch.setattr(policy, name, noop)

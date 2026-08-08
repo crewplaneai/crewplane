@@ -25,6 +25,7 @@ from .git_source import (
     git_error,
     repository_id,
     validate_git_capabilities,
+    validate_git_head_unchanged,
     validate_git_version,
 )
 from .repo_policy import (
@@ -150,6 +151,7 @@ def collect_git_source_checks(
         )
         validate_source_tree(git_context, builder)
         warn_storage_pressure(settings, git_context, estimate_full_repository, builder)
+        validate_git_head_unchanged(project_root, git_context, builder)
     except (
         OSError,
         subprocess.CalledProcessError,

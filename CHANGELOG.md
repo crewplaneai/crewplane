@@ -4,6 +4,11 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevented restricted output encodings from crashing CLI output and added a
+  native Windows support warning to project initialization.
+
 ## [0.1.9] - 2026-08-06
 
 ### Changed

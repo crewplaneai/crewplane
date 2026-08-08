@@ -46,7 +46,8 @@ The DAG summary uses an inline graph renderer (inspired by `git log --graph`) th
 - Auto-selects the first running node; keyboard controls move selection.
 - Completed nodes show elapsed time; failed nodes show error snippet.
 - Right pane shows a compact summary/tail for the selected node by default.
-- `Enter` swaps the right pane into the selected node's real invocation log so tmux scrolling and copy-mode work against the full file.
+- `Enter` opens the selected invocation's log. Crewplane shows a formatted view
+  when available and the raw log otherwise.
 - Once opened, inspect mode stays locked to that log until `Escape` restores the compact dashboard.
 
 ### DAG Rendering Examples
@@ -242,7 +243,9 @@ Keyboard-only node selection:
 
 - tmux owns stdin and installs dashboard bindings in `root`, `copy-mode`, and `copy-mode-vi`.
 - `↑/↓` returns focus to the left pane and moves selection.
-- `Enter` switches the right pane into the selected node's raw log inspector.
+- `Enter` opens the formatted log when available, or the raw log otherwise. In
+  inspect mode, `r` shows the raw log and `f` shows the formatted view when one
+  is available.
 - `Escape` returns from inspect mode to the compact dashboard.
 - `q` cancels the running workflow, closes the dashboard, and returns control to the terminal.
 
