@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-11
+
 ### Fixed
 
 - Prevented restricted output encodings from crashing CLI output and added a
