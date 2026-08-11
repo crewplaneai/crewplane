@@ -365,12 +365,30 @@ def detect_shared_reserved_drift(
 ) -> DriftCheckResult:
     if not check_shared_reserved_drift:
         return DriftCheckResult()
+    allowance = request.runtime_publication_allowance
+    if allowance is None and request.drift_session is not None:
+        allowance = request.drift_session.runtime_publication_allowance
+    if allowance is None:
+        expected_publications: dict[Path, tuple[int, str]] = {}
+        after_snapshot = shared_reserved_snapshot(request.node_dir, request.output)
+    else:
+        while True:
+            expected_publications, before_version = allowance.snapshot()
+            after_snapshot = shared_reserved_snapshot(request.node_dir, request.output)
+            expected_publications, after_version = allowance.snapshot()
+            if after_version == before_version:
+                break
+        after_snapshot = _include_current_runtime_publications(
+            after_snapshot,
+            expected_publications,
+        )
     return detect_artifact_drift(
         before_snapshot=monitoring_window.shared_reserved_snapshot or {},
-        after_snapshot=shared_reserved_snapshot(request.node_dir, request.output),
+        after_snapshot=after_snapshot,
         allowed_paths=request.allowed_paths,
         output=request.output,
         node_dir=request.node_dir,
+        expected_runtime_publications=expected_publications,
     )
 
 

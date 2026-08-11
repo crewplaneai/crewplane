@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+
+from crewplane.core.workflow.keywords import ProviderRole
 
 MAX_GENERATED_PATH_COMPONENT_CHARS = 180
 MAX_GENERATED_FILE_RESULT_DIR_CHARS = 120
@@ -51,6 +54,33 @@ def validate_run_key_name(run_key_name: str) -> str:
 def build_node_state_filename(node_id: str) -> str:
     suffix = f"--{_short_hash(node_id)}.json"
     return _bounded_with_suffix(safe_stage_name(node_id), suffix)
+
+
+def build_provider_process_state_filename(
+    node_id: str,
+    task_id: str,
+    provider: str,
+    role: ProviderRole,
+    audit_round_num: int | None,
+    round_num: int,
+    attempt: int,
+) -> str:
+    identity = json.dumps(
+        [
+            node_id,
+            task_id,
+            provider,
+            str(role),
+            audit_round_num,
+            round_num,
+            attempt,
+        ],
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    suffix = f"--{_short_hash(identity)}.json"
+    prefix = safe_stage_name(f"{node_id}-{task_id}")
+    return _bounded_with_suffix(prefix, suffix)
 
 
 def build_workspace_export_filename(logical_worktree_name: str) -> str:

@@ -11,6 +11,7 @@ from crewplane.architecture.contracts import (
     CliInvokerOptions,
     InvokerAdapterCapabilities,
     JsonObject,
+    ProviderKind,
 )
 from crewplane.core.config import Config
 from crewplane.core.workflow.models import WorkflowPlan
@@ -77,6 +78,19 @@ def collect_cli_reasoning_errors(
                     f"'{provider.provider}': {exc}"
                 )
     return errors
+
+
+def collect_cli_model_arg_warnings(config: Config) -> list[str]:
+    return [
+        (
+            f"Agent '{agent_key}': remove model_arg. Crewplane chooses the model "
+            f"flag automatically for built-in provider '{agent.provider_kind.value}'. "
+            "Set model_arg only when provider_kind is 'generic'."
+        )
+        for agent_key, agent in sorted(config.agents.items())
+        if agent.provider_kind != ProviderKind.GENERIC
+        and "model_arg" in agent.model_fields_set
+    ]
 
 
 def _format_missing_cli_errors(
@@ -158,6 +172,11 @@ class CliInvokerAdapter:
                 working_directory=working_directory,
             )
         )
+
+    def collect_model_arg_warnings(self, config: Config) -> tuple[str, ...]:
+        """Collect ignored model-argument diagnostics for the built-in CLI."""
+
+        return tuple(collect_cli_model_arg_warnings(config))
 
     def workspace_capabilities(self) -> InvokerAdapterCapabilities:
         return InvokerAdapterCapabilities.workspace_supported(

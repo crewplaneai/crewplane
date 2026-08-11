@@ -1,19 +1,43 @@
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime
 from pathlib import Path
+from threading import Lock
 
-from crewplane.architecture.contracts import JsonObject
+from pydantic import ValidationError
+
+from crewplane.architecture.contracts import InvocationProcessEvent, JsonObject
 from crewplane.architecture.ports.artifacts import (
+    ProviderProcessInvocation,
+    ProviderProcessPublication,
     StageFinalizeResult,
     StageTaskSpec,
 )
-from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
+from crewplane.core.execution_state import (
+    RUN_STATE_SCHEMA_VERSION,
+    NodeState,
+    RunManifest,
+    RunStatus,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.serialization import pretty_sorted_json
+from crewplane.core.provider_process_state import ProviderProcessState
 
-from .atomic import atomic_write_bytes, atomic_write_json, atomic_write_text
+from .atomic import (
+    atomic_write_bytes,
+    atomic_write_bytes_if_absent,
+    atomic_write_json,
+    atomic_write_text,
+    json_bytes,
+)
 from .directory_manager import DirectoryManager, safe_artifact_name
-from .naming import build_node_state_filename, build_workspace_export_filename
+from .locks.process_identity import ProcessInspector
+from .naming import (
+    build_node_state_filename,
+    build_provider_process_state_filename,
+    build_workspace_export_filename,
+)
 from .results.writer import ResultWriter
 
 
@@ -43,6 +67,8 @@ class OutputManager:
             empty_output_warning_enabled=True,
             workspace_root=resolved_template_base_dir,
         )
+        self._provider_process_states: dict[Path, ProviderProcessState] = {}
+        self._provider_process_states_lock = Lock()
 
     @staticmethod
     def _safe_name(name: str) -> str:
@@ -218,6 +244,68 @@ class OutputManager:
             node_state.model_dump(mode="json", exclude_none=True),
         )
 
+    def write_provider_process_event(
+        self,
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessPublication:
+        state_path = self._provider_process_state_path(invocation, event.attempt)
+        if event.status == "started":
+            identity = ProcessInspector().identity_for(event.pid)
+            state = ProviderProcessState(
+                run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
+                run_id=self.run_id,
+                run_key_name=self.run_key_name,
+                node_id=invocation.node_id,
+                task_id=invocation.task_id,
+                provider=invocation.provider,
+                role=invocation.role,
+                audit_round_num=invocation.audit_round_num,
+                round_num=invocation.round_num,
+                attempt=event.attempt,
+                pid=event.pid,
+                process_group_id=event.process_group_id,
+                hostname=identity.hostname,
+                process_start_identity=identity.start_identity,
+                status="started",
+                started_at=datetime.now().isoformat(),
+            )
+            publication = self._publish_provider_process_state(
+                state_path,
+                state,
+                require_absent=True,
+            )
+            with self._provider_process_states_lock:
+                self._provider_process_states[publication.path] = state
+            return publication
+
+        current = self._read_provider_process_state(state_path)
+        self._validate_provider_process_exit(current, invocation, event)
+        with self._provider_process_states_lock:
+            started = self._provider_process_states.get(state_path)
+        if started is None or current != started:
+            raise RuntimeError(
+                "Provider process state changed unexpectedly before exit."
+            )
+        if event.returncode is None:
+            raise RuntimeError("Provider process exit event is missing a return code.")
+        updated = started.model_copy(
+            update={
+                "status": "exited",
+                "exited_at": datetime.now().isoformat(),
+                "returncode": event.returncode,
+            }
+        )
+        validated = ProviderProcessState.model_validate(updated.model_dump(mode="json"))
+        publication = self._publish_provider_process_state(
+            state_path,
+            validated,
+            require_absent=False,
+        )
+        with self._provider_process_states_lock:
+            self._provider_process_states[publication.path] = validated
+        return publication
+
     def write_resume_source(self, node_id: str, payload: JsonObject) -> Path:
         stage_dir = self.create_stage_dir(node_id)
         return atomic_write_json(stage_dir / "resume-source.json", payload)
@@ -231,3 +319,78 @@ class OutputManager:
 
     def _run_manifest_path(self) -> Path:
         return self._directories.ensure_manifests_dir() / "run.json"
+
+    def _provider_process_state_path(
+        self,
+        invocation: ProviderProcessInvocation,
+        attempt: int,
+    ) -> Path:
+        filename = build_provider_process_state_filename(
+            invocation.node_id,
+            invocation.task_id,
+            invocation.provider,
+            invocation.role,
+            invocation.audit_round_num,
+            invocation.round_num,
+            attempt,
+        )
+        return (
+            self._directories.ensure_manifests_dir() / "provider-processes" / filename
+        )
+
+    @staticmethod
+    def _publish_provider_process_state(
+        path: Path,
+        state: ProviderProcessState,
+        *,
+        require_absent: bool,
+    ) -> ProviderProcessPublication:
+        payload = json_bytes(state.model_dump(mode="json", exclude_none=True))
+        writer = atomic_write_bytes_if_absent if require_absent else atomic_write_bytes
+        published_path = writer(path, payload)
+        return ProviderProcessPublication(
+            path=published_path,
+            signature=(len(payload), hashlib.sha256(payload).hexdigest()),
+        )
+
+    @staticmethod
+    def _read_provider_process_state(path: Path) -> ProviderProcessState:
+        try:
+            return ProviderProcessState.model_validate_json(
+                path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValidationError) as exc:
+            raise RuntimeError(
+                "Provider process state is missing, malformed, or unreadable."
+            ) from exc
+
+    @staticmethod
+    def _validate_provider_process_exit(
+        state: ProviderProcessState,
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> None:
+        expected = (
+            invocation.node_id,
+            invocation.task_id,
+            invocation.provider,
+            invocation.role,
+            invocation.audit_round_num,
+            invocation.round_num,
+            event.attempt,
+            event.pid,
+            event.process_group_id,
+        )
+        actual = (
+            state.node_id,
+            state.task_id,
+            state.provider,
+            state.role,
+            state.audit_round_num,
+            state.round_num,
+            state.attempt,
+            state.pid,
+            state.process_group_id,
+        )
+        if actual != expected:
+            raise RuntimeError("Provider process exit event does not match its state.")

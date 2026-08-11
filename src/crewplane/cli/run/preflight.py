@@ -144,6 +144,8 @@ def raise_for_preflight_preview_errors(
     for title in preview_error_titles(preview):
         console.print(f"[red]{title}:[/]")
     for diagnostic in preview.diagnostics:
+        if diagnostic.severity != "error":
+            continue
         console.print(f"  - {diagnostic.code}: {diagnostic.message}")
     if preview_has_provider_cli_failure(preview):
         console.print(
@@ -155,6 +157,8 @@ def raise_for_preflight_preview_errors(
 def preview_error_titles(preview: PreflightCompilationPreview) -> tuple[str, ...]:
     titles: list[str] = []
     for diagnostic in preview.diagnostics:
+        if diagnostic.severity != "error":
+            continue
         title = diagnostic_error_title(diagnostic)
         if title is not None and title not in titles:
             titles.append(title)
@@ -241,12 +245,14 @@ def compile_preview(
     executable_lookup: Callable[[str], str | None] | None = None,
     workspace_real_execution: bool = False,
 ) -> PreflightCompilationPreview:
-    invoker_validation_errors = run_invoker_preflight_errors(
-        workflow=context.source.workflow,
-        config=context.config,
-        project_root=context.project_root,
-        check_availability=check_invoker_availability,
-        executable_lookup=executable_lookup,
+    invoker_validation_errors, invoker_validation_warnings = (
+        run_invoker_preflight_diagnostics(
+            workflow=context.source.workflow,
+            config=context.config,
+            project_root=context.project_root,
+            check_availability=check_invoker_availability,
+            executable_lookup=executable_lookup,
+        )
     )
     workspace_check = collect_workspace_source_policy(
         config=context.config,
@@ -268,29 +274,30 @@ def compile_preview(
             additional_validation_errors=(
                 invoker_validation_errors + additional_validation_errors
             ),
-            additional_diagnostics=workspace_preflight_diagnostics(workspace_check),
+            additional_diagnostics=(
+                workspace_preflight_diagnostics(workspace_check)
+                + invoker_preflight_warning_diagnostics(invoker_validation_warnings)
+            ),
             workspace_source_snapshot=workspace_check.source_snapshot,
         ),
     )
 
 
-def run_invoker_preflight_errors(
+def run_invoker_preflight_diagnostics(
     workflow: WorkflowPlan,
     config: Config,
     project_root: Path,
     check_availability: bool,
     executable_lookup: Callable[[str], str | None] | None,
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     reasoning_locations = _reasoning_requested_locations(workflow)
-    if not check_availability and not reasoning_locations:
-        return ()
     settings = config.settings if config.settings is not None else Settings()
     configured_invoker_identity = resolve_implementation_path(
         "invoker",
         settings.integrations.invoker.implementation,
     )
     if not _is_builtin_cli_invoker_identity(configured_invoker_identity):
-        return _reasoning_ineligibility_errors(reasoning_locations)
+        return _reasoning_ineligibility_errors(reasoning_locations), ()
     adapter = instantiate_adapter(
         "invoker",
         settings.integrations.invoker.implementation,
@@ -302,14 +309,20 @@ def run_invoker_preflight_errors(
         configured_invoker_identity,
         project_root,
     )
-    if not check_availability:
-        return reasoning_errors
-    return reasoning_errors + run_availability_errors(
-        workflow,
-        config,
-        adapter,
-        project_root,
-        executable_lookup,
+    availability_errors = (
+        run_availability_errors(
+            workflow,
+            config,
+            adapter,
+            project_root,
+            executable_lookup,
+        )
+        if check_availability
+        else ()
+    )
+    return (
+        reasoning_errors + availability_errors,
+        run_model_arg_warnings(config, adapter),
     )
 
 
@@ -334,7 +347,7 @@ def run_availability_errors(
         raise AdapterContractError(
             f"Invoker adapter collect_availability_errors() failed: {exc}"
         ) from exc
-    return validated_adapter_errors(errors, "collect_availability_errors")
+    return validated_adapter_messages(errors, "collect_availability_errors")
 
 
 def run_reasoning_control_errors(
@@ -364,7 +377,39 @@ def run_reasoning_control_errors(
         raise AdapterContractError(
             f"Built-in CLI invoker collect_reasoning_errors() failed: {exc}"
         ) from exc
-    return validated_adapter_errors(errors, "collect_reasoning_errors")
+    return validated_adapter_messages(errors, "collect_reasoning_errors")
+
+
+def run_model_arg_warnings(
+    config: Config,
+    adapter: InvokerAdapterPort,
+) -> tuple[str, ...]:
+    collector = getattr(adapter, "collect_model_arg_warnings", None)
+    if not callable(collector):
+        raise AdapterContractError(
+            "Built-in CLI invoker adapter must define collect_model_arg_warnings()."
+        )
+    try:
+        warnings = collector(config)
+    except Exception as exc:
+        raise AdapterContractError(
+            f"Built-in CLI invoker collect_model_arg_warnings() failed: {exc}"
+        ) from exc
+    return validated_adapter_messages(warnings, "collect_model_arg_warnings")
+
+
+def invoker_preflight_warning_diagnostics(
+    warnings: tuple[str, ...],
+) -> tuple[PreflightDiagnostic, ...]:
+    return tuple(
+        PreflightDiagnostic(
+            code=PreflightDiagnosticCode.PROVIDER_CONFIG,
+            phase=PreflightDiagnosticPhase.PROVIDER,
+            message=message,
+            severity="warning",
+        )
+        for message in warnings
+    )
 
 
 def _reasoning_requested_locations(workflow: WorkflowPlan) -> tuple[str, ...]:
@@ -392,7 +437,7 @@ def _is_builtin_cli_invoker_identity(resolved_identity: str) -> bool:
     )
 
 
-def validated_adapter_errors(value: object, method_name: str) -> tuple[str, ...]:
+def validated_adapter_messages(value: object, method_name: str) -> tuple[str, ...]:
     if not isinstance(value, tuple) or not all(isinstance(item, str) for item in value):
         raise AdapterContractError(
             f"Invoker adapter {method_name}() must return tuple[str, ...]."

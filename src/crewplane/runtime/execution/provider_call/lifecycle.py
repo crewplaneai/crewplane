@@ -413,6 +413,8 @@ def _rebuild_invocation_context(
         request.telemetry,
         _require_invocation_metadata(state),
         display,
+        request.output,
+        request.on_provider_process_state_published,
     )
     return invocation_context
 

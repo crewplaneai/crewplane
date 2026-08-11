@@ -192,7 +192,9 @@ providers:
 ```
 
 When a workflow node supplies `model`, Crewplane passes that value to the
-provider CLI. Built-in provider kinds choose their own model flag. For
+provider CLI. With the built-in `cli` invoker, built-in provider kinds do not
+need `model_arg`; if you set it, Crewplane ignores it and warns you to remove
+it. For
 `provider_kind: generic`, use `model_arg` to choose the flag; it defaults to
 `--model`. Set `model_arg: null` if your generic CLI should not receive a model
 flag.

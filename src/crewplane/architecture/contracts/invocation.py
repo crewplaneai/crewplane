@@ -52,6 +52,7 @@ type FailureClassificationProfile = ProviderKind
 ProviderUsageStatus = Literal["full", "partial", "none", "malformed"]
 InvocationCostConfidence = Literal["full", "partial", "none"]
 AggregateCostConfidence = Literal["full", "partial", "none", "mixed"]
+InvocationProcessStatus = Literal["started", "exited"]
 LogPresentationFormat = Literal["plain", "json_lines", "json_object"]
 InvocationSourceKind = Literal["project", "node", "candidate"]
 InvocationWorktreeContractMode = Literal["blob_exact"]
@@ -278,6 +279,48 @@ WorkspaceEnvironmentAppliedSink = Callable[[], None]
 
 
 @dataclass(frozen=True)
+class InvocationProcessEvent:
+    attempt: int
+    pid: int
+    process_group_id: int | None
+    status: InvocationProcessStatus
+    returncode: int | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.attempt, int)
+            or isinstance(self.attempt, bool)
+            or self.attempt < 1
+        ):
+            raise ValueError("invocation process attempt must be a positive integer")
+        if not isinstance(self.pid, int) or isinstance(self.pid, bool) or self.pid < 1:
+            raise ValueError("invocation process pid must be a positive integer")
+        if self.process_group_id is not None and (
+            not isinstance(self.process_group_id, int)
+            or isinstance(self.process_group_id, bool)
+            or self.process_group_id < 1
+        ):
+            raise ValueError(
+                "invocation process group id must be a positive integer or None"
+            )
+        if not isinstance(self.status, str) or self.status not in {"started", "exited"}:
+            raise ValueError(f"unsupported invocation process status: {self.status!r}")
+        if self.returncode is not None and (
+            not isinstance(self.returncode, int) or isinstance(self.returncode, bool)
+        ):
+            raise ValueError(
+                "invocation process return code must be an integer or None"
+            )
+        if self.status == "started" and self.returncode is not None:
+            raise ValueError("a started invocation process cannot have a return code")
+        if self.status == "exited" and self.returncode is None:
+            raise ValueError("an exited invocation process requires a return code")
+
+
+InvocationProcessEventSink = Callable[[InvocationProcessEvent], None]
+
+
+@dataclass(frozen=True)
 class InvocationSourceContext:
     source_kind: InvocationSourceKind
     source_node_id: str | None
@@ -329,9 +372,17 @@ class InvocationContext:
     )
     workspace: InvocationWorkspaceContext | None = None
     requested_reasoning: str | None = None
+    attempt_num: int = 1
+    process_event_sink: InvocationProcessEventSink | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "role", ProviderRole(self.role))
+        if (
+            not isinstance(self.attempt_num, int)
+            or isinstance(self.attempt_num, bool)
+            or self.attempt_num < 1
+        ):
+            raise ValueError("invocation attempt number must be a positive integer")
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Never
 
+from crewplane.architecture.ports import ProviderProcessPublication
+
 from ..common import (
     ExecutionTelemetry,
     ProviderCallRequest,
@@ -19,6 +21,7 @@ from .types import (
     DriftGuardSession,
     EventLogAppendCapture,
     GeneratedFileDriftAllowance,
+    RuntimePublicationAllowance,
 )
 
 
@@ -162,6 +165,19 @@ async def invoke_provider_under_drift_guard(
         else GeneratedFileDriftAllowance()
     )
     request.generated_file_allowance = generated_file_allowance
+    runtime_publication_allowance = (
+        request.drift_session.runtime_publication_allowance
+        if request.drift_session is not None
+        else RuntimePublicationAllowance()
+    )
+    request.runtime_publication_allowance = runtime_publication_allowance
+
+    def record_runtime_publication(publication: ProviderProcessPublication) -> None:
+        runtime_publication_allowance.publish(
+            publication.path,
+            publication.signature,
+        )
+
     await run_provider_call(
         ProviderCallRequest(
             runtime_context=request.runtime_context,
@@ -179,6 +195,7 @@ async def invoke_provider_under_drift_guard(
             findings_enabled=request.findings_enabled,
             provider_output_policy=request.provider_output_policy,
             on_log_file_resolved=request.allowed_paths.add,
+            on_provider_process_state_published=record_runtime_publication,
             on_generated_file_snapshot_started=generated_file_allowance.start_snapshot,
             on_generated_file_snapshot_finished=generated_file_allowance.finish_snapshot,
             rendered_workspace_files=request.rendered_workspace_files,

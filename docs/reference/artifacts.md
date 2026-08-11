@@ -48,7 +48,7 @@ Each non-dry `crewplane run` allocates:
 ```
 
 `<run-key>` is the filesystem directory name for one run. It has the shape
-`<workflow-slug>--<workflow-hash>-<run-id>`, for example
+`<workflow-id>-<run-id>`, for example
 `single-agent-review--5e34bc54c79a-20260629-202539`.
 
 Stage run contents can include:

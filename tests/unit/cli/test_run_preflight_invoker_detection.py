@@ -26,6 +26,10 @@ from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightWorkflowSource,
 )
+from crewplane.core.preflight.diagnostics import (
+    PreflightDiagnosticCode,
+    PreflightDiagnosticPhase,
+)
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
@@ -123,15 +127,23 @@ def _workflow(reasoning: str | None = None) -> WorkflowPlan:
     )
 
 
-def _config_for(implementation: str) -> Config:
+def _config_for(
+    implementation: str,
+    explicit_model_arg: bool = False,
+) -> Config:
+    agent = AgentConfig(
+        cli_cmd=["missing-provider"],
+        provider_kind="codex",
+    )
+    if explicit_model_arg:
+        agent = AgentConfig(
+            cli_cmd=["missing-provider"],
+            provider_kind="codex",
+            model_arg="--custom-model",
+        )
     return Config(
         version=SCHEMA_VERSION,
-        agents={
-            "alpha": AgentConfig(
-                cli_cmd=["missing-provider"],
-                provider_kind="codex",
-            )
-        },
+        agents={"alpha": agent},
         settings=Settings(
             integrations=IntegrationsConfig(
                 invoker=IntegrationSpec(implementation=implementation),
@@ -148,10 +160,11 @@ def _compile_with_availability(
     executable_lookup: Callable[[str], str | None],
     reasoning: str | None = None,
     check_cli_availability: bool = True,
+    explicit_model_arg: bool = False,
 ) -> PreflightCompilationPreview:
     workflow = _workflow(reasoning)
     return compile_workflow_preview(
-        config=_config_for(implementation),
+        config=_config_for(implementation, explicit_model_arg),
         source=PreflightWorkflowSource.from_workflow(workflow),
         console=Console(file=None),
         no_live=True,
@@ -210,6 +223,44 @@ def test_mock_invoker_performs_no_availability_probe(tmp_path: Path) -> None:
         tmp_path,
         "mock",
         unexpected_probe,
+    )
+
+    assert not preview.diagnostics
+
+
+def test_builtin_cli_reports_ignored_model_arg_warning(tmp_path: Path) -> None:
+    preview = _compile_with_availability(
+        tmp_path,
+        "cli",
+        lambda command: f"/bin/{command}",
+        explicit_model_arg=True,
+    )
+
+    assert len(preview.diagnostics) == 1
+    diagnostic = preview.diagnostics[0]
+    assert diagnostic.code is PreflightDiagnosticCode.PROVIDER_CONFIG
+    assert diagnostic.phase is PreflightDiagnosticPhase.PROVIDER
+    assert diagnostic.severity == "warning"
+    assert "Agent 'alpha': remove model_arg" in diagnostic.message
+
+
+@pytest.mark.parametrize(
+    "implementation",
+    [
+        "mock",
+        f"{TEST_MODULE}:NoAvailabilityInvokerAdapter",
+        f"{TEST_MODULE}:CliWrapperAdapter",
+    ],
+)
+def test_non_builtin_invokers_do_not_report_cli_model_arg_warning(
+    tmp_path: Path,
+    implementation: str,
+) -> None:
+    preview = _compile_with_availability(
+        tmp_path,
+        implementation,
+        lambda command: f"/bin/{command}",
+        explicit_model_arg=True,
     )
 
     assert not preview.diagnostics

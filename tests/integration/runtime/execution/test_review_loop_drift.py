@@ -1,10 +1,22 @@
 import asyncio
+import json
+import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from threading import Event
 
 import pytest
 
+from crewplane.adapters.invokers.cli_invoker import (
+    build_cli_invocation_plan,
+    build_cli_log_presentation,
+)
+from crewplane.architecture.contracts import InvocationProcessEvent
+from crewplane.architecture.ports import (
+    ProviderProcessInvocation,
+    ProviderProcessPublication,
+)
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
     generated_file_source_root,
@@ -30,6 +42,7 @@ from crewplane.observability.events import (
     runtime_log_event,
 )
 from crewplane.runtime.agent.failures import InvocationFailureError
+from crewplane.runtime.agent.invoker import PlannedAgentInvoker
 from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
     ProviderCallDisplay,
@@ -52,17 +65,30 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 )
 
 
-def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path]:
+def _request(
+    tmp_path: Path,
+    use_cli_invoker: bool = False,
+) -> tuple[DriftGuardCallRequest, OutputManager, Path]:
     output = OutputManager("workflow", base_dir=tmp_path)
-    agent_payload = AgentConfig(cli_cmd=["mock"], default_model="m1").model_dump(
-        mode="json",
-        exclude_none=True,
+    agent_config = AgentConfig(
+        cli_cmd=(
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stdin.read(); print('provider output')",
+            ]
+            if use_cli_invoker
+            else ["mock"]
+        ),
+        default_model=None if use_cli_invoker else "m1",
     )
+    agent_payload = agent_config.model_dump(mode="json", exclude_none=True)
+    invoker_alias = "cli" if use_cli_invoker else "mock"
     invoker_payload = {
         "capabilities": {},
-        "implementation": "mock",
+        "implementation": invoker_alias,
         "options": {},
-        "resolved_identity": "mock",
+        "resolved_identity": invoker_alias,
     }
     agent_signature = _agent_signature("exec", agent_payload, None)
     node = PreflightExecutionNode(
@@ -75,7 +101,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
                 role=ProviderRole.EXECUTOR,
                 task_id="exec_executor_0",
                 agent_config_key="exec",
-                invoker_alias="mock",
+                invoker_alias=invoker_alias,
                 agent_config_signature=agent_signature,
                 invoker_config_signature=signature_for_payload(invoker_payload),
             )
@@ -114,7 +140,14 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
         output=output,
         node=node,
         node_dir=node_dir,
-        invoker=object(),
+        invoker=(
+            PlannedAgentInvoker(
+                plan_builder=build_cli_invocation_plan,
+                log_presentation_builder=build_cli_log_presentation,
+            )
+            if use_cli_invoker
+            else object()
+        ),
         telemetry=None,
         audit_round_num=None,
         round_num=1,
@@ -123,7 +156,7 @@ def _request(tmp_path: Path) -> tuple[DriftGuardCallRequest, OutputManager, Path
             role=ProviderRole.EXECUTOR,
             task_id="exec_executor_0",
             agent_config_key="exec",
-            invoker_alias="mock",
+            invoker_alias=invoker_alias,
             agent_config_signature=agent_signature,
             invoker_config_signature=signature_for_payload(invoker_payload),
         ),
@@ -173,6 +206,90 @@ def test_current_invocation_and_parallel_reviewer_outputs_are_allowed(
 
     assert drift.warning_paths == ()
     assert drift.fatal_paths == ()
+
+
+def test_cli_provider_process_state_is_an_expected_runtime_publication(
+    tmp_path: Path,
+) -> None:
+    request, output, _node_dir = _request(tmp_path, use_cli_invoker=True)
+    request.allowed_paths.add(request.output_file)
+
+    warning_count = asyncio.run(
+        review_loop_drift.run_provider_call_with_drift_guard(request)
+    )
+
+    process_states = tuple(
+        (output.stages_dir / "manifests" / "provider-processes").glob("*.json")
+    )
+    assert warning_count == 0
+    assert len(process_states) == 1
+    assert process_states[0] not in request.allowed_paths
+    assert request.runtime_publication_allowance is not None
+    published, _ = request.runtime_publication_allowance.snapshot()
+    assert process_states[0] in published
+
+
+def test_parallel_cli_provider_process_states_are_expected_publications(
+    tmp_path: Path,
+) -> None:
+    first, output, node_dir = _request(tmp_path, use_cli_invoker=True)
+    session = review_loop_drift.create_drift_guard_session(None)
+    first_output = node_dir / "exec_executor_0_round1.md"
+    second_output = node_dir / "exec_executor_1_round1.md"
+    allowed_paths = {first_output, second_output}
+    first.drift_session = session
+    first.allowed_paths = allowed_paths
+    second = replace(
+        first,
+        provider=first.provider.model_copy(update={"task_id": "exec_executor_1"}),
+        task_id="exec_executor_1",
+        output_file=second_output,
+        runtime_publication_allowance=None,
+    )
+
+    async def run_parallel_calls() -> tuple[int, int]:
+        results = await asyncio.gather(
+            review_loop_drift.run_provider_call_with_drift_guard(first),
+            review_loop_drift.run_provider_call_with_drift_guard(second),
+        )
+        return results[0], results[1]
+
+    warning_counts = asyncio.run(run_parallel_calls())
+
+    process_states = tuple(
+        (output.stages_dir / "manifests" / "provider-processes").glob("*.json")
+    )
+    assert warning_counts == (0, 0)
+    assert len(process_states) == 2
+
+
+def test_cli_provider_process_state_tampering_remains_fatal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, output, _node_dir = _request(tmp_path, use_cli_invoker=True)
+    request.allowed_paths.add(request.output_file)
+    write_process_event = output.write_provider_process_event
+
+    def write_process_event_then_tamper(
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessPublication:
+        publication = write_process_event(invocation, event)
+        if event.status == "exited":
+            payload = json.loads(publication.path.read_text(encoding="utf-8"))
+            payload["returncode"] = 99
+            publication.path.write_text(json.dumps(payload), encoding="utf-8")
+        return publication
+
+    monkeypatch.setattr(
+        output,
+        "write_provider_process_event",
+        write_process_event_then_tamper,
+    )
+
+    with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
 
 
 def test_shared_reserved_drift_is_ignored_when_not_exclusive(tmp_path: Path) -> None:

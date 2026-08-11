@@ -8,6 +8,11 @@ All notable user-facing changes are recorded here.
 
 - Prevented restricted output encodings from crashing CLI output and added a
   native Windows support warning to project initialization.
+- Warned when the built-in CLI invoker receives an explicit `model_arg` for a
+  built-in provider, where the setting has no effect.
+- Prevented stale-lock recovery from starting a same-context replacement while
+  a recorded provider CLI process or process group from the interrupted run is
+  still active.
 
 ## [0.1.9] - 2026-08-06
 

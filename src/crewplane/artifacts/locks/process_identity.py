@@ -14,35 +14,56 @@ class ProcessIdentity:
 
 class ProcessInspector:
     def current(self) -> ProcessIdentity:
+        return self.identity_for(os.getpid())
+
+    def identity_for(self, pid: int) -> ProcessIdentity:
         return ProcessIdentity(
-            pid=os.getpid(),
+            pid=pid,
             hostname=socket.gethostname(),
-            start_identity=process_start_identity(os.getpid()),
+            start_identity=process_start_identity(pid),
         )
 
     def is_live(self, identity: ProcessIdentity) -> bool:
         if identity.hostname != socket.gethostname():
-            raise RuntimeError("Cannot verify lock owner on a different host.")
+            raise RuntimeError("Cannot verify a process on a different host.")
         if not _pid_exists(identity.pid):
             return False
         current_start = process_start_identity(identity.pid)
         if current_start is None or identity.start_identity is None:
-            raise RuntimeError(
-                "Cannot safely verify lock owner process start identity."
-            )
+            raise RuntimeError("Cannot safely verify process start identity.")
         return current_start == identity.start_identity
+
+    def is_process_group_live(self, process_group_id: int) -> bool:
+        if process_group_id <= 0:
+            raise RuntimeError("Cannot verify an invalid process group.")
+        if not hasattr(os, "killpg"):
+            raise RuntimeError("Cannot verify process groups on this platform.")
+        try:
+            os.killpg(process_group_id, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OverflowError as exc:
+            raise RuntimeError("Cannot verify an out-of-range process group.") from exc
+        return True
 
 
 def process_start_identity(pid: int) -> str | None:
     stat_path = f"/proc/{pid}/stat"
     try:
         with open(stat_path, encoding="utf-8") as handle:
-            fields = handle.read().split()
+            stat_content = handle.read()
     except OSError:
         return None
-    if len(fields) < 22:
+    command_end = stat_content.rfind(")")
+    if command_end < 0:
         return None
-    return fields[21]
+    fields_after_command = stat_content[command_end + 1 :].split()
+    start_time_index = 22 - 3
+    if len(fields_after_command) <= start_time_index:
+        return None
+    return fields_after_command[start_time_index]
 
 
 def _pid_exists(pid: int) -> bool:
@@ -54,4 +75,6 @@ def _pid_exists(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    except OverflowError as exc:
+        raise RuntimeError("Cannot verify an out-of-range process ID.") from exc
     return True

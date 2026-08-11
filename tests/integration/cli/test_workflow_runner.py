@@ -649,6 +649,37 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(failure_manifest["status"], "preflight_failed")
 
+    async def test_preflight_warning_is_not_repeated_as_failure(self) -> None:
+        with temporary_project_cwd():
+            stream = io.StringIO()
+            console = Console(file=stream, force_terminal=False)
+            workflow = _workflow()
+            config = _mock_config(invoker_implementation="cli")
+            config.agents["alpha"] = AgentConfig(
+                cli_cmd=["missing-provider"],
+                provider_kind="codex",
+                default_model="model-a",
+                model_arg="--custom-model",
+            )
+
+            def missing_cli(command: str) -> str | None:
+                self.assertEqual(command, "missing-provider")
+                return None
+
+            with self.assertRaises(typer.Exit):
+                await _run_workflow(
+                    workflow,
+                    config,
+                    console,
+                    which_fn=missing_cli,
+                )
+
+            output = stream.getvalue()
+            warning = "Agent 'alpha': remove model_arg"
+            self.assertEqual(output.count(warning), 1)
+            self.assertNotIn("Preflight PROVIDER-CONFIG", output)
+            self.assertIn("Preflight PROVIDER-CLI", output)
+
     async def test_runtime_config_snapshot_failure_writes_failure_bundle(self) -> None:
         with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)

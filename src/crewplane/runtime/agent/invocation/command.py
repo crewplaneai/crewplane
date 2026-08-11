@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from collections.abc import Awaitable
+from dataclasses import replace
 from pathlib import Path
 from typing import BinaryIO
 
@@ -12,6 +14,7 @@ from crewplane.architecture.contracts import (
     CommandRunner,
     InvocationContext,
     InvocationPlan,
+    InvocationProcessEvent,
 )
 
 from ..process.runner import (
@@ -72,12 +75,17 @@ async def run_command_once(
             env=_child_process_env(child_environment),
             **process_kwargs,
         )
+        # start_new_session=True makes the child both session and process-group leader.
+        process_group_id = process.pid if os.name == "posix" else None
         record_workspace_child_environment_applied(
             invocation_context,
             child_environment,
         )
-        # start_new_session=True makes the child both session and process-group leader.
-        process_group_id = process.pid if os.name == "posix" else None
+        _emit_process_started(
+            invocation_context,
+            process.pid,
+            process_group_id,
+        )
         log_handle = open_log_handle(
             log_file,
             append=append_log,
@@ -110,7 +118,16 @@ async def run_command_once(
             output_capture.cleanup()
         raise RuntimeError(f"Execution error: {exc}") from exc
     finally:
+        active_exception = sys.exception()
         close_log_handle(log_handle)
+        try:
+            _emit_process_exit(invocation_context, process, process_group_id)
+        except Exception as exc:
+            if active_exception is None:
+                if output_capture is not None:
+                    output_capture.cleanup()
+                raise
+            active_exception.add_note(f"Provider process exit reporting failed: {exc}")
 
     if process.returncode is None:
         raise RuntimeError("Provider process finished without a return code.")
@@ -167,6 +184,7 @@ async def run_invocation_attempt(
     idle_timeout_seconds: float | None,
     child_environment: ChildProcessEnvironment | None,
 ) -> CommandResult:
+    attempt_context = _context_for_attempt(invocation_context, attempt)
     attempt_result = command_runner(
         cmd=runtime.cmd,
         stdin_data=runtime.stdin_data,
@@ -174,16 +192,76 @@ async def run_invocation_attempt(
         append_log=attempt > 0,
         log_header=_retry_log_header(runtime, attempt),
         cwd=cwd,
-        invocation_context=invocation_context,
+        invocation_context=attempt_context,
         idle_timeout_seconds=idle_timeout_seconds,
         child_environment=child_environment,
     )
     return await _await_invocation_attempt(
         attempt_result=attempt_result,
         timeout_seconds=timeout_seconds,
-        invocation_context=invocation_context,
+        invocation_context=attempt_context,
         attempt=attempt,
     )
+
+
+def _context_for_attempt(
+    invocation_context: InvocationContext | None,
+    zero_based_attempt: int,
+) -> InvocationContext | None:
+    if invocation_context is None:
+        return None
+    return replace(invocation_context, attempt_num=zero_based_attempt + 1)
+
+
+def _emit_process_exit(
+    invocation_context: InvocationContext | None,
+    process: asyncio.subprocess.Process | None,
+    process_group_id: int | None,
+) -> None:
+    if invocation_context is None or process is None or process.returncode is None:
+        return
+    _emit_process_event(
+        invocation_context,
+        InvocationProcessEvent(
+            attempt=invocation_context.attempt_num,
+            pid=process.pid,
+            process_group_id=process_group_id,
+            status="exited",
+            returncode=process.returncode,
+        ),
+    )
+
+
+def _emit_process_started(
+    invocation_context: InvocationContext | None,
+    pid: int,
+    process_group_id: int | None,
+) -> None:
+    if invocation_context is None:
+        return
+    _emit_process_event(
+        invocation_context,
+        InvocationProcessEvent(
+            attempt=invocation_context.attempt_num,
+            pid=pid,
+            process_group_id=process_group_id,
+            status="started",
+        ),
+    )
+
+
+def _emit_process_event(
+    invocation_context: InvocationContext,
+    event: InvocationProcessEvent,
+) -> None:
+    if invocation_context.process_event_sink is None:
+        return
+    try:
+        invocation_context.process_event_sink(event)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Provider process {event.status} reporting failed: {exc}"
+        ) from exc
 
 
 def _retry_log_header(runtime: InvocationCommandRuntime, attempt: int) -> bytes:
