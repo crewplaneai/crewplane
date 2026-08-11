@@ -67,8 +67,8 @@ class OutputManager:
             empty_output_warning_enabled=True,
             workspace_root=resolved_template_base_dir,
         )
-        self._provider_process_states: dict[Path, ProviderProcessState] = {}
-        self._provider_process_states_lock = Lock()
+        self._expected_provider_process_states: dict[Path, ProviderProcessState] = {}
+        self._expected_provider_process_states_lock = Lock()
 
     @staticmethod
     def _safe_name(name: str) -> str:
@@ -249,62 +249,115 @@ class OutputManager:
         invocation: ProviderProcessInvocation,
         event: InvocationProcessEvent,
     ) -> ProviderProcessPublication:
-        state_path = self._provider_process_state_path(invocation, event.attempt)
         if event.status == "started":
-            identity = ProcessInspector().identity_for(event.pid)
-            state = ProviderProcessState(
-                run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
-                run_id=self.run_id,
-                run_key_name=self.run_key_name,
-                node_id=invocation.node_id,
-                task_id=invocation.task_id,
-                provider=invocation.provider,
-                role=invocation.role,
-                audit_round_num=invocation.audit_round_num,
-                round_num=invocation.round_num,
-                attempt=event.attempt,
-                pid=event.pid,
-                process_group_id=event.process_group_id,
-                hostname=identity.hostname,
-                process_start_identity=identity.start_identity,
-                status="started",
-                started_at=datetime.now().isoformat(),
-            )
-            publication = self._publish_provider_process_state(
-                state_path,
-                state,
-                require_absent=True,
-            )
-            with self._provider_process_states_lock:
-                self._provider_process_states[publication.path] = state
-            return publication
+            return self._write_provider_process_start(invocation, event)
+        return self._write_provider_process_exit(invocation, event)
 
-        current = self._read_provider_process_state(state_path)
-        self._validate_provider_process_exit(current, invocation, event)
-        with self._provider_process_states_lock:
-            started = self._provider_process_states.get(state_path)
-        if started is None or current != started:
+    def _write_provider_process_start(
+        self,
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessPublication:
+        state_path = self._provider_process_state_path(invocation, event.attempt)
+        state = self._build_started_provider_process_state(invocation, event)
+        publication = self._publish_provider_process_state(
+            state_path,
+            state,
+            require_absent=True,
+        )
+        self._remember_provider_process_state(publication.path, state)
+        return publication
+
+    def _build_started_provider_process_state(
+        self,
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessState:
+        identity = ProcessInspector().identity_for(event.pid)
+        return ProviderProcessState(
+            run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
+            run_id=self.run_id,
+            run_key_name=self.run_key_name,
+            node_id=invocation.node_id,
+            task_id=invocation.task_id,
+            provider=invocation.provider,
+            role=invocation.role,
+            audit_round_num=invocation.audit_round_num,
+            round_num=invocation.round_num,
+            attempt=event.attempt,
+            pid=event.pid,
+            process_group_id=event.process_group_id,
+            hostname=identity.hostname,
+            process_start_identity=identity.start_identity,
+            status="started",
+            started_at=datetime.now().isoformat(),
+        )
+
+    def _write_provider_process_exit(
+        self,
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessPublication:
+        state_path = self._provider_process_state_path(invocation, event.attempt)
+        expected_state = self._verified_provider_process_state(
+            state_path,
+            invocation,
+            event,
+        )
+        exited_state = self._build_exited_provider_process_state(expected_state, event)
+        publication = self._publish_provider_process_state(
+            state_path,
+            exited_state,
+            require_absent=False,
+        )
+        self._remember_provider_process_state(publication.path, exited_state)
+        return publication
+
+    def _verified_provider_process_state(
+        self,
+        state_path: Path,
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessState:
+        current_state = self._read_provider_process_state(state_path)
+        self._validate_provider_process_exit(current_state, invocation, event)
+        expected_state = self._expected_provider_process_state(state_path)
+        if expected_state is None or current_state != expected_state:
             raise RuntimeError(
                 "Provider process state changed unexpectedly before exit."
             )
+        return expected_state
+
+    @staticmethod
+    def _build_exited_provider_process_state(
+        expected_state: ProviderProcessState,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessState:
         if event.returncode is None:
             raise RuntimeError("Provider process exit event is missing a return code.")
-        updated = started.model_copy(
+        exited_state = expected_state.model_copy(
             update={
                 "status": "exited",
                 "exited_at": datetime.now().isoformat(),
                 "returncode": event.returncode,
             }
         )
-        validated = ProviderProcessState.model_validate(updated.model_dump(mode="json"))
-        publication = self._publish_provider_process_state(
-            state_path,
-            validated,
-            require_absent=False,
-        )
-        with self._provider_process_states_lock:
-            self._provider_process_states[publication.path] = validated
-        return publication
+        return ProviderProcessState.model_validate(exited_state.model_dump(mode="json"))
+
+    def _remember_provider_process_state(
+        self,
+        state_path: Path,
+        state: ProviderProcessState,
+    ) -> None:
+        with self._expected_provider_process_states_lock:
+            self._expected_provider_process_states[state_path] = state
+
+    def _expected_provider_process_state(
+        self,
+        state_path: Path,
+    ) -> ProviderProcessState | None:
+        with self._expected_provider_process_states_lock:
+            return self._expected_provider_process_states.get(state_path)
 
     def write_resume_source(self, node_id: str, payload: JsonObject) -> Path:
         stage_dir = self.create_stage_dir(node_id)
@@ -342,7 +395,6 @@ class OutputManager:
     def _publish_provider_process_state(
         path: Path,
         state: ProviderProcessState,
-        *,
         require_absent: bool,
     ) -> ProviderProcessPublication:
         payload = json_bytes(state.model_dump(mode="json", exclude_none=True))

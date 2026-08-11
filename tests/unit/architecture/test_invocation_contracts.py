@@ -179,6 +179,20 @@ def test_invocation_context_preserves_existing_positional_contract() -> None:
     assert context.process_event_sink is None
 
 
+@pytest.mark.parametrize("attempt_num", [0, True, 1.5])
+def test_invocation_context_rejects_invalid_attempt_numbers(
+    attempt_num: object,
+) -> None:
+    with pytest.raises(ValueError, match="attempt number"):
+        InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="codex",
+            role="executor",
+            attempt_num=attempt_num,  # type: ignore[arg-type]
+        )
+
+
 def test_invocation_process_event_records_one_based_attempt_and_exit() -> None:
     event = InvocationProcessEvent(
         attempt=2,
@@ -196,8 +210,15 @@ def test_invocation_process_event_records_one_based_attempt_and_exit() -> None:
     ("event_kwargs", "message"),
     [
         ({"attempt": 0}, "attempt"),
+        ({"attempt": True}, "attempt"),
         ({"pid": 0}, "pid"),
+        ({"pid": 1.5}, "pid"),
         ({"process_group_id": 0}, "group id"),
+        ({"process_group_id": True}, "group id"),
+        ({"status": "running"}, "unsupported"),
+        ({"status": 1}, "unsupported"),
+        ({"returncode": True}, "return code"),
+        ({"returncode": 1.5}, "return code"),
         ({"status": "started", "returncode": 0}, "cannot have"),
         ({"status": "exited", "returncode": None}, "requires"),
     ],

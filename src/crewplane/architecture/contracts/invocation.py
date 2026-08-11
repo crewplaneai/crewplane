@@ -79,6 +79,16 @@ def _add_exact_counter(current: int | None, additional: int | None) -> int | Non
     return current + additional
 
 
+def _is_non_boolean_integer(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_positive_integer(value: object) -> bool:
+    if not _is_non_boolean_integer(value):
+        return False
+    return cast(int, value) > 0
+
+
 @dataclass(frozen=True)
 class ProviderTokenUsage:
     input: int | None = None
@@ -287,27 +297,25 @@ class InvocationProcessEvent:
     returncode: int | None = None
 
     def __post_init__(self) -> None:
-        if (
-            not isinstance(self.attempt, int)
-            or isinstance(self.attempt, bool)
-            or self.attempt < 1
-        ):
+        self._validate_identity_fields()
+        self._validate_lifecycle()
+
+    def _validate_identity_fields(self) -> None:
+        if not _is_positive_integer(self.attempt):
             raise ValueError("invocation process attempt must be a positive integer")
-        if not isinstance(self.pid, int) or isinstance(self.pid, bool) or self.pid < 1:
+        if not _is_positive_integer(self.pid):
             raise ValueError("invocation process pid must be a positive integer")
-        if self.process_group_id is not None and (
-            not isinstance(self.process_group_id, int)
-            or isinstance(self.process_group_id, bool)
-            or self.process_group_id < 1
+        if self.process_group_id is not None and not _is_positive_integer(
+            self.process_group_id
         ):
             raise ValueError(
                 "invocation process group id must be a positive integer or None"
             )
+
+    def _validate_lifecycle(self) -> None:
         if not isinstance(self.status, str) or self.status not in {"started", "exited"}:
             raise ValueError(f"unsupported invocation process status: {self.status!r}")
-        if self.returncode is not None and (
-            not isinstance(self.returncode, int) or isinstance(self.returncode, bool)
-        ):
+        if self.returncode is not None and not _is_non_boolean_integer(self.returncode):
             raise ValueError(
                 "invocation process return code must be an integer or None"
             )
@@ -377,11 +385,7 @@ class InvocationContext:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "role", ProviderRole(self.role))
-        if (
-            not isinstance(self.attempt_num, int)
-            or isinstance(self.attempt_num, bool)
-            or self.attempt_num < 1
-        ):
+        if not _is_positive_integer(self.attempt_num):
             raise ValueError("invocation attempt number must be a positive integer")
 
 

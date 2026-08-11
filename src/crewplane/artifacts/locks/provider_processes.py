@@ -1,6 +1,9 @@
+"""Validate provider process receipts before stale-lock recovery."""
+
 from __future__ import annotations
 
 import stat
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,8 +24,8 @@ from .manifest import (
 from .process_identity import ProcessIdentity, ProcessInspector
 
 
-@dataclass(frozen=True)
-class _ProcessStateFile:
+@dataclass(frozen=True, slots=True)
+class _InspectedStateFile:
     path: Path
     device: int
     inode: int
@@ -34,59 +37,91 @@ def ensure_no_live_provider_processes(
     metadata: LockRunMetadata,
     inspector: ProcessInspector,
 ) -> None:
+    """Reject recovery while a recorded provider process or group may be live."""
+    for state in _iter_validated_process_states(state_dir, metadata):
+        _ensure_process_is_inactive(state, inspector)
+        _ensure_process_group_is_inactive(state, inspector)
+
+
+def _iter_validated_process_states(
+    state_dir: Path,
+    metadata: LockRunMetadata,
+) -> Iterator[ProviderProcessState]:
     process_dir = _provider_process_dir(state_dir, metadata)
     if process_dir is None:
         return
-    for path in _safe_process_state_paths(state_dir, process_dir):
+    for path in _trusted_process_state_paths(state_dir, process_dir):
         state = _read_process_state(path)
         _validate_process_state(path, state, metadata)
-        identity = ProcessIdentity(
-            pid=state.pid,
-            hostname=state.hostname,
-            start_identity=state.process_start_identity,
-        )
-        try:
-            is_live = inspector.is_live(identity)
-        except RuntimeError as exc:
-            raise LockManifestError(
-                "Cannot safely verify a provider process from the interrupted run "
-                f"(PID {state.pid}, node '{state.node_id}')."
-            ) from exc
-        if is_live:
-            recorded_status = (
-                " despite its exited receipt" if state.status == "exited" else ""
-            )
-            raise LockManifestError(
-                "A provider process from the interrupted run is still active"
-                f"{recorded_status} "
-                f"(PID {state.pid}, node '{state.node_id}', task "
-                f"'{state.task_id}'). Wait for it to finish or terminate it, then "
-                "retry."
-            )
-        if state.process_group_id is None:
-            continue
-        try:
-            group_is_live = inspector.is_process_group_live(state.process_group_id)
-        except RuntimeError as exc:
-            raise LockManifestError(
-                "Cannot safely verify a provider process group from the "
-                f"interrupted run (PGID {state.process_group_id}, node "
-                f"'{state.node_id}')."
-            ) from exc
-        if group_is_live:
-            raise LockManifestError(
-                "A recorded provider process group may still be active "
-                f"(PGID {state.process_group_id}, node '{state.node_id}', task "
-                f"'{state.task_id}'). Confirm that it belongs to the interrupted "
-                "provider, then wait for it to finish or terminate it before "
-                "retrying."
-            )
+        yield state
+
+
+def _ensure_process_is_inactive(
+    state: ProviderProcessState,
+    inspector: ProcessInspector,
+) -> None:
+    identity = ProcessIdentity(
+        pid=state.pid,
+        hostname=state.hostname,
+        start_identity=state.process_start_identity,
+    )
+    try:
+        if not inspector.is_live(identity):
+            return
+    except RuntimeError as exc:
+        raise LockManifestError(
+            "Cannot safely verify a provider process from the interrupted run "
+            f"(PID {state.pid}, node '{state.node_id}')."
+        ) from exc
+    recorded_status = " despite its exited receipt" if state.status == "exited" else ""
+    raise LockManifestError(
+        "A provider process from the interrupted run is still active"
+        f"{recorded_status} "
+        f"(PID {state.pid}, node '{state.node_id}', task '{state.task_id}'). "
+        "Wait for it to finish or terminate it, then retry."
+    )
+
+
+def _ensure_process_group_is_inactive(
+    state: ProviderProcessState,
+    inspector: ProcessInspector,
+) -> None:
+    process_group_id = state.process_group_id
+    if process_group_id is None:
+        return
+    try:
+        if not inspector.is_process_group_live(process_group_id):
+            return
+    except RuntimeError as exc:
+        raise LockManifestError(
+            "Cannot safely verify a provider process group from the "
+            f"interrupted run (PGID {process_group_id}, node '{state.node_id}')."
+        ) from exc
+    raise LockManifestError(
+        "A recorded provider process group may still be active "
+        f"(PGID {process_group_id}, node '{state.node_id}', task "
+        f"'{state.task_id}'). Confirm that it belongs to the interrupted "
+        "provider, then wait for it to finish or terminate it before retrying."
+    )
 
 
 def _provider_process_dir(
     state_dir: Path,
     metadata: LockRunMetadata,
 ) -> Path | None:
+    run_key_name = _validated_run_key_name(metadata)
+    if run_key_name is None:
+        return None
+    return (
+        state_dir
+        / "execution-stages"
+        / run_key_name
+        / "manifests"
+        / "provider-processes"
+    )
+
+
+def _validated_run_key_name(metadata: LockRunMetadata) -> str | None:
     if metadata.run_id is None and metadata.run_key_name is None:
         return None
     if metadata.run_id is None or metadata.run_key_name is None:
@@ -97,26 +132,28 @@ def _provider_process_dir(
         raise LockManifestError(
             "Lock owner run metadata is not safely contained."
         ) from exc
-    return (
-        state_dir
-        / "execution-stages"
-        / run_key_name
-        / "manifests"
-        / "provider-processes"
-    )
+    return run_key_name
 
 
-def _safe_process_state_paths(
+def _trusted_process_state_paths(
     state_dir: Path,
     process_dir: Path,
 ) -> tuple[Path, ...]:
     stages_root = state_dir / "execution-stages"
     ensure_no_symlink_manifest_components(stages_root, process_dir)
     ensure_owner_path_contained(stages_root, process_dir)
+    if not _inspect_process_state_directory(process_dir):
+        return ()
+    paths = _list_process_state_paths(process_dir)
+    files = tuple(_inspect_process_state_file(stages_root, path) for path in paths)
+    return _validated_canonical_state_paths(files)
+
+
+def _inspect_process_state_directory(process_dir: Path) -> bool:
     try:
         directory_stat = process_dir.lstat()
     except (FileNotFoundError, NotADirectoryError):
-        return ()
+        return False
     except PermissionError:
         raise
     except OSError as exc:
@@ -125,29 +162,44 @@ def _safe_process_state_paths(
         ) from exc
     if not stat.S_ISDIR(directory_stat.st_mode):
         raise LockManifestError("Provider process state path is not a safe directory.")
+    return True
+
+
+def _list_process_state_paths(process_dir: Path) -> tuple[Path, ...]:
     try:
-        paths = tuple(sorted(process_dir.iterdir(), key=lambda path: path.name))
+        return tuple(sorted(process_dir.iterdir(), key=lambda path: path.name))
     except PermissionError:
         raise
     except OSError as exc:
         raise LockManifestError(
             "Cannot inspect provider process state safely."
         ) from exc
-    entries = tuple(_inspect_process_state_file(stages_root, path) for path in paths)
-    canonical_entries = {
-        entry.path.name: entry for entry in entries if entry.path.suffix == ".json"
+
+
+def _validated_canonical_state_paths(
+    files: tuple[_InspectedStateFile, ...],
+) -> tuple[Path, ...]:
+    canonical_files = {
+        file.path.name: file for file in files if file.path.suffix == ".json"
     }
-    paired_names = _validate_interrupted_publications(entries, canonical_entries)
+    paired_names = _validate_interrupted_publications(files, canonical_files)
+    _validate_unpaired_canonical_files(canonical_files, paired_names)
+    return tuple(file.path for file in canonical_files.values())
+
+
+def _validate_unpaired_canonical_files(
+    canonical_files: dict[str, _InspectedStateFile],
+    paired_names: set[str],
+) -> None:
     if any(
-        entry.link_count != 1
-        for name, entry in canonical_entries.items()
+        file.link_count != 1
+        for name, file in canonical_files.items()
         if name not in paired_names
     ):
         raise LockManifestError("Provider process state is not a safe file.")
-    return tuple(entry.path for entry in canonical_entries.values())
 
 
-def _inspect_process_state_file(stages_root: Path, path: Path) -> _ProcessStateFile:
+def _inspect_process_state_file(stages_root: Path, path: Path) -> _InspectedStateFile:
     ensure_no_symlink_manifest_components(stages_root, path)
     ensure_owner_path_contained(stages_root, path)
     try:
@@ -160,7 +212,7 @@ def _inspect_process_state_file(stages_root: Path, path: Path) -> _ProcessStateF
         ) from exc
     if not stat.S_ISREG(path_stat.st_mode):
         raise LockManifestError("Provider process state is not a safe file.")
-    return _ProcessStateFile(
+    return _InspectedStateFile(
         path=path,
         device=path_stat.st_dev,
         inode=path_stat.st_ino,
@@ -169,20 +221,20 @@ def _inspect_process_state_file(stages_root: Path, path: Path) -> _ProcessStateF
 
 
 def _validate_interrupted_publications(
-    entries: tuple[_ProcessStateFile, ...],
-    canonical_entries: dict[str, _ProcessStateFile],
+    files: tuple[_InspectedStateFile, ...],
+    canonical_files: dict[str, _InspectedStateFile],
 ) -> set[str]:
     paired_names: set[str] = set()
-    for entry in entries:
-        if entry.path.suffix == ".json":
+    for file in files:
+        if file.path.suffix == ".json":
             continue
-        canonical_name = _atomic_target_name(entry.path)
+        canonical_name = _atomic_target_name(file.path)
         if canonical_name is None:
             raise LockManifestError("Provider process state is not a safe file.")
-        canonical = canonical_entries.get(canonical_name)
+        canonical = canonical_files.get(canonical_name)
         if canonical is None or canonical_name in paired_names:
             raise LockManifestError("Provider process state is not a safe file.")
-        _validate_interrupted_publication(canonical, entry)
+        _validate_interrupted_publication(canonical, file)
         paired_names.add(canonical_name)
     return paired_names
 
@@ -198,8 +250,8 @@ def _atomic_target_name(path: Path) -> str | None:
 
 
 def _validate_interrupted_publication(
-    canonical: _ProcessStateFile,
-    temporary: _ProcessStateFile,
+    canonical: _InspectedStateFile,
+    temporary: _InspectedStateFile,
 ) -> None:
     if _is_linked_publication_alias(canonical, temporary):
         return
@@ -214,8 +266,8 @@ def _validate_interrupted_publication(
 
 
 def _is_linked_publication_alias(
-    canonical: _ProcessStateFile,
-    temporary: _ProcessStateFile,
+    canonical: _InspectedStateFile,
+    temporary: _InspectedStateFile,
 ) -> bool:
     return (
         canonical.device == temporary.device

@@ -98,6 +98,50 @@ def test_provider_process_attempts_use_distinct_state_files(tmp_path) -> None:
     assert len(second_path.name) <= 180
 
 
+def test_failed_duplicate_start_preserves_expected_process_state(tmp_path) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    invocation = _invocation()
+    event = InvocationProcessEvent(
+        attempt=1,
+        pid=os.getpid(),
+        process_group_id=None,
+        status="started",
+    )
+    state_path = output.write_provider_process_event(invocation, event).path
+    original_state = state_path.read_bytes()
+
+    with pytest.raises(FileExistsError):
+        output.write_provider_process_event(invocation, event)
+
+    assert state_path.read_bytes() == original_state
+    output.write_provider_process_event(
+        invocation,
+        InvocationProcessEvent(
+            attempt=1,
+            pid=os.getpid(),
+            process_group_id=None,
+            status="exited",
+            returncode=0,
+        ),
+    )
+
+
+def test_provider_process_exit_requires_started_state(tmp_path) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    with pytest.raises(RuntimeError, match="missing, malformed, or unreadable"):
+        output.write_provider_process_event(
+            _invocation(),
+            InvocationProcessEvent(
+                attempt=1,
+                pid=os.getpid(),
+                process_group_id=None,
+                status="exited",
+                returncode=0,
+            ),
+        )
+
+
 def test_provider_process_state_accepts_initial_reviewer_round_zero(tmp_path) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
 
