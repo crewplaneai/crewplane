@@ -78,9 +78,14 @@ def discover_git_context(
             project_root,
             git_text(project_root, "rev-parse", "--git-common-dir"),
         )
+        run_base_commit = git_text(project_root, "rev-parse", "HEAD^{commit}")
         return GitSourceContext(
-            run_base_commit=git_text(project_root, "rev-parse", "HEAD^{commit}"),
-            source_tree=git_text(project_root, "rev-parse", "HEAD^{tree}"),
+            run_base_commit=run_base_commit,
+            source_tree=git_text(
+                project_root,
+                "rev-parse",
+                f"{run_base_commit}^{{tree}}",
+            ),
             object_format=git_text(
                 project_root,
                 "rev-parse",
@@ -143,6 +148,20 @@ def validate_git_capabilities(
         )
 
 
+def validate_git_head_unchanged(
+    project_root: Path,
+    git_context: GitSourceContext,
+    builder: WorkspacePolicyBuilder,
+) -> None:
+    current_commit = git_text(project_root, "rev-parse", "HEAD^{commit}")
+    if current_commit == git_context.run_base_commit:
+        return
+    builder.errors.append(
+        "Workspace source policy failed: Git HEAD changed during workspace "
+        "source validation. Retry from a stable checkout."
+    )
+
+
 def repository_id(git_context: GitSourceContext, project_root: Path) -> str:
     payload = "|".join(
         [
@@ -155,7 +174,7 @@ def repository_id(git_context: GitSourceContext, project_root: Path) -> str:
 
 
 def git_text(project_root: Path, *args: str) -> str:
-    return run_git(project_root, *args).stdout.decode("utf-8").strip()
+    return run_git(project_root, *args).stdout.decode("utf-8").removesuffix("\n")
 
 
 def git_zero_records(project_root: Path, *args: str) -> tuple[str, ...]:

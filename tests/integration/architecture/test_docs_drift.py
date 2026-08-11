@@ -37,6 +37,16 @@ STALE_VERSION_IMPORT_RULE = ForbiddenTextRule(
     ),
 )
 
+OBSOLETE_DASHBOARD_LOG_PATH_RULE = ForbiddenTextRule(
+    name="compact dashboard omits the obsolete global provider log prefix",
+    paths=(REPO_ROOT / "docs" / "architecture" / "ui_compact_dashboard.md",),
+    forbidden_terms=frozenset(
+        {
+            ".crewplane/execution-stages/<workflow>-<run_id>/logs/<provider>/",
+        }
+    ),
+)
+
 
 def test_docs_and_templates_do_not_reference_legacy_prompt_config_fields() -> None:
     assert find_forbidden_text(LEGACY_PROMPT_CONFIG_RULE) == []
@@ -53,3 +63,7 @@ def test_version_catalog_has_single_public_python_source() -> None:
     ] == []
 
     assert find_forbidden_text(STALE_VERSION_IMPORT_RULE) == []
+
+
+def test_compact_dashboard_omits_obsolete_global_provider_log_prefix() -> None:
+    assert find_forbidden_text(OBSOLETE_DASHBOARD_LOG_PATH_RULE) == []

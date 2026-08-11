@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from unittest.mock import mock_open, patch
 
 import pytest
 
@@ -47,6 +48,57 @@ def test_process_inspector_treats_pid_start_identity_mismatch_as_not_live(
             start_identity="old-start",
         )
     )
+
+
+def test_process_inspector_rejects_out_of_range_process_id(monkeypatch) -> None:
+    def kill(pid: int, signal_number: int) -> None:
+        assert pid == 2_147_483_648
+        assert signal_number == 0
+        raise OverflowError("signed integer is greater than maximum")
+
+    monkeypatch.setattr(process_identity.os, "kill", kill)
+    monkeypatch.setattr(process_identity.socket, "gethostname", lambda: "host")
+
+    with pytest.raises(RuntimeError, match="out-of-range process ID"):
+        ProcessInspector().is_live(
+            ProcessIdentity(
+                pid=2_147_483_648,
+                hostname="host",
+                start_identity="provider-start",
+            )
+        )
+
+
+def test_process_start_identity_handles_spaces_and_parentheses_in_command() -> None:
+    fields_after_command = ["S", *(str(index) for index in range(4, 23))]
+    stat_content = f"100 (provider (worker) cli) {' '.join(fields_after_command)}"
+
+    with patch("builtins.open", mock_open(read_data=stat_content)):
+        identity = process_identity.process_start_identity(100)
+
+    assert identity == "22"
+
+
+def test_process_inspector_detects_live_process_group(monkeypatch) -> None:
+    def killpg(process_group_id: int, signal_number: int) -> None:
+        assert process_group_id == 100
+        assert signal_number == 0
+
+    monkeypatch.setattr(process_identity.os, "killpg", killpg)
+
+    assert ProcessInspector().is_process_group_live(100)
+
+
+def test_process_inspector_rejects_out_of_range_process_group(monkeypatch) -> None:
+    def killpg(process_group_id: int, signal_number: int) -> None:
+        assert process_group_id == 2_147_483_648
+        assert signal_number == 0
+        raise OverflowError("signed integer is greater than maximum")
+
+    monkeypatch.setattr(process_identity.os, "killpg", killpg)
+
+    with pytest.raises(RuntimeError, match="out-of-range process group"):
+        ProcessInspector().is_process_group_live(2_147_483_648)
 
 
 def test_acquire_update_and_release_same_context_lock(tmp_path) -> None:

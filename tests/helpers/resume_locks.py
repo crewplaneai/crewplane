@@ -13,11 +13,15 @@ class FakeProcessInspector:
         start_identity: str | None,
         live: bool = False,
         live_checks: list[bool] | None = None,
+        group_live: bool = False,
+        group_live_checks: list[bool] | None = None,
     ) -> None:
         self.pid = pid
         self.start_identity = start_identity
         self.live = live
         self.live_checks = list(live_checks or [])
+        self.group_live = group_live
+        self.group_live_checks = list(group_live_checks or [])
 
     def current(self) -> ProcessIdentity:
         return ProcessIdentity(
@@ -32,6 +36,13 @@ class FakeProcessInspector:
         if self.live_checks:
             return self.live_checks.pop(0)
         return self.live
+
+    def is_process_group_live(self, process_group_id: int) -> bool:
+        if process_group_id <= 0:
+            return False
+        if self.group_live_checks:
+            return self.group_live_checks.pop(0)
+        return self.group_live
 
 
 class UnsafeProcessInspector(FakeProcessInspector):

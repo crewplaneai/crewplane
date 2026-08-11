@@ -5,6 +5,7 @@ import pytest
 from crewplane.architecture.contracts import (
     SUPPORTED_PROVIDER_KIND_VALUES,
     InvocationContext,
+    InvocationProcessEvent,
     InvocationSourceContext,
     InvocationUsage,
     InvocationWorkspaceContext,
@@ -174,6 +175,69 @@ def test_invocation_context_preserves_existing_positional_contract() -> None:
     assert context.round_num == 3
     assert context.findings_enabled is True
     assert context.requested_reasoning is None
+    assert context.attempt_num == 1
+    assert context.process_event_sink is None
+
+
+@pytest.mark.parametrize("attempt_num", [0, True, 1.5])
+def test_invocation_context_rejects_invalid_attempt_numbers(
+    attempt_num: object,
+) -> None:
+    with pytest.raises(ValueError, match="attempt number"):
+        InvocationContext(
+            node_id="node",
+            task_id="task",
+            provider="codex",
+            role="executor",
+            attempt_num=attempt_num,  # type: ignore[arg-type]
+        )
+
+
+def test_invocation_process_event_records_one_based_attempt_and_exit() -> None:
+    event = InvocationProcessEvent(
+        attempt=2,
+        pid=123,
+        process_group_id=123,
+        status="exited",
+        returncode=-15,
+    )
+
+    assert event.attempt == 2
+    assert event.returncode == -15
+
+
+@pytest.mark.parametrize(
+    ("event_kwargs", "message"),
+    [
+        ({"attempt": 0}, "attempt"),
+        ({"attempt": True}, "attempt"),
+        ({"pid": 0}, "pid"),
+        ({"pid": 1.5}, "pid"),
+        ({"process_group_id": 0}, "group id"),
+        ({"process_group_id": True}, "group id"),
+        ({"status": "running"}, "unsupported"),
+        ({"status": 1}, "unsupported"),
+        ({"returncode": True}, "return code"),
+        ({"returncode": 1.5}, "return code"),
+        ({"status": "started", "returncode": 0}, "cannot have"),
+        ({"status": "exited", "returncode": None}, "requires"),
+    ],
+)
+def test_invocation_process_event_rejects_invalid_state(
+    event_kwargs: dict[str, object],
+    message: str,
+) -> None:
+    values: dict[str, object] = {
+        "attempt": 1,
+        "pid": 123,
+        "process_group_id": None,
+        "status": "started",
+        "returncode": None,
+    }
+    values.update(event_kwargs)
+
+    with pytest.raises(ValueError, match=message):
+        InvocationProcessEvent(**values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("report_count", [0, 3])

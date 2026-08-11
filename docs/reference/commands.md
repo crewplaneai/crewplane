@@ -112,6 +112,9 @@ execution.
 
 Existing files are not overwritten by template creation.
 
+On native Windows, initialization warns that the platform is not officially
+supported, recommends WSL, and then continues.
+
 ## `crewplane onboarding`
 
 Prepare one real provider after the provider-free first run.

@@ -82,6 +82,8 @@ def print_run_preflight_diagnostics(
     diagnostics: list[PreflightDiagnostic],
 ) -> None:
     for diagnostic in diagnostics:
+        if diagnostic.severity != "error":
+            continue
         context.console.print(
             f"[red]Preflight {diagnostic.code}:[/] {diagnostic.message}"
         )

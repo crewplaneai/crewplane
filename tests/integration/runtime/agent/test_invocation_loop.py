@@ -28,6 +28,56 @@ from crewplane.version import SCHEMA_VERSION
 
 
 class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retries_receive_incrementing_process_attempt_numbers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_file = Path(tmp_dir) / "output.txt"
+            observed_attempts: list[int] = []
+
+            async def runner(
+                cmd: list[str],  # noqa: ARG001
+                stdin_data: bytes | None,  # noqa: ARG001
+                log_file: Path | None,  # noqa: ARG001
+                append_log: bool,  # noqa: ARG001
+                log_header: bytes | None,  # noqa: ARG001
+                cwd: Path,  # noqa: ARG001
+                invocation_context: InvocationContext | None,
+                idle_timeout_seconds: float | None,  # noqa: ARG001
+                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001
+            ) -> CommandResult:
+                assert invocation_context is not None
+                observed_attempts.append(invocation_context.attempt_num)
+                output = "temporary error" if len(observed_attempts) == 1 else "done"
+                return CommandResult(returncode=0, stdout_text=output, stderr_text="")
+
+            context = InvocationContext(
+                node_id="node.a",
+                task_id="generic_executor_0",
+                provider="generic",
+                role=ProviderRole.EXECUTOR,
+            )
+            config = AgentConfig(
+                cli_cmd=["provider"],
+                provider_kind="generic",
+                max_retries=1,
+                retry_delay_seconds=0,
+                retry_on_output_contains=["temporary error"],
+            )
+
+            await invoke_agent_with_runner(
+                config=config,
+                model=None,
+                prompt="prompt",
+                output_file=output_file,
+                cwd=output_file.parent,
+                log_file=None,
+                invocation_context=context,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+
+            self.assertEqual(observed_attempts, [1, 2])
+            self.assertEqual(output_file.read_text(encoding="utf-8"), "done")
+
     async def test_completion_buffered_output_disables_idle_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

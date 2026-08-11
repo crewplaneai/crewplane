@@ -26,6 +26,7 @@ def copy_update_surfaces(destination: Path) -> Path:
         Path("install.sh"),
         Path("packaging/npm/scripts/postinstall.js"),
         Path("packaging/uv-bootstrap.json"),
+        Path("packaging/uv-bootstrap-version.txt"),
     ):
         source = ROOT / relative_path
         target = destination / relative_path
@@ -168,7 +169,7 @@ ldd() {
     assert result.stdout == f"{target}|{release.checksums[target]}\n"
 
 
-def test_update_workflow_versions_updates_only_version_input() -> None:
+def test_validate_workflow_version_file_inputs_accepts_shared_pin() -> None:
     workflow = """steps:
   - uses: astral-sh/setup-uv@commit
     env:
@@ -180,18 +181,15 @@ def test_update_workflow_versions_updates_only_version_input() -> None:
       cache-suffix: one
       ignore-empty-workdir: true
       github-token: token
-      version: "0.0.0"
+      version-file: "packaging/uv-bootstrap-version.txt"
 """
 
-    updated = updater.update_workflow_versions(
+    setup_uv_steps = updater.validate_workflow_version_file_inputs(
         workflow,
-        "9.8.7",
         Path(".github/workflows/test.yml"),
     )
 
-    assert 'version: "application-version"' in updated
-    assert 'version: "9.8.7"' in updated
-    assert 'version: "0.0.0"' not in updated
+    assert setup_uv_steps == 1
 
 
 @pytest.mark.parametrize(
@@ -207,48 +205,55 @@ def test_update_workflow_versions_updates_only_version_input() -> None:
         """steps:
   - uses: astral-sh/setup-uv@commit
     with:
-      enable-cache: true
+      version-file: "packaging/other-version.txt"
   - run: echo test
     env:
       version: "application-version"
 """,
+        """steps:
+  - uses: astral-sh/setup-uv@commit
+    with:
+      version: "0.0.0"
+""",
     ],
 )
-def test_update_workflow_versions_rejects_unrelated_version_fields(
+def test_validate_workflow_version_file_inputs_rejects_other_pins(
     workflow: str,
 ) -> None:
-    with pytest.raises(updater.UvBootstrapError, match="no explicit version input"):
-        updater.update_workflow_versions(
+    with pytest.raises(updater.UvBootstrapError, match="setup-uv"):
+        updater.validate_workflow_version_file_inputs(
             workflow,
-            "9.8.7",
             Path(".github/workflows/test.yml"),
         )
 
 
-def test_synchronize_repository_updates_all_pins_and_preserves_other_versions(
+def test_synchronize_repository_updates_pins_without_rewriting_workflows(
     tmp_path: Path,
 ) -> None:
     repository = copy_update_surfaces(tmp_path)
     release = make_release("9.8.7")
+    ci_workflow_path = repository / ".github/workflows/ci.yml"
+    original_ci_workflow = ci_workflow_path.read_text(encoding="utf-8")
 
     changed_paths = updater.synchronize_repository(repository, release)
 
     assert changed_paths
+    assert not any(path.parts[:2] == (".github", "workflows") for path in changed_paths)
+    assert updater.WORKFLOW_VERSION_PATH in changed_paths
     assert updater.validate_repository(repository) == release
-    ci_workflow = (repository / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert 'version: "9.8.7"' in ci_workflow
-    assert 'python-version: "3.13"' in ci_workflow
-    assert 'python-version: ["3.13", "3.14"]' in ci_workflow
+    assert ci_workflow_path.read_text(encoding="utf-8") == original_ci_workflow
+    assert (repository / updater.WORKFLOW_VERSION_PATH).read_text(
+        encoding="utf-8"
+    ) == "uv==9.8.7\n"
 
 
-def test_validate_repository_rejects_workflow_version_drift(tmp_path: Path) -> None:
+def test_validate_repository_rejects_inline_workflow_version(tmp_path: Path) -> None:
     repository = copy_update_surfaces(tmp_path)
-    current_version = updater.load_manifest(repository).version
     workflow_path = repository / ".github/workflows/ci.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
     workflow_path.write_text(
         workflow.replace(
-            f'version: "{current_version}"',
+            'version-file: "packaging/uv-bootstrap-version.txt"',
             'version: "0.0.0"',
             1,
         ),
@@ -256,4 +261,15 @@ def test_validate_repository_rejects_workflow_version_drift(tmp_path: Path) -> N
     )
 
     with pytest.raises(updater.UvBootstrapError, match="ci.yml"):
+        updater.validate_repository(repository)
+
+
+def test_validate_repository_rejects_workflow_version_file_drift(
+    tmp_path: Path,
+) -> None:
+    repository = copy_update_surfaces(tmp_path)
+    version_path = repository / updater.WORKFLOW_VERSION_PATH
+    version_path.write_text("uv==0.0.0\n", encoding="utf-8")
+
+    with pytest.raises(updater.UvBootstrapError, match="uv-bootstrap-version.txt"):
         updater.validate_repository(repository)

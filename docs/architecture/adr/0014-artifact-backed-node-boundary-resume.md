@@ -17,6 +17,7 @@ directories. Current run state is written under:
 
 - `.crewplane/execution-stages/<run_key>/manifests/run.json`
 - `.crewplane/execution-stages/<run_key>/manifests/nodes/`
+- `.crewplane/execution-stages/<run_key>/manifests/provider-processes/`
 - `.crewplane/locks/`
 
 `run_key` is a bounded generated path component composed as:
@@ -71,6 +72,11 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
 - Unsafe or ambiguous history fails closed. Corrupt manifests and node-state
   records are ignored for reuse, while unsafe filesystem metadata or live locks
   block takeover instead of risking reuse of untrusted artifacts.
+- The built-in CLI invoker records each child process attempt separately from
+  node completion. Stale-lock recovery blocks takeover while a recorded child
+  or its process group is still running, or while the child cannot be identified
+  safely. These records are a process-liveness guard; they do not make an
+  incomplete invocation or node reusable.
 - `--dry-run` reports advisory decisions without acquiring locks or recovering
   stale owners, so its answer can differ from a later real run.
 
@@ -111,6 +117,10 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
 - V1 resume is limited to the built-in filesystem artifact backend.
 - It does not support intra-node resume, provider replay, best-frontier scoring,
   or reconstruction of arbitrary workspace side effects.
+- It does not automatically terminate a provider that outlives Crewplane. The
+  process guard prevents a same-context replacement from starting after stale
+  lock recovery, but a hard kill can still occur between child creation and
+  durable process publication.
 - `--dry-run` decisions remain advisory because it must not acquire locks,
   allocate runs, write artifacts, create fingerprint keys, or recover stale
   owners.
@@ -129,3 +139,7 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
 - **2026-07-11**: Clarified that descriptor-named workspace lineage may include
   the selected canonical review output and review-loop status without allowing
   arbitrary stage hydration.
+- **2026-08-07**: Added durable built-in CLI child-process records. Stale-lock
+  recovery now fails closed while a recorded provider process or process group
+  is active, or its identity cannot be verified, without changing node-boundary
+  resume semantics.

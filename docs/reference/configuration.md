@@ -104,7 +104,7 @@ settings use dotted paths in the left column.
 | `cli_cmd` | Non-empty argv list for the provider CLI. |
 | `provider_kind` | `claude`, `codex`, `copilot`, `gemini`, `kilo`, or `generic`. Defaults to `generic`. |
 | `default_model` | Optional model name used when a workflow provider does not override `model`. |
-| `model_arg` | CLI flag for model selection when `provider_kind: generic`. Defaults to `--model`; can be `null`. Built-in provider kinds use adapter-owned model flags. |
+| `model_arg` | CLI flag for model selection when `provider_kind: generic`. Defaults to `--model`; can be `null`. With the built-in `cli` invoker, do not set it for built-in provider kinds; that invoker ignores it and reports a preflight warning. |
 | `prompt_transport` | `stdin` or `argv`. Defaults to `stdin`. |
 | `prompt_transport_arg` | Required for `argv`; optional stdin sentinel for `stdin`. |
 | `extra_args` | Additional argv tokens appended to the provider command. |

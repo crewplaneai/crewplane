@@ -9,9 +9,14 @@ from pathlib import Path
 from typing import Any
 
 
+def json_bytes(payload: Any) -> bytes:
+    return (
+        json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+
 def atomic_write_json(path: Path, payload: Any, ensure_parent: bool = True) -> Path:
-    text = json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n"
-    return atomic_write_text(path, text, ensure_parent)
+    return atomic_write_bytes(path, json_bytes(payload), ensure_parent)
 
 
 def atomic_write_text(path: Path, content: str, ensure_parent: bool = True) -> Path:
@@ -56,8 +61,7 @@ def atomic_write_bytes(path: Path, payload: bytes, ensure_parent: bool = True) -
 def atomic_write_json_if_absent(
     path: Path, payload: Any, ensure_parent: bool = True
 ) -> Path:
-    text = json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n"
-    return atomic_write_bytes_if_absent(path, text.encode("utf-8"), ensure_parent)
+    return atomic_write_bytes_if_absent(path, json_bytes(payload), ensure_parent)
 
 
 def atomic_write_bytes_if_absent(

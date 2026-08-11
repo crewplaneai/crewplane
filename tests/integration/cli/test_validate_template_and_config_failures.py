@@ -220,12 +220,67 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             self.assertIn("Preflight warnings:", output_text)
             self.assertIn("uses argv prompt transport", output_text)
 
-    def test_validate_fails_fast_for_missing_env_template_reference(self) -> None:
+    def test_validate_warns_when_built_in_provider_sets_model_arg(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
-            write_basic_config(config_path)
+            config_path.write_text(
+                "\n".join(
+                    [
+                        f'version: "{SCHEMA_VERSION}"',
+                        "",
+                        "agents:",
+                        "  alpha:",
+                        '    cli_cmd: ["echo"]',
+                        '    provider_kind: "codex"',
+                        '    default_model: "model-a"',
+                        '    model_arg: "--custom-model"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            write_basic_workflow(workflow_path)
+
+            stream = io.StringIO()
+            original_console_cls = cli.Console
+            cli.Console = ConsoleFactory(
+                file=stream,
+                force_terminal=False,
+                color_system=None,
+                width=120,
+            )
+            try:
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+            finally:
+                cli.Console = original_console_cls
+
+            output_text = stream.getvalue()
+            self.assertIn("Preflight warnings:", output_text)
+            self.assertIn("Agent 'alpha': remove model_arg", output_text)
+            self.assertIn("chooses the model flag automatically", output_text)
+            self.assertIn("provider_kind is 'generic'", output_text)
+
+    def test_validate_keeps_provider_warning_out_of_missing_env_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yml"
+            workflow_path = tmp_path / "workflow.task.md"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        f'version: "{SCHEMA_VERSION}"',
+                        "",
+                        "agents:",
+                        "  alpha:",
+                        '    cli_cmd: ["echo"]',
+                        '    provider_kind: "codex"',
+                        '    default_model: "model-a"',
+                        '    model_arg: "--custom-model"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
             workflow_path.write_text(
                 "\n".join(
                     [
@@ -267,7 +322,10 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
                 cli.Console = original_console_cls
 
             output_text = stream.getvalue()
+            self.assertIn("Preflight warnings:", output_text)
+            self.assertEqual(output_text.count("Agent 'alpha': remove model_arg"), 1)
             self.assertIn("Preflight compilation failed", output_text)
+            self.assertNotIn("Provider validation failed", output_text)
             self.assertIn(
                 "Environment variable not set: ORCH_VALIDATE_REQUIRED_ENV",
                 output_text,

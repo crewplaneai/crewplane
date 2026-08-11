@@ -904,11 +904,12 @@ nodes:
     mode: sequential
     needs: [implement_authentication_change]
     worktree: implementation_worktree
+    review_starts_with: reviewer
     providers:
-      - provider: claude
-        role: reviewer
       - provider: codex
         role: executor
+      - provider: claude
+        role: reviewer
 ---
 
 ## plan_authentication_change

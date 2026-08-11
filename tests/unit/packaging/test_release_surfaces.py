@@ -1033,12 +1033,31 @@ def test_nightly_uv_update_job_is_repository_scoped_and_uses_a_pull_request() ->
     )
     for fragment in (
         "scripts/update_uv_bootstrap.py update latest",
+        "packaging/uv-bootstrap-version.txt",
         "--app dependabot",
         "select(.isCrossRepository == false)",
         "gh pr create",
         "gh workflow run ci.yml",
     ):
         assert fragment in commands
+    assert ".github/workflows" not in workflow_step_run(
+        update_job,
+        "Update and validate pinned uv metadata",
+    )
+
+
+def test_security_scanning_write_permissions_are_job_scoped() -> None:
+    for workflow_name, job_name in (
+        ("scorecard.yml", "scorecard"),
+        ("codeql.yml", "analyze"),
+    ):
+        workflow = yaml.safe_load(read_text(".github", "workflows", workflow_name))
+
+        assert workflow["permissions"] == {"contents": "read"}
+        assert workflow["jobs"][job_name]["permissions"] == {
+            "contents": "read",
+            "security-events": "write",
+        }
 
 
 def test_private_reporting_surfaces_use_github_security_advisories() -> None:

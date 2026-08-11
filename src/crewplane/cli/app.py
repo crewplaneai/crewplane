@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -12,6 +14,7 @@ from rich.text import Text
 
 from crewplane.artifacts.locks import ResumeLockError
 from crewplane.core.config import Config, load_config
+from crewplane.core.platform import is_native_windows
 from crewplane.core.preflight import (
     PreflightCompilationPreview,
     load_workflow_source_for_preflight,
@@ -37,6 +40,12 @@ app = typer.Typer(name="crewplane", help="Multi-agent workflow runner")
 app.add_typer(cleanup_app, name="cleanup")
 
 
+def _configure_output_encoding() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="backslashreplace")
+
+
 def _print_version(show_version: bool) -> None:
     if not show_version:
         return
@@ -50,6 +59,7 @@ def _update_package(update_package: bool) -> None:
     if not update_package:
         return
 
+    _configure_output_encoding()
     console = Console()
     try:
         exit_code = update_crewplane(console)
@@ -62,7 +72,7 @@ def _update_package(update_package: bool) -> None:
 
 @app.callback()
 def main(
-    _version: Annotated[
+    version: Annotated[  # noqa: ARG001 - handled by the eager option callback
         bool,
         typer.Option(
             "--version",
@@ -72,7 +82,7 @@ def main(
             is_eager=True,
         ),
     ] = False,
-    _update: Annotated[
+    update: Annotated[  # noqa: ARG001 - handled by the eager option callback
         bool,
         typer.Option(
             "--update",
@@ -84,6 +94,7 @@ def main(
     ] = False,
 ) -> None:
     """Multi-agent workflow runner."""
+    _configure_output_encoding()
 
 
 @dataclass(frozen=True)
@@ -223,6 +234,12 @@ def _compile_validate_preview_for_context(
 def init() -> None:
     """Initialize a new .crewplane directory with default config files."""
     console = Console()
+    if is_native_windows():
+        console.print(
+            "[yellow]Warning:[/] Native Windows is not officially supported. "
+            "Crewplane may work, but unexpected issues can occur. "
+            "Use WSL for a supported environment."
+        )
     initialize_project_templates(console)
 
     console.print("\n[bold]Initialized .crewplane directory.[/]")

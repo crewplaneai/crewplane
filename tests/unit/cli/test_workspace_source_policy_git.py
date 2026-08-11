@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.cli.run.workspace import git_source
 from crewplane.cli.run.workspace import source_policy as policy
 from crewplane.cli.run.workspace.git_source import discover_git_context
 from crewplane.cli.run.workspace.source_types import WorkspacePolicyBuilder
@@ -104,6 +105,97 @@ def test_discover_git_context_resolves_common_dir_from_project_root(
     assert context.git_top_level == project_root.resolve()
     assert context.project_root_relative_path == "app"
     assert context.common_git_dir == (project_root / ".git").resolve()
+
+
+def test_discover_git_context_pairs_tree_with_captured_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_clean_repo(tmp_path)
+    captured_commit = run_git_text(tmp_path, "rev-parse", "HEAD^{commit}")
+    captured_tree = run_git_text(
+        tmp_path,
+        "rev-parse",
+        f"{captured_commit}^{{tree}}",
+    )
+    original_git_text = git_source.git_text
+    head_advanced = False
+
+    def advance_head_after_commit_read(project_root: Path, *args: str) -> str:
+        nonlocal head_advanced
+        result = original_git_text(project_root, *args)
+        if args == ("rev-parse", "HEAD^{commit}") and not head_advanced:
+            (tmp_path / "next.txt").write_text("next\n", encoding="utf-8")
+            run_git_text(tmp_path, "add", "next.txt")
+            run_git_text(tmp_path, "commit", "-m", "advance head")
+            head_advanced = True
+        return result
+
+    monkeypatch.setattr(git_source, "git_text", advance_head_after_commit_read)
+    builder = WorkspacePolicyBuilder()
+
+    context = discover_git_context(tmp_path, builder)
+
+    assert builder.errors == []
+    assert context is not None
+    assert context.run_base_commit == captured_commit
+    assert context.source_tree == captured_tree
+    assert run_git_text(tmp_path, "rev-parse", "HEAD^{commit}") != captured_commit
+
+
+def test_workspace_source_policy_rejects_head_change_during_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_clean_repo(tmp_path)
+    original_warn_storage_pressure = policy.warn_storage_pressure
+
+    def warn_then_advance_head(
+        settings: Settings,
+        git_context: git_source.GitSourceContext,
+        estimate_full_repository: bool,
+        builder: WorkspacePolicyBuilder,
+    ) -> None:
+        original_warn_storage_pressure(
+            settings,
+            git_context,
+            estimate_full_repository,
+            builder,
+        )
+        (tmp_path / "next.txt").write_text("next\n", encoding="utf-8")
+        run_git_text(tmp_path, "add", "next.txt")
+        run_git_text(tmp_path, "commit", "-m", "advance head")
+
+    monkeypatch.setattr(policy, "warn_storage_pressure", warn_then_advance_head)
+
+    result = policy.collect_workspace_source_policy(
+        config=workspace_source_config(),
+        workflow=workspace_source_workflow(),
+        project_root=tmp_path,
+        state_dir=tmp_path / ".crewplane",
+        real_execution=False,
+    )
+
+    assert result.source_snapshot is None
+    assert any(
+        "Git HEAD changed during workspace source validation" in error
+        for error in result.errors
+    )
+
+
+def test_discover_git_context_preserves_trailing_space_in_repository_root(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project "
+    project_root.mkdir()
+    _create_clean_repo(project_root)
+    builder = WorkspacePolicyBuilder()
+
+    context = discover_git_context(project_root, builder)
+
+    assert builder.errors == []
+    assert context is not None
+    assert context.git_top_level == project_root.resolve()
 
 
 def test_git_source_checks_reports_filesystem_errors(

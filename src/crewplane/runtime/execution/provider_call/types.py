@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from crewplane.architecture.contracts import AgentInvoker
-from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.ports import ArtifactStorePort, ProviderProcessPublication
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -37,6 +37,9 @@ class ProviderCallRequest:
     findings_enabled: bool = False
     provider_output_policy: ProviderOutputPolicy = ProviderOutputPolicy.REQUIRE_OUTPUT
     on_log_file_resolved: Callable[[Path], None] | None = None
+    on_provider_process_state_published: (
+        Callable[[ProviderProcessPublication], None] | None
+    ) = None
     on_generated_file_snapshot_started: Callable[[Path], None] | None = None
     on_generated_file_snapshot_finished: (
         Callable[[Path, dict[Path, tuple[int, str]] | None], None] | None

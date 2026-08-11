@@ -209,27 +209,19 @@ summary, event timeline, manifests, stage outputs, and results.
 | `crewplane run --tasks <file>` | Runs the workflow file you name instead of relying on default discovery. |
 | `crewplane run --force` | Creates a new run with a new run ID, reruns selected nodes, and bypasses duplicate-skip and resume hydration. |
 
-## Run Keys And Run IDs
+## Workflow IDs, Run IDs, And Run Keys
 
-Crewplane records both a run ID and a run key:
+Crewplane records a workflow ID, a run ID, and a run key:
 
+- The **workflow ID** identifies the workflow in artifact paths. Example:
+  `single-agent-review--5e34bc54c79a`.
 - The **run ID** is the per-attempt ID stored in manifests and printed by some
   resume messages. Example: `20260629-202539`.
 - The **run key** is the filesystem directory name under
   `.crewplane/execution-stages/` and `.crewplane/execution-results/`. Example:
   `single-agent-review--5e34bc54c79a-20260629-202539`.
-- The run key has the shape `<workflow-slug>--<workflow-hash>-<run-id>`. Use the
-  full run key anywhere these docs show `<run-key>`.
-
-### Run Key
-
-A run key has three parts:
-
-| Part | Example | Meaning |
-| --- | --- | --- |
-| Workflow slug | `single-agent-review` | The workflow name in filesystem-safe form. |
-| Workflow hash | `5e34bc54c79a` | A short fingerprint for the compiled workflow context. |
-| Run ID | `20260629-202539` | The per-attempt ID for this run. |
+- The run key combines the workflow ID and run ID. Use the full run key anywhere
+  these docs show `<run-key>`.
 
 ## Workflow Signature
 
@@ -273,9 +265,8 @@ Crewplane creates a new run ID and reruns the selected nodes.
 ## Resume
 
 When no valid same-context success exists, a failed or cancelled
-filesystem-backed run can resume from validated completed node boundaries. The
-new execution gets its own run directory, hydrates validated upstream results,
-and reruns unresolved nodes.
+filesystem-backed run can resume at completed node boundaries. Validated
+completed nodes are reused, while incomplete nodes restart from the beginning.
 
 `run --dry-run` only prints a resume advisory. It does not write run artifacts or
 bind future execution to that advisory.
@@ -295,7 +286,7 @@ Use `--force` to bypass resume hydration and rerun every selected node.
 | When | What happens | What to run instead |
 | --- | --- | --- |
 | The same workflow already finished successfully with the same inputs and settings. | Crewplane reuses the saved result and does not invoke providers. | Run `crewplane run --force` to create a new run with a new run ID and rerun selected nodes. |
-| A previous run failed or was cancelled after some nodes finished. | Crewplane creates a new run, reuses finished node outputs, and reruns unfinished nodes. | Run `crewplane run --force` to create a new run with a new run ID and rerun every selected node. |
+| A previous run failed or was cancelled after some nodes finished. | Crewplane creates a new run, reuses validated completed node outputs, and reruns incomplete nodes from the beginning. | Run `crewplane run --force` to create a new run with a new run ID and rerun every selected node. |
 | You run `crewplane run --dry-run`. | Crewplane prints the plan and skip/resume advisory only. It does not invoke providers or write run artifacts. | Run `crewplane run` to execute. |
 | Provider settings, workflow files, templates, or referenced inputs changed. | Crewplane computes a different workflow signature, so older results for different inputs or settings are not reused as duplicates. | Usually no override is needed. Run `crewplane run --dry-run` to preview the decision; use `crewplane run --force` only to bypass matching history for the new signature. |
 

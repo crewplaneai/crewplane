@@ -130,12 +130,34 @@ class GeneratedFileDriftAllowance:
             )
 
 
+@dataclass
+class RuntimePublicationAllowance:
+    _published_signatures: dict[Path, tuple[int, str]] = field(
+        default_factory=dict,
+        repr=False,
+    )
+    _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
+    _version: int = field(default=0, repr=False, compare=False)
+
+    def publish(self, path: Path, signature: tuple[int, str]) -> None:
+        with self._lock:
+            self._published_signatures[path] = signature
+            self._version += 1
+
+    def snapshot(self) -> tuple[dict[Path, tuple[int, str]], int]:
+        with self._lock:
+            return dict(self._published_signatures), self._version
+
+
 @dataclass(frozen=True)
 class DriftGuardSession:
     telemetry: ExecutionTelemetry | None
     event_log_capture: EventLogAppendCapture | None
     generated_file_allowance: GeneratedFileDriftAllowance = field(
         default_factory=GeneratedFileDriftAllowance
+    )
+    runtime_publication_allowance: RuntimePublicationAllowance = field(
+        default_factory=RuntimePublicationAllowance
     )
 
 
@@ -159,6 +181,7 @@ class DriftGuardCallRequest:
     display: ProviderCallDisplay
     drift_session: DriftGuardSession | None = None
     generated_file_allowance: GeneratedFileDriftAllowance | None = None
+    runtime_publication_allowance: RuntimePublicationAllowance | None = None
     provider_output_policy: ProviderOutputPolicy = ProviderOutputPolicy.REQUIRE_OUTPUT
     rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 

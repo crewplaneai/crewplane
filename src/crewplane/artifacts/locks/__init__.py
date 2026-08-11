@@ -18,6 +18,7 @@ from .manifest import (
     finalize_stale_running_run,
 )
 from .process_identity import ProcessIdentity, ProcessInspector
+from .provider_processes import ensure_no_live_provider_processes
 
 LOCK_OWNER_FILENAME = "owner.json"
 
@@ -155,6 +156,16 @@ def _recover_or_raise(
         raise ResumeLockError(
             "A live same-context workflow run already holds the lock."
         )
+    metadata = LockRunMetadata(
+        run_id=owner.run_id,
+        run_key_name=owner.run_key_name,
+        workflow_identity=owner.workflow_identity,
+        workflow_signature=owner.workflow_signature,
+    )
+    try:
+        ensure_no_live_provider_processes(state_dir, metadata, inspector)
+    except LockManifestError as exc:
+        raise ResumeLockError(str(exc)) from exc
     _recover_stale_lock(
         lock_dir,
         state_dir,
@@ -212,16 +223,14 @@ def _recover_stale_lock(
             inspector,
         )
         _ensure_only_owner_file(recovery_dir)
+        metadata = LockRunMetadata(
+            run_id=reread_owner.run_id,
+            run_key_name=reread_owner.run_key_name,
+            workflow_identity=reread_owner.workflow_identity,
+            workflow_signature=reread_owner.workflow_signature,
+        )
         try:
-            finalize_stale_running_run(
-                state_dir,
-                LockRunMetadata(
-                    run_id=reread_owner.run_id,
-                    run_key_name=reread_owner.run_key_name,
-                    workflow_identity=reread_owner.workflow_identity,
-                    workflow_signature=reread_owner.workflow_signature,
-                ),
-            )
+            finalize_stale_running_run(state_dir, metadata)
         except LockManifestError as exc:
             raise ResumeLockError(str(exc)) from exc
         shutil.rmtree(recovery_dir, ignore_errors=True)

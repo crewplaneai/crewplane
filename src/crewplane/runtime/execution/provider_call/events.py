@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
     InvocationContext,
     InvocationDiagnostic,
+    InvocationProcessEvent,
+)
+from crewplane.architecture.ports import (
+    ArtifactStorePort,
+    ProviderProcessInvocation,
+    ProviderProcessPublication,
+    ProviderProcessStorePort,
 )
 from crewplane.core.config import AgentConfig
 from crewplane.observability.timing import ElapsedTimer
@@ -32,12 +40,35 @@ def build_invocation_context(
     telemetry: ExecutionTelemetry | None,
     metadata: InvocationMetadata,
     display: ProviderCallDisplay,
+    output: ArtifactStorePort,
+    on_provider_process_state_published: (
+        Callable[[ProviderProcessPublication], None] | None
+    ) = None,
 ) -> tuple[InvocationContext, InvocationEventCapture]:
     capture = InvocationEventCapture()
     diagnostics = None
 
     def record_usage(usage: InvocationUsage) -> None:
         capture.usage = usage
+
+    process_invocation = ProviderProcessInvocation(
+        node_id=metadata.node_id,
+        task_id=metadata.task_id,
+        provider=metadata.provider,
+        role=metadata.role,
+        audit_round_num=metadata.audit_round_num,
+        round_num=metadata.round_num,
+    )
+
+    process_event_sink = None
+    if isinstance(output, ProviderProcessStorePort):
+
+        def record_process_event(event: InvocationProcessEvent) -> None:
+            publication = output.write_provider_process_event(process_invocation, event)
+            if on_provider_process_state_published is not None:
+                on_provider_process_state_published(publication)
+
+        process_event_sink = record_process_event
 
     if telemetry is not None:
         event_context = metadata.event_context()
@@ -66,6 +97,7 @@ def build_invocation_context(
             diagnostics=diagnostics,
             usage_recorder=record_usage,
             console_message_sink=provider_console_message_sink(display),
+            process_event_sink=process_event_sink,
         ),
         capture,
     )

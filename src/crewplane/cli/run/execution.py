@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from pathlib import Path
+from typing import Never
 
 import typer
 from rich.console import Console
 
+from crewplane.architecture.errors import AdapterContractError
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents
 from crewplane.artifacts.locks import acquire_same_context_lock
@@ -62,7 +64,6 @@ from .preflight import (
     compile_preview,
     materialize_preflight_success,
     print_preflight_diagnostics,
-    run_cli_availability_errors,
     uses_mock_invoker,
     write_preflight_diagnostics,
 )
@@ -72,6 +73,30 @@ from .resume import (
     workflow_identity_for_source,
 )
 from .topology import workflow_topology_from_plan, workflow_topology_from_preview
+
+
+def _raise_runtime_config_preflight_failure(
+    context: WorkflowRunContext,
+    exc: Exception,
+) -> Never:
+    diagnostic = PreflightDiagnostic(
+        code=PreflightDiagnosticCode.RUNTIME_CONFIG,
+        phase=PreflightDiagnosticPhase.VALIDATION,
+        message=str(exc),
+    )
+    fallback_output = OutputManager(
+        context.workflow.name,
+        base_dir=context.state_dir,
+        template_base_dir=context.project_root,
+        log_cli_output=False,
+    )
+    write_preflight_diagnostics(
+        fallback_output,
+        [diagnostic],
+        context.workflow.name,
+    )
+    context.console.print(f"[red]Preflight RUNTIME-CONFIG:[/] {exc}")
+    raise typer.Exit(code=1) from exc
 
 
 def _finalize_cancelled_run(
@@ -200,38 +225,22 @@ async def execute_workflow_run(
             no_live=no_live,
         )
     except Exception as exc:
-        diagnostics = [
-            PreflightDiagnostic(
-                code=PreflightDiagnosticCode.RUNTIME_CONFIG,
-                phase=PreflightDiagnosticPhase.VALIDATION,
-                message=str(exc),
-            )
-        ]
-        fallback_output = OutputManager(
-            workflow.name,
-            base_dir=context.state_dir,
-            template_base_dir=context.project_root,
-            log_cli_output=False,
-        )
-        write_preflight_diagnostics(fallback_output, diagnostics, workflow.name)
-        context.console.print(f"[red]Preflight RUNTIME-CONFIG:[/] {exc}")
-        raise typer.Exit(code=1) from exc
+        _raise_runtime_config_preflight_failure(context, exc)
     if uses_mock_invoker(config):
         context.console.print(
             "Mock invoker active: no provider CLI commands will be started."
         )
-    preview = compile_preview(
-        context=context,
-        snapshot_result=snapshot_result,
-        fingerprint_key_policy="persist_if_needed",
-        additional_validation_errors=run_cli_availability_errors(
-            workflow,
-            config,
-            which_fn,
-            context.project_root,
-        ),
-        workspace_real_execution=True,
-    )
+    try:
+        preview = compile_preview(
+            context=context,
+            snapshot_result=snapshot_result,
+            fingerprint_key_policy="persist_if_needed",
+            check_invoker_availability=True,
+            executable_lookup=which_fn,
+            workspace_real_execution=True,
+        )
+    except AdapterContractError as exc:
+        _raise_runtime_config_preflight_failure(context, exc)
     print_preflight_diagnostics(preview.diagnostics, context.console)
     if preview.has_errors() or preview.workflow_signature is None:
         raise_run_preflight_errors(context, snapshot_result, preview, workflow.name)

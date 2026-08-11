@@ -51,6 +51,72 @@ class CliInvokerAdapterTests(unittest.TestCase):
         self.assertEqual(capabilities["honors_cwd"], True)
         self.assertEqual(capabilities["controlled_child_environment"], True)
 
+    def test_explicit_model_arg_warns_for_builtin_provider_kinds(self) -> None:
+        adapter = CliInvokerAdapter()
+
+        for provider_kind in set(SUPPORTED_PROVIDER_KINDS) - {ProviderKind.GENERIC}:
+            for model_arg in ("--custom-model", None):
+                with self.subTest(
+                    provider_kind=provider_kind,
+                    model_arg=model_arg,
+                ):
+                    config = Config(
+                        version=SCHEMA_VERSION,
+                        agents={
+                            "alpha": AgentConfig(
+                                cli_cmd=["provider"],
+                                provider_kind=provider_kind,
+                                model_arg=model_arg,
+                            )
+                        },
+                    )
+
+                    warnings = adapter.collect_model_arg_warnings(config)
+
+                    self.assertEqual(len(warnings), 1)
+                    self.assertIn("Agent 'alpha': remove model_arg", warnings[0])
+                    self.assertIn(provider_kind.value, warnings[0])
+
+    def test_model_arg_warning_ignores_omitted_and_generic_fields(self) -> None:
+        adapter = CliInvokerAdapter()
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "builtin": AgentConfig(
+                    cli_cmd=["codex", "exec"],
+                    provider_kind=ProviderKind.CODEX,
+                ),
+                "generic": AgentConfig(
+                    cli_cmd=["provider"],
+                    provider_kind=ProviderKind.GENERIC,
+                    model_arg="--custom-model",
+                ),
+            },
+        )
+
+        self.assertEqual(adapter.collect_model_arg_warnings(config), ())
+
+    def test_model_arg_warnings_are_sorted_by_agent_name(self) -> None:
+        adapter = CliInvokerAdapter()
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                agent_name: AgentConfig(
+                    cli_cmd=["codex", "exec"],
+                    provider_kind=ProviderKind.CODEX,
+                    model_arg="--custom-model",
+                )
+                for agent_name in ("zeta", "alpha")
+            },
+        )
+
+        warnings = adapter.collect_model_arg_warnings(config)
+
+        self.assertEqual(
+            [message.split("'")[1] for message in warnings],
+            ["alpha", "zeta"],
+        )
+
     def test_builtin_provider_log_presentation_descriptors(self) -> None:
         claude = build_cli_log_presentation(
             AgentConfig(cli_cmd=["claude"], provider_kind="claude")

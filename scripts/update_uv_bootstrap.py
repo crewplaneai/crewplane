@@ -23,6 +23,7 @@ ROOT = Path(
 LATEST_RELEASE_URL = "https://api.github.com/repos/astral-sh/uv/releases/latest"
 RELEASE_BASE_URL = "https://github.com/astral-sh/uv/releases/download"
 MANIFEST_PATH = Path("packaging/uv-bootstrap.json")
+WORKFLOW_VERSION_PATH = Path("packaging/uv-bootstrap-version.txt")
 INSTALLER_PATH = Path("install.sh")
 POSTINSTALL_PATH = Path("packaging/npm/scripts/postinstall.js")
 SHELL_BEGIN = "# BEGIN GENERATED UV BOOTSTRAP METADATA"
@@ -160,6 +161,10 @@ def render_manifest(release: UvRelease) -> str:
     return f"{json.dumps(manifest, indent=2)}\n"
 
 
+def render_workflow_version(release: UvRelease) -> str:
+    return f"uv=={release.version}\n"
+
+
 def render_shell_target(target: UvTarget, checksum: str) -> str:
     platforms = "|".join(target.shell_platforms)
     return f'''        {platforms})
@@ -243,31 +248,44 @@ def replace_generated_region(
     return updated
 
 
-def update_workflow_versions(content: str, version: str, path: Path) -> str:
+def validate_workflow_version_file_inputs(content: str, path: Path) -> int:
     lines = content.splitlines(keepends=True)
     setup_indices = [
         index for index, line in enumerate(lines) if "astral-sh/setup-uv@" in line
     ]
     for setup_index in setup_indices:
-        version_index = find_setup_uv_version_line(lines, setup_index, path)
-        indentation_length = indentation_width(lines[version_index])
-        indentation = lines[version_index][:indentation_length]
-        newline = "\n" if lines[version_index].endswith("\n") else ""
-        lines[version_index] = f'{indentation}version: "{version}"{newline}'
-    return "".join(lines)
+        inputs = setup_uv_inputs(lines, setup_index)
+        line_number = setup_index + 1
+        if "version" in inputs:
+            raise UvBootstrapError(
+                f"{path}:{line_number} setup-uv step must not pin version inline"
+            )
+        version_file = inputs.get("version-file")
+        if version_file is None:
+            raise UvBootstrapError(
+                f"{path}:{line_number} setup-uv step has no version-file input"
+            )
+        expected_path = WORKFLOW_VERSION_PATH.as_posix()
+        accepted_values = {expected_path, f'"{expected_path}"', f"'{expected_path}'"}
+        if version_file not in accepted_values:
+            raise UvBootstrapError(
+                f"{path}:{line_number} setup-uv version-file must reference "
+                f"{expected_path}"
+            )
+    return len(setup_indices)
 
 
-def find_setup_uv_version_line(
+def setup_uv_inputs(
     lines: list[str],
     setup_index: int,
-    path: Path,
-) -> int:
+) -> dict[str, str]:
     setup_line = lines[setup_index]
     property_indentation = indentation_width(setup_line)
     if setup_line.lstrip().startswith("- uses:"):
         property_indentation += 2
     with_indentation: int | None = None
     input_indentation: int | None = None
+    inputs: dict[str, str] = {}
     for index in range(setup_index + 1, len(lines)):
         line = lines[index]
         stripped = line.strip()
@@ -285,12 +303,11 @@ def find_setup_uv_version_line(
             break
         if input_indentation is None:
             input_indentation = indentation
-        if indentation == input_indentation and stripped.startswith("version:"):
-            return index
-    line_number = setup_index + 1
-    raise UvBootstrapError(
-        f"{path}:{line_number} setup-uv step has no explicit version input"
-    )
+        if indentation == input_indentation:
+            key, separator, value = stripped.partition(":")
+            if separator:
+                inputs[key] = value.strip()
+    return inputs
 
 
 def indentation_width(line: str) -> int:
@@ -302,7 +319,10 @@ def rendered_repository_files(
     release: UvRelease,
 ) -> dict[Path, str]:
     validate_release(release)
-    rendered = {MANIFEST_PATH: render_manifest(release)}
+    rendered = {
+        MANIFEST_PATH: render_manifest(release),
+        WORKFLOW_VERSION_PATH: render_workflow_version(release),
+    }
     installer = (repository / INSTALLER_PATH).read_text(encoding="utf-8")
     rendered[INSTALLER_PATH] = replace_generated_region(
         installer,
@@ -324,10 +344,8 @@ def rendered_repository_files(
         content = workflow_path.read_text(encoding="utf-8")
         if "astral-sh/setup-uv@" not in content:
             continue
-        setup_uv_workflows += 1
-        rendered[relative_path] = update_workflow_versions(
+        setup_uv_workflows += validate_workflow_version_file_inputs(
             content,
-            release.version,
             relative_path,
         )
     if setup_uv_workflows == 0:

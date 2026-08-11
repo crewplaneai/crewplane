@@ -72,6 +72,35 @@ def test_cli_help_imports_without_packaging_runtime_dependency() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_global_update_supports_restricted_output_encoding(tmp_path: Path) -> None:
+    environment = os.environ.copy()
+    environment["PYTHONIOENCODING"] = "ascii:strict"
+    script = textwrap.dedent(
+        """
+        from crewplane.cli import app as cli
+
+        def fake_update(console):
+            console.print("\u2713 updated")
+            return 0
+
+        cli.update_crewplane = fake_update
+        cli.app(args=["--update"], standalone_mode=False)
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr.decode("ascii")
+    assert b"\\u2713 updated" in result.stdout
+
+
 @pytest.mark.parametrize("option", ["--update", "-u"])
 def test_global_update_option_is_eager_and_project_independent(
     monkeypatch: pytest.MonkeyPatch,

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
+    InvocationProcessEvent,
     JsonObject,
 )
 from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
@@ -36,6 +37,41 @@ class StageTaskSpec:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "role", ProviderRole(self.role))
+
+
+@dataclass(frozen=True)
+class ProviderProcessInvocation:
+    """Invocation coordinates used to persist a provider child process."""
+
+    node_id: str
+    task_id: str
+    provider: str
+    role: ProviderRole
+    audit_round_num: int | None
+    round_num: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "role", ProviderRole(self.role))
+
+
+@dataclass(frozen=True)
+class ProviderProcessPublication:
+    """Trusted identity of a provider-process state publication."""
+
+    path: Path
+    signature: tuple[int, str]
+
+
+@runtime_checkable
+class ProviderProcessStorePort(Protocol):
+    """Optional artifact capability for provider-process lifecycle records."""
+
+    def write_provider_process_event(
+        self,
+        invocation: ProviderProcessInvocation,
+        event: InvocationProcessEvent,
+    ) -> ProviderProcessPublication:
+        """Persist one provider child-process lifecycle transition."""
 
 
 class ArtifactStorePort(Protocol):
