@@ -88,7 +88,10 @@ Current CI policy:
   [Release Workflow](#release-workflow). GitHub Actions does not publish
   production PyPI or npm packages and does not need their credentials.
 - Workflow actions and `uv` are version-pinned. `packaging/uv-bootstrap.json`
-  is the source of truth for the `uv` version and installer checksums.
+  is the source of truth for the `uv` version and installer checksums. The
+  updater generates `packaging/uv-bootstrap-version.txt` from this manifest for
+  workflows; do not edit the generated file directly. This keeps nightly
+  updates from rewriting workflow definitions.
 - Nightly automation proposes `uv` updates through the shared `ci-tooling` PR
   lane.
 
