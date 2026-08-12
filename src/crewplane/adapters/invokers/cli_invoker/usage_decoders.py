@@ -14,6 +14,29 @@ from .machine_json import read_claude_model_usage
 from .streaming import iter_stdout_lines, load_stdout_json
 
 
+@dataclass
+class _UsageAccumulator:
+    totals: ProviderTokenUsage | None = None
+    valid_report_count: int = 0
+    malformed_error: str | None = None
+
+    def record_usage(self, usage: ProviderTokenUsage) -> None:
+        if not usage.has_any_value():
+            return
+        self.totals = usage if self.totals is None else self.totals.add_exact(usage)
+        self.valid_report_count += 1
+
+    def record_error(self, error: str) -> None:
+        self.malformed_error = error
+
+    def result(self) -> UsageDecodeResult:
+        return _retained_usage_result(
+            self.totals,
+            self.valid_report_count,
+            self.malformed_error,
+        )
+
+
 def decode_codex_usage(result: CommandResult) -> UsageDecodeResult:
     latest_tokens: ProviderTokenUsage | None = None
     malformed_error: str | None = None
@@ -55,23 +78,18 @@ def decode_claude_usage(result: CommandResult) -> UsageDecodeResult:
     if not isinstance(payload, dict):
         return UsageDecodeResult(error="Malformed Claude modelUsage payload.")
 
-    totals: ProviderTokenUsage | None = None
-    valid_report_count = 0
-    malformed_error: str | None = None
+    accumulator = _UsageAccumulator()
     for model_name, model_usage in payload.items():
         if not isinstance(model_name, str) or not isinstance(model_usage, dict):
-            malformed_error = "Malformed Claude modelUsage payload."
+            accumulator.record_error("Malformed Claude modelUsage payload.")
             continue
         try:
             row_usage = _claude_row_usage(model_usage)
         except _MalformedUsageError as exc:
-            malformed_error = str(exc)
+            accumulator.record_error(str(exc))
             continue
-        if not row_usage.has_any_value():
-            continue
-        totals = row_usage if totals is None else totals.add_exact(row_usage)
-        valid_report_count += 1
-    return _retained_usage_result(totals, valid_report_count, malformed_error)
+        accumulator.record_usage(row_usage)
+    return accumulator.result()
 
 
 def decode_gemini_usage(result: CommandResult) -> UsageDecodeResult:
@@ -88,42 +106,35 @@ def decode_gemini_usage(result: CommandResult) -> UsageDecodeResult:
     if not isinstance(rows, list):
         return UsageDecodeResult(error="Malformed Gemini stats.models payload.")
 
-    totals: ProviderTokenUsage | None = None
-    valid_report_count = 0
-    malformed_error: str | None = None
+    accumulator = _UsageAccumulator()
     for row in rows:
         if not isinstance(row, dict):
-            malformed_error = "Malformed Gemini model usage row."
+            accumulator.record_error("Malformed Gemini model usage row.")
             continue
         tokens = row.get("tokens")
         if tokens is None:
             continue
         if not isinstance(tokens, dict):
-            malformed_error = "Malformed Gemini model tokens payload."
+            accumulator.record_error("Malformed Gemini model tokens payload.")
             continue
         try:
             row_usage = _gemini_row_usage(tokens)
         except _MalformedUsageError as exc:
-            malformed_error = str(exc)
+            accumulator.record_error(str(exc))
             continue
-        if not row_usage.has_any_value():
-            continue
-        totals = row_usage if totals is None else totals.add_exact(row_usage)
-        valid_report_count += 1
-    return _retained_usage_result(totals, valid_report_count, malformed_error)
+        accumulator.record_usage(row_usage)
+    return accumulator.result()
 
 
 def decode_kilo_usage(result: CommandResult) -> UsageDecodeResult:
-    totals: ProviderTokenUsage | None = None
-    valid_report_count = 0
-    malformed_error: str | None = None
+    accumulator = _UsageAccumulator()
     for line in iter_stdout_lines(result):
         if not line.strip():
             continue
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            malformed_error = "Malformed Kilo JSON output."
+            accumulator.record_error("Malformed Kilo JSON output.")
             continue
         if not isinstance(event, dict) or event.get("type") != "step_finish":
             continue
@@ -132,18 +143,15 @@ def decode_kilo_usage(result: CommandResult) -> UsageDecodeResult:
             continue
         tokens = part["tokens"]
         if not isinstance(tokens, dict):
-            malformed_error = "Malformed Kilo token payload."
+            accumulator.record_error("Malformed Kilo token payload.")
             continue
         try:
             row_usage = _kilo_row_usage(tokens)
         except _MalformedUsageError as exc:
-            malformed_error = str(exc)
+            accumulator.record_error(str(exc))
             continue
-        if not row_usage.has_any_value():
-            continue
-        totals = row_usage if totals is None else totals.add_exact(row_usage)
-        valid_report_count += 1
-    return _retained_usage_result(totals, valid_report_count, malformed_error)
+        accumulator.record_usage(row_usage)
+    return accumulator.result()
 
 
 def _retained_usage_result(

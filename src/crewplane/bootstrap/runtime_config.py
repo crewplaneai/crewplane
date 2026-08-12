@@ -23,6 +23,8 @@ from crewplane.core.preflight.runtime_config import (
 
 @dataclass(frozen=True)
 class RuntimeConfigSnapshotBuildResult:
+    """Canonical runtime snapshot plus shallow option copies for construction."""
+
     snapshot: RuntimeConfigSnapshot
     invoker_options: JsonObject
     artifact_options: JsonObject
@@ -92,19 +94,24 @@ def normalize_invoker_capabilities(
     invoker_adapter: object,
     invoker_config: CanonicalIntegrationConfig,
 ) -> CanonicalIntegrationConfig:
-    declared = declared_invoker_capabilities(invoker_adapter)
-    capabilities = dict(invoker_config.capabilities)
-    if declared is None:
-        capabilities.setdefault(
+    """Merge declared workspace support or record explicit unsupported fallback."""
+    declared_capabilities = declared_invoker_capabilities(invoker_adapter)
+    normalized_capabilities = dict(invoker_config.capabilities)
+    if declared_capabilities is None:
+        normalized_capabilities.setdefault(
             "workspace",
             InvokerAdapterCapabilities.unsupported().as_dict()["workspace"],
         )
-        return invoker_config.model_copy(update={"capabilities": capabilities})
-    merge_declared_invoker_capabilities(capabilities, declared)
-    return invoker_config.model_copy(update={"capabilities": capabilities})
+    else:
+        merge_declared_invoker_capabilities(
+            normalized_capabilities,
+            declared_capabilities,
+        )
+    return invoker_config.model_copy(update={"capabilities": normalized_capabilities})
 
 
 def declared_invoker_capabilities(invoker_adapter: object) -> JsonObject | None:
+    """Read optional adapter-declared capabilities without mutating the adapter."""
     capability_factory = getattr(invoker_adapter, "workspace_capabilities", None)
     if not callable(capability_factory):
         return None
@@ -126,6 +133,7 @@ def merge_declared_invoker_capabilities(
     capabilities: JsonObject,
     declared: JsonObject,
 ) -> None:
+    """Merge declared capabilities in place, rejecting conflicting metadata."""
     for name, value in declared.items():
         existing = capabilities.get(name)
         if existing is not None and existing != value:

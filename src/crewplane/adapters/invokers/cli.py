@@ -8,7 +8,6 @@ from pathlib import Path
 from crewplane.architecture.contracts import (
     AgentInvoker,
     CanonicalIntegrationConfig,
-    CliInvokerOptions,
     InvokerAdapterCapabilities,
     JsonObject,
     ProviderKind,
@@ -190,7 +189,6 @@ class CliInvokerAdapter:
         resolved_identity: str,
         options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
-        CliInvokerOptions()
         if options:
             raise ValueError(
                 "cli invoker implementation does not support options; "

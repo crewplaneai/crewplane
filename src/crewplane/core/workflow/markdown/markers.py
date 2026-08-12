@@ -9,6 +9,7 @@ from markdown_it import MarkdownIt
 from crewplane.core.prompt_segments import PromptSegmentPayload, PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 
+from ..source_locations import SourceSpan
 from .models import (
     ALLOWED_PROMPT_MARKER_ROLE_SET,
     ALLOWED_PROMPT_MARKER_ROLES,
@@ -91,11 +92,11 @@ def extract_prompt_segment_payloads(
     source: Path,
     node_id: str,
     content_start_line: int,
-) -> tuple[list[PromptSegmentPayload], list[dict[str, int]]]:
+) -> tuple[list[PromptSegmentPayload], list[SourceSpan]]:
     lines = section_text.splitlines(keepends=True)
     events = collect_marker_events(section_text, node_id=node_id, source=source)
     prompt_segments: list[PromptSegmentPayload] = []
-    prompt_segment_spans: list[dict[str, int]] = []
+    prompt_segment_spans: list[SourceSpan] = []
     active_role: PromptMarkerRole | None = None
     cursor_line = 0
 

@@ -259,14 +259,13 @@ class OnboardingRunner:
 
     def handle_missing_state_dir(self) -> bool:
         messages.print_missing_state_dir(self.console, self.options.project_root)
-        if not self.confirm(messages.INIT_RECOVERY_PROMPT, False):
-            messages.print_no_files_changed(self.console)
-            return False
-        initialize_project_templates(self.console, self.options.project_root)
-        return self.generated_files_exist()
+        return self._recover_missing_generated_files()
 
     def handle_missing_generated_files(self) -> bool:
         messages.print_missing_generated_files(self.console)
+        return self._recover_missing_generated_files()
+
+    def _recover_missing_generated_files(self) -> bool:
         if not self.confirm(messages.INIT_RECOVERY_PROMPT, False):
             messages.print_no_files_changed(self.console)
             return False

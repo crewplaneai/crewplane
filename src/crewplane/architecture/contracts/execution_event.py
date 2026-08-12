@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from time import monotonic
 from types import MappingProxyType
-from typing import Literal, Protocol, cast
+from typing import Literal, Protocol, cast, override
 
 from crewplane.architecture.contracts.invocation import (
     OutputExtractionStatus,
@@ -66,6 +66,7 @@ class WorkflowEventPayload(EventPayload):
 
     error: str | None = None
 
+    @override
     def as_event_fields(self) -> JsonObject:
         return {"error": self.error}
 
@@ -76,6 +77,7 @@ class NodeEventPayload(EventPayload):
 
     error: str | None = None
 
+    @override
     def as_event_fields(self) -> JsonObject:
         return {"error": self.error}
 
@@ -111,6 +113,7 @@ class InvocationEventPayload(EventPayload):
                 MappingProxyType(dict(self.provider_tokens)),
             )
 
+    @override
     def as_event_fields(self) -> JsonObject:
         return {
             "attempt_count": self.attempt_count,
@@ -158,6 +161,7 @@ class WorkspaceEventPayload(EventPayload):
     workspace_child_environment_required: bool | None = None
     workspace_child_environment_applied: bool | None = None
 
+    @override
     def as_event_fields(self) -> JsonObject:
         return {
             "status": self.status,
@@ -201,6 +205,7 @@ class RuntimeLogEventPayload(EventPayload):
                 MappingProxyType(dict(self.attributes)),
             )
 
+    @override
     def as_event_fields(self) -> JsonObject:
         return {
             "level": self.level,
@@ -291,28 +296,21 @@ def emit_event(event_sink: EventSink | None, event: ExecutionEvent) -> None:
 
 
 def validate_payload_type(event_type: EventType, payload: EventPayload) -> None:
-    valid = (
-        (
-            event_type in {"workflow_started", "workflow_finished", "workflow_failed"}
-            and isinstance(payload, WorkflowEventPayload)
-        )
-        or (event_type == "runtime_log" and isinstance(payload, RuntimeLogEventPayload))
-        or (
-            event_type
-            in {"node_started", "node_finished", "node_failed", "node_blocked"}
-            and isinstance(payload, NodeEventPayload)
-        )
-        or (
-            event_type
-            in {"invocation_started", "invocation_finished", "invocation_failed"}
-            and isinstance(payload, InvocationEventPayload)
-        )
-        or (
-            event_type == "workspace_context_recorded"
-            and isinstance(payload, WorkspaceEventPayload)
-        )
-    )
-    if not valid:
+    expected_payload: type[EventPayload]
+    match event_type:
+        case "workflow_started" | "workflow_finished" | "workflow_failed":
+            expected_payload = WorkflowEventPayload
+        case "node_started" | "node_finished" | "node_failed" | "node_blocked":
+            expected_payload = NodeEventPayload
+        case "invocation_started" | "invocation_finished" | "invocation_failed":
+            expected_payload = InvocationEventPayload
+        case "workspace_context_recorded":
+            expected_payload = WorkspaceEventPayload
+        case "runtime_log":
+            expected_payload = RuntimeLogEventPayload
+        case _:
+            raise ValueError(f"Unsupported execution event type: {event_type!r}.")
+    if not isinstance(payload, expected_payload):
         raise ValueError(
             f"Execution event payload {payload.__class__.__name__} is not valid "
             f"for event_type '{event_type}'."

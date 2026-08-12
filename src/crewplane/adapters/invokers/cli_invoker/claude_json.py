@@ -41,6 +41,7 @@ def extract_claude_output(
     result: CommandResult,
     max_captured_usage_bytes: int,
 ) -> OutputExtractionResult:
+    """Extract Claude's result string into an owned temporary output file."""
     extraction = _extract_claude_document(
         result,
         use_stderr_fallback=True,
@@ -67,6 +68,8 @@ def extract_claude_output(
 
 @dataclass(frozen=True)
 class ClaudeJsonDocument:
+    """Incrementally parsed Claude result and optional model-usage payload."""
+
     result_path: Path | None
     result_char_count: int
     model_usage: object | None
@@ -105,6 +108,7 @@ def read_claude_model_usage(
     result: CommandResult,
     max_captured_usage_bytes: int,
 ) -> tuple[object | None, str | None]:
+    """Read the bounded modelUsage payload, returning parse errors as data."""
     source = stdout_source(result)
     if source is None:
         source = stream_source(result.stderr_text, result.stderr_path)

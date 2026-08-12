@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -26,6 +26,12 @@ class WorktreeSourceRef:
     bundle_size_bytes: int | None = None
     bundle_ref: str | None = None
     upstream_sources: tuple[WorktreeSourceRef, ...] = ()
+
+
+def candidate_source_ref(source_ref: WorktreeSourceRef) -> WorktreeSourceRef:
+    """Project a persisted source reference into candidate-source semantics."""
+
+    return replace(source_ref, source_kind="candidate")
 
 
 @dataclass(frozen=True)

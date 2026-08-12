@@ -4,20 +4,23 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 from crewplane.architecture.contracts import validate_log_presentation_descriptor
-from crewplane.observability.tmux.inspect_snapshot import read_snapshot
+from crewplane.observability.tmux.inspect_snapshot import read_inspect_snapshot
+from crewplane.observability.tmux.snapshot_types import (
+    SelectedInvocationSnapshot,
+    require_snapshot_string,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    snapshot = read_snapshot(args.snapshot)
+    snapshot = read_inspect_snapshot(args.snapshot)
     if snapshot is None:
         print("Inspect snapshot unavailable.", flush=True)
         return 1
     try:
-        if snapshot.get("inspect_view") == "formatted":
+        if snapshot["inspect_view"] == "formatted":
             exec_formatted(snapshot, args.snapshot)
         exec_raw(snapshot)
     except Exception as exc:
@@ -32,16 +35,16 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def exec_raw(snapshot: dict[str, Any]) -> None:
-    log_path = require_string(snapshot, "log_file")
+def exec_raw(snapshot: SelectedInvocationSnapshot) -> None:
+    log_path = require_snapshot_string(snapshot, "log_file")
     os.execvp("tail", ["tail", "-n", "+1", "-F", "--", log_path])
 
 
-def exec_formatted(snapshot: dict[str, Any], snapshot_path: Path) -> None:
+def exec_formatted(snapshot: SelectedInvocationSnapshot, snapshot_path: Path) -> None:
     validate_log_presentation_descriptor(
         {
-            "format": require_string(snapshot, "log_presentation_format"),
-            "profile": require_string(snapshot, "log_presentation_profile"),
+            "format": require_snapshot_string(snapshot, "log_presentation_format"),
+            "profile": require_snapshot_string(snapshot, "log_presentation_profile"),
         }
     )
     os.execv(
@@ -54,13 +57,6 @@ def exec_formatted(snapshot: dict[str, Any], snapshot_path: Path) -> None:
             str(snapshot_path),
         ],
     )
-
-
-def require_string(snapshot: dict[str, Any], key: str) -> str:
-    value = snapshot.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"snapshot missing {key}")
-    return value
 
 
 if __name__ == "__main__":

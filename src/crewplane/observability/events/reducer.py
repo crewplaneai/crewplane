@@ -57,15 +57,15 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             node = require_node(state, context.node_id)
             node.status = "failed"
             node.finished_at = event.timestamp
-            payload = _node_payload(event)
-            if payload.error:
-                node.recent_events.append(f"FAIL {payload.error}")
+            node_payload = _node_payload(event)
+            if node_payload.error:
+                node.recent_events.append(f"FAIL {node_payload.error}")
         case "node_blocked":
             node = require_node(state, context.node_id)
             node.status = "blocked"
-            payload = _node_payload(event)
-            if payload.error:
-                node.recent_events.append(f"BLOCKED {payload.error}")
+            node_payload = _node_payload(event)
+            if node_payload.error:
+                node.recent_events.append(f"BLOCKED {node_payload.error}")
         case "invocation_started":
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
@@ -76,30 +76,30 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
         case "invocation_finished":
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
-            payload = _invocation_payload(event)
+            finished_payload = _invocation_payload(event)
             invocation.status = "succeeded"
             invocation.finished_at = event.timestamp
-            invocation.duration_ms = payload.duration_ms
+            invocation.duration_ms = finished_payload.duration_ms
             suffix = (
-                f" ({format_elapsed_seconds(payload.duration_ms / 1000)})"
-                if payload.duration_ms is not None
+                f" ({format_elapsed_seconds(finished_payload.duration_ms / 1000)})"
+                if finished_payload.duration_ms is not None
                 else ""
             )
             record_node_event(node, f"DONE {invocation.task_id}{suffix}")
         case "invocation_failed":
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
-            payload = _invocation_payload(event)
+            failed_payload = _invocation_payload(event)
             invocation.status = "failed"
             invocation.finished_at = event.timestamp
-            invocation.duration_ms = payload.duration_ms
-            invocation.error = payload.error
+            invocation.duration_ms = failed_payload.duration_ms
+            invocation.error = failed_payload.error
             duration_label = (
-                f" ({format_elapsed_seconds(payload.duration_ms / 1000)})"
-                if payload.duration_ms is not None
+                f" ({format_elapsed_seconds(failed_payload.duration_ms / 1000)})"
+                if failed_payload.duration_ms is not None
                 else ""
             )
-            error_label = clip(payload.error or "error", 50)
+            error_label = clip(failed_payload.error or "error", 50)
             record_node_event(
                 node, f"FAIL {invocation.task_id}{duration_label}: {error_label}"
             )

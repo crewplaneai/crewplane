@@ -3,6 +3,7 @@ from __future__ import annotations
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .fields import int_field, nullable_int_field
+from .fields import mapping_value as _mapping
 from .invocations import (
     ExpectedWorkspaceInvocation,
     expected_seeded_lineage_invocation,
@@ -166,7 +167,3 @@ def _payload_bundle_matches_candidate_source(
         and source.get("bundle_size_bytes") == bundle.get("size_bytes")
         and source.get("bundle_ref") == refs.get("result")
     )
-
-
-def _mapping(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}

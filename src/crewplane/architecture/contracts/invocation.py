@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 
 class ProviderKind(StrEnum):
+    """Provider behavior families recognized by built-in invoker adapters."""
+
     CLAUDE = "claude"
     CODEX = "codex"
     COPILOT = "copilot"
@@ -27,14 +29,7 @@ class ProviderKind(StrEnum):
     GENERIC = "generic"
 
 
-SUPPORTED_PROVIDER_KINDS = (
-    ProviderKind.CLAUDE,
-    ProviderKind.CODEX,
-    ProviderKind.COPILOT,
-    ProviderKind.GEMINI,
-    ProviderKind.KILO,
-    ProviderKind.GENERIC,
-)
+SUPPORTED_PROVIDER_KINDS = tuple(ProviderKind)
 SUPPORTED_PROVIDER_KIND_VALUES = tuple(kind.value for kind in SUPPORTED_PROVIDER_KINDS)
 SUPPORTED_PROVIDER_KIND_VALUE_SET = frozenset(SUPPORTED_PROVIDER_KIND_VALUES)
 
@@ -91,6 +86,8 @@ def _is_positive_integer(value: object) -> bool:
 
 @dataclass(frozen=True)
 class ProviderTokenUsage:
+    """Provider-reported token buckets, where ``None`` means unknown."""
+
     input: int | None = None
     cached_input: int | None = None
     cache_write: int | None = None
@@ -99,6 +96,7 @@ class ProviderTokenUsage:
     total: int | None = None
 
     def as_dict(self) -> dict[str, int | None]:
+        """Return a new mutable mapping of token bucket values."""
         return {
             "input": self.input,
             "cached_input": self.cached_input,
@@ -131,6 +129,8 @@ class ProviderTokenUsage:
 
 @dataclass(frozen=True)
 class InvocationUsage:
+    """Normalized usage and cost evidence for one terminal invocation."""
+
     attempt_count: int
     cli_captured: bool
     output_extraction_status: OutputExtractionStatus
@@ -161,6 +161,7 @@ class InvocationUsage:
         )
 
     def as_event_fields(self) -> JsonObject:
+        """Return a JSON-compatible shallow copy for event persistence."""
         return {
             "attempt_count": self.attempt_count,
             "cli_captured": self.cli_captured,
@@ -179,6 +180,8 @@ class InvocationUsage:
 
 @dataclass(frozen=True)
 class LogPresentationDescriptor:
+    """Validated display-only format and formatter profile for provider logs."""
+
     format: LogPresentationFormat
     profile: str = "generic"
 
@@ -237,6 +240,8 @@ def validate_log_presentation_descriptor(
 
 
 class AgentInvoker(Protocol):
+    """Provider-neutral invocation boundary implemented by invoker adapters."""
+
     async def invoke(
         self,
         config: AgentConfig,
@@ -266,6 +271,8 @@ InvocationLogLevel = Literal["debug", "info", "warning", "error"]
 
 @dataclass(frozen=True)
 class InvocationDiagnostic:
+    """Structured diagnostic emitted while an invocation is running."""
+
     level: InvocationLogLevel
     message: str
     operation: str
@@ -290,6 +297,8 @@ WorkspaceEnvironmentAppliedSink = Callable[[], None]
 
 @dataclass(frozen=True)
 class InvocationProcessEvent:
+    """Validated start or exit receipt for one provider child process attempt."""
+
     attempt: int
     pid: int
     process_group_id: int | None
@@ -330,6 +339,8 @@ InvocationProcessEventSink = Callable[[InvocationProcessEvent], None]
 
 @dataclass(frozen=True)
 class InvocationSourceContext:
+    """Immutable Git source identity visible to one provider invocation."""
+
     source_kind: InvocationSourceKind
     source_node_id: str | None
     source_commit: str
@@ -339,12 +350,16 @@ class InvocationSourceContext:
 
 @dataclass(frozen=True)
 class InvocationWorktreeContract:
+    """Workspace materialization contract recorded for an invocation."""
+
     mode: InvocationWorktreeContractMode
     schema_version: str
 
 
 @dataclass(frozen=True)
 class InvocationWorkspaceContext:
+    """Provider-visible workspace facts passed through the invoker boundary."""
+
     workspace_kind: InvocationWorkspaceKind
     materialization: InvocationWorkspaceMaterialization
     logical_worktree_name: str
@@ -363,6 +378,8 @@ class InvocationWorkspaceContext:
 
 @dataclass(frozen=True)
 class InvocationContext:
+    """Runtime metadata and callbacks owned by one provider invocation."""
+
     node_id: str
     task_id: str
     provider: str
@@ -391,6 +408,8 @@ class InvocationContext:
 
 @dataclass(frozen=True)
 class CommandResult:
+    """Provider process result with inline or file-backed captured streams."""
+
     returncode: int
     stdout_text: str
     stderr_text: str
@@ -464,6 +483,8 @@ def _iter_lines_from_text(value: str) -> list[str]:
 
 @dataclass(frozen=True)
 class QuotaClassification:
+    """Provider-neutral quota decision and optional reset evidence."""
+
     is_quota: bool
     reset_after_seconds: float | None
     evidence: str | None
@@ -471,6 +492,8 @@ class QuotaClassification:
 
 @dataclass(frozen=True)
 class OneShotFailureRetryPolicy:
+    """Adapter-owned single retry rule for a narrowly identified failure."""
+
     output_contains: tuple[str, ...]
     wait_seconds: float
     reason: str
@@ -479,6 +502,8 @@ class OneShotFailureRetryPolicy:
 
 @dataclass(frozen=True)
 class InvocationPlan:
+    """Complete provider-neutral command plan consumed by runtime execution."""
+
     cmd: list[str]
     stdin_data: bytes | None
     structured_output_file: Path | None
@@ -495,6 +520,8 @@ class InvocationPlan:
 
 @dataclass(frozen=True)
 class ChildProcessEnvironment:
+    """Explicit child environment additions and removals."""
+
     set: Mapping[str, str]
     unset: tuple[str, ...]
 
@@ -505,6 +532,8 @@ class ChildProcessEnvironment:
 
 @dataclass(frozen=True)
 class InvokerWorkspaceSupport:
+    """Declared ability to honor managed-workspace invocation requirements."""
+
     supported: bool
     launch_mode: InvokerWorkspaceLaunchMode | None
     honors_cwd: bool
@@ -530,6 +559,8 @@ class InvokerWorkspaceSupport:
 
 @dataclass(frozen=True)
 class InvokerAdapterCapabilities:
+    """Capability metadata published by an invoker adapter."""
+
     workspace: InvokerWorkspaceSupport
 
     @classmethod
@@ -561,6 +592,8 @@ class WorkspaceCompatibleInvokerAdapter(Protocol):
 
 
 class CommandRunner(Protocol):
+    """Async child-process transport used by the runtime invocation loop."""
+
     async def __call__(
         self,
         cmd: list[str],

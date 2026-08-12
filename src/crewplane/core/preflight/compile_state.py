@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from crewplane.core.workflow.models import WorkflowNode
+from crewplane.core.workflow.source_locations import SourceSpan
 
 from .diagnostics import (
     PreflightDiagnostic,
@@ -46,8 +47,8 @@ class PreflightCompileOptions:
     state_dir: Path
     node_source_roots: dict[str, Path] = field(default_factory=dict)
     node_source_files: dict[str, Path] = field(default_factory=dict)
-    node_source_spans: dict[str, dict[str, int]] = field(default_factory=dict)
-    prompt_segment_spans: dict[str, tuple[dict[str, int], ...]] = field(
+    node_source_spans: dict[str, SourceSpan] = field(default_factory=dict)
+    prompt_segment_spans: dict[str, tuple[SourceSpan, ...]] = field(
         default_factory=dict
     )
     allowed_template_paths: tuple[Path, ...] = ()
@@ -76,7 +77,7 @@ class PreflightCompileOptions:
             node_source_roots={node_id: project_root for node_id in node_source_files},
             node_source_files=node_source_files,
             node_source_spans={
-                node_id: dict(span)
+                node_id: span.copy()
                 for node_id, span in source.node_source_spans.items()
             },
             prompt_segment_spans={
@@ -212,9 +213,9 @@ def source_file(node: WorkflowNode, options: PreflightCompileOptions) -> str | N
 def node_source_span(
     node: WorkflowNode,
     options: PreflightCompileOptions,
-) -> dict[str, int] | None:
+) -> SourceSpan | None:
     span = options.node_source_spans.get(node.id)
-    return dict(span) if span is not None else None
+    return span.copy() if span is not None else None
 
 
 def token_source_span(
@@ -222,7 +223,7 @@ def token_source_span(
     options: PreflightCompileOptions,
     segment_index: int,
     reference: TemplateReference,
-) -> dict[str, int] | None:
+) -> SourceSpan | None:
     segment_span = prompt_segment_span(node, options, segment_index)
     if segment_span is None:
         return None
@@ -241,11 +242,11 @@ def prompt_segment_span(
     node: WorkflowNode,
     options: PreflightCompileOptions,
     segment_index: int,
-) -> dict[str, int] | None:
+) -> SourceSpan | None:
     spans = options.prompt_segment_spans.get(node.id, ())
     if segment_index >= len(spans):
         return None
-    return dict(spans[segment_index])
+    return spans[segment_index].copy()
 
 
 def column_at_offset(text: str) -> int:

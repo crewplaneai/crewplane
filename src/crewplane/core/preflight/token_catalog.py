@@ -4,6 +4,7 @@ from crewplane.architecture.contracts import JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import WorkflowNode
+from crewplane.core.workflow.source_locations import SourceSpan
 
 from .compile_state import CompileState, PreflightCompileOptions, source_file
 from .models import TokenCatalogEntry
@@ -24,7 +25,7 @@ def append_token_catalog(
     options: PreflightCompileOptions,
     canonical_locator: str | None = None,
     dependency_signature: str | None = None,
-    source_span: dict[str, int] | None = None,
+    source_span: SourceSpan | None = None,
     resolved: JsonObject | None = None,
 ) -> None:
     state.token_catalog.append(

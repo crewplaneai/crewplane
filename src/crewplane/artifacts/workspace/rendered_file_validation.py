@@ -13,8 +13,20 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from ..run_history import RunHistoryRecord
 from ..safe_files import contained_regular_file
-from .bundle_validation import workspace_blob_descriptor_matches
-from .state.fields import int_field, nullable_int_field
+from .bundle_validation import (
+    WorkspaceBlobDescriptor,
+    workspace_blob_descriptor_matches,
+)
+from .state.fields import (
+    int_field,
+    nullable_int_field,
+)
+from .state.fields import (
+    is_hex_object as _is_hex_object,
+)
+from .state.fields import (
+    mapping_value as _mapping,
+)
 
 _SUPPORTED_RENDERED_FILE_MODES = (
     "100644",  # Git mode for a regular, non-executable blob.
@@ -221,13 +233,15 @@ def _dynamic_rendered_descriptor_matches(
         return False
     return workspace_blob_descriptor_matches(
         workspace_source.git_top_level,
-        source_commit,
-        source_tree,
-        locator.git_top_relative_path,
-        git_blob,
-        git_file_mode,
-        byte_size,
-        canonical,
+        WorkspaceBlobDescriptor(
+            source_commit=source_commit,
+            source_tree=source_tree,
+            git_path=locator.git_top_relative_path,
+            git_blob=git_blob,
+            git_file_mode=git_file_mode,
+            byte_size=byte_size,
+            canonical_sha256=canonical,
+        ),
         workspace_source.object_format,
         bundle_path,
         bundle_ref,
@@ -280,18 +294,6 @@ def _project_rendered_descriptor_matches(
             and descriptor.get("injected_sha256") == locator.canonical_blob_sha256
         )
     return descriptor.get("canonical_blob_sha256") == descriptor.get("injected_sha256")
-
-
-def _mapping(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _is_hex_object(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) in {40, 64}
-        and all(char in "0123456789abcdef" for char in value)
-    )
 
 
 def _is_sha256(value: object) -> bool:

@@ -25,6 +25,7 @@ from ..results.review_loop_status import (
     resolve_review_loop_status,
 )
 from ..safe_files import contained_regular_file
+from .state.fields import without_branch_export
 
 
 def build_node_workspace_descriptor(
@@ -214,7 +215,7 @@ def _workspace_state_artifact_descriptor(
     payload: Mapping[str, object],
 ) -> JsonObject:
     descriptor = _artifact_descriptor(stages_dir, path)
-    resume_payload = _without_branch_export(payload)
+    resume_payload = without_branch_export(payload)
     resume_bytes = json.dumps(
         resume_payload,
         allow_nan=False,
@@ -224,18 +225,6 @@ def _workspace_state_artifact_descriptor(
     descriptor["resume_sha256"] = hashlib.sha256(resume_bytes).hexdigest()
     descriptor["resume_size_bytes"] = len(resume_bytes)
     return descriptor
-
-
-def _without_branch_export(value: object) -> object:
-    if isinstance(value, Mapping):
-        return {
-            key: _without_branch_export(item)
-            for key, item in value.items()
-            if key != "branch_export"
-        }
-    if isinstance(value, list):
-        return [_without_branch_export(item) for item in value]
-    return value
 
 
 def _bundle_descriptor(

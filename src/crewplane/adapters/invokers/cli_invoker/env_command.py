@@ -9,6 +9,8 @@ from pathlib import Path
 
 @dataclass(frozen=True, slots=True)
 class EnvCommandContext:
+    """Effective command arguments and tracked value after an env prefix."""
+
     command_arguments: tuple[str, ...]
     tracked_environment_value: str
 
@@ -18,6 +20,7 @@ def parse_env_command_context(
     inherited_value: str,
     tracked_environment_name: str,
 ) -> EnvCommandContext:
+    """Interpret supported env options without mutating the supplied tokens."""
     if not tokens:
         return EnvCommandContext((), inherited_value)
     if Path(tokens[0]).name != "env":

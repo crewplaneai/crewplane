@@ -19,7 +19,7 @@ from crewplane.core.config import (
 from crewplane.core.token_budget import TokenBudgetSettings
 from crewplane.core.workflow.keywords import ProviderRole, SequentialConsensusPolicy
 from crewplane.core.workspace.cache import workspace_cache_root
-from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.core.workspace.policy import WorkspaceCleanStart, WorktreeContract
 from crewplane.core.workspace.settings import (
     WorkspaceDiskGuardrails,
     WorkspaceIdentitySettings,
@@ -64,7 +64,7 @@ class RuntimeWorkspaceSettingsSnapshot(BaseModel):
     cache_root: str | None = None
     cleanup_on_success: bool = True
     worktree_contract: WorktreeContract = Field(default_factory=WorktreeContract)
-    clean_start: str = "strict"
+    clean_start: WorkspaceCleanStart = "strict"
     setup_profiles: JsonObject = Field(default_factory=dict)
     setup_timeout_seconds: FiniteFloat = 600.0
     identity: WorkspaceIdentitySettings = Field(

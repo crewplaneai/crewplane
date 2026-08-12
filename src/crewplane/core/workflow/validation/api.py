@@ -6,6 +6,7 @@ from crewplane.core.workflow.diagnostics import (
     format_diagnostics,
     node_id_from_message,
 )
+from crewplane.core.workflow.graph import analyze_workflow_graph
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.core.workflow.validation.nodes import (
     collect_workflow_node_diagnostics,
@@ -76,21 +77,16 @@ def collect_workflow_topology_diagnostics(
     if any(not needs <= node_ids for needs in dependencies.values()):
         return ()
 
-    pending = dict(dependencies)
-    while pending:
-        ready = [node_id for node_id, needs in pending.items() if not needs]
-        if not ready:
-            return (
-                WorkflowValidationDiagnostic(
-                    code="WORKFLOW-DAG",
-                    phase="reference",
-                    message="Workflow graph contains a cycle.",
-                ),
-            )
-        for node_id in ready:
-            pending.pop(node_id)
-            for needs in pending.values():
-                needs.discard(node_id)
+    try:
+        analyze_workflow_graph(workflow)
+    except ValueError:
+        return (
+            WorkflowValidationDiagnostic(
+                code="WORKFLOW-DAG",
+                phase="reference",
+                message="Workflow graph contains a cycle.",
+            ),
+        )
     return ()
 
 

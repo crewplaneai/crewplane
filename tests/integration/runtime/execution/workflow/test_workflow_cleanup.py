@@ -8,9 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import crewplane.runtime.execution.workflow as workflow_module
 import crewplane.runtime.execution.workflow.cleanup as workflow_cleanup_module
 import crewplane.runtime.execution.workflow.node as workflow_node_module
+import crewplane.runtime.execution.workflow.orchestration as workflow_module
 from crewplane.artifacts import OutputManager
 from crewplane.core.preflight.models import (
     ArtifactContract,

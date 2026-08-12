@@ -10,6 +10,7 @@ from crewplane.core.workspace.git_policy import (
     local_config_policy_summary,
 )
 
+from .diagnostic_text import summarize_paths
 from .git_attributes import validate_byte_transforming_attributes
 from .git_source import (
     GitSourceContext,
@@ -397,14 +398,6 @@ def project_root_relative_source_path(
     if path.startswith(prefix):
         return path.removeprefix(prefix)
     return None
-
-
-def summarize_paths(paths: list[str]) -> str:
-    selected = paths[:5]
-    suffix = (
-        f" (+{len(paths) - len(selected)} more)" if len(paths) > len(selected) else ""
-    )
-    return ", ".join(selected) + suffix
 
 
 def summarize_policy_paths(paths: list[Path]) -> str:

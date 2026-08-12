@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.architecture.ports.artifacts import StageTaskSpec
@@ -18,6 +19,14 @@ from .selection import ordered_task_ids
 from .stage_outputs import StageOutputAggregation
 
 
+@dataclass(frozen=True)
+class _AggregationContext:
+    result_file: Path
+    stage_name: str
+    generated_file_workspace_roots: dict[Path, Path | None]
+    generated_file_detection_enabled: bool
+
+
 def aggregate_stage_outputs(
     selected_files: dict[str, Path],
     task_specs: tuple[StageTaskSpec, ...],
@@ -34,6 +43,12 @@ def aggregate_stage_outputs(
     )
     task_ids = ordered_task_ids(selected_files, task_specs)
     section_titles = section_titles_by_task_id(task_ids, task_specs)
+    context = _AggregationContext(
+        result_file=result_file,
+        stage_name=stage_name,
+        generated_file_workspace_roots=generated_file_workspace_roots,
+        generated_file_detection_enabled=generated_file_detection_enabled,
+    )
     for task_id in task_ids:
         add_output_to_aggregation(
             aggregation,
@@ -41,10 +56,7 @@ def aggregate_stage_outputs(
             section_titles[task_id],
             selected_files[task_id],
             findings_selection,
-            result_file,
-            stage_name,
-            generated_file_workspace_roots,
-            generated_file_detection_enabled,
+            context,
         )
     return aggregation
 
@@ -55,10 +67,7 @@ def add_output_to_aggregation(
     section_title: str,
     output_file: Path,
     findings_selection: FindingsSelection,
-    result_file: Path,
-    stage_name: str,
-    generated_file_workspace_roots: dict[Path, Path | None],
-    generated_file_detection_enabled: bool,
+    context: _AggregationContext,
 ) -> None:
     raw_output = output_file.read_text(encoding="utf-8")
     if not raw_output.strip():
@@ -75,10 +84,7 @@ def add_output_to_aggregation(
         task_id,
         display_content,
         output_file,
-        result_file,
-        stage_name,
-        generated_file_workspace_roots,
-        generated_file_detection_enabled,
+        context,
     )
     if findings_selection.selects_task(task_id) and is_synthetic_invocation_failure(
         raw_output
@@ -111,25 +117,22 @@ def record_generated_file_links(
     task_id: str,
     display_content: str,
     output_file: Path,
-    result_file: Path,
-    stage_name: str,
-    generated_file_workspace_roots: dict[Path, Path | None],
-    detection_enabled: bool,
+    context: _AggregationContext,
 ) -> None:
-    if not detection_enabled:
+    if not context.generated_file_detection_enabled:
         return
     resolved_output_file = output_file.resolve(strict=False)
-    if resolved_output_file not in generated_file_workspace_roots:
+    if resolved_output_file not in context.generated_file_workspace_roots:
         aggregation.generated_file_reference_content.append(display_content)
         return
-    workspace_root = generated_file_workspace_roots[resolved_output_file]
+    workspace_root = context.generated_file_workspace_roots[resolved_output_file]
     if workspace_root is None:
         return
     link_result = generated_file_links_for_content(
         display_content,
         workspace_root,
-        result_file,
-        stage_name,
+        context.result_file,
+        context.stage_name,
         materialize=True,
         copy_namespace=task_id,
     )

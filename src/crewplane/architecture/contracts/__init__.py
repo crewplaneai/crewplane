@@ -33,6 +33,7 @@ from .integration_options import (
     FilesystemArtifactOptions,
     MockInvokerFailSelector,
     MockInvokerOptions,
+    MockOutputMode,
     NullUiOptions,
     TmuxUiOptions,
 )
@@ -161,6 +162,7 @@ __all__ = [
     "LogPresentationFormat",
     "MockInvokerFailSelector",
     "MockInvokerOptions",
+    "MockOutputMode",
     "NullUiOptions",
     "NodeEventPayload",
     "NodeEventType",

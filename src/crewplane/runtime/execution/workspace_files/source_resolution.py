@@ -19,6 +19,7 @@ from crewplane.runtime.workspace.state_selection import (
 )
 from crewplane.runtime.workspace.worktree import WorktreeSourceRef
 from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
+from crewplane.runtime.workspace.worktree.types import candidate_source_ref
 
 WorkspaceResolutionPhase = Literal["candidate_review", "initial_pre_review"]
 
@@ -140,16 +141,4 @@ def project_source_ref(plan: PreflightExecutionPlan) -> WorktreeSourceRef | None
 
 
 def candidate_source_ref_from_state(path: Path) -> WorktreeSourceRef:
-    source_ref = load_source_ref_from_state(path)
-    return WorktreeSourceRef(
-        source_kind="candidate",
-        source_node_id=source_ref.source_node_id,
-        source_commit=source_ref.source_commit,
-        source_tree=source_ref.source_tree,
-        candidate_sequence=source_ref.candidate_sequence,
-        bundle_path=source_ref.bundle_path,
-        bundle_sha256=source_ref.bundle_sha256,
-        bundle_size_bytes=source_ref.bundle_size_bytes,
-        bundle_ref=source_ref.bundle_ref,
-        upstream_sources=source_ref.upstream_sources,
-    )
+    return candidate_source_ref(load_source_ref_from_state(path))

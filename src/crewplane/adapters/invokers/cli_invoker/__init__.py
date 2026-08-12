@@ -1,3 +1,5 @@
+"""Public capability and planning API for the built-in CLI invoker."""
+
 from .capabilities import (
     CliProviderCapability,
     build_cli_invocation_plan,

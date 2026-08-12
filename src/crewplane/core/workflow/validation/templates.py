@@ -6,6 +6,7 @@ from crewplane.core.workflow.diagnostics import (
     WorkflowValidationDiagnostic,
     format_diagnostics,
 )
+from crewplane.core.workflow.graph import analyze_workflow_graph
 from crewplane.core.workflow.keywords import (
     ALLOWED_NODE_ARTIFACT_NAME_SET,
     ALLOWED_NODE_ARTIFACT_NAMES,
@@ -182,20 +183,13 @@ def _ancestor_map_if_available(
     if any(not needs <= node_ids for needs in dependencies.values()):
         return None
 
-    ancestors: dict[str, set[str]] = {node.id: set() for node in workflow.nodes}
-    pending = dict(dependencies)
-    while pending:
-        ready = [node_id for node_id, needs in pending.items() if not needs]
-        if not ready:
-            return None
-        for node_id in ready:
-            pending.pop(node_id)
-            for dependent_id, needs in pending.items():
-                if node_id in needs:
-                    ancestors[dependent_id].update(ancestors[node_id])
-                    ancestors[dependent_id].add(node_id)
-                    needs.remove(node_id)
-    return ancestors
+    try:
+        analysis = analyze_workflow_graph(workflow)
+    except ValueError:
+        return None
+    return {
+        node_id: set(ancestors) for node_id, ancestors in analysis.ancestors.items()
+    }
 
 
 def _node_artifact_name_error(artifact_name: str) -> str | None:

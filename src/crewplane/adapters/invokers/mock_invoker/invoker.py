@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import cast
 
 from crewplane.architecture.contracts import (
     InvocationContext,
@@ -19,7 +18,6 @@ from .context import is_reviewer_context
 from .fixtures import fixture_candidates
 from .logging import write_invocation_log
 from .mutations import apply_fixture_mutations, build_fixture_mutation_plan
-from .options import OutputMode
 from .outputs import (
     OutputResolution,
     build_lorem_markdown,
@@ -41,6 +39,8 @@ def _mock_invocation_failure(message: str) -> InvocationFailureError:
 
 
 class MockAgentInvoker:
+    """Deterministic, filesystem-local invoker for tests and first-run workflows."""
+
     def __init__(self, options: MockInvokerOptions) -> None:
         self._options = options
 
@@ -96,8 +96,7 @@ class MockAgentInvoker:
         if self._options.observation_delay_seconds:
             await asyncio.sleep(self._options.observation_delay_seconds)
 
-        output_mode = cast(OutputMode, self._options.output_mode)
-        match output_mode:
+        match self._options.output_mode:
             case "echo":
                 if is_reviewer_context(context):
                     return review_contract_resolution("echo_review_contract")

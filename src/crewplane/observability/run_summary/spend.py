@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 from crewplane.architecture.contracts import (
     AggregateCostConfidence,
@@ -28,6 +29,18 @@ TOKEN_BUCKETS = (
     "reasoning",
     "total",
 )
+
+
+class _UsageRollupFields(TypedDict):
+    terminal_invocations: int
+    total_attempts: int
+    cli_captured_invocations: int
+    provider_usage_full_invocations: int
+    provider_usage_partial_invocations: int
+    provider_usage_malformed_invocations: int
+    visible_estimate_tokens: int
+    configured_cost_usd: float | None
+    configured_cost_confidence: AggregateCostConfidence
 
 
 @dataclass
@@ -141,30 +154,17 @@ class UsageRollupAccumulator:
         return spend_totals_from_values(self._overall.values())
 
     def provider_usage_rollups(self) -> tuple[ProviderUsageRollup, ...]:
-        rollups: list[ProviderUsageRollup] = []
-        for provider in sorted(self._providers):
-            values = self._providers[provider].values()
-            rollups.append(
-                ProviderUsageRollup(
-                    provider=provider,
-                    terminal_invocations=values.terminal_invocations,
-                    total_attempts=values.total_attempts,
-                    cli_captured_invocations=values.cli_captured_invocations,
-                    provider_usage_full_invocations=(
-                        values.provider_usage_full_invocations
-                    ),
-                    provider_usage_partial_invocations=(
-                        values.provider_usage_partial_invocations
-                    ),
-                    provider_usage_malformed_invocations=(
-                        values.provider_usage_malformed_invocations
-                    ),
-                    visible_estimate_tokens=values.visible_estimate_tokens,
-                    configured_cost_usd=values.configured_cost_usd,
-                    configured_cost_confidence=values.configured_cost_confidence,
-                )
-            )
-        return tuple(rollups)
+        return tuple(
+            _provider_usage_rollup(provider, self._providers[provider].values())
+            for provider in sorted(self._providers)
+        )
+
+
+def _provider_usage_rollup(
+    provider: str,
+    values: UsageRollupValues,
+) -> ProviderUsageRollup:
+    return ProviderUsageRollup(provider=provider, **_usage_rollup_fields(values))
 
 
 def invocation_usage_summaries(
@@ -259,7 +259,11 @@ def spend_totals(
 
 
 def spend_totals_from_values(values: UsageRollupValues) -> SpendTotals:
-    return SpendTotals(
+    return SpendTotals(**_usage_rollup_fields(values))
+
+
+def _usage_rollup_fields(values: UsageRollupValues) -> _UsageRollupFields:
+    return _UsageRollupFields(
         terminal_invocations=values.terminal_invocations,
         total_attempts=values.total_attempts,
         cli_captured_invocations=values.cli_captured_invocations,

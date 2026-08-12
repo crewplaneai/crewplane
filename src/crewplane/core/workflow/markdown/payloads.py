@@ -10,6 +10,7 @@ from ..models import (
     WorkflowPayload,
     workflow_node_payload_dict,
 )
+from ..source_locations import SourceSpan
 from .frontmatter import (
     normalize_provider_spec,
     workflow_node_from_frontmatter,
@@ -29,10 +30,10 @@ def build_workflow_payload(
     workflow: WorkflowFrontmatter,
     parsed_body: ParsedWorkflowBody,
     source: Path,
-) -> tuple[WorkflowPayload, dict[str, dict[str, int]], dict[str, list[dict[str, int]]]]:
+) -> tuple[WorkflowPayload, dict[str, SourceSpan], dict[str, list[SourceSpan]]]:
     node_payload: list[WorkflowNodePayload] = []
-    node_source_spans: dict[str, dict[str, int]] = {}
-    prompt_segment_spans_by_node: dict[str, list[dict[str, int]]] = {}
+    node_source_spans: dict[str, SourceSpan] = {}
+    prompt_segment_spans_by_node: dict[str, list[SourceSpan]] = {}
     for node in workflow.nodes:
         section_prompts = parsed_body.node_sections.get(node.id, [])
         section_text = section_prompts[0] if section_prompts else ""
@@ -51,7 +52,7 @@ def build_workflow_payload(
         if node.mode == "input":
             validate_input_node_section(section_text, source, node.id)
             prompt_segments: list[PromptSegmentPayload] = []
-            prompt_segment_spans: list[dict[str, int]] = []
+            prompt_segment_spans: list[SourceSpan] = []
         else:
             prompt_segments, prompt_segment_spans = extract_prompt_segment_payloads(
                 section_text,

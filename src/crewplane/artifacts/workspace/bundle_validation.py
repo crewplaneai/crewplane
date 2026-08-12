@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.core.workspace.git_policy import (
@@ -13,6 +14,19 @@ from .git_blob_hash import git_stdout_sha256
 
 GIT_BUNDLE_VALIDATION_TIMEOUT_SECONDS = 30.0
 _SUPPORTED_OBJECT_FORMATS = frozenset({"sha1", "sha256"})
+
+
+@dataclass(frozen=True)
+class WorkspaceBlobDescriptor:
+    """Git and byte identity required to verify one workspace file."""
+
+    source_commit: str
+    source_tree: str
+    git_path: str
+    git_blob: str
+    git_file_mode: str
+    byte_size: int
+    canonical_sha256: str
 
 
 def workspace_bundle_contains_result(
@@ -91,13 +105,7 @@ def workspace_bundle_contains_result_tree(
 
 def workspace_blob_descriptor_matches(
     git_top_level: str,
-    source_commit: str,
-    source_tree: str,
-    git_path: str,
-    git_blob: str,
-    git_file_mode: str,
-    byte_size: int,
-    canonical_sha256: str,
+    descriptor: WorkspaceBlobDescriptor,
     object_format: str,
     bundle_path: Path | None = None,
     bundle_ref: str | None = None,
@@ -109,13 +117,13 @@ def workspace_blob_descriptor_matches(
         if bundle_path is None:
             return _repo_blob_descriptor_matches(
                 repo_root,
-                source_commit,
-                source_tree,
-                git_path,
-                git_blob,
-                git_file_mode,
-                byte_size,
-                canonical_sha256,
+                descriptor.source_commit,
+                descriptor.source_tree,
+                descriptor.git_path,
+                descriptor.git_blob,
+                descriptor.git_file_mode,
+                descriptor.byte_size,
+                descriptor.canonical_sha256,
             )
         _run_git(repo_root, "bundle", "verify", bundle_path.as_posix())
         if bundle_ref is not None:
@@ -126,17 +134,21 @@ def workspace_blob_descriptor_matches(
                 bundle_path.as_posix(),
                 bundle_ref,
             )
-            if not _listed_head_matches(listed.stdout, bundle_ref, source_commit):
+            if not _listed_head_matches(
+                listed.stdout,
+                bundle_ref,
+                descriptor.source_commit,
+            ):
                 return False
         return _bundle_blob_descriptor_matches(
             bundle_path,
-            source_commit,
-            source_tree,
-            git_path,
-            git_blob,
-            git_file_mode,
-            byte_size,
-            canonical_sha256,
+            descriptor.source_commit,
+            descriptor.source_tree,
+            descriptor.git_path,
+            descriptor.git_blob,
+            descriptor.git_file_mode,
+            descriptor.byte_size,
+            descriptor.canonical_sha256,
             object_format,
         )
     except (

@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 from crewplane.architecture.contracts import (
     JsonObject,
     MockInvokerOptions,
+    MockOutputMode,
 )
 from crewplane.core.config import DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS
 
 from .selectors import validate_fail_selectors
-
-type OutputMode = Literal["lorem", "echo", "file"]
 
 
 def _validate_non_negative_number(value: object, option_name: str) -> float:
@@ -42,7 +41,7 @@ def _validate_optional_int(value: object, option_name: str) -> int | None:
     return value
 
 
-def _validate_output_mode(value: object) -> OutputMode:
+def _validate_output_mode(value: object) -> MockOutputMode:
     if not isinstance(value, str):
         raise ValueError("mock invoker option 'output_mode' must be a string")
     normalized = value.strip().lower()
@@ -50,7 +49,7 @@ def _validate_output_mode(value: object) -> OutputMode:
         raise ValueError(
             "mock invoker option 'output_mode' must be one of: lorem, echo, file"
         )
-    return cast(OutputMode, normalized)
+    return cast(MockOutputMode, normalized)
 
 
 def _validate_output_dir(value: object) -> Path | None:
@@ -64,6 +63,8 @@ def _validate_output_dir(value: object) -> Path | None:
 
 
 def parse_options(options: JsonObject | None) -> MockInvokerOptions:
+    """Validate and canonicalize user-supplied mock invoker options."""
+
     resolved = dict(options or {})
     for raw_key in resolved:
         if not isinstance(raw_key, str):

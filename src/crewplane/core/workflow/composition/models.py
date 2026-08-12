@@ -6,6 +6,7 @@ from pathlib import Path
 from crewplane.core.workspace.policy import WorktreeDeclaration
 
 from ..models import WorkflowNode, WorkflowPayload
+from ..source_locations import SourceSpan
 
 
 @dataclass(frozen=True)
@@ -19,8 +20,8 @@ class ComposedWorkflowDocument:
     workflow_payload: WorkflowPayload
     source_records: list[WorkflowSourceRecord]
     node_source_paths: dict[str, Path]
-    node_source_spans: dict[str, dict[str, int]]
-    prompt_segment_spans: dict[str, list[dict[str, int]]]
+    node_source_spans: dict[str, SourceSpan]
+    prompt_segment_spans: dict[str, list[SourceSpan]]
 
 
 @dataclass(frozen=True)
@@ -48,16 +49,16 @@ class ImportSpec:
 class NodeSpec:
     payload: WorkflowNode
     source_path: Path
-    source_span: dict[str, int] | None
-    prompt_segment_spans: tuple[dict[str, int], ...]
+    source_span: SourceSpan | None
+    prompt_segment_spans: tuple[SourceSpan, ...]
 
 
 @dataclass(frozen=True)
 class ComposedNode:
     payload: WorkflowNode
     source_path: Path
-    source_span: dict[str, int] | None
-    prompt_segment_spans: tuple[dict[str, int], ...]
+    source_span: SourceSpan | None
+    prompt_segment_spans: tuple[SourceSpan, ...]
     local_worktree_count: int = 0
     implicit_worktree_selector: str | None = None
 

@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from .diagnostic_text import summarize_paths
 from .git_source import (
     GitSourceContext,
     git_error,
@@ -140,11 +141,3 @@ def summarize_attributes(rejected: dict[str, list[str]]) -> str:
         for description, paths in sorted(rejected.items())
     ]
     return "; ".join(parts)
-
-
-def summarize_paths(paths: list[str]) -> str:
-    selected = paths[:5]
-    suffix = (
-        f" (+{len(paths) - len(selected)} more)" if len(paths) > len(selected) else ""
-    )
-    return ", ".join(selected) + suffix

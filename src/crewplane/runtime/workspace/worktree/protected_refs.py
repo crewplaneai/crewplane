@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..git import git
+from .refs import checked_ref
 
 PROTECTED_REF_PREFIX = "refs/crewplane"
 
@@ -39,6 +40,21 @@ def protected_ref_snapshot_for_scopes(
         scopes=tuple(sorted(scopes)),
         refs=tuple(sorted(refs)),
     )
+
+
+def protected_ref_snapshot_for_source(
+    git_top_level: str,
+    protected_ref_scopes: tuple[str, ...] | None,
+) -> ProtectedRefSnapshot:
+    """Capture all protected refs or an explicitly validated subset."""
+
+    repo_root = Path(git_top_level)
+    if protected_ref_scopes is None:
+        return protected_ref_snapshot(repo_root)
+    checked_scopes = tuple(
+        checked_ref(repo_root, scope) for scope in protected_ref_scopes
+    )
+    return protected_ref_snapshot_for_scopes(repo_root, checked_scopes)
 
 
 def reject_protected_ref_drift(

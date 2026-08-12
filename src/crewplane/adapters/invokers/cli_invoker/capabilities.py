@@ -54,6 +54,8 @@ CODEX_MODEL_CAPACITY_RETRY_POLICY = OneShotFailureRetryPolicy(
 
 @dataclass(frozen=True)
 class CliProviderCapability:
+    """Adapter-owned invocation behavior for one provider CLI family."""
+
     provider_kind: ProviderKind
     structured_output_mode: StructuredOutputMode
     output_extractor: OutputExtractor | None
@@ -131,6 +133,7 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
 
 
 def get_cli_provider_capability(provider_kind: ProviderKind) -> CliProviderCapability:
+    """Return the complete capability record for a supported provider kind."""
     return CAPABILITIES[ProviderKind(provider_kind)]
 
 
@@ -142,6 +145,7 @@ def build_cli_invocation_plan(
     invocation_context: InvocationContext | None = None,
     working_directory: Path | None = None,
 ) -> InvocationPlan:
+    """Build a provider-neutral invocation plan and any owned temp output path."""
     capability = get_cli_provider_capability(config.provider_kind)
     requested_reasoning = (
         invocation_context.requested_reasoning
@@ -181,6 +185,7 @@ def build_cli_invocation_plan(
 
 
 def build_cli_log_presentation(config: AgentConfig) -> LogPresentationDescriptor:
+    """Return display-only log metadata declared by the provider capability."""
     capability = get_cli_provider_capability(config.provider_kind)
     return LogPresentationDescriptor(
         format=capability.log_presentation_format,

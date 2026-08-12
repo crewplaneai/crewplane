@@ -1,13 +1,36 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from subprocess import CompletedProcess
+from typing import Literal, Protocol, overload
 
 UpdateCommand = tuple[str, ...]
-CommandRunner = Callable[..., CompletedProcess[str]]
 ExecutableLookup = Callable[[str], str | None]
+
+
+class CommandRunner(Protocol):
+    """Run update commands in either inherited-stream or captured-text mode."""
+
+    @overload
+    def __call__(
+        self,
+        args: Sequence[str],
+        capture_output: Literal[True],
+        text: Literal[True],
+        check: Literal[False],
+        timeout: float,
+        shell: Literal[False],
+    ) -> CompletedProcess[str]: ...
+
+    @overload
+    def __call__(
+        self,
+        args: Sequence[str],
+        check: Literal[False],
+        shell: Literal[False],
+    ) -> CompletedProcess[bytes]: ...
 
 
 class UpdateError(RuntimeError):

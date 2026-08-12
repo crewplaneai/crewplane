@@ -17,6 +17,7 @@ from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 
 from ..runtime_context import DeferredAsyncCleanupRegistry
 from ..workspace_files import rendered_workspace_file_descriptor
+from .cancellation import mark_workspace_finalization_deferred
 from .generated_file_changes import (
     GeneratedFileChangeBaseline,
     changed_generated_file_paths,
@@ -196,7 +197,7 @@ async def _handle_cancelled_success_finalization(
             WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS,
         )
     except TimeoutError:
-        cancel._crewplane_workspace_finalization_deferred = True  # type: ignore[attr-defined]
+        mark_workspace_finalization_deferred(cancel)
         request.runtime_context.deferred_workspace_cleanups.register(
             _record_generated_file_workspace_after_finalization(
                 request,

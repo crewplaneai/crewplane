@@ -108,6 +108,7 @@ typecheck:
 		src/crewplane/observability/observer.py \
 		src/crewplane/observability/runtime.py \
 		src/crewplane/observability/tmux/selection.py \
+		src/crewplane/observability/tmux/snapshot_types.py \
 		src/crewplane/observability/tmux/compact.py \
 		src/crewplane/observability/tmux/rendering.py \
 		src/crewplane/observability/tmux/refresh.py \
