@@ -13,7 +13,6 @@ from crewplane.core.provider_process_state import ProviderProcessState
 
 
 def _invocation(
-    *,
     task_id: str = "codex_executor_0",
     round_num: int = 1,
 ) -> ProviderProcessInvocation:

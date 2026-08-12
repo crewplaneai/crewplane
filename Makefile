@@ -114,7 +114,8 @@ typecheck:
 		src/crewplane/observability/tmux/selected_invocation.py \
 		src/crewplane/observability/run_summary/builder.py \
 		src/crewplane/observability/run_summary/logger.py \
-		tests/typecheck/public_observer_consumer.py
+		tests/typecheck/public_observer_consumer.py \
+		tests/typecheck/public_artifacts_consumer.py
 
 lint:
 	$(RUN_RUFF) check src tests scripts

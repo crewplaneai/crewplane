@@ -25,6 +25,42 @@ class ArtifactsWithoutCanonicalOptions:
         return None
 
 
+class InvokerWithStaticFactories:
+    @staticmethod
+    def canonicalize_options(
+        implementation: str,
+        resolved_identity: str,
+        options: object | None = None,
+    ) -> tuple[object, ...]:
+        return implementation, resolved_identity, options
+
+    @staticmethod
+    def create_invoker(
+        config: object,
+        options: object | None = None,
+    ) -> tuple[object, ...]:
+        return config, options
+
+
+class InvokerWithClassFactories:
+    @classmethod
+    def canonicalize_options(
+        cls,
+        implementation: str,
+        resolved_identity: str,
+        options: object | None = None,
+    ) -> tuple[object, ...]:
+        return cls, implementation, resolved_identity, options
+
+    @classmethod
+    def create_invoker(
+        cls,
+        config: object,
+        options: object | None = None,
+    ) -> tuple[object, ...]:
+        return cls, config, options
+
+
 class LoaderTests(unittest.TestCase):
     def test_resolve_alias_to_builtin_path(self) -> None:
         resolved = resolve_implementation_path("invoker", "cli")
@@ -73,6 +109,24 @@ class LoaderTests(unittest.TestCase):
             "crewplane.adapters.ui.null.NullUIAdapter",
         )
         self.assertEqual(cls.__name__, "NullUIAdapter")
+
+    def test_load_invoker_class_accepts_static_and_class_factories(self) -> None:
+        for class_name, expected_prefix in (
+            ("InvokerWithStaticFactories", ()),
+            ("InvokerWithClassFactories", (InvokerWithClassFactories,)),
+        ):
+            with self.subTest(class_name=class_name):
+                cls = load_adapter_class("invoker", f"{__name__}.{class_name}")
+                adapter = cls()
+
+                self.assertEqual(
+                    adapter.canonicalize_options("alias", "resolved", {"key": 1}),
+                    (*expected_prefix, "alias", "resolved", {"key": 1}),
+                )
+                self.assertEqual(
+                    adapter.create_invoker("config", {"key": 1}),
+                    (*expected_prefix, "config", {"key": 1}),
+                )
 
     def test_contract_violation_raises_for_wrong_class(self) -> None:
         with self.assertRaisesRegex(AdapterContractError, "create_invoker"):

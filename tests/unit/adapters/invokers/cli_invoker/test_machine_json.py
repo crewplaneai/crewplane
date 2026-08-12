@@ -114,6 +114,21 @@ def test_claude_output_extractor_decodes_escaped_and_nested_values() -> None:
     extracted.output_path.unlink(missing_ok=True)
 
 
+def test_claude_output_extractor_accepts_deeply_nested_ignored_value() -> None:
+    depth = 1_200
+    stdout_text = '{"ignored":' + "[" * depth + "0" + "]" * depth + ',"result":"ok"}'
+
+    extracted = extract_claude_output(CommandResult(0, stdout_text, ""), None)
+
+    assert extracted.output_extraction_status == "success"
+    assert extracted.output_path is not None
+    assert extracted.owns_output_path
+    try:
+        assert extracted.output_path.read_text(encoding="utf-8") == "ok"
+    finally:
+        extracted.output_path.unlink(missing_ok=True)
+
+
 def test_claude_usage_parser_reports_missing_and_malformed_payloads() -> None:
     missing = machine_json.read_claude_model_usage(CommandResult(0, "", ""))
     malformed = machine_json.read_claude_model_usage(

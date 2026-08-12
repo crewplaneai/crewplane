@@ -8,7 +8,10 @@ import venv
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-CONSUMER = REPOSITORY_ROOT / "tests" / "typecheck" / "public_observer_consumer.py"
+CONSUMERS = (
+    REPOSITORY_ROOT / "tests" / "typecheck" / "public_artifacts_consumer.py",
+    REPOSITORY_ROOT / "tests" / "typecheck" / "public_observer_consumer.py",
+)
 
 
 def _venv_python(environment: Path) -> Path:
@@ -37,8 +40,9 @@ def check_wheel(wheel: Path) -> None:
             ],
             check=True,
         )
-        consumer = root / "public_observer_consumer.py"
-        shutil.copyfile(CONSUMER, consumer)
+        consumers = [root / consumer.name for consumer in CONSUMERS]
+        for source, destination in zip(CONSUMERS, consumers, strict=True):
+            shutil.copyfile(source, destination)
         subprocess.run(
             [
                 sys.executable,
@@ -47,7 +51,7 @@ def check_wheel(wheel: Path) -> None:
                 "--strict",
                 "--python-executable",
                 str(python),
-                consumer.name,
+                *(consumer.name for consumer in consumers),
             ],
             cwd=root,
             check=True,

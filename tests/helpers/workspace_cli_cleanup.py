@@ -33,7 +33,7 @@ def assert_cleanup_dry_run(project_root: Path, cache_root: Path) -> None:
         ["cleanup", "workspaces", "--config", config_path.as_posix(), "--dry-run"],
         catch_exceptions=False,
     )
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert "Would remove" in result.output
     assert "workspace path(s)" in result.output
     assert (cache_root / "workspaces").exists()

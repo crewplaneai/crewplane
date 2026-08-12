@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import get_ident
+from threading import Event, get_ident
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +20,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.observability.events import ExecutionEvent
 from crewplane.runtime.execution.workspace_files.generated import (
+    GeneratedFileWorkspaceCleanupResult,
     GeneratedFileWorkspaceRegistry,
 )
 from crewplane.version import SCHEMA_VERSION
@@ -155,6 +156,76 @@ def test_execute_node_generated_file_cleanup_does_not_block_event_loop(
             tmp_path,
         )
     )
+
+
+def test_workflow_cleanup_waits_for_cancelled_node_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    node_finalization_started = Event()
+    node_finalization_running = Event()
+    release_node_finalization = Event()
+    cleanup_overlaps: list[bool] = []
+    original_cleanup_all = GeneratedFileWorkspaceRegistry.cleanup_all
+
+    def cleanup_all(
+        registry: GeneratedFileWorkspaceRegistry,
+    ) -> GeneratedFileWorkspaceCleanupResult:
+        assert node_finalization_started.wait(timeout=2)
+        cleanup_overlaps.append(node_finalization_running.is_set())
+        release_node_finalization.set()
+        return original_cleanup_all(registry)
+
+    async def run_workflow(output: OutputManager) -> None:
+        slow_node_started = asyncio.Event()
+        keep_slow_node_running = asyncio.Event()
+
+        async def execute_parallel_stage(
+            node: PreflightExecutionNode,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            del args, kwargs
+            if node.id == "fail":
+                await slow_node_started.wait()
+                raise RuntimeError("sibling failed")
+
+            slow_node_started.set()
+            try:
+                await keep_slow_node_running.wait()
+            finally:
+                node_finalization_running.set()
+                node_finalization_started.set()
+                try:
+                    await asyncio.to_thread(release_node_finalization.wait, 0.25)
+                finally:
+                    node_finalization_running.clear()
+
+        monkeypatch.setattr(
+            workflow_node_module,
+            "execute_parallel_stage",
+            execute_parallel_stage,
+        )
+        async with asyncio.timeout(3):
+            await workflow_module.execute_workflow(
+                _two_parallel_node_plan(output),
+                output,
+                invoker=object(),
+                secret_context=SecretContext(),
+                suppress_progress_output=True,
+            )
+
+    monkeypatch.setattr(GeneratedFileWorkspaceRegistry, "cleanup_all", cleanup_all)
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    try:
+        with pytest.raises(RuntimeError, match="sibling failed"):
+            asyncio.run(run_workflow(output))
+    finally:
+        release_node_finalization.set()
+
+    assert cleanup_overlaps == [False]
+    assert not node_finalization_running.is_set()
 
 
 def test_workflow_refreshes_generated_file_cleanup_node_manifests(
@@ -453,5 +524,23 @@ def _single_node_plan(output: OutputManager) -> PreflightExecutionPlan:
         update={
             "execution_order": ["input"],
             "nodes": [node],
+        }
+    )
+
+
+def _two_parallel_node_plan(output: OutputManager) -> PreflightExecutionPlan:
+    plan = _empty_plan(output)
+    nodes = [
+        PreflightExecutionNode(
+            id=node_id,
+            mode="parallel",
+            artifact_contract=ArtifactContract(output_path=f"{node_id}.md"),
+        )
+        for node_id in ("slow", "fail")
+    ]
+    return plan.model_copy(
+        update={
+            "execution_order": [node.id for node in nodes],
+            "nodes": nodes,
         }
     )

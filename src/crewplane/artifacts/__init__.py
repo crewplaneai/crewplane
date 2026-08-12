@@ -1,4 +1,10 @@
+from typing import TYPE_CHECKING
+
 from .naming import safe_artifact_name
+
+if TYPE_CHECKING:
+    from .manager import OutputManager
+    from .results.findings import FindingsExtractionError
 
 __all__ = [
     "FindingsExtractionError",
@@ -7,7 +13,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name in {
         "FindingsExtractionError",
         "OutputManager",

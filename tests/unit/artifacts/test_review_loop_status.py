@@ -73,6 +73,33 @@ def test_resolves_valid_status_with_outputs(tmp_path: Path) -> None:
     assert resolved.selected_output_files["executor"].name == "executor_round2.md"
 
 
+def test_resolves_retained_reviewer_output_from_longer_prior_audit(
+    tmp_path: Path,
+) -> None:
+    stage_dir = tmp_path / "stage"
+    prior_audit_dir = stage_dir / "review-audit-round-1"
+    final_audit_dir = stage_dir / "review-audit-round-2"
+    prior_audit_dir.mkdir(parents=True)
+    final_audit_dir.mkdir()
+    (prior_audit_dir / "reviewer_round3.md").write_text("reviewer", encoding="utf-8")
+    (final_audit_dir / "executor_round1.md").write_text("executor", encoding="utf-8")
+    payload = valid_status_payload()
+    payload["executed_audit_rounds"] = 2
+    payload["final_local_round_num"] = 2
+    canonical_outputs = payload["canonical_executor_outputs"]
+    reviewer_outputs = payload["reviewer_outputs"]
+    assert isinstance(canonical_outputs, list)
+    assert isinstance(reviewer_outputs, list)
+    canonical_outputs[0]["path"] = "review-audit-round-2/executor_round1.md"
+    reviewer_outputs[0]["path"] = "review-audit-round-1/reviewer_round3.md"
+    write_status(stage_dir, payload)
+
+    resolved = resolve_review_loop_status("stage", stage_dir)
+
+    assert resolved is not None
+    assert resolved.selected_output_files["reviewer"].name == "reviewer_round3.md"
+
+
 def test_resolves_valid_empty_status_without_fallback(tmp_path: Path) -> None:
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
