@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import NodeMode, ProviderRole, ReviewStartsWith
+from crewplane.core.workflow.source_locations import SourceSpan, TokenRawSpan
 from crewplane.version import SCHEMA_VERSION
 
 from .diagnostics import PreflightDiagnostic
@@ -171,7 +172,7 @@ class RenderPlan(BaseModel):
     module_id: str | None = None
     source_file: str | None = None
     source_root: str | None = None
-    source_span: dict[str, int] | None = None
+    source_span: SourceSpan | None = None
     template_hash: str | None = None
     template_signature: str | None = None
     streams: list[RenderStream] = Field(default_factory=list)
@@ -189,8 +190,8 @@ class TokenCatalogEntry(BaseModel):
     fragment_index: int
     signature: str
     source_file: str | None = None
-    source_span: dict[str, int] | None = None
-    token_raw_span: dict[str, int] | None = None
+    source_span: SourceSpan | None = None
+    token_raw_span: TokenRawSpan | None = None
     canonical_locator: str | None = None
     dependency_signature: str | None = None
     resolved: JsonObject = Field(default_factory=dict)
@@ -300,8 +301,8 @@ class WorkspaceFileLocator(BaseModel):
     raw_token: str
     raw_path: str
     source_file: str | None = None
-    source_span: dict[str, int] | None = None
-    token_raw_span: dict[str, int] | None = None
+    source_span: SourceSpan | None = None
+    token_raw_span: TokenRawSpan | None = None
     source_root: str
     source_root_relative_to_project: str
     project_root_relative_to_git_top: str
@@ -324,7 +325,7 @@ class PreflightExecutionNode(BaseModel):
     module_id: str | None = None
     source_file: str | None = None
     source_root: str | None = None
-    source_span: dict[str, int] | None = None
+    source_span: SourceSpan | None = None
     mode: NodeMode
     findings: bool = False
     dependencies: list[str] = Field(default_factory=list)

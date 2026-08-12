@@ -7,11 +7,13 @@ import subprocess
 import sys
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 from pathlib import Path
+from typing import cast
 
 from rich.console import Console
 
 from .detection import resolve_update_plan
 from .types import (
+    CommandRunner,
     InstalledMetadata,
     UpdateContext,
     UpdateError,
@@ -37,7 +39,7 @@ def default_update_context() -> UpdateContext:
         metadata=_metadata_from_distribution(package),
         current_version=package.version,
         executable_lookup=shutil.which,
-        command_runner=subprocess.run,
+        command_runner=cast(CommandRunner, subprocess.run),
     )
 
 

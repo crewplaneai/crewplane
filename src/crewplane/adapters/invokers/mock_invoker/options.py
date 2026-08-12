@@ -2,20 +2,16 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 from crewplane.architecture.contracts import (
     JsonObject,
-    MockInvokerFailSelector,
-)
-from crewplane.architecture.contracts import (
-    MockInvokerOptions as MockInvokerOptionsContract,
+    MockInvokerOptions,
+    MockOutputMode,
 )
 from crewplane.core.config import DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS
 
-from .selectors import FailSelector, validate_fail_selectors
-
-type OutputMode = Literal["lorem", "echo", "file"]
+from .selectors import validate_fail_selectors
 
 
 def _validate_non_negative_number(value: object, option_name: str) -> float:
@@ -45,7 +41,7 @@ def _validate_optional_int(value: object, option_name: str) -> int | None:
     return value
 
 
-def _validate_output_mode(value: object) -> OutputMode:
+def _validate_output_mode(value: object) -> MockOutputMode:
     if not isinstance(value, str):
         raise ValueError("mock invoker option 'output_mode' must be a string")
     normalized = value.strip().lower()
@@ -53,7 +49,7 @@ def _validate_output_mode(value: object) -> OutputMode:
         raise ValueError(
             "mock invoker option 'output_mode' must be one of: lorem, echo, file"
         )
-    return cast(OutputMode, normalized)
+    return cast(MockOutputMode, normalized)
 
 
 def _validate_output_dir(value: object) -> Path | None:
@@ -66,18 +62,9 @@ def _validate_output_dir(value: object) -> Path | None:
     return Path(value).resolve()
 
 
-def _selector_to_contract(selector: FailSelector) -> MockInvokerFailSelector:
-    return MockInvokerFailSelector(
-        node_id=selector.criteria.get("node_id"),
-        task_id=selector.criteria.get("task_id"),
-        provider=selector.criteria.get("provider"),
-        role=selector.criteria.get("role"),
-        audit_round_num=selector.criteria.get("audit_round_num"),
-        round_num=selector.criteria.get("round_num"),
-    )
+def parse_options(options: JsonObject | None) -> MockInvokerOptions:
+    """Validate and canonicalize user-supplied mock invoker options."""
 
-
-def parse_options(options: JsonObject | None) -> MockInvokerOptionsContract:
     resolved = dict(options or {})
     for raw_key in resolved:
         if not isinstance(raw_key, str):
@@ -120,17 +107,14 @@ def parse_options(options: JsonObject | None) -> MockInvokerOptionsContract:
         "strict_file_mode",
     )
     seed = _validate_optional_int(resolved.pop("seed", None), "seed")
-    fail_when = tuple(
-        _selector_to_contract(selector)
-        for selector in validate_fail_selectors(resolved.pop("fail_when", []))
-    )
+    fail_when = validate_fail_selectors(resolved.pop("fail_when", []))
 
     if output_mode == "file" and output_dir is None:
         raise ValueError(
             "mock invoker option 'output_dir' is required when output_mode='file'"
         )
 
-    return MockInvokerOptionsContract(
+    return MockInvokerOptions(
         delay_seconds=delay_seconds,
         observation_delay_seconds=observation_delay_seconds,
         output_mode=output_mode,

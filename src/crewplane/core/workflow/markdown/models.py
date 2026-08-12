@@ -7,19 +7,23 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from crewplane.core.token_budget import TokenBudgetOverride
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.core.workspace.policy import WorktreeDeclaration, validate_worktree_name
+from crewplane.core.workspace.policy import WorktreeDeclaration
 from crewplane.version import SCHEMA_VERSION
 
 from ..keywords import (
-    ALLOWED_NODE_MODE_SET,
-    ALLOWED_NODE_MODES,
-    ALLOWED_REVIEW_STARTS_WITH,
-    ALLOWED_REVIEW_STARTS_WITH_SET,
     NodeMode,
     ReviewStartsWith,
-    validate_exact_keyword,
 )
 from ..models import ProviderSpec, WorkflowPayload
+from ..normalization import (
+    normalize_node_mode,
+    normalize_review_starts_with,
+    normalize_worktree_declarations,
+    normalize_worktree_selector,
+    reject_removed_workspace_block,
+    validate_workflow_schema_version,
+)
+from ..source_locations import SourceSpan
 from ..syntax import NODE_ID_PATTERN
 
 PromptMarkerKind = Literal["open", "close"]
@@ -48,43 +52,22 @@ class WorkflowNodeConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_workspace_block(cls, value: object) -> object:
-        if isinstance(value, dict) and "workspace" in value:
-            raise ValueError(
-                "node workspace blocks have been removed; use node worktree selectors"
-            )
-        return value
+        return reject_removed_workspace_block(value, "node")
 
     @field_validator("mode", mode="before")
     @classmethod
     def _validate_mode(cls, value: object) -> object:
-        return validate_exact_keyword(
-            value,
-            field_name="node mode",
-            allowed_values=ALLOWED_NODE_MODES,
-            allowed_value_set=ALLOWED_NODE_MODE_SET,
-        )
+        return normalize_node_mode(value)
 
     @field_validator("review_starts_with", mode="before")
     @classmethod
     def _validate_review_starts_with(cls, value: object) -> object:
-        return validate_exact_keyword(
-            value,
-            field_name="review_starts_with",
-            allowed_values=ALLOWED_REVIEW_STARTS_WITH,
-            allowed_value_set=ALLOWED_REVIEW_STARTS_WITH_SET,
-        )
+        return normalize_review_starts_with(value)
 
     @field_validator("worktree", mode="before")
     @classmethod
     def _validate_worktree(cls, value: object) -> object:
-        if value is None:
-            return value
-        if not isinstance(value, str):
-            return value
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("worktree selector cannot be blank")
-        return normalized
+        return normalize_worktree_selector(value)
 
 
 class WorkflowImportConfig(BaseModel):
@@ -187,38 +170,17 @@ class WorkflowFrontmatter(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_workspace_block(cls, value: object) -> object:
-        if isinstance(value, dict) and "workspace" in value:
-            raise ValueError(
-                "workflow workspace blocks have been removed; use workflow worktrees"
-            )
-        return value
+        return reject_removed_workspace_block(value, "workflow")
 
     @field_validator("schema_version")
     @classmethod
     def _validate_schema_version(cls, value: str) -> str:
-        if value != SCHEMA_VERSION:
-            raise ValueError(
-                f"Unsupported workflow schema version '{value}'. "
-                f"Expected '{SCHEMA_VERSION}'."
-            )
-        return value
+        return validate_workflow_schema_version(value)
 
     @field_validator("worktrees", mode="before")
     @classmethod
     def _validate_worktrees(cls, value: object) -> object:
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            return value
-        normalized: dict[str, object] = {}
-        for raw_name, declaration in value.items():
-            if not isinstance(raw_name, str):
-                raise ValueError("worktree names must be strings")
-            name = validate_worktree_name(raw_name)
-            if name in normalized:
-                raise ValueError(f"Duplicate worktree name '{name}'")
-            normalized[name] = declaration
-        return normalized
+        return normalize_worktree_declarations(value)
 
     @field_validator("inputs", mode="before")
     @classmethod
@@ -248,7 +210,7 @@ class WorkflowFrontmatter(BaseModel):
 class ParsedWorkflowBody:
     node_sections: dict[str, list[str]]
     node_section_content_start_lines: dict[str, list[int]]
-    node_section_spans: dict[str, list[dict[str, int]]]
+    node_section_spans: dict[str, list[SourceSpan]]
     section_headers: list[str]
 
 
@@ -257,8 +219,8 @@ class ParsedWorkflowMarkdown:
     frontmatter: WorkflowFrontmatter
     parsed_body: ParsedWorkflowBody
     payload: WorkflowPayload
-    node_source_spans: dict[str, dict[str, int]]
-    prompt_segment_spans: dict[str, list[dict[str, int]]]
+    node_source_spans: dict[str, SourceSpan]
+    prompt_segment_spans: dict[str, list[SourceSpan]]
 
 
 @dataclass(frozen=True)

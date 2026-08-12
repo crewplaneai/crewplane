@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import crewplane.runtime.workspace.prepared_workspace as prepared_workspace_module
-import crewplane.runtime.workspace.worktree as workspace_worktree
+import crewplane.runtime.workspace.worktree.orchestration as workspace_worktree
 from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
 )

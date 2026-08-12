@@ -4,6 +4,7 @@ from pathlib import Path
 
 from markdown_it import MarkdownIt
 
+from ..source_locations import SourceSpan
 from .models import (
     MarkdownSection,
     ParsedWorkflowBody,
@@ -64,7 +65,7 @@ def parse_workflow_body(
 
     node_sections: dict[str, list[str]] = {}
     node_section_content_start_lines: dict[str, list[int]] = {}
-    node_section_spans: dict[str, list[dict[str, int]]] = {}
+    node_section_spans: dict[str, list[SourceSpan]] = {}
     section_headers: list[str] = []
     for section in sections:
         section_headers.append(section.header)

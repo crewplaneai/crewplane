@@ -8,6 +8,8 @@ from pathlib import Path
 from crewplane.architecture.contracts import ProviderKind
 from crewplane.core.config import AgentConfig
 
+from .env_command import parse_env_command_context
+
 CODEX_REASONING_KEY = "model_reasoning_effort"
 CLAUDE_REASONING_ENV = "CLAUDE_CODE_EFFORT_LEVEL"
 SUPPORTED_REASONING_PROVIDER_KINDS = frozenset(
@@ -30,10 +32,13 @@ def validate_reasoning_request(
             "provider_kind 'codex' or 'claude'."
         )
     effective_environment = os.environ if environment is None else environment
-    cli_arguments, effective_reasoning_environment = _cli_reasoning_context(
+    cli_context = parse_env_command_context(
         config.cli_cmd,
         effective_environment.get(CLAUDE_REASONING_ENV, ""),
+        CLAUDE_REASONING_ENV,
     )
+    cli_arguments = cli_context.command_arguments
+    effective_reasoning_environment = cli_context.tracked_environment_value
     _reject_cli_command_terminator(cli_arguments)
     if provider_kind == ProviderKind.CODEX:
         _reject_codex_reasoning_conflict(cli_arguments)
@@ -216,150 +221,3 @@ def _is_nonblank_settings_value(value: object) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     return True
-
-
-def _cli_reasoning_context(
-    tokens: Sequence[str],
-    inherited_value: str,
-) -> tuple[tuple[str, ...], str]:
-    if not tokens:
-        return (), inherited_value
-    if Path(tokens[0]).name != "env":
-        return tuple(tokens[1:]), inherited_value
-
-    effective_value = inherited_value
-    index = 1
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--":
-            index += 1
-            break
-        if token == "-":
-            effective_value = ""
-            index += 1
-            continue
-        if token.startswith("--"):
-            index, effective_value = _consume_env_long_option(
-                tokens,
-                index,
-                effective_value,
-            )
-            continue
-        if token.startswith("-"):
-            index, effective_value = _consume_env_short_options(
-                tokens,
-                index,
-                effective_value,
-            )
-            continue
-        break
-
-    while index < len(tokens):
-        key, separator, value = tokens[index].partition("=")
-        if not separator:
-            break
-        if key == CLAUDE_REASONING_ENV:
-            effective_value = value
-        index += 1
-    command_arguments = tuple(tokens[index + 1 :]) if index < len(tokens) else ()
-    return command_arguments, effective_value
-
-
-def _consume_env_long_option(
-    tokens: Sequence[str],
-    index: int,
-    effective_value: str,
-) -> tuple[int, str]:
-    token = tokens[index]
-    option, separator, inline_value = token.partition("=")
-    if option == "--ignore-environment" and not separator:
-        return index + 1, ""
-    if option == "--unset":
-        value, next_index = _env_option_value(
-            tokens,
-            index,
-            inline_value if separator else None,
-            option,
-        )
-        if value == CLAUDE_REASONING_ENV:
-            effective_value = ""
-        return next_index, effective_value
-    if option == "--chdir":
-        raise ValueError(
-            "--chdir cannot be combined with a workflow reasoning request."
-        )
-    if option == "--argv0":
-        _, next_index = _env_option_value(
-            tokens,
-            index,
-            inline_value if separator else None,
-            option,
-        )
-        return next_index, effective_value
-    if option == "--split-string":
-        raise ValueError(
-            "--split-string cannot be combined with a workflow reasoning request."
-        )
-    if option in {
-        "--block-signal",
-        "--debug",
-        "--default-signal",
-        "--ignore-signal",
-        "--list-signal-handling",
-        "--null",
-    }:
-        return index + 1, effective_value
-    raise ValueError(
-        f"Cannot validate env option {token!r} with a workflow reasoning request."
-    )
-
-
-def _consume_env_short_options(
-    tokens: Sequence[str],
-    index: int,
-    effective_value: str,
-) -> tuple[int, str]:
-    cluster = tokens[index][1:]
-    option_index = 0
-    while option_index < len(cluster):
-        option = cluster[option_index]
-        if option == "i":
-            effective_value = ""
-            option_index += 1
-            continue
-        if option in {"0", "v"}:
-            option_index += 1
-            continue
-        if option not in {"C", "P", "S", "a", "u"}:
-            raise ValueError(
-                f"Cannot validate env option '-{option}' "
-                "with a workflow reasoning request."
-            )
-        inline_value = cluster[option_index + 1 :] or None
-        value, next_index = _env_option_value(
-            tokens,
-            index,
-            inline_value,
-            f"-{option}",
-        )
-        if option in {"C", "S"}:
-            raise ValueError(
-                f"-{option} cannot be combined with a workflow reasoning request."
-            )
-        if option == "u" and value == CLAUDE_REASONING_ENV:
-            effective_value = ""
-        return next_index, effective_value
-    return index + 1, effective_value
-
-
-def _env_option_value(
-    tokens: Sequence[str],
-    index: int,
-    inline_value: str | None,
-    option: str,
-) -> tuple[str, int]:
-    if inline_value is not None:
-        return inline_value, index + 1
-    if index + 1 >= len(tokens):
-        raise ValueError(f"{option} requires a value.")
-    return tokens[index + 1], index + 2

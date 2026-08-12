@@ -250,13 +250,15 @@ def _descriptor_matches(
 ) -> bool:
     return workspace_bundle_validation.workspace_blob_descriptor_matches(
         descriptor.repo.as_posix(),
-        descriptor.source_commit,
-        descriptor.source_tree,
-        descriptor.git_path,
-        descriptor.git_blob,
-        descriptor.git_file_mode,
-        descriptor.byte_size,
-        descriptor.canonical_sha256,
+        workspace_bundle_validation.WorkspaceBlobDescriptor(
+            source_commit=descriptor.source_commit,
+            source_tree=descriptor.source_tree,
+            git_path=descriptor.git_path,
+            git_blob=descriptor.git_blob,
+            git_file_mode=descriptor.git_file_mode,
+            byte_size=descriptor.byte_size,
+            canonical_sha256=descriptor.canonical_sha256,
+        ),
         descriptor.object_format,
         bundle_path=bundle_path,
     )

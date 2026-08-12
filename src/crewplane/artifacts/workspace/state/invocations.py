@@ -16,6 +16,7 @@ from ...results.selection import parse_audit_round, parse_task_round
 from ...run_history import RunHistoryRecord
 from ...safe_files import contained_regular_file
 from .fields import int_field, nullable_int_field
+from .fields import mapping_value as _mapping
 
 
 class WorkspaceStateStatus(StrEnum):
@@ -276,7 +277,3 @@ def lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
     if audit_round_num.value is None:
         return (0, round_num)
     return (audit_round_num.value, round_num)
-
-
-def _mapping(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}

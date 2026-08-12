@@ -15,10 +15,8 @@ from .policy import (
 )
 from .protected_refs import (
     ProtectedRefSnapshot,
-    protected_ref_snapshot,
-    protected_ref_snapshot_for_scopes,
+    protected_ref_snapshot_for_source,
 )
-from .refs import checked_ref
 from .reset import reset_reusable_worktree_checkout
 from .types import WorktreeSourceRef, WorktreeWorkspace
 
@@ -86,10 +84,7 @@ def _protected_ref_snapshot(
     source: WorkspaceSourceSnapshot,
     protected_ref_scopes: tuple[str, ...] | None,
 ) -> ProtectedRefSnapshot:
-    repo_root = Path(source.git_top_level)
-    if protected_ref_scopes is None:
-        return protected_ref_snapshot(repo_root)
-    checked_scopes = tuple(
-        checked_ref(repo_root, scope) for scope in protected_ref_scopes
+    return protected_ref_snapshot_for_source(
+        source.git_top_level,
+        protected_ref_scopes,
     )
-    return protected_ref_snapshot_for_scopes(repo_root, checked_scopes)

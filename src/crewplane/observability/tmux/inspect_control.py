@@ -11,8 +11,8 @@ from crewplane.observability.log_presentation.limits import (
     DEFAULT_FORMATTED_INSPECT_LINE_BUDGET,
 )
 from crewplane.observability.tmux.inspect_snapshot import (
-    InspectView,
     has_valid_presentation,
+    read_inspect_snapshot,
     read_snapshot,
     selected_snapshot_is_current,
     write_inspect_snapshot,
@@ -25,6 +25,10 @@ from crewplane.observability.tmux.runtime_files import (
 )
 from crewplane.observability.tmux.selection_control import (
     read_selection_control,
+)
+from crewplane.observability.tmux.snapshot_types import (
+    InspectView,
+    SelectedInvocationSnapshot,
 )
 
 RequestedView = Literal["auto", "raw", "formatted"]
@@ -84,9 +88,9 @@ def inspect_source_snapshot(
     runtime_files: RuntimeFiles,
     requested_view: RequestedView,
     mode: str,
-) -> dict[str, object] | None:
+) -> SelectedInvocationSnapshot | None:
     if mode == MODE_INSPECT and requested_view in {"raw", "formatted"}:
-        return read_snapshot(runtime_files.inspect_invocation)
+        return read_inspect_snapshot(runtime_files.inspect_invocation)
 
     selected = read_snapshot(runtime_files.selected_invocation)
     if selected is None:
@@ -99,7 +103,7 @@ def inspect_source_snapshot(
 
 def resolve_requested_view(
     requested_view: RequestedView,
-    selected: dict[str, object],
+    selected: SelectedInvocationSnapshot,
 ) -> InspectView | None:
     if requested_view == "raw":
         return "raw"

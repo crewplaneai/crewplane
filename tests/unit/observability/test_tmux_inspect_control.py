@@ -102,30 +102,11 @@ def test_inspect_control_switches_view_on_locked_inspect_snapshot(
     write_atomic(runtime_files.mode, MODE_INSPECT)
     write_json_atomic(
         runtime_files.inspect_invocation,
-        {
-            "schema_version": 1,
-            "selection_generation": 0,
-            "requested_selected_index": -1,
-            "resolved_selected_index": 0,
-            "node_id": "node.a",
-            "log_file": str(locked_log),
-            "log_presentation_format": "json_lines",
-            "log_presentation_profile": "mock",
-            "inspect_view": "formatted",
-        },
+        inspect_snapshot_data(locked_log, "node.a", 0),
     )
     write_json_atomic(
         runtime_files.selected_invocation,
-        {
-            "schema_version": 1,
-            "selection_generation": 0,
-            "requested_selected_index": -1,
-            "resolved_selected_index": 1,
-            "node_id": "node.b",
-            "log_file": str(selected_log),
-            "log_presentation_format": "json_lines",
-            "log_presentation_profile": "mock",
-        },
+        selected_snapshot_data(selected_log, "node.b", 1),
     )
 
     def succeed(
@@ -146,6 +127,37 @@ def test_inspect_control_switches_view_on_locked_inspect_snapshot(
     assert snapshot["inspect_view"] == view
 
 
+def test_inspect_control_ignores_selected_snapshot_in_locked_inspect_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_files = initialized_runtime_files(tmp_path)
+    locked_log = tmp_path / "locked.log"
+    locked_log.write_text("locked output\n", encoding="utf-8")
+    write_atomic(runtime_files.mode, MODE_INSPECT)
+    write_json_atomic(
+        runtime_files.inspect_invocation,
+        selected_snapshot_data(locked_log, "node.a", 0),
+    )
+
+    calls: list[tuple[list[str], bool]] = []
+
+    def record(
+        command: list[str],
+        check: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((command, check))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(inspect_control.subprocess, "run", record)
+
+    assert inspect_control.main(inspect_args(tmp_path, "raw")) == 0
+    assert calls == []
+    assert json.loads(
+        runtime_files.inspect_invocation.read_text(encoding="utf-8")
+    ) == selected_snapshot_data(locked_log, "node.a", 0)
+
+
 def initialized_runtime_files(root: Path) -> RuntimeFiles:
     runtime_files = RuntimeFiles.from_root(root)
     for path, content in initial_runtime_file_contents(runtime_files).items():
@@ -156,15 +168,46 @@ def initialized_runtime_files(root: Path) -> RuntimeFiles:
 def write_selected_snapshot(runtime_files: RuntimeFiles, log_file: Path) -> None:
     write_json_atomic(
         runtime_files.selected_invocation,
-        {
-            "schema_version": 1,
-            "selection_generation": 0,
-            "requested_selected_index": -1,
-            "resolved_selected_index": 0,
-            "node_id": "node.a",
-            "log_file": str(log_file),
-        },
+        selected_snapshot_data(log_file, "node.a", 0),
     )
+
+
+def selected_snapshot_data(
+    log_file: Path,
+    node_id: str,
+    resolved_index: int,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "workflow_name": "workflow",
+        "run_id": "run",
+        "dashboard_generation": 1,
+        "selection_generation": 0,
+        "requested_selected_index": -1,
+        "resolved_selected_index": resolved_index,
+        "node_count": 2,
+        "node_id": node_id,
+        "written_at": 0.0,
+        "log_file": str(log_file),
+    }
+
+
+def inspect_snapshot_data(
+    log_file: Path,
+    node_id: str,
+    resolved_index: int,
+) -> dict[str, object]:
+    snapshot = selected_snapshot_data(log_file, node_id, resolved_index)
+    snapshot.update(
+        {
+            "inspect_view": "formatted",
+            "line_budget": 20,
+            "created_at": 0.0,
+            "log_presentation_format": "json_lines",
+            "log_presentation_profile": "mock",
+        }
+    )
+    return snapshot
 
 
 def inspect_args(runtime_root: Path, view: str = "auto") -> list[str]:

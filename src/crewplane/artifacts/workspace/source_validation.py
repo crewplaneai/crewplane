@@ -12,7 +12,13 @@ from ..results.review_loop_status import resolve_review_loop_status
 from ..results.selection import parse_audit_round, parse_task_round
 from ..run_history import RunHistoryRecord
 from ..safe_files import contained_regular_file
-from .state.fields import int_field, nullable_int_field
+from .state.fields import (
+    int_field,
+    nullable_int_field,
+)
+from .state.fields import (
+    mapping_value as _mapping,
+)
 from .state.invocations import workspace_state_payloads
 
 
@@ -393,7 +399,3 @@ def _node_by_id(
         if node.id == node_id:
             return node
     return None
-
-
-def _mapping(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}

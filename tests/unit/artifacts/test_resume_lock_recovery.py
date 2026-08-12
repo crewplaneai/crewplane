@@ -35,7 +35,6 @@ from tests.helpers.resume_locks import (
 
 def _write_provider_process_state(
     state_dir: Path,
-    *,
     status: Literal["started", "exited"] = "started",
     pid: int = 300,
     filename: str | None = None,

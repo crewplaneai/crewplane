@@ -15,7 +15,7 @@ from ..state_selection import (
     same_node_executor_state_path,
 )
 from .descriptors import load_source_ref_from_state
-from .types import WorktreeSourceRef
+from .types import WorktreeSourceRef, candidate_source_ref
 
 
 def invocation_source_ref(
@@ -75,16 +75,4 @@ def same_node_executor_state(
 
 
 def _candidate_ref_from_state(state_path: Path) -> WorktreeSourceRef:
-    ref = load_source_ref_from_state(state_path)
-    return WorktreeSourceRef(
-        source_kind="candidate",
-        source_node_id=ref.source_node_id,
-        source_commit=ref.source_commit,
-        source_tree=ref.source_tree,
-        candidate_sequence=ref.candidate_sequence,
-        bundle_path=ref.bundle_path,
-        bundle_sha256=ref.bundle_sha256,
-        bundle_size_bytes=ref.bundle_size_bytes,
-        bundle_ref=ref.bundle_ref,
-        upstream_sources=ref.upstream_sources,
-    )
+    return candidate_source_ref(load_source_ref_from_state(state_path))

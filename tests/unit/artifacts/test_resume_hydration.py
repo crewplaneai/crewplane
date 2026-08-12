@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-import crewplane.artifacts.resume.generated_files as generated_files_module
 import crewplane.artifacts.resume.hydration as hydration_module
+import crewplane.artifacts.resume.verified_copy as verified_copy_module
 from crewplane.artifacts.manager import OutputManager
 from crewplane.artifacts.naming import (
     build_generated_file_result_dir_name,
@@ -116,7 +116,7 @@ def test_hydrate_rechecks_target_after_descriptor_bound_copy(
         path.write_bytes(payload + b"corruption")
 
     monkeypatch.setattr(
-        hydration_module,
+        verified_copy_module,
         "atomic_write_bytes",
         corrupt_target_write,
     )
@@ -210,13 +210,17 @@ def test_hydrate_rechecks_generated_file_target_after_copy(
     )
     frontier = validate_resume_frontier(source, make_plan())
     output = OutputManager("Workflow", base_dir=tmp_path)
+    write_bytes = verified_copy_module.atomic_write_bytes
 
     def corrupt_target_write(path: Path, payload: bytes) -> None:
+        if "generated-files" not in path.parts:
+            write_bytes(path, payload)
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload + b"corruption")
 
     monkeypatch.setattr(
-        generated_files_module,
+        verified_copy_module,
         "atomic_write_bytes",
         corrupt_target_write,
     )

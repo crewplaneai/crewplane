@@ -241,45 +241,32 @@ def _run_setup_command(
                 cancellation,
             )
             if cancelled:
-                _write_stream(log_handle, "stdout", stdout_file)
-                _write_stream(log_handle, "stderr", stderr_file)
-                log_handle.write("[cancelled] true\n\n")
-                record = _setup_command_record(
-                    recorded_argv,
-                    command_index,
-                    cwd,
-                    started_at,
-                    started,
-                    exit_code=None,
-                    timed_out=False,
-                )
-                record["cancelled"] = True
-                return record
-            if timed_out:
-                _write_stream(log_handle, "stdout", stdout_file)
-                _write_stream(log_handle, "stderr", stderr_file)
-                log_handle.write("[timed_out] true\n\n")
-                return _setup_command_record(
-                    recorded_argv,
-                    command_index,
-                    cwd,
-                    started_at,
-                    started,
-                    exit_code=None,
-                    timed_out=True,
-                )
+                exit_code = None
+                record_timed_out = False
+                status_line = "[cancelled] true\n\n"
+            elif timed_out:
+                exit_code = None
+                record_timed_out = True
+                status_line = "[timed_out] true\n\n"
+            else:
+                exit_code = returncode
+                record_timed_out = False
+                status_line = f"[exit_code] {returncode}\n\n"
             _write_stream(log_handle, "stdout", stdout_file)
             _write_stream(log_handle, "stderr", stderr_file)
-            log_handle.write(f"[exit_code] {returncode}\n\n")
-            return _setup_command_record(
+            log_handle.write(status_line)
+            record = _setup_command_record(
                 recorded_argv,
                 command_index,
                 cwd,
                 started_at,
                 started,
-                exit_code=returncode,
-                timed_out=False,
+                exit_code=exit_code,
+                timed_out=record_timed_out,
             )
+            if cancelled:
+                record["cancelled"] = True
+            return record
     except OSError as exc:
         log_handle.write(f"[error] {exc}\n\n")
         record = _setup_command_record(

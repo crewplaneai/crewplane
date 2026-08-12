@@ -23,6 +23,7 @@ from ..activity.events import (
 from ..log_presentation import resolve_log_presentation_descriptor
 from ..runtime_context import CompiledRuntimeContext
 from .artifact_capture import capture_invocation_generated_files
+from .cancellation import workspace_finalization_is_deferred
 from .display import (
     ProviderCallDisplay,
     invoke_with_display,
@@ -333,10 +334,9 @@ async def _mark_workspace_cancelled(
         state.prepared_workspace
     ):
         return
-    if state.workspace_success_finalization_started and getattr(
-        cancellation,
-        "_crewplane_workspace_finalization_deferred",
-        False,
+    if (
+        state.workspace_success_finalization_started
+        and workspace_finalization_is_deferred(cancellation)
     ):
         return
     try:

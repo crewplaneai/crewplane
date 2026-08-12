@@ -11,6 +11,7 @@ from crewplane.core.workspace.policy import (
 
 from ..markdown import parse_workflow_markdown_document
 from ..models import WorkflowPayload, workflow_node_payload_dict
+from ..source_locations import SourceSpan
 from .imports import (
     bind_import_params,
     resolve_import_path,
@@ -40,8 +41,8 @@ class WorkflowComposer:
         self._source_hashes: dict[Path, str] = {}
         self._source_order: list[Path] = []
         self._node_sources: dict[str, Path] = {}
-        self._node_source_spans: dict[str, dict[str, int]] = {}
-        self._prompt_segment_spans: dict[str, list[dict[str, int]]] = {}
+        self._node_source_spans: dict[str, SourceSpan] = {}
+        self._prompt_segment_spans: dict[str, list[SourceSpan]] = {}
         self._root_schema_version: str | None = None
 
     def compose(self, path: Path) -> ComposedWorkflowDocument:
@@ -237,9 +238,9 @@ class WorkflowComposer:
             )
         self._node_sources[node_id] = node.source_path
         if node.source_span is not None:
-            self._node_source_spans[node_id] = dict(node.source_span)
+            self._node_source_spans[node_id] = node.source_span.copy()
         self._prompt_segment_spans[node_id] = [
-            dict(span) for span in node.prompt_segment_spans
+            span.copy() for span in node.prompt_segment_spans
         ]
         composed_nodes.append(node)
 

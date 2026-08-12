@@ -48,3 +48,17 @@ def is_hex_object(value: object) -> bool:
         and len(value) in {40, 64}
         and all(char in "0123456789abcdef" for char in value)
     )
+
+
+def without_branch_export(value: object) -> object:
+    """Return JSON-like workspace state without branch-export records."""
+
+    if isinstance(value, Mapping):
+        return {
+            key: without_branch_export(item)
+            for key, item in value.items()
+            if key != "branch_export"
+        }
+    if isinstance(value, list):
+        return [without_branch_export(item) for item in value]
+    return value

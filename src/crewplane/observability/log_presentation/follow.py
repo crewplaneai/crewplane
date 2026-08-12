@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from time import sleep, time
-from typing import Any, cast
+from typing import cast
 
 from crewplane.architecture.contracts import (
     LogPresentationDescriptor,
@@ -17,6 +18,7 @@ from crewplane.observability.log_presentation.limits import (
     DEFAULT_FORMATTED_INSPECT_LINE_BUDGET,
     DEFAULT_LIMITS,
 )
+from crewplane.observability.tmux.snapshot_types import require_snapshot_string
 
 _VALID_STATUSES: frozenset[str] = frozenset(
     {"pending", "running", "succeeded", "failed"}
@@ -46,11 +48,9 @@ def render_snapshot(snapshot_path: Path) -> None:
     try:
         snapshot = read_snapshot(snapshot_path)
         descriptor = descriptor_from_snapshot(snapshot)
-        log_path = Path(require_string(snapshot, "log_file"))
+        log_path = Path(require_snapshot_string(snapshot, "log_file"))
         status = status_from_snapshot(snapshot)
-        line_budget = int(
-            snapshot.get("line_budget") or DEFAULT_FORMATTED_INSPECT_LINE_BUDGET
-        )
+        line_budget = snapshot_line_budget(snapshot)
         formatted = format_log_file(
             log_path=log_path,
             descriptor=descriptor,
@@ -71,34 +71,36 @@ def render_snapshot(snapshot_path: Path) -> None:
         print("No formatted log output yet.", flush=True)
 
 
-def read_snapshot(snapshot_path: Path) -> dict[str, Any]:
+def read_snapshot(snapshot_path: Path) -> Mapping[str, object]:
     value = json.loads(snapshot_path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("snapshot must be a JSON object")
-    return value
+    return cast(Mapping[str, object], value)
 
 
-def descriptor_from_snapshot(snapshot: dict[str, Any]) -> LogPresentationDescriptor:
+def descriptor_from_snapshot(
+    snapshot: Mapping[str, object],
+) -> LogPresentationDescriptor:
     return validate_log_presentation_descriptor(
         {
-            "format": require_string(snapshot, "log_presentation_format"),
-            "profile": require_string(snapshot, "log_presentation_profile"),
+            "format": require_snapshot_string(snapshot, "log_presentation_format"),
+            "profile": require_snapshot_string(snapshot, "log_presentation_profile"),
         }
     )
 
 
-def status_from_snapshot(snapshot: dict[str, Any]) -> InvocationStatus:
+def snapshot_line_budget(snapshot: Mapping[str, object]) -> int:
+    value = snapshot.get("line_budget")
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return DEFAULT_FORMATTED_INSPECT_LINE_BUDGET
+
+
+def status_from_snapshot(snapshot: Mapping[str, object]) -> InvocationStatus:
     value = snapshot.get("invocation_status", "running")
     if not isinstance(value, str) or value not in _VALID_STATUSES:
         return "running"
     return cast(InvocationStatus, value)
-
-
-def require_string(snapshot: dict[str, Any], key: str) -> str:
-    value = snapshot.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"snapshot missing {key}")
-    return value
 
 
 if __name__ == "__main__":

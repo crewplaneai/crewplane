@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import crewplane.runtime.workspace.worktree as worktree_module
+import crewplane.runtime.workspace.worktree.orchestration as worktree_module
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.worktree import (

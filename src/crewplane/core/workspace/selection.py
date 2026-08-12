@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .policy import (
+    WorkspaceCleanStart,
     WorkspaceMaterialization,
     WorkspaceSourceKind,
     WorktreeContract,
@@ -19,7 +20,7 @@ class LogicalWorkspaceSelection:
     materialization: WorkspaceMaterialization
     source_kind: WorkspaceSourceKind
     source_node_id: str | None
-    clean_start: str
+    clean_start: WorkspaceCleanStart
     worktree_contract: WorktreeContract
     setup_profile: str | None
     setup_commands: tuple[tuple[str, ...], ...]

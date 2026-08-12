@@ -108,13 +108,15 @@ typecheck:
 		src/crewplane/observability/observer.py \
 		src/crewplane/observability/runtime.py \
 		src/crewplane/observability/tmux/selection.py \
+		src/crewplane/observability/tmux/snapshot_types.py \
 		src/crewplane/observability/tmux/compact.py \
 		src/crewplane/observability/tmux/rendering.py \
 		src/crewplane/observability/tmux/refresh.py \
 		src/crewplane/observability/tmux/selected_invocation.py \
 		src/crewplane/observability/run_summary/builder.py \
 		src/crewplane/observability/run_summary/logger.py \
-		tests/typecheck/public_observer_consumer.py
+		tests/typecheck/public_observer_consumer.py \
+		tests/typecheck/public_artifacts_consumer.py
 
 lint:
 	$(RUN_RUFF) check src tests scripts

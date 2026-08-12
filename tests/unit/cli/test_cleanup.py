@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from crewplane.cli.app import app
-from crewplane.cli.cleanup import cleanup_repository_id
+from crewplane.cli.cleanup import cleanup_repository_id, load_workspace_statuses
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -197,6 +198,40 @@ def test_cleanup_workspaces_rejects_project_cache_root(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "must not overlap" in result.output
     assert project_root.exists()
+
+
+def test_load_workspace_statuses_skips_twice_hydrated_state_without_cache_key(
+    tmp_path: Path,
+) -> None:
+    stage_root = tmp_path / "execution-stages"
+    state_path = stage_root / "workflow--resumed" / "node" / "workspace-state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "run_key_name": "workflow--resumed",
+                "status": "succeeded",
+                "workspace": {
+                    "cache_key": None,
+                    "retention": "not_applicable",
+                    "retained_reason": "hydrated_resume",
+                },
+                "resume_origin": {
+                    "source_run_id": "first-resume",
+                    "source_run_key_name": "workflow--first-resume",
+                    "source_node_id": "node",
+                    "source_workspace": {
+                        "cache_key": None,
+                        "retention": "not_applicable",
+                        "retained_reason": "hydrated_resume",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_workspace_statuses(stage_root) == {}
 
 
 def _cleanup_project(

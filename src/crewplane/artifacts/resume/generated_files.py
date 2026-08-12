@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.execution_state import ArtifactDescriptor
-from crewplane.core.file_hashing import file_size_and_sha256
 
-from ..atomic import atomic_write_bytes
 from ..naming import build_generated_file_result_dir_name
 from ..safe_files import contained_regular_file
+from .verified_copy import VerifiedCopyLabels, copy_verified_artifact
 
 
 def copy_generated_file_descriptors(
@@ -46,27 +44,16 @@ def copy_generated_file_descriptor(
         raise ValueError(
             f"Generated file artifact for node '{node_id}' is not reusable."
         )
-    payload = source_path.read_bytes()
-    if hashlib.sha256(payload).hexdigest() != descriptor.sha256:
-        raise ValueError(f"Generated file artifact hash changed for node '{node_id}'.")
-    if len(payload) != descriptor.size_bytes:
-        raise ValueError(f"Generated file artifact size changed for node '{node_id}'.")
     target_path = output.results_dir / descriptor.relative_path
-    atomic_write_bytes(target_path, payload)
-    target_size, target_sha256 = file_size_and_sha256(target_path)
-    if target_size != descriptor.size_bytes:
-        raise ValueError(
-            f"Hydrated generated file artifact size changed for node '{node_id}'."
-        )
-    if target_sha256 != descriptor.sha256:
-        raise ValueError(
-            f"Hydrated generated file artifact hash changed for node '{node_id}'."
-        )
-    return ArtifactDescriptor(
-        kind=descriptor.kind,
-        relative_path=descriptor.relative_path,
-        size_bytes=target_size,
-        sha256=descriptor.sha256,
+    return copy_verified_artifact(
+        source_path,
+        target_path,
+        descriptor,
+        VerifiedCopyLabels(
+            source_artifact="Generated file artifact",
+            hydrated_artifact="Hydrated generated file artifact",
+            node_id=node_id,
+        ),
     )
 
 

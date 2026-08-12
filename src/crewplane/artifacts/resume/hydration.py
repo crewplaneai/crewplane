@@ -23,12 +23,14 @@ from crewplane.core.value_checks import is_strict_int
 
 from ..atomic import atomic_write_bytes
 from ..workspace.node_state import build_node_workspace_descriptor
+from ..workspace.state.fields import without_branch_export
 from .generated_files import copy_generated_file_descriptors
 from .validation import (
     ValidatedResumeFrontier,
     contained_regular_file,
     required_resume_artifact_paths,
 )
+from .verified_copy import VerifiedCopyLabels, copy_verified_artifact
 
 
 def hydrate_resume_frontier(
@@ -101,28 +103,17 @@ def _copy_descriptors(
         )
         if source_path is None:
             raise ValueError(f"Resume artifact for node '{node.id}' is not reusable.")
-        payload = source_path.read_bytes()
-        if hashlib.sha256(payload).hexdigest() != descriptor.sha256:
-            raise ValueError(f"Resume artifact hash changed for node '{node.id}'.")
-        if len(payload) != descriptor.size_bytes:
-            raise ValueError(f"Resume artifact size changed for node '{node.id}'.")
         target_path = output.results_dir / descriptor.relative_path
-        atomic_write_bytes(target_path, payload)
-        target_size, target_sha256 = file_size_and_sha256(target_path)
-        if target_size != descriptor.size_bytes:
-            raise ValueError(
-                f"Hydrated resume artifact size changed for node '{node.id}'."
-            )
-        if target_sha256 != descriptor.sha256:
-            raise ValueError(
-                f"Hydrated resume artifact hash changed for node '{node.id}'."
-            )
         hydrated.append(
-            ArtifactDescriptor(
-                kind=descriptor.kind,
-                relative_path=descriptor.relative_path,
-                size_bytes=target_size,
-                sha256=descriptor.sha256,
+            copy_verified_artifact(
+                source_path,
+                target_path,
+                descriptor,
+                VerifiedCopyLabels(
+                    source_artifact="Resume artifact",
+                    hydrated_artifact="Hydrated resume artifact",
+                    node_id=node.id,
+                ),
             )
         )
     return hydrated
@@ -319,7 +310,7 @@ def _validate_workspace_state_resume_payload(
     except (json.JSONDecodeError, UnicodeDecodeError):
         return False
     resume_bytes = json.dumps(
-        _without_branch_export(state),
+        without_branch_export(state),
         allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -333,18 +324,6 @@ def _validate_workspace_state_resume_payload(
             f"Workspace resume artifact size changed for node '{node_id}'."
         )
     return True
-
-
-def _without_branch_export(value: object) -> object:
-    if isinstance(value, Mapping):
-        return {
-            key: _without_branch_export(item)
-            for key, item in value.items()
-            if key != "branch_export"
-        }
-    if isinstance(value, list):
-        return [_without_branch_export(item) for item in value]
-    return value
 
 
 def _hydrated_workspace_state_payload(
@@ -362,7 +341,7 @@ def _hydrated_workspace_state_payload(
         ) from exc
     if not isinstance(state, dict):
         raise ValueError(f"Workspace state for node '{node_id}' is not reusable.")
-    state = _without_branch_export(state)
+    state = without_branch_export(state)
     if not isinstance(state, dict):
         raise ValueError(f"Workspace state for node '{node_id}' is not reusable.")
     state["resume_origin"] = _workspace_state_resume_origin(

@@ -9,6 +9,7 @@ from crewplane.architecture.contracts import (
     InvokerAdapterCapabilities,
     InvokerWorkspaceSupport,
 )
+from crewplane.architecture.errors import IntegrationResolutionError
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.bootstrap.runtime_config import normalize_invoker_capabilities
 from crewplane.core.config import (
@@ -29,6 +30,8 @@ def _config(
     artifact_options: dict[str, object] | None = None,
     agent_config: AgentConfig | None = None,
     workspace: dict[str, object] | None = None,
+    ui_implementation: str = "none",
+    ui_options: dict[str, object] | None = None,
 ) -> Config:
     selected_agent_config = (
         AgentConfig(cli_cmd=["mock"]) if agent_config is None else agent_config
@@ -51,7 +54,10 @@ def _config(
                         else artifact_options
                     ),
                 ),
-                ui=IntegrationSpec(implementation="none", options={}),
+                ui=IntegrationSpec(
+                    implementation=ui_implementation,
+                    options={} if ui_options is None else ui_options,
+                ),
             ),
         ),
     )
@@ -185,6 +191,24 @@ def test_snapshot_invalid_options_fail_before_artifact_allocation(
     assert not (tmp_path / ".crewplane").exists()
     assert not (tmp_path / "execution-stages").exists()
     assert not (tmp_path / "execution-results").exists()
+
+
+def test_snapshot_validates_inactive_ui_configuration() -> None:
+    with pytest.raises(ValueError, match="none ui implementation does not support"):
+        build_runtime_config_snapshot(
+            config=_config(ui_options={"unsupported": True}),
+            console=Console(file=None),
+            no_live=True,
+        )
+
+
+def test_snapshot_resolves_inactive_ui_implementation() -> None:
+    with pytest.raises(IntegrationResolutionError, match="Unknown ui implementation"):
+        build_runtime_config_snapshot(
+            config=_config(ui_implementation="missing"),
+            console=Console(file=None),
+            no_live=True,
+        )
 
 
 def test_invoker_workspace_capabilities_are_normalized_from_adapter() -> None:

@@ -1,7 +1,9 @@
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -41,6 +43,21 @@ def test_execution_event_rejects_payload_type_mismatch() -> None:
             run_id="run-1",
             context=ExecutionEventContext(workflow_name="workflow", run_id="run-1"),
             payload=InvocationEventPayload(duration_ms=10),
+        )
+
+
+def test_execution_event_rejects_unknown_event_type() -> None:
+    with pytest.raises(ValueError, match="Unsupported execution event type"):
+        ExecutionEvent(
+            event_type=cast(EventType, "future_event"),
+            workflow_name="workflow",
+            run_id="run-1",
+            context=ExecutionEventContext(workflow_name="workflow", run_id="run-1"),
+            payload=RuntimeLogEventPayload(
+                level="warning",
+                message="payload message",
+                operation="runtime_warning",
+            ),
         )
 
 

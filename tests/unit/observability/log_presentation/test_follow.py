@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from crewplane.observability.log_presentation import follow
+from crewplane.observability.tmux.snapshot_types import require_snapshot_string
 
 
 def test_main_renders_one_snapshot_when_once_is_requested(
@@ -136,6 +137,6 @@ def test_snapshot_helpers_validate_values(tmp_path: Path) -> None:
     assert follow.read_snapshot(snapshot_path) == {"value": "present"}
     assert follow.status_from_snapshot({}) == "running"
     assert follow.status_from_snapshot({"invocation_status": "failed"}) == "failed"
-    assert follow.require_string({"value": "present"}, "value") == "present"
+    assert require_snapshot_string({"value": "present"}, "value") == "present"
     with pytest.raises(ValueError, match="snapshot missing value"):
-        follow.require_string({"value": ""}, "value")
+        require_snapshot_string({"value": ""}, "value")

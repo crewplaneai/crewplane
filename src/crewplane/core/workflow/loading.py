@@ -13,6 +13,7 @@ from .composition.models import (
     WorkflowSourceRecord,
 )
 from .models import WorkflowPayload, WorkflowPlan, workflow_payload_dict
+from .source_locations import SourceSpan
 
 
 @dataclass(frozen=True)
@@ -22,8 +23,8 @@ class WorkflowLoadResult:
     composed_workflow: WorkflowPayload
     referenced_workflows: list[WorkflowSourceRecord]
     node_source_paths: dict[str, Path]
-    node_source_spans: dict[str, dict[str, int]]
-    prompt_segment_spans: dict[str, list[dict[str, int]]]
+    node_source_spans: dict[str, SourceSpan]
+    prompt_segment_spans: dict[str, list[SourceSpan]]
 
 
 def _build_workflow_load_result(
@@ -32,8 +33,8 @@ def _build_workflow_load_result(
     workflow_content: str,
     referenced_workflows: list[WorkflowSourceRecord],
     node_source_paths: dict[str, Path],
-    node_source_spans: dict[str, dict[str, int]],
-    prompt_segment_spans: dict[str, list[dict[str, int]]],
+    node_source_spans: dict[str, SourceSpan],
+    prompt_segment_spans: dict[str, list[SourceSpan]],
 ) -> WorkflowLoadResult:
     if not isinstance(data, dict):
         raise ValueError("Workflow file must contain a YAML object.")

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from threading import Lock
 from time import monotonic, time
-from typing import Any
 
 from crewplane.observability.events import (
     ExecutionEvent,
@@ -23,7 +22,7 @@ from crewplane.observability.tmux.control_state import (
 )
 from crewplane.observability.tmux.inspect_snapshot import (
     SNAPSHOT_SCHEMA_VERSION,
-    read_snapshot,
+    read_inspect_snapshot,
 )
 from crewplane.observability.tmux.labels import counts_line, status_line
 from crewplane.observability.tmux.rendering import (
@@ -52,6 +51,10 @@ from crewplane.observability.tmux.selection_control import (
     read_selection_control,
 )
 from crewplane.observability.tmux.session_lifecycle import StartedCompactSession
+from crewplane.observability.tmux.snapshot_types import (
+    SelectedInvocationSnapshot,
+    snapshot_string,
+)
 from crewplane.observability.tmux.window import TmuxCompactWindowOptions
 from crewplane.observability.types import DashboardSnapshot, RunResult
 
@@ -165,9 +168,9 @@ class TmuxCompactRefreshController:
         )
 
         mode = read_runtime_mode(runtime_files.mode)
-        inspect_snapshot = read_snapshot(runtime_files.inspect_invocation)
-        inspect_node_id = _snapshot_string(inspect_snapshot, "node_id")
-        inspect_view = _snapshot_string(inspect_snapshot, "inspect_view")
+        inspect_snapshot = read_inspect_snapshot(runtime_files.inspect_invocation)
+        inspect_node_id = snapshot_string(inspect_snapshot, "node_id")
+        inspect_view = snapshot_string(inspect_snapshot, "inspect_view")
         inspect_mode = mode == MODE_INSPECT
         self._bindings.sync_copy_mode_bindings(
             tmux,
@@ -304,20 +307,20 @@ class TmuxCompactRefreshController:
         state: RunDashboardState,
         selection: DashboardSelection,
         selection_control: SelectionControlState,
-    ) -> dict[str, object]:
+    ) -> SelectedInvocationSnapshot:
         invocation = _selected_invocation(state, selection.selected_node_id)
-        record: dict[str, object] = {
-            "schema_version": SNAPSHOT_SCHEMA_VERSION,
-            "workflow_name": state.workflow_name,
-            "run_id": state.run_id,
-            "dashboard_generation": self._dashboard_generation,
-            "selection_generation": selection_control.selection_generation,
-            "requested_selected_index": selection_control.selected_index,
-            "resolved_selected_index": selection.selected_index,
-            "node_count": len(selection.ordered_node_ids),
-            "node_id": selection.selected_node_id,
-            "written_at": self._wall_time_now(),
-        }
+        record = SelectedInvocationSnapshot(
+            schema_version=SNAPSHOT_SCHEMA_VERSION,
+            workflow_name=state.workflow_name,
+            run_id=state.run_id,
+            dashboard_generation=self._dashboard_generation,
+            selection_generation=selection_control.selection_generation,
+            requested_selected_index=selection_control.selected_index,
+            resolved_selected_index=selection.selected_index,
+            node_count=len(selection.ordered_node_ids),
+            node_id=selection.selected_node_id,
+            written_at=self._wall_time_now(),
+        )
         if invocation is None:
             return record
         record.update(
@@ -353,10 +356,3 @@ def _selected_invocation(
     if node is None:
         return None
     return select_invocation(node)
-
-
-def _snapshot_string(snapshot: dict[str, Any] | None, key: str) -> str | None:
-    if snapshot is None:
-        return None
-    value = snapshot.get(key)
-    return value if isinstance(value, str) else None

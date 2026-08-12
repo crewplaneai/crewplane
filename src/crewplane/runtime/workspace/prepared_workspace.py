@@ -333,25 +333,12 @@ class PreparedWorkspace:
         message: str,
         child_environment_applied: bool | None = None,
     ) -> None:
-        if self.state_path is None:
-            return
-        diagnostics = [workspace_diagnostic("error", message)]
-        retention, retained_reason = self._terminal_failure_retention(
+        self._mark_terminal_state(
+            "failed",
+            "error",
             "failure",
-            diagnostics,
-        )
-        update_workspace_state(
-            self.state_path,
-            WorkspaceStateUpdateRequest(
-                status="failed",
-                diagnostics=diagnostics,
-                retention=WorkspaceStateRetention(
-                    retention=retention,
-                    retained_reason=retained_reason,
-                ),
-                child_environment_applied=child_environment_applied,
-                base_payload=self.workspace_state_payload,
-            ),
+            message,
+            child_environment_applied,
         )
 
     def mark_cancelled(
@@ -359,17 +346,33 @@ class PreparedWorkspace:
         message: str,
         child_environment_applied: bool | None = None,
     ) -> None:
+        self._mark_terminal_state(
+            "cancelled",
+            "warning",
+            "cancelled",
+            message,
+            child_environment_applied,
+        )
+
+    def _mark_terminal_state(
+        self,
+        status: Literal["failed", "cancelled"],
+        diagnostic_level: WorkspaceDiagnosticLevel,
+        retention_reason: str,
+        message: str,
+        child_environment_applied: bool | None,
+    ) -> None:
         if self.state_path is None:
             return
-        diagnostics = [workspace_diagnostic("warning", message)]
+        diagnostics = [workspace_diagnostic(diagnostic_level, message)]
         retention, retained_reason = self._terminal_failure_retention(
-            "cancelled",
+            retention_reason,
             diagnostics,
         )
         update_workspace_state(
             self.state_path,
             WorkspaceStateUpdateRequest(
-                status="cancelled",
+                status=status,
                 diagnostics=diagnostics,
                 retention=WorkspaceStateRetention(
                     retention=retention,
