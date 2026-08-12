@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
@@ -21,12 +22,7 @@ def _parse_options(options: JsonObject | None) -> FilesystemArtifactOptions:
         raise ValueError("artifacts option 'log_cli_output' must be a boolean")
 
     allowed_template_paths_raw = resolved_options.pop("allowed_template_paths", [])
-    if not isinstance(allowed_template_paths_raw, list) or any(
-        not isinstance(path, str) for path in allowed_template_paths_raw
-    ):
-        raise ValueError(
-            "artifacts option 'allowed_template_paths' must be a list of strings"
-        )
+    allowed_template_paths = _string_paths(allowed_template_paths_raw)
 
     if resolved_options:
         raise ValueError(
@@ -38,9 +34,17 @@ def _parse_options(options: JsonObject | None) -> FilesystemArtifactOptions:
         log_cli_output=log_cli_output_raw,
         allowed_template_paths=tuple(
             Path(path).expanduser().resolve(strict=False).as_posix()
-            for path in allowed_template_paths_raw
+            for path in allowed_template_paths
         ),
     )
+
+
+def _string_paths(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or any(not isinstance(path, str) for path in value):
+        raise ValueError(
+            "artifacts option 'allowed_template_paths' must be a list of strings"
+        )
+    return tuple(path for path in value if isinstance(path, str))
 
 
 class FilesystemArtifactsAdapter:
@@ -53,7 +57,7 @@ class FilesystemArtifactsAdapter:
         options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         parsed_options = _parse_options(options)
-        canonical_options = {
+        canonical_options: JsonObject = {
             "allowed_template_paths": list(parsed_options.allowed_template_paths),
             "log_cli_output": parsed_options.log_cli_output,
         }
@@ -78,9 +82,12 @@ class FilesystemArtifactsAdapter:
 
         parsed_options = _parse_options(options)
 
-        return OutputManager(
-            workflow_name,
-            base_dir=state_dir,
-            template_base_dir=project_root,
-            log_cli_output=parsed_options.log_cli_output,
+        return cast(
+            ArtifactStorePort,
+            OutputManager(
+                workflow_name,
+                base_dir=state_dir,
+                template_base_dir=project_root,
+                log_cli_output=parsed_options.log_cli_output,
+            ),
         )

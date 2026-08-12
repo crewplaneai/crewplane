@@ -49,6 +49,55 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
                 output_a.read_text(encoding="utf-8"),
                 output_b.read_text(encoding="utf-8"),
             )
+            self.assertEqual(
+                output_a.read_text(encoding="utf-8"),
+                "# Mock Invocation Output\n"
+                "\n"
+                "- Node: node.a\n"
+                "- Task: alpha_executor_0\n"
+                "- Provider: alpha\n"
+                "- Role: executor\n"
+                "- Audit Round: n/a\n"
+                "- Round: 1\n"
+                "- Seed Marker: a95392e8b671\n"
+                "\n"
+                "## Summary\n"
+                "Synthetic output generated for deterministic local "
+                "orchestration checks.\n"
+                "\n"
+                "## Notes\n"
+                "- Prompt length: 11 characters\n"
+                "- Behavior path: mock invoker lorem mode\n"
+                "\n"
+                "## Next Steps\n"
+                "1. Verify downstream template substitution.\n"
+                "2. Validate node and invocation state transitions.\n",
+            )
+
+    def test_canonical_selector_serialization_preserves_field_order(self) -> None:
+        canonical = MockInvokerAdapter().canonicalize_options(
+            "mock",
+            "crewplane.adapters.invokers.mock.MockInvokerAdapter",
+            self._options(
+                fail_when=[
+                    {
+                        "node_id": "node.a",
+                        "task_id": "alpha_reviewer_0",
+                        "provider": "alpha",
+                        "role": "reviewer",
+                        "audit_round_num": 2,
+                        "round_num": 3,
+                    }
+                ]
+            ),
+        )
+
+        self.assertEqual(
+            json.dumps(canonical.options["fail_when"], separators=(",", ":")),
+            '[{"node_id":"node.a","task_id":"alpha_reviewer_0",'
+            '"provider":"alpha","role":"reviewer","audit_round_num":2,'
+            '"round_num":3}]',
+        )
 
     def test_create_invoker_rejects_unknown_options(self) -> None:
         adapter = MockInvokerAdapter()

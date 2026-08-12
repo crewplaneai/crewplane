@@ -1,36 +1,27 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-
-from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts import (
+    InvocationContext,
+    JsonObject,
+    MockInvokerFailSelector,
+)
+from crewplane.core.workflow.keywords import ProviderRole
 
 _SELECTOR_STRING_KEYS = {"node_id", "task_id", "provider", "role"}
-_SELECTOR_INT_KEYS = {"audit_round_num", "round_num"}
-_SELECTOR_KEYS = _SELECTOR_STRING_KEYS | _SELECTOR_INT_KEYS
-
-
-@dataclass(frozen=True)
-class FailSelector:
-    criteria: Mapping[str, str | int]
-
-    def matches(self, context: InvocationContext | None) -> bool:
-        if context is None:
-            return False
-        for key, expected in self.criteria.items():
-            if getattr(context, key) != expected:
-                return False
-        return True
-
-    def summary(self) -> str:
-        return ", ".join(
-            f"{key}={value}" for key, value in sorted(self.criteria.items())
-        )
+_SELECTOR_FIELDS = (
+    "node_id",
+    "task_id",
+    "provider",
+    "role",
+    "audit_round_num",
+    "round_num",
+)
+_SELECTOR_KEYS = frozenset(_SELECTOR_FIELDS)
 
 
 def _validate_and_build_selector(
     raw_selector: object, selector_index: int
-) -> FailSelector:
+) -> MockInvokerFailSelector:
     if not isinstance(raw_selector, dict):
         raise ValueError(
             "mock invoker option 'fail_when' selectors must be objects; "
@@ -74,13 +65,66 @@ def _validate_and_build_selector(
             )
         selector[key] = raw_value
 
-    return FailSelector(criteria=selector)
+    role = _string_criterion(selector, "role")
+    return MockInvokerFailSelector(
+        node_id=_string_criterion(selector, "node_id"),
+        task_id=_string_criterion(selector, "task_id"),
+        provider=_string_criterion(selector, "provider"),
+        role=ProviderRole(role) if role is not None else None,
+        audit_round_num=_integer_criterion(selector, "audit_round_num"),
+        round_num=_integer_criterion(selector, "round_num"),
+    )
 
 
-def validate_fail_selectors(value: object) -> tuple[FailSelector, ...]:
+def _string_criterion(criteria: dict[str, str | int], key: str) -> str | None:
+    value = criteria.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _integer_criterion(criteria: dict[str, str | int], key: str) -> int | None:
+    value = criteria.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def validate_fail_selectors(value: object) -> tuple[MockInvokerFailSelector, ...]:
     if not isinstance(value, list):
         raise ValueError("mock invoker option 'fail_when' must be a list of selectors")
     return tuple(
         _validate_and_build_selector(raw_selector, index)
         for index, raw_selector in enumerate(value)
     )
+
+
+def selector_matches(
+    selector: MockInvokerFailSelector,
+    context: InvocationContext | None,
+) -> bool:
+    if context is None:
+        return False
+    criteria = (
+        (selector.node_id, context.node_id),
+        (selector.task_id, context.task_id),
+        (selector.provider, context.provider),
+        (selector.role, context.role),
+        (selector.audit_round_num, context.audit_round_num),
+        (selector.round_num, context.round_num),
+    )
+    return all(expected is None or actual == expected for expected, actual in criteria)
+
+
+def selector_summary(selector: MockInvokerFailSelector) -> str:
+    values = selector_to_json(selector)
+    return ", ".join(
+        f"{key}={value}" for key, value in sorted(values.items()) if value is not None
+    )
+
+
+def selector_to_json(selector: MockInvokerFailSelector) -> JsonObject:
+    return {
+        "node_id": selector.node_id,
+        "task_id": selector.task_id,
+        "provider": selector.provider,
+        "role": selector.role,
+        "audit_round_num": selector.audit_round_num,
+        "round_num": selector.round_num,
+    }

@@ -11,6 +11,7 @@ from crewplane.architecture.contracts import (
 from crewplane.core.config import Config
 
 from .mock_invoker import MockAgentInvoker, parse_options
+from .mock_invoker.selectors import selector_to_json
 
 
 class MockInvokerAdapter:
@@ -29,9 +30,9 @@ class MockInvokerAdapter:
         options: JsonObject | None = None,
     ) -> CanonicalIntegrationConfig:
         parsed = parse_options(options)
-        canonical_options = {
+        canonical_options: JsonObject = {
             "delay_seconds": parsed.delay_seconds,
-            "fail_when": [selector.__dict__ for selector in parsed.fail_when],
+            "fail_when": [selector_to_json(selector) for selector in parsed.fail_when],
             "observation_delay_seconds": parsed.observation_delay_seconds,
             "output_dir": parsed.output_dir,
             "output_mode": parsed.output_mode,

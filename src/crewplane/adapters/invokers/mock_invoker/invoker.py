@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from pathlib import Path
+from typing import cast
 
 from crewplane.architecture.contracts import (
     InvocationContext,
     LogPresentationDescriptor,
-    MockInvokerFailSelector,
+    MockInvokerOptions,
 )
 from crewplane.core.config import AgentConfig
 from crewplane.runtime.agent.failures import (
@@ -15,16 +15,17 @@ from crewplane.runtime.agent.failures import (
     InvocationFailureSummary,
 )
 
-from .context import ContextDisplay, context_display, is_reviewer_context
+from .context import is_reviewer_context
 from .fixtures import fixture_candidates
 from .logging import write_invocation_log
 from .mutations import apply_fixture_mutations, build_fixture_mutation_plan
-from .options import MockInvokerOptionsContract
+from .options import OutputMode
 from .outputs import (
     OutputResolution,
-    build_findings_lines,
+    build_lorem_markdown,
     review_contract_resolution,
 )
+from .selectors import selector_matches, selector_summary
 
 
 def _mock_invocation_failure(message: str) -> InvocationFailureError:
@@ -40,7 +41,7 @@ def _mock_invocation_failure(message: str) -> InvocationFailureError:
 
 
 class MockAgentInvoker:
-    def __init__(self, options: MockInvokerOptionsContract) -> None:
+    def __init__(self, options: MockInvokerOptions) -> None:
         self._options = options
 
     def log_presentation_for(
@@ -84,9 +85,9 @@ class MockAgentInvoker:
 
     def _raise_if_forced_failure(self, context: InvocationContext | None) -> None:
         for selector in self._options.fail_when:
-            if _selector_matches(selector, context):
+            if selector_matches(selector, context):
                 raise _mock_invocation_failure(
-                    f"forced failure by selector: {_selector_summary(selector)}"
+                    f"forced failure by selector: {selector_summary(selector)}"
                 )
 
     async def _resolve_output(
@@ -95,7 +96,8 @@ class MockAgentInvoker:
         if self._options.observation_delay_seconds:
             await asyncio.sleep(self._options.observation_delay_seconds)
 
-        match self._options.output_mode:
+        output_mode = cast(OutputMode, self._options.output_mode)
+        match output_mode:
             case "echo":
                 if is_reviewer_context(context):
                     return review_contract_resolution("echo_review_contract")
@@ -104,7 +106,11 @@ class MockAgentInvoker:
                 if is_reviewer_context(context):
                     return review_contract_resolution("lorem_review_contract")
                 return OutputResolution(
-                    content=self._build_lorem_markdown(prompt, context),
+                    content=build_lorem_markdown(
+                        prompt,
+                        context,
+                        self._options.seed,
+                    ),
                     source="lorem",
                 )
             case "file":
@@ -138,48 +144,13 @@ class MockAgentInvoker:
         if is_reviewer_context(context):
             return review_contract_resolution("fallback_review_contract")
         return OutputResolution(
-            content=self._build_lorem_markdown(prompt, context),
+            content=build_lorem_markdown(
+                prompt,
+                context,
+                self._options.seed,
+            ),
             source="fallback_lorem",
         )
-
-    def _build_lorem_markdown(
-        self, prompt: str, context: InvocationContext | None
-    ) -> str:
-        display = context_display(context)
-        marker = self._seed_marker(display)
-
-        lines = [
-            "# Mock Invocation Output",
-            "",
-            f"- Node: {display.node_id}",
-            f"- Task: {display.task_id}",
-            f"- Provider: {display.provider}",
-            f"- Role: {display.role_display}",
-            f"- Audit Round: {display.audit_round_display}",
-            f"- Round: {display.round_display}",
-        ]
-        if self._options.seed is not None:
-            lines.append(f"- Seed Marker: {marker}")
-        lines.extend(
-            [
-                "",
-                "## Summary",
-                (
-                    "Synthetic output generated for deterministic local "
-                    "orchestration checks."
-                ),
-                "",
-                "## Notes",
-                f"- Prompt length: {len(prompt)} characters",
-                "- Behavior path: mock invoker lorem mode",
-                "",
-                "## Next Steps",
-                "1. Verify downstream template substitution.",
-                "2. Validate node and invocation state transitions.",
-            ]
-        )
-        lines.extend(build_findings_lines(context))
-        return "\n".join(lines) + "\n"
 
     def _write_invocation_artifacts(
         self,
@@ -208,45 +179,3 @@ class MockAgentInvoker:
             context,
             resolution,
         )
-
-    def _seed_marker(self, display: ContextDisplay) -> str:
-        seed_value = self._options.seed if self._options.seed is not None else "no-seed"
-        digest = hashlib.sha256(
-            (
-                f"{seed_value}|{display.node_id}|{display.task_id}|{display.provider}|"
-                f"{display.role_display}|{display.audit_round_display}|"
-                f"{display.round_display}"
-            ).encode()
-        ).hexdigest()
-        return digest[:12]
-
-
-def _selector_matches(
-    selector: MockInvokerFailSelector,
-    context: InvocationContext | None,
-) -> bool:
-    if context is None:
-        return False
-    for key in (
-        "node_id",
-        "task_id",
-        "provider",
-        "role",
-        "audit_round_num",
-        "round_num",
-    ):
-        expected = getattr(selector, key)
-        if expected is None:
-            continue
-        if getattr(context, key) != expected:
-            return False
-    return True
-
-
-def _selector_summary(selector: MockInvokerFailSelector) -> str:
-    values = [
-        f"{key}={value}"
-        for key, value in sorted(selector.__dict__.items())
-        if value is not None
-    ]
-    return ", ".join(values)
