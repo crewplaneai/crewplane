@@ -102,9 +102,13 @@ artifact adapters can be used only with `crewplane validate` and
 Every adapter canonicalization result must have an `option_scopes` key set that
 exactly matches its canonical `options` key set. Scope each option as
 `execution`, `artifact`, `observer`, or `validation`; unscoped and unknown
-entries fail composition. Sensitive option names must also refer to canonical
-options, and all option and capability values must be finite JSON-compatible
-data.
+entries fail composition. Scopes remain attached to top-level option keys even
+when their values are nested JSON.
+
+Sensitive option declarations may name a top-level option or use a JSON Pointer,
+such as `/credentials/0/value`, for a nested value. Exact top-level names take
+precedence. Crewplane redacts sensitive values at any depth. All option and
+capability values must be finite JSON-compatible data.
 
 Observers implement the architecture `Observer` lifecycle contract and expose
 one immutable `ObserverCapabilities` value. Runtime observers receive the

@@ -27,6 +27,7 @@ from .integration import (
     SignatureScope,
     redacted_integration_option_value,
     sensitive_integration_option_keys,
+    sensitive_integration_option_pointers,
 )
 from .integration_options import (
     CliInvokerOptions,
@@ -36,6 +37,11 @@ from .integration_options import (
     MockOutputMode,
     NullUiOptions,
     TmuxUiOptions,
+)
+from .integration_secrets import (
+    json_pointer,
+    parse_json_pointer,
+    transform_sensitive_integration_options,
 )
 from .invocation import (
     SUPPORTED_PROVIDER_KIND_VALUE_SET,
@@ -205,6 +211,10 @@ __all__ = [
     "normalize_log_presentation_profile",
     "redacted_integration_option_value",
     "sensitive_integration_option_keys",
+    "sensitive_integration_option_pointers",
+    "json_pointer",
+    "parse_json_pointer",
+    "transform_sensitive_integration_options",
     "validate_payload_type",
     "validate_log_presentation_descriptor",
     "validate_log_presentation_format",

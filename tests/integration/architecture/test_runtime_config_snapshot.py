@@ -4,10 +4,12 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
+from crewplane.architecture import contracts as architecture_contracts
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     InvokerAdapterCapabilities,
     InvokerWorkspaceSupport,
+    redacted_integration_option_value,
 )
 from crewplane.architecture.errors import IntegrationResolutionError
 from crewplane.bootstrap import build_runtime_config_snapshot
@@ -22,6 +24,7 @@ from crewplane.core.config import (
 from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
     RuntimeConfigSnapshot,
+    RuntimeConfigSnapshotOptions,
 )
 from crewplane.version import SCHEMA_VERSION
 
@@ -193,6 +196,48 @@ def test_snapshot_invalid_options_fail_before_artifact_allocation(
     assert not (tmp_path / "execution-results").exists()
 
 
+class LeakyInvokerAdapter:
+    def canonicalize_options(
+        self,
+        implementation: str,
+        resolved_identity: str,
+        options: dict[str, object] | None = None,
+    ) -> CanonicalIntegrationConfig:
+        del implementation, resolved_identity
+        raise ValueError(f"invalid adapter options: {options!r}")
+
+    def create_invoker(
+        self, config: Config, options: dict[str, object] | None = None
+    ) -> object:
+        del config, options
+        raise AssertionError("canonicalization must fail first")
+
+
+def test_adapter_option_validation_errors_do_not_expose_adapter_details() -> None:
+    config = _config()
+    assert config.settings is not None
+    config.settings.integrations.invoker = IntegrationSpec(
+        implementation=f"{__name__}:LeakyInvokerAdapter",
+        options={
+            "credentials": [{"api_token": 'adapter-"secret'}],
+        },
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        build_runtime_config_snapshot(
+            config=config,
+            console=Console(file=None),
+            no_live=True,
+        )
+
+    assert 'adapter-"secret' not in str(exc_info.value)
+    assert str(exc_info.value) == (
+        "Failed to canonicalize invoker integration; adapter validation failed."
+    )
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
 def test_snapshot_validates_inactive_ui_configuration() -> None:
     with pytest.raises(ValueError, match="none ui implementation does not support"):
         build_runtime_config_snapshot(
@@ -285,6 +330,240 @@ def test_canonical_options_require_exact_signature_scopes() -> None:
             resolved_identity="example.Adapter",
             options={"timeout": float("nan")},
             option_scopes={"timeout": "execution"},
+        )
+
+
+def test_canonical_options_redact_nested_pattern_and_explicit_sensitive_paths() -> None:
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={
+            "routes": [
+                {"api_token": "pattern-secret"},
+                {"auth/config": {"value~raw": "explicit-secret"}},
+            ]
+        },
+        sensitive_options=["/routes/1/auth~1config/value~0raw"],
+        option_scopes={"routes": "execution"},
+    )
+
+    payload = config.redacted_payload()
+
+    assert payload["sensitive_options"] == [
+        "/routes/0/api_token",
+        "/routes/1/auth~1config/value~0raw",
+    ]
+    routes = payload["options"]["routes"]
+    assert routes[0]["api_token"] == {"redacted": True}
+    assert routes[1]["auth/config"]["value~raw"] == {"redacted": True}
+    assert "pattern-secret" not in json.dumps(payload, sort_keys=True)
+    assert "explicit-secret" not in json.dumps(payload, sort_keys=True)
+    assert "pattern-secret" not in repr(config)
+    assert "explicit-secret" not in repr(config)
+    assert architecture_contracts.sensitive_integration_option_keys(config) == {
+        "routes"
+    }
+    assert "sensitive_integration_option_keys" in architecture_contracts.__all__
+
+
+def test_canonical_options_normalize_legacy_sensitive_top_level_names() -> None:
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={"api_token": "legacy-secret"},
+        sensitive_options=["api_token"],
+        option_scopes={"api_token": "execution"},
+    )
+
+    payload = config.redacted_payload()
+
+    assert config.sensitive_options == ["api_token"]
+    assert payload["sensitive_options"] == ["/api_token"]
+    assert payload["options"]["api_token"] == {"redacted": True}
+
+
+def test_canonical_options_preserve_legacy_slash_prefixed_top_level_names() -> None:
+    raw_secret = "slash-prefixed-legacy-secret"
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={
+            "/opaque": raw_secret,
+            "opaque": "public",
+            "/~1opaque": "escaped-public",
+        },
+        sensitive_options=["/opaque"],
+        option_scopes={
+            "/opaque": "execution",
+            "opaque": "execution",
+            "/~1opaque": "execution",
+        },
+    )
+
+    payload = config.redacted_payload()
+    round_tripped = CanonicalIntegrationConfig.model_validate(
+        config.model_dump(mode="python")
+    )
+    neutral_integration = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.NeutralAdapter",
+    )
+    snapshot = RuntimeConfigSnapshot.build(
+        config=_config(),
+        invoker=round_tripped,
+        artifacts=neutral_integration,
+        ui=neutral_integration,
+        options=RuntimeConfigSnapshotOptions(no_live=True),
+    ).with_sensitive_config_fingerprints(b"f" * 32)
+
+    assert config.sensitive_options == ["/opaque"]
+    assert payload["sensitive_options"] == ["/~1opaque"]
+    assert payload["options"]["/opaque"] == {"redacted": True}
+    assert payload["options"]["opaque"] == "public"
+    assert payload["options"]["/~1opaque"] == "escaped-public"
+    assert round_tripped.sensitive_options == ["/opaque"]
+    assert round_tripped.redacted_payload() == payload
+    assert raw_secret not in json.dumps(payload, sort_keys=True)
+    assert snapshot.invoker.sensitive_options == ["/~1opaque"]
+    assert snapshot.invoker.options["/opaque"]["redacted"] is True
+    assert snapshot.invoker.options["opaque"] == "public"
+    assert snapshot.invoker.options["/~1opaque"] == "escaped-public"
+    assert [item["path"] for item in snapshot.config_fingerprints] == [
+        "/integrations/invoker/options/~1opaque"
+    ]
+    assert raw_secret not in snapshot.model_dump_json()
+
+
+def test_canonical_options_prefer_legacy_name_on_pointer_collision() -> None:
+    legacy_secret = "legacy-top-level-secret"
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={
+            "/routes/0/value": legacy_secret,
+            "routes": [{"value": "public"}],
+        },
+        sensitive_options=["/routes/0/value"],
+        option_scopes={"/routes/0/value": "execution", "routes": "execution"},
+    )
+
+    payload = config.redacted_payload()
+
+    assert config.sensitive_options == ["/routes/0/value"]
+    assert payload["sensitive_options"] == ["/~1routes~10~1value"]
+    assert payload["options"]["/routes/0/value"] == {"redacted": True}
+    assert payload["options"]["routes"][0]["value"] == "public"
+    assert legacy_secret not in json.dumps(payload, sort_keys=True)
+
+
+def test_redacted_integration_option_value_contains_only_redaction_metadata() -> None:
+    raw_value = "external-adapter-secret"
+
+    assert redacted_integration_option_value(raw_value) == {"redacted": True}
+
+    redacted = redacted_integration_option_value(
+        raw_value,
+        "fingerprint",
+        "config:/api_token",
+    )
+
+    assert redacted == {
+        "redacted": True,
+        "fingerprint": "fingerprint",
+        "value_handle": "config:/api_token",
+    }
+    assert raw_value not in json.dumps(redacted, sort_keys=True)
+
+
+def test_canonical_options_honors_explicit_pointer_below_sensitive_container() -> None:
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={"credentials": [{"value": "explicit-secret"}]},
+        sensitive_options=["/credentials/0/value"],
+        option_scopes={"credentials": "execution"},
+    )
+
+    payload = config.redacted_payload()
+
+    assert payload["sensitive_options"] == ["/credentials/0/value"]
+    assert payload["options"]["credentials"][0]["value"] == {"redacted": True}
+    assert "explicit-secret" not in json.dumps(payload, sort_keys=True)
+
+
+def test_canonical_options_do_not_trust_raw_redaction_metadata() -> None:
+    raw_marker_fingerprint = "a" * 64
+    raw_marker_handle = "config:/attacker-controlled-path"
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={
+            "api_token": {
+                "redacted": True,
+                "fingerprint": raw_marker_fingerprint,
+                "value_handle": raw_marker_handle,
+            }
+        },
+        option_scopes={"api_token": "execution"},
+    )
+
+    payload = config.redacted_payload()
+
+    serialized = json.dumps(payload, sort_keys=True)
+    assert raw_marker_fingerprint not in serialized
+    assert raw_marker_handle not in serialized
+    assert payload["options"]["api_token"] == {"redacted": True}
+
+
+@pytest.mark.parametrize(
+    "sensitive_path",
+    [
+        "routes/0/value",
+        "/routes/2/value",
+        "/routes/01/value",
+        "/routes/0/missing",
+        "/routes/0/value/nested",
+        "/routes/0/value~2suffix",
+    ],
+)
+def test_canonical_options_reject_invalid_sensitive_json_pointers(
+    sensitive_path: str,
+) -> None:
+    raw_secret = "CREWPLANE_NESTED_DIAGNOSTIC_SECRET"
+    with pytest.raises(
+        ValueError,
+        match="sensitive option JSON Pointer",
+    ) as exc_info:
+        CanonicalIntegrationConfig(
+            implementation="custom",
+            resolved_identity="example.Adapter",
+            options={"routes": [{"value": raw_secret}]},
+            sensitive_options=[sensitive_path],
+            option_scopes={"routes": "execution"},
+        )
+    assert raw_secret not in str(exc_info.value)
+    assert raw_secret not in repr(exc_info.value)
+
+
+def test_invalid_sensitive_json_pointer_escape_explains_valid_encoding() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        architecture_contracts.parse_json_pointer("/value~2")
+
+    assert str(exc_info.value) == (
+        "The sensitive option JSON Pointer segment 'value~2' is invalid: "
+        "'~' must be followed by '0' or '1'. "
+        "Use '~0' for '~' and '~1' for '/'."
+    )
+
+
+def test_canonical_options_reject_duplicate_sensitive_json_pointers() -> None:
+    with pytest.raises(ValueError, match="JSON Pointers must be unique"):
+        CanonicalIntegrationConfig(
+            implementation="custom",
+            resolved_identity="example.Adapter",
+            options={"routes": [{"value": "secret"}]},
+            sensitive_options=["/routes/0/value", "/routes/0/value"],
+            option_scopes={"routes": "execution"},
         )
 
 

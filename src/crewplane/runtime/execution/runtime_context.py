@@ -162,7 +162,7 @@ def resolve_secret_config_values(
                 "Redacted runtime config value is missing a secret handle."
             )
         try:
-            return secret_context.get(handle)
+            return secret_context.get_config_value(handle)
         except KeyError as exc:
             raise ValueError(
                 f"Runtime secret handle '{handle}' is unavailable."

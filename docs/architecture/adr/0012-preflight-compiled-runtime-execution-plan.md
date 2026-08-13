@@ -178,6 +178,10 @@ Crewplane-owned diagnostics, summaries, manifests, plans, runtime snapshots, and
 
 Sensitive values are represented on disk by redacted metadata, stable HMAC fingerprints, and `value_handle` references. Runtime resolves handles from same-process `SecretContext`. Persisted artifacts alone cannot reconstruct sensitive prompt text, by design.
 
+Adapter option redaction covers nested dictionaries and lists. Stored paths use
+JSON Pointer syntax. Execution- and artifact-scoped fingerprints affect
+workflow identity; observer-only fingerprints do not.
+
 Environment values are sensitive by default unless explicitly classified non-sensitive. Runtime variable values are non-sensitive by default unless the key matches sensitive naming patterns or explicit metadata marks them sensitive. Non-sensitive values may be stored in the plan for assembly, but diagnostics still redact env and var values.
 
 The stable HMAC key lives at `.crewplane/preflight/fingerprint.key` and contains 32 random bytes. `crewplane init` creates it where possible. A real `crewplane run` may create it only when sensitive fingerprints are needed. `crewplane validate` and `crewplane run --dry-run` do not write artifacts or create the key; if no key exists, they use a process-local ephemeral key for preview signatures.
@@ -345,3 +349,5 @@ Negative consequences:
   0016 hardening work.
   Explicitly allowlisted absolute external files remain static preflight
   resources.
+- **2026-08-12**: Extended redaction and fingerprinting to nested adapter
+  options using JSON Pointer paths.

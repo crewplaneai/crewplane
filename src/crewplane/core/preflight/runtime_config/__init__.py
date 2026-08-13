@@ -245,17 +245,23 @@ class RuntimeConfigSnapshot(BaseModel):
     sensitive_config_paths: list[str] = Field(default_factory=list)
     config_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     effective_runtime_config_signature: str
-    raw_agents: JsonObject = Field(default_factory=dict, exclude=True)
-    raw_workspace: JsonObject = Field(default_factory=dict, exclude=True)
+    raw_agents: JsonObject = Field(default_factory=dict, exclude=True, repr=False)
+    raw_workspace: JsonObject = Field(default_factory=dict, exclude=True, repr=False)
     raw_invoker: CanonicalIntegrationConfig | None = Field(
         default=None,
         exclude=True,
+        repr=False,
     )
     raw_artifacts: CanonicalIntegrationConfig | None = Field(
         default=None,
         exclude=True,
+        repr=False,
     )
-    raw_ui: CanonicalIntegrationConfig | None = Field(default=None, exclude=True)
+    raw_ui: CanonicalIntegrationConfig | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
 
     @classmethod
     def build(

@@ -380,7 +380,11 @@ class PreflightCompilationPreview(BaseModel):
     workspace_source: WorkspaceSourceSnapshot | None = None
     value_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     fingerprint_metadata: JsonObject = Field(default_factory=dict)
-    secret_context: SecretContext = Field(default_factory=SecretContext, exclude=True)
+    secret_context: SecretContext = Field(
+        default_factory=SecretContext,
+        exclude=True,
+        repr=False,
+    )
     static_file_payloads: dict[str, bytes] = Field(default_factory=dict, exclude=True)
     workspace_file_payloads: dict[str, bytes] = Field(
         default_factory=dict,

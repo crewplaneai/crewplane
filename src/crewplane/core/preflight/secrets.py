@@ -11,7 +11,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Literal
 
-from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.contracts import JsonObject, JsonValue
 
 from .diagnostics import (
     PreflightDiagnostic,
@@ -34,12 +34,21 @@ FINGERPRINT_PAYLOAD_VERSION = "1"
 class SecretContext:
     """Same-process secret handles used by runtime fragment assembly."""
 
-    _values: dict[str, str] = field(default_factory=dict)
+    _values: dict[str, JsonValue] = field(default_factory=dict, repr=False)
 
     def put(self, handle: str, value: str) -> None:
         self._values[handle] = value
 
     def get(self, handle: str) -> str:
+        value = self.get_config_value(handle)
+        if not isinstance(value, str):
+            raise TypeError(f"Secret handle '{handle}' does not contain text.")
+        return value
+
+    def put_config_value(self, handle: str, value: JsonValue) -> None:
+        self._values[handle] = value
+
+    def get_config_value(self, handle: str) -> JsonValue:
         try:
             return self._values[handle]
         except KeyError as exc:

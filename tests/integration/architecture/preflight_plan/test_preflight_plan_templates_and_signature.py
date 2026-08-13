@@ -116,7 +116,7 @@ class SensitiveOptionInvokerAdapter:
             implementation=implementation,
             resolved_identity=resolved_identity,
             options={"api_token": api_token},
-            sensitive_options=["api_token"],
+            sensitive_options=["/api_token"],
             option_scopes={"api_token": "execution"},
         )
 

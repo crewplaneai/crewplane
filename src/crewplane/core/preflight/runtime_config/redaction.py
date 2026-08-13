@@ -13,8 +13,10 @@ from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     JsonObject,
     JsonValue,
+    json_pointer,
     redacted_integration_option_value,
-    sensitive_integration_option_keys,
+    sensitive_integration_option_pointers,
+    transform_sensitive_integration_options,
 )
 
 from ..secrets import FINGERPRINT_PAYLOAD_VERSION, fingerprint_payload
@@ -62,9 +64,10 @@ def sensitive_integration_option_paths(
     integration_name: str,
     config: CanonicalIntegrationConfig,
 ) -> list[str]:
+    path_prefix = json_pointer(("integrations", integration_name, "options"))
     return sorted(
-        f"integrations.{integration_name}.options.{key}"
-        for key in sensitive_integration_option_keys(config)
+        f"{path_prefix}{pointer}"
+        for pointer in sensitive_integration_option_pointers(config)
     )
 
 
@@ -73,44 +76,48 @@ def integration_with_sensitive_option_fingerprints(
     integration_name: str,
     fingerprint_key: bytes | None,
 ) -> tuple[CanonicalIntegrationConfig, list[dict[str, str]]]:
-    sensitive_keys = sensitive_integration_option_keys(config)
-    if not sensitive_keys:
-        return config, []
-
-    redacted_options: JsonObject = {}
     fingerprints: list[dict[str, str]] = []
-    for key, value in sorted(config.options.items()):
-        if key not in sensitive_keys:
-            redacted_options[key] = value
-            continue
-        path = f"integrations.{integration_name}.options.{key}"
+
+    def redact_sensitive_value(pointer: str, value: JsonValue) -> JsonValue:
+        path_prefix = json_pointer(("integrations", integration_name, "options"))
+        path = f"{path_prefix}{pointer}"
         fingerprint = config_fingerprint(fingerprint_key, path, value)
-        redacted_options[key] = redacted_option_value(
-            value,
-            fingerprint,
-            config_value_handle(path),
+        redacted = redacted_option_value(
+            fingerprint=fingerprint,
+            value_handle=config_value_handle(path),
         )
         if fingerprint is not None:
             fingerprints.append({"path": path, "fingerprint": fingerprint})
+        return redacted
+
+    redacted_options, sensitive_pointers = transform_sensitive_integration_options(
+        config.options,
+        sensitive_integration_option_pointers(config),
+        redact_sensitive_value,
+    )
+    if not sensitive_pointers:
+        return config.model_copy(update={"option_fingerprints": []}), []
+
+    fingerprints.sort(key=lambda item: item["path"])
 
     return (
-        config.model_copy(
-            update={
-                "options": redacted_options,
-                "option_fingerprints": fingerprints,
-                "sensitive_options": sorted(sensitive_keys),
-            }
+        config.with_generated_redaction(
+            options=redacted_options,
+            sensitive_options=sorted(sensitive_pointers),
+            option_fingerprints=fingerprints,
         ),
         fingerprints,
     )
 
 
 def redacted_option_value(
-    value: JsonValue,
     fingerprint: str | None = None,
     value_handle: str | None = None,
 ) -> JsonObject:
-    return redacted_integration_option_value(value, fingerprint, value_handle)
+    return redacted_integration_option_value(
+        fingerprint=fingerprint,
+        value_handle=value_handle,
+    )
 
 
 def config_fingerprint(
@@ -159,7 +166,7 @@ def _redact_sensitive_value(
                 paths.append(path_label)
         return redacted, paths
     if isinstance(value, list):
-        return _redact_sensitive_list(value, path)
+        return _redact_sensitive_list_without_fingerprints(value, path)
     return value, []
 
 
@@ -312,7 +319,7 @@ def _replace_first_extra_arg(
     extra_args[0] = value
 
 
-def _redact_sensitive_list(
+def _redact_sensitive_list_without_fingerprints(
     value: list[JsonValue],
     path: tuple[str, ...],
 ) -> tuple[list[JsonValue], list[str]]:

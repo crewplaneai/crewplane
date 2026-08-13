@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 
 from rich.console import Console
 
@@ -26,9 +26,9 @@ class RuntimeConfigSnapshotBuildResult:
     """Canonical runtime snapshot plus shallow option copies for construction."""
 
     snapshot: RuntimeConfigSnapshot
-    invoker_options: JsonObject
-    artifact_options: JsonObject
-    ui_options: JsonObject
+    invoker_options: JsonObject = field(repr=False)
+    artifact_options: JsonObject = field(repr=False)
+    ui_options: JsonObject = field(repr=False)
 
 
 def build_runtime_config_snapshot(
@@ -56,21 +56,27 @@ def build_runtime_config_snapshot(
     artifacts_adapter = instantiate_adapter("artifacts", artifacts_spec.implementation)
     ui_adapter = instantiate_adapter("ui", ui_spec.implementation)
 
-    invoker_config = invoker_adapter.canonicalize_options(
+    invoker_config = _canonicalize_integration_options(
+        "invoker",
         invoker_spec.implementation,
         invoker_identity,
         dict(invoker_spec.options),
+        invoker_adapter.canonicalize_options,
     )
     invoker_config = normalize_invoker_capabilities(invoker_adapter, invoker_config)
-    artifact_config = artifacts_adapter.canonicalize_options(
+    artifact_config = _canonicalize_integration_options(
+        "artifacts",
         artifacts_spec.implementation,
         artifacts_identity,
         dict(artifacts_spec.options),
+        artifacts_adapter.canonicalize_options,
     )
-    ui_config = ui_adapter.canonicalize_options(
+    ui_config = _canonicalize_integration_options(
+        "ui",
         ui_spec.implementation,
         ui_identity,
         dict(ui_spec.options),
+        ui_adapter.canonicalize_options,
     )
     snapshot = RuntimeConfigSnapshot.build(
         config=config,
@@ -88,6 +94,27 @@ def build_runtime_config_snapshot(
         artifact_options=dict(artifact_config.options),
         ui_options=dict(ui_config.options),
     )
+
+
+def _canonicalize_integration_options(
+    integration_kind: str,
+    implementation: str,
+    resolved_identity: str,
+    options: JsonObject,
+    canonicalize: Callable[[str, str, JsonObject | None], CanonicalIntegrationConfig],
+) -> CanonicalIntegrationConfig:
+    try:
+        canonical_config = canonicalize(implementation, resolved_identity, options)
+    except Exception:
+        if implementation != resolved_identity:
+            raise
+        error_message = (
+            f"Failed to canonicalize {integration_kind} integration; "
+            "adapter validation failed."
+        )
+    else:
+        return canonical_config
+    raise ValueError(error_message)
 
 
 def normalize_invoker_capabilities(
