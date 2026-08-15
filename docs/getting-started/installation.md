@@ -40,6 +40,16 @@ crewplane --help
 
 The install succeeded when `crewplane --help` prints command help.
 
+> `uv tool install` places the executable in `~/.local/bin`. If `crewplane --help`
+> prints "command not found" immediately after installing, either open a new shell
+> session or add `~/.local/bin` to your `PATH`:
+>
+> ```bash
+> export PATH="$HOME/.local/bin:$PATH"
+> ```
+> Adding the export line to your shell profile (`~/.bashrc` or `~/.zshrc`) makes it
+> permanent.
+
 ## Install With pipx
 
 Use `pipx` if you prefer Python CLI tools in isolated environments:

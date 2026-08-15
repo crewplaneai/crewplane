@@ -96,7 +96,18 @@ The run should start with:
 Mock invoker active: no provider CLI commands will be started.
 ```
 
-It should also print a console `Run Summary` with `Run ID` and `Status: succeeded`.
+It should also print a console `Run Summary` with `Run ID` and `Status: succeeded`,
+like this:
+
+```text
+Run Summary
+  Workflow: Single Agent Review
+  Run ID: 20260629-202539
+  Status: succeeded
+  Elapsed: 5.3s
+  Nodes: pending=0 running=0 succeeded=1 blocked=0 failed=0
+```
+
 The `Stages:` and `Results:` lines point to run-specific directories:
 
 - `.crewplane/execution-stages/<run-key>/` for runtime stage files
@@ -139,6 +150,12 @@ Example output:
 In that example, the run key is
 `single-agent-review--5e34bc54c79a-20260629-202539`. Use that value wherever
 the docs show `<run-key>`.
+
+Run keys always follow the format
+`<workflow-name>--<short-id>-<YYYYMMDD>-<HHMMSS>`, where the embedded timestamp
+tells you when the run started. The short id is a stable fingerprint of the
+workflow and project, so repeated runs of the same workflow share the same
+prefix and differ only by date and time.
 
 Then list everything that was written:
 
