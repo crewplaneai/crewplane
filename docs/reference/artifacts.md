@@ -82,6 +82,13 @@ workspace-exports/*.json
 Exact files depend on node mode and enabled features. Workspace files are
 present only for Experimental workspace isolation runs.
 
+For review-loop nodes, `review-loop-status.json` records the executor and
+reviewer outputs selected when the loop ends. Each entry identifies the
+provider, task, role, audit round, local round, relative path, file size, and
+SHA-256 digest. Crewplane verifies both the status details and the referenced
+files before building the final node artifacts. If verification fails, the node
+fails.
+
 ## Results
 
 Consolidated node artifacts are written under the matching result directory:
@@ -146,6 +153,24 @@ handles. It does not re-read original `{{file:...}}` source paths.
 Run and node manifests record status, artifact descriptors, workflow identity,
 `workflow_signature`, resumed nodes, and Experimental workspace descriptors
 when applicable.
+
+Terminal fields in `manifests/run.json` depend on the run status. Failed and
+cancelled runs include a nonblank reason, while successful runs include neither
+a failure nor cancellation reason. For resumed runs, the manifest records the
+source run together with the nodes restored from it. A node is added to this
+list only after Crewplane restores its artifacts.
+
+At the end of a run, Crewplane finishes required post-run work and updates the
+event log and summary before recording the terminal status in
+`manifests/run.json`. It releases the run lock only after writing the manifest.
+A terminal manifest therefore indicates that normal finalization completed.
+
+If Crewplane stops before finalization completes, a later run with the same
+workflow identity and signature can recover the stale lock. Recovery preserves
+a recorded terminal outcome when it can verify that outcome. Otherwise, it
+marks the interrupted run as cancelled with `stale_lock_recovered`. The event
+log and summary may be incomplete or show the last state written before the
+interruption.
 
 Corrupt or untrusted manifests are treated as unusable history for skip/resume
 decisions.

@@ -177,12 +177,6 @@ class CliInvokerAdapter:
 
         return tuple(collect_cli_model_arg_warnings(config))
 
-    def workspace_capabilities(self) -> InvokerAdapterCapabilities:
-        return InvokerAdapterCapabilities.workspace_supported(
-            launch_mode="runtime_command_runner",
-            controlled_child_environment=True,
-        )
-
     def canonicalize_options(
         self,
         implementation: str,
@@ -200,7 +194,10 @@ class CliInvokerAdapter:
             resolved_identity=resolved_identity,
             options={},
             option_scopes={},
-            capabilities=self.workspace_capabilities().as_dict(),
+            capabilities=InvokerAdapterCapabilities.workspace_supported(
+                launch_mode="runtime_command_runner",
+                controlled_child_environment=True,
+            ).as_dict(),
         )
 
     def create_invoker(

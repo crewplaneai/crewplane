@@ -72,7 +72,10 @@ def uses_candidate_source(
             locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
             and not is_initial_pre_review_context(context)
         )
-    return workspace_candidate_source and locator.runtime_dynamic_after_candidate
+    return workspace_candidate_source and locator.source_class in {
+        WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE,
+        WorkspaceFileSourceClass.RUNTIME_DYNAMIC,
+    }
 
 
 def initial_pre_review_source(
@@ -105,7 +108,7 @@ def initial_pre_review_source(
         return load_source_ref_from_state(
             required_lineage_state_path(
                 output,
-                node.workspace_policy.source_node_id,
+                _plan_node(plan, node.workspace_policy.source_node_id),
             )
         )
 
@@ -138,6 +141,16 @@ def project_source_ref(plan: PreflightExecutionPlan) -> WorktreeSourceRef | None
         source_tree=plan.workspace_source.source_tree,
         candidate_sequence=None,
     )
+
+
+def _plan_node(
+    plan: PreflightExecutionPlan,
+    node_id: str,
+) -> PreflightExecutionNode:
+    for node in plan.nodes:
+        if node.id == node_id:
+            return node
+    raise RuntimeError(f"Workspace source references unknown node '{node_id}'.")
 
 
 def candidate_source_ref_from_state(path: Path) -> WorktreeSourceRef:

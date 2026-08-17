@@ -2,18 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
-_WORKSPACE_FINALIZATION_DEFERRED_ATTRIBUTE = (
-    "_crewplane_workspace_finalization_deferred"
-)
 
-
-def mark_workspace_finalization_deferred(
-    cancellation: asyncio.CancelledError,
-) -> None:
-    setattr(cancellation, _WORKSPACE_FINALIZATION_DEFERRED_ATTRIBUTE, True)
+class WorkspaceFinalizationDeferredCancellation(asyncio.CancelledError):
+    """Cancellation whose workspace finalizer continues under runtime ownership."""
 
 
 def workspace_finalization_is_deferred(cancellation: BaseException) -> bool:
-    return bool(
-        getattr(cancellation, _WORKSPACE_FINALIZATION_DEFERRED_ATTRIBUTE, False)
-    )
+    return isinstance(cancellation, WorkspaceFinalizationDeferredCancellation)

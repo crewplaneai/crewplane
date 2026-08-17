@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from crewplane.artifacts.naming import (
-    build_findings_filename,
-    build_result_filename,
-    build_stage_directory_name,
+from crewplane.architecture.contracts import (
+    artifact_contract_for_node,
     safe_artifact_name,
 )
 from crewplane.core.config import Config
@@ -20,7 +18,6 @@ from .compile_state import (
     source_root,
 )
 from .models import (
-    ArtifactContract,
     DependencyEdge,
     ExecutionPolicy,
     PreflightExecutionNode,
@@ -52,8 +49,8 @@ def compile_execution_node(
         failure_threshold=node.failure_threshold,
         token_budget=resolved_token_budget_payload(node, config),
         consensus_on_exhaustion=(
-            config.settings.sequential_consensus_on_exhaustion
-            if config.settings is not None and uses_review_loop
+            runtime_snapshot.execution.sequential_consensus_on_exhaustion
+            if uses_review_loop
             else None
         ),
         concurrency_policy={
@@ -76,12 +73,9 @@ def compile_execution_node(
         provider_records=provider_records(node, config, runtime_snapshot),
         execution_policy=policy,
         workspace_policy=workspace_policy,
-        artifact_contract=ArtifactContract(
-            stage_path=build_stage_directory_name(node.id),
-            output_path=build_result_filename(node.id),
-            findings_path=build_findings_filename(node.id) if node.findings else None,
-            log_path=f"{build_stage_directory_name(node.id)}/logs",
-            result_path=build_result_filename(node.id),
+        artifact_contract=artifact_contract_for_node(
+            node.id,
+            findings_enabled=node.findings,
         ),
         input_content_ref=state.input_content_refs.get(node.id),
         input_workspace_file_locator_id=state.input_workspace_file_locator_ids.get(
@@ -173,7 +167,7 @@ def resolved_token_budget_payload(
         return None
     try:
         budget = resolve_token_budget(
-            config.settings.token_budget if config.settings is not None else None,
+            config.settings.token_budget,
             node.token_budget,
         )
     except ValueError:

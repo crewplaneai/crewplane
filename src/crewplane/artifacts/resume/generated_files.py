@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import ArtifactDescriptor
 
 from ..naming import build_generated_file_result_dir_name
-from ..safe_files import contained_regular_file
 from .verified_copy import VerifiedCopyLabels, copy_verified_artifact
 
 

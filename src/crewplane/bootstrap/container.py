@@ -6,10 +6,10 @@ from pathlib import Path
 from rich.console import Console
 
 from crewplane.architecture.contracts import JsonObject
-from crewplane.architecture.loader import instantiate_adapter
+from crewplane.architecture.loader import instantiate_adapter, require_artifact_store
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents, UIRuntimePlan
-from crewplane.core.config import Config, Settings
+from crewplane.core.config import Config
 from crewplane.observability.types import WorkflowTopology
 
 
@@ -29,7 +29,7 @@ def build_runtime_components(
 ) -> RuntimeComponents:
     """Build the concrete runtime components for a workflow execution."""
 
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
 
     artifacts_spec = settings.integrations.artifacts
     invoker_spec = settings.integrations.invoker
@@ -66,6 +66,8 @@ def build_runtime_components(
     else:
         selected_artifact_store = artifact_store
 
+    resolved_artifact_store = require_artifact_store(selected_artifact_store)
+
     ui_runtime = UIRuntimePlan(
         observers=(),
         suppress_progress_output=False,
@@ -75,7 +77,7 @@ def build_runtime_components(
         ui_capabilities = ui_adapter.capabilities
         if (
             ui_capabilities.requires_cli_output_logs
-            and not selected_artifact_store.log_cli_output
+            and not resolved_artifact_store.log_cli_output
         ):
             message = (
                 "tmux live dashboard requires artifacts option "
@@ -89,7 +91,7 @@ def build_runtime_components(
             ui_runtime = ui_adapter.create_runtime(
                 config=config,
                 workflow_topology=workflow_topology,
-                run_id=selected_artifact_store.run_id,
+                run_id=resolved_artifact_store.run_id,
                 console=console,
                 options=ui_options if ui_options is not None else dict(ui_spec.options),
                 warning_sink=warning_sink,
@@ -97,7 +99,7 @@ def build_runtime_components(
             )
 
     return RuntimeComponents(
-        artifact_store=selected_artifact_store,
+        artifact_store=resolved_artifact_store,
         base_invoker=base_invoker,
         observers=ui_runtime.observers,
         suppress_progress_output=ui_runtime.suppress_progress_output,

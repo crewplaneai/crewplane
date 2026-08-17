@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.contracts import JsonObject, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.naming import build_workspace_export_filename
@@ -44,8 +44,8 @@ from crewplane.runtime.workspace.branch_export.records import (
 class _HistoryStageLookup:
     stage_dirs: dict[str, Path]
 
-    def get_stage_dir(self, stage_name: str) -> Path | None:
-        stage_dir = self.stage_dirs.get(stage_name)
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        stage_dir = self.stage_dirs.get(request.node_id)
         if stage_dir is None or not stage_dir.is_dir():
             return None
         return stage_dir

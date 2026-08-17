@@ -21,6 +21,7 @@ from crewplane.runtime.workspace import (
 from crewplane.runtime.workspace.snapshot import remove_workspace_path
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -100,7 +101,7 @@ def test_worktree_workspace_captures_result_commit_and_bundle(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -118,7 +119,8 @@ def test_worktree_workspace_captures_result_commit_and_bundle(
     prepared.mark_succeeded()
 
     state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     result = state["result"]
     bundle = state["bundle"]
@@ -213,7 +215,7 @@ def test_worktree_result_capture_uses_temporary_index(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -245,7 +247,7 @@ def test_worktree_capture_cleans_result_refs_when_bundle_export_fails(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
@@ -282,7 +284,7 @@ def test_worktree_capture_cleans_result_refs_when_state_recording_fails(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
@@ -325,7 +327,7 @@ def test_worktree_generated_file_snapshot_includes_created_ignored_file(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    stage_dir = output.create_stage_dir("implement")
+    stage_dir = output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -368,7 +370,7 @@ def test_worktree_capture_rejects_replaced_workspace_root_symlink(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
@@ -416,7 +418,7 @@ def test_worktree_capture_rejects_replaced_checkout_symlink(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
@@ -467,7 +469,7 @@ def test_worktree_capture_rejects_checkout_gitdir_for_external_worktree(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
@@ -515,7 +517,7 @@ def test_worktree_retry_reset_restores_attempt_baseline(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),

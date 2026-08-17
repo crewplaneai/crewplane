@@ -84,8 +84,8 @@ Validation first decides whether workspace isolation is enabled:
 41. Native Windows fails validation for workspace-enabled validate, dry-run, and
     real-run paths with clear WSL remediation.
 42. POSIX advisory-lock support is required for workspace-enabled real runs.
-43. Workspace-enabled real runs require the selected invoker adapter to declare
-    v1 workspace support through `workspace_capabilities()`.
+43. Workspace-enabled real runs require the selected invoker adapter's canonical
+    integration result to declare v1 workspace support.
 44. Process-based workspace support is valid only when provider child processes
     are launched through the runtime-owned `CommandRunner` with controlled
     `cwd`.

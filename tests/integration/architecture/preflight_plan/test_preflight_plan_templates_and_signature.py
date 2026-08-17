@@ -35,6 +35,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.resume import make_plan, make_snapshot_workspace_plan
 
 
 def _mock_config() -> Config:
@@ -53,7 +54,7 @@ def _mock_config() -> Config:
                 ui=IntegrationSpec(implementation="tmux", options={}),
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
-                    options={"allowed_template_paths": [], "log_cli_output": True},
+                    options={"log_cli_output": True},
                 ),
             )
         ),
@@ -562,6 +563,102 @@ def test_preflight_execution_plan_rejects_provider_node_with_blank_render_plan_i
         PreflightExecutionPlan(**payload)
 
 
+def test_preflight_execution_plan_rejects_dependency_graph_drift(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["nodes"][0]["dependencies"] = ["build"]
+
+    with pytest.raises(ValidationError, match="disagree with the compiled"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_unknown_dependency_graph_nodes(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["dependency_graph"] = [
+        {
+            "source_node": "unknown",
+            "target_node": "build",
+            "artifact_name": "output",
+            "dependency_signature": "unknown-edge",
+            "target_locator": "unknown.output",
+            "artifact_key": "output",
+        }
+    ]
+
+    with pytest.raises(ValidationError, match="unknown source node"):
+        PreflightExecutionPlan(**payload)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value", "message"),
+    [
+        ("findings", True, "cannot define findings"),
+        ("dependencies", ["build"], "cannot define findings or dependencies"),
+        (
+            "execution_policy",
+            {"continue_on_failure": True},
+            "contains provider execution policy",
+        ),
+    ],
+)
+def test_preflight_execution_plan_rejects_input_provider_authority(
+    tmp_path: Path,
+    field_name: str,
+    value: object,
+    message: str,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    node = payload["nodes"][0]
+    node["mode"] = "input"
+    node["render_plan_id"] = None
+    node["provider_records"] = []
+    node["input_content_ref"] = "static/input.txt"
+    node["input_workspace_file_locator_id"] = None
+    node[field_name] = value
+
+    with pytest.raises(ValidationError, match=message):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_input_node_accepts_global_concurrency_policy(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    node = payload["nodes"][0]
+    node["mode"] = "input"
+    node["render_plan_id"] = None
+    node["provider_records"] = []
+    node["input_content_ref"] = "static/input.txt"
+    node["input_workspace_file_locator_id"] = None
+    node["execution_policy"]["token_budget"] = None
+    payload["render_plans"] = []
+    payload["runtime_config_snapshot"]["execution"].update(
+        {
+            "max_concurrent_nodes": 2,
+            "max_parallel_invocations": 3,
+        }
+    )
+    node["execution_policy"]["concurrency_policy"] = {
+        "max_concurrent_nodes": 2,
+        "max_parallel_invocations": 3,
+    }
+
+    PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_single_provider_reviewer(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["nodes"][0]["provider_records"][0]["role"] = "reviewer"
+
+    with pytest.raises(ValidationError, match="single-provider node"):
+        PreflightExecutionPlan(**payload)
+
+
 def test_preflight_execution_plan_rejects_malformed_fragment_payload(
     tmp_path: Path,
 ) -> None:
@@ -595,3 +692,138 @@ def test_preflight_execution_plan_rejects_persisted_param_token(
         match="Param tokens are composition-only",
     ):
         PreflightExecutionPlan(**payload)
+
+
+@pytest.mark.parametrize("schema_version", [None, "0.9", "99.0"])
+def test_serialized_plan_requires_exact_schema_identity(
+    tmp_path: Path,
+    schema_version: str | None,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    if schema_version is None:
+        payload.pop("plan_schema_version")
+    else:
+        payload["plan_schema_version"] = schema_version
+
+    with pytest.raises(ValidationError):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    "token_budget",
+    [
+        {"fail_threshold_chars": 0, "warn_threshold_chars": None},
+        {"fail_threshold_chars": None, "warn_threshold_chars": -1},
+        {"fail_threshold_chars": 50, "warn_threshold_chars": 100},
+    ],
+)
+def test_serialized_plan_rejects_invalid_token_budgets(
+    tmp_path: Path,
+    token_budget: dict[str, int | None],
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    payload["nodes"][0]["execution_policy"]["token_budget"] = token_budget
+
+    with pytest.raises(ValidationError):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def test_serialized_plan_rejects_invalid_consensus_value(tmp_path: Path) -> None:
+    payload = _persisted_review_plan_payload(tmp_path)
+    payload["nodes"][0]["execution_policy"]["consensus_on_exhaustion"] = (
+        "unknown-policy"
+    )
+
+    with pytest.raises(ValidationError):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def test_serialized_plan_rejects_conflicting_consensus_authorities(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_review_plan_payload(tmp_path)
+    payload["nodes"][0]["execution_policy"]["consensus_on_exhaustion"] = "fatal"
+    payload["runtime_config_snapshot"]["execution"][
+        "sequential_consensus_on_exhaustion"
+    ] = "continue"
+
+    with pytest.raises(ValidationError, match="conflicts with the signed"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "negative_size",
+        "missing_static_metadata",
+        "dynamic_with_static_metadata",
+        "unknown_node",
+        "wrong_target",
+        "duplicate_locator",
+    ],
+)
+def test_serialized_plan_rejects_impossible_workspace_locator_states(
+    mutation: str,
+) -> None:
+    payload = json.loads(make_snapshot_workspace_plan().model_dump_json())
+    locator = payload["workspace_file_locators"][0]
+    if mutation == "negative_size":
+        locator["byte_size"] = -1
+    elif mutation == "missing_static_metadata":
+        locator["content_ref"] = None
+    elif mutation == "dynamic_with_static_metadata":
+        locator["source_class"] = "runtime_dynamic"
+    elif mutation == "unknown_node":
+        locator["node_id"] = "unknown"
+    elif mutation == "wrong_target":
+        locator["target"] = "executor_prompt"
+    else:
+        duplicate = dict(locator)
+        duplicate["occurrence_id"] = "duplicate-occurrence"
+        payload["workspace_file_locators"].append(duplicate)
+
+    with pytest.raises(ValidationError):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def test_serialized_plan_requires_exact_dependency_for_runtime_locator() -> None:
+    payload = json.loads(make_plan().model_dump_json())
+    payload["render_plans"][1]["streams"] = [
+        {
+            "target_role": "executor",
+            "fragments": [
+                {
+                    "fragment_index": 0,
+                    "kind": "runtime_locator_lookup",
+                    "source_role": "shared",
+                    "locator": {
+                        "node_id": "a",
+                        "artifact_name": "output_size",
+                    },
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(ValidationError, match="matching dependency edge"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def _persisted_review_plan_payload(root: Path) -> dict[str, Any]:
+    payload = _persisted_plan_payload(root)
+    executor = payload["nodes"][0]["provider_records"][0]
+    reviewer = dict(executor)
+    reviewer.update(
+        {
+            "provider": "reviewer",
+            "role": "reviewer",
+            "task_id": "reviewer_reviewer_0",
+            "agent_config_key": "mock",
+        }
+    )
+    payload["nodes"][0]["provider_records"].append(reviewer)
+    payload["nodes"][0]["execution_policy"]["consensus_on_exhaustion"] = "continue"
+    payload["runtime_config_snapshot"]["execution"][
+        "sequential_consensus_on_exhaustion"
+    ] = "continue"
+    return payload

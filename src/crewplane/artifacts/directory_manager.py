@@ -4,14 +4,16 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from crewplane.architecture.safe_files import (
+    contained_directory,
+    ensure_contained_directory,
+)
 from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
 
 from .naming import (
     build_findings_filename,
-    build_log_filename,
     build_result_filename,
     build_run_key_name,
-    build_stage_directory_name,
     safe_artifact_name,
     safe_stage_name,
 )
@@ -30,7 +32,8 @@ class DirectoryManager:
         base_dir: Path,
         log_cli_output: bool,
     ) -> None:
-        self.base_dir = base_dir.resolve()
+        self.base_dir = base_dir.absolute()
+        ensure_contained_directory(self.base_dir.parent, self.base_dir.name)
         self._workflow_name = task_name
         self.task_name = safe_artifact_name(task_name)
         self.log_cli_output = log_cli_output
@@ -44,18 +47,6 @@ class DirectoryManager:
         self.logs_dir = self.stages_dir / "logs"
         self.manifests_dir = self.stages_dir / "manifests"
 
-        self._current_stage_dirs: dict[str, Path] = {}
-
-    def create_stage_dir(self, stage_name: str) -> Path:
-        self._validate_stage_name(stage_name)
-        stage_dir = self.stages_dir / build_stage_directory_name(stage_name)
-        stage_dir.mkdir(parents=True, exist_ok=True)
-        self._current_stage_dirs[stage_name] = stage_dir
-        return stage_dir
-
-    def get_stage_dir(self, stage_name: str) -> Path | None:
-        return self._current_stage_dirs.get(stage_name)
-
     def get_stage_result_file(self, stage_name: str) -> Path:
         self._validate_stage_name(stage_name)
         return self.results_dir / build_result_filename(stage_name)
@@ -65,8 +56,7 @@ class DirectoryManager:
         return self.results_dir / build_findings_filename(stage_name)
 
     def ensure_run_logs_dir(self) -> Path:
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
-        return self.logs_dir
+        return ensure_contained_directory(self.stages_dir, "logs")
 
     def get_run_event_log_path(self) -> Path:
         return self.ensure_run_logs_dir() / "events.ndjson"
@@ -74,27 +64,8 @@ class DirectoryManager:
     def get_run_summary_path(self) -> Path:
         return self.ensure_run_logs_dir() / "summary.md"
 
-    def get_log_file(
-        self,
-        stage_name: str,
-        provider: str,
-        task_id: str,
-        audit_round_num: int | None = None,
-        round_num: int | None = None,
-    ) -> Path | None:
-        if not self.log_cli_output:
-            return None
-
-        stage_dir = self.create_stage_dir(stage_name)
-        provider_dir = stage_dir / "logs" / safe_artifact_name(provider)
-        provider_dir.mkdir(parents=True, exist_ok=True)
-
-        filename = build_log_filename(task_id, audit_round_num, round_num)
-        return provider_dir / filename
-
     def ensure_manifests_dir(self) -> Path:
-        self.manifests_dir.mkdir(parents=True, exist_ok=True)
-        return self.manifests_dir
+        return ensure_contained_directory(self.stages_dir, "manifests")
 
     @staticmethod
     def _validate_stage_name(stage_name: str) -> None:
@@ -132,8 +103,19 @@ class DirectoryManager:
 
     def _run_paths(self, run_id: str) -> tuple[Path, Path]:
         run_key = build_run_key_name(self._workflow_name, run_id)
-        stages_dir = self.base_dir / "execution-stages" / run_key
-        results_dir = self.base_dir / "execution-results" / run_key
+        stages_root = ensure_contained_directory(self.base_dir, "execution-stages")
+        results_root = self.base_dir / "execution-results"
+        if results_root.exists() or results_root.is_symlink():
+            contained_results_root = contained_directory(
+                self.base_dir, "execution-results"
+            )
+            if contained_results_root is None:
+                raise ValueError(
+                    "Execution results root disappeared during allocation."
+                )
+            results_root = contained_results_root
+        stages_dir = stages_root / run_key
+        results_dir = results_root / run_key
         return stages_dir, results_dir
 
     @staticmethod

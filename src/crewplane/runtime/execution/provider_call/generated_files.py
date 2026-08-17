@@ -15,9 +15,9 @@ from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.snapshot import WorkspaceSnapshotCancelled
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 
-from ..runtime_context import DeferredAsyncCleanupRegistry
+from ..deferred_cleanup import DeferredAsyncCleanupRegistry
 from ..workspace_files import rendered_workspace_file_descriptor
-from .cancellation import mark_workspace_finalization_deferred
+from .cancellation import WorkspaceFinalizationDeferredCancellation
 from .generated_file_changes import (
     GeneratedFileChangeBaseline,
     changed_generated_file_paths,
@@ -167,7 +167,7 @@ async def finalize_successful_workspace(
         await asyncio.shield(finalization)
     except asyncio.CancelledError as cancel:
         cancel_requested.set()
-        await _handle_cancelled_success_finalization(
+        finalization_deferred = await _handle_cancelled_success_finalization(
             request,
             prepared_workspace,
             child_environment_applied,
@@ -175,6 +175,8 @@ async def finalize_successful_workspace(
             finalization,
             cancel,
         )
+        if finalization_deferred:
+            raise WorkspaceFinalizationDeferredCancellation(*cancel.args) from cancel
         raise
     record_generated_file_workspace(
         request,
@@ -190,14 +192,13 @@ async def _handle_cancelled_success_finalization(
     generated_file_workspace: Path | None,
     finalization: asyncio.Task[None],
     cancel: asyncio.CancelledError,
-) -> None:
+) -> bool:
     try:
         await asyncio.wait_for(
             asyncio.shield(finalization),
             WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS,
         )
     except TimeoutError:
-        mark_workspace_finalization_deferred(cancel)
         request.runtime_context.deferred_workspace_cleanups.register(
             _record_generated_file_workspace_after_finalization(
                 request,
@@ -208,6 +209,7 @@ async def _handle_cancelled_success_finalization(
             ),
             False,
         )
+        return True
     except Exception as exc:
         note_cleanup_failure(
             cancel,
@@ -219,12 +221,14 @@ async def _handle_cancelled_success_finalization(
             child_environment_applied,
             cancel,
         )
+        return False
     else:
         record_generated_file_workspace(
             request,
             prepared_workspace,
             generated_file_workspace,
         )
+        return False
 
 
 async def _record_generated_file_workspace_after_finalization(
@@ -341,12 +345,18 @@ def snapshot_invocation_generated_files(
     change_baseline: GeneratedFileChangeBaseline | None = None,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> Path | None:
-    if not request.output_file.is_file():
+    provider_output_file = (
+        request.invocation_output_file
+        if request.defer_output_publication
+        and request.invocation_output_file is not None
+        else request.output_file
+    )
+    if not provider_output_file.is_file():
         if request.provider_output_policy == ProviderOutputPolicy.ALLOW_MISSING_OUTPUT:
             return None
         raise RuntimeError(
             "Generated-file snapshot requires an existing provider output file: "
-            f"{request.output_file.as_posix()}"
+            f"{provider_output_file.as_posix()}"
         )
     workspace_root = validated_generated_file_workspace_root(prepared_workspace)
     candidate_files = (
@@ -368,11 +378,12 @@ def snapshot_invocation_generated_files(
     published_signatures: dict[Path, tuple[int, str]] = {}
     try:
         result = snapshot_generated_file_workspace(
-            request.output_file,
+            provider_output_file,
             workspace_root,
             candidate_files=candidate_files,
             explicit_claims_only=prepared_workspace.workspace_kind == "project_root",
             on_file_published=published_signatures.__setitem__,
+            snapshot_root=snapshot_root,
         )
         succeeded = True
         return result

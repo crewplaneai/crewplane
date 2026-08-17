@@ -39,6 +39,9 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
         case "workflow_failed":
             state.workflow_status = "failed"
             state.workflow_finished_at = event.timestamp
+        case "workflow_cancelled":
+            state.workflow_status = "cancelled"
+            state.workflow_finished_at = event.timestamp
         case "runtime_log":
             if context.node_id is None:
                 return

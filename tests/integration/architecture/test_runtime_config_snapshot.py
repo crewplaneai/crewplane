@@ -7,13 +7,10 @@ from rich.console import Console
 from crewplane.architecture import contracts as architecture_contracts
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
-    InvokerAdapterCapabilities,
-    InvokerWorkspaceSupport,
     redacted_integration_option_value,
 )
 from crewplane.architecture.errors import IntegrationResolutionError
 from crewplane.bootstrap import build_runtime_config_snapshot
-from crewplane.bootstrap.runtime_config import normalize_invoker_capabilities
 from crewplane.core.config import (
     AgentConfig,
     Config,
@@ -52,7 +49,7 @@ def _config(
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
                     options=(
-                        {"allowed_template_paths": [], "log_cli_output": True}
+                        {"log_cli_output": True}
                         if artifact_options is None
                         else artifact_options
                     ),
@@ -213,6 +210,107 @@ class LeakyInvokerAdapter:
         raise AssertionError("canonicalization must fail first")
 
 
+class OwnedAllowlistArtifactsAdapter:
+    def canonicalize_options(
+        self,
+        implementation: str,
+        resolved_identity: str,
+        options: dict[str, object] | None = None,
+    ) -> CanonicalIntegrationConfig:
+        resolved_options = dict(options or {})
+        allowed_template_paths = resolved_options.pop("allowed_template_paths")
+        if resolved_options:
+            raise ValueError("unexpected adapter options")
+        return CanonicalIntegrationConfig(
+            implementation=implementation,
+            resolved_identity=resolved_identity,
+            options={"allowed_template_paths": allowed_template_paths},
+            option_scopes={"allowed_template_paths": "validation"},
+        )
+
+    def create_store(
+        self,
+        workflow_name: str,
+        state_dir: Path,
+        project_root: Path,
+        options: dict[str, object] | None = None,
+    ) -> object:
+        del workflow_name, state_dir, project_root, options
+        raise AssertionError("snapshot construction must not create the store")
+
+    def create_terminal_history_reader(
+        self,
+        state_dir: Path,
+        options: dict[str, object] | None = None,
+    ) -> object:
+        del state_dir, options
+        raise AssertionError("snapshot construction must not create history readers")
+
+
+def test_dotted_artifact_adapter_non_policy_allowlist_option_stays_owned() -> None:
+    settings = Settings.model_validate(
+        {
+            "integrations": {
+                "artifacts": {
+                    "implementation": f"{__name__}:OwnedAllowlistArtifactsAdapter",
+                    "options": {"allowed_template_paths": "adapter-owned"},
+                },
+                "invoker": {
+                    "implementation": "mock",
+                    "options": {"output_mode": "echo"},
+                },
+                "ui": {"implementation": "none", "options": {}},
+            },
+        }
+    )
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": AgentConfig(cli_cmd=["mock"])},
+        settings=settings,
+    )
+
+    snapshot = build_runtime_config_snapshot(
+        config=config,
+        console=Console(file=None),
+        no_live=True,
+    ).snapshot
+
+    assert snapshot.file_access.allowed_template_paths == []
+    assert snapshot.artifacts.options == {"allowed_template_paths": "adapter-owned"}
+
+
+def test_dotted_adapter_mixed_allowlist_option_stays_adapter_owned() -> None:
+    settings = Settings.model_validate(
+        {
+            "integrations": {
+                "artifacts": {
+                    "implementation": f"{__name__}:OwnedAllowlistArtifactsAdapter",
+                    "options": {"allowed_template_paths": ["/tmp", 1]},
+                },
+                "invoker": {
+                    "implementation": "mock",
+                    "options": {"output_mode": "echo"},
+                },
+                "ui": {"implementation": "none", "options": {}},
+            },
+        }
+    )
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": AgentConfig(cli_cmd=["mock"])},
+        settings=settings,
+    )
+
+    snapshot = build_runtime_config_snapshot(
+        config=config,
+        console=Console(file=None),
+        no_live=True,
+    ).snapshot
+
+    assert snapshot.file_access.allowed_template_paths == []
+    assert snapshot.artifacts.options == {"allowed_template_paths": ["/tmp", 1]}
+
+
 def test_adapter_option_validation_errors_do_not_expose_adapter_details() -> None:
     config = _config()
     assert config.settings is not None
@@ -253,59 +351,6 @@ def test_snapshot_resolves_inactive_ui_implementation() -> None:
             config=_config(ui_implementation="missing"),
             console=Console(file=None),
             no_live=True,
-        )
-
-
-def test_invoker_workspace_capabilities_are_normalized_from_adapter() -> None:
-    config = normalize_invoker_capabilities(
-        WorkspaceCompatibleAdapter(),
-        CanonicalIntegrationConfig(
-            implementation="custom",
-            resolved_identity="tests:WorkspaceCompatibleAdapter",
-        ),
-    )
-
-    assert config.capabilities["workspace"] == {
-        "supported": True,
-        "launch_mode": "runtime_command_runner",
-        "honors_cwd": True,
-        "controlled_child_environment": True,
-    }
-
-
-def test_invoker_without_workspace_capabilities_defaults_to_unsupported() -> None:
-    config = normalize_invoker_capabilities(
-        object(),
-        CanonicalIntegrationConfig(
-            implementation="custom",
-            resolved_identity="tests:NoWorkspaceAdapter",
-        ),
-    )
-
-    assert config.capabilities["workspace"] == {
-        "supported": False,
-        "launch_mode": None,
-        "honors_cwd": False,
-        "controlled_child_environment": False,
-    }
-
-
-def test_conflicting_invoker_workspace_capabilities_are_rejected() -> None:
-    with pytest.raises(ValueError, match="conflicts"):
-        normalize_invoker_capabilities(
-            WorkspaceCompatibleAdapter(),
-            CanonicalIntegrationConfig(
-                implementation="custom",
-                resolved_identity="tests:WorkspaceCompatibleAdapter",
-                capabilities={
-                    "workspace": {
-                        "supported": False,
-                        "launch_mode": None,
-                        "honors_cwd": False,
-                        "controlled_child_environment": False,
-                    }
-                },
-            ),
         )
 
 
@@ -366,24 +411,19 @@ def test_canonical_options_redact_nested_pattern_and_explicit_sensitive_paths() 
     assert "sensitive_integration_option_keys" in architecture_contracts.__all__
 
 
-def test_canonical_options_normalize_legacy_sensitive_top_level_names() -> None:
-    config = CanonicalIntegrationConfig(
-        implementation="custom",
-        resolved_identity="example.Adapter",
-        options={"api_token": "legacy-secret"},
-        sensitive_options=["api_token"],
-        option_scopes={"api_token": "execution"},
-    )
-
-    payload = config.redacted_payload()
-
-    assert config.sensitive_options == ["api_token"]
-    assert payload["sensitive_options"] == ["/api_token"]
-    assert payload["options"]["api_token"] == {"redacted": True}
+def test_canonical_options_reject_legacy_sensitive_top_level_names() -> None:
+    with pytest.raises(ValueError, match="must start with '/'"):
+        CanonicalIntegrationConfig(
+            implementation="custom",
+            resolved_identity="example.Adapter",
+            options={"api_token": "legacy-secret"},
+            sensitive_options=["api_token"],
+            option_scopes={"api_token": "execution"},
+        )
 
 
-def test_canonical_options_preserve_legacy_slash_prefixed_top_level_names() -> None:
-    raw_secret = "slash-prefixed-legacy-secret"
+def test_canonical_options_support_json_pointer_escaped_top_level_names() -> None:
+    raw_secret = "slash-prefixed-secret"
     config = CanonicalIntegrationConfig(
         implementation="custom",
         resolved_identity="example.Adapter",
@@ -392,7 +432,7 @@ def test_canonical_options_preserve_legacy_slash_prefixed_top_level_names() -> N
             "opaque": "public",
             "/~1opaque": "escaped-public",
         },
-        sensitive_options=["/opaque"],
+        sensitive_options=["/~1opaque"],
         option_scopes={
             "/opaque": "execution",
             "opaque": "execution",
@@ -416,12 +456,12 @@ def test_canonical_options_preserve_legacy_slash_prefixed_top_level_names() -> N
         options=RuntimeConfigSnapshotOptions(no_live=True),
     ).with_sensitive_config_fingerprints(b"f" * 32)
 
-    assert config.sensitive_options == ["/opaque"]
+    assert config.sensitive_options == ["/~1opaque"]
     assert payload["sensitive_options"] == ["/~1opaque"]
     assert payload["options"]["/opaque"] == {"redacted": True}
     assert payload["options"]["opaque"] == "public"
     assert payload["options"]["/~1opaque"] == "escaped-public"
-    assert round_tripped.sensitive_options == ["/opaque"]
+    assert round_tripped.sensitive_options == ["/~1opaque"]
     assert round_tripped.redacted_payload() == payload
     assert raw_secret not in json.dumps(payload, sort_keys=True)
     assert snapshot.invoker.sensitive_options == ["/~1opaque"]
@@ -434,26 +474,26 @@ def test_canonical_options_preserve_legacy_slash_prefixed_top_level_names() -> N
     assert raw_secret not in snapshot.model_dump_json()
 
 
-def test_canonical_options_prefer_legacy_name_on_pointer_collision() -> None:
-    legacy_secret = "legacy-top-level-secret"
+def test_canonical_options_use_unambiguous_pointer_for_slash_prefixed_key() -> None:
+    slash_key_secret = "slash-key-secret"
     config = CanonicalIntegrationConfig(
         implementation="custom",
         resolved_identity="example.Adapter",
         options={
-            "/routes/0/value": legacy_secret,
+            "/routes/0/value": slash_key_secret,
             "routes": [{"value": "public"}],
         },
-        sensitive_options=["/routes/0/value"],
+        sensitive_options=["/~1routes~10~1value"],
         option_scopes={"/routes/0/value": "execution", "routes": "execution"},
     )
 
     payload = config.redacted_payload()
 
-    assert config.sensitive_options == ["/routes/0/value"]
+    assert config.sensitive_options == ["/~1routes~10~1value"]
     assert payload["sensitive_options"] == ["/~1routes~10~1value"]
     assert payload["options"]["/routes/0/value"] == {"redacted": True}
     assert payload["options"]["routes"][0]["value"] == "public"
-    assert legacy_secret not in json.dumps(payload, sort_keys=True)
+    assert slash_key_secret not in json.dumps(payload, sort_keys=True)
 
 
 def test_redacted_integration_option_value_contains_only_redaction_metadata() -> None:
@@ -556,15 +596,17 @@ def test_invalid_sensitive_json_pointer_escape_explains_valid_encoding() -> None
     )
 
 
-def test_canonical_options_reject_duplicate_sensitive_json_pointers() -> None:
-    with pytest.raises(ValueError, match="JSON Pointers must be unique"):
-        CanonicalIntegrationConfig(
-            implementation="custom",
-            resolved_identity="example.Adapter",
-            options={"routes": [{"value": "secret"}]},
-            sensitive_options=["/routes/0/value", "/routes/0/value"],
-            option_scopes={"routes": "execution"},
-        )
+def test_canonical_options_accept_duplicate_sensitive_option_pointers() -> None:
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={"api_token": "secret"},
+        sensitive_options=["/api_token", "/api_token"],
+        option_scopes={"api_token": "execution"},
+    )
+
+    assert config.sensitive_options == ["/api_token", "/api_token"]
+    assert config.redacted_payload()["options"] == {"api_token": {"redacted": True}}
 
 
 def test_command_argv_secrets_are_redacted_across_runtime_snapshot_fields() -> None:
@@ -597,15 +639,3 @@ def test_command_argv_secrets_are_redacted_across_runtime_snapshot_fields() -> N
         "agents.alpha.cli_cmd.2",
         "workspace.setup_profiles.bootstrap.run.0.1",
     ]
-
-
-class WorkspaceCompatibleAdapter:
-    def workspace_capabilities(self) -> InvokerAdapterCapabilities:
-        return InvokerAdapterCapabilities(
-            workspace=InvokerWorkspaceSupport(
-                supported=True,
-                launch_mode="runtime_command_runner",
-                honors_cwd=True,
-                controlled_child_environment=True,
-            )
-        )

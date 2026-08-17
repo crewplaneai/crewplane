@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..safe_files import contained_regular_file
+from crewplane.architecture.safe_files import contained_regular_file
 
 GENERATED_FILE_ACTION_PATTERN = re.compile(
     r"\b(?P<action>created|wrote|written|saved|generated|renamed|moved|updated)\b",

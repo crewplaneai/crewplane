@@ -15,6 +15,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
+    RenderPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
@@ -100,6 +101,7 @@ def workspace_plan(
         controlled_child_environment=controlled_child_environment,
     )
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id="run-001",
         run_key_name="workspace-run-001",
         project_root=repo.as_posix(),
@@ -116,7 +118,7 @@ def workspace_plan(
                 kind=kind,
             )
         ],
-        render_plans=[],
+        render_plans=[RenderPlan(render_plan_id="implement", node_id="implement")],
         static_resources=[],
         token_catalog=[],
         dependency_graph=[],
@@ -135,6 +137,7 @@ def disabled_workspace_plan(repo: Path) -> PreflightExecutionPlan:
         controlled_child_environment=True,
     )
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id="run-001",
         run_key_name="workspace-run-001",
         project_root=repo.as_posix(),
@@ -151,7 +154,7 @@ def disabled_workspace_plan(repo: Path) -> PreflightExecutionPlan:
                 kind="snapshot",
             )
         ],
-        render_plans=[],
+        render_plans=[RenderPlan(render_plan_id="implement", node_id="implement")],
         static_resources=[],
         token_catalog=[],
         dependency_graph=[],
@@ -200,6 +203,8 @@ def _node(
         artifact_contract=ArtifactContract(
             stage_path="implement",
             output_path="implement/output.md",
+            log_path="implement/logs",
+            result_path="implement/output.md",
         ),
     )
 

@@ -13,6 +13,7 @@ import pytest
 
 import crewplane.runtime.workspace.git as workspace_git
 from crewplane.runtime.workspace.cleanup import (
+    WorkspaceCleanupEligibility,
     WorkspaceCleanupFilter,
     cleanup_workspace_cache,
     parse_duration_seconds,
@@ -34,7 +35,7 @@ def test_cleanup_workspace_cache_dry_run_preserves_paths(tmp_path: Path) -> None
 
     result = cleanup_workspace_cache(
         tmp_path,
-        WorkspaceCleanupFilter(run_key_name="run-1"),
+        WorkspaceCleanupFilter(run_key_name="run-1", orphans=True),
         dry_run=True,
     )
 
@@ -74,7 +75,7 @@ def test_cleanup_workspace_cache_ignores_symlink_candidates(tmp_path: Path) -> N
 
     result = cleanup_workspace_cache(
         tmp_path,
-        WorkspaceCleanupFilter(run_key_name="run-1"),
+        WorkspaceCleanupFilter(run_key_name="run-1", orphans=True),
         dry_run=False,
     )
 
@@ -237,7 +238,9 @@ def test_cleanup_workspace_cache_removes_matching_paths(tmp_path: Path) -> None:
 
     result = cleanup_workspace_cache(
         tmp_path,
-        WorkspaceCleanupFilter(run_key_name="run-1", older_than_seconds=3600),
+        WorkspaceCleanupFilter(
+            run_key_name="run-1", older_than_seconds=3600, orphans=True
+        ),
         dry_run=False,
     )
 
@@ -263,7 +266,7 @@ def test_cleanup_workspace_cache_propagates_remove_errors_without_ref_cleanup(
     with pytest.raises(OSError, match="cannot remove"):
         cleanup_workspace_cache(
             tmp_path,
-            WorkspaceCleanupFilter(run_key_name="run-1"),
+            WorkspaceCleanupFilter(run_key_name="run-1", orphans=True),
             dry_run=False,
             ref_cleanup=lambda run_key: removed_runs.append(run_key) or 1,
         )
@@ -301,6 +304,7 @@ def test_cleanup_workspace_cache_removes_registered_worktree(
         WorkspaceCleanupFilter(
             run_key_name="run-1",
             expected_common_git_dir=repo / ".git",
+            orphans=True,
         ),
         dry_run=False,
     )
@@ -324,7 +328,7 @@ def test_cleanup_workspace_cache_derives_git_dir_for_registered_worktree(
 
     result = cleanup_workspace_cache(
         tmp_path,
-        WorkspaceCleanupFilter(run_key_name="run-1"),
+        WorkspaceCleanupFilter(run_key_name="run-1", orphans=True),
         dry_run=False,
     )
 
@@ -361,6 +365,7 @@ def test_cleanup_workspace_cache_preserves_registered_worktree_when_git_remove_f
             WorkspaceCleanupFilter(
                 run_key_name="run-1",
                 expected_common_git_dir=repo / ".git",
+                orphans=True,
             ),
             dry_run=False,
         )
@@ -387,7 +392,7 @@ def test_cleanup_workspace_cache_rejects_symlink_git_admin_entry(
     with pytest.raises(RuntimeError, match="Git metadata could not be verified"):
         cleanup_workspace_cache(
             tmp_path,
-            WorkspaceCleanupFilter(run_key_name="run-1"),
+            WorkspaceCleanupFilter(run_key_name="run-1", orphans=True),
             dry_run=False,
         )
 
@@ -418,6 +423,7 @@ def test_cleanup_workspace_cache_preserves_external_registered_worktree(
             WorkspaceCleanupFilter(
                 run_key_name="run-1",
                 expected_common_git_dir=current_repo / ".git",
+                orphans=True,
             ),
             dry_run=False,
         )
@@ -471,6 +477,7 @@ def test_cleanup_workspace_cache_rejects_gitdir_backlink_mismatch_before_git(
             WorkspaceCleanupFilter(
                 run_key_name="run-1",
                 expected_common_git_dir=repo / ".git",
+                orphans=True,
             ),
             dry_run=False,
         )
@@ -510,6 +517,27 @@ def test_cleanup_workspace_cache_filters_by_state_status(tmp_path: Path) -> None
     assert entries_by_name["orphan"].orphan is True
 
 
+def test_cleanup_workspace_cache_global_default_selects_unknown_status(
+    tmp_path: Path,
+) -> None:
+    workspace_path = _workspace_path(tmp_path, "workspaces", "run-1", "unknown")
+    workspace_path.mkdir(parents=True)
+
+    def unknown_status(run_key: str, cache_key: str) -> str:
+        del run_key, cache_key
+        return "unknown"
+
+    result = cleanup_workspace_cache(
+        tmp_path,
+        WorkspaceCleanupFilter(),
+        dry_run=True,
+        status_lookup=unknown_status,
+    )
+
+    assert [entry.path for entry in result.entries] == [workspace_path]
+    assert result.entries[0].status == "unknown"
+
+
 def test_cleanup_workspace_cache_deletes_refs_once_per_removed_run(
     tmp_path: Path,
 ) -> None:
@@ -523,7 +551,7 @@ def test_cleanup_workspace_cache_deletes_refs_once_per_removed_run(
 
     result = cleanup_workspace_cache(
         tmp_path,
-        WorkspaceCleanupFilter(run_key_name="run-1"),
+        WorkspaceCleanupFilter(run_key_name="run-1", orphans=True),
         dry_run=False,
         ref_cleanup=lambda run_key: deleted_runs.append(run_key) or 2,
     )
@@ -531,6 +559,61 @@ def test_cleanup_workspace_cache_deletes_refs_once_per_removed_run(
     assert {entry.path for entry in result.entries} == {first, second}
     assert deleted_runs == ["run-1"]
     assert result.removed_ref_count == 2
+
+
+@pytest.mark.parametrize("retained_by", ["age", "status", "eligibility"])
+def test_cleanup_workspace_cache_preserves_refs_when_same_run_candidate_remains(
+    tmp_path: Path,
+    retained_by: str,
+) -> None:
+    removable = _workspace_path(tmp_path, "workspaces", "run-1", "removable")
+    retained = _workspace_path(tmp_path, "snapshots", "run-1", "retained")
+    removable.mkdir(parents=True)
+    retained.mkdir(parents=True)
+    old_time = time.time() - 7200
+    os.utime(removable, (old_time, old_time))
+    if retained_by != "age":
+        os.utime(retained, (old_time, old_time))
+    statuses = {
+        "removable": "failed",
+        "retained": "succeeded" if retained_by == "status" else "failed",
+    }
+    deleted_runs: list[str] = []
+
+    def status_lookup(run_key: str, cache_key: str) -> str:
+        assert run_key == "run-1"
+        return statuses[cache_key]
+
+    def eligibility_lookup(
+        run_key: str,
+        cache_key: str,
+        status: str | None,
+    ) -> WorkspaceCleanupEligibility:
+        assert run_key == "run-1"
+        assert status == statuses[cache_key]
+        return WorkspaceCleanupEligibility(
+            deletable=not (retained_by == "eligibility" and cache_key == "retained"),
+            reason="workspace state is unverifiable",
+        )
+
+    result = cleanup_workspace_cache(
+        tmp_path,
+        WorkspaceCleanupFilter(
+            run_key_name="run-1",
+            older_than_seconds=3600,
+            statuses=frozenset({"failed"}),
+        ),
+        dry_run=False,
+        status_lookup=status_lookup,
+        eligibility_lookup=eligibility_lookup,
+        ref_cleanup=lambda run_key: deleted_runs.append(run_key) or 1,
+    )
+
+    assert not removable.exists()
+    assert retained.exists()
+    assert result.removed_count == 1
+    assert result.removed_ref_count == 0
+    assert deleted_runs == []
 
 
 def test_cleanup_workspace_cache_filters_current_repository_by_default(
@@ -543,7 +626,9 @@ def test_cleanup_workspace_cache_filters_current_repository_by_default(
 
     result = cleanup_workspace_cache(
         tmp_path,
-        WorkspaceCleanupFilter(run_key_name="run-1", repository_id="repo-1"),
+        WorkspaceCleanupFilter(
+            run_key_name="run-1", repository_id="repo-1", orphans=True
+        ),
         dry_run=False,
     )
 

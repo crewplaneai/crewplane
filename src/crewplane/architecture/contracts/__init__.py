@@ -1,5 +1,15 @@
 """Stable data contracts shared across architecture ports and runtime wiring."""
 
+from .artifacts import (
+    ArtifactContract,
+    NodeArtifactRequest,
+    VerifiedNodeArtifact,
+    artifact_contract_for_node,
+    build_findings_filename,
+    build_result_filename,
+    build_stage_directory_name,
+    safe_artifact_name,
+)
 from .execution_event import (
     EventPayload,
     EventSink,
@@ -91,7 +101,6 @@ from .invocation import (
     StructuredOutputMode,
     UsageDecoder,
     UsageDecodeResult,
-    WorkspaceCompatibleInvokerAdapter,
     normalize_log_presentation_profile,
     validate_log_presentation_descriptor,
     validate_log_presentation_format,
@@ -117,6 +126,9 @@ from .observer import (
 __all__ = [
     "AgentInvoker",
     "AggregateCostConfidence",
+    "ArtifactContract",
+    "NodeArtifactRequest",
+    "VerifiedNodeArtifact",
     "CanonicalIntegrationConfig",
     "ChildProcessEnvironment",
     "CliInvokerOptions",
@@ -206,7 +218,11 @@ __all__ = [
     "WorkflowTopology",
     "WorkspaceEventPayload",
     "WorkspaceEventType",
-    "WorkspaceCompatibleInvokerAdapter",
+    "artifact_contract_for_node",
+    "safe_artifact_name",
+    "build_findings_filename",
+    "build_result_filename",
+    "build_stage_directory_name",
     "emit_event",
     "normalize_log_presentation_profile",
     "redacted_integration_option_value",

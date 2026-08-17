@@ -7,6 +7,8 @@ from crewplane.architecture.ports.artifacts import (
     StageFinalizeResult,
     StageTaskSpec,
 )
+from crewplane.artifacts.atomic import atomic_write_text
+from crewplane.core.workflow.keywords import ProviderRole
 
 from ..generated_files.catalog import (
     GeneratedFileReferenceDetector,
@@ -15,7 +17,7 @@ from .aggregation import aggregate_stage_outputs
 from .findings import (
     build_findings_document,
 )
-from .review_loop_status import resolve_review_loop_status
+from .review_loop_status import ReviewLoopStatusError, resolve_review_loop_status
 from .selection import is_raw_input_stage, latest_round_files
 from .stage_document import write_stage_result_file
 from .stage_outputs import StageOutputAggregation
@@ -54,7 +56,37 @@ class ResultWriter:
         findings_file = (
             self._findings_file_resolver(stage_name) if findings_enabled else None
         )
+        return self.finalize_at(
+            stage_name,
+            stage_dir,
+            result_file,
+            findings_file,
+            findings_enabled=findings_enabled,
+            task_specs=task_specs,
+            generated_file_detection_enabled=generated_file_detection_enabled,
+            generated_file_workspace_roots=generated_file_workspace_roots,
+        )
+
+    def finalize_at(
+        self,
+        stage_name: str,
+        stage_dir: Path | None,
+        result_file: Path,
+        findings_file: Path | None,
+        findings_enabled: bool = False,
+        task_specs: tuple[StageTaskSpec, ...] = (),
+        generated_file_detection_enabled: bool = True,
+        generated_file_workspace_roots: dict[Path, Path | None] | None = None,
+    ) -> StageFinalizeResult:
+        """Finalize a stage at caller-supplied, compiled artifact locations."""
+
+        if findings_enabled and findings_file is None:
+            raise ValueError("Findings-enabled nodes require a findings locator.")
         if stage_dir is None:
+            if any(spec.role == ProviderRole.REVIEWER for spec in task_specs):
+                raise ReviewLoopStatusError(
+                    "Invalid review-loop status artifact: required status is missing."
+                )
             return StageFinalizeResult(
                 stage_name=stage_name,
                 result_file=result_file,
@@ -64,8 +96,10 @@ class ResultWriter:
                 warnings=("Stage directory was not created before finalization.",),
             )
 
-        selected_files = self._select_stage_files(stage_name, stage_dir)
+        selected_files = self._select_stage_files(stage_name, stage_dir, task_specs)
         if is_raw_input_stage(selected_files):
+            if findings_enabled:
+                raise ValueError("Input stages cannot enable findings output.")
             return self._write_raw_input_result(stage_name, result_file, selected_files)
 
         aggregation = aggregate_stage_outputs(
@@ -89,6 +123,7 @@ class ResultWriter:
         resolved_findings_file = self._write_findings_file(
             findings_file,
             aggregation.findings_sections,
+            required=findings_enabled,
         )
         return StageFinalizeResult(
             stage_name=stage_name,
@@ -107,10 +142,23 @@ class ResultWriter:
             ),
         )
 
-    def _select_stage_files(self, stage_name: str, stage_dir: Path) -> dict[str, Path]:
-        resolved_status = resolve_review_loop_status(stage_name, stage_dir)
+    def _select_stage_files(
+        self,
+        stage_name: str,
+        stage_dir: Path,
+        task_specs: tuple[StageTaskSpec, ...],
+    ) -> dict[str, Path]:
+        resolved_status = resolve_review_loop_status(
+            stage_name,
+            stage_dir,
+            task_specs,
+        )
         if resolved_status is not None:
             return resolved_status.selected_output_files
+        if any(spec.role == ProviderRole.REVIEWER for spec in task_specs):
+            raise ReviewLoopStatusError(
+                "Invalid review-loop status artifact: required status is missing."
+            )
         return latest_round_files(stage_dir)
 
     def _write_raw_input_result(
@@ -120,8 +168,10 @@ class ResultWriter:
         selected_files: dict[str, Path],
     ) -> StageFinalizeResult:
         input_file = selected_files["input"]
-        result_file.parent.mkdir(parents=True, exist_ok=True)
-        result_file.write_text(input_file.read_text(encoding="utf-8"), encoding="utf-8")
+        atomic_write_text(
+            result_file,
+            input_file.read_text(encoding="utf-8"),
+        )
         return StageFinalizeResult(
             stage_name=stage_name,
             result_file=result_file,
@@ -135,15 +185,15 @@ class ResultWriter:
         self,
         findings_file: Path | None,
         findings_sections: list[tuple[str, str]],
+        required: bool = False,
     ) -> Path | None:
         if findings_file is None:
             return None
-        if not findings_sections:
+        if not findings_sections and not required:
             return None
-        findings_file.parent.mkdir(parents=True, exist_ok=True)
-        findings_file.write_text(
+        atomic_write_text(
+            findings_file,
             build_findings_document(findings_sections),
-            encoding="utf-8",
         )
         return findings_file
 

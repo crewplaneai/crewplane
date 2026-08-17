@@ -179,6 +179,7 @@ async def run_review_phase(
         )
     )
     reviewer_outputs = reviewer_run.outputs
+    progress.selected_round_num = round_num
     progress.add_artifact_drift_warnings(reviewer_run.drift_warning_count)
     progress.record_review_outputs(reviewer_outputs)
     persist_round_review_inbox(request, progress, reviewer_outputs, round_num)

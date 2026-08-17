@@ -50,6 +50,7 @@ from crewplane.runtime.execution.runtime_context import (
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     disabled_workspace_plan,
@@ -226,7 +227,7 @@ def test_generated_file_workspace_cleanup_registered_after_cwd_deleted(
 ) -> None:
     plan = disabled_workspace_plan(tmp_path)
     output = workspace_output_manager(tmp_path, tmp_path)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -388,7 +389,7 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
         controlled_child_environment=False,
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -400,7 +401,7 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
         ),
         options={"output_mode": "echo"},
     )
-    node_dir = output.get_stage_dir("implement")
+    node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None
     events = []
 
@@ -446,7 +447,9 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
     state = read_json_object(state_path)
     assert state["workspace"]["retention"] == "deleted"
 
-    log_path = output.get_log_file("implement", "alpha", "alpha", None, 1)
+    log_path = output.get_node_log_file(
+        node_artifact_request("implement"), "alpha", "alpha", None, 1
+    )
     assert log_path is not None
     log_record = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
     assert log_record["cwd"].startswith(cache_root.as_posix())
@@ -478,7 +481,7 @@ async def _run_artifact_capture_wrapper_failure_fails_provider_invocation(
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -541,7 +544,7 @@ async def _run_workspace_finalization_failure_fails_provider_invocation(
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -606,7 +609,7 @@ async def _run_generated_file_capture_failure_disables_project_root_fallback(
     generated_file.write_text("live project content\n", encoding="utf-8")
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -657,8 +660,8 @@ async def _run_generated_file_capture_failure_disables_project_root_fallback(
         "implement"
     )
     assert workspace_roots[output_file.resolve(strict=False)] is None
-    result = output.finalize_stage(
-        "implement",
+    result = output.finalize_node(
+        node_artifact_request("implement"),
         generated_file_workspace_roots=workspace_roots,
     )
     result_text = result.result_file.read_text(encoding="utf-8")
@@ -671,7 +674,7 @@ async def _run_overlapping_project_root_invocations(tmp_path: Path) -> None:
     repo = create_git_repo(tmp_path)
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -762,7 +765,7 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -832,12 +835,12 @@ async def _run_failed_provider_invocation_preserves_applied_child_environment(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
     )
-    node_dir = output.get_stage_dir("implement")
+    node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None
     invoker = FailingCommandRunnerInvoker()
     events = []
@@ -899,7 +902,7 @@ async def _run_failed_provider_invocation_preserves_provider_error_when_mark_fai
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -955,7 +958,7 @@ async def _run_provider_invocation_cancellation_preserves_cancel_when_mark_cance
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -1012,12 +1015,12 @@ async def _run_provider_invocation_cancellation_marks_workspace_state(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
     )
-    node_dir = output.get_stage_dir("implement")
+    node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None
 
     with pytest.raises(asyncio.CancelledError):
@@ -1081,7 +1084,7 @@ async def _run_workspace_success_finalization_records_cleanup_after_cancellation
     repo = create_git_repo(tmp_path)
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -1131,7 +1134,7 @@ async def _run_workspace_success_finalization_withholds_cleanup_while_pending(
     repo = create_git_repo(tmp_path)
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -1188,7 +1191,7 @@ async def _run_workspace_success_finalization_cleans_after_drain_timeout(
     repo = create_git_repo(tmp_path)
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -1217,16 +1220,20 @@ async def _run_workspace_success_finalization_cleans_after_drain_timeout(
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    errors = await runtime_context.deferred_workspace_cleanups.drain(0.01)
+    drain_task = asyncio.create_task(
+        runtime_context.deferred_workspace_cleanups.drain(0)
+    )
+    await asyncio.sleep(0)
+    assert not drain_task.done()
+    assert not workspace.finished.is_set()
+    workspace.release.set()
+    errors = await asyncio.wait_for(drain_task, 2.0)
 
     assert any(isinstance(error, TimeoutError) for error in errors)
     assert runtime_context.deferred_workspace_cleanups.tasks == set()
     assert runtime_context.generated_file_workspaces.cleanup_by_node == {}
-
-    workspace.release.set()
-    assert await asyncio.to_thread(workspace.finished.wait, 2)
-    assert await asyncio.to_thread(workspace.cleaned_event.wait, 2)
-
+    assert workspace.finished.is_set()
+    assert workspace.cleaned_event.is_set()
     assert workspace.cleaned is True
     assert workspace.cancel_requested is True
     assert runtime_context.generated_file_workspaces.cleanup_by_node == {}
@@ -1264,7 +1271,7 @@ async def _run_lifecycle_cancellation_after_finalization_failure_records_termina
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -1417,7 +1424,7 @@ async def _run_generated_file_snapshot_defers_after_cancellation_timeout(
     repo = create_git_repo(tmp_path)
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
@@ -1467,8 +1474,11 @@ async def _run_workspace_preparation_cancellation_marks_workspace_state(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
-    state_path = output.create_stage_dir("implement") / "workspace-state.json"
+    output.create_node_dir(node_artifact_request("implement"))
+    state_path = (
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
     workspace_path = cache_root / "snapshots" / "test-repo" / "prep-cancel"
     workspace_path.mkdir(parents=True)
     started = Event()
@@ -1559,7 +1569,7 @@ async def _run_workspace_preparation_cancellation_preserves_cancel_when_mark_can
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     started = Event()
     release = Event()
 
@@ -1629,7 +1639,7 @@ async def _run_workspace_preparation_cancellation_is_bounded(
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     started = Event()
     release = Event()
 
@@ -1699,8 +1709,11 @@ async def _run_workspace_preparation_deferred_cleanup_is_drained(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
-    state_path = output.create_stage_dir("implement") / "workspace-state.json"
+    output.create_node_dir(node_artifact_request("implement"))
+    state_path = (
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
     workspace_path = cache_root / "snapshots" / "test-repo" / "prep-cancel-deferred"
     workspace_path.mkdir(parents=True)
     started = Event()
@@ -1791,18 +1804,19 @@ async def _run_workspace_preparation_deferred_cleanup_is_drained(
         await task
     assert state_path.exists() is False
 
-    timeout_errors = await cleanup_registry.drain(0.01)
-
-    assert len(timeout_errors) == 1
-    assert isinstance(timeout_errors[0], TimeoutError)
-    assert cleanup_registry.tasks == set()
+    drain_task = asyncio.create_task(cleanup_registry.drain(0))
+    await asyncio.sleep(0)
+    assert not drain_task.done()
     assert state_path.exists() is False
     assert workspace_path.exists()
 
     release.set()
-    assert await asyncio.to_thread(cancelled_marked.wait, 2)
-    await asyncio.sleep(0)
+    timeout_errors = await asyncio.wait_for(drain_task, 2.0)
 
+    assert len(timeout_errors) == 1
+    assert isinstance(timeout_errors[0], TimeoutError)
+    assert cleanup_registry.tasks == set()
+    assert cancelled_marked.is_set()
     state = read_json_object(state_path)
     assert state["status"] == "cancelled"
     assert state["child_process_environment"]["applied"] is False
@@ -1818,7 +1832,7 @@ async def _run_workspace_preparation_deferred_cleanup_reports_prepare_failure(
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     started = Event()
     release = Event()
 
@@ -1890,8 +1904,11 @@ async def _run_workspace_preparation_slow_mark_cancelled_cleanup_is_drained(
     repo.mkdir()
     plan = disabled_workspace_plan(repo)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    state_path = output.create_stage_dir("implement") / "workspace-state.json"
+    output.create_node_dir(node_artifact_request("implement"))
+    state_path = (
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
     workspace_path = tmp_path / "workspace"
     workspace_path.mkdir()
     prepare_started = Event()
@@ -2041,14 +2058,16 @@ async def _run_deferred_cleanup_registry_keeps_protected_pending_task_after_time
 
     cleanup_registry.register(cleanup(), cancel_on_timeout=False)
 
-    timeout_errors = await cleanup_registry.drain(0.01)
+    drain_task = asyncio.create_task(cleanup_registry.drain(0))
+    await asyncio.sleep(0)
+
+    assert not drain_task.done()
+    assert len(cleanup_registry.tasks) == 1
+    release.set()
+    timeout_errors = await asyncio.wait_for(drain_task, 1.0)
 
     assert len(timeout_errors) == 1
     assert isinstance(timeout_errors[0], TimeoutError)
-    assert cleanup_registry.tasks == set()
-    release.set()
-    await asyncio.wait_for(finished.wait(), 1.0)
-
     assert cleanup_registry.tasks == set()
     assert cleaned is True
     assert cancelled is False

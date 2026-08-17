@@ -7,7 +7,6 @@ from typing import Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from .integration_secrets import (
-    json_pointer,
     parse_json_pointer,
     transform_sensitive_integration_options,
     validate_sensitive_integration_option_pointers,
@@ -58,7 +57,7 @@ class CanonicalIntegrationConfig(BaseModel):
             )
         validate_sensitive_integration_option_pointers(
             self.options,
-            _declared_sensitive_option_pointers(self),
+            self.sensitive_options,
         )
         return self
 
@@ -88,7 +87,7 @@ class CanonicalIntegrationConfig(BaseModel):
             redacted_options, sensitive_options = (
                 transform_sensitive_integration_options(
                     self.options,
-                    _declared_sensitive_option_pointers(self),
+                    self.sensitive_options,
                     _redact_sensitive_option,
                 )
             )
@@ -126,7 +125,7 @@ def sensitive_integration_option_pointers(
 ) -> list[str]:
     _, pointers = transform_sensitive_integration_options(
         config.options,
-        _declared_sensitive_option_pointers(config),
+        config.sensitive_options,
     )
     return pointers
 
@@ -138,21 +137,6 @@ def sensitive_integration_option_keys(
         parse_json_pointer(pointer)[0]
         for pointer in sensitive_integration_option_pointers(config)
     }
-
-
-def _declared_sensitive_option_pointers(
-    config: CanonicalIntegrationConfig,
-) -> list[str]:
-    if config._options_are_generated_redacted:
-        return list(config.sensitive_options)
-    return [
-        (
-            json_pointer((declaration,))
-            if declaration in config.options or not declaration.startswith("/")
-            else declaration
-        )
-        for declaration in config.sensitive_options
-    ]
 
 
 def redacted_integration_option_value(

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import build_result_filename
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -317,9 +318,9 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 suppress_progress_output=True,
             )
 
-            review_result = output.get_stage_output_path("review.node").read_text(
-                encoding="utf-8"
-            )
+            review_result = (
+                output.results_dir / build_result_filename("review.node")
+            ).read_text(encoding="utf-8")
             self.assertIn("review-loop executor output", review_result)
             drift_errors = [
                 event

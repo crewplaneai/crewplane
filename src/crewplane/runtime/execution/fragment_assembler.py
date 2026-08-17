@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.core.preflight.models import (
+from crewplane.architecture.contracts import (
     ArtifactContract,
+    NodeArtifactRequest,
+    VerifiedNodeArtifact,
+)
+from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.core.preflight.models import (
     Fragment,
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -133,7 +137,11 @@ def stream_has_runtime_dynamic_workspace_locator(
     }
     return any(
         locator.locator_id in locator_ids
-        and locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
+        and locator.source_class
+        in {
+            WorkspaceFileSourceClass.RUNTIME_DYNAMIC,
+            WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE,
+        }
         for locator in plan.workspace_file_locators
     )
 
@@ -200,7 +208,14 @@ def _read_static_file(plan: PreflightExecutionPlan, content_ref: str) -> str:
     normalized_ref = Path(content_ref)
     if normalized_ref.is_absolute() or ".." in normalized_ref.parts:
         raise ValueError(f"Invalid static content reference '{content_ref}'.")
-    path = Path(plan.context_root) / "preflight" / normalized_ref
+    path = contained_regular_file(
+        Path(plan.context_root) / "preflight",
+        normalized_ref.as_posix(),
+    )
+    if path is None:
+        raise ValueError(
+            f"Static content reference is missing or unsafe: '{content_ref}'."
+        )
     return path.read_text(encoding="utf-8")
 
 
@@ -220,29 +235,30 @@ def _resolve_runtime_locator(
     node_id: str,
     artifact_name: str,
 ) -> str:
-    artifact_path = _artifact_path(plan, output, node_id, artifact_name)
+    artifact = _artifact(plan, output, node_id, artifact_name)
     if artifact_name.endswith("_path"):
-        return artifact_path.as_posix()
+        return artifact.path.as_posix()
     if artifact_name.endswith("_size"):
-        return str(artifact_path.stat().st_size)
+        return str(artifact.size_bytes)
     if artifact_name.endswith("_sha256"):
-        return hashlib.sha256(artifact_path.read_bytes()).hexdigest()
-    return artifact_path.read_text(encoding="utf-8")
+        return artifact.sha256
+    return artifact.payload.decode("utf-8")
 
 
-def _artifact_path(
+def _artifact(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
     node_id: str,
     artifact_name: str,
-) -> Path:
+) -> VerifiedNodeArtifact:
     contract = _artifact_contract(plan, node_id)
+    request = NodeArtifactRequest(node_id, contract)
     if artifact_name in OUTPUT_ARTIFACT_KEYS:
-        return _resolve_contract_path(output.results_dir, contract.output_path)
+        return output.read_verified_node_artifact(request, "output")
     if artifact_name in FINDINGS_ARTIFACT_KEYS:
         if contract.findings_path is None:
             raise ValueError(f"Node '{node_id}' has no findings artifact locator.")
-        return _resolve_contract_path(output.results_dir, contract.findings_path)
+        return output.read_verified_node_artifact(request, "findings")
     raise ValueError(f"Unsupported artifact locator '{node_id}.{artifact_name}'.")
 
 
@@ -251,10 +267,3 @@ def _artifact_contract(plan: PreflightExecutionPlan, node_id: str) -> ArtifactCo
         if node.id == node_id:
             return node.artifact_contract
     raise ValueError(f"Compiled plan has no node artifact contract for '{node_id}'.")
-
-
-def _resolve_contract_path(root: Path, relative_path: str) -> Path:
-    path = Path(relative_path)
-    if path.is_absolute() or ".." in path.parts:
-        raise ValueError(f"Invalid compiled artifact path '{relative_path}'.")
-    return root / path

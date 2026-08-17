@@ -49,7 +49,7 @@ def collect_workspace_source_policy(
     real_execution: bool,
     invoker_capabilities: Mapping[str, object] | None = None,
 ) -> WorkspacePolicyCheck:
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     if not settings.workspace.enabled:
         return WorkspacePolicyCheck()
     if not workflow_has_selected_managed_workspaces(workflow, config):

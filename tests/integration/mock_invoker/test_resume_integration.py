@@ -41,7 +41,6 @@ def _write_config(path: Path, fixture_dir: Path) -> None:
                         "artifacts": {
                             "implementation": "filesystem",
                             "options": {
-                                "allowed_template_paths": [],
                                 "log_cli_output": True,
                             },
                         },

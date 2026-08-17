@@ -3,11 +3,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.architecture.safe_files import (
+    contained_regular_file,
+    ensure_contained_directory,
+)
 from crewplane.artifacts import safe_artifact_name
+from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
 from crewplane.core.review_contract import REQUIRED_EMPTY_SENTINEL
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..consensus import EvaluatedReviewResult
+from ..provider_call import read_bound_invocation_output
 from .types import (
     REVIEW_LOOP_STATUS_FILE,
     ExecutorRoundArtifact,
@@ -36,34 +42,26 @@ def _write_review_state_file(
     file_name: str,
     content: str,
 ) -> Path:
-    review_state_dir = _review_state_dir(artifact_dir)
-    review_state_dir.mkdir(parents=True, exist_ok=True)
+    review_state_dir = ensure_contained_directory(artifact_dir, "review-state")
     file_path = review_state_dir / file_name
-    file_path.write_text(content, encoding="utf-8")
-    return file_path
+    return atomic_write_text(file_path, content)
 
 
 def review_loop_status_path(node_dir: Path) -> Path:
     return _review_state_dir(node_dir) / REVIEW_LOOP_STATUS_FILE
 
 
-def persist_review_evaluation(
+def persist_review_evaluation_artifacts(
     output_file: Path,
     evaluation: EvaluatedReviewResult,
 ) -> None:
     raw_output_path = _review_raw_output_path(output_file)
     metadata_path = _review_metadata_path(output_file)
-    raw_output_path.write_text(evaluation.raw_text, encoding="utf-8")
-    metadata_path.write_text(
-        json.dumps(
-            evaluation.to_metadata_dict(),
-            allow_nan=False,
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
+    atomic_write_text(raw_output_path, evaluation.raw_text)
+    atomic_write_json(
+        metadata_path,
+        evaluation.to_metadata_dict(),
     )
-    output_file.write_text(evaluation.normalized_markdown, encoding="utf-8")
 
 
 def _has_unresolved_review_issues(evaluation: EvaluatedReviewResult) -> bool:
@@ -272,11 +270,39 @@ def _status_output_entry(
     artifact: ExecutorRoundArtifact | ReviewerRoundArtifact,
     role: ProviderRole,
 ) -> ReviewLoopStatusOutputEntry:
+    try:
+        relative_path = artifact.output_file.relative_to(node_dir).as_posix()
+    except ValueError as exc:
+        raise ValueError(
+            f"Review output for task '{artifact.task_id}' is outside its node stage."
+        ) from exc
+    safe_output = contained_regular_file(node_dir, relative_path)
+    if safe_output is None:
+        raise ValueError(
+            f"Review output for task '{artifact.task_id}' is not a safe regular file."
+        )
+    if artifact.output_signature is None:
+        raise ValueError(
+            f"Review output for task '{artifact.task_id}' has no bound runtime "
+            "publication."
+        )
+    try:
+        read_bound_invocation_output(safe_output, artifact.output_signature)
+    except RuntimeError as exc:
+        raise ValueError(
+            f"Review output for task '{artifact.task_id}' does not match its "
+            "bound runtime publication."
+        ) from exc
+    size_bytes, sha256 = artifact.output_signature
     return {
         "task_id": artifact.task_id,
         "provider": artifact.provider.provider,
         "role": role,
-        "path": str(artifact.output_file.relative_to(node_dir)),
+        "path": relative_path,
+        "sha256": sha256,
+        "size_bytes": size_bytes,
+        "audit_round_num": artifact.audit_round_num,
+        "round_num": artifact.round_num,
     }
 
 
@@ -285,10 +311,12 @@ def build_review_loop_status_payload(
     node_dir: Path,
     progress: ReviewLoopProgress,
 ) -> ReviewLoopStatusPayload:
+    selected_round_num = progress.selected_round_num or _selected_round_num(progress)
     return {
         "node_id": node_id,
         "executed_audit_rounds": progress.executed_audit_rounds,
-        "final_local_round_num": progress.last_round_num,
+        "attempted_local_round_num": progress.last_round_num,
+        "final_local_round_num": selected_round_num,
         "consensus_reached": progress.consensus_reached,
         "continued_after_consensus_exhaustion": progress.continued_after_exhaustion,
         "invalid_candidate_round_count": progress.invalid_candidate_round_count,
@@ -305,15 +333,20 @@ def build_review_loop_status_payload(
     }
 
 
+def _selected_round_num(progress: ReviewLoopProgress) -> int:
+    artifacts = [
+        *(progress.latest_executor_outputs or []),
+        *progress.latest_reviewer_outputs,
+    ]
+    if not artifacts:
+        return 0
+    return artifacts[0].round_num
+
+
 def persist_review_loop_status(
     node_dir: Path,
     payload: ReviewLoopStatusPayload,
 ) -> Path:
-    review_state_dir = _review_state_dir(node_dir)
-    review_state_dir.mkdir(parents=True, exist_ok=True)
+    ensure_contained_directory(node_dir, "review-state")
     status_path = review_loop_status_path(node_dir)
-    status_path.write_text(
-        json.dumps(payload, allow_nan=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    return status_path
+    return atomic_write_json(status_path, payload)

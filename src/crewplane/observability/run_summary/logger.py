@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from collections import deque
+from pathlib import Path
 from threading import Lock
 from typing import cast
 
@@ -9,6 +11,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import ensure_single_link_regular_file
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.observability.events import (
     ExecutionEvent,
@@ -33,6 +36,9 @@ from .models import (
 from .spend import provider_token_aggregates
 
 MAX_RETAINED_SUMMARY_EVENTS = 2_000
+_TERMINAL_EVENT_TYPES = frozenset(
+    {"workflow_finished", "workflow_failed", "workflow_cancelled"}
+)
 
 
 class PersistentRunLogger:
@@ -69,8 +75,8 @@ class PersistentRunLogger:
             raise RuntimeError("Persistent run logger cannot be restarted.")
         self._workflow_name = context.workflow_topology.workflow_name
         self._run_id = context.run_id
-        self._event_log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._event_log_path.write_text("", encoding="utf-8")
+        event_log_path = ensure_single_link_regular_file(self._event_log_path)
+        atomic_write_text(event_log_path, "", ensure_parent=False)
         with self._lock:
             self._events = deque(maxlen=MAX_RETAINED_SUMMARY_EVENTS)
             self._dropped_event_count = 0
@@ -171,9 +177,18 @@ class PersistentRunLogger:
             self._latest_snapshot = cast(DashboardSnapshot, snapshot)
             if event is None:
                 return
+            event_log_path = ensure_single_link_regular_file(self._event_log_path)
+            event_line = format_execution_event_log_line(event)
+            if event.event_type in _TERMINAL_EVENT_TYPES and _event_line_is_durable(
+                event_log_path,
+                event_line,
+            ):
+                return
             self._record_event_summary(event)
-            with self._event_log_path.open("a", encoding="utf-8") as handle:
-                handle.write(format_execution_event_log_line(event))
+            _append_event_log_line(
+                event_log_path,
+                event_line,
+            )
 
     def stop(self, result: RunResult) -> None:
         if self._lifecycle == PersistentLoggerLifecycle.NEW:
@@ -218,12 +233,29 @@ class PersistentRunLogger:
             if self._lifecycle not in allowed_lifecycles:
                 return
             self._record_event_summary(event)
-            self._event_log_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._event_log_path.open("a", encoding="utf-8") as handle:
-                handle.write(format_execution_event_log_line(event))
+            event_log_path = ensure_single_link_regular_file(self._event_log_path)
+            _append_event_log_line(
+                event_log_path,
+                format_execution_event_log_line(event),
+            )
 
     def _record_event_summary(self, event: ExecutionEvent) -> None:
         self._summary_accumulator.record(event)
         if len(self._events) == MAX_RETAINED_SUMMARY_EVENTS:
             self._dropped_event_count += 1
         self._events.append(event)
+
+
+def _append_event_log_line(path: Path, line: str) -> None:
+    flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+        handle.write(line)
+
+
+def _event_line_is_durable(path: Path, line: str) -> bool:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    expected_line = line.encode("utf-8")
+    with os.fdopen(descriptor, "rb") as handle:
+        return any(durable_line == expected_line for durable_line in handle)

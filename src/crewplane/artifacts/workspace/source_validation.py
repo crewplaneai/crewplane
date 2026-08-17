@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.ports.artifacts import StageTaskSpec
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 
-from ..results.review_loop_status import resolve_review_loop_status
+from ..results.review_loop_status import (
+    resolve_review_loop_status,
+    task_specs_for_producers,
+)
 from ..results.selection import parse_audit_round, parse_task_round
 from ..run_history import RunHistoryRecord
-from ..safe_files import contained_regular_file
 from .state.fields import (
     int_field,
     nullable_int_field,
@@ -296,8 +300,17 @@ def _canonical_lineage_payload(
     relative_status_path = f"{stage_path}/review-state/review-loop-status.json"
     safe_status_path = contained_regular_file(run.run_dir, relative_status_path)
     if safe_status_path is not None:
-        return _review_loop_canonical_payload(stage_dir, node.id, payloads)
+        return _review_loop_canonical_payload(
+            stage_dir,
+            node.id,
+            payloads,
+            task_specs_for_producers(node.provider_records),
+        )
     if (stage_dir / "review-state" / "review-loop-status.json").exists():
+        return None
+    if any(
+        provider.role == ProviderRole.REVIEWER for provider in node.provider_records
+    ):
         return None
     return _latest_lineage_payload(payloads)
 
@@ -306,9 +319,10 @@ def _review_loop_canonical_payload(
     stage_dir: Path,
     node_id: str,
     payloads: tuple[dict[str, object], ...],
+    task_specs: tuple[StageTaskSpec, ...],
 ) -> dict[str, object] | None:
     try:
-        resolved = resolve_review_loop_status(node_id, stage_dir)
+        resolved = resolve_review_loop_status(node_id, stage_dir, task_specs)
     except RuntimeError:
         return None
     if resolved is None or len(resolved.canonical_executor_outputs) != 1:

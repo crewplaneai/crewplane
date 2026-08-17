@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+from crewplane.architecture.safe_files import contained_regular_file
+
 from ..naming import build_generated_file_result_dir_name
-from ..safe_files import contained_regular_file
 from .detection import (
     GENERATED_FILE_SNAPSHOT_METADATA_NAME,
     GENERATED_FILE_SOURCE_METADATA_NAME,
@@ -143,9 +144,10 @@ def snapshot_generated_file_workspace(
     candidate_files: Sequence[Path] | None = None,
     explicit_claims_only: bool = False,
     on_file_published: Callable[[Path, tuple[int, str]], None] | None = None,
+    snapshot_root: Path | None = None,
 ) -> Path:
     content = output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
-    snapshot_root = generated_file_source_root(output_file)
+    selected_snapshot_root = snapshot_root or generated_file_source_root(output_file)
     resolved_workspace_root = workspace_root.resolve(strict=True)
     detector = GeneratedFileReferenceDetector(resolved_workspace_root)
     explicit_files = detector.detect_explicit_section(content)
@@ -172,20 +174,23 @@ def snapshot_generated_file_workspace(
             rejection_detail_limit=MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS,
         ),
     )
-    _replace_generated_file_source_root(snapshot_root)
+    _replace_generated_file_source_root(selected_snapshot_root)
     source_metadata_signature = _write_generated_file_source_metadata(
-        snapshot_root,
+        selected_snapshot_root,
         resolved_workspace_root,
     )
     if on_file_published is not None:
         on_file_published(
-            snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME,
+            selected_snapshot_root / GENERATED_FILE_SOURCE_METADATA_NAME,
             source_metadata_signature,
         )
     copied_candidates: list[GeneratedFileSnapshotCandidate] = []
     for candidate in selection.candidates:
-        target = snapshot_root.joinpath(*candidate.relative_path.parts)
-        _ensure_contained_directory(snapshot_root, candidate.relative_path.parent)
+        target = selected_snapshot_root.joinpath(*candidate.relative_path.parts)
+        _ensure_contained_directory(
+            selected_snapshot_root,
+            candidate.relative_path.parent,
+        )
         try:
             target_signature = copy_generated_file_snapshot_candidate(
                 candidate,
@@ -205,7 +210,7 @@ def snapshot_generated_file_workspace(
         if on_file_published is not None:
             on_file_published(target, target_signature)
     snapshot_metadata_signature = _write_generated_file_snapshot_metadata(
-        snapshot_root,
+        selected_snapshot_root,
         [
             generated_file_snapshot_candidate_metadata(candidate)
             for candidate in copied_candidates
@@ -214,10 +219,10 @@ def snapshot_generated_file_workspace(
     )
     if on_file_published is not None:
         on_file_published(
-            snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME,
+            selected_snapshot_root / GENERATED_FILE_SNAPSHOT_METADATA_NAME,
             snapshot_metadata_signature,
         )
-    return snapshot_root
+    return selected_snapshot_root
 
 
 def _ordered_generated_files_for_content(

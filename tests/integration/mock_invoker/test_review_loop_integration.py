@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import yaml
 from rich.console import Console
 
+from crewplane.architecture.contracts import build_result_filename
 from crewplane.bootstrap.container import build_runtime_components
 from crewplane.core.config import Config, load_config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -19,6 +21,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.runtime.execution.workflow import execute_workflow
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
 
@@ -119,7 +122,9 @@ def test_mock_invoker_review_loop_integration_groups_multi_audit_round_artifacts
         )
     )
 
-    stage_dir = components.artifact_store.get_stage_dir("review.iterate")
+    stage_dir = components.artifact_store.get_node_dir(
+        node_artifact_request("review.iterate")
+    )
     assert stage_dir is not None
     audit_round_1 = stage_dir / "review-audit-round-1"
     audit_round_2 = stage_dir / "review-audit-round-2"
@@ -178,8 +183,8 @@ def test_mock_invoker_review_loop_integration_groups_multi_audit_round_artifacts
     assert (log_dir / "claude-reviewer-0-audit1-round2.log").exists()
     assert (log_dir / "claude-reviewer-0-audit2-round1.log").exists()
 
-    result_text = components.artifact_store.get_stage_output_path(
-        "review.iterate"
+    result_text = (
+        components.artifact_store.results_dir / build_result_filename("review.iterate")
     ).read_text(encoding="utf-8")
     assert "Review Inbox" not in result_text
     assert "## codex (executor)" in result_text
@@ -246,7 +251,9 @@ def test_mock_invoker_review_loop_integration_keeps_last_valid_candidate_after_i
         )
     )
 
-    stage_dir = components.artifact_store.get_stage_dir("review.drift")
+    stage_dir = components.artifact_store.get_node_dir(
+        node_artifact_request("review.drift")
+    )
     assert stage_dir is not None
     audit_round_1 = stage_dir / "review-audit-round-1"
     assert not (audit_round_1 / "claude_reviewer_0_round2.md").exists()
@@ -257,19 +264,24 @@ def test_mock_invoker_review_loop_integration_keeps_last_valid_candidate_after_i
         )
     )
     assert status_payload["invalid_candidate_round_count"] == 1
-    assert status_payload["artifact_drift_warning_count"] == 1
+    assert status_payload["artifact_drift_warning_count"] == 0
     assert status_payload["continued_after_consensus_exhaustion"] is False
-    assert status_payload["canonical_executor_outputs"] == [
-        {
-            "path": "review-audit-round-2/codex_executor_0_round1.md",
-            "provider": "codex",
-            "role": "executor",
-            "task_id": "codex_executor_0",
-        }
-    ]
+    canonical_output = status_payload["canonical_executor_outputs"][0]
+    assert canonical_output["path"] == (
+        "review-audit-round-2/codex_executor_0_round1.md"
+    )
+    assert canonical_output["provider"] == "codex"
+    assert canonical_output["role"] == "executor"
+    assert canonical_output["task_id"] == "codex_executor_0"
+    assert canonical_output["audit_round_num"] == 2
+    assert canonical_output["round_num"] == 1
+    canonical_path = stage_dir / canonical_output["path"]
+    canonical_bytes = canonical_path.read_bytes()
+    assert canonical_output["size_bytes"] == len(canonical_bytes)
+    assert canonical_output["sha256"] == hashlib.sha256(canonical_bytes).hexdigest()
 
-    result_text = components.artifact_store.get_stage_output_path(
-        "review.drift"
+    result_text = (
+        components.artifact_store.results_dir / build_result_filename("review.drift")
     ).read_text(encoding="utf-8")
     assert "Executor round 1 baseline candidate." in result_text
     assert "Updated prior artifact in place." not in result_text

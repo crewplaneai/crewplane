@@ -28,7 +28,7 @@ from crewplane.core.preflight.diagnostics import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.source import PreflightWorkflowSource
-from crewplane.observability import PersistentRunLogger
+from crewplane.observability import ObservabilityHub, PersistentRunLogger
 from crewplane.runtime.execution import execute_workflow
 from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
@@ -44,21 +44,15 @@ from .execution_helpers import (
     write_initial_run_manifest,
 )
 from .manifest import (
-    finalize_run_manifest,
     print_resume_context_message,
 )
 from .observability import (
-    EXTERNAL_CANCEL_REASON,
-    UI_STOP_CANCEL_REASON,
     ExecuteWorkflowCallable,
     ObservabilityHubFactory,
     WorkflowCancelledByUser,
     WorkflowWarningRecorder,
     execute_workflow_with_observability,
     print_end_of_run_summary,
-    refresh_cancelled_run_summary,
-    refresh_failed_run_summary,
-    refresh_successful_run_summary,
 )
 from .preflight import (
     compile_preview,
@@ -71,6 +65,10 @@ from .resume import (
     build_resume_plan,
     require_filesystem_artifacts_backend,
     workflow_identity_for_source,
+)
+from .terminalization import (
+    TerminalizationCoordinator,
+    commit_terminalization_with_retry,
 )
 from .topology import workflow_topology_from_plan, workflow_topology_from_preview
 
@@ -99,36 +97,6 @@ def _raise_runtime_config_preflight_failure(
     raise typer.Exit(code=1) from exc
 
 
-def _finalize_cancelled_run(
-    context: WorkflowRunContext,
-    output: ArtifactStorePort,
-    warning_recorder: WorkflowWarningRecorder,
-    cancel_reason: str,
-) -> None:
-    finalize_run_manifest(output, "cancelled", cancel_reason=cancel_reason)
-    summary_logger = refresh_cancelled_run_summary(
-        warning_recorder.persistent_logger,
-        cancel_reason,
-    )
-    print_end_of_run_summary(context.console, summary_logger)
-
-
-def _finalize_failed_run(
-    context: WorkflowRunContext,
-    output: ArtifactStorePort,
-    warning_recorder: WorkflowWarningRecorder,
-    exc: Exception,
-) -> None:
-    finalize_run_manifest(output, "failed", failure_message=str(exc))
-    summary_logger = refresh_failed_run_summary(
-        warning_recorder.persistent_logger,
-        context.workflow,
-        warning_recorder.run_id,
-        exc,
-    )
-    print_end_of_run_summary(context.console, summary_logger)
-
-
 async def run_and_finalize_workflow(
     context: WorkflowRunContext,
     output: ArtifactStorePort,
@@ -139,10 +107,19 @@ async def run_and_finalize_workflow(
     warning_recorder: WorkflowWarningRecorder,
     observability_hub_cls: ObservabilityHubFactory | None,
     workflow_identity: str,
+    terminalization: TerminalizationCoordinator,
     resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
+    branch_export_records = []
+    persistent_logger: PersistentRunLogger | None = None
+
+    def complete_scheduler_postconditions() -> None:
+        nonlocal branch_export_records
+        branch_export_records = fulfill_branch_exports(plan, output)
+
     try:
         persistent_logger = PersistentRunLogger(output)
+        terminalization.bind_summary_logger(persistent_logger)
         warning_recorder.bind_logger(persistent_logger)
         await execute_workflow_with_observability(
             components,
@@ -154,41 +131,48 @@ async def run_and_finalize_workflow(
             persistent_logger,
             warning_recorder,
             observability_hub_cls,
+            on_scheduler_succeeded=complete_scheduler_postconditions,
+            terminalization=terminalization,
             workflow_identity=workflow_identity,
             resumed_node_ids=resumed_node_ids,
         )
     except asyncio.CancelledError:
-        _finalize_cancelled_run(
-            context,
-            output,
-            warning_recorder,
-            EXTERNAL_CANCEL_REASON,
-        )
+        print_end_of_run_summary(context.console, persistent_logger)
         raise
     except WorkflowCancelledByUser:
-        _finalize_cancelled_run(
-            context,
-            output,
-            warning_recorder,
-            UI_STOP_CANCEL_REASON,
-        )
+        print_end_of_run_summary(context.console, persistent_logger)
         raise
-    except Exception as exc:
-        _finalize_failed_run(context, output, warning_recorder, exc)
+    except Exception:
+        print_end_of_run_summary(context.console, persistent_logger)
         raise
-
-    try:
-        branch_export_records = fulfill_branch_exports(plan, output)
-    except Exception as exc:
-        _finalize_failed_run(context, output, warning_recorder, exc)
-        raise
-    finalize_run_manifest(
-        output,
-        "succeeded",
-    )
     print_branch_export_fulfillments(branch_export_records, context.console)
-    summary_logger = refresh_successful_run_summary(warning_recorder.persistent_logger)
-    print_end_of_run_summary(context.console, summary_logger)
+    print_end_of_run_summary(context.console, persistent_logger)
+
+
+def terminalize_component_setup_failure(
+    output: ArtifactStorePort,
+    plan: PreflightExecutionPlan,
+    warning_recorder: WorkflowWarningRecorder,
+    terminalization: TerminalizationCoordinator,
+    exc: Exception,
+    observability_hub_cls: ObservabilityHubFactory | None,
+) -> None:
+    persistent_logger = PersistentRunLogger(output)
+    terminalization.bind_summary_logger(persistent_logger)
+    warning_recorder.bind_logger(persistent_logger)
+    observability_hub_factory = (
+        ObservabilityHub if observability_hub_cls is None else observability_hub_cls
+    )
+    with observability_hub_factory(
+        workflow_topology=workflow_topology_from_plan(plan),
+        run_id=output.run_id,
+        observers=[persistent_logger],
+        refresh_per_second=0,
+        warning_sink=warning_recorder.sink,
+    ) as hub:
+        warning_recorder.flush_queued()
+        commit_terminalization_with_retry(terminalization, hub, "failed", str(exc))
+    terminalization.acknowledge_observer_shutdown()
 
 
 async def execute_workflow_run(
@@ -255,6 +239,8 @@ async def execute_workflow_run(
         workflow_identity,
         preview.workflow_signature,
     )
+    terminalization: TerminalizationCoordinator | None = None
+    running_manifest_written = False
     try:
         resume_plan = build_resume_plan(
             config,
@@ -277,6 +263,12 @@ async def execute_workflow_run(
             source,
             resume_plan,
         )
+        running_manifest_written = True
+        terminalization = TerminalizationCoordinator(
+            output=output,
+            workflow_name=plan.workflow_name,
+            terminal_recovery_recorder=same_context_lock,
+        )
         try:
             if resume_plan.frontier is not None:
                 hydrate_resume_frontier(resume_plan.frontier, plan, output)
@@ -297,7 +289,14 @@ async def execute_workflow_run(
                 which_fn=which_fn,
             )
         except Exception as exc:
-            finalize_run_manifest(output, "failed", failure_message=str(exc))
+            terminalize_component_setup_failure(
+                output,
+                plan,
+                warning_recorder,
+                terminalization,
+                exc,
+                observability_hub_cls,
+            )
             raise
 
         await run_and_finalize_workflow(
@@ -310,7 +309,11 @@ async def execute_workflow_run(
             warning_recorder,
             observability_hub_cls,
             workflow_identity=resume_plan.workflow_identity,
+            terminalization=terminalization,
             resumed_node_ids=resume_plan.resumed_node_ids,
         )
     finally:
-        same_context_lock.release()
+        if not running_manifest_written or (
+            terminalization is not None and terminalization.committed
+        ):
+            same_context_lock.release()

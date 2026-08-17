@@ -14,6 +14,7 @@ from crewplane.architecture.contracts import (
     InvocationContext,
     JsonObject,
     LogPresentationDescriptor,
+    build_result_filename,
 )
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
@@ -30,6 +31,7 @@ from crewplane.runtime.agent.invoker import PlannedAgentInvoker
 from crewplane.runtime.execution import WorkflowExecutionError
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     SelectiveFailInvoker,
@@ -203,7 +205,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
 
             await execute_workflow(config, workflow, output, invoker=invoker)
 
-            input_node_dir = output.get_stage_dir("review-input")
+            input_node_dir = output.get_node_dir(node_artifact_request("review-input"))
             if input_node_dir is None:
                 self.fail("Expected input node directory to be created")
             self.assertEqual(
@@ -211,7 +213,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 "Raw findings from file",
             )
             self.assertEqual(
-                output.get_stage_output_path("review-input").read_text(
+                (output.results_dir / build_result_filename("review-input")).read_text(
                     encoding="utf-8"
                 ),
                 "Raw findings from file",
@@ -455,7 +457,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         class DefectiveOutputManager(OutputManager):
-            def finalize_stage(self, *args: object, **kwargs: object) -> object:
+            def finalize_node(self, *args: object, **kwargs: object) -> object:
                 del args, kwargs
                 raise RuntimeError("simulated finalize defect")
 
@@ -509,7 +511,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         class DefectiveOutputManager(OutputManager):
-            def finalize_stage(self, *args: object, **kwargs: object) -> object:
+            def finalize_node(self, *args: object, **kwargs: object) -> object:
                 del args, kwargs
                 raise RuntimeError("simulated finalize defect")
 

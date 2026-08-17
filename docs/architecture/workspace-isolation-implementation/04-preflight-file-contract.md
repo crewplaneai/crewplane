@@ -179,7 +179,8 @@ identities, rendered workspace-file digests, literal path resolution
 descriptors, and output artifact hashes through the ordinary artifact contract.
 
 Absolute paths remain blocked unless explicitly allowlisted through
-`settings.integrations.artifacts.options.allowed_template_paths`.
+`settings.file_access.allowed_template_paths`. This core-owned policy applies
+independently of the selected artifact adapter.
 
 Allowlisted absolute paths are external static resources:
 

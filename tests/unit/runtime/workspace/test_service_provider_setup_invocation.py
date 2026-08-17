@@ -32,6 +32,7 @@ from crewplane.runtime.execution.runtime_context import CompiledRuntimeContext
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -85,7 +86,7 @@ def test_worktree_retry_reset_reruns_selected_setup(tmp_path: Path) -> None:
         ],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
@@ -138,7 +139,7 @@ def test_worktree_setup_failure_records_retained_when_cleanup_fails(
         [[sys.executable, "-c", "import sys; sys.exit(7)"]],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     def fail_cleanup(source: object, workspace_path: Path) -> None:
         del source
@@ -158,7 +159,8 @@ def test_worktree_setup_failure_records_retained_when_cleanup_fails(
         )
 
     state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     assert state["status"] == "failed"
     assert state["workspace"]["retention"] == "retained"
@@ -175,7 +177,7 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True, kind="worktree")
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     def fail_snapshot_entries(
         path: Path, policy: object | None = None
@@ -206,7 +208,8 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
         )
 
     state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     assert state["status"] == "failed"
     assert state["workspace"]["retention"] == "retained"
@@ -251,12 +254,12 @@ async def _run_provider_invocation_runs_selected_worktree_setup_before_provider(
         ],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
     )
-    node_dir = output.get_stage_dir("implement")
+    node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None
     invoker = SetupMarkerInvoker(expect_marker=True)
 
@@ -323,7 +326,7 @@ async def _run_worktree_retry_reset_cancellation_terminates_retry_setup(
         [[sys.executable, "-c", setup_script]],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
@@ -400,12 +403,12 @@ async def _run_provider_invocation_setup_failure_prevents_provider_call(
         [[sys.executable, "-c", "import sys; sys.exit(7)"]],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
     )
-    node_dir = output.get_stage_dir("implement")
+    node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None
     invoker = SetupMarkerInvoker(expect_marker=True)
     output_file = node_dir / "alpha_round1.md"
@@ -464,12 +467,12 @@ async def _run_provider_invocation_setup_cancellation_terminates_setup_process_g
         [[sys.executable, "-c", parent_script]],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
     )
-    node_dir = output.get_stage_dir("implement")
+    node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None
     invoker = SetupMarkerInvoker(expect_marker=True)
     output_file = node_dir / "alpha_round1.md"
@@ -550,12 +553,12 @@ async def _run_provider_invocation_skips_unselected_setup_profile_for_snapshot(
         ],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=SecretContext(),
     )
-    node_dir = output.get_stage_dir("implement")
+    node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None
     invoker = SetupMarkerInvoker(expect_marker=False)
 

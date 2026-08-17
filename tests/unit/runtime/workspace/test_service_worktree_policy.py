@@ -7,6 +7,7 @@ import pytest
 
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     run_git_text,
@@ -41,7 +42,7 @@ def test_worktree_capture_rejects_common_policy_file_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -87,7 +88,7 @@ def test_worktree_capture_rejects_common_object_behavior_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -139,7 +140,7 @@ def test_worktree_capture_rejects_sibling_result_ref_updates(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -176,7 +177,7 @@ def test_worktree_capture_allows_unprotected_branch_ref_updates(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -213,7 +214,7 @@ def test_worktree_capture_rejects_ignored_gitattributes_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -247,7 +248,7 @@ def test_worktree_capture_rejects_gitignore_that_hides_result_files(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -283,7 +284,7 @@ def test_worktree_capture_rejects_attributes_for_new_files(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),

@@ -184,6 +184,7 @@ The lifecycle event set is:
 - `workflow_started`
 - `workflow_finished`
 - `workflow_failed`
+- `workflow_cancelled`
 - `node_started`
 - `node_finished`
 - `node_failed`

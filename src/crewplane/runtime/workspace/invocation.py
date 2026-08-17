@@ -4,6 +4,7 @@ import hashlib
 import re
 from pathlib import Path
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -31,9 +32,10 @@ def workspace_state_path(
     audit_round_num: int | None,
     round_num: int = 1,
 ) -> Path:
-    stage_dir = output.get_stage_dir(node.id)
+    request = NodeArtifactRequest(node.id, node.artifact_contract)
+    stage_dir = output.get_node_dir(request)
     if stage_dir is None:
-        stage_dir = output.create_stage_dir(node.id)
+        stage_dir = output.create_node_dir(request)
     if len(node.provider_records) == 1 and audit_round_num is None and round_num == 1:
         return stage_dir / "workspace-state.json"
     return stage_dir / f"workspace-state-{slug}.json"

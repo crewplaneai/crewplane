@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from crewplane.cli.app import app
 from crewplane.cli.cleanup import cleanup_repository_id, load_workspace_statuses
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.resume import make_run_manifest, write_run_manifest
 
 
 def test_cleanup_workspaces_defaults_to_advisory_dry_run(tmp_path: Path) -> None:
@@ -45,6 +46,56 @@ def test_cleanup_workspaces_yes_removes_paths(tmp_path: Path) -> None:
     assert not workspace_path.exists()
 
 
+def test_cleanup_workspaces_yes_retains_active_run_assets(tmp_path: Path) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+        run_status="running",
+    )
+    _git(project_root, "update-ref", "refs/crewplane/runs/run-1/node/a", "HEAD")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Removed 0 workspace path(s)" in result.output
+    assert "retained: workspace state is running" in result.output
+    assert workspace_path.exists()
+    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") != ""
+
+
+def test_cleanup_workspaces_yes_allows_distinct_terminal_node_and_run_states(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    write_run_manifest(
+        project_root / ".crewplane",
+        make_run_manifest(
+            run_id="run-1",
+            run_key_name="run-1",
+            status="failed",
+        ),
+    )
+    _git(project_root, "update-ref", "refs/crewplane/runs/run-1/node/a", "HEAD")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Removed 1 workspace path(s)" in result.output
+    assert not workspace_path.exists()
+    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") == ""
+
+
 def test_cleanup_workspaces_yes_removes_run_owned_refs(tmp_path: Path) -> None:
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
@@ -65,6 +116,66 @@ def test_cleanup_workspaces_yes_removes_run_owned_refs(tmp_path: Path) -> None:
     assert "Removed 1 run-owned Git ref(s)" in result.output
     assert not workspace_path.exists()
     assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") == ""
+
+
+def test_cleanup_workspaces_orphans_removes_only_terminal_run_orphan(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    orphan_path = workspace_path.parent / "orphan-round1"
+    orphan_path.mkdir()
+    (orphan_path / "file.txt").write_text("orphan", encoding="utf-8")
+    _git(project_root, "update-ref", "refs/crewplane/runs/run-1/node/a", "HEAD")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cleanup",
+            "workspaces",
+            "--config",
+            config_path.as_posix(),
+            "--orphans",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Removed 1 workspace path(s)" in result.output
+    assert workspace_path.exists()
+    assert not orphan_path.exists()
+    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") != ""
+
+
+def test_cleanup_workspaces_orphans_retains_unverifiable_run(tmp_path: Path) -> None:
+    _, config_path, orphan_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+        create_workspace=False,
+    )
+    orphan_path.mkdir(parents=True)
+    (orphan_path / "file.txt").write_text("orphan", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cleanup",
+            "workspaces",
+            "--config",
+            config_path.as_posix(),
+            "--orphans",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Removed 0 workspace path(s)" in result.output
+    assert "run manifest is missing or unsafe" in result.output
+    assert orphan_path.exists()
 
 
 def test_cleanup_workspaces_yes_ignores_symlink_workspace_candidates(
@@ -114,10 +225,35 @@ def test_cleanup_workspaces_all_projects_allows_non_git_project(
     )
 
     assert result.exit_code == 0
+    assert "cannot verify cross-project run ownership or activity" in result.output
     assert "Would remove 1 workspace path(s)" in result.output
     assert "status=unknown" in result.output
     assert "status=orphan" not in result.output
     assert workspace_path.exists()
+
+
+def test_cleanup_workspaces_all_projects_yes_is_explicit_global_override(
+    tmp_path: Path,
+) -> None:
+    _, config_path, workspace_path = _cleanup_project(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cleanup",
+            "workspaces",
+            "--config",
+            config_path.as_posix(),
+            "--all-projects",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "cannot verify cross-project run ownership or activity" in result.output
+    assert "Removed 1 workspace path(s)" in result.output
+    assert not workspace_path.exists()
 
 
 def test_cleanup_workspaces_all_projects_rejects_orphan_filter(
@@ -238,6 +374,7 @@ def _cleanup_project(
     tmp_path: Path,
     initialize_git: bool = False,
     create_workspace: bool = True,
+    run_status: str = "succeeded",
 ) -> tuple[Path, Path, Path]:
     project_root = tmp_path / "project"
     state_dir = project_root / ".crewplane"
@@ -260,6 +397,29 @@ def _cleanup_project(
         workspace_path.mkdir(parents=True)
         (workspace_path / "file.txt").write_text("payload", encoding="utf-8")
     state_dir.mkdir(parents=True)
+    if create_workspace:
+        state_path = (
+            state_dir / "execution-stages" / "run-1" / "node" / "workspace-state.json"
+        )
+        state_path.parent.mkdir(parents=True)
+        state_path.write_text(
+            json.dumps(
+                {
+                    "run_key_name": "run-1",
+                    "status": run_status,
+                    "workspace": {"cache_key": workspace_path.name},
+                }
+            ),
+            encoding="utf-8",
+        )
+        write_run_manifest(
+            state_dir,
+            make_run_manifest(
+                run_id="run-1",
+                run_key_name="run-1",
+                status=run_status,
+            ),
+        )
     config_path = state_dir / "config.yml"
     config_path.write_text(
         "\n".join(

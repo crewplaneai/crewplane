@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from crewplane.artifacts.atomic import atomic_write_text
+
 from ..generated_files.catalog import (
     GeneratedFileLink,
     GeneratedFileReferenceDetector,
@@ -20,8 +22,8 @@ def write_stage_result_file(
     workspace_root: Path | None,
     generated_file_detector: GeneratedFileReferenceDetector | None,
 ) -> None:
-    result_file.parent.mkdir(parents=True, exist_ok=True)
-    result_file.write_text(
+    atomic_write_text(
+        result_file,
         build_stage_result_document(
             result_file,
             stage_name,
@@ -31,7 +33,6 @@ def write_stage_result_file(
             workspace_root,
             generated_file_detector,
         ),
-        encoding="utf-8",
     )
 
 

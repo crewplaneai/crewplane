@@ -9,6 +9,7 @@ import pytest
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -52,8 +53,8 @@ def test_reused_worktree_setup_runs_after_reset_and_clean(
         ],
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -79,7 +80,8 @@ def test_reused_worktree_setup_runs_after_reset_and_clean(
             encoding="utf-8"
         ) == "after-reset"
         state = read_json_object(
-            output.create_stage_dir("verify") / "workspace-state.json"
+            output.create_node_dir(node_artifact_request("verify"))
+            / "workspace-state.json"
         )
         assert state["reuse"]["strategy"] == "incremental_reset"
         assert state["setup"]["status"] == "succeeded"

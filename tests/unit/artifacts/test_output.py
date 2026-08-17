@@ -11,6 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from crewplane.architecture.contracts import (
+    NodeArtifactRequest,
+    build_findings_filename,
+    build_result_filename,
+)
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
     generated_file_snapshot_rejection_summary,
@@ -28,9 +33,11 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
+    RenderPlan,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 
 
 def _workflow_signature(label: str) -> str:
@@ -41,6 +48,7 @@ def _workflow_signature(label: str) -> str:
 
 def _minimal_plan(output: OutputManager) -> PreflightExecutionPlan:
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id=output.run_id,
         run_key_name=output.run_key_name,
         project_root=output.base_dir.as_posix(),
@@ -55,7 +63,12 @@ def _minimal_plan(output: OutputManager) -> PreflightExecutionPlan:
                 id="build.node",
                 mode="sequential",
                 render_plan_id="build.node",
-                artifact_contract=ArtifactContract(output_path="build.node-result.md"),
+                artifact_contract=ArtifactContract(
+                    stage_path="build.node",
+                    output_path="build.node-result.md",
+                    log_path="build.node/logs",
+                    result_path="build.node-result.md",
+                ),
                 execution_policy=ExecutionPolicy(),
                 provider_records=[
                     ProviderRecord(
@@ -70,7 +83,7 @@ def _minimal_plan(output: OutputManager) -> PreflightExecutionPlan:
                 ],
             )
         ],
-        render_plans=[],
+        render_plans=[RenderPlan(render_plan_id="build.node", node_id="build.node")],
         static_resources=[],
         token_catalog=[],
         dependency_graph=[],
@@ -105,6 +118,59 @@ def _running_manifest(
 
 
 class OutputManagerTests(unittest.TestCase):
+    def test_legacy_stage_path_and_resume_methods_remain_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
+
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
+            resume_path = output.write_node_resume_source(
+                node_artifact_request("build.node"),
+                {"source": "run-a"},
+            )
+
+            self.assertEqual(
+                output.get_node_dir(node_artifact_request("build.node")), stage_dir
+            )
+            self.assertEqual(
+                output.get_node_output_path(node_artifact_request("build.node")),
+                output.results_dir / build_result_filename("build.node"),
+            )
+            self.assertEqual(
+                output.get_node_findings_path(
+                    node_artifact_request("build.node", findings_enabled=True)
+                ),
+                output.results_dir / build_findings_filename("build.node"),
+            )
+            self.assertEqual(resume_path, stage_dir / "resume-source.json")
+            self.assertEqual(
+                json.loads(resume_path.read_text(encoding="utf-8")),
+                {"source": "run-a"},
+            )
+
+    def test_compiled_stage_directory_rejects_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            outside = base_dir / "outside"
+            outside.mkdir()
+            stage_link = output.stages_dir / "build.node"
+            try:
+                stage_link.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+
+            request = NodeArtifactRequest(
+                "build.node",
+                ArtifactContract(
+                    stage_path="build.node",
+                    output_path="build.node-result.md",
+                    log_path="build.node/logs",
+                    result_path="build.node-result.md",
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                output.create_node_dir(request)
+
     def test_run_allocation_does_not_create_results_until_finalization(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             base_dir = Path(tmp_dir)
@@ -113,24 +179,59 @@ class OutputManagerTests(unittest.TestCase):
             self.assertTrue(output.stages_dir.exists())
             self.assertFalse((base_dir / "execution-results").exists())
 
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
-            output.finalize_stage("build.node")
+            output.finalize_node(node_artifact_request("build.node"))
 
             self.assertTrue(output.results_dir.exists())
+
+    def test_compiled_result_path_rejects_symlinked_results_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            outside = base_dir / "outside"
+            outside.mkdir()
+            results_root = base_dir / "execution-results"
+            try:
+                results_root.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                output.get_node_output_path(node_artifact_request("build.node"))
+
+            self.assertFalse((outside / output.run_key_name).exists())
+
+    def test_compiled_result_path_rejects_symlinked_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base_dir = Path(tmp_dir)
+            output = OutputManager("Workflow", base_dir=base_dir)
+            outside = base_dir / "outside.md"
+            outside.write_text("outside", encoding="utf-8")
+            result_path = output.results_dir / build_result_filename("build.node")
+            result_path.parent.mkdir(parents=True)
+            try:
+                result_path.symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+
+            with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+                output.get_node_output_path(node_artifact_request("build.node"))
+
+            self.assertEqual(outside.read_text(encoding="utf-8"), "outside")
 
     def test_finalize_stage_consolidates_task_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
             (stage_dir / "beta_round1.md").write_text("beta", encoding="utf-8")
 
-            result = output.finalize_stage("build.node")
+            result = output.finalize_node(node_artifact_request("build.node"))
 
-            result_text = output.get_stage_output_path("build.node").read_text(
-                encoding="utf-8"
-            )
+            result_text = (
+                output.results_dir / build_result_filename("build.node")
+            ).read_text(encoding="utf-8")
             self.assertEqual(result.stage_name, "build.node")
             self.assertIn("alpha", result_text)
             self.assertIn("beta", result_text)
@@ -141,17 +242,17 @@ class OutputManagerTests(unittest.TestCase):
             output = OutputManager("Workflow", base_dir=base_dir)
             (base_dir / "src").mkdir()
             (base_dir / "src" / "app.txt").write_text("content", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             (stage_dir / "alpha_round1.md").write_text(
                 "Updated `src/app.txt`.\n",
                 encoding="utf-8",
             )
 
-            output.finalize_stage("build.node")
+            output.finalize_node(node_artifact_request("build.node"))
 
-            result_text = output.get_stage_output_path("build.node").read_text(
-                encoding="utf-8"
-            )
+            result_text = (
+                output.results_dir / build_result_filename("build.node")
+            ).read_text(encoding="utf-8")
             self.assertIn("## Generated Files", result_text)
             self.assertIn("[src/app.txt]", result_text)
 
@@ -172,23 +273,23 @@ class OutputManagerTests(unittest.TestCase):
                 "beta content",
                 encoding="utf-8",
             )
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             beta_output = stage_dir / "beta_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
             beta_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
 
-            result = output.finalize_stage(
-                "build.node",
+            result = output.finalize_node(
+                node_artifact_request("build.node"),
                 generated_file_workspace_roots={
                     alpha_output.resolve(strict=False): alpha_workspace,
                     beta_output.resolve(strict=False): beta_workspace,
                 },
             )
 
-            result_text = output.get_stage_output_path("build.node").read_text(
-                encoding="utf-8"
-            )
+            result_text = (
+                output.results_dir / build_result_filename("build.node")
+            ).read_text(encoding="utf-8")
             self.assertIn("[alpha/src/app.txt]", result_text)
             self.assertIn("[beta/src/app.txt]", result_text)
             self.assertEqual(len(result.generated_files), 2)
@@ -225,7 +326,7 @@ class OutputManagerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (workspace / "good.txt").write_text("good content", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             provider_output = stage_dir / "alpha_round1.md"
             provider_output.write_text(
                 "## Generated Files\n\n- `blocked/app.txt`\n- `good.txt`\n",
@@ -242,8 +343,8 @@ class OutputManagerTests(unittest.TestCase):
             blocking_path.parent.mkdir(parents=True, exist_ok=True)
             blocking_path.write_text("preserve me", encoding="utf-8")
 
-            result = output.finalize_stage(
-                "build.node",
+            result = output.finalize_node(
+                node_artifact_request("build.node"),
                 generated_file_workspace_roots={
                     provider_output.resolve(strict=False): snapshot,
                 },
@@ -277,7 +378,7 @@ class OutputManagerTests(unittest.TestCase):
             workspace = base_dir / "workspace"
             workspace.mkdir()
             (workspace / "app.txt").write_text("complete", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             provider_output = stage_dir / "alpha_round1.md"
             provider_output.write_text(
                 "## Generated Files\n\n- `app.txt`\n",
@@ -293,8 +394,8 @@ class OutputManagerTests(unittest.TestCase):
                 "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
                 side_effect=fail_after_partial_copy,
             ):
-                result = output.finalize_stage(
-                    "build.node",
+                result = output.finalize_node(
+                    node_artifact_request("build.node"),
                     generated_file_workspace_roots={
                         provider_output.resolve(strict=False): snapshot,
                     },
@@ -325,12 +426,12 @@ class OutputManagerTests(unittest.TestCase):
                     f"{suffix} content",
                     encoding="utf-8",
                 )
-                stage_dir = output.create_stage_dir(stage_name)
+                stage_dir = output.create_node_dir(node_artifact_request(stage_name))
                 provider_output = stage_dir / "alpha_round1.md"
                 provider_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
 
-                result = output.finalize_stage(
-                    stage_name,
+                result = output.finalize_node(
+                    node_artifact_request(stage_name),
                     generated_file_workspace_roots={
                         provider_output.resolve(strict=False): workspace,
                     },
@@ -356,14 +457,14 @@ class OutputManagerTests(unittest.TestCase):
             (workspace / "src").mkdir(parents=True)
             generated_file = workspace / "src" / "app.txt"
             generated_file.write_text("original", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
             snapshot = snapshot_generated_file_workspace(alpha_output, workspace)
             generated_file.write_text("mutated", encoding="utf-8")
 
-            output.finalize_stage(
-                "build.node",
+            output.finalize_node(
+                node_artifact_request("build.node"),
                 generated_file_workspace_roots={
                     alpha_output.resolve(strict=False): snapshot,
                 },
@@ -387,7 +488,7 @@ class OutputManagerTests(unittest.TestCase):
             (workspace / "src").mkdir(parents=True)
             generated_file = workspace / "src" / "app.txt"
             generated_file.write_text("original", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text(
                 f"Updated `{generated_file.as_posix()}`.\n",
@@ -396,8 +497,8 @@ class OutputManagerTests(unittest.TestCase):
             snapshot = snapshot_generated_file_workspace(alpha_output, workspace)
             shutil.rmtree(workspace)
 
-            result = output.finalize_stage(
-                "build.node",
+            result = output.finalize_node(
+                node_artifact_request("build.node"),
                 generated_file_workspace_roots={
                     alpha_output.resolve(strict=False): snapshot,
                 },
@@ -421,7 +522,7 @@ class OutputManagerTests(unittest.TestCase):
                 "same bytes",
                 encoding="utf-8",
             )
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text(
                 "Updated `src/documented.txt`.\n",
@@ -439,16 +540,16 @@ class OutputManagerTests(unittest.TestCase):
                 )
             )
 
-            output.finalize_stage(
-                "build.node",
+            output.finalize_node(
+                node_artifact_request("build.node"),
                 generated_file_workspace_roots={
                     alpha_output.resolve(strict=False): snapshot,
                 },
             )
 
-            result_text = output.get_stage_output_path("build.node").read_text(
-                encoding="utf-8"
-            )
+            result_text = (
+                output.results_dir / build_result_filename("build.node")
+            ).read_text(encoding="utf-8")
             self.assertNotIn("## Generated Files", result_text)
             self.assertEqual(
                 snapshot_metadata,
@@ -478,7 +579,7 @@ class OutputManagerTests(unittest.TestCase):
                 "oversized unchanged",
                 encoding="utf-8",
             )
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text(
                 "\n".join(
@@ -533,7 +634,7 @@ class OutputManagerTests(unittest.TestCase):
             (workspace / "src").mkdir(parents=True)
             created_file = workspace / "src" / "created.txt"
             created_file.write_text("created", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
 
             snapshot = snapshot_generated_file_workspace(
@@ -574,7 +675,7 @@ class OutputManagerTests(unittest.TestCase):
             (workspace / "src").mkdir(parents=True)
             (workspace / "src" / "one.txt").write_text("1", encoding="utf-8")
             (workspace / "src" / "two.txt").write_text("2", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text(
                 "\n".join(
@@ -632,7 +733,7 @@ class OutputManagerTests(unittest.TestCase):
             (workspace / "src").mkdir(parents=True)
             oversized = workspace / "src" / "large.bin"
             oversized.write_bytes(b"xx")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text(
                 "## Generated Files\n\n- `src/large.bin`\n",
@@ -689,7 +790,7 @@ class OutputManagerTests(unittest.TestCase):
                 generated_file = source_dir / f"{index}.txt"
                 generated_file.write_text(str(index), encoding="utf-8")
                 generated_files.append(generated_file)
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
 
             with (
@@ -734,7 +835,7 @@ class OutputManagerTests(unittest.TestCase):
             workspace = base_dir / "workspace"
             (workspace / "src").mkdir(parents=True)
             (workspace / "src" / "app.txt").write_text("x", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
 
@@ -778,7 +879,7 @@ class OutputManagerTests(unittest.TestCase):
                 "complete",
                 encoding="utf-8",
             )
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
 
@@ -823,7 +924,7 @@ class OutputManagerTests(unittest.TestCase):
                 os.link(outside_file, generated_file)
             except OSError as exc:
                 self.skipTest(f"hard links are unavailable: {exc}")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/leak.txt`.\n", encoding="utf-8")
 
@@ -843,7 +944,7 @@ class OutputManagerTests(unittest.TestCase):
             source.write_text("inside", encoding="utf-8")
             outside = base_dir / "outside.txt"
             outside.write_text("escape", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             alpha_output = stage_dir / "alpha_round1.md"
             alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
             original_open = os.open
@@ -893,7 +994,7 @@ class OutputManagerTests(unittest.TestCase):
             workspace = base_dir / "workspace"
             (workspace / "src").mkdir(parents=True)
             (workspace / "src" / "app.txt").write_text("content", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             outside = base_dir / "outside"
             outside.mkdir()
             (stage_dir / "generated-file-sources").symlink_to(
@@ -918,20 +1019,20 @@ class OutputManagerTests(unittest.TestCase):
             output = OutputManager("Workflow", base_dir=base_dir)
             (base_dir / "src").mkdir()
             (base_dir / "src" / "app.txt").write_text("stale", encoding="utf-8")
-            stage_dir = output.create_stage_dir("build.node")
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
             (stage_dir / "alpha_round1.md").write_text(
                 "Updated `src/app.txt`.\n",
                 encoding="utf-8",
             )
 
-            output.finalize_stage(
-                "build.node",
+            output.finalize_node(
+                node_artifact_request("build.node"),
                 generated_file_detection_enabled=False,
             )
 
-            result_text = output.get_stage_output_path("build.node").read_text(
-                encoding="utf-8"
-            )
+            result_text = (
+                output.results_dir / build_result_filename("build.node")
+            ).read_text(encoding="utf-8")
             self.assertNotIn("## Generated Files", result_text)
             self.assertIn("Updated `src/app.txt`.", result_text)
 
@@ -939,16 +1040,17 @@ class OutputManagerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             output = OutputManager("Workflow", base_dir=Path(tmp_dir))
 
-            escaped_candidate = output.create_stage_dir("..-")
-            dashed = output.create_stage_dir("-a")
-            plain = output.create_stage_dir("a")
+            escaped_candidate = output.create_node_dir(node_artifact_request("..-"))
+            dashed = output.create_node_dir(node_artifact_request("-a"))
+            plain = output.create_node_dir(node_artifact_request("a"))
 
             self.assertTrue(
                 escaped_candidate.resolve().is_relative_to(output.stages_dir)
             )
             self.assertNotEqual(dashed, plain)
             self.assertNotEqual(
-                output.get_stage_output_path("-a"), output.get_stage_output_path("a")
+                output.results_dir / build_result_filename("-a"),
+                output.results_dir / build_result_filename("a"),
             )
 
     def test_write_and_update_run_manifest(self) -> None:
@@ -1031,6 +1133,29 @@ class OutputManagerTests(unittest.TestCase):
             self.assertEqual(render_path.name, "render-plans.json")
             self.assertEqual(bundle_path.name, "execution-bundle.json")
             self.assertEqual(summary_path.read_text(encoding="utf-8"), "# Preflight\n")
+
+    def test_preflight_and_workspace_exports_reject_symlinked_directories(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
+            outside = Path(tmp_dir) / "outside"
+            outside.mkdir()
+
+            preflight_link = output.stages_dir / "preflight"
+            export_link = output.stages_dir / "workspace-exports"
+            try:
+                preflight_link.symlink_to(outside, target_is_directory=True)
+                export_link.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                output.write_preflight_static_file("static-files/context.txt", b"x")
+            with self.assertRaisesRegex(ValueError, "real directory"):
+                output.write_workspace_export("primary", {"status": "succeeded"})
+            self.assertFalse((outside / "static-files" / "context.txt").exists())
+            self.assertFalse((outside / "primary.json").exists())
 
     def test_run_manifest_signature_must_be_sha256_hex(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

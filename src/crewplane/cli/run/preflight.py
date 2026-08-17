@@ -15,13 +15,16 @@ from crewplane.architecture.loader import (
     instantiate_adapter,
     resolve_implementation_path,
 )
-from crewplane.architecture.ports import ArtifactStorePort, InvokerAdapterPort
+from crewplane.architecture.ports import (
+    ArtifactStorePort,
+    InvokerAdapterPort,
+)
 from crewplane.artifacts.manager import OutputManager
 from crewplane.bootstrap import (
     RuntimeConfigSnapshotBuildResult,
     build_runtime_config_snapshot,
 )
-from crewplane.core.config import Config, Settings
+from crewplane.core.config import Config
 from crewplane.core.preflight import (
     PREFLIGHT_STATUS_FAILED,
     PreflightCompilationPreview,
@@ -68,7 +71,7 @@ def _uses_invoker_implementation(
     shorthand: str,
     implementation_path: str,
 ) -> bool:
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     implementation = settings.integrations.invoker.implementation
     if implementation == shorthand:
         return True
@@ -227,15 +230,6 @@ def write_early_preflight_failure_run(
     )
 
 
-def allowed_template_paths(
-    snapshot_result: RuntimeConfigSnapshotBuildResult,
-) -> tuple[Path, ...]:
-    raw_paths = snapshot_result.artifact_options.get("allowed_template_paths", [])
-    if not isinstance(raw_paths, list):
-        return ()
-    return tuple(Path(path) for path in raw_paths if isinstance(path, str))
-
-
 def compile_preview(
     context: WorkflowRunContext,
     snapshot_result: RuntimeConfigSnapshotBuildResult,
@@ -262,6 +256,15 @@ def compile_preview(
         real_execution=workspace_real_execution,
         invoker_capabilities=snapshot_result.snapshot.invoker.capabilities,
     )
+    settings = context.config.settings
+    artifacts_adapter = instantiate_adapter(
+        "artifacts",
+        settings.integrations.artifacts.implementation,
+    )
+    terminal_history_reader = artifacts_adapter.create_terminal_history_reader(
+        context.state_dir,
+        snapshot_result.artifact_options,
+    )
     return compile_preflight_preview(
         source=context.source,
         config=context.config,
@@ -269,7 +272,11 @@ def compile_preview(
         options=PreflightCompileOptions(
             project_root=context.project_root,
             state_dir=context.state_dir,
-            allowed_template_paths=allowed_template_paths(snapshot_result),
+            allowed_template_paths=tuple(
+                Path(path)
+                for path in snapshot_result.snapshot.file_access.allowed_template_paths
+            ),
+            terminal_history_reader=terminal_history_reader,
             fingerprint_key_policy=fingerprint_key_policy,
             additional_validation_errors=(
                 invoker_validation_errors + additional_validation_errors
@@ -291,7 +298,7 @@ def run_invoker_preflight_diagnostics(
     executable_lookup: Callable[[str], str | None] | None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     reasoning_locations = _reasoning_requested_locations(workflow)
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     configured_invoker_identity = resolve_implementation_path(
         "invoker",
         settings.integrations.invoker.implementation,
@@ -501,9 +508,7 @@ def write_preflight_failure_artifacts(
     diagnostics: list[PreflightDiagnostic],
     workflow_name: str,
 ) -> None:
-    settings = (
-        context.config.settings if context.config.settings is not None else Settings()
-    )
+    settings = context.config.settings
     artifacts_adapter = instantiate_adapter(
         "artifacts",
         settings.integrations.artifacts.implementation,

@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.artifacts.atomic import atomic_write_text
-from crewplane.artifacts.naming import (
-    build_findings_filename,
-    build_result_filename,
+from crewplane.architecture.contracts import (
+    ArtifactContract,
+    NodeArtifactRequest,
+    VerifiedNodeArtifact,
 )
+from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.observability.events import (
@@ -29,6 +30,7 @@ from .topology import workflow_topology_from_plan
 @dataclass(frozen=True)
 class _HistoricalArtifactStore:
     source: RunHistoryRecord
+    artifact_contracts: dict[str, ArtifactContract]
 
     @property
     def run_id(self) -> str:
@@ -60,18 +62,38 @@ class _HistoricalArtifactStore:
     def get_run_summary_path(self) -> Path:
         return self.logs_dir / "summary.md"
 
-    def get_stage_output_path(self, stage_name: str) -> Path:
-        return self.results_dir / build_result_filename(stage_name)
+    def get_node_artifact_request(
+        self,
+        node_id: str,
+    ) -> NodeArtifactRequest | None:
+        contract = self.artifact_contracts.get(node_id)
+        return None if contract is None else NodeArtifactRequest(node_id, contract)
 
-    def get_stage_findings_path(self, stage_name: str) -> Path:
-        return self.results_dir / build_findings_filename(stage_name)
+    def get_node_output_path(self, request: NodeArtifactRequest) -> Path:
+        return self.results_dir / request.contract.output_path
+
+    def get_node_findings_path(self, request: NodeArtifactRequest) -> Path | None:
+        findings_path = request.contract.findings_path
+        return None if findings_path is None else self.results_dir / findings_path
+
+    def read_verified_node_artifact(
+        self,
+        request: NodeArtifactRequest,
+        kind: str,
+    ) -> VerifiedNodeArtifact:
+        raise NotImplementedError(
+            f"Historical artifact '{request.node_id}.{kind}' is not a runtime input."
+        )
 
 
 def refresh_historical_run_summary(
     plan: PreflightExecutionPlan,
     source: RunHistoryRecord,
 ) -> Path:
-    artifact_store = _HistoricalArtifactStore(source)
+    artifact_store = _HistoricalArtifactStore(
+        source,
+        {node.id: node.artifact_contract for node in plan.nodes},
+    )
     events = read_event_log(artifact_store.get_run_event_log_path())
     snapshot = _historical_dashboard_snapshot(plan, source, events)
     summary = build_run_summary(

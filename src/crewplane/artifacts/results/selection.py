@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.ports.artifacts import StageTaskSpec
+from crewplane.architecture.safe_files import contained_regular_file
 
 
 def latest_round_files(stage_dir: Path) -> dict[str, Path]:
@@ -29,15 +30,30 @@ def candidate_markdown_files(stage_dir: Path) -> list[tuple[int, Path]]:
         key=lambda candidate: parse_audit_round(candidate.name),
     )
     if not audit_dirs:
-        return [(0, md_file) for md_file in stage_dir.glob("*.md")]
+        return [
+            (0, _resolve_candidate_file(stage_dir, md_file))
+            for md_file in stage_dir.glob("*.md")
+        ]
 
     candidates: list[tuple[int, Path]] = []
     for audit_dir in audit_dirs:
         audit_round_num = parse_audit_round(audit_dir.name)
         candidates.extend(
-            (audit_round_num, md_file) for md_file in audit_dir.glob("*.md")
+            (audit_round_num, _resolve_candidate_file(stage_dir, md_file))
+            for md_file in audit_dir.glob("*.md")
         )
     return candidates
+
+
+def _resolve_candidate_file(stage_dir: Path, candidate: Path) -> Path:
+    relative_path = candidate.relative_to(stage_dir).as_posix()
+    resolved = contained_regular_file(stage_dir, relative_path)
+    if resolved is None:
+        raise ValueError(
+            "Stage candidate must be a contained single-link regular file: "
+            f"{candidate.as_posix()}"
+        )
+    return resolved
 
 
 def ordered_task_ids(

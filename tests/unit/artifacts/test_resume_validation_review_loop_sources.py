@@ -14,6 +14,7 @@ from tests.helpers.resume_validation import (
     attach_git_workspace_source,
     attach_source_bundle_descriptor,
     provider_workspace_state_payload,
+    review_status_output_entry,
     source_record,
     write_lineage_bundle_for_payload,
     write_review_status_file,
@@ -174,7 +175,7 @@ def test_validate_frontier_accepts_seeded_audit_candidate_source(
     tmp_path,
 ) -> None:
     source = source_record(tmp_path)
-    plan = make_plan()
+    plan = make_plan(review_loop=True)
     policy = workspace_selection_record(
         enabled=True,
         kind="worktree",
@@ -199,12 +200,13 @@ def test_validate_frontier_accepts_seeded_audit_candidate_source(
     status_path = source.run_dir / "a" / "review-state" / "review-loop-status.json"
     status_payload = json.loads(status_path.read_text(encoding="utf-8"))
     status_payload["reviewer_outputs"] = [
-        {
-            "task_id": "beta",
-            "provider": "beta",
-            "role": "reviewer",
-            "path": "review-audit-round-2/beta_round1.md",
-        }
+        review_status_output_entry(
+            source.run_dir / "a",
+            "review-audit-round-2/beta_round1.md",
+            task_id="beta",
+            provider="beta",
+            role="reviewer",
+        )
     ]
     status_path.write_text(json.dumps(status_payload), encoding="utf-8")
     write_stage_output_file(
@@ -296,7 +298,7 @@ def test_validate_frontier_accepts_downstream_review_loop_lineage(
     tmp_path,
 ) -> None:
     source = source_record(tmp_path)
-    plan = make_plan()
+    plan = make_plan(review_loop=True)
     source_policy = workspace_selection_record(
         enabled=True,
         kind="worktree",
@@ -392,6 +394,11 @@ def test_validate_frontier_accepts_downstream_review_loop_lineage(
 
     assert frontier.resumed_node_ids == ("a", "b")
 
+    (source.run_dir / "a/review-state/review-loop-status.json").unlink()
+    missing_status_frontier = validate_resume_frontier(source, plan)
+
+    assert missing_status_frontier.resumed_node_ids == ()
+
 
 def _initial_reviewer_payload(
     payload: dict[str, object],
@@ -429,23 +436,24 @@ def _write_review_status_file_for_node(
 ) -> None:
     status_dir = stage_dir / "review-state"
     status_dir.mkdir(parents=True, exist_ok=True)
+    entry = review_status_output_entry(
+        stage_dir,
+        canonical_path,
+        task_id="alpha",
+        provider="alpha",
+        role="executor",
+    )
     payload = {
         "node_id": node_id,
-        "executed_audit_rounds": 1,
-        "final_local_round_num": 1,
+        "executed_audit_rounds": entry["audit_round_num"] or 1,
+        "attempted_local_round_num": entry["round_num"],
+        "final_local_round_num": entry["round_num"],
         "invalid_candidate_round_count": 0,
         "no_progress_round_count": 0,
         "artifact_drift_warning_count": 0,
         "consensus_reached": True,
         "continued_after_consensus_exhaustion": False,
-        "canonical_executor_outputs": [
-            {
-                "task_id": "alpha",
-                "provider": "alpha",
-                "role": "executor",
-                "path": canonical_path,
-            }
-        ],
+        "canonical_executor_outputs": [entry],
         "reviewer_outputs": [],
     }
     (status_dir / "review-loop-status.json").write_text(

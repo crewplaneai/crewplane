@@ -586,11 +586,6 @@ class InvokerAdapterCapabilities:
         return {"workspace": self.workspace.as_dict()}
 
 
-class WorkspaceCompatibleInvokerAdapter(Protocol):
-    def workspace_capabilities(self) -> InvokerAdapterCapabilities:
-        """Return workspace launch compatibility metadata."""
-
-
 class CommandRunner(Protocol):
     """Async child-process transport used by the runtime invocation loop."""
 

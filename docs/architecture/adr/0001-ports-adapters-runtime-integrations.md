@@ -39,9 +39,8 @@ for runtime integration boundaries. It adds these settled rules:
   rather than concrete runtime or observability implementation types.
 - Built-in adapter options use typed models or `JsonObject`. External
   dotted-path integration options intentionally remain JSON-compatible extension
-  payloads, with recursive sensitive-value redaction at that boundary. Explicit
-  nested locations use JSON Pointers; exact legacy top-level names take
-  precedence.
+  payloads. Sensitive values are redacted recursively; nested locations use
+  RFC 6901 JSON Pointers, including for top-level options.
 - Port contracts remain structural `Protocol`s rather than abstract base
   classes. The supported enforcement path is loading through
   `architecture/loader.py` and the composition root, where aliases, dotted
@@ -107,8 +106,7 @@ The prior structure had meaningful seams but orchestration wiring still hardcode
   workspace `cwd` through the invoker contract while keeping Git
   materialization, capture, setup, branch export, and cleanup inside
   runtime-owned services.
-- **2026-08-12**: Extended adapter-option redaction to nested values using JSON
-  Pointer paths.
+- **2026-08-12**: Added JSON Pointer declarations for nested adapter secrets.
 
 ## Follow-ups
 1. Add `llm_api` invoker adapter.

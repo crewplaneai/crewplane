@@ -44,9 +44,7 @@ def collect_token_budget_validation_errors(
     config: Config,
 ) -> list[str]:
     errors: list[str] = []
-    settings_budget = (
-        config.settings.token_budget if config.settings is not None else None
-    )
+    settings_budget = config.settings.token_budget
     for node in workflow.nodes:
         if node.mode == "input":
             continue

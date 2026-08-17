@@ -8,10 +8,20 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.artifacts.locks import run_lock_activity
+from crewplane.artifacts.locks.manifest import LockManifestError, LockRunMetadata
+from crewplane.artifacts.locks.process_identity import ProcessInspector
+from crewplane.artifacts.locks.provider_processes import (
+    ensure_no_live_provider_processes,
+)
 from crewplane.core.config import Settings, load_config
+from crewplane.core.execution_state import RunManifest
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.core.workspace.cache import workspace_cache_root
 from crewplane.runtime.workspace.cleanup import (
+    WorkspaceCleanupEligibility,
+    WorkspaceCleanupEligibilityLookup,
     WorkspaceCleanupFilter,
     WorkspaceStatusLookup,
     cleanup_workspace_cache,
@@ -106,7 +116,7 @@ def cleanup_workspaces(
         )
         config = load_config(resolved_config_file)
         project_root = project_root_for_config(resolved_config_file)
-        settings = config.settings if config.settings is not None else Settings()
+        settings = config.settings
         statuses = cleanup_statuses(successful, failed, cancelled)
         validate_all_projects_filters(all_projects, statuses, orphans)
         scope = cleanup_scope(project_root, all_projects)
@@ -121,6 +131,15 @@ def cleanup_workspaces(
         raise typer.Exit(code=1) from exc
 
     destructive = yes and not dry_run
+    if all_projects:
+        console.print(
+            "[yellow]Warning:[/] --all-projects cannot verify cross-project run "
+            "ownership or activity."
+        )
+        console.print(
+            "Passing --yes without --dry-run explicitly authorizes deletion "
+            "across every repository bucket."
+        )
 
     result = cleanup_workspace_cache(
         cache_root,
@@ -139,10 +158,15 @@ def cleanup_workspaces(
         ref_cleanup=(
             None if all_projects else workspace_ref_cleanup_for_project(project_root)
         ),
+        eligibility_lookup=workspace_cleanup_eligibility_lookup(
+            project_root,
+            all_projects,
+            orphans,
+        ),
     )
     verb = "Removed" if destructive else "Would remove"
     console.print(
-        f"{verb} {len(result.entries)} workspace path(s) under "
+        f"{verb} {result.selected_count} workspace path(s) under "
         f"{result.cache_root.as_posix()}."
     )
     for entry in result.entries:
@@ -151,6 +175,8 @@ def cleanup_workspaces(
             f"({entry.size_bytes} bytes, run={entry.run_key_name}, "
             f"status={entry.status or 'orphan'})"
         )
+        if entry.retained_reason is not None:
+            console.print(f"    retained: {entry.retained_reason}")
     if destructive and result.removed_ref_count:
         console.print(f"Removed {result.removed_ref_count} run-owned Git ref(s).")
 
@@ -168,6 +194,96 @@ def cleanup_statuses(
     if cancelled:
         statuses.add("cancelled")
     return frozenset(statuses)
+
+
+def workspace_cleanup_eligibility_lookup(
+    project_root: Path,
+    all_projects: bool,
+    orphan_cleanup_requested: bool,
+) -> WorkspaceCleanupEligibilityLookup:
+    if all_projects:
+
+        def explicit_cross_project_override(
+            run_key_name: str,
+            cache_key: str,
+            status: str | None,
+        ) -> WorkspaceCleanupEligibility:
+            del run_key_name, cache_key, status
+            return WorkspaceCleanupEligibility(deletable=True)
+
+        return explicit_cross_project_override
+    state_dir = project_root / STATE_DIR_NAME
+    inspector = ProcessInspector()
+
+    def lookup(
+        run_key_name: str,
+        cache_key: str,
+        status: str | None,
+    ) -> WorkspaceCleanupEligibility:
+        del cache_key
+        workspace_state = status
+        if workspace_state is None:
+            if not orphan_cleanup_requested:
+                return WorkspaceCleanupEligibility(
+                    deletable=False,
+                    reason="workspace state is unverifiable",
+                )
+        elif workspace_state not in {"succeeded", "failed", "cancelled"}:
+            return WorkspaceCleanupEligibility(
+                deletable=False,
+                reason=f"workspace state is {workspace_state}",
+            )
+        try:
+            manifest_path = contained_regular_file(
+                state_dir / "execution-stages",
+                f"{run_key_name}/manifests/run.json",
+            )
+        except OSError:
+            manifest_path = None
+        if manifest_path is None:
+            return WorkspaceCleanupEligibility(
+                deletable=False,
+                reason="run manifest is missing or unsafe",
+            )
+        try:
+            manifest = RunManifest.model_validate_json(
+                manifest_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            return WorkspaceCleanupEligibility(
+                deletable=False,
+                reason="run manifest is invalid",
+            )
+        if manifest.run_key_name != run_key_name or manifest.status == "running":
+            return WorkspaceCleanupEligibility(
+                deletable=False,
+                reason="run manifest is active or mismatched",
+            )
+        try:
+            lock_activity = run_lock_activity(state_dir, run_key_name, inspector)
+        except (OSError, RuntimeError):
+            lock_activity = "unverifiable"
+        if lock_activity in {"live", "unverifiable"}:
+            return WorkspaceCleanupEligibility(
+                deletable=False,
+                reason=f"run lock is {lock_activity}",
+            )
+        metadata = LockRunMetadata(
+            run_id=manifest.run_id,
+            run_key_name=manifest.run_key_name,
+            workflow_identity=manifest.workflow_identity,
+            workflow_signature=manifest.workflow_signature,
+        )
+        try:
+            ensure_no_live_provider_processes(state_dir, metadata, inspector)
+        except (LockManifestError, OSError, RuntimeError) as exc:
+            return WorkspaceCleanupEligibility(
+                deletable=False,
+                reason=str(exc) or "provider process state is unverifiable",
+            )
+        return WorkspaceCleanupEligibility(deletable=True)
+
+    return lookup
 
 
 def project_root_for_config(config_file: Path) -> Path:

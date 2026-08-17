@@ -17,12 +17,6 @@ from .mock_invoker.selectors import selector_to_json
 class MockInvokerAdapter:
     """Create deterministic mock invokers for local orchestration runs."""
 
-    def workspace_capabilities(self) -> InvokerAdapterCapabilities:
-        return InvokerAdapterCapabilities.workspace_supported(
-            launch_mode="mock_no_child_process",
-            controlled_child_environment=False,
-        )
-
     def canonicalize_options(
         self,
         implementation: str,
@@ -44,7 +38,10 @@ class MockInvokerAdapter:
             resolved_identity=resolved_identity,
             options=canonical_options,
             option_scopes={key: "execution" for key in canonical_options},
-            capabilities=self.workspace_capabilities().as_dict(),
+            capabilities=InvokerAdapterCapabilities.workspace_supported(
+                launch_mode="mock_no_child_process",
+                controlled_child_environment=False,
+            ).as_dict(),
         )
 
     def create_invoker(

@@ -24,6 +24,17 @@ class ArtifactsWithoutCanonicalOptions:
     def create_store(self):  # type: ignore[no-untyped-def]
         return None
 
+    def create_terminal_history_reader(self):  # type: ignore[no-untyped-def]
+        return None
+
+
+class ArtifactsWithoutTerminalHistoryReader:
+    def canonicalize_options(self):  # type: ignore[no-untyped-def]
+        return None
+
+    def create_store(self):  # type: ignore[no-untyped-def]
+        return None
+
 
 class InvokerWithStaticFactories:
     @staticmethod
@@ -147,6 +158,16 @@ class LoaderTests(unittest.TestCase):
             load_adapter_class(
                 "artifacts",
                 f"{__name__}:ArtifactsWithoutCanonicalOptions",
+            )
+
+    def test_artifact_contract_requires_terminal_history_reader(self) -> None:
+        with self.assertRaisesRegex(
+            AdapterContractError,
+            "create_terminal_history_reader",
+        ):
+            load_adapter_class(
+                "artifacts",
+                f"{__name__}:ArtifactsWithoutTerminalHistoryReader",
             )
 
     def test_invalid_colon_path_raises_clear_error(self) -> None:

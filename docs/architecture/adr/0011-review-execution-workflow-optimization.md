@@ -662,33 +662,33 @@ Every review-loop node writes
 - executed audit rounds and final local round number
 - consensus and continuation flags
 - invalid-candidate, no-progress, and artifact-drift warning counts
-- final canonical executor output paths
-- reviewer output paths
+- final canonical executor output descriptors
+- reviewer output descriptors
+
+Selected descriptors bind task, provider, role, audit, round, relative path,
+size, and SHA-256. Consumers verify them before use. An empty reviewer set
+replaces the preceding audit's set.
 
 For reviewer-first loops, round-0 initial reviewer outputs are intentionally
 excluded from `review-loop-status.json` result selection. They are preserved as
 stage artifacts and review-state sidecars, but downstream `{{node.output}}` and
 result finalization continue to describe the canonical executor output.
 
-Stage finalization prefers paths from this status artifact. It falls back to
-latest-round filename selection only when the status artifact is absent,
-malformed, or references no existing output files. This fallback exists for
-compatibility with older or partial runs, not as the primary contract.
+When status exists, stage finalization accepts only verified entries. Invalid
+attribution, missing files, and size or hash mismatches are fatal. Filename
+selection applies only when status is absent.
 
 Artifact drift checks wrap executor and reviewer invocations:
 
-- Each provider call is allowed to write its own current output path.
-- For parallel reviewers in the same local review step, all reviewer output
-  paths for that step are allowed.
-- Unexpected changes inside the current node stage tree are warning-level drift.
-- Changes to execution results, manifests, or reserved run-root log artifacts are
-  fatal only when the runtime can attribute them safely to the current
-  invocation.
-- `logs/summary.md` is strict.
+- Providers write private outputs. Runtime atomically publishes completed bytes
+  to unoccupied canonical paths.
+- Candidate replacement and changes to peer verdicts or reserved artifacts are
+  fatal; runtime restores captured canonical bytes.
+- A run-wide registry identifies concurrent runtime publications without
+  weakening drift checks.
 - `logs/events.ndjson` may only gain event records emitted by the guarded
-  runtime invocation in attributable windows. Concurrent node windows only reject
-  destructive event-log drift so legitimate events from other nodes are not
-  blamed on the current provider call.
+  invocation or another registered runtime publication. Destructive or
+  unattributed drift is fatal.
 
 This keeps the blackboard contract explicit without adding a second permission
 model to adapters or config.
@@ -879,8 +879,7 @@ The implementation requires deterministic coverage for:
 - Reviewer invocation/output failure state, `continue_on_failure` behavior, and
   preservation of successful peer reviewer artifacts before failure handling.
 - Invalid candidate skipping, no-progress skipping, artifact drift warnings and
-  fatal drift, status-artifact finalization, and fallback finalization for older
-  runs.
+  fatal drift, and status-artifact finalization.
 - Provider structured output extraction, usage parsing, malformed usage
   telemetry, visible lower-bound estimates, cost confidence, and summary
   rendering.
@@ -904,9 +903,9 @@ because they are easy to misread from the high-level workflow:
 - `--bare` for Claude is a generated-template preference. Runtime command
   shaping enforces `--output-format json` and the effective `-p` prompt argument,
   but does not inject `--bare` independently of config.
-- `review-loop-status.json` is the primary finalization source. Filename-based
-  latest-round selection remains only as a compatibility fallback when status is
-  missing or unusable.
+- `review-loop-status.json` is required for nodes with reviewers. Missing or
+  invalid status fails finalization instead of selecting outputs by filename.
+  Nodes without reviewers continue to use latest-round filename selection.
 - Review inboxes are Markdown-only in the current implementation. A parallel
   JSON inbox, an explicit stall failure policy, and reviewer-scope-based
   skipping remain future design questions.

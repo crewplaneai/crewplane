@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.architecture.errors import AdapterContractError
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_node_state, write_node_state, write_result
+from tests.helpers.terminal_results import RESULT_SOURCE_TOKEN, write_result_source
 from tests.integration.cli.dry_run_helpers import (
     DryRunUnavailableArtifactsAdapter,
     artifact_tree,
@@ -19,7 +23,122 @@ from tests.integration.cli.dry_run_helpers import (
 )
 
 
+def _write_terminal_history_workflow(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Task",
+                "nodes:",
+                "  - id: prior-result",
+                "    mode: input",
+                f'    source: "{RESULT_SOURCE_TOKEN}"',
+                "---",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+class InvalidTerminalHistoryArtifactsAdapter(DryRunUnavailableArtifactsAdapter):
+    create_terminal_history_reader = None
+
+
+class OptionsRequiredTerminalHistoryArtifactsAdapter(DryRunUnavailableArtifactsAdapter):
+    received_options: dict[str, object] | None = None
+
+    def canonicalize_options(
+        self,
+        implementation: str,
+        resolved_identity: str,
+        options: dict[str, object] | None = None,
+    ) -> CanonicalIntegrationConfig:
+        del options
+        return CanonicalIntegrationConfig(
+            implementation=implementation,
+            resolved_identity=resolved_identity,
+            options={"history_root": "canonical-history"},
+            option_scopes={"history_root": "artifact"},
+        )
+
+    def create_terminal_history_reader(
+        self,
+        state_dir: Path,
+        options: dict[str, object] | None = None,
+    ) -> object:
+        if options != {"history_root": "canonical-history"}:
+            raise RuntimeError("canonical artifact options were not supplied")
+        type(self).received_options = dict(options)
+        return super().create_terminal_history_reader(state_dir, options)
+
+
+def _write_invalid_terminal_history_adapter_config(path: Path) -> None:
+    write_nonfilesystem_config(
+        path,
+        f"{__name__}:InvalidTerminalHistoryArtifactsAdapter",
+    )
+
+
+def _write_options_required_terminal_history_adapter_config(path: Path) -> None:
+    write_nonfilesystem_config(
+        path,
+        f"{__name__}:OptionsRequiredTerminalHistoryArtifactsAdapter",
+    )
+
+
 class CliDryRunResumeAdvisoryTests(unittest.TestCase):
+    def test_terminal_history_reader_receives_canonical_artifact_options(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path, workflow_path = write_standard_project(
+                tmp_path,
+                config_writer=(_write_options_required_terminal_history_adapter_config),
+            )
+            OptionsRequiredTerminalHistoryArtifactsAdapter.received_options = None
+
+            compile_preview(tmp_path, config_path, workflow_path)
+
+            self.assertEqual(
+                OptionsRequiredTerminalHistoryArtifactsAdapter.received_options,
+                {"history_root": "canonical-history"},
+            )
+
+    def test_present_invalid_history_capability_fails_contract_validation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path, workflow_path = write_standard_project(
+                tmp_path,
+                config_writer=_write_invalid_terminal_history_adapter_config,
+            )
+
+            with self.assertRaisesRegex(
+                AdapterContractError,
+                "create_terminal_history_reader",
+            ):
+                compile_preview(tmp_path, config_path, workflow_path)
+
+    def test_external_adapter_with_history_reader_reads_local_history(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path, workflow_path = write_standard_project(
+                tmp_path,
+                config_writer=write_nonfilesystem_config,
+                workflow_writer=_write_terminal_history_workflow,
+            )
+            write_result_source(tmp_path)
+
+            preview = compile_preview(tmp_path, config_path, workflow_path)
+
+            assert preview.static_file_payloads
+            self.assertIn(b"prior result", preview.static_file_payloads.values())
+
     def test_dry_run_advises_full_run_without_creating_run_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

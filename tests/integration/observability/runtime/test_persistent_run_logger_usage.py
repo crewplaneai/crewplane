@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import build_result_filename
 from crewplane.artifacts import OutputManager
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability import PersistentRunLogger
@@ -104,7 +105,10 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             self.assertIn("configured cost: $0.000007", summary_text)
             self.assertIn("`node.a`: failed", summary_text)
             self.assertIn("result: not produced", summary_text)
-            self.assertNotIn(str(output.get_stage_output_path("node.a")), summary_text)
+            self.assertNotIn(
+                str(output.results_dir / build_result_filename("node.a")),
+                summary_text,
+            )
             last_summary = persistent_logger.last_summary
             self.assertIsNotNone(last_summary)
             assert last_summary is not None
@@ -165,7 +169,10 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             self.assertIn("result: not produced", summary_text)
             self.assertIn("[error] Workflow failed: failed", summary_text)
             self.assertNotIn("Workflow failed: unspecified error", summary_text)
-            self.assertNotIn(str(output.get_stage_output_path("node.b")), summary_text)
+            self.assertNotIn(
+                str(output.results_dir / build_result_filename("node.b")),
+                summary_text,
+            )
 
     def test_persistent_run_logger_counts_partial_provider_token_reports(
         self,

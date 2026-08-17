@@ -64,7 +64,7 @@ def _mock_config() -> Config:
                 ui=IntegrationSpec(implementation="tmux", options={}),
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
-                    options={"allowed_template_paths": [], "log_cli_output": True},
+                    options={"log_cli_output": True},
                 ),
             )
         ),

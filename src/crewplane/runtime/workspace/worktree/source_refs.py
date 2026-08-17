@@ -5,6 +5,7 @@ from pathlib import Path
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
+    PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
@@ -20,6 +21,7 @@ from .types import WorktreeSourceRef, candidate_source_ref
 
 def invocation_source_ref(
     output: ArtifactStorePort,
+    plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     policy: WorkspaceSelectionRecord,
     source: WorkspaceSourceSnapshot,
@@ -43,7 +45,10 @@ def invocation_source_ref(
             return _candidate_ref_from_state(state_path)
     if policy.source_kind == "node" and policy.source_node_id is not None:
         return load_source_ref_from_state(
-            required_lineage_state(output, policy.source_node_id)
+            required_lineage_state(
+                output,
+                _plan_node(plan, policy.source_node_id),
+            )
         )
     return WorktreeSourceRef(
         source_kind="project",
@@ -54,8 +59,11 @@ def invocation_source_ref(
     )
 
 
-def required_lineage_state(output: ArtifactStorePort, node_id: str) -> Path:
-    return required_lineage_state_path(output, node_id)
+def required_lineage_state(
+    output: ArtifactStorePort,
+    node: PreflightExecutionNode,
+) -> Path:
+    return required_lineage_state_path(output, node)
 
 
 def same_node_executor_state(
@@ -76,3 +84,13 @@ def same_node_executor_state(
 
 def _candidate_ref_from_state(state_path: Path) -> WorktreeSourceRef:
     return candidate_source_ref(load_source_ref_from_state(state_path))
+
+
+def _plan_node(
+    plan: PreflightExecutionPlan,
+    node_id: str,
+) -> PreflightExecutionNode:
+    for node in plan.nodes:
+        if node.id == node_id:
+            return node
+    raise RuntimeError(f"Workspace source references unknown node '{node_id}'.")

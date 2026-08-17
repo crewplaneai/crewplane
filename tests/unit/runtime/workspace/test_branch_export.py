@@ -15,6 +15,7 @@ from crewplane.runtime.workspace.branch_export import (
 )
 from crewplane.runtime.workspace.branch_export import git as branch_export_git
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     update_state_bundle_metadata,
@@ -41,7 +42,7 @@ def test_fulfill_branch_exports_creates_branch_and_audit_record(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -70,9 +71,10 @@ def test_fulfill_branch_exports_creates_branch_and_audit_record(
     assert record["result_commit"] == result_commit
     assert record["worktree_contract"]["mode"] == "blob_exact"
     state = json.loads(
-        (output.create_stage_dir("implement") / "workspace-state.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            output.create_node_dir(node_artifact_request("implement"))
+            / "workspace-state.json"
+        ).read_text(encoding="utf-8")
     )
     assert state["branch_export"]["status"] == "fulfilled"
     assert state["branch_export"]["operation"] == "created"
@@ -84,7 +86,10 @@ def test_fulfill_branch_exports_creates_branch_and_audit_record(
     assert (
         artifact["sha256"]
         == hashlib.sha256(
-            (output.create_stage_dir("implement") / "workspace-state.json").read_bytes()
+            (
+                output.create_node_dir(node_artifact_request("implement"))
+                / "workspace-state.json"
+            ).read_bytes()
         ).hexdigest()
     )
 
@@ -99,7 +104,7 @@ def test_fulfill_branch_exports_verifies_existing_expected_branch_without_record
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -124,9 +129,10 @@ def test_fulfill_branch_exports_verifies_existing_expected_branch_without_record
         result_commit
     )
     state = json.loads(
-        (output.create_stage_dir("implement") / "workspace-state.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            output.create_node_dir(node_artifact_request("implement"))
+            / "workspace-state.json"
+        ).read_text(encoding="utf-8")
     )
     assert state["branch_export"]["operation"] == "verified_existing"
 
@@ -141,7 +147,7 @@ def test_fulfill_branch_exports_refuses_existing_mismatched_branch(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -166,9 +172,10 @@ def test_fulfill_branch_exports_refuses_existing_mismatched_branch(
     assert record["branch_exists_after"] is True
     assert "refuses to overwrite" in record["failure_message"]
     state = json.loads(
-        (output.create_stage_dir("implement") / "workspace-state.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            output.create_node_dir(node_artifact_request("implement"))
+            / "workspace-state.json"
+        ).read_text(encoding="utf-8")
     )
     assert state["branch_export"]["status"] == "failed_verification"
 
@@ -183,7 +190,7 @@ def test_fulfill_branch_exports_verifies_existing_recorded_branch(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -208,9 +215,10 @@ def test_fulfill_branch_exports_verifies_existing_recorded_branch(
         result_commit
     )
     state = json.loads(
-        (output.create_stage_dir("implement") / "workspace-state.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            output.create_node_dir(node_artifact_request("implement"))
+            / "workspace-state.json"
+        ).read_text(encoding="utf-8")
     )
     assert state["branch_export"]["operation"] == "verified_existing"
 
@@ -227,7 +235,7 @@ def test_fulfill_branch_exports_rejects_invalid_branch_name(tmp_path: Path) -> N
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -262,7 +270,7 @@ def test_fulfill_branch_exports_validates_generated_branch_name(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -303,7 +311,7 @@ def test_fulfill_branch_exports_rejects_bundle_metadata_mismatch(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     state_path = write_workspace_state(
@@ -335,7 +343,7 @@ def test_fulfill_branch_exports_rejects_result_tree_mismatch_before_branch_ref(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, _result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -369,7 +377,7 @@ def test_fulfill_branch_exports_imports_missing_result_from_bundle(
         write_result_bundle_from_clone(
             repo,
             tmp_path,
-            output.create_stage_dir("implement"),
+            output.create_node_dir(node_artifact_request("implement")),
             "feature result\n",
         )
     )
@@ -402,7 +410,9 @@ def test_fulfill_branch_exports_imports_upstream_bundles_in_dependency_order(
     first, second = create_prerequisite_bundle_chain(
         repo,
         output.stages_dir / "prepare" / "workspace-bundles" / "first.bundle",
-        output.create_stage_dir("implement") / "workspace-bundles" / "second.bundle",
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-bundles"
+        / "second.bundle",
     )
     if git_commit_exists(repo, first.commit) or git_commit_exists(repo, second.commit):
         pytest.skip("git retained the test commits after pruning")

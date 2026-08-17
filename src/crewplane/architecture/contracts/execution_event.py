@@ -19,6 +19,7 @@ EventType = Literal[
     "workflow_started",
     "workflow_finished",
     "workflow_failed",
+    "workflow_cancelled",
     "node_started",
     "node_finished",
     "node_failed",
@@ -33,6 +34,7 @@ WorkflowEventType = Literal[
     "workflow_started",
     "workflow_finished",
     "workflow_failed",
+    "workflow_cancelled",
 ]
 NodeEventType = Literal[
     "node_started",
@@ -298,7 +300,12 @@ def emit_event(event_sink: EventSink | None, event: ExecutionEvent) -> None:
 def validate_payload_type(event_type: EventType, payload: EventPayload) -> None:
     expected_payload: type[EventPayload]
     match event_type:
-        case "workflow_started" | "workflow_finished" | "workflow_failed":
+        case (
+            "workflow_started"
+            | "workflow_finished"
+            | "workflow_failed"
+            | "workflow_cancelled"
+        ):
             expected_payload = WorkflowEventPayload
         case "node_started" | "node_finished" | "node_failed" | "node_blocked":
             expected_payload = NodeEventPayload

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -19,6 +21,7 @@ def valid_status_payload(node_id: str = "stage") -> dict[str, object]:
     return {
         "node_id": node_id,
         "executed_audit_rounds": 1,
+        "attempted_local_round_num": 2,
         "final_local_round_num": 2,
         "invalid_candidate_round_count": 0,
         "no_progress_round_count": 0,
@@ -30,7 +33,11 @@ def valid_status_payload(node_id: str = "stage") -> dict[str, object]:
                 "task_id": "executor",
                 "provider": "codex",
                 "role": "executor",
-                "path": "review-audit-round-1/executor_round2.md",
+                "path": "executor_round2.md",
+                "sha256": hashlib.sha256(b"executor").hexdigest(),
+                "size_bytes": len(b"executor"),
+                "audit_round_num": None,
+                "round_num": 2,
             }
         ],
         "reviewer_outputs": [
@@ -38,7 +45,11 @@ def valid_status_payload(node_id: str = "stage") -> dict[str, object]:
                 "task_id": "reviewer",
                 "provider": "claude",
                 "role": "reviewer",
-                "path": "review-audit-round-1/reviewer_round1.md",
+                "path": "reviewer_round2.md",
+                "sha256": hashlib.sha256(b"reviewer").hexdigest(),
+                "size_bytes": len(b"reviewer"),
+                "audit_round_num": None,
+                "round_num": 2,
             }
         ],
     }
@@ -52,10 +63,8 @@ def write_status(stage_dir: Path, payload: dict[str, object] | str) -> None:
 
 
 def create_referenced_outputs(stage_dir: Path) -> None:
-    round_dir = stage_dir / "review-audit-round-1"
-    round_dir.mkdir(parents=True)
-    (round_dir / "executor_round2.md").write_text("executor", encoding="utf-8")
-    (round_dir / "reviewer_round1.md").write_text("reviewer", encoding="utf-8")
+    (stage_dir / "executor_round2.md").write_text("executor", encoding="utf-8")
+    (stage_dir / "reviewer_round2.md").write_text("reviewer", encoding="utf-8")
 
 
 def test_resolves_valid_status_with_outputs(tmp_path: Path) -> None:
@@ -73,7 +82,7 @@ def test_resolves_valid_status_with_outputs(tmp_path: Path) -> None:
     assert resolved.selected_output_files["executor"].name == "executor_round2.md"
 
 
-def test_resolves_retained_reviewer_output_from_longer_prior_audit(
+def test_rejects_reviewer_output_retained_from_a_prior_audit(
     tmp_path: Path,
 ) -> None:
     stage_dir = tmp_path / "stage"
@@ -94,10 +103,53 @@ def test_resolves_retained_reviewer_output_from_longer_prior_audit(
     reviewer_outputs[0]["path"] = "review-audit-round-1/reviewer_round3.md"
     write_status(stage_dir, payload)
 
-    resolved = resolve_review_loop_status("stage", stage_dir)
+    with pytest.raises(ReviewLoopStatusError):
+        resolve_review_loop_status("stage", stage_dir)
 
-    assert resolved is not None
-    assert resolved.selected_output_files["reviewer"].name == "reviewer_round3.md"
+
+def test_rejects_output_bytes_changed_after_status_publication(tmp_path: Path) -> None:
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    create_referenced_outputs(stage_dir)
+    write_status(stage_dir, valid_status_payload())
+    output_path = stage_dir / "reviewer_round2.md"
+    output_path.write_text("replaced", encoding="utf-8")
+
+    with pytest.raises(ReviewLoopStatusError, match="bytes do not match"):
+        resolve_review_loop_status("stage", stage_dir)
+
+
+def test_rejects_hardlinked_output_inside_stage(tmp_path: Path) -> None:
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    source_path = stage_dir / "source.md"
+    output_path = stage_dir / "executor_round2.md"
+    source_path.write_text("executor", encoding="utf-8")
+    try:
+        os.link(source_path, output_path)
+    except OSError as exc:
+        pytest.skip(f"hardlink creation is unavailable: {exc}")
+    write_status(stage_dir, valid_status_payload())
+
+    with pytest.raises(ReviewLoopStatusError, match="safe regular file"):
+        resolve_review_loop_status("stage", stage_dir)
+
+
+def test_rejects_symlinked_status_artifact(tmp_path: Path) -> None:
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    outside_status = tmp_path / "status.json"
+    outside_status.write_text(json.dumps(valid_status_payload()), encoding="utf-8")
+    status_dir = stage_dir / "review-state"
+    status_dir.mkdir()
+    status_path = status_dir / "review-loop-status.json"
+    try:
+        status_path.symlink_to(outside_status)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ReviewLoopStatusError, match="safe regular file"):
+        resolve_review_loop_status("stage", stage_dir)
 
 
 def test_resolves_valid_empty_status_without_fallback(tmp_path: Path) -> None:

@@ -126,7 +126,11 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
     def test_workspace_capabilities_declare_mock_no_child_process(self) -> None:
         adapter = MockInvokerAdapter()
 
-        capabilities = adapter.workspace_capabilities().as_dict()["workspace"]
+        capabilities = adapter.canonicalize_options(
+            "mock",
+            "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+            self._options(),
+        ).capabilities["workspace"]
 
         self.assertEqual(capabilities["supported"], True)
         self.assertEqual(capabilities["launch_mode"], "mock_no_child_process")

@@ -20,6 +20,7 @@ from crewplane.runtime.execution.consensus import (
     extract_verdict,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     OptionalOutputInvoker,
@@ -71,7 +72,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
 
@@ -132,7 +133,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 invoker=MockAgentInvoker(outputs=["executor output", malformed_review]),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
 
@@ -216,7 +217,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             state_payload = json.loads(
@@ -280,7 +281,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 invoker=MockAgentInvoker(outputs=["executor output", "  "]),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             state_payload = json.loads(
@@ -339,7 +340,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -416,7 +417,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             normalized_output = (node_dir / "review_reviewer_0_round1.md").read_text(
@@ -490,7 +491,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
             self.assertEqual(len(invoker.calls), 4)
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -603,7 +604,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -683,7 +684,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertFalse((node_dir / "exec_executor_0_round2.md").exists())
@@ -759,7 +760,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(

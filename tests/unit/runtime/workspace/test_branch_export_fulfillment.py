@@ -18,6 +18,7 @@ from crewplane.runtime.workspace.branch_export.records import (
     checkpoint_from_record,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     history_record_for_output,
@@ -44,7 +45,7 @@ def test_preview_branch_exports_rejects_result_ref_that_is_not_a_commit(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_tree, result_ref, bundle_path = write_tree_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
     )
     write_workspace_state(
         output.stages_dir,
@@ -122,7 +123,7 @@ def test_fulfill_branch_exports_from_history_writes_duplicate_skip_record(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -160,7 +161,7 @@ def test_fulfill_branch_exports_ignores_inherited_git_transport_restrictions(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -202,7 +203,7 @@ def test_fulfill_branch_exports_writes_skipped_record_when_disabled(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -224,9 +225,10 @@ def test_fulfill_branch_exports_writes_skipped_record_when_disabled(
     assert record["skip_reason"] == "create_branch_false"
     assert record["branch_name"] is None
     state = json.loads(
-        (output.create_stage_dir("implement") / "workspace-state.json").read_text(
-            encoding="utf-8"
-        )
+        (
+            output.create_node_dir(node_artifact_request("implement"))
+            / "workspace-state.json"
+        ).read_text(encoding="utf-8")
     )
     assert state["branch_export"]["status"] == "skipped"
     assert state["branch_export"]["operation"] == "skipped"
@@ -246,7 +248,7 @@ def test_preview_branch_exports_verifies_without_creating_ref(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -281,7 +283,7 @@ def test_preview_and_history_fulfillment_verify_existing_expected_branch(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(
@@ -321,7 +323,9 @@ def test_preview_branch_exports_verifies_chained_bundles_without_branch_ref(
     first, second = create_prerequisite_bundle_chain(
         repo,
         output.stages_dir / "prepare" / "workspace-bundles" / "first.bundle",
-        output.create_stage_dir("implement") / "workspace-bundles" / "second.bundle",
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-bundles"
+        / "second.bundle",
     )
     if git_commit_exists(repo, first.commit) or git_commit_exists(repo, second.commit):
         pytest.skip("git retained the test commits after pruning")
@@ -378,7 +382,9 @@ def test_preview_and_fulfillment_reject_ambient_omitted_bundle_prerequisite(
     first, second = create_prerequisite_bundle_chain(
         repo,
         output.stages_dir / "prepare" / "workspace-bundles" / "first.bundle",
-        output.create_stage_dir("implement") / "workspace-bundles" / "second.bundle",
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-bundles"
+        / "second.bundle",
     )
     run_git_text(
         repo,
@@ -443,7 +449,9 @@ def test_preview_branch_exports_verifies_sha256_chained_bundles(
     first, second = create_prerequisite_bundle_chain(
         repo,
         output.stages_dir / "prepare" / "workspace-bundles" / "first.bundle",
-        output.create_stage_dir("implement") / "workspace-bundles" / "second.bundle",
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-bundles"
+        / "second.bundle",
     )
     if git_commit_exists(repo, first.commit) or git_commit_exists(repo, second.commit):
         pytest.skip("git retained the test commits after pruning")

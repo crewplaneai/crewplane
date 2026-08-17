@@ -12,7 +12,8 @@ If an externally referenced file is missing, blocked, or invalid, or if an envir
 
 File references are bounded by filesystem-safety policy. `{{file:path}}`
 references must remain within the project root unless explicitly allowlisted
-through `allowed_template_paths`; reserved crewplane directories, symlink
+through the core-owned `settings.file_access.allowed_template_paths` policy;
+reserved crewplane directories, symlink
 escapes, binary content, NUL-containing content, and non-UTF-8 text fail during
 preflight before any provider invocation. File-backed input nodes may read files
 under `.crewplane/execution-results/` after the source run reaches `succeeded`,

@@ -70,6 +70,7 @@ Failures write preflight diagnostics, metadata, manifest, and summary artifacts,
 ### Plan Contract
 `PreflightExecutionPlan` is a deterministic JSON-serializable contract. It contains:
 
+- an explicit schema version that must equal the running Crewplane schema
 - run and workflow identity
 - execution order
 - execution nodes
@@ -83,9 +84,16 @@ Failures write preflight diagnostics, metadata, manifest, and summary artifacts,
 - runtime config snapshot metadata
 - workflow and runtime config signatures
 
-Each execution node owns the full runtime contract for mode, findings behavior, dependencies, providers, retry/concurrency policy, token budget, review-loop policy, consensus policy, and artifact locators. Runtime may create and finalize artifacts through those locators, but it must not derive locator shape from the original workflow.
+Each execution node owns the full runtime contract for mode, findings behavior,
+dependencies, providers, execution policy, and artifact locators. Runtime passes
+`NodeArtifactRequest` through artifact operations; runtime and adapters must not
+re-derive paths from node or stage names.
 
 Provider records carry normalized provider, role, model, task id, agent config key, invoker alias, and config signatures. Artifact contracts carry the expected stage, output, findings, log, manifest, and result locators. These are runtime inputs, not hints.
+
+Before scheduling, persisted plans validate schema identity, execution policy,
+dependency and workspace lineage, referenced nodes, and locator uniqueness.
+Missing or unsupported schema markers are rejected rather than synthesized.
 
 The plan also carries the auditable boundary facts needed by runtime: signed
 config snapshots, workflow signatures, provider config fingerprints, static
@@ -178,9 +186,9 @@ Crewplane-owned diagnostics, summaries, manifests, plans, runtime snapshots, and
 
 Sensitive values are represented on disk by redacted metadata, stable HMAC fingerprints, and `value_handle` references. Runtime resolves handles from same-process `SecretContext`. Persisted artifacts alone cannot reconstruct sensitive prompt text, by design.
 
-Adapter option redaction covers nested dictionaries and lists. Stored paths use
-JSON Pointer syntax. Execution- and artifact-scoped fingerprints affect
-workflow identity; observer-only fingerprints do not.
+Adapter option redaction traverses nested JSON values and identifies nested
+secrets with JSON Pointers. Execution and artifact fingerprints affect workflow
+identity; observer fingerprints do not.
 
 Environment values are sensitive by default unless explicitly classified non-sensitive. Runtime variable values are non-sensitive by default unless the key matches sensitive naming patterns or explicit metadata marks them sensitive. Non-sensitive values may be stored in the plan for assembly, but diagnostics still redact env and var values.
 
@@ -349,5 +357,4 @@ Negative consequences:
   0016 hardening work.
   Explicitly allowlisted absolute external files remain static preflight
   resources.
-- **2026-08-12**: Extended redaction and fingerprinting to nested adapter
-  options using JSON Pointer paths.
+- **2026-08-12**: Added JSON Pointer declarations for nested adapter secrets.

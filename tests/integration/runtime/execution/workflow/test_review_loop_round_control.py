@@ -17,6 +17,7 @@ from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     audit_round_dir,
@@ -64,7 +65,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(invoker.calls), 2)
             self.assertEqual(invoker.calls[0]["audit_round_num"], 1)
             self.assertEqual(invoker.calls[1]["audit_round_num"], 1)
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertTrue(audit_round_dir(node_dir, 1).exists())
@@ -112,7 +113,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             await execute_sequential_stage(config, node, output, invoker=invoker)
 
             self.assertEqual(len(invoker.calls), 5)
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             audit_round_1 = audit_round_dir(node_dir, 1)
@@ -232,7 +233,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Previous unresolved review state:", fresh_audit_prompt)
             self.assertNotIn("Still missing validation", fresh_audit_prompt)
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertEqual(
@@ -269,7 +270,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
                 invoker=MockAgentInvoker(outputs=["round 1", "round 2"]),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertFalse((node_dir / "review-state").exists())
@@ -314,7 +315,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
 
             await execute_sequential_stage(config, node, output, invoker=invoker)
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
 

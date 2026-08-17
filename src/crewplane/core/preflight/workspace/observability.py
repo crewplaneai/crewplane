@@ -101,7 +101,11 @@ def node_workspace_descriptor(
         "result": node_result_descriptor(node),
         "workspace_file_locator_count": len(node_locators),
         "runtime_dynamic_locator_count": sum(
-            locator.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC
+            locator.source_class
+            in {
+                WorkspaceFileSourceClass.RUNTIME_DYNAMIC,
+                WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE,
+            }
             for locator in node_locators
         ),
     }
@@ -111,7 +115,11 @@ def rendered_file_summary(locators: list[WorkspaceFileLocator]) -> JsonObject:
     return {
         "locator_count": len(locators),
         "project_initial": sum(
-            locator.source_class == WorkspaceFileSourceClass.PROJECT_INITIAL
+            locator.source_class
+            in {
+                WorkspaceFileSourceClass.PROJECT_INITIAL,
+                WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE,
+            }
             for locator in locators
         ),
         "runtime_dynamic": sum(

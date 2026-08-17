@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from crewplane.core.config import Config, Settings
+from crewplane.core.config import Config
 from crewplane.core.workflow.diagnostics import WorkflowValidationDiagnostic
 from crewplane.core.workflow.graph import ancestor_map
 from crewplane.core.workflow.keywords import ProviderRole
@@ -23,7 +23,7 @@ def workspace_policy_diagnostics(
     config: Config,
     selections: dict[str, LogicalWorkspaceSelection],
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     diagnostics: list[WorkflowValidationDiagnostic] = []
     if workflow.worktrees and not settings.workspace.enabled:
         diagnostics.append(_diagnostic(DISABLED_WORKSPACE_MESSAGE))
@@ -128,7 +128,7 @@ def _setup_profile_diagnostics(
     config: Config,
     selections: dict[str, LogicalWorkspaceSelection],
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     diagnostics: list[WorkflowValidationDiagnostic] = []
     for selection in selections.values():
         if (

@@ -27,6 +27,7 @@ from crewplane.runtime.workspace.snapshot import (
     remove_workspace_path,
     runtime_git_env,
 )
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     disabled_workspace_plan,
@@ -57,7 +58,7 @@ def test_prepare_snapshot_workspace_materializes_writable_state(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=True)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -131,7 +132,7 @@ def test_snapshot_workspace_materializes_only_project_subtree(
         }
     )
     output = workspace_output_manager(tmp_path, project_root)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -155,7 +156,7 @@ def test_snapshot_workspace_discards_provider_mutation(tmp_path: Path) -> None:
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -195,7 +196,7 @@ def test_snapshot_workspace_retry_reset_restores_initial_checkout(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -225,7 +226,7 @@ def test_snapshot_retry_reset_rejects_replaced_workspace_parent(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -261,7 +262,7 @@ def test_snapshot_workspace_final_state_ignores_state_file_mutation(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -297,7 +298,7 @@ def test_snapshot_workspace_failure_removes_disposable_checkout(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -323,7 +324,7 @@ def test_snapshot_workspace_cancellation_removes_disposable_checkout(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -352,7 +353,7 @@ def test_snapshot_workspace_preparation_failure_removes_workspace_path(
     bad_source = plan.workspace_source.model_copy(update={"run_base_commit": "f" * 40})
     plan = plan.model_copy(update={"workspace_source": bad_source})
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     with pytest.raises(subprocess.CalledProcessError):
         prepare_invocation_workspace(
@@ -360,7 +361,10 @@ def test_snapshot_workspace_preparation_failure_removes_workspace_path(
             workspace_invocation_context(),
         )
 
-    state_path = output.create_stage_dir("implement") / "workspace-state.json"
+    state_path = (
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
     failed_state = read_json_object(state_path)
     assert failed_state["status"] == "failed"
     assert failed_state["workspace"]["materialization"] == "snapshot_checkout"
@@ -388,7 +392,7 @@ def test_worktree_workspace_preparation_failure_writes_failed_state(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind="worktree")
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     def fail_materialize_worktree_workspace(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -406,7 +410,10 @@ def test_worktree_workspace_preparation_failure_writes_failed_state(
             workspace_invocation_context(),
         )
 
-    state_path = output.create_stage_dir("implement") / "workspace-state.json"
+    state_path = (
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
     failed_state = read_json_object(state_path)
     assert failed_state["status"] == "failed"
     assert failed_state["workspace"]["materialization"] == "worktree_checkout"
@@ -426,7 +433,7 @@ def test_snapshot_workspace_preparation_cleanup_failure_notes_primary_error(
     cache_root = tmp_path / "cache"
     plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     def fail_materialize_snapshot(
         source: object,
@@ -535,7 +542,7 @@ def test_materialization_limit_serializes_snapshot_creation(
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     limiter = workspace_service.MaterializationLimiter.from_plan(plan)
     active = 0
     max_active = 0

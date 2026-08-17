@@ -50,6 +50,7 @@ from crewplane.observability.types import (
 )
 from crewplane.runtime.agent.usage import InvocationUsageAccumulator
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.observability import (
     make_execution_event,
     topology_from_workflow,
@@ -89,10 +90,10 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             output = OutputManager(
                 workflow.name, base_dir=tmp_path, log_cli_output=True
             )
-            stage_dir = output.create_stage_dir("node.a")
+            stage_dir = output.create_node_dir(node_artifact_request("node.a"))
             output_file = stage_dir / "alpha_executor_0_round1.md"
-            log_file = output.get_log_file(
-                stage_name="node.a",
+            log_file = output.get_node_log_file(
+                node_artifact_request("node.a"),
                 provider="alpha",
                 task_id="alpha_executor_0",
                 round_num=1,
@@ -291,7 +292,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     }
                 }
             )
-            stage_dir = output.create_stage_dir("node.a")
+            stage_dir = output.create_node_dir(node_artifact_request("node.a"))
             state_path = stage_dir / "workspace-state.json"
             state_path.write_text(
                 json.dumps(
@@ -389,7 +390,9 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            snapshot_stage_dir = output.create_stage_dir("snapshot.node")
+            snapshot_stage_dir = output.create_node_dir(
+                node_artifact_request("snapshot.node")
+            )
             (snapshot_stage_dir / "workspace-state.json").write_text(
                 json.dumps(
                     {
@@ -1450,7 +1453,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 base_dir=tmp_path,
                 log_cli_output=True,
             )
-            stage_dir = output.create_stage_dir("review.iterate")
+            stage_dir = output.create_node_dir(node_artifact_request("review.iterate"))
             persistent_logger = PersistentRunLogger(output)
 
             with ObservabilityHub(
@@ -1480,8 +1483,8 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                         / f"review-audit-round-{audit_round_num}"
                         / "claude_reviewer_0_round1.md"
                     )
-                    log_file = output.get_log_file(
-                        stage_name="review.iterate",
+                    log_file = output.get_node_log_file(
+                        node_artifact_request("review.iterate"),
                         provider="claude",
                         task_id="claude_reviewer_0",
                         audit_round_num=audit_round_num,

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TypeGuard, get_args
 
 from crewplane.architecture.contracts import OutputExtractionStatus
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
@@ -31,10 +32,14 @@ _OUTPUT_EXTRACTION_STATUSES: frozenset[str] = frozenset(
 
 def read_event_log(event_log_path: Path) -> list[ExecutionEvent]:
     """Read valid execution events from one durable NDJSON event log."""
-    if not event_log_path.is_file() or event_log_path.is_symlink():
+    safe_event_log = contained_regular_file(
+        event_log_path.parent,
+        event_log_path.name,
+    )
+    if safe_event_log is None:
         return []
     try:
-        lines = event_log_path.read_text(encoding="utf-8").splitlines()
+        lines = safe_event_log.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         return []
     return [event for line in lines if (event := event_from_line(line)) is not None]
@@ -86,7 +91,12 @@ def _payload_from_record(
     record: Mapping[str, object],
 ) -> EventPayload | None:
     match event_type:
-        case "workflow_started" | "workflow_finished" | "workflow_failed":
+        case (
+            "workflow_started"
+            | "workflow_finished"
+            | "workflow_failed"
+            | "workflow_cancelled"
+        ):
             return _workflow_payload_from_record(record)
         case "node_started" | "node_finished" | "node_failed" | "node_blocked":
             return _node_payload_from_record(record)

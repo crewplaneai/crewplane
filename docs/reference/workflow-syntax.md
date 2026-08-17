@@ -150,7 +150,7 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 | `worktree` | Experimental node worktree selector. Not valid for input nodes. |
 
 Node IDs must match `[a-z0-9._-]+`, cannot be `.` or `..`, and cannot use the
-reserved run-root names `logs`, `manifests`, or `workspace-exports`.
+reserved run-root names `logs`, `manifests`, `preflight`, or `workspace-exports`.
 
 ## Node Modes
 
@@ -341,7 +341,7 @@ Relative `{{file:path}}` paths resolve from the project root, including when
 the token is authored in an imported Markdown workflow. Imported workflow source
 paths remain provenance metadata for diagnostics and audit. All resolved paths
 are bounded to the project root unless explicitly allowlisted with
-`settings.integrations.artifacts.options.allowed_template_paths`.
+`settings.file_access.allowed_template_paths`.
 
 Node artifact references are valid only for upstream dependencies. Findings
 references require the upstream node to declare `findings: true`.

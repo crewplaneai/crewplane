@@ -18,7 +18,7 @@ from crewplane.artifacts.run_history import (
     RunHistoryRecord,
     find_same_context_runs,
 )
-from crewplane.core.config import Config, Settings
+from crewplane.core.config import Config
 from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightExecutionPlan,
@@ -59,7 +59,7 @@ def require_filesystem_artifacts_backend(config: Config) -> None:
 
 
 def filesystem_artifacts_backend_enabled(config: Config) -> bool:
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     implementation = settings.integrations.artifacts.implementation
     try:
         resolved = resolve_implementation_path("artifacts", implementation)

@@ -59,7 +59,7 @@ def resolve_input_source(
     terminal_result = resolve_terminal_result_file(
         reference.key or "",
         source_root(node, options),
-        options.state_dir,
+        options.terminal_history_reader,
     )
     if terminal_result is not None:
         record_static_input_source(

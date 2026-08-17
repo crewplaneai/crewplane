@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import json
 import stat
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
-    RUN_STATUS_CANCELLED,
     RUN_STATUS_RUNNING,
     RunManifest,
+    TerminalRunStatus,
 )
 
 from ..atomic import atomic_write_json
@@ -19,12 +24,58 @@ class LockManifestError(RuntimeError):
     """Raised when stale lock manifest metadata cannot be trusted."""
 
 
+TerminalRecoveryPhase = Literal[
+    "outcome_selected",
+    "terminal_views_published",
+    "observer_shutdown_complete",
+]
+TERMINAL_RECOVERY_PHASES: tuple[TerminalRecoveryPhase, ...] = (
+    "outcome_selected",
+    "terminal_views_published",
+    "observer_shutdown_complete",
+)
+_TERMINAL_EVENT_TYPES = frozenset(
+    {"workflow_finished", "workflow_failed", "workflow_cancelled"}
+)
+_TERMINAL_EVENT_TYPE_BY_STATUS: dict[TerminalRunStatus, str] = {
+    "succeeded": "workflow_finished",
+    "failed": "workflow_failed",
+    "cancelled": "workflow_cancelled",
+}
+
+
+class TerminalRecoveryIntent(BaseModel):
+    """Selected terminal outcome and its durable publication phase."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    phase: TerminalRecoveryPhase
+    status: TerminalRunStatus
+    reason: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Terminal recovery reason cannot be blank.")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_status_reason(self) -> TerminalRecoveryIntent:
+        if self.status == "succeeded" and self.reason is not None:
+            raise ValueError("Successful terminal recovery cannot include a reason.")
+        if self.status != "succeeded" and self.reason is None:
+            raise ValueError("Failed and cancelled terminal recovery require a reason.")
+        return self
+
+
 @dataclass(frozen=True)
 class LockRunMetadata:
     run_id: str | None
     run_key_name: str | None
     workflow_identity: str
     workflow_signature: str
+    terminal_recovery: TerminalRecoveryIntent | None = None
 
 
 def finalize_stale_running_run(
@@ -42,11 +93,17 @@ def finalize_stale_running_run(
     validate_owner_manifest_match(metadata, manifest)
     if manifest.status != RUN_STATUS_RUNNING:
         return
+    status, reason = _stale_terminal_outcome(
+        state_dir,
+        manifest,
+        metadata.terminal_recovery,
+    )
     updated = manifest.model_copy(
         update={
-            "status": RUN_STATUS_CANCELLED,
+            "status": status,
             "completed_at": datetime.now().isoformat(),
-            "cancel_reason": "stale_lock_recovered",
+            "failure_message": reason if status == "failed" else None,
+            "cancel_reason": reason if status == "cancelled" else None,
         }
     )
     validated = RunManifest.model_validate(updated.model_dump(mode="json"))
@@ -57,6 +114,104 @@ def finalize_stale_running_run(
         manifest_path,
         validated.model_dump(mode="json", exclude_none=True),
     )
+
+
+def _stale_terminal_outcome(
+    state_dir: Path,
+    manifest: RunManifest,
+    recovery: TerminalRecoveryIntent | None,
+) -> tuple[TerminalRunStatus, str | None]:
+    if recovery is None:
+        return "cancelled", "stale_lock_recovered"
+    if recovery.phase == "outcome_selected" and not _terminal_views_match(
+        state_dir,
+        manifest,
+        recovery,
+    ):
+        return "cancelled", "stale_lock_recovered"
+    return recovery.status, recovery.reason
+
+
+def _terminal_views_match(
+    state_dir: Path,
+    manifest: RunManifest,
+    recovery: TerminalRecoveryIntent,
+) -> bool:
+    stages_root = state_dir / "execution-stages"
+    log_prefix = f"{manifest.run_key_name}/logs"
+    try:
+        event_log_path = contained_regular_file(
+            stages_root,
+            f"{log_prefix}/events.ndjson",
+        )
+        summary_path = contained_regular_file(
+            stages_root,
+            f"{log_prefix}/summary.md",
+        )
+        if event_log_path is None or summary_path is None:
+            return False
+        event_log = event_log_path.read_text(encoding="utf-8")
+        summary = summary_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False
+    return _terminal_event_matches(event_log, manifest, recovery) and (
+        _terminal_summary_matches(summary, manifest, recovery.status)
+    )
+
+
+def _terminal_event_matches(
+    event_log: str,
+    manifest: RunManifest,
+    recovery: TerminalRecoveryIntent,
+) -> bool:
+    records: list[dict[str, object]] = []
+    for line in event_log.splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(record, dict):
+            return False
+        records.append(record)
+    terminal_records = [
+        record
+        for record in records
+        if record.get("event_type") in _TERMINAL_EVENT_TYPES
+    ]
+    if len(terminal_records) != 1:
+        return False
+    terminal = terminal_records[0]
+    timestamp = terminal.get("timestamp")
+    return (
+        terminal.get("event_type") == _TERMINAL_EVENT_TYPE_BY_STATUS[recovery.status]
+        and terminal.get("workflow_name") == manifest.workflow_name
+        and terminal.get("run_id") == manifest.run_id
+        and terminal.get("error") == recovery.reason
+        and isinstance(timestamp, str)
+        and bool(timestamp.strip())
+    )
+
+
+def _terminal_summary_matches(
+    summary: str,
+    manifest: RunManifest,
+    status: TerminalRunStatus,
+) -> bool:
+    expected_status = f"- Status: {status}"
+    lines = summary.splitlines()
+    expected_header = [
+        "# Run Summary",
+        "",
+        f"- Workflow: {manifest.workflow_name}",
+        f"- Run ID: {manifest.run_id}",
+        expected_status,
+    ]
+    status_lines = [line for line in lines if line.startswith("- Status: ")]
+    return lines[: len(expected_header)] == expected_header and status_lines == [
+        expected_status
+    ]
 
 
 def read_owner_manifest(manifest_path: Path) -> RunManifest:

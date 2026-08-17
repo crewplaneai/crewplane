@@ -126,7 +126,7 @@ use `--force` for a fresh run.
 ## Template Access Denied
 
 `{{file:path}}` is project-root bounded unless
-`settings.integrations.artifacts.options.allowed_template_paths` includes an
+`settings.file_access.allowed_template_paths` includes an
 absolute allowlisted path. Symlinks are resolved before the final access check.
 
 ## Quota Or Rate Limit

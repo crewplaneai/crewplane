@@ -29,8 +29,8 @@ def test_runtime_context_ignores_bool_concurrency_settings() -> None:
     assert context.max_parallel_invocations() is None
 
 
-def test_deferred_cleanup_registry_detaches_protected_tasks_after_timeout() -> None:
-    async def run_test() -> tuple[tuple[Exception, ...], int, int]:
+def test_deferred_cleanup_registry_awaits_protected_tasks_after_timeout() -> None:
+    async def run_test() -> tuple[tuple[Exception, ...], bool, int, int]:
         registry = DeferredAsyncCleanupRegistry()
         release = asyncio.Event()
         finished = asyncio.Event()
@@ -40,58 +40,79 @@ def test_deferred_cleanup_registry_detaches_protected_tasks_after_timeout() -> N
             finished.set()
 
         registry.register(cleanup(), False)
-        errors = await registry.drain(0.01)
+        drain_task = asyncio.create_task(registry.drain(0))
+        await asyncio.sleep(0)
+        drain_waited_for_cleanup = not drain_task.done()
         task_count_after_timeout = len(registry.tasks)
         release.set()
-        await asyncio.wait_for(finished.wait(), 1.0)
-        return errors, task_count_after_timeout, len(registry.tasks)
+        errors = await asyncio.wait_for(drain_task, 1.0)
+        return (
+            errors,
+            drain_waited_for_cleanup,
+            task_count_after_timeout,
+            len(registry.tasks),
+        )
 
-    errors, task_count_after_timeout, final_task_count = asyncio.run(run_test())
+    errors, drain_waited, task_count_after_timeout, final_task_count = asyncio.run(
+        run_test()
+    )
 
     assert any(isinstance(error, TimeoutError) for error in errors)
-    assert task_count_after_timeout == 0
+    assert drain_waited is True
+    assert task_count_after_timeout == 1
     assert final_task_count == 0
 
 
-def test_deferred_cleanup_registry_reports_detached_task_errors() -> None:
-    async def run_test() -> tuple[tuple[Exception, ...], list[object]]:
+def test_deferred_cleanup_registry_returns_protected_task_errors() -> None:
+    async def run_test() -> tuple[tuple[Exception, ...], bool]:
         registry = DeferredAsyncCleanupRegistry()
-        loop = asyncio.get_running_loop()
         release = asyncio.Event()
-        reported = asyncio.Event()
-        handled_contexts: list[object] = []
-        original_handler = loop.get_exception_handler()
-
-        def handler(
-            loop: asyncio.AbstractEventLoop, context: dict[str, object]
-        ) -> None:
-            del loop
-            handled_contexts.append(context)
-            reported.set()
 
         async def cleanup() -> None:
             await release.wait()
             raise RuntimeError("late cleanup failure")
 
-        loop.set_exception_handler(handler)
-        try:
-            registry.register(cleanup(), False)
-            errors = await registry.drain(0.01)
-            release.set()
-            await asyncio.wait_for(reported.wait(), 1.0)
-        finally:
-            loop.set_exception_handler(original_handler)
-        return errors, handled_contexts
+        registry.register(cleanup(), False)
+        drain_task = asyncio.create_task(registry.drain(0))
+        await asyncio.sleep(0)
+        drain_waited_for_cleanup = not drain_task.done()
+        release.set()
+        errors = await asyncio.wait_for(drain_task, 1.0)
+        return errors, drain_waited_for_cleanup
 
-    errors, handled_contexts = asyncio.run(run_test())
+    errors, drain_waited = asyncio.run(run_test())
 
     assert any(isinstance(error, TimeoutError) for error in errors)
-    assert len(handled_contexts) == 1
-    context = handled_contexts[0]
-    assert isinstance(context, dict)
-    assert (
-        context["message"]
-        == "Detached deferred cleanup task failed after drain timeout."
-    )
-    assert isinstance(context["exception"], RuntimeError)
-    assert str(context["exception"]) == "late cleanup failure"
+    assert any(str(error) == "late cleanup failure" for error in errors)
+    assert drain_waited is True
+
+
+def test_deferred_cleanup_registry_awaits_protected_follow_up_tasks() -> None:
+    async def run_test() -> tuple[tuple[Exception, ...], bool]:
+        registry = DeferredAsyncCleanupRegistry()
+        release_initial = asyncio.Event()
+        release_follow_up = asyncio.Event()
+        follow_up_started = asyncio.Event()
+
+        async def follow_up() -> None:
+            follow_up_started.set()
+            await release_follow_up.wait()
+
+        async def initial_cleanup() -> None:
+            await release_initial.wait()
+            registry.register(follow_up(), cancel_on_timeout=False)
+
+        registry.register(initial_cleanup(), cancel_on_timeout=False)
+        drain_task = asyncio.create_task(registry.drain(0))
+        await asyncio.sleep(0)
+        release_initial.set()
+        await asyncio.wait_for(follow_up_started.wait(), 1.0)
+        drain_waited_for_follow_up = not drain_task.done()
+        release_follow_up.set()
+        errors = await asyncio.wait_for(drain_task, 1.0)
+        return errors, drain_waited_for_follow_up
+
+    errors, drain_waited = asyncio.run(run_test())
+
+    assert any(isinstance(error, TimeoutError) for error in errors)
+    assert drain_waited is True

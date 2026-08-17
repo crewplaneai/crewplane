@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pydantic import ValidationError
-
-from crewplane.artifacts.safe_files import contained_regular_file
+if TYPE_CHECKING:
+    from crewplane.architecture.ports import TerminalHistoryReaderPort
 
 from .compile_state import CompileState
 from .diagnostics import (
@@ -104,106 +103,23 @@ def resolve_static_file(
 def resolve_terminal_result_file(
     raw_path: str,
     source_root: Path,
-    state_dir: Path,
+    history_reader: TerminalHistoryReaderPort | None,
 ) -> StaticFileResult | None:
+    if history_reader is None:
+        return None
     raw = raw_path.strip()
-    relative_path = _terminal_result_relative_path(raw, source_root, state_dir)
-    if relative_path is None:
+    result = history_reader.read_terminal_result(raw, source_root)
+    if not result.matched:
         return None
-    if len(relative_path.parts) < 2:
-        return _file_diagnostic(raw, "Execution result path is incomplete.")
-
-    run_key_name = relative_path.parts[0]
-    manifest_error = _validate_terminal_run(raw, state_dir, run_key_name)
-    if manifest_error is not None:
-        return manifest_error
-
-    file_result = _read_terminal_result(raw, state_dir, relative_path)
-    if isinstance(file_result, StaticFileResult):
-        return file_result
-    result_path, payload = file_result
-    return _materialize_static_file(raw, source_root, result_path, payload)
-
-
-def _terminal_result_relative_path(
-    raw_path: str,
-    source_root: Path,
-    state_dir: Path,
-) -> Path | None:
-    candidate = Path(raw_path).expanduser()
-    if not candidate.is_absolute():
-        candidate = source_root / candidate
-    candidate = Path(os.path.abspath(candidate))
-    results_root = Path(os.path.abspath(state_dir / "execution-results"))
-    try:
-        return candidate.relative_to(results_root)
-    except ValueError:
-        return None
-
-
-def _validate_terminal_run(
-    raw_path: str,
-    state_dir: Path,
-    run_key_name: str,
-) -> StaticFileResult | None:
-    from crewplane.core.execution_state import RunManifest
-
-    manifest_path = contained_regular_file(
-        state_dir / "execution-stages",
-        f"{run_key_name}/manifests/run.json",
-    )
-    if manifest_path is None:
+    if result.error is not None:
         return _file_diagnostic(
-            raw_path,
-            "Execution result run manifest is missing or unsafe.",
+            raw,
+            result.error,
+            resolved_path=result.path,
         )
-    try:
-        manifest = RunManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
-        )
-    except (OSError, UnicodeDecodeError, ValidationError):
-        return _file_diagnostic(
-            raw_path,
-            "Execution result run manifest is invalid.",
-            resolved_path=manifest_path,
-        )
-    if manifest.run_key_name != run_key_name:
-        return _file_diagnostic(
-            raw_path,
-            "Execution result run manifest does not match its run directory.",
-            resolved_path=manifest_path,
-        )
-    if manifest.status == "running":
-        return _file_diagnostic(
-            raw_path,
-            "Execution result run is still running.",
-            resolved_path=manifest_path,
-        )
-    return None
-
-
-def _read_terminal_result(
-    raw_path: str,
-    state_dir: Path,
-    relative_path: Path,
-) -> tuple[Path, bytes] | StaticFileResult:
-    result_path = contained_regular_file(
-        state_dir / "execution-results",
-        relative_path.as_posix(),
-    )
-    if result_path is None:
-        return _file_diagnostic(
-            raw_path,
-            "Execution result is missing or is not a safe regular file.",
-        )
-    try:
-        return result_path, result_path.read_bytes()
-    except OSError:
-        return _file_diagnostic(
-            raw_path,
-            "Execution result could not be read.",
-            resolved_path=result_path,
-        )
+    if result.path is None or result.payload is None:
+        raise ValueError("Terminal history reader returned an incomplete result.")
+    return _materialize_static_file(raw, source_root, result.path, result.payload)
 
 
 def _materialize_static_file(

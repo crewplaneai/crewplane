@@ -35,10 +35,6 @@ def validate_sensitive_integration_option_pointers(
     options: JsonObject,
     pointers: Collection[str],
 ) -> None:
-    if len(pointers) != len(set(pointers)):
-        raise ValueError(
-            "Canonical integration sensitive option JSON Pointers must be unique."
-        )
     for pointer in pointers:
         segments = parse_json_pointer(pointer)
         if not _json_path_exists(options, segments):

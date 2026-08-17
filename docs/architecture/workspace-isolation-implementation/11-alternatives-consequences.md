@@ -131,12 +131,12 @@ non-lineage workspaces, and `worktree: none` for project-root execution.
 22. Trusting custom process invokers without a workspace launch contract
     - A dotted-path invoker could launch provider processes without the
       controlled `cwd` or Git environment.
-    - V1 adds optional workspace capability metadata and fails
-      workspace-enabled real runs for unsupported launch modes.
+    - V1 reads workspace capability metadata from the canonical integration
+      result and fails workspace-enabled real runs for unsupported launch modes.
 
 23. Making workspace capability mandatory on the base invoker port
     - It would leak the feature flag into disabled-mode project-root execution.
-    - V1 keeps the base port valid for disabled mode and validates optional
+    - V1 keeps the base port valid for disabled mode and validates canonical
       capability metadata only when workspace execution is enabled.
 
 24. Supporting future non-process invokers in v1

@@ -5,16 +5,17 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ...results.review_loop_status import (
     ReviewLoopStatusEntry,
     resolve_review_loop_status,
+    task_specs_for_producers,
 )
 from ...results.selection import parse_audit_round, parse_task_round
 from ...run_history import RunHistoryRecord
-from ...safe_files import contained_regular_file
 from .fields import int_field, nullable_int_field
 from .fields import mapping_value as _mapping
 
@@ -104,7 +105,11 @@ def expected_workspace_invocations(
         return ()
     stage_dir = source.run_dir / stage_path
     try:
-        resolved_review_status = resolve_review_loop_status(node.id, stage_dir)
+        resolved_review_status = resolve_review_loop_status(
+            node.id,
+            stage_dir,
+            task_specs_for_producers(node.provider_records),
+        )
     except RuntimeError:
         return ()
     if resolved_review_status is not None:

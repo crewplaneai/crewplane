@@ -4,19 +4,20 @@ import hashlib
 import json
 import re
 
+from crewplane.architecture.contracts import artifacts as _artifact_contracts
 from crewplane.core.workflow.keywords import ProviderRole
 
 MAX_GENERATED_PATH_COMPONENT_CHARS = 180
 MAX_GENERATED_FILE_RESULT_DIR_CHARS = 120
 GENERATED_FILE_RESULT_DIR_HASH_CHARS = 12
 
-_SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 _STAGE_PATTERN = re.compile(r"[^a-z0-9._-]+")
 _RUN_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
-
-def safe_artifact_name(name: str) -> str:
-    return _slugify_name(name, _SLUG_PATTERN, strip_edges=True)
+build_findings_filename = _artifact_contracts.build_findings_filename
+build_result_filename = _artifact_contracts.build_result_filename
+build_stage_directory_name = _artifact_contracts.build_stage_directory_name
+safe_artifact_name = _artifact_contracts.safe_artifact_name
 
 
 def safe_stage_name(name: str) -> str:
@@ -86,21 +87,6 @@ def build_provider_process_state_filename(
 def build_workspace_export_filename(logical_worktree_name: str) -> str:
     suffix = f"--{_short_hash(logical_worktree_name)}.json"
     return _bounded_with_suffix(safe_artifact_name(logical_worktree_name), suffix)
-
-
-def build_stage_directory_name(node_id: str) -> str:
-    safe_name = safe_stage_name(node_id)
-    if len(safe_name) <= MAX_GENERATED_PATH_COMPONENT_CHARS:
-        return safe_name
-    return _bounded_with_suffix(safe_name, f"--{_short_hash(node_id)}")
-
-
-def build_result_filename(node_id: str) -> str:
-    return _bounded_artifact_filename(node_id, "-result.md")
-
-
-def build_findings_filename(node_id: str) -> str:
-    return _bounded_artifact_filename(node_id, "-findings.md")
 
 
 def build_generated_file_result_dir_name(name: str) -> str:

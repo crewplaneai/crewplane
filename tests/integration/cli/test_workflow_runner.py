@@ -14,8 +14,18 @@ from unittest.mock import AsyncMock, patch
 import typer
 from rich.console import Console
 
-from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.adapters.artifacts.terminal_history import (
+    FilesystemTerminalHistoryReader,
+)
+from crewplane.architecture.contracts import (
+    CanonicalIntegrationConfig,
+    ObserverCapabilities,
+)
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.locks import (
+    LOCK_OWNER_FILENAME,
+    acquire_same_context_lock,
+)
 from crewplane.artifacts.manager import OutputManager
 from crewplane.cli.run.workspace.git_source import (
     GIT_MIN_VERSION,
@@ -38,7 +48,9 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.observability import ObservabilityHub
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.resume_locks import FakeProcessInspector
 from tests.helpers.working_directory import temporary_project_cwd
 
 DESCRIPTOR_LEAK_TOKENS = (
@@ -83,6 +95,14 @@ class DuplicateReportingArtifactsAdapter:
             template_base_dir=project_root,
             log_cli_output=bool(resolved_options.get("log_cli_output", False)),
         )
+
+    def create_terminal_history_reader(
+        self,
+        state_dir: Path,
+        options: Mapping[str, Any] | None = None,
+    ) -> FilesystemTerminalHistoryReader:
+        del options
+        return FilesystemTerminalHistoryReader(state_dir.resolve())
 
 
 class PreflightOrderingInvoker:
@@ -135,6 +155,34 @@ class PreflightOrderingInvokerAdapter:
         return PreflightOrderingInvoker()
 
 
+class RequiredStopFailureObserver:
+    capabilities = ObserverCapabilities(required=True)
+
+    @property
+    def stop_requested(self) -> bool:
+        return False
+
+    def start(self, context: object) -> None:
+        del context
+
+    def on_snapshot(self, event: object, snapshot: object) -> None:
+        del event, snapshot
+
+    def stop(self, result: object) -> None:
+        del result
+        raise RuntimeError("required observer stop failed")
+
+
+class RequiredStopFailureHub(ObservabilityHub):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        observers = list(kwargs.pop("observers"))
+        super().__init__(
+            *args,
+            observers=[*observers, RequiredStopFailureObserver()],
+            **kwargs,
+        )
+
+
 def _mock_config(
     options: dict[str, object] | None = None,
     invoker_implementation: str = "mock",
@@ -143,7 +191,6 @@ def _mock_config(
 ) -> Config:
     resolved_artifact_options = (
         {
-            "allowed_template_paths": [],
             "log_cli_output": True,
         }
         if artifact_options is None
@@ -309,10 +356,13 @@ async def _run_workflow(
     force: bool = False,
     which_fn: Callable[[str], str | None] | None = None,
     execute_workflow_impl: Callable[..., Any] | None = None,
+    observability_hub_cls: type[ObservabilityHub] | None = None,
 ) -> None:
     run_kwargs = {}
     if execute_workflow_impl is not None:
         run_kwargs["execute_workflow_impl"] = execute_workflow_impl
+    if observability_hub_cls is not None:
+        run_kwargs["observability_hub_cls"] = observability_hub_cls
     await execute_workflow_run(
         config=config,
         source=PreflightWorkflowSource.from_workflow(
@@ -330,6 +380,147 @@ async def _run_workflow(
 
 
 class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_terminal_manifest_publication_failure_recovers_exact_outcome(
+        self,
+    ) -> None:
+        with temporary_project_cwd() as root:
+            console = Console(file=io.StringIO(), force_terminal=False)
+            with (
+                patch.object(
+                    OutputManager,
+                    "update_run_manifest_status",
+                    side_effect=OSError("manifest publication failed"),
+                ),
+                self.assertRaisesRegex(OSError, "manifest publication failed"),
+            ):
+                await _run_workflow(_workflow(), _mock_config(), console)
+
+            run_dirs = _run_dirs(root)
+            self.assertEqual(len(run_dirs), 1)
+            manifest = json.loads(
+                (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["status"], "running")
+            lock_dir = next((root / ".crewplane" / "locks").iterdir())
+            owner = json.loads(
+                (lock_dir / LOCK_OWNER_FILENAME).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                owner["terminal_recovery"],
+                {
+                    "phase": "observer_shutdown_complete",
+                    "status": "succeeded",
+                },
+            )
+
+            replacement = acquire_same_context_lock(
+                root / ".crewplane",
+                _workflow().name,
+                owner["workflow_identity"],
+                owner["workflow_signature"],
+                process_inspector=FakeProcessInspector(200, "new", live=False),
+            )
+            try:
+                recovered = json.loads(
+                    (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(recovered["status"], "succeeded")
+                self.assertNotIn("cancel_reason", recovered)
+                events = [
+                    json.loads(line)
+                    for line in (run_dirs[0] / "logs" / "events.ndjson")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                    if line.strip()
+                ]
+                terminal_event_types = [
+                    event["event_type"]
+                    for event in events
+                    if event["event_type"]
+                    in {
+                        "workflow_finished",
+                        "workflow_failed",
+                        "workflow_cancelled",
+                    }
+                ]
+                self.assertEqual(terminal_event_types, ["workflow_finished"])
+                summary = (run_dirs[0] / "logs" / "summary.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("- Status: succeeded", summary)
+            finally:
+                replacement.release()
+
+    async def test_required_observer_stop_failure_retains_run_lock(self) -> None:
+        with temporary_project_cwd() as root:
+            console = Console(file=io.StringIO(), force_terminal=False)
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "required observer stop failed",
+            ):
+                await _run_workflow(
+                    _workflow(),
+                    _mock_config(),
+                    console,
+                    observability_hub_cls=RequiredStopFailureHub,
+                )
+
+            run_dirs = _run_dirs(root)
+            self.assertEqual(len(run_dirs), 1)
+            manifest = json.loads(
+                (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["status"], "running")
+            lock_dir = next((root / ".crewplane" / "locks").iterdir())
+            owner = json.loads(
+                (lock_dir / LOCK_OWNER_FILENAME).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                owner["terminal_recovery"],
+                {
+                    "phase": "terminal_views_published",
+                    "status": "succeeded",
+                },
+            )
+
+            replacement = acquire_same_context_lock(
+                root / ".crewplane",
+                _workflow().name,
+                owner["workflow_identity"],
+                owner["workflow_signature"],
+                process_inspector=FakeProcessInspector(200, "new", live=False),
+            )
+            try:
+                recovered = json.loads(
+                    (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(recovered["status"], "succeeded")
+                self.assertNotIn("cancel_reason", recovered)
+                events = [
+                    json.loads(line)
+                    for line in (run_dirs[0] / "logs" / "events.ndjson")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                    if line.strip()
+                ]
+                terminal_event_types = [
+                    event["event_type"]
+                    for event in events
+                    if event["event_type"]
+                    in {
+                        "workflow_finished",
+                        "workflow_failed",
+                        "workflow_cancelled",
+                    }
+                ]
+                self.assertEqual(terminal_event_types, ["workflow_finished"])
+                summary = (run_dirs[0] / "logs" / "summary.md").read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("- Status: succeeded", summary)
+            finally:
+                replacement.release()
+
     async def test_duplicate_signature_skips_without_run_allocation(self) -> None:
         with temporary_project_cwd() as root:
             stream = io.StringIO()

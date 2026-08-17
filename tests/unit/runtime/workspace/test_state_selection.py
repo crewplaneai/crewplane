@@ -1,20 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.core.preflight.models import (
     ArtifactContract,
+    Fragment,
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
+    RenderPlan,
+    RenderStream,
     WorkspaceFileLocator,
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
+from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.workspace_files import (
@@ -41,6 +48,12 @@ class ArtifactStore:
         path = self.stages_dir / stage_name
         return path if path.is_dir() else None
 
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        stage_path = request.contract.stage_path
+        assert stage_path is not None
+        path = self.stages_dir / stage_path
+        return path if path.is_dir() else None
+
 
 def test_required_lineage_state_uses_review_loop_canonical_output(
     tmp_path: Path,
@@ -54,7 +67,7 @@ def test_required_lineage_state_uses_review_loop_canonical_output(
     _write_state(stale_state, "1" * 40, round_num=1, audit_round_num=1)
     _write_state(canonical_state, "2" * 40, round_num=2, audit_round_num=1)
 
-    assert required_lineage_state(store, "implement") == canonical_state
+    assert required_lineage_state(store, _same_node()) == canonical_state
 
 
 def test_downstream_invocation_source_uses_review_loop_canonical_state(
@@ -71,6 +84,7 @@ def test_downstream_invocation_source_uses_review_loop_canonical_state(
 
     source_ref = invocation_source_ref(
         store,
+        _downstream_source_plan(tmp_path),
         _downstream_node(),
         workspace_selection_record(
             enabled=True,
@@ -102,7 +116,7 @@ def test_required_lineage_state_keeps_review_loop_canonical_over_later_state(
     _write_state(canonical_state, "2" * 40, round_num=2, audit_round_num=None)
     _write_state(later_state, "3" * 40, round_num=3, audit_round_num=None)
 
-    assert required_lineage_state(store, "implement") == canonical_state
+    assert required_lineage_state(store, _same_node()) == canonical_state
 
 
 def test_same_node_executor_source_skips_discarded_invalid_candidate(
@@ -118,6 +132,7 @@ def test_same_node_executor_source_skips_discarded_invalid_candidate(
 
     source_ref = invocation_source_ref(
         store,
+        _plan_with_locator(tmp_path, _runtime_dynamic_locator()),
         _same_node(),
         workspace_selection_record(
             enabled=True,
@@ -174,7 +189,7 @@ def test_dynamic_locator_source_context_uses_previous_executor_candidate(
     _write_review_status(stage_dir, "review-audit-round-1/alpha_round1.md")
     _write_state(stale_canonical_state, "1" * 40, round_num=1, audit_round_num=1)
     _write_state(previous_executor_state, "2" * 40, round_num=2, audit_round_num=1)
-    locator = _runtime_dynamic_locator("executor_prompt")
+    locator = _project_then_candidate_locator()
 
     state_path = dynamic_locator_source_state_path(
         _plan_with_locator(tmp_path, locator),
@@ -280,6 +295,7 @@ def test_initial_pre_review_dynamic_locator_uses_upstream_source(
     locator = _runtime_dynamic_locator("reviewer_prompt")
     node = _same_node().model_copy(
         update={
+            "dependencies": ["upstream"],
             "workspace_policy": workspace_selection_record(
                 enabled=True,
                 kind="worktree",
@@ -287,10 +303,32 @@ def test_initial_pre_review_dynamic_locator_uses_upstream_source(
                 source_node_id="upstream",
                 clean_start="strict",
                 materialization="worktree_checkout",
-            )
+            ),
         }
     )
-    plan = _plan_with_locator(tmp_path, locator).model_copy(update={"nodes": [node]})
+    upstream = _same_node().model_copy(
+        update={
+            "id": "upstream",
+            "render_plan_id": "upstream",
+            "artifact_contract": ArtifactContract(
+                stage_path="upstream",
+                output_path="upstream.md",
+                log_path="upstream/logs",
+                result_path="upstream.md",
+            ),
+        }
+    )
+    base_plan = _plan_with_locator(tmp_path, locator)
+    plan = base_plan.model_copy(
+        update={
+            "execution_order": ["upstream", "implement"],
+            "nodes": [upstream, node],
+            "render_plans": [
+                RenderPlan(render_plan_id="upstream", node_id="upstream"),
+                *base_plan.render_plans,
+            ],
+        }
+    )
 
     source = dynamic_locator_source(
         plan,
@@ -337,7 +375,7 @@ def test_required_lineage_state_prefers_latest_executor_without_review_status(
     _write_state(first_state, "1" * 40, round_num=1, audit_round_num=None)
     _write_state(latest_state, "2" * 40, round_num=2, audit_round_num=None)
 
-    assert required_lineage_state(store, "implement") == latest_state
+    assert required_lineage_state(store, _same_node()) == latest_state
 
 
 def test_required_lineage_state_resolves_seeded_audit_copy_to_previous_state(
@@ -350,7 +388,7 @@ def test_required_lineage_state_resolves_seeded_audit_copy_to_previous_state(
     _write_review_status(stage_dir, "review-audit-round-2/alpha_round1.md")
     _write_state(previous_state, "2" * 40, round_num=2, audit_round_num=1)
 
-    assert required_lineage_state(store, "implement") == previous_state
+    assert required_lineage_state(store, _same_node()) == previous_state
 
 
 def test_required_lineage_state_fails_when_canonical_status_has_no_state(
@@ -362,7 +400,7 @@ def test_required_lineage_state_fails_when_canonical_status_has_no_state(
     _write_review_status(stage_dir, "alpha_round2.md")
 
     with pytest.raises(RuntimeError, match="no matching succeeded workspace state"):
-        required_lineage_state(store, "implement")
+        required_lineage_state(store, _same_node())
 
 
 def test_latest_executor_workspace_state_uses_payload_order_not_filename_order(
@@ -383,7 +421,18 @@ def test_latest_executor_workspace_state_uses_payload_order_not_filename_order(
         audit_round_num=None,
     )
 
-    state = latest_executor_workspace_state(store, "build")
+    build_node = _same_node().model_copy(
+        update={
+            "id": "build",
+            "artifact_contract": ArtifactContract(
+                stage_path="build",
+                output_path="build.md",
+                log_path="build/logs",
+                result_path="build.md",
+            ),
+        }
+    )
+    state = latest_executor_workspace_state(store, build_node)
 
     assert state["result"]["result_commit"] == "a" * 40
 
@@ -424,10 +473,20 @@ def _write_output(path: Path) -> None:
 def _write_review_status(stage_dir: Path, canonical_path: str) -> None:
     status_dir = stage_dir / "review-state"
     status_dir.mkdir(parents=True, exist_ok=True)
+    output_bytes = (stage_dir / canonical_path).read_bytes()
+    round_match = re.search(r"_round(\d+)\.md$", canonical_path)
+    assert round_match is not None
+    round_num = int(round_match.group(1))
+    audit_match = re.fullmatch(
+        r"review-audit-round-(\d+)",
+        Path(canonical_path).parent.name,
+    )
+    audit_round_num = int(audit_match.group(1)) if audit_match else None
     payload = {
         "node_id": "implement",
-        "executed_audit_rounds": 1,
-        "final_local_round_num": 2,
+        "executed_audit_rounds": audit_round_num or 1,
+        "attempted_local_round_num": round_num,
+        "final_local_round_num": round_num,
         "invalid_candidate_round_count": 0,
         "no_progress_round_count": 0,
         "artifact_drift_warning_count": 0,
@@ -439,6 +498,10 @@ def _write_review_status(stage_dir: Path, canonical_path: str) -> None:
                 "provider": "codex",
                 "role": "executor",
                 "path": canonical_path,
+                "sha256": hashlib.sha256(output_bytes).hexdigest(),
+                "size_bytes": len(output_bytes),
+                "audit_round_num": audit_round_num,
+                "round_num": round_num,
             }
         ],
         "reviewer_outputs": [],
@@ -475,6 +538,7 @@ def _downstream_node() -> PreflightExecutionNode:
     return PreflightExecutionNode(
         id="verify",
         mode="sequential",
+        dependencies=["implement"],
         render_plan_id="verify",
         provider_records=[
             ProviderRecord(
@@ -495,7 +559,12 @@ def _downstream_node() -> PreflightExecutionNode:
             clean_start="strict",
             materialization="worktree_checkout",
         ),
-        artifact_contract=ArtifactContract(output_path="verify.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="verify",
+            output_path="verify.md",
+            log_path="verify/logs",
+            result_path="verify.md",
+        ),
     )
 
 
@@ -506,7 +575,7 @@ def _same_node() -> PreflightExecutionNode:
         render_plan_id="implement",
         provider_records=[
             ProviderRecord(
-                provider="alpha",
+                provider="codex",
                 role=ProviderRole.EXECUTOR,
                 task_id="alpha",
                 agent_config_key="alpha",
@@ -522,7 +591,28 @@ def _same_node() -> PreflightExecutionNode:
             clean_start="strict",
             materialization="worktree_checkout",
         ),
-        artifact_contract=ArtifactContract(output_path="implement.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="implement",
+            output_path="implement.md",
+            log_path="implement/logs",
+            result_path="implement.md",
+        ),
+    )
+
+
+def _downstream_source_plan(tmp_path: Path) -> PreflightExecutionPlan:
+    plan = _plan_with_locator(tmp_path, _runtime_dynamic_locator())
+    downstream = _downstream_node()
+    return plan.model_copy(
+        update={
+            "execution_order": ["implement", "verify"],
+            "nodes": [_same_node(), downstream],
+            "render_plans": [
+                RenderPlan(render_plan_id="implement", node_id="implement"),
+                RenderPlan(render_plan_id="verify", node_id="verify"),
+            ],
+            "workspace_file_locators": [],
+        }
     )
 
 
@@ -540,7 +630,31 @@ def _runtime_dynamic_locator(target: str = "reviewer_prompt") -> WorkspaceFileLo
         project_root_relative_to_git_top=".",
         git_top_relative_path="README.md",
         workspace_relative_path="README.md",
-        runtime_dynamic_after_candidate=True,
+    )
+
+
+def _project_then_candidate_locator() -> WorkspaceFileLocator:
+    payload = b"project initial\n"
+    return WorkspaceFileLocator(
+        locator_id="implement:executor_prompt:file:README.md",
+        content_ref="workspace-files/implement-executor-readme.txt",
+        occurrence_id="implement:executor_prompt:file:README.md",
+        node_id="implement",
+        target="executor_prompt",
+        source_class="project_initial_then_candidate",
+        raw_token="{{file:README.md}}",
+        raw_path="README.md",
+        source_root="/repo",
+        source_root_relative_to_project=".",
+        project_root_relative_to_git_top=".",
+        git_top_relative_path="README.md",
+        workspace_relative_path="README.md",
+        git_blob="0" * 40,
+        git_file_mode="100644",
+        byte_size=len(payload),
+        canonical_blob_sha256=hashlib.sha256(payload).hexdigest(),
+        literal_path_verified=True,
+        utf8_validated=True,
     )
 
 
@@ -549,6 +663,7 @@ def _plan_with_locator(
     locator: WorkspaceFileLocator,
 ) -> PreflightExecutionPlan:
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id="run",
         run_key_name="run",
         project_root=tmp_path.as_posix(),
@@ -559,7 +674,35 @@ def _plan_with_locator(
         workflow_signature="workflow-signature",
         execution_order=["implement"],
         nodes=[_same_node()],
-        render_plans=[],
+        render_plans=[
+            RenderPlan(
+                render_plan_id="implement",
+                node_id="implement",
+                streams=[
+                    RenderStream(
+                        target_role=(
+                            ProviderRole.REVIEWER
+                            if locator.target == "reviewer_prompt"
+                            else ProviderRole.EXECUTOR
+                        ),
+                        fragments=[
+                            Fragment(
+                                fragment_index=0,
+                                kind="workspace_file_locator",
+                                source_role=PromptSegmentRole.SHARED,
+                                locator={
+                                    "locator_id": locator.locator_id,
+                                    "source_class": locator.source_class.value,
+                                    "workspace_relative_path": (
+                                        locator.workspace_relative_path
+                                    ),
+                                },
+                            )
+                        ],
+                    )
+                ],
+            )
+        ],
         static_resources=[],
         workspace_file_locators=[locator],
         token_catalog=[],

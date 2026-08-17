@@ -148,6 +148,10 @@ agents:
   #   quota_retry_max_attempts: null
 
 settings:
+  # Core-owned authorization for {{file:...}} references outside this project.
+  file_access:
+    allowed_template_paths: []
+
   # Experimental workspace isolation feature is disabled by default. With enabled:
   # false, providers run in the project root and non-Git projects work normally.
   #
@@ -215,7 +219,6 @@ settings:
       implementation: "filesystem"
       options:
         log_cli_output: true
-        allowed_template_paths: []
 
 # Real provider runs start the external commands configured in .crewplane/config.yml.
 # Those tools run with their own filesystem, network, credential, approval, and

@@ -79,9 +79,9 @@ experimental worktree settings, and executable nodes. The generated templates
 use the current schema version from `src/crewplane/version.py`.
 
 Node IDs use lower-case letters, digits, `.`, `_`, and `-`. They cannot be `.`,
-`..`, `logs`, `manifests`, or `workspace-exports`. A non-input node must have
-exactly one `## <node-id>` Markdown section. An input node has no authored body
-section and uses `source` instead.
+`..`, `logs`, `manifests`, `preflight`, or `workspace-exports`. A non-input node
+must have exactly one `## <node-id>` Markdown section. An input node has no
+authored body section and uses `source` instead.
 
 ## Dependencies
 
@@ -184,7 +184,7 @@ Supported runtime template forms are:
 
 `{{file:path}}` references read UTF-8 text and are bounded to the project root by
 default. External files must be explicitly allowlisted through
-`settings.integrations.artifacts.options.allowed_template_paths`. Symlinks are
+`settings.file_access.allowed_template_paths`. Symlinks are
 resolved before the final access check.
 
 `{{param:key}}` is composition-time only. Bound parameters are substituted

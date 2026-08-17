@@ -47,10 +47,9 @@ class MockInvokerOptions:
 
 @dataclass(frozen=True)
 class FilesystemArtifactOptions:
-    """Canonical filesystem artifact-store behavior and template allowlist."""
+    """Canonical filesystem artifact-store behavior."""
 
     log_cli_output: bool = True
-    allowed_template_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

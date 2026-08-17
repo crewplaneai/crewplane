@@ -5,7 +5,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -60,7 +62,10 @@ def resolve_project_initial_workspace_file(
     locator_id: str,
 ) -> ResolvedWorkspaceFile:
     locator = workspace_file_locator(plan, locator_id)
-    if locator.source_class != WorkspaceFileSourceClass.PROJECT_INITIAL:
+    if locator.source_class not in {
+        WorkspaceFileSourceClass.PROJECT_INITIAL,
+        WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE,
+    }:
         raise RuntimeError(
             "Runtime-dynamic workspace file locator resolution is unavailable in "
             f"this build: {locator_id}."
@@ -104,13 +109,13 @@ def resolve_workspace_file(
     workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
 ) -> ResolvedWorkspaceFile:
     locator = workspace_file_locator(plan, locator_id)
-    if (
-        locator.source_class == WorkspaceFileSourceClass.PROJECT_INITIAL
-        and not uses_candidate_source(
-            locator,
-            workspace_candidate_source,
-            workspace_candidate_context,
-        )
+    if locator.source_class in {
+        WorkspaceFileSourceClass.PROJECT_INITIAL,
+        WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE,
+    } and not uses_candidate_source(
+        locator,
+        workspace_candidate_source,
+        workspace_candidate_context,
     ):
         return resolve_project_initial_workspace_file(plan, locator_id)
     source = dynamic_locator_source(
@@ -223,13 +228,15 @@ def dynamic_locator_source_state_path(
                 f"{workspace_candidate_context.role_label} round "
                 f"{workspace_candidate_context.round_num}: {locator.node_id}."
             )
-        stage_dir = output.get_stage_dir(locator.node_id)
+        stage_dir = output.get_node_dir(
+            NodeArtifactRequest(node.id, node.artifact_contract)
+        )
         if stage_dir is None:
             raise RuntimeError(
                 f"Workspace source node has no stage directory: {locator.node_id}."
             )
         state_path = review_loop_canonical_lineage_state_path(
-            stage_dir, locator.node_id
+            stage_dir, node
         ) or latest_executor_lineage_state_path(stage_dir)
         if state_path is None:
             raise RuntimeError(
@@ -242,7 +249,7 @@ def dynamic_locator_source_state_path(
     ):
         state_path = required_lineage_state_path(
             output,
-            node.workspace_policy.source_node_id,
+            _plan_node(plan, node.workspace_policy.source_node_id),
         )
     else:
         raise RuntimeError(
@@ -341,24 +348,36 @@ def rendered_workspace_file_invocation_id(
 
 def required_workspace_state(
     output: ArtifactStorePort,
-    node_id: str,
+    node: PreflightExecutionNode,
 ) -> dict[str, object]:
-    return load_workspace_state(required_lineage_state_path(output, node_id))
+    return load_workspace_state(required_lineage_state_path(output, node))
 
 
 def latest_executor_workspace_state(
     output: ArtifactStorePort,
-    node_id: str,
+    node: PreflightExecutionNode,
 ) -> dict[str, object]:
-    stage_dir = output.get_stage_dir(node_id)
+    stage_dir = output.get_node_dir(
+        NodeArtifactRequest(node.id, node.artifact_contract)
+    )
     if stage_dir is None:
-        raise RuntimeError(f"Workspace source node has no stage directory: {node_id}.")
+        raise RuntimeError(f"Workspace source node has no stage directory: {node.id}.")
     state_path = latest_executor_lineage_state_path(stage_dir)
     if state_path is None:
         raise RuntimeError(
-            f"Workspace source node has no succeeded executor state: {node_id}."
+            f"Workspace source node has no succeeded executor state: {node.id}."
         )
     return load_workspace_state(state_path)
+
+
+def _plan_node(
+    plan: PreflightExecutionPlan,
+    node_id: str,
+) -> PreflightExecutionNode:
+    for node in plan.nodes:
+        if node.id == node_id:
+            return node
+    raise RuntimeError(f"Workspace source references unknown node '{node_id}'.")
 
 
 def load_workspace_state(path: Path) -> dict[str, object]:
@@ -378,7 +397,15 @@ def _read_preflight_workspace_file(
     normalized_ref = Path(content_ref)
     if normalized_ref.is_absolute() or ".." in normalized_ref.parts:
         raise ValueError(f"Invalid workspace content reference '{content_ref}'.")
-    return (Path(plan.context_root) / "preflight" / normalized_ref).read_bytes()
+    path = contained_regular_file(
+        Path(plan.context_root) / "preflight",
+        normalized_ref.as_posix(),
+    )
+    if path is None:
+        raise RuntimeError(
+            f"Workspace content reference is missing or unsafe: '{content_ref}'."
+        )
+    return path.read_bytes()
 
 
 def _decode_workspace_file(locator_id: str, payload: bytes) -> str:

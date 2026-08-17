@@ -4,6 +4,9 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
+from crewplane.adapters.artifacts.terminal_history import (
+    FilesystemTerminalHistoryReader,
+)
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.config import (
     AgentConfig,
@@ -45,7 +48,7 @@ def _config() -> Config:
                 ),
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
-                    options={"allowed_template_paths": [], "log_cli_output": True},
+                    options={"log_cli_output": True},
                 ),
                 ui=IntegrationSpec(implementation="none", options={}),
             )
@@ -84,6 +87,9 @@ def _compile_source(root: Path, source: PreflightWorkflowSource):
         options=PreflightCompileOptions(
             project_root=root,
             state_dir=root / ".crewplane",
+            terminal_history_reader=FilesystemTerminalHistoryReader(
+                root / ".crewplane"
+            ),
             fingerprint_key_policy="read_only",
         ),
     )

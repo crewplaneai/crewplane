@@ -7,11 +7,15 @@ from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     FilesystemArtifactOptions,
     JsonObject,
+    SignatureScope,
 )
 from crewplane.architecture.ports.artifacts import (
     ArtifactStorePort,
+    TerminalHistoryReaderPort,
 )
 from crewplane.artifacts import OutputManager
+
+from .terminal_history import FilesystemTerminalHistoryReader
 
 
 def _parse_options(options: JsonObject | None) -> FilesystemArtifactOptions:
@@ -21,30 +25,13 @@ def _parse_options(options: JsonObject | None) -> FilesystemArtifactOptions:
     if not isinstance(log_cli_output_raw, bool):
         raise ValueError("artifacts option 'log_cli_output' must be a boolean")
 
-    allowed_template_paths_raw = resolved_options.pop("allowed_template_paths", [])
-    allowed_template_paths = _string_paths(allowed_template_paths_raw)
-
     if resolved_options:
         raise ValueError(
             "Unsupported filesystem artifacts options: "
             f"{', '.join(sorted(resolved_options))}"
         )
 
-    return FilesystemArtifactOptions(
-        log_cli_output=log_cli_output_raw,
-        allowed_template_paths=tuple(
-            Path(path).expanduser().resolve(strict=False).as_posix()
-            for path in allowed_template_paths
-        ),
-    )
-
-
-def _string_paths(value: object) -> tuple[str, ...]:
-    if not isinstance(value, list) or any(not isinstance(path, str) for path in value):
-        raise ValueError(
-            "artifacts option 'allowed_template_paths' must be a list of strings"
-        )
-    return tuple(path for path in value if isinstance(path, str))
+    return FilesystemArtifactOptions(log_cli_output=log_cli_output_raw)
 
 
 class FilesystemArtifactsAdapter:
@@ -58,17 +45,14 @@ class FilesystemArtifactsAdapter:
     ) -> CanonicalIntegrationConfig:
         parsed_options = _parse_options(options)
         canonical_options: JsonObject = {
-            "allowed_template_paths": list(parsed_options.allowed_template_paths),
-            "log_cli_output": parsed_options.log_cli_output,
+            "log_cli_output": parsed_options.log_cli_output
         }
+        option_scopes: dict[str, SignatureScope] = {"log_cli_output": "artifact"}
         return CanonicalIntegrationConfig(
             implementation=implementation,
             resolved_identity=resolved_identity,
             options=canonical_options,
-            option_scopes={
-                "allowed_template_paths": "artifact",
-                "log_cli_output": "artifact",
-            },
+            option_scopes=option_scopes,
         )
 
     def create_store(
@@ -91,3 +75,11 @@ class FilesystemArtifactsAdapter:
                 log_cli_output=parsed_options.log_cli_output,
             ),
         )
+
+    def create_terminal_history_reader(
+        self,
+        state_dir: Path,
+        options: JsonObject | None = None,
+    ) -> TerminalHistoryReaderPort:
+        _parse_options(options)
+        return FilesystemTerminalHistoryReader(state_dir.resolve())

@@ -32,15 +32,15 @@ class DeferredAsyncCleanupRegistry:
             remaining_seconds = deadline - loop.time()
             if remaining_seconds <= 0:
                 timed_out = True
-                errors.extend(await self._cancel_pending_tasks(tasks))
-                break
+                errors.extend(await self._settle_pending_tasks(tasks))
+                continue
             done, pending = await asyncio.wait(tasks, timeout=remaining_seconds)
             errors.extend(self._errors_from_done_tasks(done))
             self._discard_tasks(done)
             if pending:
                 timed_out = True
-                errors.extend(await self._cancel_pending_tasks(pending))
-                break
+                errors.extend(await self._settle_pending_tasks(pending))
+                continue
         if timed_out:
             errors.append(
                 TimeoutError(
@@ -55,12 +55,7 @@ class DeferredAsyncCleanupRegistry:
             self.tasks.discard(task)
             self.timeout_cancellable_tasks.discard(task)
 
-    def _detach_tasks(self, tasks: Iterable[asyncio.Task[None]]) -> None:
-        for task in tasks:
-            self._discard_tasks((task,))
-            task.add_done_callback(self._report_detached_task_completion)
-
-    async def _cancel_pending_tasks(
+    async def _settle_pending_tasks(
         self,
         tasks: Iterable[asyncio.Task[None]],
     ) -> tuple[Exception, ...]:
@@ -79,32 +74,15 @@ class DeferredAsyncCleanupRegistry:
             for task in tasks
             if not task.done() and task not in self.timeout_cancellable_tasks
         )
-        self._detach_tasks(protected_pending_tasks)
-        if not pending_tasks:
+        remaining_tasks = (*pending_tasks, *protected_pending_tasks)
+        if not remaining_tasks:
             return tuple(errors)
         for task in pending_tasks:
             task.cancel()
-        results = await asyncio.gather(*pending_tasks, return_exceptions=True)
-        self._discard_tasks(pending_tasks)
-        errors.extend(self._errors_from_cancel_results(results))
+        results = await asyncio.gather(*remaining_tasks, return_exceptions=True)
+        self._discard_tasks(remaining_tasks)
+        errors.extend(self._errors_from_task_results(results))
         return tuple(errors)
-
-    @staticmethod
-    def _report_detached_task_completion(task: asyncio.Task[None]) -> None:
-        try:
-            result = task.exception()
-        except asyncio.CancelledError:
-            result = RuntimeError("Detached deferred cleanup task was cancelled.")
-        if result is None:
-            return
-        error = result if isinstance(result, Exception) else RuntimeError(str(result))
-        task.get_loop().call_exception_handler(
-            {
-                "message": "Detached deferred cleanup task failed after drain timeout.",
-                "exception": error,
-                "task": task,
-            }
-        )
 
     @staticmethod
     def _errors_from_done_tasks(
@@ -125,7 +103,7 @@ class DeferredAsyncCleanupRegistry:
         return tuple(errors)
 
     @staticmethod
-    def _errors_from_cancel_results(results: Iterable[object]) -> tuple[Exception, ...]:
+    def _errors_from_task_results(results: Iterable[object]) -> tuple[Exception, ...]:
         errors: list[Exception] = []
         for result in results:
             if result is None or isinstance(result, asyncio.CancelledError):

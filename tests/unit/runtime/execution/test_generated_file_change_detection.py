@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts import InvocationContext, build_result_filename
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
@@ -25,6 +25,7 @@ from crewplane.runtime.execution.provider_call.generated_files import (
 )
 from crewplane.runtime.execution.provider_call.types import ProviderOutputPolicy
 from crewplane.runtime.workspace import PreparedWorkspace
+from tests.helpers.artifacts import node_artifact_request
 
 
 def test_shared_project_root_does_not_capture_unclaimed_changes(
@@ -357,15 +358,17 @@ def test_non_git_project_root_prose_fallback_still_links_files(tmp_path: Path) -
     output = OutputManager("Workflow", base_dir=tmp_path)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.txt").write_text("content", encoding="utf-8")
-    stage_dir = output.create_stage_dir("build.node")
+    stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     (stage_dir / "alpha_round1.md").write_text(
         "Updated `src/app.txt`.\n",
         encoding="utf-8",
     )
 
-    output.finalize_stage("build.node")
+    output.finalize_node(node_artifact_request("build.node"))
 
-    result_text = output.get_stage_output_path("build.node").read_text(encoding="utf-8")
+    result_text = (output.results_dir / build_result_filename("build.node")).read_text(
+        encoding="utf-8"
+    )
     assert "[alpha/src/app.txt]" in result_text or "[src/app.txt]" in result_text
 
 
@@ -373,7 +376,7 @@ def test_non_git_project_root_explicit_claim_fails_closed(tmp_path: Path) -> Non
     output = OutputManager("Workflow", base_dir=tmp_path)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.txt").write_text("content", encoding="utf-8")
-    stage_dir = output.create_stage_dir("build.node")
+    stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     output_file = stage_dir / "alpha_round1.md"
     output_file.write_text(
         "## Generated Files\n\n- `src/app.txt`\n",
@@ -382,6 +385,8 @@ def test_non_git_project_root_explicit_claim_fails_closed(tmp_path: Path) -> Non
 
     request = SimpleNamespace(
         output_file=output_file,
+        invocation_output_file=None,
+        defer_output_publication=False,
         on_generated_file_snapshot_started=None,
         on_generated_file_snapshot_finished=None,
     )
@@ -405,11 +410,13 @@ def test_non_git_project_root_explicit_claim_fails_closed(tmp_path: Path) -> Non
     )
     assert snapshot is not None
 
-    result = output.finalize_stage(
-        "build.node",
+    result = output.finalize_node(
+        node_artifact_request("build.node"),
         generated_file_workspace_roots={output_file.resolve(strict=False): snapshot},
     )
-    result_text = output.get_stage_output_path("build.node").read_text(encoding="utf-8")
+    result_text = (output.results_dir / build_result_filename("build.node")).read_text(
+        encoding="utf-8"
+    )
     assert "[alpha/src/app.txt]" not in result_text
     assert "[src/app.txt]" not in result_text
     assert result.generated_files == ()
@@ -419,11 +426,13 @@ def test_snapshot_invocation_generated_files_skips_missing_workspace_cwd(
     tmp_path: Path,
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
-    stage_dir = output.create_stage_dir("build.node")
+    stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     output_file = stage_dir / "alpha_round1.md"
     output_file.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
     request = SimpleNamespace(
         output_file=output_file,
+        invocation_output_file=None,
+        defer_output_publication=False,
         on_generated_file_snapshot_started=None,
         on_generated_file_snapshot_finished=None,
     )
@@ -445,6 +454,8 @@ def test_snapshot_invocation_generated_files_rejects_missing_output_by_default(
 ) -> None:
     request = SimpleNamespace(
         output_file=tmp_path / "missing.md",
+        invocation_output_file=None,
+        defer_output_publication=False,
         provider_output_policy=ProviderOutputPolicy.REQUIRE_OUTPUT,
         on_generated_file_snapshot_started=None,
         on_generated_file_snapshot_finished=None,
@@ -468,6 +479,8 @@ def test_snapshot_invocation_generated_files_allows_explicit_missing_output_poli
 ) -> None:
     request = SimpleNamespace(
         output_file=tmp_path / "missing.md",
+        invocation_output_file=None,
+        defer_output_publication=False,
         provider_output_policy=ProviderOutputPolicy.ALLOW_MISSING_OUTPUT,
         on_generated_file_snapshot_started=None,
         on_generated_file_snapshot_finished=None,
@@ -492,7 +505,7 @@ def _finalize_with_snapshot(
     explicit_claims_only: bool = False,
 ) -> tuple[str, tuple[Path, ...]]:
     output = OutputManager("Workflow", base_dir=repo)
-    stage_dir = output.create_stage_dir("build.node")
+    stage_dir = output.create_node_dir(node_artifact_request("build.node"))
     alpha_output = stage_dir / "alpha_round1.md"
     alpha_output.write_text(provider_output, encoding="utf-8")
     snapshot = snapshot_generated_file_workspace(
@@ -502,11 +515,13 @@ def _finalize_with_snapshot(
         explicit_claims_only=explicit_claims_only,
     )
 
-    result = output.finalize_stage(
-        "build.node",
+    result = output.finalize_node(
+        node_artifact_request("build.node"),
         generated_file_workspace_roots={alpha_output.resolve(strict=False): snapshot},
     )
-    result_text = output.get_stage_output_path("build.node").read_text(encoding="utf-8")
+    result_text = (output.results_dir / build_result_filename("build.node")).read_text(
+        encoding="utf-8"
+    )
     return result_text, result.generated_files
 
 

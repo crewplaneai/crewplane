@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
-from crewplane.architecture.contracts import JsonObject, JsonValue
+from crewplane.architecture.contracts import JsonObject, JsonValue, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
@@ -57,8 +57,8 @@ def hydrate_resume_frontier(
             node.id,
         )
         _copy_workspace_artifacts(frontier, output, node, hydrated_at)
-        output.write_resume_source(
-            node_id,
+        output.write_node_resume_source(
+            NodeArtifactRequest(node.id, node.artifact_contract),
             _resume_source_payload(
                 frontier,
                 node_id,
@@ -76,6 +76,11 @@ def hydrate_resume_frontier(
                 frontier,
                 hydrated_at,
             )
+        )
+        output.record_hydrated_resume_node(
+            node_id,
+            frontier.source.manifest.run_id,
+            frontier.source.manifest.run_key_name,
         )
     return frontier.resumed_node_ids
 
@@ -134,7 +139,9 @@ def _copy_workspace_artifacts(
     source_stage_dir = frontier.source.run_dir / stage_path
     if not source_stage_dir.is_dir():
         return
-    target_stage_dir = output.create_stage_dir(node.id)
+    target_stage_dir = output.create_node_dir(
+        NodeArtifactRequest(node.id, node.artifact_contract)
+    )
     expected_artifacts = _workspace_artifact_descriptors(source_state.workspace)
     for run_relative_path in sorted(expected_artifacts):
         relative = _stage_relative_workspace_artifact_path(

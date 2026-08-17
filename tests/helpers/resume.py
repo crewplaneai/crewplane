@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
 )
@@ -21,6 +22,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
+    RenderPlan,
     WorkspaceFileLocator,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
@@ -101,21 +103,42 @@ def write_run_manifest(state_dir: Path, manifest: RunManifest) -> Path:
     return path
 
 
-def make_plan(findings_edge: bool = False) -> PreflightExecutionPlan:
+def make_plan(
+    findings_edge: bool = False,
+    review_loop: bool = False,
+) -> PreflightExecutionPlan:
     a_contract = ArtifactContract(
         stage_path="a",
         output_path="a-result.md",
-        findings_path="a-findings.md",
+        findings_path="a-findings.md" if findings_edge else None,
+        log_path="a/logs",
+        result_path="a-result.md",
     )
-    b_contract = ArtifactContract(stage_path="b", output_path="b-result.md")
+    b_contract = ArtifactContract(
+        stage_path="b",
+        output_path="b-result.md",
+        log_path="b/logs",
+        result_path="b-result.md",
+    )
     dependency_edge = DependencyEdge(
         source_node="a",
         target_node="b",
         artifact_name="findings" if findings_edge else "output",
         dependency_signature=sha256_hex("a->b"),
+        target_locator=("a.findings" if findings_edge else "a.output"),
         artifact_key="findings" if findings_edge else "output",
     )
+    runtime_config_snapshot: dict[str, object] = {"schema_version": SCHEMA_VERSION}
+    a_execution_policy = ExecutionPolicy()
+    a_provider_records = [make_provider_record("alpha")]
+    if review_loop:
+        runtime_config_snapshot["execution"] = {
+            "sequential_consensus_on_exhaustion": "continue"
+        }
+        a_execution_policy = ExecutionPolicy(consensus_on_exhaustion="continue")
+        a_provider_records.append(make_provider_record("beta", ProviderRole.REVIEWER))
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id="current-run",
         run_key_name="workflow--current-run",
         project_root=".",
@@ -129,11 +152,12 @@ def make_plan(findings_edge: bool = False) -> PreflightExecutionPlan:
             PreflightExecutionNode(
                 id="a",
                 mode="sequential",
+                findings=findings_edge,
                 render_plan_id="a",
                 dependencies=[],
-                execution_policy=ExecutionPolicy(),
+                execution_policy=a_execution_policy,
                 artifact_contract=a_contract,
-                provider_records=[make_provider_record("alpha")],
+                provider_records=a_provider_records,
             ),
             PreflightExecutionNode(
                 id="b",
@@ -145,11 +169,14 @@ def make_plan(findings_edge: bool = False) -> PreflightExecutionPlan:
                 provider_records=[make_provider_record("alpha")],
             ),
         ],
-        render_plans=[],
+        render_plans=[
+            RenderPlan(render_plan_id="a", node_id="a"),
+            RenderPlan(render_plan_id="b", node_id="b"),
+        ],
         static_resources=[],
         token_catalog=[],
         dependency_graph=[dependency_edge],
-        runtime_config_snapshot={"schema_version": SCHEMA_VERSION},
+        runtime_config_snapshot=runtime_config_snapshot,
         effective_runtime_config_signature=RUNTIME_SIGNATURE,
         fingerprint_metadata={"payload_version": "1"},
     )
@@ -441,4 +468,8 @@ class _WorkspaceDescriptorStore:
 
     def get_stage_dir(self, stage_name: str) -> Path | None:
         del stage_name
+        return self._stage_dir if self._stage_dir.is_dir() else None
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        del request
         return self._stage_dir if self._stage_dir.is_dir() else None

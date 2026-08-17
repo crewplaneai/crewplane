@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
+from dataclasses import replace
+from pathlib import Path
 
 from .display import ProviderCallDisplay
 from .generated_files import (
@@ -9,6 +12,9 @@ from .generated_files import (
     record_generated_file_workspace,
 )
 from .lifecycle import (
+    bind_invocation_output,
+    publish_invocation_output,
+    read_bound_invocation_output,
     resolve_provider_model,
     run_provider_invocation_lifecycle,
 )
@@ -19,8 +25,11 @@ __all__ = [
     "ProviderCallRequest",
     "ProviderCallResult",
     "ProviderOutputPolicy",
+    "bind_invocation_output",
     "finalize_successful_workspace",
     "mark_workspace_succeeded",
+    "publish_invocation_output",
+    "read_bound_invocation_output",
     "record_generated_file_workspace",
     "resolve_provider_model",
     "run_provider_call",
@@ -34,6 +43,17 @@ async def run_provider_invocation(
     capture_exception: bool = False,
     display: ProviderCallDisplay | None = None,
 ) -> ProviderCallResult:
+    if request.invocation_output_file is None:
+        with tempfile.TemporaryDirectory(prefix="crewplane-invocation-") as private_dir:
+            return await run_provider_invocation(
+                replace(
+                    request,
+                    invocation_output_file=Path(private_dir) / "provider-output.md",
+                ),
+                invocation_semaphore=invocation_semaphore,
+                capture_exception=capture_exception,
+                display=display,
+            )
     selected_display = display or ProviderCallDisplay(telemetry=request.telemetry)
     if invocation_semaphore is None:
         return await run_provider_invocation_lifecycle(

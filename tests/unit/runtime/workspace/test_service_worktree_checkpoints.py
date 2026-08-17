@@ -8,6 +8,7 @@ import pytest
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -31,7 +32,7 @@ def test_three_node_same_worktree_chain_emits_additive_state_and_bundles(
     plan = three_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
     for node_id in ("implement", "verify", "finalize"):
-        output.create_stage_dir(node_id)
+        output.create_node_dir(node_artifact_request(node_id))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -51,7 +52,8 @@ def test_three_node_same_worktree_chain_emits_additive_state_and_bundles(
         bundle_paths = []
         for node_id in ("implement", "verify", "finalize"):
             state = read_json_object(
-                output.create_stage_dir(node_id) / "workspace-state.json"
+                output.create_node_dir(node_artifact_request(node_id))
+                / "workspace-state.json"
             )
             assert state["status"] == "succeeded"
             assert state["logical_worktree_name"] == "primary"

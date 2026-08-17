@@ -212,8 +212,8 @@ from the live project checkout or workspace filesystem. Reviewer and remediation
 rounds resolve file tokens from the current candidate commit.
 
 Absolute paths remain blocked unless explicitly allowlisted through
-`settings.integrations.artifacts.options.allowed_template_paths`. Allowlisted
-absolute files are static external resources and are not part of Git lineage.
+`settings.file_access.allowed_template_paths`. Allowlisted absolute files are
+static external resources and are not part of Git lineage.
 
 ## Branch Export
 
@@ -257,10 +257,10 @@ crewplane cleanup workspaces --dry-run
 crewplane cleanup workspaces --yes
 ```
 
-Cleanup removes managed cache directories, worktree registrations, reviewer
-workspaces, temporary indexes, and run-owned cached refs. It does not remove
-canonical lineage artifacts, provider outputs, findings, manifests, or final
-result artifacts under `.crewplane/`.
+Cleanup removes eligible managed cache directories, worktree registrations,
+reviewer workspaces, temporary indexes, and run-owned cached refs. It does not
+remove canonical lineage artifacts, provider outputs, findings, manifests, or
+final result artifacts under `.crewplane/`.
 
 ## Next
 

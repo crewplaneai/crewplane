@@ -19,6 +19,7 @@ from crewplane.runtime.workspace.materialization import MaterializationLimiter
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 
 from .deferred_cleanup import DeferredAsyncCleanupRegistry
+from .publication_registry import RuntimePublicationRegistry
 from .workspace_files.generated import GeneratedFileWorkspaceRegistry
 
 
@@ -32,6 +33,9 @@ class CompiledRuntimeContext:
     worktree_reuse_cache: WorktreeReuseCache = field(default_factory=WorktreeReuseCache)
     deferred_workspace_cleanups: DeferredAsyncCleanupRegistry = field(
         default_factory=DeferredAsyncCleanupRegistry
+    )
+    runtime_publications: RuntimePublicationRegistry = field(
+        default_factory=RuntimePublicationRegistry
     )
     workspace_materialization_limiter: MaterializationLimiter = field(init=False)
 
@@ -93,12 +97,6 @@ class CompiledRuntimeContext:
     def max_parallel_invocations(self) -> int | None:
         value = self._execution_setting("max_parallel_invocations")
         return positive_strict_int(value)
-
-    def sequential_consensus_on_exhaustion(self) -> str:
-        value = self._execution_setting("sequential_consensus_on_exhaustion")
-        if isinstance(value, str):
-            return value
-        return "continue"
 
     def _execution_setting(self, key: str) -> object:
         snapshot = self.plan.runtime_config_snapshot

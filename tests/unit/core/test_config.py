@@ -16,6 +16,7 @@ from crewplane.core.config import (
 )
 from crewplane.core.token_budget import TokenBudgetOverride, resolve_token_budget
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.working_directory import temporary_project_cwd
 
 
 class ConfigTests(unittest.TestCase):
@@ -229,6 +230,24 @@ class ConfigTests(unittest.TestCase):
                     " alpha ": AgentConfig(cli_cmd=["echo"]),
                     "alpha": AgentConfig(cli_cmd=["echo"]),
                 },
+            )
+
+    def test_config_defaults_omitted_settings(self) -> None:
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={"alpha": AgentConfig(cli_cmd=["echo"])},
+        )
+
+        self.assertEqual(config.settings, Settings())
+
+    def test_config_rejects_null_settings(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "settings"):
+            Config.model_validate(
+                {
+                    "version": SCHEMA_VERSION,
+                    "agents": {"alpha": {"cli_cmd": ["echo"]}},
+                    "settings": None,
+                }
             )
 
     def test_workspace_settings_default_disabled(self) -> None:
@@ -569,6 +588,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_settings_accepts_integration_overrides(self) -> None:
         settings = Settings(
+            file_access={"allowed_template_paths": ["/tmp"]},
             integrations={
                 "invoker": {
                     "implementation": "cli",
@@ -582,15 +602,50 @@ class ConfigTests(unittest.TestCase):
                     "implementation": "filesystem",
                     "options": {
                         "log_cli_output": False,
-                        "allowed_template_paths": ["/tmp"],
                     },
                 },
-            }
+            },
         )
         self.assertEqual(settings.integrations.ui.implementation, "none")
         self.assertEqual(
             settings.integrations.artifacts.options["log_cli_output"],
             False,
+        )
+        self.assertEqual(settings.file_access.allowed_template_paths, ["/tmp"])
+
+    def test_settings_does_not_treat_artifact_options_as_core_file_policy(self) -> None:
+        settings = Settings.model_validate(
+            {
+                "integrations": {
+                    "artifacts": {
+                        "implementation": "filesystem",
+                        "options": {
+                            "allowed_template_paths": ["/tmp"],
+                            "log_cli_output": False,
+                        },
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(settings.file_access.allowed_template_paths, [])
+        self.assertEqual(
+            settings.integrations.artifacts.options,
+            {
+                "allowed_template_paths": ["/tmp"],
+                "log_cli_output": False,
+            },
+        )
+
+    def test_settings_resolves_relative_core_template_allowlist_from_cwd(self) -> None:
+        with temporary_project_cwd() as project_root:
+            settings = Settings.model_validate(
+                {"file_access": {"allowed_template_paths": ["../shared"]}}
+            )
+
+        self.assertEqual(
+            settings.file_access.allowed_template_paths,
+            [(project_root.parent / "shared").as_posix()],
         )
 
     def test_load_config_preserves_null_tmux_log_tail_lines(self) -> None:

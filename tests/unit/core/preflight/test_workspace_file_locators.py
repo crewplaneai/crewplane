@@ -1,5 +1,7 @@
 import hashlib
+import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,7 @@ from rich.console import Console
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.preflight import (
     PreflightCompileOptions,
+    PreflightExecutionPlan,
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
@@ -50,9 +53,8 @@ def test_workspace_enabled_file_tokens_compile_to_workspace_locators(
     assert len(preview.workspace_file_locators) == 2
     project_locator = preview.workspace_file_locators[0]
     reviewer_locator = preview.workspace_file_locators[1]
-    assert project_locator.source_class == "project_initial"
+    assert project_locator.source_class == "project_initial_then_candidate"
     assert project_locator.target == "executor_prompt"
-    assert project_locator.runtime_dynamic_after_candidate is True
     assert project_locator.workspace_relative_path == "docs/requirements.md"
     assert project_locator.git_top_relative_path == "docs/requirements.md"
     assert project_locator.content_ref is not None
@@ -76,6 +78,69 @@ def test_workspace_enabled_file_tokens_compile_to_workspace_locators(
         "workspace_file_locator"
     )
     assert preview.token_catalog[0].canonical_locator == project_locator.locator_id
+
+
+@pytest.mark.parametrize(
+    ("target", "source_class"),
+    [
+        ("executor_prompt", "project_initial"),
+        ("reviewer_prompt", "project_initial_then_candidate"),
+    ],
+)
+def test_persisted_worktree_locator_rejects_source_class_for_target(
+    tmp_path: Path,
+    target: str,
+    source_class: str,
+) -> None:
+    requirements = tmp_path / "docs" / "requirements.md"
+    requirements.parent.mkdir()
+    requirements.write_text("requirements\n", encoding="utf-8")
+    source_snapshot = init_git_repo(tmp_path)
+    workflow = workspace_workflow("Read {{file:docs/requirements.md}}")
+    workflow.nodes[0].providers.append(ProviderSpec(provider="alpha", role="reviewer"))
+    preview = compile_workflow_with_source_snapshot(
+        tmp_path,
+        workflow,
+        source_snapshot,
+    )
+    plan = PreflightExecutionPlan.from_preview(
+        preview,
+        run_id="run",
+        run_key_name="workspace-preflight--run",
+        project_root=tmp_path.as_posix(),
+        context_root=".crewplane/execution-stages/workspace-preflight--run",
+        manifest_root=(
+            ".crewplane/execution-stages/workspace-preflight--run/manifests"
+        ),
+        created_at=datetime.now(UTC),
+    )
+    payload = plan.model_dump(mode="json")
+    locator = next(
+        record
+        for record in payload["workspace_file_locators"]
+        if record["target"] == target
+    )
+    locator["source_class"] = source_class
+    if target == "reviewer_prompt":
+        static_locator = next(
+            record
+            for record in payload["workspace_file_locators"]
+            if record["target"] == "executor_prompt"
+        )
+        for field_name in (
+            "content_ref",
+            "git_blob",
+            "git_file_mode",
+            "byte_size",
+            "canonical_blob_sha256",
+            "injected_sha256",
+            "literal_path_verified",
+            "utf8_validated",
+        ):
+            locator[field_name] = static_locator[field_name]
+
+    with pytest.raises(ValueError, match="source class conflicts"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
 
 
 def test_workspace_imported_file_token_resolves_from_project_root(
@@ -158,7 +223,7 @@ def test_workspace_imported_file_token_resolves_from_project_root(
     locator = next(
         locator
         for locator in preview.workspace_file_locators
-        if locator.source_class == "project_initial"
+        if locator.source_class == "project_initial_then_candidate"
     )
     assert locator.source_root == root.as_posix()
     assert locator.source_root_relative_to_project == "."
@@ -219,7 +284,6 @@ def test_downstream_worktree_executor_file_locator_can_use_candidate_source(
     assert locator.node_id == "fix"
     assert locator.source_class == "runtime_dynamic"
     assert locator.target == "executor_prompt"
-    assert locator.runtime_dynamic_after_candidate is True
     assert locator.content_ref is None
 
 
@@ -282,8 +346,22 @@ def test_worktree_executor_file_locator_after_project_root_node_uses_prior_candi
     locator = executor_locators[0]
     assert locator.node_id == "fix"
     assert locator.source_class == "runtime_dynamic"
-    assert locator.runtime_dynamic_after_candidate is True
     assert locator.content_ref is None
+
+    plan = PreflightExecutionPlan.from_preview(
+        preview,
+        run_id="run",
+        run_key_name="workspace-transitive-file--run",
+        project_root=tmp_path.as_posix(),
+        context_root=".crewplane/execution-stages/workspace-transitive-file--run",
+        manifest_root=(
+            ".crewplane/execution-stages/workspace-transitive-file--run/manifests"
+        ),
+        created_at=datetime.now(UTC),
+    )
+    fix = next(node for node in plan.nodes if node.id == "fix")
+    assert fix.workspace_policy is not None
+    assert fix.workspace_policy.source_node_id == "implement"
 
 
 def test_workspace_enabled_allowlisted_absolute_file_tokens_remain_static(
@@ -619,7 +697,7 @@ def test_workspace_enabled_input_node_keeps_terminal_result_static(
     assert preview.nodes[1].workspace_policy is not None
 
 
-def test_worktree_node_after_input_uses_project_initial_file_locator(
+def test_worktree_node_after_input_uses_initial_then_candidate_file_locator(
     tmp_path: Path,
 ) -> None:
     requirements = tmp_path / "docs" / "requirements.md"
@@ -664,7 +742,7 @@ def test_worktree_node_after_input_uses_project_initial_file_locator(
         for locator in preview.workspace_file_locators
         if locator.node_id == "implement"
     )
-    assert implement_locator.source_class == "project_initial"
+    assert implement_locator.source_class == "project_initial_then_candidate"
     assert implement_locator.content_ref is not None
     assert preview.workspace_file_payloads[implement_locator.content_ref] == (
         b"generated\n"

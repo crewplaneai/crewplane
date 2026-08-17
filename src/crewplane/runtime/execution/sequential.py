@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
@@ -91,7 +91,9 @@ async def execute_sequential_stage(
     telemetry: ExecutionTelemetry | None = None,
 ) -> None:
     """Execute a sequential stage."""
-    node_dir = output.create_stage_dir(stage.id)
+    node_dir = output.create_node_dir(
+        NodeArtifactRequest(stage.id, stage.artifact_contract)
+    )
     if len(stage.provider_records) == 1:
         await _execute_single_provider_sequential_node(
             node=stage,

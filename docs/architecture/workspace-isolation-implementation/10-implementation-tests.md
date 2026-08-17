@@ -29,8 +29,9 @@ project-root execution.
 - Add mandatory `cwd` and optional `child_environment` to `CommandRunner`.
 - Keep `InvocationPlan` free of `cwd`, environment policy, Git policy,
   invocation-source policy, and workspace policy.
-- Add optional `WorkspaceCompatibleInvokerAdapter.workspace_capabilities()`.
-- Normalize missing workspace capability metadata to unsupported.
+- Put workspace capability metadata in
+  `CanonicalIntegrationConfig.capabilities`.
+- Treat missing workspace capability metadata as unsupported.
 - Ensure missing capability metadata does not affect disabled-mode execution.
 - Support built-in `cli` through `runtime_command_runner`.
 - Support built-in `mock` through `mock_no_child_process`.

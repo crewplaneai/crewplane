@@ -37,7 +37,11 @@ class RunSummaryAccumulator:
     def record(self, event: ExecutionEvent) -> None:
         if event.event_type == "workflow_started":
             self._started_at = event.timestamp_utc
-        if event.event_type in {"workflow_finished", "workflow_failed"}:
+        if event.event_type in {
+            "workflow_finished",
+            "workflow_failed",
+            "workflow_cancelled",
+        }:
             self._completed_at = event.timestamp_utc
         usage_summary = invocation_usage_summary_from_event(event)
         if usage_summary is not None:

@@ -5,6 +5,9 @@ from pathlib import Path
 
 from rich.console import Console
 
+from crewplane.adapters.artifacts.terminal_history import (
+    FilesystemTerminalHistoryReader,
+)
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight import (
@@ -129,6 +132,9 @@ def compile_workflow_with_source_snapshot(
             project_root=root,
             state_dir=root / ".crewplane",
             allowed_template_paths=allowed_template_paths,
+            terminal_history_reader=FilesystemTerminalHistoryReader(
+                root / ".crewplane"
+            ),
             fingerprint_key_policy="read_only",
             workspace_source_snapshot=source_snapshot,
         ),

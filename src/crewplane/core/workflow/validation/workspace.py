@@ -125,7 +125,7 @@ def _base_logical_workspace_selections(
     workflow: WorkflowPlan,
     config: Config,
 ) -> dict[str, LogicalWorkspaceSelection]:
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     selections: dict[str, LogicalWorkspaceSelection] = {}
     for node in workflow.nodes:
         if node.mode == "input":

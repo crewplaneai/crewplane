@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from crewplane.architecture.contracts import AgentInvoker
+from pathlib import Path
+
+from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts.results.findings import FindingsExtractionError
+from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import PreflightExecutionNode
 
 from ..common import (
@@ -20,6 +24,7 @@ from ..common import (
 from ..errors import NodeExecutionError
 from ..input import execute_input_stage
 from ..parallel import execute_parallel_stage
+from ..publication_registry import RuntimePublicationRegistry
 from ..resume import write_successful_node_state
 from ..sequential import execute_sequential_stage
 
@@ -76,18 +81,21 @@ async def execute_node(
             invoker=invoker,
             telemetry=telemetry,
         )
-    try:
-        stage_finalize_result = output.finalize_stage(
-            node.id,
-            findings_enabled=node.findings,
-            task_specs=build_stage_task_specs(node),
-            generated_file_detection_enabled=generated_file_detection_enabled(node),
-            generated_file_workspace_roots=(
-                runtime_context.generated_file_workspaces.roots_for_node(node.id)
-            ),
-        )
-    except FindingsExtractionError as exc:
-        raise NodeExecutionError(str(exc)) from exc
+    publications = runtime_context.runtime_publications
+    with publications.transaction():
+        try:
+            stage_finalize_result = output.finalize_node(
+                NodeArtifactRequest(node.id, node.artifact_contract),
+                findings_enabled=node.findings,
+                task_specs=build_stage_task_specs(node),
+                generated_file_detection_enabled=generated_file_detection_enabled(node),
+                generated_file_workspace_roots=(
+                    runtime_context.generated_file_workspaces.roots_for_node(node.id)
+                ),
+            )
+        except FindingsExtractionError as exc:
+            raise NodeExecutionError(str(exc)) from exc
+        _register_stage_publications(publications, stage_finalize_result)
     emit_stage_finalize_logs(telemetry, stage_finalize_result)
     cleanup_errors = (
         await runtime_context.generated_file_workspaces.cleanup_node_best_effort_async(
@@ -95,19 +103,49 @@ async def execute_node(
         )
     )
     _emit_generated_file_workspace_cleanup_errors(telemetry, node.id, cleanup_errors)
-    write_successful_node_state(
-        node,
-        runtime_context.plan,
-        output,
-        workflow_identity,
-        stage_finalize_result,
-    )
+    with publications.transaction():
+        node_state_path = write_successful_node_state(
+            node,
+            runtime_context.plan,
+            output,
+            workflow_identity,
+            stage_finalize_result,
+        )
+        _register_recoverable_publication(publications, node_state_path)
     if should_print_console(telemetry):
         execution_console(telemetry).print(f"[green]✓[/] Node '{node.id}' complete\n")
 
 
 def generated_file_detection_enabled(node: PreflightExecutionNode) -> bool:
     return node.mode != "input"
+
+
+def _register_stage_publications(
+    publications: RuntimePublicationRegistry,
+    result: StageFinalizeResult,
+) -> None:
+    reserved_paths = (result.result_file, result.findings_file)
+    for path in reserved_paths:
+        if path is not None:
+            _register_recoverable_publication(publications, path)
+    for path in result.generated_files:
+        if path not in reserved_paths:
+            publications.publish(
+                path,
+                file_size_and_sha256(path),
+                recovery_source=path,
+            )
+
+
+def _register_recoverable_publication(
+    publications: RuntimePublicationRegistry,
+    path: Path,
+) -> None:
+    publications.publish(
+        path,
+        file_size_and_sha256(path),
+        recovery_source=path,
+    )
 
 
 def _emit_generated_file_workspace_cleanup_errors(

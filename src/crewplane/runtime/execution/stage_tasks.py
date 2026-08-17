@@ -38,6 +38,7 @@ def build_stage_task_specs(node: PreflightExecutionNode) -> tuple[StageTaskSpec,
             task_id=provider.task_id,
             role=provider.role,
             display_name=display_names[provider.task_id],
+            provider=provider.provider,
         )
         for provider in node.provider_records
     )

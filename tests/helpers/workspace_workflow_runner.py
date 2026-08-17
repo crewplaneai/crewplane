@@ -8,6 +8,7 @@ import pytest
 from rich.console import Console
 
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
+from crewplane.architecture.ports import TerminalHistoryRead
 from crewplane.cli.workflow_runner import execute_workflow_run
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight import PreflightWorkflowSource
@@ -58,6 +59,24 @@ class WorkspaceUnavailableArtifactsAdapter:
         del workflow_name, state_dir, project_root, options
         type(self).create_store_calls += 1
         raise AssertionError("workspace real run must fail before store allocation")
+
+    def create_terminal_history_reader(
+        self,
+        state_dir: Path,
+        options: dict[str, Any] | None = None,
+    ) -> UnavailableTerminalHistoryReader:
+        del state_dir, options
+        return UnavailableTerminalHistoryReader()
+
+
+class UnavailableTerminalHistoryReader:
+    def read_terminal_result(
+        self,
+        raw_path: str,
+        source_root: Path,
+    ) -> TerminalHistoryRead:
+        del raw_path, source_root
+        return TerminalHistoryRead(matched=False)
 
 
 async def run_workspace_enabled_mock_e2e(
@@ -186,7 +205,6 @@ def _workspace_config(
                 "artifacts": {
                     "implementation": artifact_implementation,
                     "options": {
-                        "allowed_template_paths": [],
                         "log_cli_output": True,
                     },
                 },

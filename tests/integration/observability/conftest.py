@@ -17,6 +17,7 @@ from crewplane.bootstrap.container import build_runtime_components
 from crewplane.core.config import Config, load_config
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.observability import PersistentRunLogger, render_dag_summary
+from crewplane.observability.events import workflow_event
 from crewplane.observability.runtime import ObservabilityHub
 from crewplane.observability.types import (
     DashboardSnapshot,
@@ -220,17 +221,37 @@ def run_visualization_case() -> Callable[
                     components=components,
                     project_root=tmp_path,
                 )
-                asyncio.run(
-                    execute_workflow(
-                        plan=plan,
-                        output=components.artifact_store,
-                        invoker=components.base_invoker,
-                        secret_context=secret_context,
-                        event_sink=hub.emit,
+                try:
+                    asyncio.run(
+                        execute_workflow(
+                            plan=plan,
+                            output=components.artifact_store,
+                            invoker=components.base_invoker,
+                            secret_context=secret_context,
+                            event_sink=hub.emit,
+                            run_id=components.artifact_store.run_id,
+                            suppress_progress_output=True,
+                        )
+                    )
+                except Exception as exc:
+                    hub.emit(
+                        workflow_event(
+                            "workflow_failed",
+                            workflow_name=plan.workflow_name,
+                            run_id=components.artifact_store.run_id,
+                            error=str(exc),
+                        )
+                    )
+                    hub.set_terminal_result(RunResult(status="failed"))
+                    raise
+                hub.emit(
+                    workflow_event(
+                        "workflow_finished",
+                        workflow_name=plan.workflow_name,
                         run_id=components.artifact_store.run_id,
-                        suppress_progress_output=True,
                     )
                 )
+                hub.set_terminal_result(RunResult(status="succeeded"))
 
         error: Exception | None = None
         if case.expect_error is None:

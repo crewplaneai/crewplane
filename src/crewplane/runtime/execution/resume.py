@@ -33,8 +33,8 @@ def write_successful_node_state(
     output: ArtifactStorePort,
     workflow_identity: str,
     finalize_result: StageFinalizeResult,
-) -> None:
-    output.write_node_success_state(
+) -> Path:
+    return output.write_node_success_state(
         NodeState(
             run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
             plan_schema_version=plan.plan_schema_version,

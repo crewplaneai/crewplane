@@ -29,7 +29,7 @@ async def cleanup_successful_workspace_run_refs(
         removed_ref_count = await asyncio.to_thread(cleanup_plan_workspace_refs, plan)
     except Exception as exc:
         emit_cleanup_errors(telemetry, "workspace_ref_cleanup", (exc,))
-        return 0
+        raise RuntimeError("Workspace reference cleanup failed.") from exc
     if removed_ref_count:
         emit_runtime_log(
             telemetry,
@@ -71,7 +71,7 @@ async def refresh_workspace_node_manifests_for_state_paths(
     statuses: dict[str, NodeStatus],
     updated_state_paths: tuple[Path, ...],
     telemetry: ExecutionTelemetry | None,
-) -> None:
+) -> tuple[tuple[str, Exception], ...]:
     failures = await asyncio.to_thread(
         workspace_manifest_refresh_failures_for_state_paths,
         plan,
@@ -80,6 +80,7 @@ async def refresh_workspace_node_manifests_for_state_paths(
         updated_state_paths,
     )
     emit_workspace_manifest_refresh_failures(telemetry, failures)
+    return failures
 
 
 def workspace_manifest_refresh_failures_for_state_paths(
@@ -104,7 +105,7 @@ async def refresh_workspace_node_manifests(
     statuses: dict[str, NodeStatus],
     node_ids: set[str],
     telemetry: ExecutionTelemetry | None,
-) -> None:
+) -> tuple[tuple[str, Exception], ...]:
     failures = await asyncio.to_thread(
         workspace_manifest_refresh_failures,
         plan,
@@ -113,6 +114,7 @@ async def refresh_workspace_node_manifests(
         node_ids,
     )
     emit_workspace_manifest_refresh_failures(telemetry, failures)
+    return failures
 
 
 def workspace_manifest_refresh_failures(

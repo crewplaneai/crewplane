@@ -16,6 +16,7 @@ from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
 )
+from tests.helpers.artifacts import node_artifact_request
 
 
 def test_workspace_artifact_allowlist_empty_without_managed_workspace(
@@ -34,7 +35,7 @@ def test_workspace_artifact_allowlist_empty_without_managed_workspace(
     )
 
     assert allowed_paths == set()
-    assert output.get_stage_dir("implement") is None
+    assert output.get_node_dir(node_artifact_request("implement")) is None
 
 
 def test_workspace_artifact_allowlist_contains_runtime_owned_workspace_paths(
@@ -71,7 +72,7 @@ def test_workspace_artifact_allowlist_contains_runtime_owned_workspace_paths(
         1,
     )
 
-    stage_dir = output.get_stage_dir("implement")
+    stage_dir = output.get_node_dir(node_artifact_request("implement"))
     assert stage_dir is not None
     assert allowed_paths == {
         stage_dir / "workspace-state.json",

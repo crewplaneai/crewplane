@@ -63,7 +63,10 @@ def resolve_workspace_file_reference(
         return
     source_class = locator_source_class(workflow, node, target)
     blob_record = None
-    if source_class == WorkspaceFileSourceClass.PROJECT_INITIAL:
+    if source_class in {
+        WorkspaceFileSourceClass.PROJECT_INITIAL,
+        WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE,
+    }:
         blob_record = resolve_project_blob(
             source_snapshot.git_top_level,
             source_snapshot.run_base_commit,
@@ -81,7 +84,6 @@ def resolve_workspace_file_reference(
         reference=reference,
         occurrence_id=occurrence_id,
         options=options,
-        workflow=workflow,
         source_class=source_class,
         path_record=path_result,
         blob_record=blob_record,
@@ -205,6 +207,11 @@ def locator_source_class(
         return WorkspaceFileSourceClass.RUNTIME_DYNAMIC
     if has_same_worktree_source_ancestor(workflow, node, selector):
         return WorkspaceFileSourceClass.RUNTIME_DYNAMIC
+    if (
+        target == WorkspaceFileTarget.EXECUTOR_PROMPT
+        and selected_worktree_kind(workflow, node) == "worktree"
+    ):
+        return WorkspaceFileSourceClass.PROJECT_INITIAL_THEN_CANDIDATE
     return WorkspaceFileSourceClass.PROJECT_INITIAL
 
 
@@ -215,7 +222,6 @@ def build_workspace_file_locator(
     reference: TemplateReference,
     occurrence_id: str,
     options: PreflightCompileOptions,
-    workflow: WorkflowPlan,
     source_class: WorkspaceFileSourceClass,
     path_record: WorkspaceFilePathRecord,
     blob_record: ProjectBlobRecord | None,
@@ -237,10 +243,6 @@ def build_workspace_file_locator(
         ),
     }
     locator_id = f"workspace-file-{signature_for_payload(locator_payload)}"
-    runtime_dynamic_after_candidate = (
-        target == WorkspaceFileTarget.EXECUTOR_PROMPT
-        and selected_worktree_kind(workflow, node) == "worktree"
-    )
     content_ref = f"workspace-files/{locator_id}.txt" if blob_record else None
     return WorkspaceFileLocator(
         locator_id=locator_id,
@@ -267,7 +269,6 @@ def build_workspace_file_locator(
         ),
         git_top_relative_path=path_record.git_top_relative_path,
         workspace_relative_path=path_record.workspace_relative_path,
-        runtime_dynamic_after_candidate=runtime_dynamic_after_candidate,
         git_blob=blob_record.object_id if blob_record else None,
         git_file_mode=blob_record.mode if blob_record else None,
         byte_size=len(blob_record.payload) if blob_record else None,

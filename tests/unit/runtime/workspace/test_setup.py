@@ -353,6 +353,7 @@ def _policy(commands: list[list[str]]) -> WorkspaceSelectionRecord:
 
 def _plan(setup_timeout_seconds: float = 30.0) -> PreflightExecutionPlan:
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id="run",
         run_key_name="run",
         project_root=".",

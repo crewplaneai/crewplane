@@ -3,6 +3,10 @@ import unittest
 from pathlib import Path
 
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
+from crewplane.architecture.contracts import (
+    build_findings_filename,
+    build_result_filename,
+)
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight import (
@@ -121,7 +125,11 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 output.stages_dir / "implement.review" / "review_reviewer_0_round1.md"
             ).read_text(encoding="utf-8")
             self.assertEqual(extract_verdict(reviewer_output), "NO_FINDINGS")
-            self.assertTrue(output.get_stage_output_path("implement.handoff").exists())
+            self.assertTrue(
+                (
+                    output.results_dir / build_result_filename("implement.handoff")
+                ).exists()
+            )
 
     async def test_summary_node_waits_for_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -189,7 +197,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("billing-out", summary_call["prompt"])
             self.assertEqual(len(invoker.calls), 3)
 
-    async def test_scheduler_uses_compiled_dependency_graph_not_node_dependencies(
+    async def test_scheduler_uses_compiled_dependency_graph(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -218,21 +226,32 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 dependencies=[],
                 render_plan_id="first-render",
                 provider_records=[provider],
-                artifact_contract=ArtifactContract(output_path="first-result.md"),
+                artifact_contract=ArtifactContract(
+                    stage_path="first-stage",
+                    output_path="first-result.md",
+                    log_path="first-stage/logs",
+                    result_path="first-result.md",
+                ),
             )
             second = PreflightExecutionNode(
                 id="second",
                 mode="sequential",
-                dependencies=[],
+                dependencies=["first"],
                 render_plan_id="second-render",
                 provider_records=[
                     provider.model_copy(
                         update={"task_id": "alpha_executor_1"},
                     )
                 ],
-                artifact_contract=ArtifactContract(output_path="second-result.md"),
+                artifact_contract=ArtifactContract(
+                    stage_path="second-stage",
+                    output_path="second-result.md",
+                    log_path="second-stage/logs",
+                    result_path="second-result.md",
+                ),
             )
             plan = PreflightExecutionPlan(
+                plan_schema_version=SCHEMA_VERSION,
                 run_id=output.run_id,
                 run_key_name=output.run_key_name,
                 project_root=output.base_dir.as_posix(),
@@ -246,6 +265,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 render_plans=[
                     RenderPlan(
                         render_plan_id="first-render",
+                        node_id="first",
                         streams=[
                             RenderStream(
                                 target_role=ProviderRole.EXECUTOR,
@@ -262,6 +282,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     RenderPlan(
                         render_plan_id="second-render",
+                        node_id="second",
                         streams=[
                             RenderStream(
                                 target_role=ProviderRole.EXECUTOR,
@@ -285,6 +306,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                         target_node="second",
                         artifact_name=None,
                         dependency_signature="first-to-second",
+                        target_locator="first",
                     )
                 ],
                 runtime_config_snapshot={
@@ -374,7 +396,9 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 and event.payload.operation == "prompt_budget_warning"
             ]
             expected_char_count = len(
-                output.get_stage_output_path("node.source").read_text(encoding="utf-8")
+                (output.results_dir / build_result_filename("node.source")).read_text(
+                    encoding="utf-8"
+                )
             )
             self.assertEqual(len(warning_events), 1)
             self.assertEqual(warning_events[0].context.node_id, "node.parallel")
@@ -454,7 +478,9 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             await execute_workflow(config, workflow, output, invoker=invoker)
 
             self.assertIn("concise review finding", invoker.calls[1]["prompt"])
-            self.assertTrue(output.get_stage_findings_path("node.review").exists())
+            self.assertTrue(
+                (output.results_dir / build_findings_filename("node.review")).exists()
+            )
 
     async def test_prompt_budget_warning_handles_findings_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

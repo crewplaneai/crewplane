@@ -23,6 +23,8 @@ def _artifact(task_id: str, content: str) -> ExecutorRoundArtifact:
         task_id=task_id,
         content=content,
         output_file=Path(f"{task_id}_round1.md"),
+        audit_round_num=None,
+        round_num=1,
     )
 
 

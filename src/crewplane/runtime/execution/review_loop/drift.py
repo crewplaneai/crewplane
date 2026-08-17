@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import Never
-
-from crewplane.architecture.ports import ProviderProcessPublication
 
 from ..common import (
     ExecutionTelemetry,
@@ -11,9 +10,11 @@ from ..common import (
     run_provider_call,
 )
 from ..errors import NodeExecutionError, is_expected_execution_failure
+from ..publication_registry import RuntimePublicationRegistry
 from .drift_detection import (
     capture_drift_monitoring_window,
     detect_provider_call_drift,
+    restore_fatal_artifacts,
 )
 from .drift_events import emit_artifact_drift
 from .types import (
@@ -21,19 +22,33 @@ from .types import (
     DriftGuardSession,
     EventLogAppendCapture,
     GeneratedFileDriftAllowance,
-    RuntimePublicationAllowance,
 )
 
 
 def create_drift_guard_session(
     telemetry: ExecutionTelemetry | None,
+    runtime_publications: RuntimePublicationRegistry | None = None,
+    generated_file_allowance: GeneratedFileDriftAllowance | None = None,
 ) -> DriftGuardSession:
+    publications = runtime_publications or RuntimePublicationRegistry()
+    allowance = generated_file_allowance or GeneratedFileDriftAllowance()
     if telemetry is None:
-        return DriftGuardSession(telemetry=None, event_log_capture=None)
-    capture = EventLogAppendCapture(event_sink=telemetry.event_sink, events=[])
+        return DriftGuardSession(
+            telemetry=None,
+            event_log_capture=None,
+            generated_file_allowance=allowance,
+            runtime_publications=publications,
+        )
+    capture = EventLogAppendCapture(
+        event_sink=telemetry.event_sink,
+        events=[],
+        runtime_publications=publications,
+    )
     return DriftGuardSession(
         telemetry=replace(telemetry, event_sink=capture.emit),
         event_log_capture=capture,
+        generated_file_allowance=allowance,
+        runtime_publications=publications,
     )
 
 
@@ -45,6 +60,14 @@ async def run_provider_call_with_drift_guard(
         node_dir=request.node_dir,
         output=request.output,
         telemetry=request.telemetry,
+        runtime_publications=request.runtime_context.runtime_publications,
+        runtime_owned_paths=request.runtime_owned_paths,
+        runtime_owned_roots=request.runtime_owned_roots,
+        recovery_baseline=(
+            request.drift_session.recovery_baseline
+            if request.drift_session is not None
+            else None
+        ),
     )
     captured_telemetry, event_log_capture, event_log_start_index = (
         drift_guard_telemetry_context(request)
@@ -63,6 +86,7 @@ async def run_provider_call_with_drift_guard(
             event_log_capture,
             event_log_start_index,
         )
+        restore_fatal_artifacts(request, monitoring_window, drift.fatal_paths)
     except Exception as drift_exc:
         if provider_error is not None:
             mixed_error = mixed_provider_and_drift_guard_error(
@@ -147,7 +171,10 @@ def drift_guard_telemetry_context(
 ) -> tuple[ExecutionTelemetry | None, EventLogAppendCapture | None, int]:
     session = request.drift_session
     if session is None:
-        session = create_drift_guard_session(request.telemetry)
+        session = create_drift_guard_session(
+            request.telemetry,
+            request.runtime_context.runtime_publications,
+        )
     event_log_capture = session.event_log_capture
     event_log_start_index = (
         event_log_capture.event_count() if event_log_capture is not None else 0
@@ -165,18 +192,15 @@ async def invoke_provider_under_drift_guard(
         else GeneratedFileDriftAllowance()
     )
     request.generated_file_allowance = generated_file_allowance
-    runtime_publication_allowance = (
-        request.drift_session.runtime_publication_allowance
-        if request.drift_session is not None
-        else RuntimePublicationAllowance()
-    )
-    request.runtime_publication_allowance = runtime_publication_allowance
+    request.runtime_publications = request.runtime_context.runtime_publications
 
-    def record_runtime_publication(publication: ProviderProcessPublication) -> None:
-        runtime_publication_allowance.publish(
-            publication.path,
-            publication.signature,
-        )
+    def register_runtime_log(path: Path) -> None:
+        if request.runtime_owned_roots and not any(
+            path == owned_path or path.is_relative_to(owned_path)
+            for owned_path in request.runtime_owned_roots
+        ):
+            raise RuntimeError(f"Unexpected runtime log path: {path}")
+        request.allow_runtime_log_path(path)
 
     await run_provider_call(
         ProviderCallRequest(
@@ -194,11 +218,16 @@ async def invoke_provider_under_drift_guard(
             telemetry=captured_telemetry,
             findings_enabled=request.findings_enabled,
             provider_output_policy=request.provider_output_policy,
-            on_log_file_resolved=request.allowed_paths.add,
-            on_provider_process_state_published=record_runtime_publication,
-            on_generated_file_snapshot_started=generated_file_allowance.start_snapshot,
-            on_generated_file_snapshot_finished=generated_file_allowance.finish_snapshot,
+            on_log_file_resolved=register_runtime_log,
+            on_generated_file_snapshot_started=(
+                generated_file_allowance.start_snapshot
+            ),
+            on_generated_file_snapshot_finished=(
+                generated_file_allowance.finish_snapshot
+            ),
             rendered_workspace_files=request.rendered_workspace_files,
+            invocation_output_file=request.invocation_output_file,
+            defer_output_publication=request.defer_output_publication,
         ),
         display=replace(request.display, telemetry=captured_telemetry),
     )

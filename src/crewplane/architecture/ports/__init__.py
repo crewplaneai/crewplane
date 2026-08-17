@@ -4,6 +4,8 @@ from .artifacts import (
     ProviderProcessInvocation,
     ProviderProcessPublication,
     ProviderProcessStorePort,
+    TerminalHistoryRead,
+    TerminalHistoryReaderPort,
 )
 from .invoker import InvokerAdapterPort
 from .runtime import RuntimeComponents, UIRuntimePlan
@@ -16,6 +18,8 @@ __all__ = [
     "ProviderProcessInvocation",
     "ProviderProcessPublication",
     "ProviderProcessStorePort",
+    "TerminalHistoryRead",
+    "TerminalHistoryReaderPort",
     "RuntimeComponents",
     "UIAdapterCapabilities",
     "UIAdapterPort",

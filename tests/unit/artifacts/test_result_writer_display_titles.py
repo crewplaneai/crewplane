@@ -5,6 +5,11 @@ from pathlib import Path
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.artifacts.results.writer import ResultWriter
 from crewplane.core.workflow.keywords import ProviderRole
+from tests.helpers.resume_validation import review_status_output_entry
+from tests.unit.artifacts.test_review_loop_status import (
+    valid_status_payload,
+    write_status,
+)
 
 
 def build_writer(result_file: Path, findings_file: Path) -> ResultWriter:
@@ -70,6 +75,35 @@ def test_multi_provider_result_and_findings_use_display_headings(
     result_file = tmp_path / "result.md"
     findings_file = tmp_path / "findings.md"
     writer = build_writer(result_file, findings_file)
+    status = valid_status_payload("review")
+    status["final_local_round_num"] = 1
+    status["attempted_local_round_num"] = 1
+    status["canonical_executor_outputs"] = [
+        review_status_output_entry(
+            stage_dir,
+            "alpha_executor_0_round1.md",
+            task_id="alpha_executor_0",
+            provider="alpha",
+            role="executor",
+        ),
+        review_status_output_entry(
+            stage_dir,
+            "beta_executor_1_round1.md",
+            task_id="beta_executor_1",
+            provider="beta",
+            role="executor",
+        ),
+    ]
+    status["reviewer_outputs"] = [
+        review_status_output_entry(
+            stage_dir,
+            "review_reviewer_0_round1.md",
+            task_id="review_reviewer_0",
+            provider="review",
+            role="reviewer",
+        )
+    ]
+    write_status(stage_dir, status)
 
     writer.finalize_stage(
         "review",

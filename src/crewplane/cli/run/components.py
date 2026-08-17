@@ -3,14 +3,13 @@ from __future__ import annotations
 import shutil
 from collections.abc import Callable
 
-from crewplane.architecture.loader import instantiate_adapter
+from crewplane.architecture.loader import instantiate_adapter, require_artifact_store
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents
 from crewplane.bootstrap import (
     RuntimeConfigSnapshotBuildResult,
     build_runtime_components,
 )
-from crewplane.core.config import Settings
 from crewplane.observability.types import WorkflowTopology
 
 from .context import WorkflowRunContext, print_artifact_locations
@@ -47,18 +46,18 @@ def allocate_run_output(
     snapshot_result: RuntimeConfigSnapshotBuildResult,
     warning_recorder: WorkflowWarningRecorder,
 ) -> ArtifactStorePort:
-    settings = (
-        context.config.settings if context.config.settings is not None else Settings()
-    )
+    settings = context.config.settings
     artifacts_adapter = instantiate_adapter(
         "artifacts",
         settings.integrations.artifacts.implementation,
     )
-    output = artifacts_adapter.create_store(
-        workflow_name=context.workflow.name,
-        state_dir=context.state_dir,
-        project_root=context.project_root,
-        options=snapshot_result.artifact_options,
+    output = require_artifact_store(
+        artifacts_adapter.create_store(
+            workflow_name=context.workflow.name,
+            state_dir=context.state_dir,
+            project_root=context.project_root,
+            options=snapshot_result.artifact_options,
+        )
     )
     warning_recorder.bind_run_id(output.run_id)
     print_artifact_locations(context.workflow.name, output, context.console)
