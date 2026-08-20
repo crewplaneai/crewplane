@@ -1,28 +1,30 @@
+"""Run provider calls with artifact-drift protection."""
+
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Never
 
-from ..common import (
+from ...common import (
     ExecutionTelemetry,
     ProviderCallRequest,
     run_provider_call,
 )
-from ..errors import NodeExecutionError, is_expected_execution_failure
-from ..publication_registry import RuntimePublicationRegistry
-from .drift_detection import (
-    capture_drift_monitoring_window,
-    detect_provider_call_drift,
-    restore_fatal_artifacts,
-)
-from .drift_events import emit_artifact_drift
-from .types import (
+from ...errors import NodeExecutionError, is_expected_execution_failure
+from ...publication_registry import RuntimePublicationRegistry
+from ..types import (
+    DriftCheckResult,
     DriftGuardCallRequest,
     DriftGuardSession,
+    DriftMonitoringWindow,
     EventLogAppendCapture,
     GeneratedFileDriftAllowance,
 )
+from .capture import capture_drift_monitoring_window
+from .detection import detect_provider_call_drift
+from .events import emit_artifact_drift
+from .recovery import restore_fatal_artifacts
 
 
 def create_drift_guard_session(
@@ -52,9 +54,35 @@ def create_drift_guard_session(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _DriftGuardContext:
+    monitoring_window: DriftMonitoringWindow
+    captured_telemetry: ExecutionTelemetry | None
+    event_log_capture: EventLogAppendCapture | None
+    event_log_start_index: int
+
+
 async def run_provider_call_with_drift_guard(
     request: DriftGuardCallRequest,
 ) -> int:
+    context = _prepare_drift_guard_context(request)
+    provider_error = await _invoke_provider_capturing_error(
+        request,
+        context.captured_telemetry,
+    )
+    drift = _detect_and_restore_drift(request, context, provider_error)
+    _emit_drift_telemetry(request, drift, provider_error)
+
+    if provider_error is not None:
+        _raise_for_provider_failure(request, drift, provider_error)
+    if drift.fatal_paths:
+        raise fatal_artifact_drift_error(request)
+    return 1 if drift.warning_paths else 0
+
+
+def _prepare_drift_guard_context(
+    request: DriftGuardCallRequest,
+) -> _DriftGuardContext:
     monitoring_window = capture_drift_monitoring_window(
         node_id=request.node.id,
         node_dir=request.node_dir,
@@ -72,34 +100,60 @@ async def run_provider_call_with_drift_guard(
     captured_telemetry, event_log_capture, event_log_start_index = (
         drift_guard_telemetry_context(request)
     )
-    provider_error: Exception | None = None
+    return _DriftGuardContext(
+        monitoring_window=monitoring_window,
+        captured_telemetry=captured_telemetry,
+        event_log_capture=event_log_capture,
+        event_log_start_index=event_log_start_index,
+    )
+
+
+async def _invoke_provider_capturing_error(
+    request: DriftGuardCallRequest,
+    captured_telemetry: ExecutionTelemetry | None,
+) -> Exception | None:
     try:
         await invoke_provider_under_drift_guard(request, captured_telemetry)
     except Exception as exc:
-        provider_error = exc
+        return exc
+    return None
 
-    mixed_error: Exception | None = None
+
+def _detect_and_restore_drift(
+    request: DriftGuardCallRequest,
+    context: _DriftGuardContext,
+    provider_error: Exception | None,
+) -> DriftCheckResult:
     try:
         drift = detect_provider_call_drift(
             request,
-            monitoring_window,
-            event_log_capture,
-            event_log_start_index,
+            context.monitoring_window,
+            context.event_log_capture,
+            context.event_log_start_index,
         )
-        restore_fatal_artifacts(request, monitoring_window, drift.fatal_paths)
+        restore_fatal_artifacts(
+            request,
+            context.monitoring_window,
+            drift.fatal_paths,
+        )
     except Exception as drift_exc:
-        if provider_error is not None:
-            mixed_error = mixed_provider_and_drift_guard_error(
-                provider_error,
-                drift_exc,
-                "artifact drift detection failed",
-            )
-        else:
+        if provider_error is None:
             raise
-    if mixed_error is not None:
-        raise_preserving_cause(mixed_error)
+        mixed_error = mixed_provider_and_drift_guard_error(
+            provider_error,
+            drift_exc,
+            "artifact drift detection failed",
+        )
+    else:
+        return drift
+    raise_preserving_cause(mixed_error)
 
-    mixed_error = None
+
+def _emit_drift_telemetry(
+    request: DriftGuardCallRequest,
+    drift: DriftCheckResult,
+    provider_error: Exception | None,
+) -> None:
     try:
         emit_artifact_drift(
             telemetry=request.telemetry,
@@ -113,32 +167,34 @@ async def run_provider_call_with_drift_guard(
             drift=drift,
         )
     except Exception as drift_emit_exc:
-        if provider_error is not None:
-            mixed_error = mixed_provider_and_drift_guard_error(
-                provider_error,
-                drift_emit_exc,
-                "artifact drift telemetry failed",
-            )
-        else:
+        if provider_error is None:
             raise
-    if mixed_error is not None:
-        raise_preserving_cause(mixed_error)
+        mixed_error = mixed_provider_and_drift_guard_error(
+            provider_error,
+            drift_emit_exc,
+            "artifact drift telemetry failed",
+        )
+    else:
+        return
+    raise_preserving_cause(mixed_error)
 
-    if provider_error is not None:
-        if drift.warning_paths or drift.fatal_paths:
-            provider_error.add_note(
-                "artifact drift detected after provider failure: "
-                f"{len(drift.warning_paths)} warning path(s), "
-                f"{len(drift.fatal_paths)} fatal path(s)"
-            )
-        if drift.fatal_paths:
-            if not is_expected_execution_failure(provider_error):
-                raise provider_error
-            raise fatal_artifact_drift_error(request) from provider_error
-        raise provider_error
+
+def _raise_for_provider_failure(
+    request: DriftGuardCallRequest,
+    drift: DriftCheckResult,
+    provider_error: Exception,
+) -> Never:
+    if drift.warning_paths or drift.fatal_paths:
+        provider_error.add_note(
+            "artifact drift detected after provider failure: "
+            f"{len(drift.warning_paths)} warning path(s), "
+            f"{len(drift.fatal_paths)} fatal path(s)"
+        )
     if drift.fatal_paths:
-        raise fatal_artifact_drift_error(request)
-    return 1 if drift.warning_paths else 0
+        if not is_expected_execution_failure(provider_error):
+            raise provider_error
+        raise fatal_artifact_drift_error(request) from provider_error
+    raise provider_error
 
 
 def mixed_provider_and_drift_guard_error(

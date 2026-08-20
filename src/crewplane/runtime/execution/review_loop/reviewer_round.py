@@ -34,7 +34,7 @@ from .drift import (
     create_drift_guard_session,
     run_provider_call_with_drift_guard,
 )
-from .drift_detection import capture_drift_recovery_baseline
+from .drift.capture import capture_drift_recovery_baseline
 from .prompts import REVIEWER_ONLY_INSTRUCTION, build_reviewer_prompt
 from .state import (
     persist_review_evaluation_artifacts,

@@ -20,7 +20,9 @@ from crewplane.runtime.execution import NodeExecutionError
 from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
-from crewplane.runtime.execution.review_loop import drift as review_loop_drift
+from crewplane.runtime.execution.review_loop.drift import (
+    guard as review_loop_drift_guard,
+)
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
@@ -158,15 +160,11 @@ class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
             workflow = WorkflowPlan(name="Mixed Drift Detector", nodes=[node])
             output = OutputManager(workflow.name, base_dir=tmp_path)
 
-            def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
-                del args, kwargs
-                raise TypeError("simulated drift detector defect")
-
             with (
                 patch.object(
-                    review_loop_drift,
+                    review_loop_drift_guard,
                     "detect_provider_call_drift",
-                    broken_drift_detection,
+                    side_effect=TypeError("simulated drift detector defect"),
                 ),
                 self.assertRaisesRegex(
                     TypeError,
