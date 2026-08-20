@@ -35,7 +35,7 @@ from crewplane.runtime.execution.common import (
     run_provider_call,
 )
 from crewplane.runtime.execution.provider_call import (
-    lifecycle as provider_call_lifecycle,
+    provider_output as provider_call_output,
 )
 from crewplane.runtime.execution.provider_call import publish_invocation_output
 from crewplane.runtime.execution.publication_registry import (
@@ -156,7 +156,7 @@ def test_invocation_output_publication_stages_on_destination_filesystem(
         23,
         "8073e76391e728426a7dfcd9c08af6dad50d89e69bdb982390c3f726fa995b31",
     )
-    original_replace = provider_call_lifecycle.replace_contained_file
+    original_replace = provider_call_output.replace_contained_file
     staged_sources: list[Path] = []
 
     def record_replace(root: Path, relative_path: str, staged_source: Path) -> Path:
@@ -165,7 +165,7 @@ def test_invocation_output_publication_stages_on_destination_filesystem(
         return original_replace(root, relative_path, staged_source)
 
     monkeypatch.setattr(
-        provider_call_lifecycle,
+        provider_call_output,
         "replace_contained_file",
         record_replace,
     )

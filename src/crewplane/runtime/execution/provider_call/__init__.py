@@ -11,12 +11,11 @@ from .generated_files import (
     mark_workspace_succeeded,
     record_generated_file_workspace,
 )
-from .lifecycle import (
+from .lifecycle import resolve_provider_model, run_provider_invocation_lifecycle
+from .provider_output import (
     bind_invocation_output,
     publish_invocation_output,
     read_bound_invocation_output,
-    resolve_provider_model,
-    run_provider_invocation_lifecycle,
 )
 from .types import ProviderCallRequest, ProviderCallResult, ProviderOutputPolicy
 
