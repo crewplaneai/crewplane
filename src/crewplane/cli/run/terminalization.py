@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 from crewplane.architecture.contracts import RunResult
 from crewplane.architecture.ports import ArtifactStorePort
@@ -21,6 +21,12 @@ from crewplane.observability.run_summary.logger import PersistentRunLogger
 
 from .manifest import finalize_run_manifest
 
+_TERMINAL_EVENT_TYPE_BY_STATUS: dict[TerminalRunStatus, WorkflowEventType] = {
+    "succeeded": "workflow_finished",
+    "failed": "workflow_failed",
+    "cancelled": "workflow_cancelled",
+}
+
 
 class TerminalizationHub(Protocol):
     def emit(self, event: ExecutionEvent) -> None: ...
@@ -34,6 +40,15 @@ class TerminalRecoveryRecorder(Protocol):
         phase: TerminalRecoveryPhase,
         status: TerminalRunStatus,
         reason: str | None,
+    ) -> None: ...
+
+
+class TerminalizationCommitter(Protocol):
+    def commit(
+        self,
+        hub: TerminalizationHub,
+        status: TerminalRunStatus,
+        reason: str | None = None,
     ) -> None: ...
 
 
@@ -71,50 +86,12 @@ class TerminalizationCoordinator:
             return
         if self.summary_logger is None:
             raise RuntimeError("Terminalization requires a bound summary logger.")
-        normalized_reason = (reason or "").strip() or None
-        if status == "succeeded" and normalized_reason is not None:
-            raise ValueError("Successful terminalization cannot include a reason.")
-        if status == "failed" and normalized_reason is None:
-            normalized_reason = "Workflow execution failed."
-        if status == "cancelled" and normalized_reason is None:
-            normalized_reason = "Workflow execution was cancelled."
+        normalized_reason = self._normalize_terminal_outcome(status, reason)
         self._set_outcome(status, normalized_reason)
         self._publish_recovery_phase("outcome_selected")
-
-        event_types: dict[TerminalRunStatus, WorkflowEventType] = {
-            "succeeded": "workflow_finished",
-            "failed": "workflow_failed",
-            "cancelled": "workflow_cancelled",
-        }
-        event_type = event_types[status]
-
-        if self._event is None:
-            self._event = workflow_event(
-                event_type,
-                workflow_name=self.workflow_name,
-                run_id=self.output.run_id,
-                error=normalized_reason,
-            )
-        if not self.event_published:
-            hub.emit(self._event)
-            if not self._event_is_durable():
-                raise RuntimeError(
-                    "Terminal event publication did not produce durable evidence."
-                )
-            self.event_published = True
-
-        if self._result is None:
-            self._result = RunResult(
-                status=status,
-                cancel_reason=normalized_reason if status == "cancelled" else None,
-            )
-        if not self.result_published:
-            hub.set_terminal_result(self._result)
-            self.result_published = True
-
-        if not self.summary_published:
-            self.summary_logger.refresh_summary(self._result)
-            self.summary_published = True
+        self._publish_terminal_event(hub, status, normalized_reason)
+        self._publish_terminal_result(hub, status, normalized_reason)
+        self._publish_summary()
         self._publish_recovery_phase("terminal_views_published")
 
     @property
@@ -195,6 +172,20 @@ class TerminalizationCoordinator:
         )
         self.manifest_published = True
 
+    def _normalize_terminal_outcome(
+        self,
+        status: TerminalRunStatus,
+        reason: str | None,
+    ) -> str | None:
+        normalized_reason = (reason or "").strip() or None
+        if status == "succeeded" and normalized_reason is not None:
+            raise ValueError("Successful terminalization cannot include a reason.")
+        if status == "failed" and normalized_reason is None:
+            return "Workflow execution failed."
+        if status == "cancelled" and normalized_reason is None:
+            return "Workflow execution was cancelled."
+        return normalized_reason
+
     def _set_outcome(
         self,
         status: TerminalRunStatus,
@@ -206,6 +197,52 @@ class TerminalizationCoordinator:
             return
         if self._status != status or self._reason != reason:
             raise RuntimeError("Run terminalization outcome cannot change on retry.")
+
+    def _publish_terminal_event(
+        self,
+        hub: TerminalizationHub,
+        status: TerminalRunStatus,
+        reason: str | None,
+    ) -> None:
+        if self._event is None:
+            self._event = workflow_event(
+                _TERMINAL_EVENT_TYPE_BY_STATUS[status],
+                workflow_name=self.workflow_name,
+                run_id=self.output.run_id,
+                error=reason,
+            )
+        if self.event_published:
+            return
+        hub.emit(self._event)
+        if not self._event_is_durable():
+            raise RuntimeError(
+                "Terminal event publication did not produce durable evidence."
+            )
+        self.event_published = True
+
+    def _publish_terminal_result(
+        self,
+        hub: TerminalizationHub,
+        status: TerminalRunStatus,
+        reason: str | None,
+    ) -> None:
+        if self._result is None:
+            self._result = RunResult(
+                status=status,
+                cancel_reason=reason if status == "cancelled" else None,
+            )
+        if self.result_published:
+            return
+        hub.set_terminal_result(self._result)
+        self.result_published = True
+
+    def _publish_summary(self) -> None:
+        if self.summary_published:
+            return
+        if self._result is None:
+            raise RuntimeError("Terminal result has not been prepared.")
+        cast(PersistentRunLogger, self.summary_logger).refresh_summary(self._result)
+        self.summary_published = True
 
     def _event_is_durable(self) -> bool:
         if self._event is None:
@@ -233,7 +270,7 @@ def _retry_once(action: Callable[[], None], operation: str) -> None:
 
 
 def commit_terminalization_with_retry(
-    coordinator: TerminalizationCoordinator,
+    coordinator: TerminalizationCommitter,
     hub: TerminalizationHub,
     status: TerminalRunStatus,
     reason: str | None = None,

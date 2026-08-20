@@ -7,6 +7,7 @@ import pytest
 from crewplane.architecture import safe_files
 from crewplane.architecture.safe_files import (
     ensure_contained_directory,
+    ensure_single_link_regular_file,
     replace_contained_file,
 )
 
@@ -74,7 +75,6 @@ def test_replace_contained_file_does_not_clobber_a_racing_destination(
     def precreate_destination(
         source_path: Path,
         destination_name: str,
-        *,
         dst_dir_fd: int,
         follow_symlinks: bool,
     ) -> None:
@@ -140,3 +140,44 @@ def test_replace_contained_file_rolls_back_its_link_after_verification_failure(
 
     assert source.read_text(encoding="utf-8") == "private"
     assert not (root / "output.md").exists()
+
+
+def test_ensure_single_link_regular_file_retries_contention_then_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "result.md"
+    calls = 0
+    original_open = safe_files.os.open
+
+    def create_once_after_two_races(file_path: str, flags: int, mode: int = 0) -> int:
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            raise FileExistsError
+        return original_open(file_path, flags, mode)
+
+    monkeypatch.setattr(safe_files.os, "open", create_once_after_two_races)
+
+    safe_path = ensure_single_link_regular_file(path)
+
+    assert safe_path == path
+    assert path.read_text(encoding="utf-8") == ""
+    assert calls == 3
+
+
+def test_ensure_single_link_regular_file_fails_after_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "result.md"
+
+    def keep_file_contended(
+        file_path: str,  # noqa: ARG001
+        flags: int,  # noqa: ARG001
+        mode: int = 0,  # noqa: ARG001
+    ) -> int:
+        raise FileExistsError
+
+    monkeypatch.setattr(safe_files.os, "open", keep_file_contended)
+
+    with pytest.raises(ValueError, match="could not be created safely"):
+        ensure_single_link_regular_file(path)

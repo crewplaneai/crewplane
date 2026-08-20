@@ -8,7 +8,17 @@ from pydantic import ValidationError
 
 from crewplane.architecture.ports import TerminalHistoryRead
 from crewplane.architecture.safe_files import contained_regular_file
-from crewplane.core.execution_state import RunManifest
+from crewplane.core.execution_state import RUN_STATUS_RUNNING, RunManifest
+
+_EXECUTION_RESULTS_DIR = "execution-results"
+_EXECUTION_STAGES_DIR = "execution-stages"
+
+
+@dataclass(frozen=True)
+class _ResultRelativePath:
+    run_key_name: str
+    relative_path: Path
+    is_complete: bool
 
 
 @dataclass(frozen=True)
@@ -22,34 +32,122 @@ class FilesystemTerminalHistoryReader:
         raw_path: str,
         source_root: Path,
     ) -> TerminalHistoryRead:
-        relative_path = self._result_relative_path(raw_path, source_root)
-        if relative_path is None:
+        result_location = self._result_relative_path(raw_path, source_root)
+        if result_location is None:
             return TerminalHistoryRead(matched=False)
-        if len(relative_path.parts) < 2:
-            return TerminalHistoryRead(
-                matched=True,
-                error="Execution result path is incomplete.",
-            )
-        run_key_name = relative_path.parts[0]
-        manifest_error = self._terminal_manifest_error(run_key_name)
+
+        path_error = self._validate_result_path_structure(result_location)
+        if path_error is not None:
+            return path_error
+
+        manifest_error = self._terminal_manifest_error(result_location.run_key_name)
         if manifest_error is not None:
             return manifest_error
-        result_path = contained_regular_file(
-            self.state_dir / "execution-results",
+
+        result_path = self._resolve_result_file(result_location.relative_path)
+        if result_path is None:
+            return self._matched_error(
+                "Execution result is missing or is not a safe regular file."
+            )
+
+        return self._read_result_bytes(result_path)
+
+    def _validate_result_path_structure(
+        self,
+        result_location: _ResultRelativePath,
+    ) -> TerminalHistoryRead | None:
+        if not result_location.is_complete:
+            return self._matched_error("Execution result path is incomplete.")
+        return None
+
+    def _resolve_result_file(self, relative_path: Path) -> Path | None:
+        return contained_regular_file(
+            self.state_dir / _EXECUTION_RESULTS_DIR,
             relative_path.as_posix(),
         )
-        if result_path is None:
-            return TerminalHistoryRead(
-                matched=True,
-                error="Execution result is missing or is not a safe regular file.",
+
+    def _terminal_manifest_error(
+        self,
+        run_key_name: str,
+    ) -> TerminalHistoryRead | None:
+        manifest_path = self._terminal_manifest_path(run_key_name)
+        if manifest_path is None:
+            return self._matched_error(
+                "Execution result run manifest is missing or unsafe."
             )
+        manifest = self._load_terminal_manifest(manifest_path)
+        if isinstance(manifest, TerminalHistoryRead):
+            return manifest
+        return self._validate_terminal_manifest(manifest, manifest_path, run_key_name)
+
+    def _terminal_manifest_path(self, run_key_name: str) -> Path | None:
+        return contained_regular_file(
+            self.state_dir / _EXECUTION_STAGES_DIR,
+            f"{run_key_name}/manifests/run.json",
+        )
+
+    def _load_terminal_manifest(
+        self,
+        manifest_path: Path,
+    ) -> RunManifest | TerminalHistoryRead:
+        try:
+            manifest = RunManifest.model_validate_json(
+                manifest_path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, ValidationError):
+            return self._matched_error(
+                "Execution result run manifest is invalid.",
+                path=manifest_path,
+            )
+        return manifest
+
+    def _validate_terminal_manifest(
+        self,
+        manifest: RunManifest,
+        manifest_path: Path,
+        run_key_name: str,
+    ) -> TerminalHistoryRead | None:
+        if manifest.run_key_name != run_key_name:
+            return self._matched_error(
+                "Execution result run manifest does not match its run directory.",
+                path=manifest_path,
+            )
+        if manifest.status == RUN_STATUS_RUNNING:
+            return self._matched_error(
+                "Execution result run is still running.",
+                path=manifest_path,
+            )
+        return None
+
+    def _result_relative_path(
+        self,
+        raw_path: str,
+        source_root: Path,
+    ) -> _ResultRelativePath | None:
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = source_root / candidate
+        normalized_candidate = Path(os.path.abspath(candidate))
+        results_root = Path(
+            os.path.abspath(self.state_dir / _EXECUTION_RESULTS_DIR),
+        )
+        try:
+            relative = normalized_candidate.relative_to(results_root)
+        except ValueError:
+            return None
+        return _ResultRelativePath(
+            run_key_name=relative.parts[0] if relative.parts else "",
+            relative_path=relative,
+            is_complete=len(relative.parts) >= 2,
+        )
+
+    def _read_result_bytes(self, result_path: Path) -> TerminalHistoryRead:
         try:
             payload = result_path.read_bytes()
         except OSError:
-            return TerminalHistoryRead(
-                matched=True,
+            return self._matched_error(
+                "Execution result could not be read.",
                 path=result_path,
-                error="Execution result could not be read.",
             )
         return TerminalHistoryRead(
             matched=True,
@@ -57,54 +155,13 @@ class FilesystemTerminalHistoryReader:
             payload=payload,
         )
 
-    def _result_relative_path(
+    def _matched_error(
         self,
-        raw_path: str,
-        source_root: Path,
-    ) -> Path | None:
-        candidate = Path(raw_path).expanduser()
-        if not candidate.is_absolute():
-            candidate = source_root / candidate
-        candidate = Path(os.path.abspath(candidate))
-        results_root = Path(os.path.abspath(self.state_dir / "execution-results"))
-        try:
-            return candidate.relative_to(results_root)
-        except ValueError:
-            return None
-
-    def _terminal_manifest_error(
-        self,
-        run_key_name: str,
-    ) -> TerminalHistoryRead | None:
-        manifest_path = contained_regular_file(
-            self.state_dir / "execution-stages",
-            f"{run_key_name}/manifests/run.json",
+        message: str,
+        path: Path | None = None,
+    ) -> TerminalHistoryRead:
+        return TerminalHistoryRead(
+            matched=True,
+            path=path,
+            error=message,
         )
-        if manifest_path is None:
-            return TerminalHistoryRead(
-                matched=True,
-                error="Execution result run manifest is missing or unsafe.",
-            )
-        try:
-            manifest = RunManifest.model_validate_json(
-                manifest_path.read_text(encoding="utf-8")
-            )
-        except (OSError, UnicodeDecodeError, ValidationError):
-            return TerminalHistoryRead(
-                matched=True,
-                path=manifest_path,
-                error="Execution result run manifest is invalid.",
-            )
-        if manifest.run_key_name != run_key_name:
-            return TerminalHistoryRead(
-                matched=True,
-                path=manifest_path,
-                error="Execution result run manifest does not match its run directory.",
-            )
-        if manifest.status == "running":
-            return TerminalHistoryRead(
-                matched=True,
-                path=manifest_path,
-                error="Execution result run is still running.",
-            )
-        return None

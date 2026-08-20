@@ -460,7 +460,6 @@ def write_review_status_with_reviewer(stage_dir: Path) -> None:
 def review_status_output_entry(
     stage_dir: Path,
     relative_path: str,
-    *,
     task_id: str,
     provider: str,
     role: str,

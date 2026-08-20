@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
 from rich.console import Console
 
@@ -194,7 +194,7 @@ async def wait_for_stop_request(hub: ObservabilityHubInstance) -> None:
 
 
 async def await_workflow_or_stop_request(
-    workflow_call: Awaitable[None],
+    workflow_call: Coroutine[object, object, None],
     hub: ObservabilityHubInstance,
 ) -> None:
     workflow_task = asyncio.create_task(workflow_call)
@@ -259,6 +259,129 @@ def print_end_of_run_summary(
     console.print(render_run_summary_terminal(summary), markup=False)
 
 
+def _resolve_observability_hub(
+    observability_hub_cls: ObservabilityHubFactory | None,
+) -> ObservabilityHubFactory:
+    if observability_hub_cls is not None:
+        return observability_hub_cls
+    return cast(ObservabilityHubFactory, ObservabilityHub)
+
+
+def _is_live_dashboard_available(
+    hub: ObservabilityHubInstance,
+    components: RuntimeComponents,
+) -> bool:
+    if not components.observers:
+        return False
+    return any(
+        observer_is_active(
+            hub,
+            observer,
+            observer_count=len(components.observers),
+        )
+        for observer in components.observers
+    )
+
+
+def _selected_progress_mode(
+    components: RuntimeComponents,
+    has_live_dashboard: bool,
+) -> bool:
+    return (
+        False
+        if (components.observers and not has_live_dashboard)
+        else components.suppress_progress_output
+    )
+
+
+async def _execute_observed_workflow(
+    execute_workflow_impl: ExecuteWorkflowCallable,
+    plan: PreflightExecutionPlan,
+    output: ArtifactStorePort,
+    components: RuntimeComponents,
+    secret_context: SecretContext,
+    hub: ObservabilityHubInstance,
+    workflow_identity: str | None,
+    resumed_node_ids: tuple[str, ...],
+    suppress_progress_output: bool,
+    terminalization: TerminalizationCoordinatorProtocol,
+) -> BaseException | None:
+    try:
+        await await_workflow_or_stop_request(
+            call_execute_workflow(
+                execute_workflow_impl,
+                plan,
+                output,
+                invoker=components.base_invoker,
+                secret_context=secret_context,
+                event_sink=hub.emit,
+                run_id=output.run_id,
+                suppress_progress_output=suppress_progress_output,
+                workflow_identity=workflow_identity,
+                resumed_node_ids=resumed_node_ids,
+            ),
+            hub,
+        )
+    except asyncio.CancelledError as exc:
+        commit_terminalization_with_retry(
+            terminalization,
+            hub,
+            "cancelled",
+            EXTERNAL_CANCEL_REASON,
+        )
+        return exc
+    except WorkflowCancelledByUser as exc:
+        commit_terminalization_with_retry(
+            terminalization,
+            hub,
+            "cancelled",
+            UI_STOP_CANCEL_REASON,
+        )
+        return exc
+    except Exception as exc:
+        commit_terminalization_with_retry(
+            terminalization,
+            hub,
+            "failed",
+            str(exc),
+        )
+        return exc
+    return None
+
+
+def _run_scheduler_post_hook(
+    on_scheduler_succeeded: Callable[[], None],
+    terminalization: TerminalizationCoordinatorProtocol,
+    hub: ObservabilityHubInstance,
+) -> BaseException | None:
+    try:
+        on_scheduler_succeeded()
+    except Exception as exc:
+        commit_terminalization_with_retry(
+            terminalization,
+            hub,
+            "failed",
+            str(exc),
+        )
+        return exc
+
+    commit_terminalization_with_retry(
+        terminalization,
+        hub,
+        "succeeded",
+    )
+    return None
+
+
+def _handle_shutdown(
+    shutdown_error: BaseException,
+    terminal_error: BaseException | None,
+) -> None:
+    if terminal_error is not None:
+        raise shutdown_error from terminal_error
+    raise shutdown_error
+
+
 async def execute_workflow_with_observability(
     components: RuntimeComponents,
     workflow_topology: WorkflowTopology,
@@ -274,9 +397,7 @@ async def execute_workflow_with_observability(
     workflow_identity: str | None = None,
     resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
-    observability_hub_factory = (
-        ObservabilityHub if observability_hub_cls is None else observability_hub_cls
-    )
+    observability_hub_factory = _resolve_observability_hub(observability_hub_cls)
     terminal_error: BaseException | None = None
     try:
         with observability_hub_factory(
@@ -287,84 +408,35 @@ async def execute_workflow_with_observability(
             warning_sink=warning_recorder.sink,
         ) as hub:
             warning_recorder.flush_queued()
-            ui_observers_unavailable = bool(components.observers) and not any(
-                observer_is_active(
-                    hub,
-                    observer,
-                    observer_count=len(components.observers),
-                )
-                for observer in components.observers
-            )
-            if ui_observers_unavailable:
+            has_live_dashboard = _is_live_dashboard_available(hub, components)
+            if components.observers and not has_live_dashboard:
                 warning_recorder.sink(
                     "live dashboard unavailable; continuing without live dashboard."
                 )
-            selected_suppress_progress_output = (
-                False
-                if ui_observers_unavailable
-                else components.suppress_progress_output
+            selected_suppress_progress_output = _selected_progress_mode(
+                components,
+                has_live_dashboard,
             )
-            try:
-                await await_workflow_or_stop_request(
-                    call_execute_workflow(
-                        execute_workflow_impl,
-                        plan,
-                        output,
-                        invoker=components.base_invoker,
-                        secret_context=secret_context,
-                        event_sink=hub.emit,
-                        run_id=output.run_id,
-                        suppress_progress_output=selected_suppress_progress_output,
-                        workflow_identity=workflow_identity,
-                        resumed_node_ids=resumed_node_ids,
-                    ),
-                    hub,
-                )
-            except asyncio.CancelledError as exc:
-                commit_terminalization_with_retry(
-                    terminalization,
-                    hub,
-                    "cancelled",
-                    EXTERNAL_CANCEL_REASON,
-                )
-                terminal_error = exc
-            except WorkflowCancelledByUser as exc:
-                commit_terminalization_with_retry(
-                    terminalization,
-                    hub,
-                    "cancelled",
-                    UI_STOP_CANCEL_REASON,
-                )
-                terminal_error = exc
-            except Exception as exc:
-                commit_terminalization_with_retry(
-                    terminalization,
-                    hub,
-                    "failed",
-                    str(exc),
-                )
-                terminal_error = exc
+            terminal_error = await _execute_observed_workflow(
+                execute_workflow_impl=execute_workflow_impl,
+                plan=plan,
+                output=output,
+                components=components,
+                secret_context=secret_context,
+                hub=hub,
+                workflow_identity=workflow_identity,
+                resumed_node_ids=resumed_node_ids,
+                suppress_progress_output=selected_suppress_progress_output,
+                terminalization=terminalization,
+            )
             if terminal_error is None:
-                try:
-                    on_scheduler_succeeded()
-                except Exception as exc:
-                    commit_terminalization_with_retry(
-                        terminalization,
-                        hub,
-                        "failed",
-                        str(exc),
-                    )
-                    terminal_error = exc
-                else:
-                    commit_terminalization_with_retry(
-                        terminalization,
-                        hub,
-                        "succeeded",
-                    )
+                terminal_error = _run_scheduler_post_hook(
+                    on_scheduler_succeeded,
+                    terminalization,
+                    hub,
+                )
     except BaseException as shutdown_error:
-        if terminal_error is not None:
-            raise shutdown_error from terminal_error
-        raise
+        _handle_shutdown(shutdown_error, terminal_error)
 
     terminalization.acknowledge_observer_shutdown()
     if terminal_error is not None:

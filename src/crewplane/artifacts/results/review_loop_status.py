@@ -82,6 +82,26 @@ def resolve_review_loop_status(
     stage_dir: Path,
     task_specs: tuple[StageTaskSpec, ...] = (),
 ) -> ResolvedReviewLoopStatus | None:
+    status_path = locate_review_loop_status(stage_dir)
+    if status_path is None:
+        return None
+
+    payload = load_status_payload(status_path)
+    validate_status_metadata(payload, stage_name)
+    canonical_outputs, reviewer_outputs = resolve_status_outputs(payload, stage_dir)
+    validate_review_loop_output_set(
+        payload,
+        canonical_outputs,
+        reviewer_outputs,
+        task_specs,
+    )
+    return ResolvedReviewLoopStatus(
+        canonical_executor_outputs=canonical_outputs,
+        reviewer_outputs=reviewer_outputs,
+    )
+
+
+def locate_review_loop_status(stage_dir: Path) -> Path | None:
     status_candidate = stage_dir / REVIEW_LOOP_STATUS_RELATIVE_PATH
     status_path = contained_regular_file(
         stage_dir,
@@ -109,10 +129,25 @@ def resolve_review_loop_status(
                 "review-loop status path could not be inspected"
             ) from exc
         raise status_error("review-loop status path must be a safe regular file")
-    payload = load_status_payload(status_path)
+    return status_path
+
+
+def validate_status_metadata(
+    payload: dict[str, object],
+    stage_name: str,
+) -> None:
     validate_status_identity(payload, stage_name)
     validate_status_counters(payload)
     validate_status_booleans(payload)
+
+
+def resolve_status_outputs(
+    payload: dict[str, object],
+    stage_dir: Path,
+) -> tuple[
+    tuple[ReviewLoopStatusEntry, ...],
+    tuple[ReviewLoopStatusEntry, ...],
+]:
     canonical_outputs = parse_status_entries(
         payload,
         "canonical_executor_outputs",
@@ -125,6 +160,15 @@ def resolve_review_loop_status(
         ProviderRole.REVIEWER,
         stage_dir,
     )
+    return canonical_outputs, reviewer_outputs
+
+
+def validate_review_loop_output_set(
+    payload: dict[str, object],
+    canonical_outputs: tuple[ReviewLoopStatusEntry, ...],
+    reviewer_outputs: tuple[ReviewLoopStatusEntry, ...],
+    task_specs: tuple[StageTaskSpec, ...],
+) -> None:
     validate_unique_task_ids(canonical_outputs, reviewer_outputs)
     validate_expected_task_producers(
         canonical_outputs,
@@ -132,10 +176,6 @@ def resolve_review_loop_status(
         task_specs,
     )
     validate_round_attribution(payload, canonical_outputs, reviewer_outputs)
-    return ResolvedReviewLoopStatus(
-        canonical_executor_outputs=canonical_outputs,
-        reviewer_outputs=reviewer_outputs,
-    )
 
 
 def load_status_payload(status_path: Path) -> dict[str, object]:

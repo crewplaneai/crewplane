@@ -2,76 +2,103 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Literal
 
 from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
 from crewplane.architecture.safe_files import contained_regular_file
-from crewplane.core.execution_state import NodeState
+from crewplane.core.execution_state import ArtifactDescriptor, NodeState
 
 from .naming import build_node_state_filename
+
+_NodeArtifactKind = Literal["output", "findings"]
 
 
 def read_verified_node_artifact(
     stages_dir: Path,
     results_dir: Path,
     request: NodeArtifactRequest,
-    kind: str,
+    kind: _NodeArtifactKind,
 ) -> VerifiedNodeArtifact:
     """Read a compiled result only after its successful descriptor is verified."""
 
-    expected_relative: str | None
-    if kind == "output":
-        expected_relative = request.contract.output_path
-    elif kind == "findings":
-        expected_relative = request.contract.findings_path
-    else:
-        raise ValueError(f"Unsupported node artifact kind '{kind}'.")
-    if expected_relative is None:
-        raise ValueError(f"Node '{request.node_id}' has no {kind} artifact locator.")
-
-    state_path = contained_regular_file(
-        stages_dir,
-        f"manifests/nodes/{build_node_state_filename(request.node_id)}",
-    )
-    if state_path is None:
-        raise ValueError(
-            f"Node '{request.node_id}' has no valid successful state descriptor."
-        )
-    try:
-        state = NodeState.model_validate_json(state_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ValueError(
-            f"Node '{request.node_id}' has no valid successful state descriptor."
-        ) from exc
+    expected_relative = _expected_relative_path(request, kind)
+    state = _load_node_state(stages_dir, request.node_id)
     if state.status != "succeeded" or state.node_id != request.node_id:
         raise ValueError(
             f"Node '{request.node_id}' does not have successful artifact state."
         )
-    descriptor = next(
-        (item for item in state.artifacts if item.kind == kind),
-        None,
-    )
-    if descriptor is None or descriptor.relative_path != expected_relative:
+    descriptor = _descriptor_for_artifact(state, kind, expected_relative)
+    if descriptor is None:
         raise ValueError(
             f"Node '{request.node_id}' {kind} descriptor does not match its plan."
         )
     artifact_path = contained_regular_file(results_dir, descriptor.relative_path)
     if artifact_path is None:
         raise ValueError(f"Node '{request.node_id}' {kind} artifact is unavailable.")
-    try:
-        payload = artifact_path.read_bytes()
-    except OSError as exc:
+    payload = _read_payload(artifact_path, request.node_id, kind)
+    if len(payload) != descriptor.size_bytes:
         raise ValueError(
-            f"Node '{request.node_id}' {kind} artifact is unavailable."
-        ) from exc
-    size_bytes = len(payload)
+            f"Node '{request.node_id}' {kind} artifact bytes do not match state."
+        )
     sha256 = hashlib.sha256(payload).hexdigest()
-    if size_bytes != descriptor.size_bytes or sha256 != descriptor.sha256:
+    if sha256 != descriptor.sha256:
         raise ValueError(
             f"Node '{request.node_id}' {kind} artifact bytes do not match state."
         )
     return VerifiedNodeArtifact(
         path=artifact_path,
         payload=payload,
-        size_bytes=size_bytes,
+        size_bytes=len(payload),
         sha256=sha256,
     )
+
+
+def _expected_relative_path(
+    request: NodeArtifactRequest,
+    kind: _NodeArtifactKind,
+) -> str:
+    match kind:
+        case "output":
+            return request.contract.output_path
+        case "findings":
+            findings_path = request.contract.findings_path
+            if findings_path is None:
+                raise ValueError(
+                    f"Node '{request.node_id}' has no {kind} artifact locator."
+                )
+            return findings_path
+        case _:
+            raise ValueError(f"Unsupported node artifact kind '{kind}'.")
+
+
+def _load_node_state(stages_dir: Path, node_id: str) -> NodeState:
+    state_path = contained_regular_file(
+        stages_dir,
+        f"manifests/nodes/{build_node_state_filename(node_id)}",
+    )
+    if state_path is None:
+        raise ValueError(f"Node '{node_id}' has no valid successful state descriptor.")
+    try:
+        return NodeState.model_validate_json(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(
+            f"Node '{node_id}' has no valid successful state descriptor."
+        ) from exc
+
+
+def _descriptor_for_artifact(
+    state: NodeState,
+    kind: _NodeArtifactKind,
+    expected_relative: str,
+) -> ArtifactDescriptor | None:
+    descriptor = next((item for item in state.artifacts if item.kind == kind), None)
+    if descriptor is None or descriptor.relative_path != expected_relative:
+        return None
+    return descriptor
+
+
+def _read_payload(path: Path, node_id: str, kind: _NodeArtifactKind) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"Node '{node_id}' {kind} artifact is unavailable.") from exc

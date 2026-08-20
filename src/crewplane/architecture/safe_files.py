@@ -5,14 +5,16 @@ import stat
 from contextlib import suppress
 from pathlib import Path
 
+_CREATE_RETRIES = 2
+
 
 def ensure_contained_directory(root: Path, relative_path: str) -> Path:
     """Create and return a non-symlink directory below ``root``."""
 
-    _validate_relative_path(relative_path)
+    parts = _relative_path_parts(relative_path)
     _ensure_directory_root(root)
     current = root
-    for part in Path(relative_path).parts:
+    for part in parts:
         current = current / part
         _ensure_directory_component(current)
     return current
@@ -21,11 +23,11 @@ def ensure_contained_directory(root: Path, relative_path: str) -> Path:
 def contained_directory(root: Path, relative_path: str) -> Path | None:
     """Resolve a non-symlink directory below ``root`` when it exists."""
 
-    _validate_relative_path(relative_path)
+    parts = _relative_path_parts(relative_path)
     if not _directory_root_exists_safely(root):
         return None
     current = root
-    for part in Path(relative_path).parts:
+    for part in parts:
         current = current / part
         try:
             component_stat = current.lstat()
@@ -49,87 +51,69 @@ def contained_directory(root: Path, relative_path: str) -> Path | None:
 def contained_regular_file(root: Path, relative_path: str) -> Path | None:
     """Resolve a single-link regular file contained below ``root``."""
 
-    raw_parts = relative_path.split("/")
-    if (
-        not relative_path
-        or any(part in {"", ".", ".."} for part in raw_parts)
-        or Path(relative_path).is_absolute()
-    ):
+    parts = _relative_path_parts_optional(relative_path)
+    if not parts:
         return None
     if _has_symlink_component(root):
         return None
-    candidate = root
-    for part in Path(*raw_parts).parts:
-        candidate = candidate / part
-        if _path_is_symlink(candidate):
-            return None
-    try:
-        resolved = candidate.resolve(strict=True)
-        root_resolved = root.resolve(strict=True)
-    except PermissionError:
-        raise
-    except OSError:
+    candidate = _walk_without_symlink(root, parts)
+    if candidate is None:
         return None
-    if not resolved.is_relative_to(root_resolved):
+    resolved_candidate = _resolve_candidate_under_root(root, candidate)
+    if resolved_candidate is None:
         return None
-    try:
-        file_stat = resolved.stat()
-    except PermissionError:
-        raise
-    except OSError:
-        return None
-    if not resolved.is_file() or file_stat.st_nlink != 1:
-        return None
-    return resolved
+    return _ensure_single_link_file(resolved_candidate)
 
 
 def ensure_single_link_regular_file(path: Path) -> Path:
     """Create or return a single-link regular file without following links."""
 
     _ensure_directory_root(path.parent)
-    safe_path = contained_regular_file(path.parent, path.name)
-    if safe_path is not None:
-        return safe_path
-    try:
-        path.lstat()
-    except FileNotFoundError:
-        try:
-            descriptor = os.open(
-                path,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                0o600,
-            )
-        except FileExistsError:
-            return ensure_single_link_regular_file(path)
-        else:
-            os.close(descriptor)
+
+    # At most one create attempt plus bounded retries to tolerate benign races.
+    # This avoids unbounded looping if another process keeps creating the path.
+    for _ in range(_CREATE_RETRIES + 1):  # noqa: B007
         safe_path = contained_regular_file(path.parent, path.name)
         if safe_path is not None:
             return safe_path
-    raise ValueError(f"Path must be a single-link regular file: {path}")
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            if not _create_regular_file_exclusively(path):
+                # Another actor created the path after the initial lookup.
+                # Retry from the start to re-check safety invariants.
+                continue
+            safe_path = contained_regular_file(path.parent, path.name)
+            if safe_path is not None:
+                return safe_path
+            raise ValueError(
+                f"Path must be a single-link regular file: {path}"
+            ) from None
+        else:
+            raise ValueError(
+                f"Path must be a single-link regular file: {path}"
+            ) from None
+    raise ValueError(
+        f"Path could not be created safely after {_CREATE_RETRIES + 1} attempts: {path}"
+    )
 
 
 def replace_contained_file(root: Path, relative_path: str, source: Path) -> Path:
     """Publish a same-filesystem file below a stable directory without clobbering."""
 
-    _validate_relative_path(relative_path)
-    parts = Path(relative_path).parts
+    parts = _relative_path_parts(relative_path)
     if not parts:
         raise ValueError("Contained replacement requires a file path.")
     source_stat = source.lstat()
     if not _is_single_link_regular_file(source_stat):
         raise ValueError(f"Publication source must be a single-link file: {source}")
+
     directory_fd = _open_contained_directory(root, parts[:-1])
     parent_path = root.joinpath(*parts[:-1])
     published = False
     try:
         _ensure_directory_handle_matches_path(directory_fd, parent_path)
-        os.link(
-            source,
-            parts[-1],
-            dst_dir_fd=directory_fd,
-            follow_symlinks=False,
-        )
+        _publish_source_entry(directory_fd, source, parts[-1])
         published = True
         _ensure_entry_matches_source(directory_fd, parts[-1], source_stat)
         source.unlink()
@@ -145,6 +129,84 @@ def replace_contained_file(root: Path, relative_path: str, source: Path) -> Path
     if contained_regular_file(root, relative_path) is None:
         raise ValueError(f"Published file is not safely contained: {result}")
     return result
+
+
+def _relative_path_parts(relative_path: str) -> tuple[str, ...]:
+    if relative_path in {"", "."}:
+        return ()
+    raw_parts = relative_path.split("/")
+    if (
+        any(part in {"", ".", ".."} for part in raw_parts)
+        or Path(relative_path).is_absolute()
+    ):
+        raise ValueError("Contained paths must be safe relative POSIX paths.")
+    return tuple(raw_parts)
+
+
+def _relative_path_parts_optional(relative_path: str) -> tuple[str, ...] | None:
+    try:
+        return _relative_path_parts(relative_path)
+    except ValueError:
+        return None
+
+
+def _walk_without_symlink(root: Path, parts: tuple[str, ...]) -> Path | None:
+    candidate = root
+    for part in parts:
+        candidate = candidate / part
+        if _path_is_symlink(candidate):
+            return None
+    return candidate
+
+
+def _resolve_candidate_under_root(root: Path, candidate: Path) -> Path | None:
+    try:
+        resolved = candidate.resolve(strict=True)
+        root_resolved = root.resolve(strict=True)
+    except PermissionError:
+        raise
+    except OSError:
+        return None
+    if not resolved.is_relative_to(root_resolved):
+        return None
+    return resolved
+
+
+def _ensure_single_link_file(resolved: Path) -> Path | None:
+    try:
+        file_stat = resolved.stat()
+    except PermissionError:
+        raise
+    except OSError:
+        return None
+    if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
+        return None
+    return resolved
+
+
+def _publish_source_entry(
+    directory_fd: int, source: Path, destination_name: str
+) -> None:
+    os.link(
+        source,
+        destination_name,
+        dst_dir_fd=directory_fd,
+        follow_symlinks=False,
+    )
+
+
+def _create_regular_file_exclusively(path: Path) -> bool:
+    try:
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+    except FileExistsError:
+        return False
+    else:
+        os.close(descriptor)
+        return True
 
 
 def _open_contained_directory(root: Path, relative_parts: tuple[str, ...]) -> int:
@@ -211,17 +273,6 @@ def _ensure_regular_entry(directory_fd: int, name: str) -> None:
 
 def _is_single_link_regular_file(file_stat: os.stat_result) -> bool:
     return stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1
-
-
-def _validate_relative_path(relative_path: str) -> None:
-    if relative_path in {"", "."}:
-        return
-    raw_parts = relative_path.split("/")
-    if (
-        any(part in {"", ".", ".."} for part in raw_parts)
-        or Path(relative_path).is_absolute()
-    ):
-        raise ValueError("Contained paths must be safe relative POSIX paths.")
 
 
 def _ensure_directory_root(root: Path) -> None:

@@ -17,6 +17,7 @@ from crewplane.observability.events import (
     format_execution_event_log_line,
 )
 
+from ...workspace.worktree.cache import WorktreeReuseCleanupResult
 from ..common import (
     CompiledRuntimeContext,
     ExecutionTelemetry,
@@ -33,6 +34,7 @@ from ..common import (
 from ..errors import WorkflowExecutionError, is_expected_execution_failure
 from ..publication_registry import RuntimePublicationRegistry
 from ..resume import emit_resumed_node_events
+from ..workspace_files.generated import GeneratedFileWorkspaceCleanupResult
 from .cleanup import (
     cleanup_successful_workspace_run_refs,
     emit_cleanup_errors,
@@ -301,19 +303,18 @@ def _raise_if_workflow_failed(
     raise WorkflowExecutionError(f"Workflow '{workflow_name}' failed:\n{details}")
 
 
-async def execute_workflow(
+def _build_runtime_context(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
-    invoker: AgentInvoker,
     secret_context: SecretContext,
-    event_sink: EventSink | None = None,
-    run_id: str | None = None,
-    suppress_progress_output: bool = False,
-    workflow_identity: str | None = None,
-    resumed_node_ids: tuple[str, ...] = (),
-) -> None:
-    """Execute a compiled preflight plan with optional live observability hooks."""
-
+    event_sink: EventSink | None,
+    run_id: str | None,
+    suppress_progress_output: bool,
+) -> tuple[
+    CompiledRuntimeContext,
+    ExecutionTelemetry,
+    asyncio.Semaphore | None,
+]:
     runtime_context = CompiledRuntimeContext(
         plan=plan,
         secret_context=secret_context,
@@ -335,120 +336,312 @@ async def execute_workflow(
         activity_tracker=RuntimeActivityTracker(),
     )
     runtime_context.validate_execution_contract()
+
     node_semaphore: asyncio.Semaphore | None = None
     max_concurrent_nodes = runtime_context.max_concurrent_nodes()
     if max_concurrent_nodes is not None:
         node_semaphore = asyncio.Semaphore(max_concurrent_nodes)
+    return runtime_context, telemetry, node_semaphore
+
+
+def _emit_workflow_started(
+    telemetry: ExecutionTelemetry | None,
+    workflow_name: str,
+) -> None:
     if should_print_console(telemetry):
         execution_console(telemetry).print(
-            f"[bold blue]Executing Workflow:[/] {plan.workflow_name}"
+            f"[bold blue]Executing Workflow:[/] {workflow_name}"
         )
     emit_workflow_event(telemetry, "workflow_started")
 
-    nodes_by_id: dict[str, PreflightExecutionNode] = {
-        node.id: node for node in plan.nodes
-    }
+
+def _initialize_workflow_execution(
+    plan: PreflightExecutionPlan,
+    output: ArtifactStorePort,
+    secret_context: SecretContext,
+    event_sink: EventSink | None,
+    run_id: str | None,
+    suppress_progress_output: bool,
+    workflow_identity: str | None,
+    resumed_node_ids: tuple[str, ...],
+) -> tuple[
+    CompiledRuntimeContext,
+    ExecutionTelemetry,
+    dict[str, PreflightExecutionNode],
+    str,
+    WorkflowExecutionState,
+    asyncio.Semaphore | None,
+]:
+    runtime_context, telemetry, node_semaphore = _build_runtime_context(
+        plan=plan,
+        output=output,
+        secret_context=secret_context,
+        event_sink=event_sink,
+        run_id=run_id,
+        suppress_progress_output=suppress_progress_output,
+    )
+    _emit_workflow_started(telemetry, plan.workflow_name)
+
+    nodes_by_id = {node.id: node for node in plan.nodes}
     resolved_workflow_identity = workflow_identity or plan.workflow_name
     state = initialize_workflow_execution_state(plan, resumed_node_ids)
-    scheduler_succeeded = False
-    postcondition_errors: list[Exception] = []
-    try:
-        for node_id in sorted(resumed_node_ids, key=state.node_order.__getitem__):
-            emit_resumed_node_events(node_id, telemetry)
-        while state.ready or state.running:
-            _schedule_ready_nodes(
-                nodes_by_id=nodes_by_id,
-                output=output,
-                invoker=invoker,
-                runtime_context=runtime_context,
-                state=state,
-                telemetry=telemetry,
-                max_concurrent_nodes=max_concurrent_nodes,
-                node_semaphore=node_semaphore,
-                workflow_identity=resolved_workflow_identity,
-            )
-            if not state.running:
-                break
 
-            completed_node_ids = await wait_for_completed_nodes(state)
-            unexpected_error: Exception | None = None
-            for node_id in completed_node_ids:
-                try:
-                    await _finalize_completed_node(node_id, state, telemetry)
-                except Exception as exc:
-                    if unexpected_error is None:
-                        unexpected_error = exc
-            if unexpected_error is not None:
-                raise unexpected_error
+    return (
+        runtime_context,
+        telemetry,
+        nodes_by_id,
+        resolved_workflow_identity,
+        state,
+        node_semaphore,
+    )
 
-        blocked_nodes = _mark_blocked_nodes(
+
+async def _consume_completed_nodes(
+    state: WorkflowExecutionState,
+    telemetry: ExecutionTelemetry | None,
+) -> None:
+    completed_node_ids = await wait_for_completed_nodes(state)
+    unexpected_error: Exception | None = None
+    for node_id in completed_node_ids:
+        try:
+            await _finalize_completed_node(node_id, state, telemetry)
+        except Exception as exc:
+            if unexpected_error is None:
+                unexpected_error = exc
+    if unexpected_error is not None:
+        raise unexpected_error
+
+
+async def _run_scheduling_loop(
+    nodes_by_id: dict[str, PreflightExecutionNode],
+    output: ArtifactStorePort,
+    invoker: AgentInvoker,
+    runtime_context: CompiledRuntimeContext,
+    state: WorkflowExecutionState,
+    telemetry: ExecutionTelemetry | None,
+    max_concurrent_nodes: int | None,
+    node_semaphore: asyncio.Semaphore | None,
+    workflow_identity: str,
+) -> None:
+    while state.ready or state.running:
+        _schedule_ready_nodes(
+            nodes_by_id=nodes_by_id,
+            output=output,
+            invoker=invoker,
+            runtime_context=runtime_context,
             state=state,
             telemetry=telemetry,
+            max_concurrent_nodes=max_concurrent_nodes,
+            node_semaphore=node_semaphore,
+            workflow_identity=workflow_identity,
         )
-        _raise_if_workflow_failed(
-            workflow_name=plan.workflow_name,
-            node_errors=state.node_errors,
-            blocked_nodes=blocked_nodes,
-            dependencies_by_node=state.dependencies_by_node,
-            statuses=state.statuses,
+        if not state.running:
+            break
+        await _consume_completed_nodes(state, telemetry)
+
+
+async def _finalize_execution(
+    state: WorkflowExecutionState,
+    plan: PreflightExecutionPlan,
+    telemetry: ExecutionTelemetry | None,
+) -> None:
+    blocked_nodes = _mark_blocked_nodes(
+        state=state,
+        telemetry=telemetry,
+    )
+    _raise_if_workflow_failed(
+        workflow_name=plan.workflow_name,
+        node_errors=state.node_errors,
+        blocked_nodes=blocked_nodes,
+        dependencies_by_node=state.dependencies_by_node,
+        statuses=state.statuses,
+    )
+    await cleanup_successful_workspace_run_refs(plan, telemetry)
+
+
+async def _collect_workflow_postconditions(
+    plan: PreflightExecutionPlan,
+    output: ArtifactStorePort,
+    state: WorkflowExecutionState,
+    runtime_context: CompiledRuntimeContext,
+    telemetry: ExecutionTelemetry | None,
+) -> list[Exception]:
+    postcondition_errors: list[Exception] = []
+    try:
+        await _cancel_running_node_tasks(state)
+        postcondition_errors.extend(
+            await _collect_deferred_workspace_cleanup_errors(
+                runtime_context=runtime_context,
+                telemetry=telemetry,
+            )
         )
-        await cleanup_successful_workspace_run_refs(plan, telemetry)
-        scheduler_succeeded = True
+        generated_file_cleanup = await _collect_generated_file_workspace_cleanup(
+            runtime_context=runtime_context,
+            telemetry=telemetry,
+        )
+        postcondition_errors.extend(generated_file_cleanup.errors)
+
+        worktree_cleanup = await _collect_worktree_reuse_cache_cleanup(
+            runtime_context=runtime_context,
+            telemetry=telemetry,
+        )
+        postcondition_errors.extend(worktree_cleanup.errors)
+
+        postcondition_errors.extend(
+            await _collect_descriptor_refresh_errors(
+                plan=plan,
+                output=output,
+                statuses=state.statuses,
+                worktree_cleanup=worktree_cleanup,
+                generated_file_cleanup=generated_file_cleanup,
+                telemetry=telemetry,
+            )
+        )
     finally:
-        try:
-            await _cancel_running_node_tasks(state)
-            deferred_workspace_cleanup_errors = (
-                await runtime_context.deferred_workspace_cleanups.drain(
-                    DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS
-                )
-            )
-            emit_cleanup_errors(
-                telemetry,
-                "workspace_preparation_cancellation_cleanup",
-                deferred_workspace_cleanup_errors,
-            )
-            postcondition_errors.extend(deferred_workspace_cleanup_errors)
-            generated_file_cleanup = await asyncio.to_thread(
-                runtime_context.generated_file_workspaces.cleanup_all
-            )
-            emit_cleanup_errors(
-                telemetry,
-                "generated_file_workspace_cleanup",
-                generated_file_cleanup.errors,
-            )
-            postcondition_errors.extend(generated_file_cleanup.errors)
-            worktree_cleanup = await asyncio.to_thread(
-                runtime_context.worktree_reuse_cache.cleanup_all
-            )
-            emit_cleanup_errors(
-                telemetry,
-                "worktree_reuse_cleanup",
-                worktree_cleanup.errors,
-            )
-            postcondition_errors.extend(worktree_cleanup.errors)
-            state_refresh_failures = (
-                await refresh_workspace_node_manifests_for_state_paths(
-                    plan,
-                    output,
-                    state.statuses,
-                    worktree_cleanup.updated_state_paths,
-                    telemetry,
-                )
-            )
-            descriptor_refresh_failures = await refresh_workspace_node_manifests(
-                plan,
-                output,
-                state.statuses,
-                set(generated_file_cleanup.cleaned_node_ids),
-                telemetry,
-            )
-            postcondition_errors.extend(exc for _, exc in state_refresh_failures)
-            postcondition_errors.extend(exc for _, exc in descriptor_refresh_failures)
-        finally:
-            runtime_context.runtime_publications.close()
+        runtime_context.runtime_publications.close()
+
+    return postcondition_errors
+
+
+async def _collect_deferred_workspace_cleanup_errors(
+    runtime_context: CompiledRuntimeContext,
+    telemetry: ExecutionTelemetry | None,
+) -> tuple[Exception, ...]:
+    errors = await runtime_context.deferred_workspace_cleanups.drain(
+        DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS
+    )
+    emit_cleanup_errors(
+        telemetry,
+        "workspace_preparation_cancellation_cleanup",
+        errors,
+    )
+    return errors
+
+
+async def _collect_generated_file_workspace_cleanup(
+    runtime_context: CompiledRuntimeContext,
+    telemetry: ExecutionTelemetry | None,
+) -> GeneratedFileWorkspaceCleanupResult:
+    generated_file_cleanup = await asyncio.to_thread(
+        runtime_context.generated_file_workspaces.cleanup_all
+    )
+    emit_cleanup_errors(
+        telemetry,
+        "generated_file_workspace_cleanup",
+        generated_file_cleanup.errors,
+    )
+    return generated_file_cleanup
+
+
+async def _collect_worktree_reuse_cache_cleanup(
+    runtime_context: CompiledRuntimeContext,
+    telemetry: ExecutionTelemetry | None,
+) -> WorktreeReuseCleanupResult:
+    worktree_cleanup = await asyncio.to_thread(
+        runtime_context.worktree_reuse_cache.cleanup_all
+    )
+    emit_cleanup_errors(telemetry, "worktree_reuse_cleanup", worktree_cleanup.errors)
+    return worktree_cleanup
+
+
+async def _collect_descriptor_refresh_errors(
+    plan: PreflightExecutionPlan,
+    output: ArtifactStorePort,
+    statuses: dict[str, NodeStatus],
+    worktree_cleanup: WorktreeReuseCleanupResult,
+    generated_file_cleanup: GeneratedFileWorkspaceCleanupResult,
+    telemetry: ExecutionTelemetry | None,
+) -> list[Exception]:
+    postcondition_errors: list[Exception] = []
+    state_refresh_failures = await refresh_workspace_node_manifests_for_state_paths(
+        plan,
+        output,
+        statuses,
+        worktree_cleanup.updated_state_paths,
+        telemetry,
+    )
+    descriptor_refresh_failures = await refresh_workspace_node_manifests(
+        plan,
+        output,
+        statuses,
+        set(generated_file_cleanup.cleaned_node_ids),
+        telemetry,
+    )
+    postcondition_errors.extend(exc for _, exc in state_refresh_failures)
+    postcondition_errors.extend(exc for _, exc in descriptor_refresh_failures)
+    return postcondition_errors
+
+
+def _raise_if_postcondition_errors(
+    scheduler_succeeded: bool,
+    postcondition_errors: list[Exception],
+) -> None:
     if scheduler_succeeded and postcondition_errors:
         raise WorkflowExecutionError(
             "Workflow postconditions failed: "
             f"{len(postcondition_errors)} cleanup or descriptor error(s); "
             f"first error: {safe_error_message(postcondition_errors[0])}"
         )
+
+
+async def execute_workflow(
+    plan: PreflightExecutionPlan,
+    output: ArtifactStorePort,
+    invoker: AgentInvoker,
+    secret_context: SecretContext,
+    event_sink: EventSink | None = None,
+    run_id: str | None = None,
+    suppress_progress_output: bool = False,
+    workflow_identity: str | None = None,
+    resumed_node_ids: tuple[str, ...] = (),
+) -> None:
+    """Execute a compiled preflight plan with optional live observability hooks."""
+
+    (
+        runtime_context,
+        telemetry,
+        nodes_by_id,
+        resolved_workflow_identity,
+        state,
+        node_semaphore,
+    ) = _initialize_workflow_execution(
+        plan=plan,
+        output=output,
+        secret_context=secret_context,
+        event_sink=event_sink,
+        run_id=run_id,
+        suppress_progress_output=suppress_progress_output,
+        workflow_identity=workflow_identity,
+        resumed_node_ids=resumed_node_ids,
+    )
+    max_concurrent_nodes = runtime_context.max_concurrent_nodes()
+    scheduler_succeeded = False
+    postcondition_errors: list[Exception] = []
+    try:
+        for node_id in sorted(resumed_node_ids, key=state.node_order.__getitem__):
+            emit_resumed_node_events(node_id, telemetry)
+        await _run_scheduling_loop(
+            nodes_by_id=nodes_by_id,
+            output=output,
+            invoker=invoker,
+            runtime_context=runtime_context,
+            state=state,
+            telemetry=telemetry,
+            max_concurrent_nodes=max_concurrent_nodes,
+            node_semaphore=node_semaphore,
+            workflow_identity=resolved_workflow_identity,
+        )
+        await _finalize_execution(state, plan, telemetry)
+        scheduler_succeeded = True
+    finally:
+        postcondition_errors = await _collect_workflow_postconditions(
+            plan=plan,
+            output=output,
+            state=state,
+            runtime_context=runtime_context,
+            telemetry=telemetry,
+        )
+    _raise_if_postcondition_errors(
+        scheduler_succeeded=scheduler_succeeded,
+        postcondition_errors=postcondition_errors,
+    )
