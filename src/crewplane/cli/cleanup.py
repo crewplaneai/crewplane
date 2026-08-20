@@ -202,7 +202,7 @@ def execute_workspace_cleanup(
             context.project_root,
             context.all_projects,
         ),
-        eligibility_lookup=workspace_cleanup_eligibility_lookup(
+        eligibility_lookup=_workspace_cleanup_eligibility_lookup(
             context.project_root,
             context.all_projects,
             context.orphans,
@@ -286,65 +286,36 @@ def cleanup_statuses(
     return frozenset(statuses)
 
 
-def workspace_cleanup_eligibility_lookup(
+def _workspace_cleanup_eligibility_lookup(
     project_root: Path,
     all_projects: bool,
     orphan_cleanup_requested: bool,
-) -> WorkspaceCleanupEligibilityLookup:
-    """Return a per-entry eligibility callback for workspace cleanup candidates."""
+) -> WorkspaceCleanupEligibilityLookup | None:
+    """Return project-scoped cleanup checks or no cross-project override."""
     if all_projects:
-        # Cross-project cleanup intentionally skips workspace-specific retention checks.
-        def all_projects_lookup(
-            _run_key_name: str,  # noqa: ARG001
-            _cache_key: str,  # noqa: ARG001
-            _status: str | None,  # noqa: ARG001
-        ) -> WorkspaceCleanupEligibility:
-            return WorkspaceCleanupEligibility(deletable=True)
+        return None
 
-        return all_projects_lookup
-
-    # Scoped cleanup needs filesystem and process context to verify run ownership/state.
     state_dir = project_root / STATE_DIR_NAME
     inspector = ProcessInspector()
 
-    def lookup(
+    def current_project_lookup(
         run_key_name: str,
-        _cache_key: str,  # noqa: ARG001
+        cache_key: str,  # noqa: ARG001 - Required by eligibility callback contract.
         status: str | None,
     ) -> WorkspaceCleanupEligibility:
-        # Keep blocker logic in one place and treat an explicit block as non-deletable.
-        retention_blocker = workspace_cleanup_blocker(
+        blocker_reason = _first_cleanup_blocker_reason(
             run_key_name,
             status,
             state_dir,
             orphan_cleanup_requested,
             inspector,
         )
-        if retention_blocker is not None:
-            return retention_blocker
-        return WorkspaceCleanupEligibility(deletable=True)
+        return WorkspaceCleanupEligibility(
+            deletable=blocker_reason is None,
+            reason=blocker_reason,
+        )
 
-    return lookup
-
-
-def workspace_cleanup_blocker(
-    run_key_name: str,
-    status: str | None,
-    state_dir: Path,
-    orphan_cleanup_requested: bool,
-    inspector: ProcessInspector,
-) -> WorkspaceCleanupEligibility | None:
-    blocker_reason = _first_cleanup_blocker_reason(
-        run_key_name,
-        status,
-        state_dir,
-        orphan_cleanup_requested,
-        inspector,
-    )
-    if blocker_reason is not None:
-        return WorkspaceCleanupEligibility(deletable=False, reason=blocker_reason)
-
-    return None
+    return current_project_lookup
 
 
 def _first_cleanup_blocker_reason(

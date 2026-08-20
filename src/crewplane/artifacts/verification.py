@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
-from typing import Literal
 
 from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
 from crewplane.architecture.safe_files import contained_regular_file
@@ -10,23 +8,17 @@ from crewplane.core.execution_state import ArtifactDescriptor, NodeState
 
 from .naming import build_node_state_filename
 
-_NodeArtifactKind = Literal["output", "findings"]
-
 
 def read_verified_node_artifact(
     stages_dir: Path,
     results_dir: Path,
     request: NodeArtifactRequest,
-    kind: _NodeArtifactKind,
+    kind: str,
 ) -> VerifiedNodeArtifact:
-    """Read a compiled result only after its successful descriptor is verified."""
+    """Read a compiled result after verifying its persisted descriptor."""
 
     expected_relative = _expected_relative_path(request, kind)
-    state = _load_node_state(stages_dir, request.node_id)
-    if state.status != "succeeded" or state.node_id != request.node_id:
-        raise ValueError(
-            f"Node '{request.node_id}' does not have successful artifact state."
-        )
+    state = _load_successful_node_state(stages_dir, request.node_id)
     descriptor = _descriptor_for_artifact(state, kind, expected_relative)
     if descriptor is None:
         raise ValueError(
@@ -36,26 +28,22 @@ def read_verified_node_artifact(
     if artifact_path is None:
         raise ValueError(f"Node '{request.node_id}' {kind} artifact is unavailable.")
     payload = _read_payload(artifact_path, request.node_id, kind)
-    if len(payload) != descriptor.size_bytes:
+    try:
+        return VerifiedNodeArtifact(
+            path=artifact_path,
+            payload=payload,
+            size_bytes=descriptor.size_bytes,
+            sha256=descriptor.sha256,
+        )
+    except ValueError as exc:
         raise ValueError(
             f"Node '{request.node_id}' {kind} artifact bytes do not match state."
-        )
-    sha256 = hashlib.sha256(payload).hexdigest()
-    if sha256 != descriptor.sha256:
-        raise ValueError(
-            f"Node '{request.node_id}' {kind} artifact bytes do not match state."
-        )
-    return VerifiedNodeArtifact(
-        path=artifact_path,
-        payload=payload,
-        size_bytes=len(payload),
-        sha256=sha256,
-    )
+        ) from exc
 
 
 def _expected_relative_path(
     request: NodeArtifactRequest,
-    kind: _NodeArtifactKind,
+    kind: str,
 ) -> str:
     match kind:
         case "output":
@@ -71,7 +59,7 @@ def _expected_relative_path(
             raise ValueError(f"Unsupported node artifact kind '{kind}'.")
 
 
-def _load_node_state(stages_dir: Path, node_id: str) -> NodeState:
+def _load_successful_node_state(stages_dir: Path, node_id: str) -> NodeState:
     state_path = contained_regular_file(
         stages_dir,
         f"manifests/nodes/{build_node_state_filename(node_id)}",
@@ -79,16 +67,19 @@ def _load_node_state(stages_dir: Path, node_id: str) -> NodeState:
     if state_path is None:
         raise ValueError(f"Node '{node_id}' has no valid successful state descriptor.")
     try:
-        return NodeState.model_validate_json(state_path.read_text(encoding="utf-8"))
+        state = NodeState.model_validate_json(state_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ValueError(
             f"Node '{node_id}' has no valid successful state descriptor."
         ) from exc
+    if state.status != "succeeded" or state.node_id != node_id:
+        raise ValueError(f"Node '{node_id}' does not have successful artifact state.")
+    return state
 
 
 def _descriptor_for_artifact(
     state: NodeState,
-    kind: _NodeArtifactKind,
+    kind: str,
     expected_relative: str,
 ) -> ArtifactDescriptor | None:
     descriptor = next((item for item in state.artifacts if item.kind == kind), None)
@@ -97,7 +88,7 @@ def _descriptor_for_artifact(
     return descriptor
 
 
-def _read_payload(path: Path, node_id: str, kind: _NodeArtifactKind) -> bytes:
+def _read_payload(path: Path, node_id: str, kind: str) -> bytes:
     try:
         return path.read_bytes()
     except OSError as exc:

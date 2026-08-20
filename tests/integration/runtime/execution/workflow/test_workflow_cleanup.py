@@ -11,8 +11,11 @@ from types import SimpleNamespace
 import pytest
 
 import crewplane.runtime.execution.workflow.cleanup as workflow_cleanup_module
+import crewplane.runtime.execution.workflow.execution_session as workflow_execution_session_module
 import crewplane.runtime.execution.workflow.node as workflow_node_module
 import crewplane.runtime.execution.workflow.orchestration as workflow_module
+import crewplane.runtime.execution.workflow.postconditions as workflow_postconditions_module
+import crewplane.runtime.execution.workflow.scheduling as workflow_scheduling_module
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts import OutputManager
 from crewplane.core.preflight.models import (
@@ -458,8 +461,12 @@ def test_workflow_refreshes_generated_file_cleanup_node_manifests(
         ref_cleanup_thread_ids.append(get_ident())
         return 0
 
-    monkeypatch.setattr(workflow_module, "CompiledRuntimeContext", RuntimeContext)
-    monkeypatch.setattr(workflow_module, "execute_node", execute_node)
+    monkeypatch.setattr(
+        workflow_execution_session_module,
+        "CompiledRuntimeContext",
+        RuntimeContext,
+    )
+    monkeypatch.setattr(workflow_scheduling_module, "execute_node", execute_node)
     monkeypatch.setattr(
         workflow_cleanup_module,
         "refresh_node_workspace_descriptor",
@@ -541,7 +548,11 @@ def test_workflow_reports_deferred_workspace_cleanup_errors(
         del plan
         return 0
 
-    monkeypatch.setattr(workflow_module, "CompiledRuntimeContext", RuntimeContext)
+    monkeypatch.setattr(
+        workflow_execution_session_module,
+        "CompiledRuntimeContext",
+        RuntimeContext,
+    )
     monkeypatch.setattr(
         workflow_cleanup_module,
         "cleanup_plan_workspace_refs",
@@ -564,7 +575,7 @@ def test_workflow_reports_deferred_workspace_cleanup_errors(
         )
 
     assert drained_timeouts == [
-        workflow_module.DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS
+        workflow_postconditions_module.DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS
     ]
     cleanup_warnings = [
         event

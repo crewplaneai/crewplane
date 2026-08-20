@@ -258,7 +258,7 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "crewplane.runtime.execution.workflow.orchestration.wait_for_completed_nodes",
+                    "crewplane.runtime.execution.workflow.scheduling.wait_for_completed_nodes",
                     new=_fail_wait_for_completed_nodes,
                 ),
                 self.assertRaisesRegex(RuntimeError, "simulated scheduler failure"),

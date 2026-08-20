@@ -128,6 +128,29 @@ def test_read_verified_node_artifact_rejects_hash_mismatch(tmp_path: Path) -> No
         read_verified_node_artifact(stages_dir, results_dir, request, "output")
 
 
+def test_read_verified_node_artifact_rejects_size_mismatch(tmp_path: Path) -> None:
+    stages_dir = tmp_path / "execution-stages"
+    results_dir = tmp_path / "execution-results"
+    request = _request("build-result.md")
+    payload = b"expected output"
+    descriptor = _write_artifact(
+        results_dir,
+        request.contract.output_path,
+        payload,
+        "output",
+    )
+    wrong_descriptor = ArtifactDescriptor(
+        kind=descriptor.kind,
+        relative_path=descriptor.relative_path,
+        sha256=descriptor.sha256,
+        size_bytes=descriptor.size_bytes + 1,
+    )
+    _write_node_state(stages_dir, request, [wrong_descriptor])
+
+    with pytest.raises(ValueError, match="bytes do not match state"):
+        read_verified_node_artifact(stages_dir, results_dir, request, "output")
+
+
 def test_read_verified_node_artifact_rejects_missing_findings_locator(
     tmp_path: Path,
 ) -> None:
