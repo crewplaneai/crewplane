@@ -41,6 +41,28 @@ def _write_terminal_history_workflow(path: Path) -> None:
     )
 
 
+def _write_terminal_history_prompt_workflow(path: Path) -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Task",
+                "nodes:",
+                "  - id: review",
+                "    mode: sequential",
+                "    providers: [alpha]",
+                "---",
+                "",
+                "## review",
+                "",
+                f"Review {RESULT_SOURCE_TOKEN}.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 class InvalidTerminalHistoryArtifactsAdapter(DryRunUnavailableArtifactsAdapter):
     create_terminal_history_reader = None
 
@@ -131,6 +153,21 @@ class CliDryRunResumeAdvisoryTests(unittest.TestCase):
                 tmp_path,
                 config_writer=write_nonfilesystem_config,
                 workflow_writer=_write_terminal_history_workflow,
+            )
+            write_result_source(tmp_path)
+
+            preview = compile_preview(tmp_path, config_path, workflow_path)
+
+            assert preview.static_file_payloads
+            self.assertIn(b"prior result", preview.static_file_payloads.values())
+
+    def test_provider_prompt_reads_terminal_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path, workflow_path = write_standard_project(
+                tmp_path,
+                config_writer=write_nonfilesystem_config,
+                workflow_writer=_write_terminal_history_prompt_workflow,
             )
             write_result_source(tmp_path)
 

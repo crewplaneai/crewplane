@@ -212,16 +212,33 @@ def test_file_token_rejects_runtime_owned_crewplane_root(tmp_path: Path) -> None
     assert "runtime-owned path" in preview.diagnostics[0].message
 
 
-def test_file_token_rejects_execution_result_in_provider_prompt(
+@pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled"])
+def test_file_token_allows_terminal_execution_result_in_provider_prompt(
+    tmp_path: Path,
+    status: RunStatus,
+) -> None:
+    write_result_source(tmp_path, status=status)
+
+    preview = _compile_file_prompt(tmp_path, RESULT_SOURCE_TOKEN)
+
+    assert preview.diagnostics == []
+    assert len(preview.static_resources) == 1
+    assert set(preview.static_file_payloads.values()) == {b"prior result"}
+    assert preview.render_plans[0].streams[0].fragments[0].kind == (
+        "static_file_content"
+    )
+
+
+def test_file_token_rejects_running_execution_result_in_provider_prompt(
     tmp_path: Path,
 ) -> None:
-    write_result_source(tmp_path)
+    write_result_source(tmp_path, status="running")
 
     preview = _compile_file_prompt(tmp_path, RESULT_SOURCE_TOKEN)
 
     assert preview.workflow_signature is None
     assert [diagnostic.code for diagnostic in preview.diagnostics] == ["FILE-POLICY"]
-    assert "runtime-owned path" in preview.diagnostics[0].message
+    assert "still running" in preview.diagnostics[0].message
 
 
 @pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled"])

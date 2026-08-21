@@ -124,7 +124,10 @@ class FilesystemTerminalHistoryReader:
         raw_path: str,
         source_root: Path,
     ) -> _ResultRelativePath | None:
-        candidate = Path(raw_path).expanduser()
+        try:
+            candidate = Path(raw_path).expanduser()
+        except RuntimeError:
+            return None
         if not candidate.is_absolute():
             candidate = source_root / candidate
         normalized_candidate = Path(os.path.abspath(candidate))

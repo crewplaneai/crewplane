@@ -185,7 +185,10 @@ Supported runtime template forms are:
 `{{file:path}}` references read UTF-8 text and are bounded to the project root by
 default. External files must be explicitly allowlisted through
 `settings.file_access.allowed_template_paths`. Symlinks are
-resolved before the final access check.
+resolved before the final access check. References under
+`.crewplane/execution-results/<run-key>/` are allowed only after the source run
+has succeeded, failed, or been cancelled. Running-run results and all other
+runtime-owned paths remain blocked.
 
 `{{param:key}}` is composition-time only. Bound parameters are substituted
 during Markdown workflow composition; unbound parameters are rewritten to

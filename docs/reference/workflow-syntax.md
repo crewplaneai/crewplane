@@ -278,10 +278,8 @@ nodes:
 Rules:
 
 - `source` must be exactly one raw `{{file:...}}` template.
-- A source may read a file under `.crewplane/execution-results/<run-key>/` when
-  the source run is `succeeded`, `failed`, or `cancelled`. Running-run results
-  remain blocked, and other file-template contexts cannot read runtime-owned
-  paths.
+- `source` follows the same terminal-result access policy as other file
+  templates.
 - No Markdown body section is allowed.
 - No `providers`, `needs`, `findings`, `depth`, `audit_rounds`,
   `review_starts_with`,
@@ -342,6 +340,12 @@ the token is authored in an imported Markdown workflow. Imported workflow source
 paths remain provenance metadata for diagnostics and audit. All resolved paths
 are bounded to the project root unless explicitly allowlisted with
 `settings.file_access.allowed_template_paths`.
+
+File references may read `.crewplane/execution-results/<run-key>/` after the
+source run reaches `succeeded`, `failed`, or `cancelled`. Preflight verifies the
+terminal manifest and materializes the result into the immutable static bundle.
+Results from a `running` source run and all other runtime-owned paths remain
+blocked.
 
 Node artifact references are valid only for upstream dependencies. Findings
 references require the upstream node to declare `findings: true`.

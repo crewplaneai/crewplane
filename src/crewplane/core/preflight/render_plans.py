@@ -24,6 +24,7 @@ from .fragment_handlers import (
     resolve_file_reference,
     resolve_static_value_reference,
     static_value_fragment,
+    try_resolve_terminal_file_reference,
 )
 from .input_sources import append_input_source_token_catalog, resolve_input_source
 from .models import Fragment, RenderPlan, RenderStream, WorkspaceFileTarget
@@ -47,6 +48,14 @@ def apply_file_policy(
             resolve_input_source(workflow, node, options, state)
     for occurrence in iter_render_token_occurrences(workflow):
         if occurrence.reference.kind != "file":
+            continue
+        if try_resolve_terminal_file_reference(
+            occurrence.node,
+            occurrence.reference,
+            options,
+            state,
+            occurrence.occurrence_id,
+        ):
             continue
         if should_use_workspace_file_locator(
             workflow,

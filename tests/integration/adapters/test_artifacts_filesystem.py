@@ -55,6 +55,19 @@ class FilesystemArtifactsAdapterTests(unittest.TestCase):
                 {"log_cli_output": "yes"},
             )
 
+    def test_terminal_history_reader_ignores_unresolvable_user_path(self) -> None:
+        adapter = FilesystemArtifactsAdapter()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            reader = adapter.create_terminal_history_reader(tmp_path)
+
+            result = reader.read_terminal_result(
+                "~crewplane_missing_user_for_tests/context.md",
+                tmp_path,
+            )
+
+        self.assertFalse(result.matched)
+
     def test_canonicalize_options_does_not_create_run_dirs(self) -> None:
         adapter = FilesystemArtifactsAdapter()
         with tempfile.TemporaryDirectory() as tmp_dir:

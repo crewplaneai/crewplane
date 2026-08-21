@@ -26,7 +26,12 @@ from .diagnostics import PreflightDiagnosticCode, PreflightDiagnosticPhase
 from .models import Fragment
 from .references import TemplateReference
 from .signatures import signature_for_payload
-from .static_resources import append_static_resource, resolve_static_file
+from .static_resources import (
+    StaticFileResult,
+    append_static_resource,
+    resolve_static_file,
+    resolve_terminal_result_file,
+)
 from .token_catalog import append_token_catalog
 from .workspace.files.locators import (
     token_signature_for_workspace_locator,
@@ -217,6 +222,34 @@ def resolve_file_reference(
         project_root=options.project_root.resolve(),
         allowed_paths=allowed_template_paths(options),
     )
+    record_static_file_reference(node, reference, state, occurrence_id, result)
+
+
+def try_resolve_terminal_file_reference(
+    node: WorkflowNode,
+    reference: TemplateReference,
+    options: PreflightCompileOptions,
+    state: CompileState,
+    occurrence_id: str,
+) -> bool:
+    result = resolve_terminal_result_file(
+        reference.key or "",
+        source_root(node, options),
+        options.terminal_history_reader,
+    )
+    if result is None:
+        return False
+    record_static_file_reference(node, reference, state, occurrence_id, result)
+    return True
+
+
+def record_static_file_reference(
+    node: WorkflowNode,
+    reference: TemplateReference,
+    state: CompileState,
+    occurrence_id: str,
+    result: StaticFileResult,
+) -> None:
     extend_diagnostics(state, result.diagnostics)
     if result.resource is None or result.payload is None:
         return

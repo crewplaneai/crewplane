@@ -15,9 +15,10 @@ references must remain within the project root unless explicitly allowlisted
 through the core-owned `settings.file_access.allowed_template_paths` policy;
 reserved crewplane directories, symlink
 escapes, binary content, NUL-containing content, and non-UTF-8 text fail during
-preflight before any provider invocation. File-backed input nodes may read files
-under `.crewplane/execution-results/` after the source run reaches `succeeded`,
-`failed`, or `cancelled`; results from a `running` source run remain unavailable.
+preflight before any provider invocation. File references may read files under
+`.crewplane/execution-results/` after the source run reaches `succeeded`,
+`failed`, or `cancelled`; results from a `running` source run and all other
+runtime-owned paths remain unavailable.
 
 ## Context
 Previously, template reference resolution was more lenient or handled during runtime execution. This could lead to partial workflow executions, where downstream nodes might be invoked with raw, unresolved template placeholders (or error placeholders), causing subtle failures, wasted compute, or undefined behaviors in Crewplane tools. By the time the error was apparent, time and API costs were already expended on earlier nodes. This addresses: "Template Reference Failures During Run" from the architecture review.

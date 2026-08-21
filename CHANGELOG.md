@@ -26,6 +26,9 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
+- Allowed provider-prompt file templates to consume result files from prior
+  terminal runs while keeping running-run results and other runtime-owned paths
+  blocked.
 - Prevented nested secrets, forged redaction metadata, unsafe links, path
   substitution, and concurrent writes from leaking or corrupting artifacts.
 - Corrected worktree file templates to use the project snapshot before the

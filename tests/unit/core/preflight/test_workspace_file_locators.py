@@ -697,6 +697,29 @@ def test_workspace_enabled_input_node_keeps_terminal_result_static(
     assert preview.nodes[1].workspace_policy is not None
 
 
+def test_workspace_enabled_prompt_keeps_terminal_result_static(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "README.md").write_text("project\n", encoding="utf-8")
+    source_snapshot = init_git_repo(tmp_path)
+    write_result_source(tmp_path, status="failed")
+    workflow = workspace_workflow(prompt=f"Review {RESULT_SOURCE_TOKEN}")
+
+    preview = compile_workflow_with_source_snapshot(
+        tmp_path,
+        workflow,
+        source_snapshot,
+    )
+
+    assert preview.diagnostics == []
+    assert preview.workspace_file_locators == []
+    assert len(preview.static_resources) == 1
+    assert set(preview.static_file_payloads.values()) == {b"prior result"}
+    assert preview.render_plans[0].streams[0].fragments[1].kind == (
+        "static_file_content"
+    )
+
+
 def test_worktree_node_after_input_uses_initial_then_candidate_file_locator(
     tmp_path: Path,
 ) -> None:
