@@ -4,7 +4,7 @@ import asyncio
 
 from rich.text import Text
 
-from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts import AgentInvoker, EventType
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
 
@@ -117,7 +117,7 @@ def _mark_node_failed(
         )
     emit_workflow_event(
         telemetry,
-        "node_failed",
+        EventType.NODE_FAILED,
         node_id=node_id,
         error=safe_error_message(exc),
     )
@@ -142,7 +142,7 @@ def _mark_node_succeeded(
 ) -> None:
     mark_node_finished_activity(telemetry, node_id)
     state.statuses[node_id] = "succeeded"
-    emit_workflow_event(telemetry, "node_finished", node_id=node_id)
+    emit_workflow_event(telemetry, EventType.NODE_FINISHED, node_id=node_id)
     _queue_satisfied_dependents(node_id, state)
 
 
@@ -204,7 +204,7 @@ def _mark_blocked_nodes(
         details = ", ".join(unsatisfied)
         emit_workflow_event(
             telemetry,
-            "node_blocked",
+            EventType.NODE_BLOCKED,
             node_id=node_id,
             error=f"unsatisfied dependencies: {details}",
         )

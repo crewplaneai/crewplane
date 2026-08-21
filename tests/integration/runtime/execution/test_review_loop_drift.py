@@ -17,7 +17,11 @@ from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from crewplane.architecture.contracts import InvocationProcessEvent, NodeArtifactRequest
+from crewplane.architecture.contracts import (
+    EventType,
+    InvocationProcessEvent,
+    NodeArtifactRequest,
+)
 from crewplane.architecture.ports import (
     ProviderProcessInvocation,
     ProviderProcessPublication,
@@ -1008,7 +1012,7 @@ def test_event_log_append_allows_ambient_runtime_warning(
     event_log_path = tmp_path / "events.ndjson"
     started = format_execution_event_log_line(
         invocation_event(
-            "invocation_started",
+            EventType.INVOCATION_STARTED,
             "workflow",
             "run-1",
             context=ExecutionEventContext(
@@ -1023,7 +1027,7 @@ def test_event_log_append_allows_ambient_runtime_warning(
     ).encode("utf-8")
     finished = format_execution_event_log_line(
         invocation_event(
-            "invocation_finished",
+            EventType.INVOCATION_FINISHED,
             "workflow",
             "run-1",
             context=ExecutionEventContext(

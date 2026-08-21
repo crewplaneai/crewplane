@@ -4,28 +4,25 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
 
-from crewplane.architecture.contracts import RunResult
+from crewplane.architecture.contracts import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
+    RunResult,
+)
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.locks.manifest import (
     TERMINAL_RECOVERY_PHASES,
+    TERMINAL_WORKFLOW_EVENT_TYPE_BY_STATUS,
     TerminalRecoveryPhase,
 )
 from crewplane.core.execution_state import TerminalRunStatus
 from crewplane.observability.events import (
     ExecutionEvent,
-    WorkflowEventType,
     read_event_log,
     workflow_event,
 )
 from crewplane.observability.run_summary.logger import PersistentRunLogger
 
 from .manifest import finalize_run_manifest
-
-_TERMINAL_EVENT_TYPE_BY_STATUS: dict[TerminalRunStatus, WorkflowEventType] = {
-    "succeeded": "workflow_finished",
-    "failed": "workflow_failed",
-    "cancelled": "workflow_cancelled",
-}
 
 
 class TerminalizationHub(Protocol):
@@ -206,7 +203,7 @@ class TerminalizationCoordinator:
     ) -> None:
         if self._event is None:
             self._event = workflow_event(
-                _TERMINAL_EVENT_TYPE_BY_STATUS[status],
+                TERMINAL_WORKFLOW_EVENT_TYPE_BY_STATUS[status],
                 workflow_name=self.workflow_name,
                 run_id=self.output.run_id,
                 error=reason,
@@ -245,7 +242,10 @@ class TerminalizationCoordinator:
         self.summary_published = True
 
     def _event_is_durable(self) -> bool:
-        if self._event is None:
+        if (
+            self._event is None
+            or self._event.event_type not in TERMINAL_WORKFLOW_EVENT_TYPES
+        ):
             return False
         return any(
             event.event_type == self._event.event_type

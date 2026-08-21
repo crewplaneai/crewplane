@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager, safe_artifact_name
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -933,7 +934,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             failed_events = [
                 event
                 for event in events
-                if event.event_type == "invocation_failed"
+                if event.event_type == EventType.INVOCATION_FAILED
                 and event.context.provider == "review-b"
             ]
             self.assertEqual(len(failed_events), 1)

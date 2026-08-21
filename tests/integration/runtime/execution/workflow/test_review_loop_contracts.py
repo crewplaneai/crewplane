@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -241,7 +242,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(len(warning_events), 1)
@@ -438,7 +439,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(warning_events, [])
@@ -503,7 +504,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             exhaustion_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_consensus_exhausted"
             ]
             self.assertEqual(len(exhaustion_events), 1)
@@ -620,7 +621,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -695,7 +696,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -771,7 +772,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             no_progress_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_no_progress"
             ]
             self.assertEqual(len(no_progress_events), 1)
@@ -832,7 +833,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(invalid_events, [])

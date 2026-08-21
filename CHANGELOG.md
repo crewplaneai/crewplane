@@ -12,6 +12,9 @@ All notable user-facing changes are recorded here.
 - **Custom integrations:** Use JSON Pointers for sensitive options and canonical
   metadata for invoker capabilities; artifact adapters must implement the
   node-based store and terminal-history APIs.
+- **Execution-event consumers:** `EventType` is now a public runtime enum, and
+  in-memory consumers use enum members. Persisted lowercase NDJSON event values
+  remain unchanged.
 
 ### Changed
 

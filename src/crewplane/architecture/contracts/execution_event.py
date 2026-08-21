@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum, unique
 from time import monotonic
 from types import MappingProxyType
 from typing import Literal, Protocol, cast, override
@@ -15,39 +16,56 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from .json import JsonObject
 
-EventType = Literal[
-    "workflow_started",
-    "workflow_finished",
-    "workflow_failed",
-    "workflow_cancelled",
-    "node_started",
-    "node_finished",
-    "node_failed",
-    "node_blocked",
-    "invocation_started",
-    "invocation_finished",
-    "invocation_failed",
-    "workspace_context_recorded",
-    "runtime_log",
-]
+
+@unique
+class EventType(StrEnum):
+    WORKFLOW_STARTED = "workflow_started"
+    WORKFLOW_FINISHED = "workflow_finished"
+    WORKFLOW_FAILED = "workflow_failed"
+    WORKFLOW_CANCELLED = "workflow_cancelled"
+
+    NODE_STARTED = "node_started"
+    NODE_FINISHED = "node_finished"
+    NODE_FAILED = "node_failed"
+    NODE_BLOCKED = "node_blocked"
+
+    INVOCATION_STARTED = "invocation_started"
+    INVOCATION_FINISHED = "invocation_finished"
+    INVOCATION_FAILED = "invocation_failed"
+
+    WORKSPACE_CONTEXT_RECORDED = "workspace_context_recorded"
+    RUNTIME_LOG = "runtime_log"
+
+
 WorkflowEventType = Literal[
-    "workflow_started",
-    "workflow_finished",
-    "workflow_failed",
-    "workflow_cancelled",
+    EventType.WORKFLOW_STARTED,
+    EventType.WORKFLOW_FINISHED,
+    EventType.WORKFLOW_FAILED,
+    EventType.WORKFLOW_CANCELLED,
 ]
 NodeEventType = Literal[
-    "node_started",
-    "node_finished",
-    "node_failed",
-    "node_blocked",
+    EventType.NODE_STARTED,
+    EventType.NODE_FINISHED,
+    EventType.NODE_FAILED,
+    EventType.NODE_BLOCKED,
 ]
 InvocationEventType = Literal[
-    "invocation_started",
-    "invocation_finished",
-    "invocation_failed",
+    EventType.INVOCATION_STARTED,
+    EventType.INVOCATION_FINISHED,
+    EventType.INVOCATION_FAILED,
 ]
-WorkspaceEventType = Literal["workspace_context_recorded"]
+WorkspaceEventType = Literal[EventType.WORKSPACE_CONTEXT_RECORDED]
+
+
+TERMINAL_WORKFLOW_EVENT_TYPES: frozenset[WorkflowEventType] = frozenset(
+    {
+        EventType.WORKFLOW_FINISHED,
+        EventType.WORKFLOW_FAILED,
+        EventType.WORKFLOW_CANCELLED,
+    }
+)
+
+
 WorkflowStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
 NodeStatus = Literal["pending", "running", "succeeded", "failed", "blocked"]
 InvocationStatus = Literal["pending", "running", "succeeded", "failed"]
@@ -276,11 +294,19 @@ class ExecutionEvent:
     timestamp_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def __post_init__(self) -> None:
+        supplied_event_type = self.event_type
+        try:
+            event_type = EventType(supplied_event_type)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"Unsupported execution event type: {supplied_event_type!r}."
+            ) from error
+        object.__setattr__(self, "event_type", event_type)
         if self.context.workflow_name != self.workflow_name:
             raise ValueError("Execution event workflow mismatch in context.")
         if self.context.run_id != self.run_id:
             raise ValueError("Execution event run_id mismatch in context.")
-        validate_payload_type(self.event_type, self.payload)
+        validate_payload_type(event_type, self.payload)
 
 
 class EventSink(Protocol):
@@ -301,19 +327,28 @@ def validate_payload_type(event_type: EventType, payload: EventPayload) -> None:
     expected_payload: type[EventPayload]
     match event_type:
         case (
-            "workflow_started"
-            | "workflow_finished"
-            | "workflow_failed"
-            | "workflow_cancelled"
+            EventType.WORKFLOW_STARTED
+            | EventType.WORKFLOW_FINISHED
+            | EventType.WORKFLOW_FAILED
+            | EventType.WORKFLOW_CANCELLED
         ):
             expected_payload = WorkflowEventPayload
-        case "node_started" | "node_finished" | "node_failed" | "node_blocked":
+        case (
+            EventType.NODE_STARTED
+            | EventType.NODE_FINISHED
+            | EventType.NODE_FAILED
+            | EventType.NODE_BLOCKED
+        ):
             expected_payload = NodeEventPayload
-        case "invocation_started" | "invocation_finished" | "invocation_failed":
+        case (
+            EventType.INVOCATION_STARTED
+            | EventType.INVOCATION_FINISHED
+            | EventType.INVOCATION_FAILED
+        ):
             expected_payload = InvocationEventPayload
-        case "workspace_context_recorded":
+        case EventType.WORKSPACE_CONTEXT_RECORDED:
             expected_payload = WorkspaceEventPayload
-        case "runtime_log":
+        case EventType.RUNTIME_LOG:
             expected_payload = RuntimeLogEventPayload
         case _:
             raise ValueError(f"Unsupported execution event type: {event_type!r}.")

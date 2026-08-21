@@ -4,13 +4,23 @@ from typing import assert_type
 
 from crewplane.architecture.contracts import (
     DashboardSnapshot,
+    EventType,
     ExecutionEvent,
+    ExecutionEventContext,
     ObserverCapabilities,
     RunContext,
     RunResult,
     RuntimeObserver,
+    WorkspaceEventPayload,
 )
 from crewplane.architecture.ports.runtime import UIRuntimePlan
+from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.observability.events import (
+    invocation_event,
+    node_event,
+    workflow_event,
+    workspace_event,
+)
 
 
 class ExternalObserver:
@@ -28,6 +38,8 @@ class ExternalObserver:
         event: ExecutionEvent | None,  # noqa: ARG002 - Observer protocol.
         snapshot: DashboardSnapshot,
     ) -> None:
+        if event is not None:
+            assert_type(event.event_type, EventType)
         workflow_name: str = snapshot.state.workflow_name
         workflow_status: str = snapshot.state.workflow_status
         ordered_nodes: list[str] = [
@@ -89,4 +101,23 @@ install_observer(IncompatibleObserver())  # type: ignore[arg-type]
 UIRuntimePlan(
     observers=(IncompatibleObserver(),),  # type: ignore[arg-type]
     suppress_progress_output=False,
+)
+
+event_context = ExecutionEventContext(
+    workflow_name="workflow",
+    run_id="run-1",
+    node_id="node.a",
+    provider="codex",
+    role=ProviderRole.EXECUTOR,
+    task_id="codex_executor_0",
+)
+workflow_event(EventType.NODE_STARTED, "workflow", "run-1")  # type: ignore[arg-type]
+node_event(EventType.INVOCATION_STARTED, "workflow", "run-1", "node.a")  # type: ignore[arg-type]
+invocation_event(EventType.WORKFLOW_STARTED, "workflow", "run-1", event_context)  # type: ignore[arg-type]
+workspace_event(
+    EventType.RUNTIME_LOG,  # type: ignore[arg-type]
+    "workflow",
+    "run-1",
+    event_context,
+    WorkspaceEventPayload(),
 )

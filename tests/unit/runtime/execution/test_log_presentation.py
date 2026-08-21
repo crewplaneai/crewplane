@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts import EventType, InvocationContext
 from crewplane.core.config import AgentConfig
 from crewplane.observability.events import ExecutionEvent
 from crewplane.runtime.execution.activity.events import RuntimeEventContext
@@ -58,7 +58,7 @@ def test_invalid_log_presentation_descriptor_warns_and_falls_back() -> None:
     assert descriptor is None
     assert len(events) == 1
     event = events[0]
-    assert event.event_type == "runtime_log"
+    assert event.event_type == EventType.RUNTIME_LOG
     assert event.payload.operation == "log_presentation_descriptor_invalid"
     assert "unsafe/profile" not in event.payload.message
     assert event.payload.attributes == {"reason": "ValueError"}

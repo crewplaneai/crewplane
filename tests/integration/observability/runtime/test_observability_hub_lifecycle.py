@@ -3,7 +3,7 @@ from threading import Event
 from time import monotonic
 from unittest.mock import patch
 
-from crewplane.architecture.contracts import ObserverCapabilities
+from crewplane.architecture.contracts import EventType, ObserverCapabilities
 from crewplane.observability import observer_lifecycle
 from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
@@ -117,14 +117,14 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         ) as hub:
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_started",
+                    event_type=EventType.WORKFLOW_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-1",
                 )
             )
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_finished",
+                    event_type=EventType.WORKFLOW_FINISHED,
                     workflow_name=workflow.name,
                     run_id="run-1",
                 )
@@ -134,8 +134,8 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         self.assertTrue(observer.stopped)
         self.assertEqual(observer.event_types[0], None)
         self.assertEqual(observer.workflow_statuses[-1], "succeeded")
-        self.assertIn("workflow_started", observer.event_types)
-        self.assertIn("workflow_finished", observer.event_types)
+        self.assertIn(EventType.WORKFLOW_STARTED, observer.event_types)
+        self.assertIn(EventType.WORKFLOW_FINISHED, observer.event_types)
 
     def test_observability_hub_disables_failing_observer_and_continues(self) -> None:
         workflow = single_node_workflow()
@@ -152,7 +152,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         ) as hub:
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_started",
+                    event_type=EventType.WORKFLOW_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-2",
                 )
@@ -179,14 +179,14 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
             self.assertTrue(gate.entered.wait(timeout=1.0))
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_started",
+                    event_type=EventType.WORKFLOW_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-skip-disabled",
                 )
             )
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_finished",
+                    event_type=EventType.WORKFLOW_FINISHED,
                     workflow_name=workflow.name,
                     run_id="run-skip-disabled",
                 )
@@ -194,7 +194,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
             gate.release.set()
 
         self.assertEqual(failing.call_count, 1)
-        self.assertIn("workflow_finished", healthy.event_types)
+        self.assertIn(EventType.WORKFLOW_FINISHED, healthy.event_types)
 
     def test_observability_hub_continues_when_observer_start_fails(self) -> None:
         workflow = single_node_workflow()
@@ -209,7 +209,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
             self.assertEqual(hub.active_observer_count, 0)
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_started",
+                    event_type=EventType.WORKFLOW_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-start-fail",
                 )
@@ -446,7 +446,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         ):
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_started",
+                    event_type=EventType.WORKFLOW_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-delivery-thread-fail",
                 )
@@ -455,7 +455,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         self.assertTrue(
             any("delivery worker failed to start" in warning for warning in warnings)
         )
-        self.assertIn("workflow_started", observer.event_types)
+        self.assertIn(EventType.WORKFLOW_STARTED, observer.event_types)
 
     def test_observability_hub_continues_when_ticker_start_fails(self) -> None:
         workflow = single_node_workflow()
@@ -496,7 +496,7 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         ):
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_started",
+                    event_type=EventType.WORKFLOW_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-ticker-thread-fail",
                 )

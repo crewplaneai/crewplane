@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.architecture.ports import ArtifactStorePort
 
 from ...common import ExecutionTelemetry
@@ -255,7 +256,7 @@ def is_ambient_runtime_warning_event(line: bytes) -> bool:
         return False
     return (
         isinstance(record, dict)
-        and record.get("event_type") == "runtime_log"
+        and record.get("event_type") == EventType.RUNTIME_LOG.value
         and record.get("operation") == "runtime_warning"
         and "node_id" not in record
         and "provider" not in record

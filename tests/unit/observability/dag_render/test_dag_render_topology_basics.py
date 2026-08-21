@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.cli.templates import render_template_content
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
@@ -531,7 +532,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="node_started",
+                    event_type=EventType.NODE_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-review-fix",
                     node_id=node_id,
@@ -542,7 +543,7 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="node_finished",
+                    event_type=EventType.NODE_FINISHED,
                     workflow_name=workflow.name,
                     run_id="run-review-fix",
                     node_id=node_id,

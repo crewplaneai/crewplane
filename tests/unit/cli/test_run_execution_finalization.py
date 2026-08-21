@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from crewplane.architecture.contracts import DashboardSnapshot, ObserverCapabilities
+from crewplane.architecture.contracts import (
+    DashboardSnapshot,
+    EventType,
+    ObserverCapabilities,
+)
 from crewplane.architecture.ports.runtime import RuntimeComponents
 from crewplane.artifacts.locks import SameContextLock, acquire_same_context_lock
 from crewplane.artifacts.locks.manifest import TerminalRecoveryPhase
@@ -68,7 +72,7 @@ class _FailOnceTerminalEventLogger(PersistentRunLogger):
         event: ExecutionEvent | None,
         snapshot: DashboardSnapshot,
     ) -> None:
-        if event is not None and event.event_type == "workflow_finished":
+        if event is not None and event.event_type == EventType.WORKFLOW_FINISHED:
             self.terminal_event_attempts += 1
             if self.terminal_event_attempts == 1:
                 raise OSError("terminal event append failed")
@@ -86,7 +90,7 @@ class _WriteThenFailOnceTerminalEventLogger(PersistentRunLogger):
         snapshot: DashboardSnapshot,
     ) -> None:
         super().on_snapshot(event, snapshot)
-        if event is None or event.event_type != "workflow_finished":
+        if event is None or event.event_type != EventType.WORKFLOW_FINISHED:
             return
         self.terminal_event_attempts += 1
         if self.terminal_event_attempts == 1:
@@ -103,7 +107,7 @@ class _AlwaysFailTerminalEventLogger(PersistentRunLogger):
         event: ExecutionEvent | None,
         snapshot: DashboardSnapshot,
     ) -> None:
-        if event is not None and event.event_type == "workflow_finished":
+        if event is not None and event.event_type == EventType.WORKFLOW_FINISHED:
             self.terminal_event_attempts += 1
             raise OSError("terminal event append failed permanently")
         super().on_snapshot(event, snapshot)
@@ -131,7 +135,7 @@ class _FailOnceRequiredTerminalObserver:
         snapshot: DashboardSnapshot,
     ) -> None:
         del snapshot
-        if event is None or event.event_type != "workflow_finished":
+        if event is None or event.event_type != EventType.WORKFLOW_FINISHED:
             return
         self.terminal_event_attempts += 1
         if self.terminal_event_attempts == 1:
@@ -387,7 +391,7 @@ def test_post_manifest_failure_is_retryable_without_duplicate_terminal_event(
     terminal_events = [
         event
         for event in read_event_log(output.get_run_event_log_path())
-        if event.event_type == "workflow_finished"
+        if event.event_type == EventType.WORKFLOW_FINISHED
     ]
     assert len(terminal_events) == 1
 
@@ -415,7 +419,7 @@ def test_terminal_event_retry_requires_exact_durable_event(
     terminal_events = [
         event
         for event in read_event_log(output.get_run_event_log_path())
-        if event.event_type == "workflow_finished"
+        if event.event_type == EventType.WORKFLOW_FINISHED
     ]
     assert logger.terminal_event_attempts == 2
     assert len(terminal_events) == 1
@@ -446,7 +450,7 @@ def test_terminal_event_retry_does_not_duplicate_completed_append(
     terminal_events = [
         event
         for event in read_event_log(output.get_run_event_log_path())
-        if event.event_type == "workflow_finished"
+        if event.event_type == EventType.WORKFLOW_FINISHED
     ]
     assert logger.terminal_event_attempts == 2
     assert len(terminal_events) == 1
@@ -512,7 +516,11 @@ def test_permanent_terminal_event_failure_leaves_manifest_running(
             event
             for event in read_event_log(output.get_run_event_log_path())
             if event.event_type
-            in {"workflow_finished", "workflow_failed", "workflow_cancelled"}
+            in {
+                EventType.WORKFLOW_FINISHED,
+                EventType.WORKFLOW_FAILED,
+                EventType.WORKFLOW_CANCELLED,
+            }
         ]
         assert terminal_events == []
         assert "- Status: failed" in output.get_run_summary_path().read_text(
@@ -566,9 +574,13 @@ def test_stale_recovery_replays_views_when_phase_publication_fails(
             event.event_type
             for event in read_event_log(output.get_run_event_log_path())
             if event.event_type
-            in {"workflow_finished", "workflow_failed", "workflow_cancelled"}
+            in {
+                EventType.WORKFLOW_FINISHED,
+                EventType.WORKFLOW_FAILED,
+                EventType.WORKFLOW_CANCELLED,
+            }
         ]
-        assert terminal_events == ["workflow_finished"]
+        assert terminal_events == [EventType.WORKFLOW_FINISHED]
         assert "- Status: succeeded" in output.get_run_summary_path().read_text(
             encoding="utf-8"
         )
@@ -600,7 +612,7 @@ def test_terminal_event_retry_reaches_all_required_synchronous_observers(
     terminal_events = [
         event
         for event in read_event_log(output.get_run_event_log_path())
-        if event.event_type == "workflow_finished"
+        if event.event_type == EventType.WORKFLOW_FINISHED
     ]
     assert secondary_observer.terminal_event_attempts == 2
     assert len(terminal_events) == 1
@@ -688,9 +700,15 @@ def test_branch_export_failure_preserves_failed_run_finalization(
         event
         for event in read_event_log(output.get_run_event_log_path())
         if event.event_type
-        in {"workflow_finished", "workflow_failed", "workflow_cancelled"}
+        in {
+            EventType.WORKFLOW_FINISHED,
+            EventType.WORKFLOW_FAILED,
+            EventType.WORKFLOW_CANCELLED,
+        }
     ]
-    assert [event.event_type for event in terminal_events] == ["workflow_failed"]
+    assert [event.event_type for event in terminal_events] == [
+        EventType.WORKFLOW_FAILED
+    ]
     assert "- Status: failed" in output.get_run_summary_path().read_text(
         encoding="utf-8"
     )

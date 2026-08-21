@@ -4,6 +4,7 @@ import pytest
 
 from crewplane.architecture.contracts import (
     SUPPORTED_PROVIDER_KIND_VALUES,
+    EventType,
     InvocationContext,
     InvocationProcessEvent,
     InvocationSourceContext,
@@ -307,7 +308,7 @@ def test_invocation_event_serializes_nullable_provider_report_count(
     report_count: int | None,
 ) -> None:
     event = invocation_event(
-        event_type="invocation_finished",
+        event_type=EventType.INVOCATION_FINISHED,
         workflow_name="workflow",
         run_id="run-1",
         context=ExecutionEventContext(

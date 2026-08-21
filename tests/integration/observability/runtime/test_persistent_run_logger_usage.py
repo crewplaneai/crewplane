@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from crewplane.architecture.contracts import build_result_filename
+from crewplane.architecture.contracts import EventType, build_result_filename
 from crewplane.artifacts import OutputManager
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability import PersistentRunLogger
@@ -36,14 +36,14 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             ) as hub:
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_started",
+                        event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_started",
+                        event_type=EventType.NODE_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -51,7 +51,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="invocation_failed",
+                        event_type=EventType.INVOCATION_FAILED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -83,7 +83,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_failed",
+                        event_type=EventType.NODE_FAILED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -92,7 +92,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_failed",
+                        event_type=EventType.WORKFLOW_FAILED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         error="boom",
@@ -141,14 +141,14 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             ) as hub:
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_started",
+                        event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_blocked",
+                        event_type=EventType.NODE_BLOCKED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.b",
@@ -157,7 +157,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_failed",
+                        event_type=EventType.WORKFLOW_FAILED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         error="failed",
@@ -193,14 +193,14 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             ) as hub:
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_started",
+                        event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_started",
+                        event_type=EventType.NODE_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -208,7 +208,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="invocation_finished",
+                        event_type=EventType.INVOCATION_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -239,7 +239,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_finished",
+                        event_type=EventType.NODE_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -247,7 +247,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_finished",
+                        event_type=EventType.WORKFLOW_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
@@ -289,14 +289,14 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
             ) as hub:
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_started",
+                        event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_started",
+                        event_type=EventType.NODE_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -304,7 +304,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="invocation_finished",
+                        event_type=EventType.INVOCATION_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -335,7 +335,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_finished",
+                        event_type=EventType.NODE_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -343,7 +343,7 @@ class PersistentRunLoggerUsageTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_finished",
+                        event_type=EventType.WORKFLOW_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )

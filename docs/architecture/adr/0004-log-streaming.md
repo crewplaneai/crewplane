@@ -116,6 +116,9 @@ settled rules:
   event representation. Runtime event construction goes through event builders,
   reducers read structured fields, and legacy flat-field compatibility paths are
   removed.
+- `architecture/contracts/execution_event.py` is the sole owner of execution
+  event values. In-memory events use public `EventType` enum members while
+  persisted NDJSON keeps the existing lowercase string values.
 - Event payloads are validated and persisted as structured JSON lines. Runtime
   summaries, terminal rendering, and dashboard reducers consume the same typed
   event records.
@@ -165,9 +168,11 @@ continue to receive the same invocation entry point and may ignore diagnostics.
 - `observability/runtime.py` fans events and snapshots out to active observers.
 - `observability/persistent.py` writes `events.ndjson`, rewrites `summary.md`,
   and renders terminal run summaries from the same persisted event stream.
-- `observability/events/__init__.py` defines lifecycle events, `runtime_log`, dashboard
-  state transitions, NDJSON serialization, and warning/error recent-event
-  updates for node-scoped runtime logs.
+- `architecture/contracts/execution_event.py` defines the public event values,
+  contexts, and payload contract.
+- `observability/events/__init__.py` exposes event builders, dashboard state
+  transitions, NDJSON serialization, and warning/error recent-event updates for
+  node-scoped runtime logs.
 - `runtime/execution/common.py` emits lifecycle events, converts invocation
   diagnostics into `runtime_log`, and emits stage-finalization facts.
 - `runtime/agent/invoker.py` emits diagnostics for retry scheduling, quota retry
@@ -192,6 +197,10 @@ The lifecycle event set is:
 - `invocation_started`
 - `invocation_finished`
 - `invocation_failed`
+
+Workspace context facts use:
+
+- `workspace_context_recorded`
 
 Operational facts use:
 

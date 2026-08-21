@@ -4,6 +4,7 @@ from pathlib import Path
 
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import (
+    EventType,
     build_findings_filename,
     build_result_filename,
 )
@@ -392,7 +393,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "prompt_budget_warning"
             ]
             expected_char_count = len(
@@ -552,7 +553,7 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "prompt_budget_warning"
                 and event.context.node_id == "node.summary"
             ]

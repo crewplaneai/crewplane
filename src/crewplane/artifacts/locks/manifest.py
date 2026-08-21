@@ -3,13 +3,19 @@ from __future__ import annotations
 import json
 import os
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from crewplane.architecture.contracts import (
+    EventType,
+    WorkflowEventType,
+)
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
     RUN_STATUS_RUNNING,
@@ -35,14 +41,18 @@ TERMINAL_RECOVERY_PHASES: tuple[TerminalRecoveryPhase, ...] = (
     "terminal_views_published",
     "observer_shutdown_complete",
 )
-_TERMINAL_EVENT_TYPES = frozenset(
-    {"workflow_finished", "workflow_failed", "workflow_cancelled"}
+TERMINAL_WORKFLOW_EVENT_TYPE_BY_STATUS: Mapping[
+    TerminalRunStatus, WorkflowEventType
+] = MappingProxyType(
+    {
+        "succeeded": EventType.WORKFLOW_FINISHED,
+        "failed": EventType.WORKFLOW_FAILED,
+        "cancelled": EventType.WORKFLOW_CANCELLED,
+    }
 )
-_TERMINAL_EVENT_TYPE_BY_STATUS: dict[TerminalRunStatus, str] = {
-    "succeeded": "workflow_finished",
-    "failed": "workflow_failed",
-    "cancelled": "workflow_cancelled",
-}
+_TERMINAL_EVENT_TYPES = frozenset(
+    event_type.value for event_type in TERMINAL_WORKFLOW_EVENT_TYPE_BY_STATUS.values()
+)
 
 
 class TerminalRecoveryIntent(BaseModel):
@@ -235,7 +245,8 @@ def _terminal_record_matches(
 ) -> bool:
     timestamp = terminal.get("timestamp")
     return (
-        terminal.get("event_type") == _TERMINAL_EVENT_TYPE_BY_STATUS[recovery.status]
+        terminal.get("event_type")
+        == TERMINAL_WORKFLOW_EVENT_TYPE_BY_STATUS[recovery.status].value
         and terminal.get("workflow_name") == manifest.workflow_name
         and terminal.get("run_id") == manifest.run_id
         and terminal.get("error") == recovery.reason

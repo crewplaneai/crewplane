@@ -17,6 +17,9 @@ from time import monotonic
 from typing import cast
 
 from crewplane.architecture.contracts import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
+)
+from crewplane.architecture.contracts import (
     DashboardSnapshot as PublicDashboardSnapshot,
 )
 from crewplane.observability.events import (
@@ -44,9 +47,6 @@ OBSERVER_DELIVERY_JOIN_TIMEOUT_SECONDS = 1.0
 OBSERVER_START_TIMEOUT_SECONDS = 5.0
 OBSERVER_STOP_TIMEOUT_SECONDS = 1.0
 _MAX_OBSERVER_DELIVERY_QUEUE_SIZE = 1024
-_TERMINAL_EVENT_TYPES = frozenset(
-    {"workflow_finished", "workflow_failed", "workflow_cancelled"}
-)
 
 
 @dataclass(frozen=True)
@@ -438,6 +438,6 @@ def _new_lifecycle_thread(
 
 
 def _terminal_event_line(event: ExecutionEvent | None) -> bytes | None:
-    if event is None or event.event_type not in _TERMINAL_EVENT_TYPES:
+    if event is None or event.event_type not in TERMINAL_WORKFLOW_EVENT_TYPES:
         return None
     return format_execution_event_log_line(event).encode("utf-8")

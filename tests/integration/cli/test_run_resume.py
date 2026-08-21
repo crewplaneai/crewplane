@@ -8,7 +8,11 @@ from pathlib import Path
 
 from rich.console import Console
 
-from crewplane.architecture.contracts import NodeArtifactRequest, build_result_filename
+from crewplane.architecture.contracts import (
+    EventType,
+    NodeArtifactRequest,
+    build_result_filename,
+)
 from crewplane.architecture.ports.artifacts import (
     ArtifactStorePort,
     StageTaskSpec,
@@ -207,7 +211,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     assert event_sink is not None
                     event_sink(
                         make_execution_event(
-                            event_type="invocation_finished",
+                            event_type=EventType.INVOCATION_FINISHED,
                             workflow_name=plan.workflow_name,
                             run_id=output.run_id,
                             node_id="a",
@@ -315,7 +319,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                         "A result",
                     )
                     usage_event = make_execution_event(
-                        event_type="invocation_finished",
+                        event_type=EventType.INVOCATION_FINISHED,
                         workflow_name=plan.workflow_name,
                         run_id=output.run_id,
                         node_id="a",

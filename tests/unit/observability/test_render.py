@@ -1,6 +1,7 @@
 import unittest
 from time import monotonic
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -79,7 +80,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="workflow_started",
+                event_type=EventType.WORKFLOW_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-1",
             ),
@@ -103,7 +104,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_finished",
+                event_type=EventType.NODE_FINISHED,
                 workflow_name=workflow.name,
                 run_id="run-1",
                 node_id="node1",
@@ -112,7 +113,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-1",
                 node_id="node5",
@@ -197,7 +198,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-collapsed-sticky",
                 node_id="d",
@@ -440,7 +441,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-elapsed",
                 node_id="node.elapsed",
@@ -449,7 +450,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="invocation_started",
+                event_type=EventType.INVOCATION_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-elapsed",
                 node_id="node.elapsed",
@@ -462,7 +463,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="invocation_finished",
+                event_type=EventType.INVOCATION_FINISHED,
                 workflow_name=workflow.name,
                 run_id="run-elapsed",
                 node_id="node.elapsed",
@@ -525,7 +526,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-stream-sticky",
                 node_id="node1",
@@ -534,7 +535,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-stream-sticky",
                 node_id="node5",
@@ -565,7 +566,7 @@ class DashboardRenderTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-stream-duplicate",
                 node_id="node1",
@@ -609,7 +610,7 @@ class DashboardRenderTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-rounds",
                     node_id="node.seq",
@@ -623,7 +624,7 @@ class DashboardRenderTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id="run-rounds",
                     node_id="node.seq",
@@ -671,7 +672,7 @@ class DashboardRenderTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-audit-rounds",
                     node_id="node.seq",
@@ -686,7 +687,7 @@ class DashboardRenderTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id="run-audit-rounds",
                     node_id="node.seq",

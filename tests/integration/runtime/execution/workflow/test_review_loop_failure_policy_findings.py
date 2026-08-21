@@ -5,6 +5,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import (
     AgentInvoker,
+    EventType,
     build_findings_filename,
     build_result_filename,
 )
@@ -387,7 +388,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(len(warning_events), 1)

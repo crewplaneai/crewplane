@@ -19,7 +19,7 @@ def collect_audit_rounds_validation_errors(
     workflow: WorkflowPlan,
     config: Config,
 ) -> list[str]:
-    max_audit_rounds = config.settings.max_audit_rounds if config.settings else 5
+    max_audit_rounds = config.settings.max_audit_rounds
     return [
         (
             f"Sequential node '{node.id}' audit_rounds ({node.audit_rounds}) must be "

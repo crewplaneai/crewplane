@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
+    EventType,
     InvocationContext,
     InvocationDiagnostic,
     InvocationProcessEvent,
@@ -131,7 +132,7 @@ def emit_provider_invocation_failure_event(
     try:
         emit_invocation_event(
             telemetry,
-            "invocation_failed",
+            EventType.INVOCATION_FAILED,
             invocation_metadata,
             duration_ms=duration_ms,
             error=safe_error_message(exc),

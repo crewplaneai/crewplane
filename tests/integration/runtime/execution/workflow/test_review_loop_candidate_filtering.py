@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -87,7 +88,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -154,7 +155,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -219,7 +220,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(invalid_events, [])
@@ -281,7 +282,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             no_candidate_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_no_canonical_candidate"
             ]
             self.assertEqual(len(no_candidate_events), 1)
@@ -349,7 +350,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             drift_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_artifact_drift"
                 and event.payload.level == "error"
             ]

@@ -4,7 +4,11 @@ import asyncio
 from dataclasses import replace
 from pathlib import Path
 
-from crewplane.architecture.contracts import InvocationContext, NodeArtifactRequest
+from crewplane.architecture.contracts import (
+    EventType,
+    InvocationContext,
+    NodeArtifactRequest,
+)
 from crewplane.architecture.ports import ProviderProcessPublication
 from crewplane.architecture.safe_files import ensure_single_link_regular_file
 from crewplane.core.config import AgentConfig
@@ -222,7 +226,7 @@ async def _invoke_provider_and_finalize_workspace(
     metadata = state.require_invocation_metadata()
     prepared_workspace = state.require_prepared_workspace()
     _ensure_invocation_log_file(metadata.log_file)
-    emit_invocation_event(request.telemetry, "invocation_started", metadata)
+    emit_invocation_event(request.telemetry, EventType.INVOCATION_STARTED, metadata)
     with ElapsedTimer() as timer:
         state.timer = timer
         await _invoke_provider_request(

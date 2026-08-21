@@ -6,7 +6,7 @@ from threading import Event, Thread
 from unittest.mock import patch
 
 from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
-from crewplane.architecture.contracts import CommandResult, ProviderKind
+from crewplane.architecture.contracts import CommandResult, EventType, ProviderKind
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.config import AgentConfig
@@ -69,7 +69,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="runtime_log",
+                event_type=EventType.RUNTIME_LOG,
                 workflow_name=workflow.name,
                 run_id="run-1",
                 node_id="node.a",
@@ -110,14 +110,14 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             ) as hub:
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_started",
+                        event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_started",
+                        event_type=EventType.NODE_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -125,7 +125,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="invocation_started",
+                        event_type=EventType.INVOCATION_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -140,7 +140,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="runtime_log",
+                        event_type=EventType.RUNTIME_LOG,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -154,7 +154,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="invocation_finished",
+                        event_type=EventType.INVOCATION_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -186,7 +186,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_finished",
+                        event_type=EventType.NODE_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -194,7 +194,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_finished",
+                        event_type=EventType.WORKFLOW_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
@@ -455,7 +455,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -467,7 +467,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="workspace_context_recorded",
+                    event_type=EventType.WORKSPACE_CONTEXT_RECORDED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -675,7 +675,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -686,7 +686,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="workspace_context_recorded",
+                    event_type=EventType.WORKSPACE_CONTEXT_RECORDED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -709,7 +709,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             for index in range(MAX_RETAINED_SUMMARY_EVENTS + overflow_count):
                 persistent_logger.record_event(
                     make_execution_event(
-                        event_type="runtime_log",
+                        event_type=EventType.RUNTIME_LOG,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         level="warning",
@@ -747,7 +747,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 for index in range(MAX_RETAINED_SUMMARY_EVENTS + overflow_count):
                     hub.emit(
                         make_execution_event(
-                            event_type="runtime_log",
+                            event_type=EventType.RUNTIME_LOG,
                             workflow_name=workflow.name,
                             run_id=output.run_id,
                             level="warning",
@@ -791,7 +791,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -820,7 +820,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             for index in range(MAX_RETAINED_SUMMARY_EVENTS + overflow_count):
                 persistent_logger.record_event(
                     make_execution_event(
-                        event_type="runtime_log",
+                        event_type=EventType.RUNTIME_LOG,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         level="warning",
@@ -865,7 +865,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             for index in range(invocation_count):
                 persistent_logger.record_event(
                     make_execution_event(
-                        event_type="invocation_finished",
+                        event_type=EventType.INVOCATION_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="node.a",
@@ -966,7 +966,9 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 persistent_logger.record_event(
                     make_execution_event(
                         event_type=(
-                            "invocation_failed" if index % 2 else "invocation_finished"
+                            EventType.INVOCATION_FAILED
+                            if index % 2
+                            else EventType.INVOCATION_FINISHED
                         ),
                         workflow_name=workflow.name,
                         run_id=output.run_id,
@@ -991,7 +993,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -1062,7 +1064,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.start(context)
             disk_only_event = make_execution_event(
-                event_type="invocation_failed",
+                event_type=EventType.INVOCATION_FAILED,
                 workflow_name=workflow.name,
                 run_id=output.run_id,
                 node_id="node.a",
@@ -1105,7 +1107,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -1186,7 +1188,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -1284,7 +1286,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -1352,7 +1354,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             )
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     node_id="node.a",
@@ -1408,7 +1410,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
 
             persistent_logger.record_event(
                 make_execution_event(
-                    event_type="runtime_log",
+                    event_type=EventType.RUNTIME_LOG,
                     workflow_name=workflow.name,
                     run_id=output.run_id,
                     level="warning",
@@ -1464,14 +1466,14 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
             ) as hub:
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_started",
+                        event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_started",
+                        event_type=EventType.NODE_STARTED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="review.iterate",
@@ -1492,7 +1494,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     )
                     hub.emit(
                         make_execution_event(
-                            event_type="invocation_started",
+                            event_type=EventType.INVOCATION_STARTED,
                             workflow_name=workflow.name,
                             run_id=output.run_id,
                             node_id="review.iterate",
@@ -1508,7 +1510,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     )
                     hub.emit(
                         make_execution_event(
-                            event_type="invocation_finished",
+                            event_type=EventType.INVOCATION_FINISHED,
                             workflow_name=workflow.name,
                             run_id=output.run_id,
                             node_id="review.iterate",
@@ -1539,7 +1541,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                     )
                 hub.emit(
                     make_execution_event(
-                        event_type="node_finished",
+                        event_type=EventType.NODE_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="review.iterate",
@@ -1547,7 +1549,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="runtime_log",
+                        event_type=EventType.RUNTIME_LOG,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                         node_id="review.iterate",
@@ -1560,7 +1562,7 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
                 )
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_finished",
+                        event_type=EventType.WORKFLOW_FINISHED,
                         workflow_name=workflow.name,
                         run_id=output.run_id,
                     )

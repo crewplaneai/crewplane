@@ -23,7 +23,6 @@ from crewplane.observability.events.payloads import (
 )
 from crewplane.observability.events.types import EventType, LogLevel, RuntimeLogValue
 
-EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))
 LOG_LEVELS: frozenset[str] = frozenset(get_args(LogLevel))
 _OUTPUT_EXTRACTION_STATUSES: frozenset[str] = frozenset(
     get_args(OutputExtractionStatus)
@@ -58,16 +57,17 @@ def event_from_line(line: str) -> ExecutionEvent | None:
 
 
 def event_from_record(record: Mapping[str, object]) -> ExecutionEvent | None:
-    event_type = record.get("event_type")
+    raw_event_type = record.get("event_type")
+    if not isinstance(raw_event_type, str):
+        return None
+    try:
+        event_type = EventType(raw_event_type)
+    except ValueError:
+        return None
     workflow_name = _string(record.get("workflow_name"))
     run_id = _string(record.get("run_id"))
     timestamp_utc = _string(record.get("timestamp"))
-    if (
-        not _is_event_type(event_type)
-        or workflow_name is None
-        or run_id is None
-        or timestamp_utc is None
-    ):
+    if workflow_name is None or run_id is None or timestamp_utc is None:
         return None
     payload = _payload_from_record(event_type, record)
     if payload is None:
@@ -92,19 +92,28 @@ def _payload_from_record(
 ) -> EventPayload | None:
     match event_type:
         case (
-            "workflow_started"
-            | "workflow_finished"
-            | "workflow_failed"
-            | "workflow_cancelled"
+            EventType.WORKFLOW_STARTED
+            | EventType.WORKFLOW_FINISHED
+            | EventType.WORKFLOW_FAILED
+            | EventType.WORKFLOW_CANCELLED
         ):
             return _workflow_payload_from_record(record)
-        case "node_started" | "node_finished" | "node_failed" | "node_blocked":
+        case (
+            EventType.NODE_STARTED
+            | EventType.NODE_FINISHED
+            | EventType.NODE_FAILED
+            | EventType.NODE_BLOCKED
+        ):
             return _node_payload_from_record(record)
-        case "invocation_started" | "invocation_finished" | "invocation_failed":
+        case (
+            EventType.INVOCATION_STARTED
+            | EventType.INVOCATION_FINISHED
+            | EventType.INVOCATION_FAILED
+        ):
             return _invocation_payload_from_record(record)
-        case "workspace_context_recorded":
+        case EventType.WORKSPACE_CONTEXT_RECORDED:
             return _workspace_payload_from_record(record)
-        case "runtime_log":
+        case EventType.RUNTIME_LOG:
             return _runtime_log_payload_from_record(record)
 
 
@@ -226,10 +235,6 @@ def _timestamp_value(timestamp_utc: str) -> float:
         return datetime.fromisoformat(timestamp_utc).timestamp()
     except ValueError:
         return 0.0
-
-
-def _is_event_type(value: object) -> TypeGuard[EventType]:
-    return isinstance(value, str) and value in EVENT_TYPES
 
 
 def _is_log_level(value: str | None) -> TypeGuard[LogLevel]:

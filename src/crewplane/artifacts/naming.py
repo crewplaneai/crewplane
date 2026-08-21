@@ -116,13 +116,6 @@ def build_log_filename(
     return _bounded_with_suffix(safe_name, f"--{_short_hash(task_id)}{suffix}")
 
 
-def _bounded_artifact_filename(node_id: str, suffix: str) -> str:
-    safe_name = safe_stage_name(node_id)
-    if len(f"{safe_name}{suffix}") <= MAX_GENERATED_PATH_COMPONENT_CHARS:
-        return f"{safe_name}{suffix}"
-    return _bounded_with_suffix(safe_name, f"--{_short_hash(node_id)}{suffix}")
-
-
 def _bounded_with_suffix(safe_prefix: str, suffix: str) -> str:
     if len(suffix) >= MAX_GENERATED_PATH_COMPONENT_CHARS:
         raise ValueError("Generated suffix exceeds path component budget.")

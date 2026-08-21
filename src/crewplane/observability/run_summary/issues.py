@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from crewplane.observability.events import (
+    EventType,
     ExecutionEvent,
     InvocationEventPayload,
     NodeEventPayload,
@@ -29,13 +30,13 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
     blocked_runtime_nodes = {
         event.context.node_id
         for event in events
-        if event.event_type == "runtime_log"
+        if event.event_type == EventType.RUNTIME_LOG
         and runtime_payload(event).operation == "blocked_dependencies"
         and event.context.node_id is not None
     }
     issues: list[tuple[int, str, str]] = []
     for event in events:
-        if event.event_type == "runtime_log":
+        if event.event_type == EventType.RUNTIME_LOG:
             payload = runtime_payload(event)
             if payload.level not in {"warning", "error"} or not payload.message:
                 continue
@@ -47,7 +48,7 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
                 )
             )
             continue
-        if event.event_type == "invocation_failed":
+        if event.event_type == EventType.INVOCATION_FAILED:
             issues.append(
                 (
                     severity_rank("error"),
@@ -56,7 +57,7 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
                 )
             )
             continue
-        if event.event_type == "node_failed":
+        if event.event_type == EventType.NODE_FAILED:
             issues.append(
                 (
                     severity_rank("error"),
@@ -65,7 +66,7 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
                 )
             )
             continue
-        if event.event_type == "workflow_failed":
+        if event.event_type == EventType.WORKFLOW_FAILED:
             issues.append(
                 (
                     severity_rank("error"),
@@ -74,7 +75,7 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
                 )
             )
             continue
-        if event.event_type == "node_blocked":
+        if event.event_type == EventType.NODE_BLOCKED:
             if event.context.node_id in blocked_runtime_nodes:
                 continue
             issues.append(

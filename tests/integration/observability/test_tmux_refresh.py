@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -99,7 +100,7 @@ def test_refresh_writes_selected_invocation_snapshot() -> None:
         apply_event(
             state,
             make_execution_event(
-                event_type="invocation_started",
+                event_type=EventType.INVOCATION_STARTED,
                 workflow_name=workflow.name,
                 run_id="refresh-selected-json",
                 node_id="node.a",

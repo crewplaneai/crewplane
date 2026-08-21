@@ -4,6 +4,7 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.config import AgentConfig
 from crewplane.observability.timing import ElapsedTimer
 from crewplane.runtime.workspace import PreparedWorkspace
@@ -139,7 +140,7 @@ class ProviderInvocationLifecycleState:
         try:
             emit_invocation_event(
                 request.telemetry,
-                "invocation_finished",
+                EventType.INVOCATION_FINISHED,
                 self.invocation_metadata,
                 duration_ms=duration_ms,
                 usage=resolve_invocation_usage(

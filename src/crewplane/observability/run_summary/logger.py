@@ -7,9 +7,12 @@ from threading import Lock
 from typing import cast
 
 from crewplane.architecture.contracts import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
+    ObserverCapabilities,
+)
+from crewplane.architecture.contracts import (
     DashboardSnapshot as PublicDashboardSnapshot,
 )
-from crewplane.architecture.contracts import ObserverCapabilities
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.safe_files import ensure_single_link_regular_file
 from crewplane.artifacts.atomic import atomic_write_text
@@ -36,9 +39,6 @@ from .models import (
 from .spend import provider_token_aggregates
 
 MAX_RETAINED_SUMMARY_EVENTS = 2_000
-_TERMINAL_EVENT_TYPES = frozenset(
-    {"workflow_finished", "workflow_failed", "workflow_cancelled"}
-)
 
 
 class PersistentRunLogger:
@@ -179,9 +179,12 @@ class PersistentRunLogger:
                 return
             event_log_path = ensure_single_link_regular_file(self._event_log_path)
             event_line = format_execution_event_log_line(event)
-            if event.event_type in _TERMINAL_EVENT_TYPES and _event_line_is_durable(
-                event_log_path,
-                event_line,
+            if (
+                event.event_type in TERMINAL_WORKFLOW_EVENT_TYPES
+                and _event_line_is_durable(
+                    event_log_path,
+                    event_line,
+                )
             ):
                 return
             self._record_event_summary(event)

@@ -16,6 +16,7 @@ import crewplane.runtime.execution.workflow.node as workflow_node_module
 import crewplane.runtime.execution.workflow.orchestration as workflow_module
 import crewplane.runtime.execution.workflow.postconditions as workflow_postconditions_module
 import crewplane.runtime.execution.workflow.scheduling as workflow_scheduling_module
+from crewplane.architecture.contracts import EventType
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts import OutputManager
 from crewplane.core.preflight.models import (
@@ -203,12 +204,21 @@ def test_successful_scheduler_becomes_failure_when_workspace_ref_cleanup_fails(
     cleanup_warnings = [
         event
         for event in events
-        if event.event_type == "runtime_log"
+        if event.event_type == EventType.RUNTIME_LOG
         and event.payload.operation == "workspace_ref_cleanup"
     ]
     assert len(cleanup_warnings) == 1
     assert cleanup_warnings[0].payload.level == "warning"
-    assert not any(event.event_type.startswith("workflow_") for event in events[1:])
+    assert not any(
+        event.event_type
+        in {
+            EventType.WORKFLOW_STARTED,
+            EventType.WORKFLOW_FINISHED,
+            EventType.WORKFLOW_FAILED,
+            EventType.WORKFLOW_CANCELLED,
+        }
+        for event in events[1:]
+    )
 
 
 def test_successful_node_cleanup_retains_failed_generated_file_callbacks(
@@ -580,7 +590,7 @@ def test_workflow_reports_deferred_workspace_cleanup_errors(
     cleanup_warnings = [
         event
         for event in events
-        if event.event_type == "runtime_log"
+        if event.event_type == EventType.RUNTIME_LOG
         and event.payload.operation == "workspace_preparation_cancellation_cleanup"
     ]
     assert len(cleanup_warnings) == 1
@@ -589,7 +599,7 @@ def test_workflow_reports_deferred_workspace_cleanup_errors(
         "deferred cleanup failed"
         in cleanup_warnings[0].payload.attributes["first_error"]
     )
-    assert not any(event.event_type == "workflow_finished" for event in events)
+    assert not any(event.event_type == EventType.WORKFLOW_FINISHED for event in events)
 
 
 async def _run_execute_node_generated_file_cleanup_does_not_block_event_loop(

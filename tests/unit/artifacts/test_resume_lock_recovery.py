@@ -10,6 +10,7 @@ from typing import Literal
 import pytest
 
 import crewplane.artifacts.locks.process_identity as process_identity
+from crewplane.architecture.contracts import EventType, WorkflowEventType
 from crewplane.artifacts.locks import (
     LOCK_OWNER_FILENAME,
     ResumeLockError,
@@ -115,13 +116,16 @@ def _write_terminal_views(
     event_count: int = 1,
     summary_status: Literal["succeeded", "failed", "cancelled"] | None = None,
 ) -> None:
-    event_type = {
-        "succeeded": "workflow_finished",
-        "failed": "workflow_failed",
-        "cancelled": "workflow_cancelled",
-    }[status]
+    event_type_by_status: dict[
+        Literal["succeeded", "failed", "cancelled"],
+        WorkflowEventType,
+    ] = {
+        "succeeded": EventType.WORKFLOW_FINISHED,
+        "failed": EventType.WORKFLOW_FAILED,
+        "cancelled": EventType.WORKFLOW_CANCELLED,
+    }
     event = workflow_event(
-        event_type,
+        event_type_by_status[status],
         workflow_name=WORKFLOW_NAME,
         run_id="source",
         error=reason,

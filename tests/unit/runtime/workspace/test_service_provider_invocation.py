@@ -20,6 +20,7 @@ from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
+    EventType,
     InvocationContext,
 )
 from crewplane.artifacts.generated_files.detection import (
@@ -406,7 +407,7 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
     events = []
 
     def record_event(event) -> None:
-        if event.event_type == "invocation_started":
+        if event.event_type == EventType.INVOCATION_STARTED:
             assert event.context.log_file is not None
             assert Path(event.context.log_file).is_file()
         events.append(event)
@@ -457,11 +458,13 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
     assert log_record["workspace"]["materialization"] == "snapshot_checkout"
     assert log_record["workspace"]["child_environment_required"] is False
     started_events = [
-        event for event in events if event.event_type == "invocation_started"
+        event for event in events if event.event_type == EventType.INVOCATION_STARTED
     ]
     assert len(started_events) == 1
     workspace_events = [
-        event for event in events if event.event_type == "workspace_context_recorded"
+        event
+        for event in events
+        if event.event_type == EventType.WORKSPACE_CONTEXT_RECORDED
     ]
     assert len(workspace_events) == 2
     workspace_payload = workspace_events[0].payload
@@ -532,8 +535,10 @@ async def _run_artifact_capture_wrapper_failure_fails_provider_invocation(
     assert output_file.read_text(encoding="utf-8") == "done\n"
     assert isinstance(result.error, RuntimeError)
     assert str(result.error) == "artifact capture wrapper failed"
-    assert not any(event.event_type == "invocation_finished" for event in events)
-    assert any(event.event_type == "invocation_failed" for event in events)
+    assert not any(
+        event.event_type == EventType.INVOCATION_FINISHED for event in events
+    )
+    assert any(event.event_type == EventType.INVOCATION_FAILED for event in events)
 
 
 async def _run_workspace_finalization_failure_fails_provider_invocation(
@@ -595,8 +600,10 @@ async def _run_workspace_finalization_failure_fails_provider_invocation(
 
     assert isinstance(result.error, RuntimeError)
     assert str(result.error) == "workspace finalization failed"
-    assert not any(event.event_type == "invocation_finished" for event in events)
-    assert any(event.event_type == "invocation_failed" for event in events)
+    assert not any(
+        event.event_type == EventType.INVOCATION_FINISHED for event in events
+    )
+    assert any(event.event_type == EventType.INVOCATION_FAILED for event in events)
 
 
 async def _run_generated_file_capture_failure_disables_project_root_fallback(
@@ -731,11 +738,11 @@ async def _run_overlapping_project_root_invocations(tmp_path: Path) -> None:
     results = await asyncio.gather(*tasks)
 
     assert all(result.error is None for result in results)
-    assert not any(event.event_type == "invocation_failed" for event in events)
+    assert not any(event.event_type == EventType.INVOCATION_FAILED for event in events)
     assert {
         event.context.task_id
         for event in events
-        if event.event_type == "invocation_finished"
+        if event.event_type == EventType.INVOCATION_FINISHED
     } == {"alpha", "beta"}
     snapshot_roots = runtime_context.generated_file_workspaces.roots_for_node(
         "implement"
@@ -879,13 +886,13 @@ async def _run_failed_provider_invocation_preserves_applied_child_environment(
     assert invoker.invocation_context.workspace is not None
     assert invoker.invocation_context.workspace.child_environment_applied is False
     failed_events = [
-        event for event in events if event.event_type == "invocation_failed"
+        event for event in events if event.event_type == EventType.INVOCATION_FAILED
     ]
     assert len(failed_events) == 1
     workspace_failed_events = [
         event
         for event in events
-        if event.event_type == "workspace_context_recorded"
+        if event.event_type == EventType.WORKSPACE_CONTEXT_RECORDED
         and event.payload.status == "failed"
     ]
     assert len(workspace_failed_events) == 1

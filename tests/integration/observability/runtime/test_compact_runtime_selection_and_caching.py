@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -200,7 +201,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-running-preferred",
                     node_id="node.a",
@@ -215,7 +216,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id="compact-running-preferred",
                     node_id="node.a",
@@ -229,7 +230,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-running-preferred",
                     node_id="node.a",
@@ -282,7 +283,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="node_started",
+                    event_type=EventType.NODE_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-newest-running",
                     node_id="node.a",
@@ -292,7 +293,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-newest-running",
                     node_id="node.a",
@@ -308,7 +309,7 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-newest-running",
                     node_id="node.a",

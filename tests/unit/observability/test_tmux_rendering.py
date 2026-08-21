@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -114,7 +115,7 @@ def _running_output_context() -> SelectedOutputRenderContext:
     apply_event(
         state,
         make_execution_event(
-            event_type="node_started",
+            event_type=EventType.NODE_STARTED,
             workflow_name=workflow.name,
             run_id="run-output",
             node_id="node.a",
@@ -124,7 +125,7 @@ def _running_output_context() -> SelectedOutputRenderContext:
     apply_event(
         state,
         make_execution_event(
-            event_type="invocation_started",
+            event_type=EventType.INVOCATION_STARTED,
             workflow_name=workflow.name,
             run_id="run-output",
             node_id="node.a",

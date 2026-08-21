@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -68,7 +69,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="node_started",
+                    event_type=EventType.NODE_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-render",
                     node_id="node.b",
@@ -77,7 +78,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-render",
                     node_id="node.b",
@@ -168,7 +169,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="node_started",
+                    event_type=EventType.NODE_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-codex-jsonl",
                     node_id="node.a",
@@ -177,7 +178,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-codex-jsonl",
                     node_id="node.a",
@@ -235,7 +236,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="compact-left-elapsed",
                 node_id="node.a",
@@ -297,7 +298,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-fixed-tail",
                     node_id="node.a",
@@ -363,7 +364,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-fixed-wrap",
                     node_id="node.a",
@@ -442,7 +443,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="node_started",
+                    event_type=EventType.NODE_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-wrap-headers",
                     node_id="node.with.long.identifier",
@@ -452,7 +453,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-wrap-headers",
                     node_id="node.with.long.identifier",
@@ -531,7 +532,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-auto-tail",
                     node_id="node.a",
@@ -600,7 +601,7 @@ class CompactRuntimeRenderingTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-auto-wrap-budget",
                     node_id="node.a",

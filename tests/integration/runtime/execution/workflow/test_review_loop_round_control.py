@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -467,7 +468,7 @@ class ExecutorReviewLoopRoundControlTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "prompt_budget_warning"
             ]
             self.assertEqual(len(warning_events), 1)

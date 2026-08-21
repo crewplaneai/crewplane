@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from crewplane.architecture.contracts import EventType
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -101,7 +102,7 @@ def _emit_workflow_started(
         execution_console(telemetry).print(
             f"[bold blue]Executing Workflow:[/] {workflow_name}"
         )
-    emit_workflow_event(telemetry, "workflow_started")
+    emit_workflow_event(telemetry, EventType.WORKFLOW_STARTED)
 
 
 def initialize_workflow_execution(

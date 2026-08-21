@@ -11,6 +11,7 @@ from crewplane.adapters.invokers.cli_invoker import (
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
+    EventType,
     InvocationContext,
     JsonObject,
     LogPresentationDescriptor,
@@ -155,7 +156,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "prompt_budget_warning"
                 and event.context.node_id == "node.summary"
             ]
@@ -502,7 +503,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
             node_failed_events = [
                 event
                 for event in events
-                if event.event_type == "node_failed"
+                if event.event_type == EventType.NODE_FAILED
                 and event.context.node_id == "input"
             ]
             self.assertEqual(len(node_failed_events), 1)
@@ -576,7 +577,7 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
             failed_node_ids = [
                 event.context.node_id
                 for event in events
-                if event.event_type == "node_failed"
+                if event.event_type == EventType.NODE_FAILED
             ]
             self.assertEqual(failed_node_ids, ["first", "second"])
             never_retrieved_contexts = [
@@ -787,14 +788,14 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             blocked_events = [
-                event for event in events if event.event_type == "node_blocked"
+                event for event in events if event.event_type == EventType.NODE_BLOCKED
             ]
             self.assertEqual(len(blocked_events), 1)
             self.assertEqual(blocked_events[0].context.node_id, "node.dep")
             blocked_runtime_logs = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "blocked_dependencies"
             ]
             self.assertEqual(len(blocked_runtime_logs), 1)
@@ -872,7 +873,9 @@ class WorkflowInputBudgetFailureTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             invocation_failed_events = [
-                event for event in events if event.event_type == "invocation_failed"
+                event
+                for event in events
+                if event.event_type == EventType.INVOCATION_FAILED
             ]
             self.assertEqual(len(invocation_failed_events), 1)
             self.assertEqual(invocation_failed_events[0].context.node_id, "node.fail")

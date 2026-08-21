@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
+from crewplane.architecture.contracts import (
+    AgentInvoker,
+    EventType,
+    NodeArtifactRequest,
+)
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts.results.findings import FindingsExtractionError
@@ -55,7 +59,7 @@ async def execute_node(
     telemetry: ExecutionTelemetry | None,
     workflow_identity: str,
 ) -> None:
-    emit_workflow_event(telemetry, "node_started", node_id=node.id)
+    emit_workflow_event(telemetry, EventType.NODE_STARTED, node_id=node.id)
     if should_print_console(telemetry):
         execution_console(telemetry).rule(f"Node: {node.id} ({node.mode})")
     if node.mode == "input":

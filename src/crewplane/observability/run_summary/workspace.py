@@ -4,7 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.observability.events import ExecutionEvent
+from crewplane.observability.events import EventType, ExecutionEvent
 from crewplane.observability.events.payloads import WorkspaceEventPayload
 
 from . import workspace_readers as _workspace_readers
@@ -24,7 +24,7 @@ workspace_state_summary = _workspace_readers.workspace_state_summary
 def workspace_invocation_summary_from_event(
     event: ExecutionEvent,
 ) -> WorkspaceInvocationSummary | None:
-    if event.event_type != "workspace_context_recorded":
+    if event.event_type != EventType.WORKSPACE_CONTEXT_RECORDED:
         return None
     if not isinstance(event.payload, WorkspaceEventPayload):
         return None

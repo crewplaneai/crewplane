@@ -12,6 +12,7 @@ from typing import BinaryIO, cast
 
 import pytest
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig
 from crewplane.core.file_hashing import file_size_and_sha256
@@ -663,7 +664,7 @@ def test_failure_telemetry_error_does_not_mask_provider_error(
     agent_config = AgentConfig(cli_cmd=["echo"], default_model="model-a")
 
     def event_sink(event: ExecutionEvent) -> None:
-        if event.event_type == "invocation_failed":
+        if event.event_type == EventType.INVOCATION_FAILED:
             raise RuntimeError("sink boom")
 
     request = ProviderCallRequest(
@@ -737,7 +738,7 @@ def test_failure_telemetry_counts_partial_private_provider_output(
         asyncio.run(run_provider_call(request))
 
     failed_event = next(
-        event for event in events if event.event_type == "invocation_failed"
+        event for event in events if event.event_type == EventType.INVOCATION_FAILED
     )
     assert failed_event.payload.visible_estimate_tokens == (
         estimate_token_count(len(prompt)) + estimate_token_count(len(partial_output))

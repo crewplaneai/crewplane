@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -165,7 +166,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
@@ -222,7 +223,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             no_progress_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_no_progress"
             ]
             self.assertEqual(len(no_progress_events), 1)
@@ -289,7 +290,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
@@ -361,7 +362,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
@@ -429,7 +430,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(stall_events, [])

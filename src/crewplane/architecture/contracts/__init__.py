@@ -11,6 +11,7 @@ from .artifacts import (
     safe_artifact_name,
 )
 from .execution_event import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
     EventPayload,
     EventSink,
     EventType,
@@ -199,6 +200,7 @@ __all__ = [
     "QuotaParserProfile",
     "RuntimeLogValue",
     "RuntimeLogEventPayload",
+    "TERMINAL_WORKFLOW_EVENT_TYPES",
     "RunContext",
     "RunResult",
     "RuntimeObserver",
