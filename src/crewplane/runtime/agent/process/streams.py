@@ -13,7 +13,7 @@ from .diagnostics import (
     emit_pipe_drain_timeout_diagnostic,
     emit_process_already_exited_diagnostic,
 )
-from .log_rendering import render_log_text_segments
+from .log_rendering import IncrementalLogRenderer
 from .signals import (
     kill_process_or_group,
     reap_failed_process,
@@ -57,6 +57,34 @@ async def write_stdin(
     process.stdin.write(stdin_data)
     await process.stdin.drain()
     process.stdin.close()
+
+
+async def write_stdin_and_collect_output(
+    process: asyncio.subprocess.Process,
+    stdin_data: bytes | None,
+    log_handle: BinaryIO | None,
+    diagnostic_sink: InvocationDiagnosticSink | None = None,
+    process_group_id: int | None = None,
+    idle_timeout_seconds: float | None = None,
+) -> ProcessOutputCapture:
+    try:
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(write_stdin(process, stdin_data))
+            output_task = task_group.create_task(
+                collect_process_output(
+                    process,
+                    log_handle,
+                    diagnostic_sink,
+                    process_group_id,
+                    idle_timeout_seconds,
+                )
+            )
+    except Exception as exc:
+        error = unwrap_task_group_error(exc)
+        if error is not exc:
+            raise error from exc
+        raise
+    return output_task.result()
 
 
 async def collect_process_output(
@@ -195,21 +223,21 @@ async def pipe_stream(
     capture: CapturedStream,
     activity: ProcessActivity | None = None,
 ) -> None:
-    line_open = False
+    log_renderer = IncrementalLogRenderer(prefix) if log_queue is not None else None
     while True:
         chunk = await reader.read(1024)
         if not chunk:
+            if log_queue is not None and log_renderer is not None:
+                payload = log_renderer.finish()
+                if payload:
+                    await log_queue.put(payload)
             return
         if activity is not None:
             activity.mark_output()
         capture.write(chunk)
-        if log_queue is None:
+        if log_queue is None or log_renderer is None:
             continue
-        payload, line_open = render_log_text_segments(
-            chunk.decode(errors="replace"),
-            prefix,
-            line_open,
-        )
+        payload = log_renderer.render(chunk)
         if payload:
             await log_queue.put(payload)
 

@@ -20,9 +20,8 @@ from crewplane.architecture.contracts import (
 from ..process.runner import (
     build_retry_log_header,
     close_log_handle,
-    collect_process_output,
     reap_failed_process,
-    write_stdin,
+    write_stdin_and_collect_output,
 )
 from ..process.stream_capture import ProcessOutputCapture
 from ..workspace_environment import record_workspace_child_environment_applied
@@ -91,9 +90,9 @@ async def run_command_once(
             append=append_log,
             header_bytes=log_header,
         )
-        await write_stdin(process, stdin_data)
-        output_capture = await collect_process_output(
+        output_capture = await write_stdin_and_collect_output(
             process,
+            stdin_data,
             log_handle,
             diagnostic_sink,
             process_group_id,

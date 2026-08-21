@@ -30,6 +30,14 @@ All notable user-facing changes are recorded here.
   substitution, and concurrent writes from leaking or corrupting artifacts.
 - Corrected worktree file templates to use the project snapshot before the
   first candidate and candidate lineage thereafter.
+- Prevented project-local Python `.venv` environments beside unrelated
+  `package.json` files from being misclassified as npm-managed.
+- Prevented provider invocations from deadlocking when a provider writes output
+  while receiving a large prompt.
+- Preserved valid UTF-8 and CRLF line endings across provider-log read boundaries.
+- Reported workspace cleanup mutation failures and unavailable installed-version
+  metadata as stable CLI errors instead of uncaught exceptions.
+- Rejected dangling workspace-cache symlinks during run and cleanup validation.
 
 ## [0.1.10] - 2026-08-11
 

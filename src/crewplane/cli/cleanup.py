@@ -134,15 +134,13 @@ def cleanup_workspaces(
             older_than,
             orphans,
         )
+        destructive = yes and not dry_run
+        warn_all_projects_cleanup(console, context.all_projects)
+        result = execute_workspace_cleanup(context, destructive)
+        write_cleanup_result(console, result, destructive)
     except Exception as exc:
         console.print(f"[red]Cleanup failed:[/] {exc}")
         raise typer.Exit(code=1) from exc
-
-    destructive = yes and not dry_run
-    warn_all_projects_cleanup(console, context.all_projects)
-
-    result = execute_workspace_cleanup(context, destructive)
-    write_cleanup_result(console, result, destructive)
 
 
 def resolve_cleanup_workspace_context(
@@ -497,7 +495,7 @@ def validate_cleanup_cache_root(
         raise RuntimeError(
             "settings.workspace.cache_root must be absolute for workspace cleanup."
         )
-    if cache_root.exists() and cache_root.is_symlink():
+    if cache_root.is_symlink():
         raise RuntimeError(
             f"Workspace cache root must not be a symlink: {cache_root.as_posix()}"
         )

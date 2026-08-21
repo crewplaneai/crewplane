@@ -25,7 +25,7 @@ def validate_cache_root(
             "isolation is enabled."
         )
         return
-    if cache_root.exists() and cache_root.is_symlink():
+    if cache_root.is_symlink():
         builder.errors.append(
             f"Workspace cache root must not be a symlink: {cache_root.as_posix()}"
         )

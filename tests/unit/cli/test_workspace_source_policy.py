@@ -304,6 +304,39 @@ def test_workspace_cache_overlap_uses_casefolded_unicode_normalization(
     assert paths_overlap(cache_root, blocked_root)
 
 
+@pytest.mark.usefixtures("patched_git_policy")
+def test_workspace_source_policy_rejects_dangling_cache_root_symlink(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "workspace-cache"
+    try:
+        cache_root.symlink_to(
+            tmp_path / "missing-cache-target", target_is_directory=True
+        )
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    config = workspace_source_config().model_copy(
+        update={
+            "settings": Settings(
+                workspace={
+                    "enabled": True,
+                    "cache_root": cache_root.as_posix(),
+                }
+            )
+        }
+    )
+
+    result = policy.collect_workspace_source_policy(
+        config=config,
+        workflow=workspace_source_workflow(),
+        project_root=tmp_path,
+        state_dir=tmp_path / ".crewplane",
+        real_execution=False,
+    )
+
+    assert any("cache root must not be a symlink" in error for error in result.errors)
+
+
 def test_executable_bit_probe_creates_empty_probe_file(tmp_path: Path) -> None:
     supported = workspace_filesystem_policy.executable_bit_supported(tmp_path)
 

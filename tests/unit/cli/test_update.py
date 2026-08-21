@@ -261,6 +261,26 @@ def test_unmanaged_installations_receive_manual_guidance(
     assert runner.calls == []
 
 
+def test_project_virtual_environment_beside_package_json_is_not_npm_owned(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "web-app"
+    environment_root = project_root / ".venv"
+    environment_root.mkdir(parents=True)
+    write_json(project_root / "package.json", {"name": "web-app", "private": True})
+    runner = ProbeRunner({})
+    context = make_context(environment_root, runner, "pip", set())
+
+    with pytest.raises(UpdateError) as error:
+        resolve_update_plan(context)
+
+    message = str(error.value)
+    assert "installed directly in a Python environment" in message
+    assert str(environment_root / "bin" / "python") in message
+    assert "npm-managed" not in message
+    assert runner.calls == []
+
+
 def test_ambiguous_manager_ownership_is_rejected(
     tmp_path: Path,
 ) -> None:

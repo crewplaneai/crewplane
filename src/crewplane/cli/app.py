@@ -50,7 +50,11 @@ def _print_version(show_version: bool) -> None:
     if not show_version:
         return
 
-    package_name, package_version = installed_package_identity()
+    try:
+        package_name, package_version = installed_package_identity()
+    except UpdateError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
     typer.echo(f"{package_name} {package_version}")
     raise typer.Exit()
 

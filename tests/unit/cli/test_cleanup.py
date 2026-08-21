@@ -4,10 +4,12 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Never
 
 import pytest
 from typer.testing import CliRunner
 
+import crewplane.cli.cleanup as cleanup_cli
 from crewplane.cli.app import app
 from crewplane.cli.cleanup import cleanup_repository_id, load_workspace_statuses
 from crewplane.version import SCHEMA_VERSION
@@ -44,6 +46,43 @@ def test_cleanup_workspaces_yes_removes_paths(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Removed 1 workspace path(s)" in result.output
     assert not workspace_path.exists()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        PermissionError("read-only cache"),
+        OSError("workspace I/O failure"),
+    ],
+)
+def test_cleanup_workspaces_reports_mutation_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: OSError,
+) -> None:
+    _, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+
+    def fail_cleanup(
+        context: object,
+        destructive: bool,
+    ) -> Never:
+        del context, destructive
+        raise failure
+
+    monkeypatch.setattr(cleanup_cli, "execute_workspace_cleanup", fail_cleanup)
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert f"Cleanup failed: {failure}" in result.output
+    assert not isinstance(result.exception, OSError)
+    assert workspace_path.exists()
 
 
 def test_cleanup_workspaces_yes_retains_active_run_assets(tmp_path: Path) -> None:
@@ -311,6 +350,33 @@ def test_cleanup_workspaces_rejects_relative_cache_root(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "cache_root must be absolute" in result.output
     assert workspace_path.exists()
+
+
+def test_cleanup_workspaces_rejects_dangling_cache_root_symlink(
+    tmp_path: Path,
+) -> None:
+    _, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+        create_workspace=False,
+    )
+    cache_root = workspace_path.parents[3]
+    try:
+        cache_root.symlink_to(
+            tmp_path / "missing-cache-target", target_is_directory=True
+        )
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1
+    assert "Workspace cache root must not be a symlink" in result.output
+    assert cache_root.is_symlink()
 
 
 def test_cleanup_workspaces_rejects_project_cache_root(tmp_path: Path) -> None:
