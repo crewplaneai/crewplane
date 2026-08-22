@@ -1,4 +1,4 @@
-name: ci-tooling update
+name: uv bootstrap update
 
 on:
   schedule:
@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-tooling-update-${{ github.ref }}
+  group: uv-bootstrap-update-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci-tooling-update:
+  uv-bootstrap-update:
     name: update pinned uv metadata
     if: github.repository == 'crewplaneai/crewplane' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
@@ -21,7 +21,7 @@ jobs:
     permissions:
       actions: write
       contents: write
-      pull-requests: write
+      pull-requests: read
     env:
       CREWPLANE_UV_BOOTSTRAP_ROOT: ${{ github.workspace }}
       GH_TOKEN: ${{ github.token }}
@@ -43,30 +43,49 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Select the ci-tooling PR lane
+      # Dependabot deliberately owns PR creation. The uv-bootstrap workflow
+      # intentionally does not create its own automation/uv-bootstrap PR because
+      # that would require a GitHub token allowed to create pull requests.
+      - name: Select the Dependabot uv PR
         id: lane
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          dependabot_pr="$(
-              gh pr list --state open --base master --app dependabot \
-                --json number,headRefName \
-                --jq '[.[] | select(.headRefName | startswith("dependabot/")) | select(.headRefName | contains("ci-tooling"))][0].number // empty'
-          )"
-          if [ -z "$dependabot_pr" ]; then
-            printf 'No open Dependabot ci-tooling PR; waiting for the next weekly update.\n'
-            printf 'active=false\n' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          matching_head_refs=()
+          pull_request_candidates="$RUNNER_TEMP/dependabot-prs.tsv"
+          gh pr list --state open --base master --app dependabot --limit 100 \
+            --json number,headRefName,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository == false) | select(.headRefName | startswith("dependabot/")) | [.number, .headRefName] | @tsv' \
+            > "$pull_request_candidates"
+          while IFS=$'\t' read -r pr_number head_ref; do
+            changes_uv_pin="$(
+              gh pr view "$pr_number" --json files \
+                --jq 'any(.files[]; .path == "packaging/uv-bootstrap-version.txt")'
+            )"
+            if [ "$changes_uv_pin" = true ]; then
+              matching_head_refs+=("$head_ref")
+            fi
+          done < "$pull_request_candidates"
 
-          head_ref="$(
-            gh pr view "$dependabot_pr" --json headRefName \
-              --jq '.headRefName'
-          )"
+          case "${#matching_head_refs[@]}" in
+            0)
+              printf 'No open same-repository Dependabot PR changes packaging/uv-bootstrap-version.txt; waiting for the next weekly update.\n'
+              printf 'active=false\n' >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            1)
+              head_ref="${matching_head_refs[0]}"
+              ;;
+            *)
+              printf 'Expected at most one Dependabot PR changing packaging/uv-bootstrap-version.txt; found %s.\n' "${#matching_head_refs[@]}" >&2
+              exit 1
+              ;;
+          esac
+
           case "$head_ref" in
-            dependabot/*ci-tooling*) ;;
+            dependabot/*) ;;
             *) printf 'Unexpected Dependabot head: %s\n' "$head_ref" >&2; exit 1 ;;
           esac
           git fetch --no-tags origin master "$head_ref"
@@ -76,30 +95,28 @@ jobs:
           {
             printf 'active=true\n'
             printf 'head_ref=%s\n' "$head_ref"
-            printf 'pr_number=%s\n' "$dependabot_pr"
           } >> "$GITHUB_OUTPUT"
 
       - name: Update and validate pinned uv metadata
-        id: update
         if: steps.lane.outputs.active == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          version="$(
-            cd "$RUNNER_TEMP"
-            python scripts/update_uv_bootstrap.py update latest
-          )"
+          requested_pin="$(< packaging/uv-bootstrap-version.txt)"
+          if [[ ! "$requested_pin" =~ ^uv==([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            printf 'Invalid uv version pin: %s\n' "$requested_pin" >&2
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
           (
             cd "$RUNNER_TEMP"
+            python scripts/update_uv_bootstrap.py update "$version"
             python scripts/update_uv_bootstrap.py check
           )
           sh -n install.sh
           node --check packaging/npm/scripts/postinstall.js
 
-          if git diff --quiet; then
-            changed=false
-          else
-            changed=true
+          if ! git diff --quiet; then
             git add \
               install.sh \
               packaging/npm/scripts/postinstall.js \
@@ -108,12 +125,7 @@ jobs:
             git commit -m "build(deps): update uv bootstrap to $version [dependabot skip]"
           fi
 
-          {
-            printf 'changed=%s\n' "$changed"
-            printf 'version=%s\n' "$version"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Publish the ci-tooling branch
+      - name: Publish the Dependabot branch
         id: publish
         if: steps.lane.outputs.active == 'true'
         shell: bash
@@ -127,19 +139,6 @@ jobs:
             published=true
           fi
           printf 'published=%s\n' "$published" >> "$GITHUB_OUTPUT"
-
-      - name: Label the updated ci-tooling PR
-        if: steps.update.outputs.changed == 'true'
-        shell: bash
-        env:
-          PR_NUMBER: ${{ steps.lane.outputs.pr_number }}
-        run: |
-          set -euo pipefail
-          gh pr edit "$PR_NUMBER" \
-            --add-label "dependencies" \
-            --add-label "area: ci" \
-            --add-label "area: packaging"
-          printf 'Updated Dependabot ci-tooling PR #%s.\n' "$PR_NUMBER"
 
       - name: Dispatch CI for the bot-authored push
         if: steps.publish.outputs.published == 'true'
