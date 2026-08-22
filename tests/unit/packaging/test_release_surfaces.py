@@ -1018,11 +1018,11 @@ def test_repository_automation_matches_supported_platform_and_publish_policy() -
     assert "skip-existing" not in testpypi
 
 
-def test_weekly_uv_update_job_only_uses_an_existing_dependabot_pull_request() -> None:
+def test_weekly_uv_update_job_completes_the_dependabot_uv_pull_request() -> None:
     nightly = yaml.safe_load(read_text(".github", "workflows", "nightly.yml"))
     workflow_text = read_text(".github", "workflows", "ci-tooling-update.yml")
     workflow = yaml.safe_load(workflow_text)
-    update_job = workflow["jobs"]["ci-tooling-update"]
+    update_job = workflow["jobs"]["uv-bootstrap-update"]
 
     assert "ci-tooling-update" not in nightly["jobs"]
     assert 'cron: "30 20 * * 1"' in workflow_text
@@ -1032,43 +1032,92 @@ def test_weekly_uv_update_job_only_uses_an_existing_dependabot_pull_request() ->
     assert update_job["permissions"] == {
         "actions": "write",
         "contents": "write",
-        "pull-requests": "write",
+        "pull-requests": "read",
     }
     assert "crewplaneai/crewplane" in update_job["if"]
     commands = "\n".join(
         step.get("run", "") for step in update_job["steps"] if isinstance(step, dict)
     )
     for fragment in (
-        "scripts/update_uv_bootstrap.py update latest",
+        'any(.files[]; .path == "packaging/uv-bootstrap-version.txt")',
+        "isCrossRepository == false",
+        'scripts/update_uv_bootstrap.py update "$version"',
+        "BASH_REMATCH[1]",
+        "Expected at most one Dependabot PR",
         "packaging/uv-bootstrap-version.txt",
         "--app dependabot",
         "active=false",
         "active=true",
-        "gh pr edit",
         "gh workflow run ci.yml",
     ):
         assert fragment in commands
     for fragment in (
+        "scripts/update_uv_bootstrap.py update latest",
         "automation/ci-tooling",
         "automation_pr",
         "gh pr create",
+        "gh pr edit",
     ):
         assert fragment not in commands
+    assert "automation/uv-bootstrap" in workflow_text
+    assert "GitHub token allowed to" in workflow_text
+    assert "create pull requests" in workflow_text
 
     steps = {step["name"]: step for step in update_job["steps"] if "name" in step}
+    preserve_commands = workflow_step_run(update_job, "Preserve the trusted updater")
+    assert "cp scripts/update_uv_bootstrap.py" in preserve_commands
+    assert '"$RUNNER_TEMP/scripts/update_uv_bootstrap.py"' in preserve_commands
     assert steps["Update and validate pinned uv metadata"]["if"] == (
         "steps.lane.outputs.active == 'true'"
     )
-    assert steps["Publish the ci-tooling branch"]["if"] == (
+    assert steps["Publish the Dependabot branch"]["if"] == (
         "steps.lane.outputs.active == 'true'"
     )
-    assert steps["Label the updated ci-tooling PR"]["if"] == (
-        "steps.update.outputs.changed == 'true'"
-    )
-    assert ".github/workflows" not in workflow_step_run(
+    update_commands = workflow_step_run(
         update_job,
         "Update and validate pinned uv metadata",
     )
+    assert 'cd "$RUNNER_TEMP"' in update_commands
+    assert ".github/workflows" not in update_commands
+
+
+def test_weekly_uv_update_job_propagates_pull_request_query_failures(
+    tmp_path: Path,
+) -> None:
+    workflow = yaml.safe_load(
+        read_text(".github", "workflows", "ci-tooling-update.yml")
+    )
+    update_job = workflow["jobs"]["uv-bootstrap-update"]
+    lane_commands = workflow_step_run(update_job, "Select the Dependabot uv PR")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    write_executable(fake_bin / "gh", "#!/bin/sh\nexit 42\n")
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    github_output = tmp_path / "github-output"
+    env = os.environ.copy()
+    env.update(
+        {
+            "GITHUB_OUTPUT": str(github_output),
+            "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+            "RUNNER_TEMP": str(runner_temp),
+        }
+    )
+
+    failed_selection = subprocess.run(
+        ["bash", "-c", lane_commands],
+        cwd=repository,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert failed_selection.returncode == 42
+    assert not github_output.exists()
 
 
 def test_security_scanning_write_permissions_are_job_scoped() -> None:
