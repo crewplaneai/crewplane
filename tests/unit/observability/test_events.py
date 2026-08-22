@@ -14,6 +14,9 @@ from crewplane.architecture.contracts import (
     NodeEventType,
     WorkflowEventType,
     WorkspaceEventType,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
 )
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
@@ -89,6 +92,18 @@ def test_event_category_aliases_are_disjoint_and_cover_lifecycle_members() -> No
     }
 
 
+def test_event_category_predicates_match_aliases() -> None:
+    assert frozenset(filter(is_workflow_event_type, EventType)) == frozenset(
+        get_args(WorkflowEventType)
+    )
+    assert frozenset(filter(is_node_event_type, EventType)) == frozenset(
+        get_args(NodeEventType)
+    )
+    assert frozenset(filter(is_invocation_event_type, EventType)) == frozenset(
+        get_args(InvocationEventType)
+    )
+
+
 def test_terminal_workflow_event_types_are_exact() -> None:
     assert {
         EventType.WORKFLOW_FINISHED,
@@ -106,6 +121,9 @@ def test_terminal_workflow_event_types_are_exact() -> None:
         "InvocationEventType",
         "WorkspaceEventType",
         "TERMINAL_WORKFLOW_EVENT_TYPES",
+        "is_workflow_event_type",
+        "is_node_event_type",
+        "is_invocation_event_type",
     ],
 )
 def test_public_event_facades_expose_architecture_contract(export_name: str) -> None:
@@ -655,25 +673,11 @@ def _single_node_state() -> RunDashboardState:
 
 def _event_for_type(event_type: EventType) -> ExecutionEvent:
     match event_type:
-        case (
-            EventType.WORKFLOW_STARTED
-            | EventType.WORKFLOW_FINISHED
-            | EventType.WORKFLOW_FAILED
-            | EventType.WORKFLOW_CANCELLED
-        ):
+        case _ if is_workflow_event_type(event_type):
             return workflow_event(event_type, "workflow", "run-1")
-        case (
-            EventType.NODE_STARTED
-            | EventType.NODE_FINISHED
-            | EventType.NODE_FAILED
-            | EventType.NODE_BLOCKED
-        ):
+        case _ if is_node_event_type(event_type):
             return node_event(event_type, "workflow", "run-1", "node.a")
-        case (
-            EventType.INVOCATION_STARTED
-            | EventType.INVOCATION_FINISHED
-            | EventType.INVOCATION_FAILED
-        ):
+        case _ if is_invocation_event_type(event_type):
             return invocation_event(
                 event_type,
                 "workflow",
@@ -708,3 +712,4 @@ def _event_for_type(event_type: EventType) -> ExecutionEvent:
                 message="message",
                 operation="operation",
             )
+    raise AssertionError(f"Unhandled event type: {event_type!r}.")

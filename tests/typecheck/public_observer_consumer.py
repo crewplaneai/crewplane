@@ -7,11 +7,17 @@ from crewplane.architecture.contracts import (
     EventType,
     ExecutionEvent,
     ExecutionEventContext,
+    InvocationEventType,
+    NodeEventType,
     ObserverCapabilities,
     RunContext,
     RunResult,
     RuntimeObserver,
+    WorkflowEventType,
     WorkspaceEventPayload,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
 )
 from crewplane.architecture.ports.runtime import UIRuntimePlan
 from crewplane.core.workflow.keywords import ProviderRole
@@ -40,6 +46,7 @@ class ExternalObserver:
     ) -> None:
         if event is not None:
             assert_type(event.event_type, EventType)
+            assert_event_type_narrowing(event.event_type)
         workflow_name: str = snapshot.state.workflow_name
         workflow_status: str = snapshot.state.workflow_status
         ordered_nodes: list[str] = [
@@ -69,6 +76,15 @@ class ExternalObserver:
 
     def stop(self, result: RunResult) -> None:  # noqa: ARG002 - Observer protocol.
         pass
+
+
+def assert_event_type_narrowing(event_type: EventType) -> None:
+    if is_workflow_event_type(event_type):
+        assert_type(event_type, WorkflowEventType)
+    elif is_node_event_type(event_type):
+        assert_type(event_type, NodeEventType)
+    elif is_invocation_event_type(event_type):
+        assert_type(event_type, InvocationEventType)
 
 
 class IncompatibleObserver:

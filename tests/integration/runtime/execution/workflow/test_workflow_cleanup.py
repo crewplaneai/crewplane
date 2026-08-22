@@ -16,7 +16,7 @@ import crewplane.runtime.execution.workflow.node as workflow_node_module
 import crewplane.runtime.execution.workflow.orchestration as workflow_module
 import crewplane.runtime.execution.workflow.postconditions as workflow_postconditions_module
 import crewplane.runtime.execution.workflow.scheduling as workflow_scheduling_module
-from crewplane.architecture.contracts import EventType
+from crewplane.architecture.contracts import EventType, is_workflow_event_type
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts import OutputManager
 from crewplane.core.preflight.models import (
@@ -209,16 +209,7 @@ def test_successful_scheduler_becomes_failure_when_workspace_ref_cleanup_fails(
     ]
     assert len(cleanup_warnings) == 1
     assert cleanup_warnings[0].payload.level == "warning"
-    assert not any(
-        event.event_type
-        in {
-            EventType.WORKFLOW_STARTED,
-            EventType.WORKFLOW_FINISHED,
-            EventType.WORKFLOW_FAILED,
-            EventType.WORKFLOW_CANCELLED,
-        }
-        for event in events[1:]
-    )
+    assert not any(is_workflow_event_type(event.event_type) for event in events[1:])
 
 
 def test_successful_node_cleanup_retains_failed_generated_file_callbacks(

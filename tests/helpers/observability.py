@@ -9,6 +9,9 @@ from crewplane.observability.events import (
     ExecutionEventContext,
     WorkspaceEventPayload,
     invocation_event,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
     node_event,
     runtime_log_event,
     workflow_event,
@@ -33,19 +36,9 @@ def make_execution_event(event_type: EventType, **fields: Any) -> ExecutionEvent
     workflow_name = fields.pop("workflow_name")
     run_id = fields.pop("run_id")
     match event_type:
-        case (
-            EventType.WORKFLOW_STARTED
-            | EventType.WORKFLOW_FINISHED
-            | EventType.WORKFLOW_FAILED
-            | EventType.WORKFLOW_CANCELLED
-        ):
+        case _ if is_workflow_event_type(event_type):
             return workflow_event(event_type, workflow_name, run_id, **fields)
-        case (
-            EventType.NODE_STARTED
-            | EventType.NODE_FINISHED
-            | EventType.NODE_FAILED
-            | EventType.NODE_BLOCKED
-        ):
+        case _ if is_node_event_type(event_type):
             return node_event(event_type, workflow_name, run_id, **fields)
         case EventType.WORKSPACE_CONTEXT_RECORDED:
             context = event_context(workflow_name, run_id, fields)
@@ -70,11 +63,7 @@ def make_execution_event(event_type: EventType, **fields: Any) -> ExecutionEvent
         case EventType.RUNTIME_LOG:
             context = event_context(workflow_name, run_id, fields)
             return runtime_log_event(workflow_name, run_id, context=context, **fields)
-        case (
-            EventType.INVOCATION_STARTED
-            | EventType.INVOCATION_FINISHED
-            | EventType.INVOCATION_FAILED
-        ):
+        case _ if is_invocation_event_type(event_type):
             context = event_context(workflow_name, run_id, fields)
             if context is None:
                 context = ExecutionEventContext(

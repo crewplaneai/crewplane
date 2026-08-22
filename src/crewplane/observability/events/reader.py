@@ -21,7 +21,14 @@ from crewplane.observability.events.payloads import (
     WorkflowEventPayload,
     WorkspaceEventPayload,
 )
-from crewplane.observability.events.types import EventType, LogLevel, RuntimeLogValue
+from crewplane.observability.events.types import (
+    EventType,
+    LogLevel,
+    RuntimeLogValue,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
+)
 
 LOG_LEVELS: frozenset[str] = frozenset(get_args(LogLevel))
 _OUTPUT_EXTRACTION_STATUSES: frozenset[str] = frozenset(
@@ -91,30 +98,17 @@ def _payload_from_record(
     record: Mapping[str, object],
 ) -> EventPayload | None:
     match event_type:
-        case (
-            EventType.WORKFLOW_STARTED
-            | EventType.WORKFLOW_FINISHED
-            | EventType.WORKFLOW_FAILED
-            | EventType.WORKFLOW_CANCELLED
-        ):
+        case _ if is_workflow_event_type(event_type):
             return _workflow_payload_from_record(record)
-        case (
-            EventType.NODE_STARTED
-            | EventType.NODE_FINISHED
-            | EventType.NODE_FAILED
-            | EventType.NODE_BLOCKED
-        ):
+        case _ if is_node_event_type(event_type):
             return _node_payload_from_record(record)
-        case (
-            EventType.INVOCATION_STARTED
-            | EventType.INVOCATION_FINISHED
-            | EventType.INVOCATION_FAILED
-        ):
+        case _ if is_invocation_event_type(event_type):
             return _invocation_payload_from_record(record)
         case EventType.WORKSPACE_CONTEXT_RECORDED:
             return _workspace_payload_from_record(record)
         case EventType.RUNTIME_LOG:
             return _runtime_log_payload_from_record(record)
+    return None
 
 
 def _workflow_payload_from_record(

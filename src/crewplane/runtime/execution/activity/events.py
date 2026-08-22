@@ -14,6 +14,7 @@ from crewplane.observability.events import (
     WorkflowEventType,
     emit_event,
     invocation_event,
+    is_workflow_event_type,
     node_event,
     runtime_log_event,
     workflow_event,
@@ -200,12 +201,7 @@ def emit_workflow_event(
     if telemetry is None:
         return
     match event_type:
-        case (
-            EventType.WORKFLOW_STARTED
-            | EventType.WORKFLOW_FINISHED
-            | EventType.WORKFLOW_FAILED
-            | EventType.WORKFLOW_CANCELLED
-        ):
+        case _ if is_workflow_event_type(event_type):
             event = workflow_event(
                 event_type,
                 workflow_name=telemetry.workflow_name,

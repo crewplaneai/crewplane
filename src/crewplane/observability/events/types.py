@@ -12,6 +12,9 @@ from crewplane.architecture.contracts.execution_event import (
     WorkflowEventType,
     WorkflowStatus,
     WorkspaceEventType,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
 )
 
 __all__ = [
@@ -26,4 +29,7 @@ __all__ = [
     "WorkflowEventType",
     "WorkflowStatus",
     "WorkspaceEventType",
+    "is_invocation_event_type",
+    "is_node_event_type",
+    "is_workflow_event_type",
 ]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 from crewplane.architecture.contracts import EventType, InvocationEventType
@@ -38,11 +40,7 @@ def test_emit_workflow_event_retains_node_context_validation() -> None:
 
 @pytest.mark.parametrize(
     "event_type",
-    [
-        EventType.INVOCATION_STARTED,
-        EventType.INVOCATION_FINISHED,
-        EventType.INVOCATION_FAILED,
-    ],
+    get_args(InvocationEventType),
 )
 def test_invocation_events_still_require_invocation_context(
     event_type: InvocationEventType,

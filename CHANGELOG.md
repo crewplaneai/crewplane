@@ -6,15 +6,25 @@ All notable user-facing changes are recorded here.
 
 ### Breaking Changes
 
-- **Configuration and workflows:** Move the template allowlist to
-  `settings.file_access.allowed_template_paths`; null `settings` and `preflight`
-  node IDs are rejected.
+- **Configuration:** Template allowlists now use
+  `settings.file_access.allowed_template_paths`; explicit `settings: null` is
+  rejected.
+- **Workflows:** `preflight` is now a reserved node ID.
 - **Custom integrations:** Use JSON Pointers for sensitive options and canonical
   metadata for invoker capabilities; artifact adapters must implement the
   node-based store and terminal-history APIs.
 - **Execution-event consumers:** `EventType` is now a public runtime enum, and
   in-memory consumers use enum members. Persisted lowercase NDJSON event values
   remain unchanged.
+
+### Migration
+
+- Move any existing template allowlist from
+  `settings.integrations.artifacts.options.allowed_template_paths` to
+  `settings.file_access.allowed_template_paths`.
+- Remove `settings: null` to use the defaults, or replace it with `settings: {}`.
+- Rename any workflow node whose ID is `preflight`, update all references to it,
+  and rename its `## preflight` section when present.
 
 ### Changed
 

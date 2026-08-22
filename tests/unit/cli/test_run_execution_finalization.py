@@ -8,6 +8,7 @@ import pytest
 from rich.console import Console
 
 from crewplane.architecture.contracts import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
     DashboardSnapshot,
     EventType,
     ObserverCapabilities,
@@ -515,12 +516,7 @@ def test_permanent_terminal_event_failure_leaves_manifest_running(
         terminal_events = [
             event
             for event in read_event_log(output.get_run_event_log_path())
-            if event.event_type
-            in {
-                EventType.WORKFLOW_FINISHED,
-                EventType.WORKFLOW_FAILED,
-                EventType.WORKFLOW_CANCELLED,
-            }
+            if event.event_type in TERMINAL_WORKFLOW_EVENT_TYPES
         ]
         assert terminal_events == []
         assert "- Status: failed" in output.get_run_summary_path().read_text(
@@ -573,12 +569,7 @@ def test_stale_recovery_replays_views_when_phase_publication_fails(
         terminal_events = [
             event.event_type
             for event in read_event_log(output.get_run_event_log_path())
-            if event.event_type
-            in {
-                EventType.WORKFLOW_FINISHED,
-                EventType.WORKFLOW_FAILED,
-                EventType.WORKFLOW_CANCELLED,
-            }
+            if event.event_type in TERMINAL_WORKFLOW_EVENT_TYPES
         ]
         assert terminal_events == [EventType.WORKFLOW_FINISHED]
         assert "- Status: succeeded" in output.get_run_summary_path().read_text(
@@ -699,12 +690,7 @@ def test_branch_export_failure_preserves_failed_run_finalization(
     terminal_events = [
         event
         for event in read_event_log(output.get_run_event_log_path())
-        if event.event_type
-        in {
-            EventType.WORKFLOW_FINISHED,
-            EventType.WORKFLOW_FAILED,
-            EventType.WORKFLOW_CANCELLED,
-        }
+        if event.event_type in TERMINAL_WORKFLOW_EVENT_TYPES
     ]
     assert [event.event_type for event in terminal_events] == [
         EventType.WORKFLOW_FAILED

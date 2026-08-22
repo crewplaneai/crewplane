@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum, unique
 from time import monotonic
 from types import MappingProxyType
-from typing import Literal, Protocol, cast, override
+from typing import Literal, Protocol, TypeIs, cast, get_args, override
 
 from crewplane.architecture.contracts.invocation import (
     OutputExtractionStatus,
@@ -55,6 +55,35 @@ InvocationEventType = Literal[
     EventType.INVOCATION_FAILED,
 ]
 WorkspaceEventType = Literal[EventType.WORKSPACE_CONTEXT_RECORDED]
+
+
+_WORKFLOW_EVENT_TYPES: frozenset[WorkflowEventType] = frozenset(
+    get_args(WorkflowEventType)
+)
+_NODE_EVENT_TYPES: frozenset[NodeEventType] = frozenset(get_args(NodeEventType))
+_INVOCATION_EVENT_TYPES: frozenset[InvocationEventType] = frozenset(
+    get_args(InvocationEventType)
+)
+
+
+def is_workflow_event_type(event_type: EventType) -> TypeIs[WorkflowEventType]:
+    """Return whether an event type belongs to the workflow category."""
+
+    return event_type in _WORKFLOW_EVENT_TYPES
+
+
+def is_node_event_type(event_type: EventType) -> TypeIs[NodeEventType]:
+    """Return whether an event type belongs to the node category."""
+
+    return event_type in _NODE_EVENT_TYPES
+
+
+def is_invocation_event_type(
+    event_type: EventType,
+) -> TypeIs[InvocationEventType]:
+    """Return whether an event type belongs to the invocation category."""
+
+    return event_type in _INVOCATION_EVENT_TYPES
 
 
 TERMINAL_WORKFLOW_EVENT_TYPES: frozenset[WorkflowEventType] = frozenset(
@@ -326,25 +355,11 @@ def emit_event(event_sink: EventSink | None, event: ExecutionEvent) -> None:
 def validate_payload_type(event_type: EventType, payload: EventPayload) -> None:
     expected_payload: type[EventPayload]
     match event_type:
-        case (
-            EventType.WORKFLOW_STARTED
-            | EventType.WORKFLOW_FINISHED
-            | EventType.WORKFLOW_FAILED
-            | EventType.WORKFLOW_CANCELLED
-        ):
+        case _ if is_workflow_event_type(event_type):
             expected_payload = WorkflowEventPayload
-        case (
-            EventType.NODE_STARTED
-            | EventType.NODE_FINISHED
-            | EventType.NODE_FAILED
-            | EventType.NODE_BLOCKED
-        ):
+        case _ if is_node_event_type(event_type):
             expected_payload = NodeEventPayload
-        case (
-            EventType.INVOCATION_STARTED
-            | EventType.INVOCATION_FINISHED
-            | EventType.INVOCATION_FAILED
-        ):
+        case _ if is_invocation_event_type(event_type):
             expected_payload = InvocationEventPayload
         case EventType.WORKSPACE_CONTEXT_RECORDED:
             expected_payload = WorkspaceEventPayload

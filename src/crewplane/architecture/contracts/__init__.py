@@ -31,6 +31,9 @@ from .execution_event import (
     WorkspaceEventPayload,
     WorkspaceEventType,
     emit_event,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
     validate_payload_type,
 )
 from .integration import (
@@ -226,6 +229,9 @@ __all__ = [
     "build_result_filename",
     "build_stage_directory_name",
     "emit_event",
+    "is_invocation_event_type",
+    "is_node_event_type",
+    "is_workflow_event_type",
     "normalize_log_presentation_profile",
     "redacted_integration_option_value",
     "sensitive_integration_option_keys",
