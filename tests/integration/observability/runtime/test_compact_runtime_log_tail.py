@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     apply_event,
@@ -61,7 +62,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="node_started",
+                    event_type=EventType.NODE_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-no-started-at",
                     node_id="node.a",
@@ -71,7 +72,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-no-started-at",
                     node_id="node.a",
@@ -118,7 +119,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="compact-missing-log",
                 node_id="node.a",
@@ -128,7 +129,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="invocation_started",
+                event_type=EventType.INVOCATION_STARTED,
                 workflow_name=workflow.name,
                 run_id="compact-missing-log",
                 node_id="node.a",
@@ -192,7 +193,7 @@ class CompactRuntimeLogTailTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="compact-missing-log-wrap",
                     node_id="node.a",

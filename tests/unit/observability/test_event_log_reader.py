@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     ExecutionEventContext,
@@ -55,7 +56,7 @@ def test_event_reader_skips_invalid_report_counts(invalid_count: object) -> None
 
 def test_event_reader_accepts_serialized_event_and_legacy_omitted_field() -> None:
     current_event = invocation_event(
-        event_type="invocation_finished",
+        event_type=EventType.INVOCATION_FINISHED,
         workflow_name="workflow",
         run_id="run-1",
         context=ExecutionEventContext(
@@ -110,6 +111,16 @@ def test_event_reader_keeps_existing_invalid_line_behavior(tmp_path: Path) -> No
 def test_event_reader_skips_blank_and_non_object_lines() -> None:
     assert event_from_line("   ") is None
     assert event_from_line("[]") is None
+
+
+@pytest.mark.parametrize("raw_event_type", ["unknown_event", 1, True, {}, []])
+def test_event_reader_skips_unknown_and_non_string_event_types(
+    raw_event_type: object,
+) -> None:
+    record = invocation_record()
+    record["event_type"] = raw_event_type
+
+    assert event_from_record(record) is None
 
 
 @pytest.mark.parametrize(

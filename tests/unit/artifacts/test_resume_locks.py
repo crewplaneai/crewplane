@@ -118,9 +118,75 @@ def test_acquire_update_and_release_same_context_lock(tmp_path) -> None:
     assert owner["workflow_identity"] == WORKFLOW_IDENTITY
     assert WORKFLOW_IDENTITY not in lock.lock_dir.name
 
+
+def test_same_context_lock_records_monotonic_terminal_recovery(
+    tmp_path,
+) -> None:
+    lock = acquire_same_context_lock(
+        tmp_path,
+        WORKFLOW_NAME,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_SIGNATURE,
+        process_inspector=FakeProcessInspector(100, "start"),
+    )
+    lock.update_run("run", "workflow--run")
+
+    lock.record_terminal_recovery(
+        "outcome_selected",
+        "failed",
+        "branch export failed",
+    )
+    lock.record_terminal_recovery(
+        "terminal_views_published",
+        "failed",
+        "branch export failed",
+    )
+    lock.record_terminal_recovery(
+        "observer_shutdown_complete",
+        "failed",
+        "branch export failed",
+    )
+
+    owner = json.loads(
+        (lock.lock_dir / LOCK_OWNER_FILENAME).read_text(encoding="utf-8")
+    )
+    assert owner["terminal_recovery"] == {
+        "phase": "observer_shutdown_complete",
+        "status": "failed",
+        "reason": "branch export failed",
+    }
+
     lock.release()
 
     assert not lock.lock_dir.exists()
+
+
+def test_same_context_lock_rejects_skipped_terminal_recovery_phase(tmp_path) -> None:
+    lock = acquire_same_context_lock(
+        tmp_path,
+        WORKFLOW_NAME,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_SIGNATURE,
+        process_inspector=FakeProcessInspector(100, "start"),
+    )
+    lock.update_run("run", "workflow--run")
+
+    with pytest.raises(ResumeLockError, match="must begin with outcome_selected"):
+        lock.record_terminal_recovery(
+            "terminal_views_published",
+            "succeeded",
+            None,
+        )
+
+    lock.record_terminal_recovery("outcome_selected", "succeeded", None)
+    with pytest.raises(ResumeLockError, match="cannot skip or regress"):
+        lock.record_terminal_recovery(
+            "observer_shutdown_complete",
+            "succeeded",
+            None,
+        )
+
+    lock.release()
 
 
 def test_acquire_update_and_release_lock_without_process_start_identity(

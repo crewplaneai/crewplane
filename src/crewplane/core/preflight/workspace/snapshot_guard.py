@@ -41,4 +41,4 @@ def append_missing_workspace_snapshot_diagnostic(
 
 
 def _workspace_enabled(config: Config) -> bool:
-    return config.settings is not None and config.settings.workspace.enabled
+    return config.settings.workspace.enabled

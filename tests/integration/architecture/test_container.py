@@ -8,7 +8,11 @@ from pathlib import Path
 from rich.console import Console
 
 import crewplane.adapters.ui.tmux as tmux_adapter_module
-from crewplane.architecture.contracts import ObserverCapabilities
+from crewplane.architecture.contracts import (
+    ObserverCapabilities,
+    build_findings_filename,
+    build_result_filename,
+)
 from crewplane.architecture.errors import AdapterLoadError
 from crewplane.architecture.ports.runtime import UIRuntimePlan
 from crewplane.bootstrap import (
@@ -135,13 +139,15 @@ class _ConformingObserverRuntime:
 
 class ContainerTests(unittest.TestCase):
     def _build_config(self, settings: Settings | None = None) -> Config:
-        return Config(
-            version=SCHEMA_VERSION,
-            agents={
+        config: dict[str, object] = {
+            "version": SCHEMA_VERSION,
+            "agents": {
                 "alpha": AgentConfig(cli_cmd=["echo"], default_model="model-a"),
             },
-            settings=settings,
-        )
+        }
+        if settings is not None:
+            config["settings"] = settings
+        return Config.model_validate(config)
 
     def _build_workflow(self) -> WorkflowPlan:
         return WorkflowPlan(
@@ -200,7 +206,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -263,7 +268,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -296,7 +300,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -344,7 +347,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -376,7 +378,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -453,7 +454,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": False,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -494,7 +494,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -557,7 +556,6 @@ class ContainerTests(unittest.TestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": False,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -620,7 +618,6 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -645,7 +642,9 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 suppress_progress_output=True,
             )
 
-            result_file = components.artifact_store.get_stage_output_path("node.mock")
+            result_file = components.artifact_store.results_dir / build_result_filename(
+                "node.mock"
+            )
             self.assertTrue(result_file.exists())
             output_text = result_file.read_text(encoding="utf-8")
             self.assertIn("# Mock Invocation Output", output_text)
@@ -694,7 +693,6 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         "implementation": "filesystem",
                         "options": {
                             "log_cli_output": True,
-                            "allowed_template_paths": [],
                         },
                     },
                 }
@@ -719,11 +717,12 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 suppress_progress_output=True,
             )
 
-            result_file = components.artifact_store.get_stage_output_path(
+            result_file = components.artifact_store.results_dir / build_result_filename(
                 "review.context"
             )
-            findings_file = components.artifact_store.get_stage_findings_path(
-                "review.context"
+            findings_file = (
+                components.artifact_store.results_dir
+                / build_findings_filename("review.context")
             )
             self.assertTrue(result_file.exists())
             self.assertTrue(findings_file.exists())

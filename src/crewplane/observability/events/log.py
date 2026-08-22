@@ -7,7 +7,7 @@ from crewplane.observability.events.execution_event import ExecutionEvent
 
 def execution_event_log_record(event: ExecutionEvent) -> dict[str, object]:
     record: dict[str, object] = {
-        "event_type": event.event_type,
+        "event_type": event.event_type.value,
         "run_id": event.run_id,
         "timestamp": event.timestamp_utc,
         "workflow_name": event.workflow_name,

@@ -91,20 +91,30 @@ preflight bundles, locks, and workspace state under `.crewplane/`.
 Options:
 
 - `log_cli_output`
-- `allowed_template_paths`
+
+Template authorization is configured separately through the core-owned
+`settings.file_access.allowed_template_paths` policy.
 
 Real runs currently require the built-in `filesystem` adapter. External
 artifact adapters can be used only with `crewplane validate` and
 `crewplane run --dry-run`.
+
+Artifact adapters must provide `create_terminal_history_reader()` so preflight
+can resolve terminal results through the selected storage integration. The
+factory receives the same canonical artifact options used for runtime component
+construction. The loader rejects adapters that omit this factory.
 
 ## Extension Contract
 
 Every adapter canonicalization result must have an `option_scopes` key set that
 exactly matches its canonical `options` key set. Scope each option as
 `execution`, `artifact`, `observer`, or `validation`; unscoped and unknown
-entries fail composition. Sensitive option names must also refer to canonical
-options, and all option and capability values must be finite JSON-compatible
-data.
+entries fail composition. Scopes remain attached to top-level option keys even
+when their values are nested JSON.
+
+Sensitive option declarations use RFC 6901 JSON Pointers, such as `/api_token`
+or `/credentials/0/value`. Crewplane redacts sensitive values at any depth. All
+option and capability values must be finite JSON-compatible data.
 
 Observers implement the architecture `Observer` lifecycle contract and expose
 one immutable `ObserverCapabilities` value. Runtime observers receive the

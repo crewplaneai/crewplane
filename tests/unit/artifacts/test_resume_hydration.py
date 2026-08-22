@@ -68,9 +68,17 @@ def validated_frontier(
     return validate_resume_frontier(source, plan), plan
 
 
+def hydration_output(tmp_path: Path) -> OutputManager:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    output.write_run_manifest(
+        make_run_manifest(output.run_id, output.run_key_name, status="running")
+    )
+    return output
+
+
 def test_hydrate_resume_frontier_copies_only_required_artifacts(tmp_path) -> None:
     frontier, plan = validated_frontier(tmp_path)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     resumed = hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -98,7 +106,7 @@ def test_hydrate_rechecks_source_hash_after_validation(tmp_path) -> None:
     frontier, plan = validated_frontier(tmp_path, include_findings=False)
     source_path = frontier.source.results_dir / "a-result.md"
     source_path.write_text("mutated", encoding="utf-8")
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     with pytest.raises(ValueError, match="hash changed"):
         hydration_module.hydrate_resume_frontier(frontier, plan, output)
@@ -109,7 +117,7 @@ def test_hydrate_rechecks_target_after_descriptor_bound_copy(
     monkeypatch,
 ) -> None:
     frontier, plan = validated_frontier(tmp_path, include_findings=False)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     def corrupt_target_write(path: Path, payload: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +139,7 @@ def test_hydrate_resume_frontier_records_findings_hash_when_required(tmp_path) -
         include_findings=True,
         findings_edge=True,
     )
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -171,7 +179,7 @@ def test_hydrate_resume_frontier_copies_generated_file_sidecars(tmp_path) -> Non
     )
     plan = make_plan()
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -209,7 +217,7 @@ def test_hydrate_rechecks_generated_file_target_after_copy(
         ),
     )
     frontier = validate_resume_frontier(source, make_plan())
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
     write_bytes = verified_copy_module.atomic_write_bytes
 
     def corrupt_target_write(path: Path, payload: bytes) -> None:
@@ -260,7 +268,7 @@ def test_hydrate_resume_frontier_copies_generated_file_from_bounded_node_directo
     )
     plan = _single_node_plan(node_id)
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -308,7 +316,7 @@ def test_hydrate_resume_frontier_rewrites_workspace_state_run_identity(
     state_path.write_text(json.dumps(state_payload), encoding="utf-8")
     attach_workspace_descriptor(source.run_dir, plan, "a")
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -364,7 +372,7 @@ def test_hydrate_rechecks_rewritten_workspace_state_before_node_success(
     plan = _workspace_snapshot_plan()
     _write_snapshot_workspace_state(source, plan)
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
     write_bytes = hydration_module.atomic_write_bytes
 
     def corrupt_workspace_state(path: Path, payload: bytes) -> None:
@@ -410,7 +418,7 @@ def test_workspace_target_verification_does_not_add_full_file_read(
     plan = _workspace_snapshot_plan()
     _write_snapshot_workspace_state(source, plan)
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
     target_path = output.stages_dir / "a" / "workspace-state.json"
     read_bytes = Path.read_bytes
     target_read_count = 0
@@ -456,7 +464,7 @@ def test_hydrate_resume_frontier_strips_source_branch_export(
     }
     state_path.write_text(json.dumps(payload), encoding="utf-8")
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -497,7 +505,7 @@ def test_hydrate_resume_frontier_skips_bool_workspace_artifact_size_bytes(
     state_artifact["size_bytes"] = True
     node_state_path.write_text(json.dumps(node_state_payload), encoding="utf-8")
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     with pytest.raises(RuntimeError, match="no workspace-state artifact"):
         hydration_module.hydrate_resume_frontier(frontier, plan, output)
@@ -541,12 +549,12 @@ def test_hydrate_resume_frontier_preserves_review_loop_canonical_lineage(
         node_state_path.read_text(encoding="utf-8")
     )
     frontier = ValidatedResumeFrontier(source, {"a": node_state})
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
     assert (
-        required_lineage_state_path(output, "a").name
+        required_lineage_state_path(output, plan.nodes[0]).name
         == "workspace-state-a-alpha-round2.json"
     )
     assert (
@@ -594,7 +602,7 @@ def test_hydrate_resume_frontier_rechecks_review_loop_artifact_hash(
     )
     (stage_dir / relative_path).write_text("tampered\n", encoding="utf-8")
     frontier = ValidatedResumeFrontier(source, {"a": node_state})
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     with pytest.raises(ValueError, match="Workspace resume artifact hash changed"):
         hydration_module.hydrate_resume_frontier(frontier, plan, output)
@@ -643,7 +651,7 @@ def test_hydrate_resume_frontier_copies_workspace_setup_artifacts(
         node_state_path.read_text(encoding="utf-8")
     )
     frontier = ValidatedResumeFrontier(source, {"a": node_state})
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -675,7 +683,7 @@ def test_hydrate_resume_frontier_ignores_undeclared_workspace_artifacts(
     frontier = validate_resume_frontier(source, plan)
     extra_state = source.run_dir / "a" / "workspace-state-extra.json"
     extra_state.write_bytes(b"\xff")
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
@@ -710,7 +718,7 @@ def test_hydrated_parallel_workspace_state_can_be_resumed_without_raw_outputs(
         )
     attach_workspace_descriptor(source.run_dir, plan, "a")
     frontier = validate_resume_frontier(source, plan)
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
     output.write_run_manifest(
@@ -757,7 +765,7 @@ def test_hydrate_resume_frontier_rechecks_workspace_artifact_hash(
     state_payload = json.loads(state_path.read_text(encoding="utf-8"))
     state_payload["diagnostics"] = [{"level": "warning", "message": "mutated"}]
     state_path.write_text(json.dumps(state_payload), encoding="utf-8")
-    output = OutputManager("Workflow", base_dir=tmp_path)
+    output = hydration_output(tmp_path)
 
     with pytest.raises(ValueError, match="Workspace resume artifact hash changed"):
         hydration_module.hydrate_resume_frontier(frontier, plan, output)
@@ -861,11 +869,13 @@ def _write_lineage_workspace_state(path, result_commit: str, round_num: int) -> 
 def _write_review_status(stage_dir, canonical_path: str) -> None:
     status_dir = stage_dir / "review-state"
     status_dir.mkdir(parents=True, exist_ok=True)
+    canonical_bytes = (stage_dir / canonical_path).read_bytes()
     (status_dir / "review-loop-status.json").write_text(
         json.dumps(
             {
                 "node_id": "a",
                 "executed_audit_rounds": 1,
+                "attempted_local_round_num": 2,
                 "final_local_round_num": 2,
                 "invalid_candidate_round_count": 0,
                 "no_progress_round_count": 0,
@@ -878,6 +888,10 @@ def _write_review_status(stage_dir, canonical_path: str) -> None:
                         "provider": "alpha",
                         "role": "executor",
                         "path": canonical_path,
+                        "sha256": sha256_hex(canonical_bytes),
+                        "size_bytes": len(canonical_bytes),
+                        "audit_round_num": None,
+                        "round_num": 2,
                     }
                 ],
                 "reviewer_outputs": [],

@@ -214,7 +214,8 @@ def assert_workspace_e2e_artifacts(run_dir: Path, workspace_git: IsolatedGit) ->
     locators = plan["workspace_file_locators"]
     assert any(locator["target"] == "reviewer_prompt" for locator in locators)
     assert any(
-        locator["runtime_dynamic_after_candidate"] is True for locator in locators
+        locator["source_class"] == "project_initial_then_candidate"
+        for locator in locators
     )
 
 

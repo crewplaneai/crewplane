@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts import (
+    AgentInvoker,
+    EventType,
+    build_findings_filename,
+    build_result_filename,
+)
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -22,6 +27,7 @@ from crewplane.runtime.execution.consensus import (
     extract_verdict,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_sequential_stage,
@@ -291,12 +297,12 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
 
             await execute_workflow(config, workflow, output, invoker=invoker)
 
-            findings_text = output.get_stage_findings_path("review.chain").read_text(
-                encoding="utf-8"
-            )
-            result_text = output.get_stage_output_path("review.chain").read_text(
-                encoding="utf-8"
-            )
+            findings_text = (
+                output.results_dir / build_findings_filename("review.chain")
+            ).read_text(encoding="utf-8")
+            result_text = (
+                output.results_dir / build_result_filename("review.chain")
+            ).read_text(encoding="utf-8")
 
             self.assertIn("## alpha (executor)", findings_text)
             self.assertIn("## beta (executor)", findings_text)
@@ -360,7 +366,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             reviewer_output = (node_dir / "review_reviewer_0_round1.md").read_text(
@@ -382,7 +388,7 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(len(warning_events), 1)

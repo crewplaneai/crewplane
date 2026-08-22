@@ -98,6 +98,8 @@ def test_resolve_previous_candidate_context_uses_executor_artifacts(tmp_path) ->
         task_id="exec_executor_0",
         content="Candidate body",
         output_file=output_file,
+        audit_round_num=None,
+        round_num=1,
     )
 
     context = resolve_previous_candidate_context(_node(), [artifact], None)

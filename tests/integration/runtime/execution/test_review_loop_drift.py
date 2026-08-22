@@ -1,10 +1,15 @@
 import asyncio
+import hashlib
 import json
+import os
+import stat
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 from threading import Event
+from unittest.mock import Mock
 
 import pytest
 
@@ -12,7 +17,11 @@ from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from crewplane.architecture.contracts import InvocationProcessEvent
+from crewplane.architecture.contracts import (
+    EventType,
+    InvocationProcessEvent,
+    NodeArtifactRequest,
+)
 from crewplane.architecture.ports import (
     ProviderProcessInvocation,
     ProviderProcessPublication,
@@ -27,6 +36,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
+    RenderPlan,
 )
 from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
@@ -48,11 +58,32 @@ from crewplane.runtime.execution.common import (
     ProviderCallDisplay,
 )
 from crewplane.runtime.execution.errors import NodeExecutionError
-from crewplane.runtime.execution.review_loop import (
-    drift as review_loop_drift,
+from crewplane.runtime.execution.publication_registry import (
+    RuntimePublicationRegistry,
 )
-from crewplane.runtime.execution.review_loop import (
-    drift_detection as review_loop_drift_detection,
+from crewplane.runtime.execution.review_loop.drift import (
+    capture as review_loop_drift_capture,
+)
+from crewplane.runtime.execution.review_loop.drift import (
+    comparison as review_loop_drift_comparison,
+)
+from crewplane.runtime.execution.review_loop.drift import (
+    detection as review_loop_drift_detection,
+)
+from crewplane.runtime.execution.review_loop.drift import (
+    guard as review_loop_drift_guard,
+)
+from crewplane.runtime.execution.review_loop.drift import (
+    node as review_loop_drift_node,
+)
+from crewplane.runtime.execution.review_loop.drift import (
+    recovery as review_loop_drift_recovery,
+)
+from crewplane.runtime.execution.review_loop.drift import (
+    reserved as review_loop_drift_reserved,
+)
+from crewplane.runtime.execution.review_loop.drift import (
+    snapshots as review_loop_drift_snapshots,
 )
 from crewplane.runtime.execution.review_loop.types import (
     ActivityWindow,
@@ -60,9 +91,20 @@ from crewplane.runtime.execution.review_loop.types import (
     DriftMonitoringWindow,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     provider_failure,
 )
+
+
+def _recovery_payload(
+    registry: RuntimePublicationRegistry,
+    path: Path,
+) -> bytes | None:
+    destination = BytesIO()
+    if not registry.copy_recovery_payload_to(path, destination):
+        return None
+    return destination.getvalue()
 
 
 def _request(
@@ -106,12 +148,18 @@ def _request(
                 invoker_config_signature=signature_for_payload(invoker_payload),
             )
         ],
-        artifact_contract=ArtifactContract(output_path="review.node-result.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="review.node",
+            output_path="review.node-result.md",
+            log_path="review.node/logs",
+            result_path="review.node-result.md",
+        ),
     )
-    node_dir = output.create_stage_dir(node.id)
+    node_dir = output.create_node_dir(node_artifact_request(node.id))
     request = DriftGuardCallRequest(
         runtime_context=CompiledRuntimeContext(
             plan=PreflightExecutionPlan(
+                plan_schema_version=SCHEMA_VERSION,
                 run_id="run-1",
                 run_key_name="run-1",
                 project_root=".",
@@ -122,7 +170,12 @@ def _request(
                 workflow_signature="workflow-signature",
                 execution_order=["review.node"],
                 nodes=[node],
-                render_plans=[],
+                render_plans=[
+                    RenderPlan(
+                        render_plan_id="review.node",
+                        node_id="review.node",
+                    )
+                ],
                 static_resources=[],
                 token_catalog=[],
                 dependency_graph=[],
@@ -196,12 +249,11 @@ def test_current_invocation_and_parallel_reviewer_outputs_are_allowed(
     executor_output = node_dir / "exec_executor_0_round1.md"
     reviewer_output = node_dir / "review_reviewer_0_round1.md"
 
-    drift = review_loop_drift_detection.detect_artifact_drift(
+    drift = review_loop_drift_comparison.detect_artifact_drift(
         before_snapshot={},
         after_snapshot={executor_output: (1, "a"), reviewer_output: (1, "b")},
         allowed_paths={executor_output, reviewer_output},
         output=output,
-        node_dir=node_dir,
     )
 
     assert drift.warning_paths == ()
@@ -215,7 +267,7 @@ def test_cli_provider_process_state_is_an_expected_runtime_publication(
     request.allowed_paths.add(request.output_file)
 
     warning_count = asyncio.run(
-        review_loop_drift.run_provider_call_with_drift_guard(request)
+        review_loop_drift_guard.run_provider_call_with_drift_guard(request)
     )
 
     process_states = tuple(
@@ -224,16 +276,24 @@ def test_cli_provider_process_state_is_an_expected_runtime_publication(
     assert warning_count == 0
     assert len(process_states) == 1
     assert process_states[0] not in request.allowed_paths
-    assert request.runtime_publication_allowance is not None
-    published, _ = request.runtime_publication_allowance.snapshot()
+    assert request.runtime_publications is not None
+    published, _ = request.runtime_publications.snapshot()
     assert process_states[0] in published
+    assert (
+        _recovery_payload(
+            request.runtime_publications,
+            process_states[0],
+        )
+        == process_states[0].read_bytes()
+    )
+    request.runtime_publications.close()
 
 
 def test_parallel_cli_provider_process_states_are_expected_publications(
     tmp_path: Path,
 ) -> None:
     first, output, node_dir = _request(tmp_path, use_cli_invoker=True)
-    session = review_loop_drift.create_drift_guard_session(None)
+    session = review_loop_drift_guard.create_drift_guard_session(None)
     first_output = node_dir / "exec_executor_0_round1.md"
     second_output = node_dir / "exec_executor_1_round1.md"
     allowed_paths = {first_output, second_output}
@@ -244,13 +304,13 @@ def test_parallel_cli_provider_process_states_are_expected_publications(
         provider=first.provider.model_copy(update={"task_id": "exec_executor_1"}),
         task_id="exec_executor_1",
         output_file=second_output,
-        runtime_publication_allowance=None,
+        runtime_publications=None,
     )
 
     async def run_parallel_calls() -> tuple[int, int]:
         results = await asyncio.gather(
-            review_loop_drift.run_provider_call_with_drift_guard(first),
-            review_loop_drift.run_provider_call_with_drift_guard(second),
+            review_loop_drift_guard.run_provider_call_with_drift_guard(first),
+            review_loop_drift_guard.run_provider_call_with_drift_guard(second),
         )
         return results[0], results[1]
 
@@ -289,10 +349,12 @@ def test_cli_provider_process_state_tampering_remains_fatal(
     )
 
     with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
-        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
 
 
-def test_shared_reserved_drift_is_ignored_when_not_exclusive(tmp_path: Path) -> None:
+def test_preexisting_shared_reserved_drift_is_fatal_when_not_exclusive(
+    tmp_path: Path,
+) -> None:
     request, output, _ = _request(tmp_path)
     result_path = output.results_dir / "review.node-result.md"
     window = DriftMonitoringWindow(
@@ -303,14 +365,440 @@ def test_shared_reserved_drift_is_ignored_when_not_exclusive(tmp_path: Path) -> 
         activity_window=ActivityWindow(is_exclusive=False, version=1),
     )
 
-    drift = review_loop_drift_detection.detect_shared_reserved_drift(
+    drift = review_loop_drift_reserved.detect_shared_reserved_drift(
         request,
         window,
-        check_shared_reserved_drift=False,
     )
 
     assert drift.warning_paths == ()
-    assert drift.fatal_paths == ()
+    assert drift.fatal_paths == (result_path,)
+
+
+def test_new_reserved_drift_is_fatal_when_not_exclusive(tmp_path: Path) -> None:
+    request, output, _ = _request(tmp_path)
+    result_path = output.results_dir / "other-node-result.md"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text("unattributed", encoding="utf-8")
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot={},
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=1),
+    )
+
+    drift = review_loop_drift_reserved.detect_shared_reserved_drift(
+        request,
+        window,
+    )
+
+    assert drift.fatal_paths == (result_path,)
+
+
+def test_monitoring_window_retries_concurrent_runtime_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, output, node_dir = _request(tmp_path)
+    publications = request.runtime_context.runtime_publications
+    result_path = output.results_dir / "peer-result.md"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_bytes(b"original result")
+    replacement_path = tmp_path / "peer-result-replacement.md"
+    replacement_payload = b"published peer result"
+    replacement_signature = (
+        len(replacement_payload),
+        hashlib.sha256(replacement_payload).hexdigest(),
+    )
+    original_read_bytes = Path.read_bytes
+    publication_count = 0
+
+    def publish_during_read(path: Path) -> bytes:
+        nonlocal publication_count
+        payload = original_read_bytes(path)
+        if path == result_path and publication_count == 0:
+            replacement_path.write_bytes(replacement_payload)
+            with publications.transaction():
+                os.replace(replacement_path, result_path)
+                publications.publish(
+                    result_path,
+                    replacement_signature,
+                    recovery_source=result_path,
+                )
+            publication_count += 1
+        return payload
+
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        publish_during_read,
+    )
+
+    window = review_loop_drift_capture.capture_drift_monitoring_window(
+        request.node.id,
+        node_dir,
+        output,
+        telemetry=None,
+        runtime_publications=publications,
+    )
+
+    assert publication_count == 1
+    assert window.shared_reserved_original_bytes == {}
+    assert window.shared_reserved_snapshot[result_path] == replacement_signature
+    assert _recovery_payload(publications, result_path) == replacement_payload
+    publications.close()
+
+
+def test_monitoring_windows_share_disk_backed_recovery_baseline(
+    tmp_path: Path,
+) -> None:
+    request, output, node_dir = _request(tmp_path)
+    result_path = output.results_dir / "peer-result.md"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_bytes(b"shared recovery payload")
+    recovery_baseline = review_loop_drift_capture.capture_drift_recovery_baseline(
+        node_dir,
+        output,
+        request.runtime_context.runtime_publications,
+    )
+
+    first = review_loop_drift_capture.capture_drift_monitoring_window(
+        request.node.id,
+        node_dir,
+        output,
+        telemetry=None,
+        runtime_publications=request.runtime_context.runtime_publications,
+        recovery_baseline=recovery_baseline,
+    )
+    second = review_loop_drift_capture.capture_drift_monitoring_window(
+        request.node.id,
+        node_dir,
+        output,
+        telemetry=None,
+        runtime_publications=request.runtime_context.runtime_publications,
+        recovery_baseline=recovery_baseline,
+    )
+
+    assert first.node_original_bytes is second.node_original_bytes
+    assert first.shared_reserved_original_bytes is second.shared_reserved_original_bytes
+    assert first.node_original_bytes == {}
+    assert first.shared_reserved_original_bytes == {}
+    assert (
+        _recovery_payload(
+            request.runtime_context.runtime_publications,
+            result_path,
+        )
+        == b"shared recovery payload"
+    )
+    request.runtime_context.runtime_publications.close()
+
+
+def test_recovery_baseline_without_registry_retains_original_bytes(
+    tmp_path: Path,
+) -> None:
+    request, output, node_dir = _request(tmp_path)
+    result_path = output.results_dir / "peer-result.md"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_bytes(b"in-memory fallback")
+
+    recovery_baseline = review_loop_drift_capture.capture_drift_recovery_baseline(
+        node_dir,
+        output,
+    )
+
+    assert recovery_baseline.shared_reserved_original_bytes == {
+        result_path: b"in-memory fallback"
+    }
+    assert recovery_baseline.shared_reserved_snapshot[result_path] == (
+        len(b"in-memory fallback"),
+        hashlib.sha256(b"in-memory fallback").hexdigest(),
+    )
+    request.runtime_context.runtime_publications.close()
+
+
+def test_registered_reserved_publication_created_during_window_is_restored(
+    tmp_path: Path,
+) -> None:
+    request, output, node_dir = _request(tmp_path)
+    publications = request.runtime_context.runtime_publications
+    request.runtime_publications = publications
+    window = review_loop_drift_capture.capture_drift_monitoring_window(
+        request.node.id,
+        node_dir,
+        output,
+        telemetry=None,
+        runtime_publications=publications,
+    )
+    result_path = output.results_dir / "sibling-result.md"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    trusted_payload = b"trusted sibling publication"
+    result_path.write_bytes(trusted_payload)
+    publications.publish(
+        result_path,
+        review_loop_drift_snapshots.file_snapshot_signature(result_path),
+        recovery_source=result_path,
+    )
+    result_path.write_bytes(b"provider mutation")
+
+    drift = review_loop_drift_detection.detect_provider_call_drift(
+        request,
+        window,
+        event_log_capture=None,
+        event_log_start_index=0,
+    )
+    review_loop_drift_recovery.restore_fatal_artifacts(
+        request,
+        window,
+        drift.fatal_paths,
+    )
+
+    assert result_path in drift.fatal_paths
+    assert result_path.read_bytes() == trusted_payload
+    publications.close()
+
+
+@pytest.mark.parametrize(
+    "target_kind",
+    ["candidate", "peer_verdict", "result", "findings", "manifest"],
+)
+def test_drift_guard_rejects_and_restores_producer_owned_artifacts(
+    tmp_path: Path,
+    target_kind: str,
+) -> None:
+    request, output, node_dir = _request(tmp_path)
+    targets = {
+        "candidate": request.output_file,
+        "peer_verdict": node_dir / "peer_reviewer_0_round1.md",
+        "result": output.results_dir / "review.node-result.md",
+        "findings": output.results_dir / "review.node-findings.md",
+        "manifest": output.stages_dir / "manifests" / "run.json",
+    }
+    target = targets[target_kind]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = f"original {target_kind}".encode()
+    target.write_bytes(original)
+
+    class MutatingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            target.write_text("provider mutation", encoding="utf-8")
+            output_file.write_text("provider output", encoding="utf-8")
+
+    request.invoker = MutatingInvoker()
+
+    with pytest.raises((NodeExecutionError, RuntimeError)):
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
+
+    assert target.read_bytes() == original
+
+
+@pytest.mark.parametrize("target_kind", ["summary", "events"])
+def test_drift_guard_restores_unsafe_strict_log_substitution(
+    tmp_path: Path,
+    target_kind: str,
+) -> None:
+    request, output, _node_dir = _request(tmp_path)
+    target = (
+        output.get_run_summary_path()
+        if target_kind == "summary"
+        else output.get_run_event_log_path()
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    original = f"original {target_kind}\n".encode()
+    target.write_bytes(original)
+    outside = tmp_path / f"outside-{target_kind}.txt"
+    outside.write_text("outside\n", encoding="utf-8")
+
+    class UnsafeLogMutatingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            target.unlink()
+            target.symlink_to(outside)
+            output_file.write_text("provider output", encoding="utf-8")
+
+    request.invoker = UnsafeLogMutatingInvoker()
+
+    try:
+        with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+            asyncio.run(
+                review_loop_drift_guard.run_provider_call_with_drift_guard(request)
+            )
+
+        assert not target.is_symlink()
+        assert target.read_bytes() == original
+    finally:
+        request.runtime_context.runtime_publications.close()
+
+
+def test_drift_guard_removes_forged_unpublished_peer_output(
+    tmp_path: Path,
+) -> None:
+    request, _output, node_dir = _request(tmp_path)
+    peer_output = node_dir / "peer_reviewer_0_round1.md"
+    request.protected_paths.add(peer_output)
+    request.allowed_paths.add(request.output_file)
+
+    class PeerMutatingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            peer_output.write_text("forged approval", encoding="utf-8")
+            output_file.write_text("provider output", encoding="utf-8")
+
+    request.invoker = PeerMutatingInvoker()
+
+    with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
+
+    assert not peer_output.exists()
+
+
+def test_nested_stage_drift_guard_rejects_and_restores_run_manifest(
+    tmp_path: Path,
+) -> None:
+    request, output, _node_dir = _request(tmp_path)
+    nested_contract = request.node.artifact_contract.model_copy(
+        update={"stage_path": "custom/build-stage"}
+    )
+    nested_node = request.node.model_copy(update={"artifact_contract": nested_contract})
+    nested_dir = output.create_node_dir(
+        NodeArtifactRequest(nested_node.id, nested_contract)
+    )
+    request.node = nested_node
+    request.node_dir = nested_dir
+    request.output_file = nested_dir / "exec_executor_0_round1.md"
+    request.allowed_paths.add(request.output_file)
+    manifest_path = output.stages_dir / "manifests" / "run.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    original = b'{"status":"running"}\n'
+    manifest_path.write_bytes(original)
+
+    class ManifestMutatingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            manifest_path.write_text('{"status":"succeeded"}\n', encoding="utf-8")
+            output_file.write_text("provider output", encoding="utf-8")
+
+    request.invoker = ManifestMutatingInvoker()
+
+    with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
+
+    assert manifest_path.read_bytes() == original
+
+
+def test_reserved_file_replaced_by_directory_is_restored(
+    tmp_path: Path,
+) -> None:
+    request, output, _node_dir = _request(tmp_path)
+    target = output.results_dir / "protected-result.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"original result")
+    monitoring_window = review_loop_drift_capture.capture_drift_monitoring_window(
+        node_id=request.node.id,
+        node_dir=request.node_dir,
+        output=output,
+        telemetry=None,
+        runtime_publications=request.runtime_context.runtime_publications,
+    )
+
+    target.unlink()
+    target.mkdir()
+    (target / "forged.md").write_text("forged", encoding="utf-8")
+
+    drift = review_loop_drift_reserved.detect_shared_reserved_drift(
+        request,
+        monitoring_window,
+    )
+
+    assert target in drift.fatal_paths
+    review_loop_drift_recovery.restore_fatal_artifacts(
+        request,
+        monitoring_window,
+        drift.fatal_paths,
+    )
+    assert target.is_file()
+    assert target.read_bytes() == b"original result"
+
+
+def test_reserved_directory_substitution_is_detected_and_restored(
+    tmp_path: Path,
+) -> None:
+    request, output, _node_dir = _request(tmp_path)
+    target = output.results_dir / "protected-directory"
+    target.mkdir(parents=True)
+    original_child = target / "original.md"
+    original_child.write_bytes(b"original child")
+    monitoring_window = review_loop_drift_capture.capture_drift_monitoring_window(
+        node_id=request.node.id,
+        node_dir=request.node_dir,
+        output=output,
+        telemetry=None,
+        runtime_publications=request.runtime_context.runtime_publications,
+    )
+
+    original_child.unlink()
+    target.rmdir()
+    target.mkdir()
+    (target / "forged.md").write_text("forged", encoding="utf-8")
+
+    drift = review_loop_drift_reserved.detect_shared_reserved_drift(
+        request,
+        monitoring_window,
+    )
+
+    assert target in drift.fatal_paths
+    review_loop_drift_recovery.restore_fatal_artifacts(
+        request,
+        monitoring_window,
+        drift.fatal_paths,
+    )
+    assert target.is_dir()
+    assert original_child.read_bytes() == b"original child"
+    assert not (target / "forged.md").exists()
 
 
 @pytest.mark.parametrize("is_exclusive", [True, False])
@@ -327,7 +815,7 @@ def test_summary_drift_is_always_fatal(tmp_path: Path, is_exclusive: bool) -> No
         activity_window=ActivityWindow(is_exclusive=is_exclusive, version=1),
     )
 
-    drift = review_loop_drift_detection.detect_summary_drift(request, window)
+    drift = review_loop_drift_reserved.detect_summary_drift(request, window)
 
     assert drift.fatal_paths == (summary_path,)
 
@@ -339,7 +827,7 @@ def test_event_log_destructive_drift_is_always_fatal(
 ) -> None:
     event_log_path = tmp_path / "events.ndjson"
 
-    drift = review_loop_drift_detection.detect_event_log_drift(
+    drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=b"before\n",
         after=b"truncated",
@@ -350,12 +838,50 @@ def test_event_log_destructive_drift_is_always_fatal(
     assert drift.fatal_paths == (event_log_path,)
 
 
+def test_event_log_restoration_preserves_registered_concurrent_appends(
+    tmp_path: Path,
+) -> None:
+    request, output, node_dir = _request(tmp_path)
+    publications = request.runtime_context.runtime_publications
+    request.runtime_publications = publications
+    event_log_path = output.get_run_event_log_path()
+    event_log_path.parent.mkdir(parents=True, exist_ok=True)
+    baseline = b"baseline\n"
+    concurrent_append = b"concurrent runtime event\n"
+    event_log_path.write_bytes(baseline)
+    window = review_loop_drift_capture.capture_drift_monitoring_window(
+        request.node.id,
+        node_dir,
+        output,
+        telemetry=None,
+        runtime_publications=publications,
+    )
+    with publications.event_publication("sibling", concurrent_append):
+        event_log_path.write_bytes(baseline + concurrent_append)
+    event_log_path.write_bytes(b"provider mutation")
+
+    drift = review_loop_drift_detection.detect_provider_call_drift(
+        request,
+        window,
+        event_log_capture=None,
+        event_log_start_index=0,
+    )
+    review_loop_drift_recovery.restore_fatal_artifacts(
+        request,
+        window,
+        drift.fatal_paths,
+    )
+
+    assert event_log_path in drift.fatal_paths
+    assert event_log_path.read_bytes() == baseline + concurrent_append
+
+
 def test_event_log_absent_before_after_no_expected_append_is_not_fatal(
     tmp_path: Path,
 ) -> None:
     event_log_path = tmp_path / "events.ndjson"
 
-    drift = review_loop_drift_detection.detect_event_log_drift(
+    drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=None,
         after=None,
@@ -372,7 +898,7 @@ def test_event_log_absent_before_after_expected_append_is_not_fatal(
 ) -> None:
     event_log_path = tmp_path / "events.ndjson"
 
-    drift = review_loop_drift_detection.detect_event_log_drift(
+    drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=None,
         after=None,
@@ -390,7 +916,7 @@ def test_event_log_absent_before_after_expected_append_must_match(
     event_log_path = tmp_path / "events.ndjson"
     expected_append = b"appended\\n"
 
-    drift = review_loop_drift_detection.detect_event_log_drift(
+    drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=None,
         after=expected_append,
@@ -407,7 +933,7 @@ def test_event_log_empty_creation_is_fatal_under_strict_append_check(
 ) -> None:
     event_log_path = tmp_path / "events.ndjson"
 
-    drift = review_loop_drift_detection.detect_event_log_drift(
+    drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=None,
         after=b"",
@@ -424,7 +950,7 @@ def test_event_log_creation_mismatch_is_ignored_when_not_strict(
 ) -> None:
     event_log_path = tmp_path / "events.ndjson"
 
-    drift = review_loop_drift_detection.detect_event_log_drift(
+    drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=None,
         after=b"concurrent event\n",
@@ -441,14 +967,14 @@ def test_event_log_append_mismatch_is_fatal_only_under_strict_append_check(
 ) -> None:
     event_log_path = tmp_path / "events.ndjson"
 
-    strict_drift = review_loop_drift_detection.detect_event_log_drift(
+    strict_drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=b"before\n",
         after=b"before\nunexpected\n",
         expected_append=b"expected\n",
         strict_expected_append=True,
     )
-    non_strict_drift = review_loop_drift_detection.detect_event_log_drift(
+    non_strict_drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=b"before\n",
         after=b"before\nunexpected\n",
@@ -460,13 +986,33 @@ def test_event_log_append_mismatch_is_fatal_only_under_strict_append_check(
     assert non_strict_drift.fatal_paths == ()
 
 
+def test_registered_event_append_requires_this_invocation_attribution(
+    tmp_path: Path,
+) -> None:
+    event_log_path = tmp_path / "events.ndjson"
+    expected_append = b"expected provider event\n"
+    concurrent_append = b"concurrent provider event\n"
+
+    drift = review_loop_drift_comparison.detect_event_log_drift(
+        event_log_path,
+        before=b"baseline\n",
+        after=b"baseline\n" + concurrent_append,
+        expected_append=expected_append,
+        strict_expected_append=True,
+        registered_append=concurrent_append,
+        registered_owned_append=b"",
+    )
+
+    assert drift.fatal_paths == (event_log_path,)
+
+
 def test_event_log_append_allows_ambient_runtime_warning(
     tmp_path: Path,
 ) -> None:
     event_log_path = tmp_path / "events.ndjson"
     started = format_execution_event_log_line(
         invocation_event(
-            "invocation_started",
+            EventType.INVOCATION_STARTED,
             "workflow",
             "run-1",
             context=ExecutionEventContext(
@@ -481,7 +1027,7 @@ def test_event_log_append_allows_ambient_runtime_warning(
     ).encode("utf-8")
     finished = format_execution_event_log_line(
         invocation_event(
-            "invocation_finished",
+            EventType.INVOCATION_FINISHED,
             "workflow",
             "run-1",
             context=ExecutionEventContext(
@@ -504,7 +1050,7 @@ def test_event_log_append_allows_ambient_runtime_warning(
         )
     ).encode("utf-8")
 
-    drift = review_loop_drift_detection.detect_event_log_drift(
+    drift = review_loop_drift_comparison.detect_event_log_drift(
         event_log_path,
         before=b'{"event":"baseline"}\n',
         after=b'{"event":"baseline"}\n' + started + ambient_warning + finished,
@@ -520,16 +1066,269 @@ def test_node_local_unexpected_writes_are_warning_level(tmp_path: Path) -> None:
     _, output, node_dir = _request(tmp_path)
     unexpected = node_dir / "review-state" / "mutated-note.md"
 
-    drift = review_loop_drift_detection.detect_artifact_drift(
+    drift = review_loop_drift_comparison.detect_artifact_drift(
         before_snapshot={},
         after_snapshot={unexpected: (1, "hash")},
         allowed_paths=set(),
         output=output,
-        node_dir=node_dir,
     )
 
     assert drift.warning_paths == (unexpected,)
     assert drift.fatal_paths == ()
+
+
+def test_node_local_child_write_preserves_existing_directory_state(
+    tmp_path: Path,
+) -> None:
+    request, _output, node_dir = _request(tmp_path)
+    review_state = node_dir / "review-state"
+    review_state.mkdir()
+    prior_state = review_state / "prior.state.json"
+    prior_state.write_text('{"round": 0}\n', encoding="utf-8")
+    provider_note = review_state / "provider-note.md"
+
+    class NodeLocalWritingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            provider_note.write_text("provider note\n", encoding="utf-8")
+            output_file.write_text("provider output\n", encoding="utf-8")
+
+    request.invoker = NodeLocalWritingInvoker()
+
+    warning_count = asyncio.run(
+        review_loop_drift_guard.run_provider_call_with_drift_guard(request)
+    )
+
+    assert warning_count == 1
+    assert prior_state.read_text(encoding="utf-8") == '{"round": 0}\n'
+    assert provider_note.read_text(encoding="utf-8") == "provider note\n"
+
+
+def test_fatal_node_root_drift_is_restored(tmp_path: Path) -> None:
+    request, _output, node_dir = _request(tmp_path)
+    original_mode = stat.S_IMODE(node_dir.stat().st_mode)
+    request.invocation_output_file = tmp_path / "provider-output.md"
+    request.defer_output_publication = True
+
+    class RootMetadataMutatingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            output_file.write_text("provider output\n", encoding="utf-8")
+            node_dir.chmod(0o555)
+
+    request.invoker = RootMetadataMutatingInvoker()
+
+    try:
+        with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+            asyncio.run(
+                review_loop_drift_guard.run_provider_call_with_drift_guard(request)
+            )
+        assert stat.S_IMODE(node_dir.stat().st_mode) == original_mode
+    finally:
+        node_dir.chmod(original_mode)
+
+
+def test_allowed_output_parent_replacement_is_fatal(tmp_path: Path) -> None:
+    request, _output, node_dir = _request(tmp_path)
+    audit_dir = node_dir / "review-audit-round-1"
+    audit_dir.mkdir()
+    request.output_file = audit_dir / "exec_executor_0_round1.md"
+    request.allowed_paths = {request.output_file}
+    displaced_dir = tmp_path / "displaced-audit-round-1"
+
+    class OutputParentReplacingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            audit_dir.rename(displaced_dir)
+            audit_dir.mkdir()
+            output_file.write_text("provider output\n", encoding="utf-8")
+
+    request.invoker = OutputParentReplacingInvoker()
+
+    with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
+
+
+def test_fatal_node_directory_drift_restores_unchanged_descendants(
+    tmp_path: Path,
+) -> None:
+    request, _output, node_dir = _request(tmp_path)
+    review_state = node_dir / "review-state"
+    review_state.mkdir()
+    original_mode = stat.S_IMODE(review_state.stat().st_mode)
+    prior_state = review_state / "prior.state.json"
+    prior_state.write_text('{"round": 0}\n', encoding="utf-8")
+    untouched_script = review_state / "untouched.sh"
+    untouched_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    untouched_script.chmod(0o754)
+    untouched_link = review_state / "untouched-link"
+    untouched_link.symlink_to(untouched_script.name)
+
+    class DirectoryMetadataMutatingInvoker:
+        def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+            return None
+
+        async def invoke(  # type: ignore[no-untyped-def]
+            self,
+            config,  # noqa: ARG002 - Required by protocol.
+            model,  # noqa: ARG002 - Required by protocol.
+            prompt,  # noqa: ARG002 - Required by protocol.
+            output_file,
+            cwd,  # noqa: ARG002 - Required by protocol.
+            log_file=None,  # noqa: ARG002 - Required by protocol.
+            invocation_context=None,  # noqa: ARG002 - Required by protocol.
+        ) -> None:
+            review_state.chmod(original_mode ^ stat.S_IWGRP)
+            output_file.write_text("provider output\n", encoding="utf-8")
+
+    request.invoker = DirectoryMetadataMutatingInvoker()
+
+    with pytest.raises(NodeExecutionError, match="modified fatal artifacts"):
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
+
+    assert stat.S_IMODE(review_state.stat().st_mode) == original_mode
+    assert prior_state.read_text(encoding="utf-8") == '{"round": 0}\n'
+    assert stat.S_IMODE(untouched_script.stat().st_mode) == 0o754
+    assert untouched_link.is_symlink()
+    assert untouched_link.readlink() == Path(untouched_script.name)
+
+
+def test_directory_restore_restores_group_before_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _output, node_dir = _request(tmp_path)
+    target = node_dir / "review-state"
+    target.mkdir()
+    monitoring_window = review_loop_drift_capture.capture_drift_monitoring_window(
+        node_id=request.node.id,
+        node_dir=node_dir,
+        output=request.output,
+        telemetry=None,
+        runtime_publications=request.runtime_context.runtime_publications,
+    )
+    expected = monitoring_window.node_directory_snapshot[target]
+    expected = replace(
+        expected,
+        group_id=expected.group_id + 1,
+        mode=expected.mode ^ stat.S_IWGRP,
+    )
+    monitoring_window.node_directory_snapshot[target] = expected
+    calls: list[tuple[str, int, int | None]] = []
+
+    def record_chown(path: Path, user_id: int, group_id: int) -> None:
+        assert path == target
+        calls.append(("chown", user_id, group_id))
+
+    def record_chmod(path: Path, mode: int) -> None:
+        assert path == target
+        calls.append(("chmod", mode, None))
+
+    monkeypatch.setattr(os, "chown", record_chown)
+    monkeypatch.setattr(Path, "chmod", record_chmod)
+
+    review_loop_drift_recovery.restore_fatal_artifacts(
+        request,
+        monitoring_window,
+        (target,),
+    )
+
+    assert calls == [
+        ("chown", expected.user_id, expected.group_id),
+        ("chmod", stat.S_IMODE(expected.mode), None),
+    ]
+
+
+def test_drift_snapshots_record_unsafe_entries_without_reading_targets(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    symlink = root / "linked.txt"
+    hardlink = root / "hardlinked.txt"
+    try:
+        symlink.symlink_to(outside)
+        os.link(outside, hardlink)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"link creation is unavailable: {exc}")
+
+    snapshot = review_loop_drift_snapshots.snapshot_files(root)
+
+    assert symlink in snapshot
+    assert hardlink in snapshot
+    assert review_loop_drift_snapshots.snapshot_file_bytes(root) == {}
+
+
+def test_drift_snapshots_reject_a_symlinked_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked_root = tmp_path / "linked-root"
+    try:
+        linked_root.symlink_to(outside, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(RuntimeError, match="must not be a symlink"):
+        review_loop_drift_snapshots.snapshot_files(linked_root)
+
+
+def test_drift_snapshot_ignores_a_file_that_disappears_during_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    transient = root / ".runtime-publication.tmp"
+    transient.write_text("publishing", encoding="utf-8")
+    original_signature = review_loop_drift_snapshots.file_snapshot_signature
+
+    def remove_transient_before_read(path: Path) -> tuple[int, str]:
+        if path == transient:
+            path.unlink()
+        return original_signature(path)
+
+    monkeypatch.setattr(
+        review_loop_drift_snapshots,
+        "file_snapshot_signature",
+        remove_transient_before_read,
+    )
+
+    assert review_loop_drift_snapshots.snapshot_files(root) == {}
 
 
 def test_runtime_generated_file_source_snapshots_are_allowed(
@@ -540,13 +1339,13 @@ def test_runtime_generated_file_source_snapshots_are_allowed(
     generated_source = snapshot_root / "src/app.txt"
     generated_source.parent.mkdir(parents=True)
     generated_source.write_text("generated", encoding="utf-8")
-    allowance = review_loop_drift.GeneratedFileDriftAllowance()
+    allowance = review_loop_drift_guard.GeneratedFileDriftAllowance()
     allowance.start_snapshot(snapshot_root)
     allowance.finish_snapshot(
         snapshot_root,
         {
             generated_source: (
-                review_loop_drift_detection.file_snapshot_signature(generated_source)
+                review_loop_drift_snapshots.file_snapshot_signature(generated_source)
             )
         },
     )
@@ -601,7 +1400,7 @@ def test_completed_generated_file_snapshot_allows_only_published_files(
     tmp_path: Path,
 ) -> None:
     request, _output, _node_dir = _request(tmp_path)
-    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    request.drift_session = review_loop_drift_guard.create_drift_guard_session(None)
     snapshot_root = generated_file_source_root(request.output_file)
     published_source = snapshot_root / "src/app.txt"
     allowance = request.drift_session.generated_file_allowance
@@ -612,7 +1411,7 @@ def test_completed_generated_file_snapshot_allows_only_published_files(
         snapshot_root,
         {
             published_source: (
-                review_loop_drift_detection.file_snapshot_signature(published_source)
+                review_loop_drift_snapshots.file_snapshot_signature(published_source)
             )
         },
     )
@@ -654,7 +1453,7 @@ def test_completed_generated_file_snapshot_detects_publication_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request, _output, _node_dir = _request(tmp_path)
-    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    request.drift_session = review_loop_drift_guard.create_drift_guard_session(None)
     snapshot_root = generated_file_source_root(request.output_file)
     published_path = snapshot_root / relative_path
     published_path.parent.mkdir(parents=True, exist_ok=True)
@@ -665,7 +1464,7 @@ def test_completed_generated_file_snapshot_detects_publication_drift(
         snapshot_root,
         {
             published_path: (
-                review_loop_drift_detection.file_snapshot_signature(published_path)
+                review_loop_drift_snapshots.file_snapshot_signature(published_path)
             )
         },
     )
@@ -678,19 +1477,20 @@ def test_completed_generated_file_snapshot_detects_publication_drift(
     )
     scan_started = Event()
     mutation_complete = Event()
-    original_snapshot_files = review_loop_drift_detection.snapshot_files
+    original_snapshot_files = review_loop_drift_snapshots.snapshot_files
 
     def snapshot_after_concurrent_mutation(
         root: Path,
         excluded_paths: set[Path] | None = None,
+        excluded_roots: set[Path] | None = None,
     ) -> dict[Path, tuple[int, str]]:
         if root == request.node_dir:
             scan_started.set()
             assert mutation_complete.wait(timeout=5)
-        return original_snapshot_files(root, excluded_paths)
+        return original_snapshot_files(root, excluded_paths, excluded_roots)
 
     monkeypatch.setattr(
-        review_loop_drift_detection,
+        review_loop_drift_node,
         "snapshot_files",
         snapshot_after_concurrent_mutation,
     )
@@ -720,31 +1520,38 @@ def test_generated_file_snapshot_published_during_node_scan_is_allowed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request, _output, _node_dir = _request(tmp_path)
-    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    request.drift_session = review_loop_drift_guard.create_drift_guard_session(None)
     snapshot_root = generated_file_source_root(request.output_file)
     generated_source = snapshot_root / "src/app.txt"
+    unexpected_source = snapshot_root / "src/unregistered.txt"
     allowance = request.drift_session.generated_file_allowance
-    original_snapshot_files = review_loop_drift_detection.snapshot_files
+    original_snapshot_files = review_loop_drift_snapshots.snapshot_files
 
     published = False
+    node_scan_count = 0
 
     def publish_generated_file_after_scan(
         root: Path,
         excluded_paths: set[Path] | None = None,
+        excluded_roots: set[Path] | None = None,
     ) -> dict[Path, tuple[int, str]]:
-        nonlocal published
-        snapshot = original_snapshot_files(root, excluded_paths)
+        nonlocal node_scan_count, published
+        snapshot = original_snapshot_files(root, excluded_paths, excluded_roots)
         if root != request.node_dir or published:
+            if root == request.node_dir:
+                node_scan_count += 1
             return snapshot
+        node_scan_count += 1
         published = True
         allowance.start_snapshot(snapshot_root)
         generated_source.parent.mkdir(parents=True)
         generated_source.write_text("generated", encoding="utf-8")
+        unexpected_source.write_text("unexpected", encoding="utf-8")
         allowance.finish_snapshot(
             snapshot_root,
             {
                 generated_source: (
-                    review_loop_drift_detection.file_snapshot_signature(
+                    review_loop_drift_snapshots.file_snapshot_signature(
                         generated_source
                     )
                 )
@@ -753,7 +1560,7 @@ def test_generated_file_snapshot_published_during_node_scan_is_allowed(
         return snapshot
 
     monkeypatch.setattr(
-        review_loop_drift_detection,
+        review_loop_drift_node,
         "snapshot_files",
         publish_generated_file_after_scan,
     )
@@ -765,7 +1572,81 @@ def test_generated_file_snapshot_published_during_node_scan_is_allowed(
         activity_window=ActivityWindow(is_exclusive=False, version=None),
     )
 
-    drift = review_loop_drift_detection.detect_node_drift(request, window)
+    drift = review_loop_drift_node.detect_node_drift(request, window)
+
+    assert drift.warning_paths == (unexpected_source,)
+    assert drift.fatal_paths == ()
+    assert node_scan_count == 2
+
+
+def test_in_progress_generated_file_root_is_not_read_during_node_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request, _output, _node_dir = _request(tmp_path)
+    request.drift_session = review_loop_drift_guard.create_drift_guard_session(None)
+    snapshot_root = generated_file_source_root(request.output_file)
+    changing_file = snapshot_root / "src/changing.bin"
+    changing_file.parent.mkdir(parents=True)
+    changing_file.write_bytes(b"runtime write")
+    allowance = request.drift_session.generated_file_allowance
+    allowance.start_snapshot(snapshot_root)
+    allowance.finish_snapshot(
+        snapshot_root,
+        {
+            changing_file: (
+                review_loop_drift_snapshots.file_snapshot_signature(changing_file)
+            )
+        },
+    )
+    allowance.start_snapshot(snapshot_root)
+    original_read_bytes = Path.read_bytes
+    read_count = 0
+
+    def append_after_each_read(path: Path) -> bytes:
+        nonlocal read_count
+        payload = original_read_bytes(path)
+        if path == changing_file:
+            read_count += 1
+            with path.open("ab") as stream:
+                stream.write(b"x")
+        return payload
+
+    monkeypatch.setattr(Path, "read_bytes", append_after_each_read)
+    window = DriftMonitoringWindow(
+        node_snapshot={},
+        shared_reserved_snapshot=None,
+        summary_before=None,
+        event_log_before=None,
+        activity_window=ActivityWindow(is_exclusive=False, version=None),
+    )
+
+    drift = review_loop_drift_node.detect_node_drift(request, window)
+
+    assert drift.warning_paths == ()
+    assert drift.fatal_paths == ()
+    assert read_count == 0
+
+
+def test_peer_runtime_owned_file_does_not_create_directory_drift(
+    tmp_path: Path,
+) -> None:
+    request, _output, node_dir = _request(tmp_path)
+    peer_state = node_dir / "workspace-state" / "peer.json"
+    request.runtime_owned_paths.add(peer_state)
+    window = review_loop_drift_capture.capture_drift_monitoring_window(
+        node_id=request.node.id,
+        node_dir=node_dir,
+        output=request.output,
+        telemetry=None,
+        runtime_publications=request.runtime_context.runtime_publications,
+        runtime_owned_paths=request.runtime_owned_paths,
+    )
+
+    peer_state.parent.mkdir()
+    peer_state.write_text("runtime state", encoding="utf-8")
+
+    drift = review_loop_drift_node.detect_node_drift(request, window)
 
     assert drift.warning_paths == ()
     assert drift.fatal_paths == ()
@@ -775,7 +1656,7 @@ def test_failed_generated_file_snapshot_does_not_allow_partial_files(
     tmp_path: Path,
 ) -> None:
     request, _output, _node_dir = _request(tmp_path)
-    request.drift_session = review_loop_drift.create_drift_guard_session(None)
+    request.drift_session = review_loop_drift_guard.create_drift_guard_session(None)
     snapshot_root = generated_file_source_root(request.output_file)
     partial_source = snapshot_root / "src/partial.txt"
     allowance = request.drift_session.generated_file_allowance
@@ -844,7 +1725,7 @@ def test_drift_is_checked_when_provider_call_fails(tmp_path: Path) -> None:
     )
 
     with pytest.raises(RuntimeError, match="provider boom") as exc_info:
-        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
 
     notes = getattr(exc_info.value, "__notes__", [])
     assert any("artifact drift detected" in note for note in notes)
@@ -894,7 +1775,7 @@ def test_fatal_drift_after_provider_call_failure_raises_fatal_error(
     )
 
     with pytest.raises(NodeExecutionError, match="fatal artifacts") as exc_info:
-        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
 
     assert isinstance(exc_info.value.__cause__, InvocationFailureError)
     assert "provider boom" in str(exc_info.value.__cause__)
@@ -924,14 +1805,10 @@ def test_drift_detection_defect_after_expected_provider_failure_propagates(
         ) -> None:
             raise provider_failure("expected provider failure")
 
-    def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
-        del args, kwargs
-        raise TypeError("simulated drift detector defect")
-
     monkeypatch.setattr(
-        review_loop_drift,
+        review_loop_drift_guard,
         "detect_provider_call_drift",
-        broken_drift_detection,
+        Mock(side_effect=TypeError("simulated drift detector defect")),
     )
     request = DriftGuardCallRequest(
         runtime_context=request.runtime_context,
@@ -953,7 +1830,7 @@ def test_drift_detection_defect_after_expected_provider_failure_propagates(
     )
 
     with pytest.raises(TypeError, match="simulated drift detector defect") as exc_info:
-        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
 
     assert type(exc_info.value) is TypeError
     notes = getattr(exc_info.value, "__notes__", [])
@@ -983,14 +1860,10 @@ def test_drift_detection_defect_preserves_unexpected_provider_cause(
         ) -> None:
             raise TypeError("provider defect") from original_cause
 
-    def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
-        del args, kwargs
-        raise RuntimeError("simulated drift detector defect")
-
     monkeypatch.setattr(
-        review_loop_drift,
+        review_loop_drift_guard,
         "detect_provider_call_drift",
-        broken_drift_detection,
+        Mock(side_effect=RuntimeError("simulated drift detector defect")),
     )
     request = DriftGuardCallRequest(
         runtime_context=request.runtime_context,
@@ -1012,7 +1885,7 @@ def test_drift_detection_defect_preserves_unexpected_provider_cause(
     )
 
     with pytest.raises(TypeError, match="provider defect") as exc_info:
-        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
 
     assert exc_info.value.__cause__ is original_cause
     notes = getattr(exc_info.value, "__notes__", [])
@@ -1045,14 +1918,10 @@ def test_drift_detection_defect_preserves_unexpected_provider_context(
             except ValueError:
                 raise TypeError("provider defect")  # noqa: B904 - Regression covers implicit context preservation.
 
-    def broken_drift_detection(*args, **kwargs):  # type: ignore[no-untyped-def]
-        del args, kwargs
-        raise RuntimeError("simulated drift detector defect")
-
     monkeypatch.setattr(
-        review_loop_drift,
+        review_loop_drift_guard,
         "detect_provider_call_drift",
-        broken_drift_detection,
+        Mock(side_effect=RuntimeError("simulated drift detector defect")),
     )
     request = DriftGuardCallRequest(
         runtime_context=request.runtime_context,
@@ -1074,7 +1943,7 @@ def test_drift_detection_defect_preserves_unexpected_provider_context(
     )
 
     with pytest.raises(TypeError, match="provider defect") as exc_info:
-        asyncio.run(review_loop_drift.run_provider_call_with_drift_guard(request))
+        asyncio.run(review_loop_drift_guard.run_provider_call_with_drift_guard(request))
 
     assert exc_info.value.__context__ is original_context
     assert exc_info.value.__suppress_context__ is False

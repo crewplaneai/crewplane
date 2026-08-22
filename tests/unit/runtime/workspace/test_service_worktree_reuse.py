@@ -19,6 +19,7 @@ from crewplane.runtime.workspace.worktree.cache import (
     WorktreeReuseCache,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.resume import make_workspace_source_snapshot
 from tests.helpers.workspace_service import (
     create_git_repo,
@@ -48,8 +49,8 @@ def test_same_worktree_reuses_checkout_with_incremental_reset(
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -79,10 +80,12 @@ def test_same_worktree_reuses_checkout_with_incremental_reset(
         assert not (second.cwd / "packages" / "app" / ".cache").exists()
         assert run_git_text(second.cwd, "status", "--porcelain=v1") == ""
         first_state = read_json_object(
-            output.create_stage_dir("implement") / "workspace-state.json"
+            output.create_node_dir(node_artifact_request("implement"))
+            / "workspace-state.json"
         )
         second_state = read_json_object(
-            output.create_stage_dir("verify") / "workspace-state.json"
+            output.create_node_dir(node_artifact_request("verify"))
+            / "workspace-state.json"
         )
         assert first_state["workspace"]["retention"] == "pending_cleanup"
         assert second_state["reuse"]["strategy"] == "incremental_reset"
@@ -106,8 +109,8 @@ def test_retained_successful_worktree_is_not_reused(tmp_path: Path) -> None:
     source = plan.workspace_source
     assert source is not None
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -130,10 +133,12 @@ def test_retained_successful_worktree_is_not_reused(tmp_path: Path) -> None:
         assert second.workspace_path != first_workspace_path
         assert first_workspace_path.exists()
         first_state = read_json_object(
-            output.create_stage_dir("implement") / "workspace-state.json"
+            output.create_node_dir(node_artifact_request("implement"))
+            / "workspace-state.json"
         )
         second_state = read_json_object(
-            output.create_stage_dir("verify") / "workspace-state.json"
+            output.create_node_dir(node_artifact_request("verify"))
+            / "workspace-state.json"
         )
         assert first_state["workspace"]["retention"] == "retained"
         assert first_state["workspace"]["retained_reason"] == "cleanup_on_success_false"
@@ -155,8 +160,8 @@ def test_reuse_cache_node_cleanup_updates_all_reused_state_paths(
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -183,10 +188,11 @@ def test_reuse_cache_node_cleanup_updates_all_reused_state_paths(
     assert errors == ()
     assert not workspace_path.exists()
     first_state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     second_state = read_json_object(
-        output.create_stage_dir("verify") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("verify")) / "workspace-state.json"
     )
     assert first_state["workspace"]["retention"] == "deleted"
     assert second_state["workspace"]["retention"] == "deleted"
@@ -201,8 +207,8 @@ def test_reuse_cache_cleanup_all_removes_leased_checkout(
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -225,12 +231,13 @@ def test_reuse_cache_cleanup_all_removes_leased_checkout(
     cleanup = reuse_cache.cleanup_all()
 
     assert cleanup.errors == ()
-    assert output.create_stage_dir("implement") / "workspace-state.json" in (
-        cleanup.updated_state_paths
-    )
+    assert output.create_node_dir(
+        node_artifact_request("implement")
+    ) / "workspace-state.json" in (cleanup.updated_state_paths)
     assert not workspace_path.exists()
     first_state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     assert first_state["workspace"]["retention"] == "deleted"
 
@@ -318,8 +325,8 @@ def test_same_worktree_reuse_failure_falls_back_to_fresh_checkout(
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -362,7 +369,8 @@ def test_same_worktree_reuse_failure_falls_back_to_fresh_checkout(
         assert second.workspace_path is not None
         assert second.workspace_path != first_workspace_path
         state = read_json_object(
-            output.create_stage_dir("verify") / "workspace-state.json"
+            output.create_node_dir(node_artifact_request("verify"))
+            / "workspace-state.json"
         )
         assert state["reuse"]["strategy"] == "fresh_checkout"
         assert state["reuse"]["fallback"] is True
@@ -382,8 +390,8 @@ def test_same_worktree_reuse_rejects_retargeted_git_file_before_reset(
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -412,7 +420,8 @@ def test_same_worktree_reuse_rejects_retargeted_git_file_before_reset(
         assert second.workspace_path is not None
         assert second.workspace_path != first_workspace_path
         state = read_json_object(
-            output.create_stage_dir("verify") / "workspace-state.json"
+            output.create_node_dir(node_artifact_request("verify"))
+            / "workspace-state.json"
         )
         assert state["reuse"]["strategy"] == "fresh_checkout"
         assert state["reuse"]["fallback"] is True
@@ -526,7 +535,7 @@ def test_fresh_worktree_terminal_failure_removes_checkout_when_cache_exists(
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -544,7 +553,8 @@ def test_fresh_worktree_terminal_failure_removes_checkout_when_cache_exists(
         workspace.mark_cancelled("provider cancelled")
 
     state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     assert state["status"] == terminal_status
     assert state["workspace"]["retention"] == "deleted"
@@ -564,8 +574,8 @@ def test_reused_worktree_terminal_failure_removes_active_checkout(
     cache_root = tmp_path / "cache"
     plan = two_node_lineage_plan(repo, cache_root)
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
-    output.create_stage_dir("verify")
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
     reuse_cache = WorktreeReuseCache()
     limiter = MaterializationLimiter.from_plan(plan)
 
@@ -586,14 +596,19 @@ def test_reused_worktree_terminal_failure_removes_active_checkout(
     )
     assert second.workspace_path == first_workspace_path
 
-    first_state_path = output.create_stage_dir("implement") / "workspace-state.json"
+    first_state_path = (
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
     if terminal_status == "failed":
         second.mark_failed("provider failed")
     else:
         second.mark_cancelled("provider cancelled")
     first.cleanup_after_success()
 
-    state = read_json_object(output.create_stage_dir("verify") / "workspace-state.json")
+    state = read_json_object(
+        output.create_node_dir(node_artifact_request("verify")) / "workspace-state.json"
+    )
     first_state = read_json_object(first_state_path)
     assert state["status"] == terminal_status
     assert state["workspace"]["retention"] == "deleted"

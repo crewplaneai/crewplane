@@ -8,10 +8,47 @@ from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     InvocationProcessEvent,
     JsonObject,
+    NodeArtifactRequest,
+    VerifiedNodeArtifact,
 )
 from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
+
+
+@dataclass(frozen=True)
+class TerminalHistoryRead:
+    """Result of asking an artifact integration to resolve a history path."""
+
+    matched: bool
+    path: Path | None = None
+    payload: bytes | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.matched and any(
+            value is not None for value in (self.path, self.payload, self.error)
+        ):
+            raise ValueError("An unmatched history read cannot carry a result.")
+        if (
+            self.matched
+            and self.error is None
+            and (self.path is None or self.payload is None)
+        ):
+            raise ValueError("A successful history read requires a path and payload.")
+        if self.error is not None and self.payload is not None:
+            raise ValueError("A failed history read cannot carry a payload.")
+
+
+class TerminalHistoryReaderPort(Protocol):
+    """Read terminal artifacts without exposing adapter storage layout to core."""
+
+    def read_terminal_result(
+        self,
+        raw_path: str,
+        source_root: Path,
+    ) -> TerminalHistoryRead:
+        """Return a terminal result, a policy error, or an unmatched result."""
 
 
 @dataclass(frozen=True)
@@ -34,9 +71,12 @@ class StageTaskSpec:
     task_id: str
     role: ProviderRole
     display_name: str | None = None
+    provider: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "role", ProviderRole(self.role))
+        if self.provider is not None and not self.provider.strip():
+            raise ValueError("Stage task provider cannot be blank.")
 
 
 @dataclass(frozen=True)
@@ -74,6 +114,7 @@ class ProviderProcessStorePort(Protocol):
         """Persist one provider child-process lifecycle transition."""
 
 
+@runtime_checkable
 class ArtifactStorePort(Protocol):
     """Runtime-facing artifact store used during a single workflow run."""
 
@@ -85,21 +126,65 @@ class ArtifactStorePort(Protocol):
     logs_dir: Path
     log_cli_output: bool
 
-    def create_stage_dir(self, stage_name: str) -> Path:
-        """Create and return the writable directory for a node stage."""
+    def create_node_dir(self, request: NodeArtifactRequest) -> Path:
+        """Create the stage directory at the compiled locator."""
 
-    def get_stage_dir(self, stage_name: str) -> Path | None:
-        """Return the current run's stage directory if it has been created."""
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        """Return the stage directory at the compiled locator when it exists."""
 
-    def finalize_stage(
+    def get_node_artifact_request(
         self,
-        stage_name: str,
+        node_id: str,
+    ) -> NodeArtifactRequest | None:
+        """Return the registered compiled request for an observed node."""
+
+    def finalize_node(
+        self,
+        request: NodeArtifactRequest,
         findings_enabled: bool = False,
         task_specs: tuple[StageTaskSpec, ...] = (),
         generated_file_detection_enabled: bool = True,
         generated_file_workspace_roots: dict[Path, Path | None] | None = None,
     ) -> StageFinalizeResult:
-        """Consolidate a stage's run artifacts into result artifacts."""
+        """Finalize a node using only its compiled artifact locators."""
+
+    def get_node_output_path(self, request: NodeArtifactRequest) -> Path:
+        """Resolve the compiled output locator for a node."""
+
+    def get_node_findings_path(self, request: NodeArtifactRequest) -> Path | None:
+        """Resolve the compiled findings locator for a node, when declared."""
+
+    def get_node_log_file(
+        self,
+        request: NodeArtifactRequest,
+        provider: str,
+        task_id: str,
+        audit_round_num: int | None = None,
+        round_num: int | None = None,
+    ) -> Path | None:
+        """Resolve a provider log below the compiled log locator."""
+
+    def read_verified_node_artifact(
+        self,
+        request: NodeArtifactRequest,
+        kind: str,
+    ) -> VerifiedNodeArtifact:
+        """Return descriptor-verified bytes and their canonical artifact path."""
+
+    def write_node_resume_source(
+        self,
+        request: NodeArtifactRequest,
+        payload: JsonObject,
+    ) -> Path:
+        """Persist resume metadata at the compiled node locator."""
+
+    def record_hydrated_resume_node(
+        self,
+        node_id: str,
+        source_run_id: str,
+        source_run_key_name: str,
+    ) -> Path:
+        """Record one actually hydrated node in the running manifest."""
 
     def get_run_log_dir(self) -> Path:
         """Return the run-level log directory, creating it when needed."""
@@ -109,22 +194,6 @@ class ArtifactStorePort(Protocol):
 
     def get_run_summary_path(self) -> Path:
         """Return the run-level human-readable summary path."""
-
-    def get_log_file(
-        self,
-        stage_name: str,
-        provider: str,
-        task_id: str,
-        audit_round_num: int | None = None,
-        round_num: int | None = None,
-    ) -> Path | None:
-        """Return the per-invocation log path, or None when capture is disabled."""
-
-    def get_stage_output_path(self, stage_name: str) -> Path:
-        """Return the consolidated output artifact path for a stage."""
-
-    def get_stage_findings_path(self, stage_name: str) -> Path:
-        """Return the consolidated findings artifact path for a stage."""
 
     def write_preflight_plan(self, plan: PreflightExecutionPlan) -> Path:
         """Persist the successful preflight execution plan."""
@@ -171,9 +240,6 @@ class ArtifactStorePort(Protocol):
     def write_node_success_state(self, node_state: NodeState) -> Path:
         """Persist a successful node-boundary state record."""
 
-    def write_resume_source(self, node_id: str, payload: JsonObject) -> Path:
-        """Persist the validated source metadata for a hydrated resumed node."""
-
     def write_workspace_export(
         self, logical_worktree_name: str, payload: object
     ) -> Path:
@@ -199,3 +265,10 @@ class ArtifactAdapterPort(Protocol):
         options: JsonObject | None = None,
     ) -> ArtifactStorePort:
         """Build the artifact store for a concrete workflow run."""
+
+    def create_terminal_history_reader(
+        self,
+        state_dir: Path,
+        options: JsonObject | None = None,
+    ) -> TerminalHistoryReaderPort:
+        """Build the reader for terminal artifacts referenced during preflight."""

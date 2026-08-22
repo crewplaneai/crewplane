@@ -88,7 +88,8 @@ settings:
       implementation: "filesystem"
       options:
         log_cli_output: true
-        allowed_template_paths: []
+  file_access:
+    allowed_template_paths: []
 ```
 
 Workspace behavior:

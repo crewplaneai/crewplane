@@ -6,7 +6,9 @@ from typing import TypedDict
 
 from crewplane.architecture.contracts import (
     AggregateCostConfidence,
+    EventType,
     InvocationCostConfidence,
+    InvocationEventType,
 )
 from crewplane.observability.events import ExecutionEvent, InvocationEventPayload
 
@@ -19,6 +21,13 @@ from .models import (
     SpendOverviewRow,
     SpendTotals,
     UsageRollupValues,
+)
+
+_TERMINAL_INVOCATION_EVENT_TYPES: frozenset[InvocationEventType] = frozenset(
+    {
+        EventType.INVOCATION_FINISHED,
+        EventType.INVOCATION_FAILED,
+    }
 )
 
 TOKEN_BUCKETS = (
@@ -185,7 +194,7 @@ def provider_token_aggregates(
     overall: _MutableProviderTokenAggregate | None = None
     providers: dict[str, _MutableProviderTokenAggregate] = {}
     for event in events:
-        if event.event_type not in {"invocation_finished", "invocation_failed"}:
+        if event.event_type not in _TERMINAL_INVOCATION_EVENT_TYPES:
             continue
         payload = invocation_payload(event)
         if (
@@ -210,7 +219,7 @@ def provider_token_aggregates(
 def invocation_usage_summary_from_event(
     event: ExecutionEvent,
 ) -> InvocationUsageSummary | None:
-    if event.event_type not in {"invocation_finished", "invocation_failed"}:
+    if event.event_type not in _TERMINAL_INVOCATION_EVENT_TYPES:
         return None
     payload = invocation_payload(event)
     if payload.attempt_count is None:

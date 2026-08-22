@@ -7,7 +7,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from crewplane.architecture.contracts import JsonValue
+from crewplane.architecture.contracts import JsonValue, NodeArtifactRequest
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
     RUN_STATUS_SUCCEEDED,
     ArtifactDescriptor,
@@ -21,7 +22,6 @@ from crewplane.core.preflight.models import (
 
 from ..naming import build_node_state_filename
 from ..run_history import RunHistoryRecord
-from ..safe_files import contained_regular_file
 from ..workspace.node_state import build_node_workspace_descriptor
 from ..workspace.state.validation import workspace_node_state_is_valid
 from .generated_files import generated_file_path_belongs_to_node
@@ -59,6 +59,11 @@ class _WorkspaceDescriptorStore:
 
     def get_stage_dir(self, stage_name: str) -> Path | None:
         if stage_name != self.stage_name or not self.stage_dir.is_dir():
+            return None
+        return self.stage_dir
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        if request.node_id != self.stage_name or not self.stage_dir.is_dir():
             return None
         return self.stage_dir
 

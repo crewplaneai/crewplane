@@ -8,6 +8,11 @@ from pathlib import Path
 
 from rich.console import Console
 
+from crewplane.architecture.contracts import (
+    EventType,
+    NodeArtifactRequest,
+    build_result_filename,
+)
 from crewplane.architecture.ports.artifacts import (
     ArtifactStorePort,
     StageTaskSpec,
@@ -24,8 +29,8 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.observability import ObservabilityHub
 from crewplane.observability.events import format_execution_event_log_line
-from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import make_execution_event
@@ -45,7 +50,7 @@ def config() -> Config:
                 "ui": {"implementation": "none", "options": {}},
                 "artifacts": {
                     "implementation": "filesystem",
-                    "options": {"allowed_template_paths": [], "log_cli_output": True},
+                    "options": {"log_cli_output": True},
                 },
             }
         ),
@@ -99,13 +104,15 @@ def write_successful_node_output(
     result_text: str,
 ) -> None:
     node = plan.nodes[node_index]
-    stage_dir = output.create_stage_dir(node.id)
+    request = NodeArtifactRequest(node.id, node.artifact_contract)
+    stage_dir = output.create_node_dir(request)
     (stage_dir / "alpha_executor_0_round1.md").write_text(
         result_text,
         encoding="utf-8",
     )
-    finalize_result = output.finalize_stage(
-        node.id,
+    finalize_result = output.finalize_node(
+        request,
+        findings_enabled=node.findings,
         task_specs=(StageTaskSpec("alpha_executor_0", ProviderRole.EXECUTOR),),
     )
     write_successful_node_state(
@@ -138,7 +145,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     )
                     raise RuntimeError("B failed")
                 assert resumed_node_ids == ("a",)
-                assert output.get_stage_output_path("a").exists()
+                assert (output.results_dir / build_result_filename("a")).exists()
                 assert (output.stages_dir / "a" / "resume-source.json").exists()
                 write_successful_node_output(
                     plan,
@@ -204,7 +211,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     assert event_sink is not None
                     event_sink(
                         make_execution_event(
-                            event_type="invocation_finished",
+                            event_type=EventType.INVOCATION_FINISHED,
                             workflow_name=plan.workflow_name,
                             run_id=output.run_id,
                             node_id="a",
@@ -219,7 +226,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     )
                     raise asyncio.CancelledError()
                 assert resumed_node_ids == ("a",)
-                assert output.get_stage_output_path("a").exists()
+                assert (output.results_dir / build_result_filename("a")).exists()
                 assert (output.stages_dir / "a" / "resume-source.json").exists()
                 write_successful_node_output(
                     plan,
@@ -287,49 +294,18 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             calls: list[tuple[str, ...]] = []
             hub_instances = []
 
-            class StopRequestedHub:
-                def __init__(
-                    self,
-                    workflow_topology,
-                    run_id: str,
-                    observers,
-                    refresh_per_second: int = 4,
-                    warning_sink=None,
-                ) -> None:
-                    self._context = RunContext(
-                        workflow_topology=workflow_topology,
-                        run_id=run_id,
-                        refresh_per_second=refresh_per_second,
-                    )
-                    self._observers = list(observers)
-                    self._terminal_result: RunResult | None = None
-                    self.stop_requested = False
-                    self.active_observer_count = 0
-                    self.warning_sink = warning_sink
+            class StopRequestedHub(ObservabilityHub):
+                def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+                    super().__init__(*args, **kwargs)
+                    self._test_stop_requested = False
                     hub_instances.append(self)
 
-                def __enter__(self):
-                    for observer in self._observers:
-                        observer.start(self._context)
-                    self.active_observer_count = len(self._observers)
-                    return self
-
-                def __exit__(self, exc_type, _exc, _traceback) -> None:
-                    result = self._terminal_result or RunResult(
-                        status="failed" if exc_type is not None else "succeeded"
-                    )
-                    for observer in reversed(self._observers):
-                        observer.stop(result)
-
-                def emit(self, event) -> None:
-                    del event
-                    return None
-
-                def set_terminal_result(self, result: RunResult) -> None:
-                    self._terminal_result = result
+                @property
+                def stop_requested(self) -> bool:
+                    return self._test_stop_requested
 
                 def request_stop(self) -> None:
-                    self.stop_requested = True
+                    self._test_stop_requested = True
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
                 resumed_node_ids = tuple(kwargs.get("resumed_node_ids", ()))
@@ -343,7 +319,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                         "A result",
                     )
                     usage_event = make_execution_event(
-                        event_type="invocation_finished",
+                        event_type=EventType.INVOCATION_FINISHED,
                         workflow_name=plan.workflow_name,
                         run_id=output.run_id,
                         node_id="a",
@@ -364,7 +340,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.sleep(5)
                     raise AssertionError("Stop request did not cancel workflow.")
                 assert resumed_node_ids == ("a",)
-                assert output.get_stage_output_path("a").exists()
+                assert (output.results_dir / build_result_filename("a")).exists()
                 assert (output.stages_dir / "a" / "resume-source.json").exists()
                 write_successful_node_output(
                     plan,

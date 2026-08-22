@@ -282,6 +282,40 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.returncode, 0)
 
+    async def test_run_command_once_drains_output_while_sending_large_stdin(
+        self,
+    ) -> None:
+        stdin_data = b"x" * (2 * 1024 * 1024)
+
+        result = await asyncio.wait_for(
+            run_command_once(
+                cmd=[
+                    sys.executable,
+                    "-c",
+                    (
+                        "import sys\n"
+                        "while chunk := sys.stdin.buffer.read(4096):\n"
+                        "    sys.stdout.buffer.write(chunk)\n"
+                        "    sys.stdout.buffer.flush()\n"
+                    ),
+                ],
+                stdin_data=stdin_data,
+                log_file=None,
+                append_log=False,
+                log_header=None,
+                cwd=Path.cwd(),
+                invocation_context=None,
+                idle_timeout_seconds=None,
+            ),
+            timeout=2.0,
+        )
+        try:
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout_path.read_bytes(), stdin_data)
+            self.assertEqual(result.stderr_path.read_bytes(), b"")
+        finally:
+            result.cleanup_stream_files()
+
     async def test_run_command_once_applies_cwd_and_child_environment(self) -> None:
         with patch.dict(os.environ, {"WORKSPACE_TEST_UNSET": "inherited"}):
             result = await run_command_once(

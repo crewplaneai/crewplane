@@ -32,11 +32,10 @@ Git metadata, clean cache directories, or infer provider behavior.
 ### Architecture Ports
 Architecture ports own the replaceable integration contract.
 
-The base `InvokerAdapterPort` remains sufficient for disabled-mode execution.
-Workspace-enabled execution uses an additional optional capability protocol. The
-loader and composition root normalize missing workspace capability metadata to
-`supported: false`; this only fails when `settings.workspace.enabled: true` and
-real workspace execution would invoke providers.
+`InvokerAdapterPort.canonicalize_options()` returns the authoritative capability
+record in `CanonicalIntegrationConfig.capabilities`. Missing workspace metadata
+is treated as unsupported; this only fails when `settings.workspace.enabled:
+true` and real workspace execution would invoke providers.
 
 ```python
 @dataclass(frozen=True)
@@ -56,11 +55,6 @@ class InvokerAdapterCapabilities:
     workspace: InvokerWorkspaceSupport
 ```
 
-```python
-class WorkspaceCompatibleInvokerAdapter(Protocol):
-    def workspace_capabilities(self) -> InvokerAdapterCapabilities: ...
-```
-
 Workspace-enabled real execution accepts only these v1 modes:
 
 - `runtime_command_runner`: provider child processes are launched through the
@@ -78,10 +72,9 @@ Workspace-enabled real execution rejects:
 - future non-process/API invokers until a separate ADR defines their workspace
   contract
 
-Disabled-mode execution does not require adapters to implement
-`workspace_capabilities()`. This keeps the feature flag from leaking into the
-default project-root path while still making enabled-mode launch behavior
-explicit.
+Disabled-mode execution does not require a workspace capability declaration.
+Enabled-mode launch behavior must be declared in the adapter's canonical
+integration result.
 
 The capability record is adapter metadata, not workflow policy. Runtime still
 owns workspace policy, source policy, Git contract enforcement,

@@ -38,6 +38,7 @@ from crewplane.observability.events.reader import (
 )
 from crewplane.observability.events.reducer import apply_event
 from crewplane.observability.events.types import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
     EventType,
     InvocationEventType,
     InvocationStatus,
@@ -48,6 +49,9 @@ from crewplane.observability.events.types import (
     WorkflowEventType,
     WorkflowStatus,
     WorkspaceEventType,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
 )
 
 __all__ = [
@@ -68,6 +72,7 @@ __all__ = [
     "RunDashboardState",
     "RuntimeLogEventPayload",
     "RuntimeLogValue",
+    "TERMINAL_WORKFLOW_EVENT_TYPES",
     "WorkflowEventPayload",
     "WorkflowEventType",
     "WorkflowStatus",
@@ -81,6 +86,9 @@ __all__ = [
     "event_from_record",
     "format_execution_event_log_line",
     "invocation_event",
+    "is_invocation_event_type",
+    "is_node_event_type",
+    "is_workflow_event_type",
     "node_event",
     "read_event_log",
     "runtime_log_event",

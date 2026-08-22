@@ -223,4 +223,10 @@ def _workspace_file_locator_payload() -> dict[str, object]:
         "project_root_relative_to_git_top": ".",
         "git_top_relative_path": "README.md",
         "workspace_relative_path": "README.md",
+        "git_blob": "a" * 40,
+        "git_file_mode": "100644",
+        "byte_size": 7,
+        "canonical_blob_sha256": "b" * 64,
+        "literal_path_verified": True,
+        "utf8_validated": True,
     }

@@ -19,6 +19,7 @@ from crewplane.cli.run import execution_helpers as execution_helpers_module
 from crewplane.cli.run.context import WorkflowRunContext
 from crewplane.cli.run.observability import WorkflowWarningRecorder
 from crewplane.cli.run.resume import ResumePlan
+from crewplane.cli.run.terminalization import TerminalizationCoordinator
 from crewplane.core.config import Config
 from crewplane.core.preflight import (
     PreflightCompilationPreview,
@@ -32,6 +33,7 @@ from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.resume import WORKFLOW_IDENTITY, make_plan, make_run_manifest
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
@@ -76,7 +78,10 @@ def test_successful_run_prints_branch_export_fulfillment(
         *args: object,
         **kwargs: object,
     ) -> None:
-        del args, kwargs
+        del args
+        on_scheduler_succeeded = kwargs["on_scheduler_succeeded"]
+        assert callable(on_scheduler_succeeded)
+        on_scheduler_succeeded()
 
     async def noop_execute_workflow(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -103,15 +108,7 @@ def test_successful_run_prints_branch_export_fulfillment(
         )
         return (record_path,)
 
-    def noop_finalize_run_manifest(*args: object, **kwargs: object) -> None:
-        del args, kwargs
-
-    refreshed_loggers = []
     printed_loggers = []
-
-    def fake_refresh_successful_run_summary(logger: object) -> object:
-        refreshed_loggers.append(logger)
-        return "refreshed-summary"
 
     def record_print_end_of_run_summary(console_arg: object, logger: object) -> None:
         del console_arg
@@ -128,17 +125,9 @@ def test_successful_run_prints_branch_export_fulfillment(
         fake_fulfill_branch_exports,
     )
     monkeypatch.setattr(
-        execution_module, "finalize_run_manifest", noop_finalize_run_manifest
-    )
-    monkeypatch.setattr(
         execution_module,
         "print_end_of_run_summary",
         record_print_end_of_run_summary,
-    )
-    monkeypatch.setattr(
-        execution_module,
-        "refresh_successful_run_summary",
-        fake_refresh_successful_run_summary,
     )
 
     asyncio.run(
@@ -155,6 +144,10 @@ def test_successful_run_prints_branch_export_fulfillment(
             ),
             observability_hub_cls=None,
             workflow_identity=".crewplane/workflows/workflow.task.md",
+            terminalization=TerminalizationCoordinator(
+                output=output,
+                workflow_name=plan.workflow_name,
+            ),
         ),
     )
 
@@ -163,8 +156,7 @@ def test_successful_run_prints_branch_export_fulfillment(
     assert "worktree=primary" in output_text
     assert "operation=created" in output_text
     assert "branch=feature/exported" in output_text
-    assert len(refreshed_loggers) == 1
-    assert printed_loggers == ["refreshed-summary"]
+    assert len(printed_loggers) == 1
 
 
 def test_duplicate_skip_prints_branch_export_fulfillment(
@@ -288,7 +280,7 @@ def test_duplicate_skip_refreshes_historical_summary_after_branch_export(
     output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
     result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
         repo,
-        output.create_stage_dir("implement"),
+        output.create_node_dir(node_artifact_request("implement")),
         "feature result\n",
     )
     write_workspace_state(

@@ -5,8 +5,9 @@ from pathlib import Path
 
 from rich.text import Text
 
-from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
@@ -122,7 +123,8 @@ def _write_parallel_failure_artifact(
     invocation: ParallelInvocation,
     error: Exception,
 ) -> None:
-    invocation.output_file.write_text(
+    atomic_write_text(
+        invocation.output_file,
         build_invocation_failure_artifact(
             provider=invocation.provider.provider,
             task_id=invocation.task_id,
@@ -134,7 +136,6 @@ def _write_parallel_failure_artifact(
                 error.advice if isinstance(error, InvocationFailureError) else None
             ),
         ),
-        encoding="utf-8",
     )
 
 
@@ -246,7 +247,9 @@ async def execute_parallel_stage(
     telemetry: ExecutionTelemetry | None = None,
 ) -> None:
     """Execute all providers in parallel with a shared node prompt."""
-    node_dir = output.create_stage_dir(stage.id)
+    node_dir = output.create_node_dir(
+        NodeArtifactRequest(stage.id, stage.artifact_contract)
+    )
     resolved_prompt = resolve_prompt_with_output_budget_details(
         runtime_context,
         stage,

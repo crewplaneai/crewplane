@@ -37,6 +37,11 @@ directories. Current run state is written under:
 Cancelled run manifests record explicit reasons for UI stops, external
 cancellation, and stale-lock recovery.
 
+Run manifests validate fields by status. Failed and cancelled manifests require
+nonblank reasons; successful manifests reject failure and cancellation reasons.
+Resume source and hydrated-node provenance appear together. Hydration is
+recorded only after every required node boundary is copied and verified.
+
 Resume hydration copies validated consolidated result, required findings, and
 generated-file artifacts. Workspace-enabled resume may also copy only lineage
 artifacts named by validated node-state descriptors, including the selected

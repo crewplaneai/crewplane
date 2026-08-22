@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
+    EventType,
     InvocationContext,
     InvocationDiagnostic,
     InvocationProcessEvent,
@@ -30,6 +31,7 @@ from ..activity.events import (
     safe_error_message,
 )
 from ..activity.telemetry import ExecutionTelemetry
+from ..publication_registry import RuntimePublicationRegistry
 from .display import (
     ProviderCallDisplay,
     provider_console_message_sink,
@@ -41,6 +43,7 @@ def build_invocation_context(
     metadata: InvocationMetadata,
     display: ProviderCallDisplay,
     output: ArtifactStorePort,
+    runtime_publications: RuntimePublicationRegistry,
     on_provider_process_state_published: (
         Callable[[ProviderProcessPublication], None] | None
     ) = None,
@@ -64,9 +67,18 @@ def build_invocation_context(
     if isinstance(output, ProviderProcessStorePort):
 
         def record_process_event(event: InvocationProcessEvent) -> None:
-            publication = output.write_provider_process_event(process_invocation, event)
-            if on_provider_process_state_published is not None:
-                on_provider_process_state_published(publication)
+            with runtime_publications.transaction():
+                publication = output.write_provider_process_event(
+                    process_invocation,
+                    event,
+                )
+                runtime_publications.publish(
+                    publication.path,
+                    publication.signature,
+                    recovery_source=publication.path,
+                )
+                if on_provider_process_state_published is not None:
+                    on_provider_process_state_published(publication)
 
         process_event_sink = record_process_event
 
@@ -120,7 +132,7 @@ def emit_provider_invocation_failure_event(
     try:
         emit_invocation_event(
             telemetry,
-            "invocation_failed",
+            EventType.INVOCATION_FAILED,
             invocation_metadata,
             duration_ms=duration_ms,
             error=safe_error_message(exc),

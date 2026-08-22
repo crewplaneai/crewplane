@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.contracts import JsonObject, NodeArtifactRequest
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.naming import (
     build_node_state_filename,
@@ -54,6 +54,11 @@ class _WorkspaceDescriptorStore:
 
     def get_stage_dir(self, stage_name: str) -> Path | None:
         if stage_name != self.stage_name or not self.stage_dir.is_dir():
+            return None
+        return self.stage_dir
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        if request.node_id != self.stage_name or not self.stage_dir.is_dir():
             return None
         return self.stage_dir
 

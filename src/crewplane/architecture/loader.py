@@ -7,6 +7,7 @@ from typing import Literal, NamedTuple, cast, overload
 from .errors import AdapterContractError, AdapterLoadError, IntegrationResolutionError
 from .ports import (
     ArtifactAdapterPort,
+    ArtifactStorePort,
     InvokerAdapterPort,
     UIAdapterCapabilities,
     UIAdapterPort,
@@ -30,7 +31,7 @@ REQUIRED_FACTORY_METHOD: dict[IntegrationKind, str] = {
 ADDITIONAL_REQUIRED_FACTORY_METHODS: dict[IntegrationKind, tuple[str, ...]] = {
     "invoker": ("canonicalize_options",),
     "ui": ("canonicalize_options",),
-    "artifacts": ("canonicalize_options",),
+    "artifacts": ("canonicalize_options", "create_terminal_history_reader"),
 }
 
 
@@ -210,3 +211,13 @@ def instantiate_adapter(
             f"{adapter_class.__name__}' for {integration_kind} implementation "
             f"'{implementation}': {exc}"
         ) from exc
+
+
+def require_artifact_store(store: object) -> ArtifactStorePort:
+    """Validate the concrete store returned by an artifact adapter."""
+
+    if not isinstance(store, ArtifactStorePort):
+        raise AdapterContractError(
+            "Artifact adapter create_store() must return an ArtifactStorePort."
+        )
+    return store

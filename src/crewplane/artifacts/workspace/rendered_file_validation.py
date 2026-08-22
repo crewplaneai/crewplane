@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -12,7 +13,6 @@ from crewplane.core.preflight.models import (
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..run_history import RunHistoryRecord
-from ..safe_files import contained_regular_file
 from .bundle_validation import (
     WorkspaceBlobDescriptor,
     workspace_blob_descriptor_matches,

@@ -4,17 +4,30 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
-from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.contracts import ArtifactContract, JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
-from crewplane.core.workflow.keywords import NodeMode, ProviderRole, ReviewStartsWith
+from crewplane.core.workflow.keywords import (
+    NodeMode,
+    ProviderRole,
+    ReviewStartsWith,
+    SequentialConsensusPolicy,
+)
 from crewplane.core.workflow.source_locations import SourceSpan, TokenRawSpan
 from crewplane.version import SCHEMA_VERSION
 
 from .diagnostics import PreflightDiagnostic
 from .plan_contract import (
     validate_current_execution_plan_shape,
+    validate_execution_plan_semantics,
     validate_supported_plan_schema_version,
 )
 from .runtime_config import RuntimeConfigSnapshot
@@ -236,8 +249,21 @@ class ProviderRecord(BaseModel):
 class TokenBudgetPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fail_threshold_chars: int | None = None
-    warn_threshold_chars: int | None = None
+    fail_threshold_chars: int | None = Field(default=None, ge=1)
+    warn_threshold_chars: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _validate_threshold_order(self) -> TokenBudgetPolicy:
+        if (
+            self.warn_threshold_chars is not None
+            and self.fail_threshold_chars is not None
+            and self.fail_threshold_chars < self.warn_threshold_chars
+        ):
+            raise ValueError(
+                "fail_threshold_chars must be greater than or equal to "
+                "warn_threshold_chars"
+            )
+        return self
 
 
 class RetryPolicy(BaseModel):
@@ -249,37 +275,40 @@ class RetryPolicy(BaseModel):
 class ConcurrencyPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    max_concurrent_nodes: int | None = None
-    max_parallel_invocations: int | None = None
+    max_concurrent_nodes: int | None = Field(default=None, ge=1)
+    max_parallel_invocations: int | None = Field(default=None, ge=1)
 
 
 class ExecutionPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    depth: int | None = None
-    audit_rounds: int | None = None
+    depth: int | None = Field(default=None, ge=1)
+    audit_rounds: int | None = Field(default=None, ge=1)
     review_starts_with: ReviewStartsWith = "executor"
     continue_on_failure: bool = False
-    failure_threshold: int | None = None
+    failure_threshold: int | None = Field(default=None, ge=0)
     token_budget: TokenBudgetPolicy | None = None
-    consensus_on_exhaustion: str | None = None
+    consensus_on_exhaustion: SequentialConsensusPolicy | None = None
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     concurrency_policy: ConcurrencyPolicy = Field(default_factory=ConcurrencyPolicy)
 
-
-class ArtifactContract(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    stage_path: str | None = None
-    output_path: str
-    findings_path: str | None = None
-    log_path: str | None = None
-    manifest_path: str | None = None
-    result_path: str | None = None
+    @field_validator("depth", "audit_rounds", mode="before")
+    @classmethod
+    def _validate_positive_round_policy(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> object:
+        if value is not None and (
+            isinstance(value, bool) or (isinstance(value, (int, float)) and value <= 0)
+        ):
+            raise ValueError(f"{info.field_name} must be greater than 0")
+        return value
 
 
 class WorkspaceFileSourceClass(StrEnum):
     PROJECT_INITIAL = "project_initial"
+    PROJECT_INITIAL_THEN_CANDIDATE = "project_initial_then_candidate"
     RUNTIME_DYNAMIC = "runtime_dynamic"
 
 
@@ -308,14 +337,80 @@ class WorkspaceFileLocator(BaseModel):
     project_root_relative_to_git_top: str
     git_top_relative_path: str
     workspace_relative_path: str
-    runtime_dynamic_after_candidate: bool = False
     git_blob: str | None = None
     git_file_mode: str | None = None
-    byte_size: int | None = None
+    byte_size: int | None = Field(default=None, ge=0)
     canonical_blob_sha256: str | None = None
     injected_sha256: str | None = None
     literal_path_verified: bool = False
     utf8_validated: bool = False
+
+    @field_validator(
+        "locator_id",
+        "occurrence_id",
+        "node_id",
+        "raw_token",
+        "raw_path",
+        "source_root",
+        "source_root_relative_to_project",
+        "project_root_relative_to_git_top",
+        "git_top_relative_path",
+        "workspace_relative_path",
+    )
+    @classmethod
+    def _validate_nonblank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Workspace file locator text fields cannot be blank.")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_source_state(self) -> WorkspaceFileLocator:
+        if self.source_class == WorkspaceFileSourceClass.RUNTIME_DYNAMIC:
+            self._validate_runtime_dynamic_state()
+        else:
+            self._validate_project_initial_state()
+        if (
+            self.target == WorkspaceFileTarget.INPUT_OUTPUT
+            and self.source_class != WorkspaceFileSourceClass.PROJECT_INITIAL
+        ):
+            raise ValueError("Input workspace locators must use project_initial bytes.")
+        return self
+
+    def _validate_project_initial_state(self) -> None:
+        required = {
+            "content_ref": self.content_ref,
+            "git_blob": self.git_blob,
+            "git_file_mode": self.git_file_mode,
+            "byte_size": self.byte_size,
+            "canonical_blob_sha256": self.canonical_blob_sha256,
+        }
+        missing = sorted(name for name, value in required.items() if value is None)
+        if missing:
+            raise ValueError(
+                "Project-initial workspace locators require: " + ", ".join(missing)
+            )
+        if not self.literal_path_verified or not self.utf8_validated:
+            raise ValueError(
+                "Project-initial workspace locators require verified literal UTF-8 bytes."
+            )
+
+    def _validate_runtime_dynamic_state(self) -> None:
+        static_fields = {
+            "content_ref": self.content_ref,
+            "git_blob": self.git_blob,
+            "git_file_mode": self.git_file_mode,
+            "byte_size": self.byte_size,
+            "canonical_blob_sha256": self.canonical_blob_sha256,
+            "injected_sha256": self.injected_sha256,
+        }
+        present = sorted(
+            name for name, value in static_fields.items() if value is not None
+        )
+        if present or self.literal_path_verified or self.utf8_validated:
+            raise ValueError(
+                "Runtime-dynamic workspace locators cannot carry static byte "
+                f"metadata: {', '.join(present) or 'verification flags'}."
+            )
 
 
 class PreflightExecutionNode(BaseModel):
@@ -380,7 +475,11 @@ class PreflightCompilationPreview(BaseModel):
     workspace_source: WorkspaceSourceSnapshot | None = None
     value_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     fingerprint_metadata: JsonObject = Field(default_factory=dict)
-    secret_context: SecretContext = Field(default_factory=SecretContext, exclude=True)
+    secret_context: SecretContext = Field(
+        default_factory=SecretContext,
+        exclude=True,
+        repr=False,
+    )
     static_file_payloads: dict[str, bytes] = Field(default_factory=dict, exclude=True)
     workspace_file_payloads: dict[str, bytes] = Field(
         default_factory=dict,
@@ -399,7 +498,7 @@ class PreflightCompilationPreview(BaseModel):
 class PreflightExecutionPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    plan_schema_version: str = SCHEMA_VERSION
+    plan_schema_version: str
     run_id: str
     run_key_name: str
     project_root: str
@@ -435,6 +534,7 @@ class PreflightExecutionPlan(BaseModel):
             self.value_fingerprints,
             self.nodes,
         )
+        validate_execution_plan_semantics(self)
         return self
 
     @classmethod
@@ -453,6 +553,7 @@ class PreflightExecutionPlan(BaseModel):
         if preview.runtime_config_snapshot is None:
             raise ValueError("Successful preview requires runtime config snapshot.")
         return cls(
+            plan_schema_version=preview.plan_schema_version,
             run_id=run_id,
             run_key_name=run_key_name,
             project_root=project_root,

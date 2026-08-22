@@ -16,6 +16,9 @@ see [Experimental workspace isolation](workspace-isolation.md).
 
 By default, cleanup is scoped to the current Git repository. Use `--all-projects`
 to clean every repository bucket under the configured workspace cache root.
+Crewplane cannot tell whether another project's cached workspace is still in
+use, so always preview an all-projects cleanup first. Adding
+`--all-projects --yes` confirms that you accept this risk.
 
 ## Preview Cleanup
 
@@ -25,6 +28,10 @@ crewplane cleanup workspaces --dry-run
 
 Cleanup is non-destructive unless `--yes` is set. `--dry-run` prints the paths
 that would be removed and wins over `--yes` if both are present.
+
+With no status flags, cleanup selects only workspaces from completed runs in the
+current project. It leaves running workspaces and workspaces whose state cannot
+be confirmed.
 
 ## Delete Matching Cache Entries
 
@@ -56,7 +63,9 @@ Status filters are:
 - `--failed`
 - `--cancelled`
 
-`--orphans` selects cache paths that do not have workspace state.
+`--orphans` selects cache paths that do not have workspace state. Crewplane
+removes an orphan only when it can confirm that the related run has ended and no
+provider process is active. Otherwise it keeps the path and explains why.
 
 `--all-projects` cannot be combined with `--orphans` or status filters because
 those filters require current-project workspace-state artifacts.

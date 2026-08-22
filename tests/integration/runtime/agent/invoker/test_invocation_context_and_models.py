@@ -239,6 +239,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
 
         runtime_context = CompiledRuntimeContext(
             plan=PreflightExecutionPlan(
+                plan_schema_version=SCHEMA_VERSION,
                 run_id="run",
                 run_key_name="workflow-run",
                 project_root="/tmp/project-root",

@@ -10,6 +10,7 @@ from crewplane.adapters.invokers.cli_invoker import (
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
+    EventType,
 )
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
@@ -119,7 +120,9 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             failed_events = [
-                event for event in events if event.event_type == "invocation_failed"
+                event
+                for event in events
+                if event.event_type == EventType.INVOCATION_FAILED
             ]
             self.assertEqual(len(failed_events), 1)
             failed_event = failed_events[0]
@@ -215,7 +218,9 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             failed_events = [
-                event for event in events if event.event_type == "invocation_failed"
+                event
+                for event in events
+                if event.event_type == EventType.INVOCATION_FAILED
             ]
             self.assertEqual(len(failed_events), 1)
             failed_event = failed_events[0]
@@ -258,7 +263,7 @@ class WorkflowProviderFailureEventTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch(
-                    "crewplane.runtime.execution.workflow.orchestration.wait_for_completed_nodes",
+                    "crewplane.runtime.execution.workflow.scheduling.wait_for_completed_nodes",
                     new=_fail_wait_for_completed_nodes,
                 ),
                 self.assertRaisesRegex(RuntimeError, "simulated scheduler failure"),

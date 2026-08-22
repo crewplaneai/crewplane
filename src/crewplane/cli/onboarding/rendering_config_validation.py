@@ -16,8 +16,6 @@ def validate_provider_ready_config(config_text: str, provider: str) -> None:
             f"Provider-ready config for {provider} has provider_kind "
             f"{provider_kind.value!r}."
         )
-    if config.settings is None:
-        raise OnboardingRenderingError("Provider-ready config is missing settings.")
     invoker = config.settings.integrations.invoker
     if invoker.implementation != "cli":
         raise OnboardingRenderingError(

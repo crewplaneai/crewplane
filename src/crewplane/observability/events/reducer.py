@@ -11,6 +11,7 @@ from crewplane.observability.events.payloads import (
     NodeEventPayload,
     RuntimeLogEventPayload,
 )
+from crewplane.observability.events.types import EventType
 from crewplane.observability.timing import format_elapsed_seconds
 
 
@@ -30,50 +31,53 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
         )
 
     match event.event_type:
-        case "workflow_started":
+        case EventType.WORKFLOW_STARTED:
             state.workflow_status = "running"
             state.workflow_started_at = event.timestamp
-        case "workflow_finished":
+        case EventType.WORKFLOW_FINISHED:
             state.workflow_status = "succeeded"
             state.workflow_finished_at = event.timestamp
-        case "workflow_failed":
+        case EventType.WORKFLOW_FAILED:
             state.workflow_status = "failed"
             state.workflow_finished_at = event.timestamp
-        case "runtime_log":
+        case EventType.WORKFLOW_CANCELLED:
+            state.workflow_status = "cancelled"
+            state.workflow_finished_at = event.timestamp
+        case EventType.RUNTIME_LOG:
             if context.node_id is None:
                 return
             node = require_node(state, context.node_id)
             apply_runtime_log_event(node, event)
-        case "node_started":
+        case EventType.NODE_STARTED:
             node = require_node(state, context.node_id)
             node.status = "running"
             node.started_at = event.timestamp
             node.finished_at = None
-        case "node_finished":
+        case EventType.NODE_FINISHED:
             node = require_node(state, context.node_id)
             node.status = "succeeded"
             node.finished_at = event.timestamp
-        case "node_failed":
+        case EventType.NODE_FAILED:
             node = require_node(state, context.node_id)
             node.status = "failed"
             node.finished_at = event.timestamp
             node_payload = _node_payload(event)
             if node_payload.error:
                 node.recent_events.append(f"FAIL {node_payload.error}")
-        case "node_blocked":
+        case EventType.NODE_BLOCKED:
             node = require_node(state, context.node_id)
             node.status = "blocked"
             node_payload = _node_payload(event)
             if node_payload.error:
                 node.recent_events.append(f"BLOCKED {node_payload.error}")
-        case "invocation_started":
+        case EventType.INVOCATION_STARTED:
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
             invocation.status = "running"
             invocation.started_at = event.timestamp
             invocation.finished_at = None
             record_node_event(node, f"RUN {invocation.task_id}")
-        case "invocation_finished":
+        case EventType.INVOCATION_FINISHED:
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
             finished_payload = _invocation_payload(event)
@@ -86,7 +90,7 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
                 else ""
             )
             record_node_event(node, f"DONE {invocation.task_id}{suffix}")
-        case "invocation_failed":
+        case EventType.INVOCATION_FAILED:
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
             failed_payload = _invocation_payload(event)
@@ -103,7 +107,7 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             record_node_event(
                 node, f"FAIL {invocation.task_id}{duration_label}: {error_label}"
             )
-        case "workspace_context_recorded":
+        case EventType.WORKSPACE_CONTEXT_RECORDED:
             return
         case _:
             raise ValueError(f"Unsupported event type: {event.event_type}")

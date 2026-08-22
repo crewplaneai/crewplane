@@ -13,6 +13,7 @@ from crewplane.artifacts.workspace.node_state import (
     refresh_node_workspace_descriptor,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.resume import (
     WORKTREE_CONTRACT_PAYLOAD,
     make_node_state,
@@ -29,7 +30,7 @@ def test_build_node_workspace_descriptor_records_state_and_bundle_artifacts(
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _workspace_plan()
-    stage_dir = output.create_stage_dir("a")
+    stage_dir = output.create_node_dir(node_artifact_request("a"))
     bundle_payload = b"bundle"
     bundle_path = stage_dir / "workspace-bundles" / "a.bundle"
     bundle_path.parent.mkdir(parents=True)
@@ -74,7 +75,7 @@ def test_build_node_workspace_descriptor_requires_workspace_state(
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _workspace_plan()
-    output.create_stage_dir("a")
+    output.create_node_dir(node_artifact_request("a"))
 
     with pytest.raises(RuntimeError, match="no workspace-state artifact"):
         build_node_workspace_descriptor(plan.nodes[0], plan, output)
@@ -85,7 +86,7 @@ def test_build_node_workspace_descriptor_rejects_hardlinked_bundle(
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _workspace_plan()
-    stage_dir = output.create_stage_dir("a")
+    stage_dir = output.create_node_dir(node_artifact_request("a"))
     outside_bundle = tmp_path / "outside.bundle"
     bundle_payload = b"bundle"
     outside_bundle.write_bytes(bundle_payload)
@@ -110,7 +111,7 @@ def test_build_node_workspace_descriptor_rejects_symlinked_setup_parent(
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _workspace_plan()
-    stage_dir = output.create_stage_dir("a")
+    stage_dir = output.create_node_dir(node_artifact_request("a"))
     bundle_payload = b"bundle"
     bundle_path = stage_dir / "workspace-bundles" / "a.bundle"
     bundle_path.parent.mkdir(parents=True)
@@ -143,7 +144,7 @@ def test_refresh_node_workspace_descriptor_updates_manifest_from_state(
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _workspace_plan()
-    stage_dir = output.create_stage_dir("a")
+    stage_dir = output.create_node_dir(node_artifact_request("a"))
     bundle_payload = b"bundle"
     bundle_path = stage_dir / "workspace-bundles" / "a.bundle"
     bundle_path.parent.mkdir(parents=True)

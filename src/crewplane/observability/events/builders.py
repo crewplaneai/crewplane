@@ -161,7 +161,7 @@ def runtime_log_event(
     timestamp_utc: str | None = None,
 ) -> ExecutionEvent:
     return _build_event(
-        event_type="runtime_log",
+        event_type=EventType.RUNTIME_LOG,
         workflow_name=workflow_name,
         run_id=run_id,
         context=context

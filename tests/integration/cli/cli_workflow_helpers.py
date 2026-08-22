@@ -7,6 +7,7 @@ import pytest
 from rich.console import Console
 
 import crewplane.cli.app as cli
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports.artifacts import ArtifactStorePort, StageTaskSpec
 from crewplane.core.preflight import PreflightExecutionPlan
 from crewplane.runtime.execution.resume import write_successful_node_state
@@ -43,17 +44,22 @@ def write_successful_workflow_outputs(
     workflow_identity: str,
 ) -> None:
     for node in plan.nodes:
+        request = NodeArtifactRequest(node.id, node.artifact_contract)
         task_specs = tuple(
             StageTaskSpec(record.task_id, record.role)
             for record in node.provider_records
         )
-        stage_dir = output.create_stage_dir(node.id)
+        stage_dir = output.create_node_dir(request)
         for task_spec in task_specs:
             (stage_dir / f"{task_spec.task_id}_round1.md").write_text(
                 f"{node.id} completed",
                 encoding="utf-8",
             )
-        finalize_result = output.finalize_stage(node.id, task_specs=task_specs)
+        finalize_result = output.finalize_node(
+            request,
+            findings_enabled=node.findings,
+            task_specs=task_specs,
+        )
         write_successful_node_state(
             node,
             plan,
@@ -113,7 +119,6 @@ def write_basic_config_with_settings(path: Path, log_cli_output: bool) -> None:
                 '      implementation: "filesystem"',
                 "      options:",
                 f"        log_cli_output: {'true' if log_cli_output else 'false'}",
-                "        allowed_template_paths: []",
             ]
         ),
         encoding="utf-8",

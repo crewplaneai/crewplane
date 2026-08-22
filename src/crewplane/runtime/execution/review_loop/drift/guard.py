@@ -1,0 +1,289 @@
+"""Run provider calls with artifact-drift protection."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Never
+
+from ...common import (
+    ExecutionTelemetry,
+    ProviderCallRequest,
+    run_provider_call,
+)
+from ...errors import NodeExecutionError, is_expected_execution_failure
+from ...publication_registry import RuntimePublicationRegistry
+from ..types import (
+    DriftCheckResult,
+    DriftGuardCallRequest,
+    DriftGuardSession,
+    DriftMonitoringWindow,
+    EventLogAppendCapture,
+    GeneratedFileDriftAllowance,
+)
+from .capture import capture_drift_monitoring_window
+from .detection import detect_provider_call_drift
+from .events import emit_artifact_drift
+from .recovery import restore_fatal_artifacts
+
+
+def create_drift_guard_session(
+    telemetry: ExecutionTelemetry | None,
+    runtime_publications: RuntimePublicationRegistry | None = None,
+    generated_file_allowance: GeneratedFileDriftAllowance | None = None,
+) -> DriftGuardSession:
+    publications = runtime_publications or RuntimePublicationRegistry()
+    allowance = generated_file_allowance or GeneratedFileDriftAllowance()
+    if telemetry is None:
+        return DriftGuardSession(
+            telemetry=None,
+            event_log_capture=None,
+            generated_file_allowance=allowance,
+            runtime_publications=publications,
+        )
+    capture = EventLogAppendCapture(
+        event_sink=telemetry.event_sink,
+        events=[],
+        runtime_publications=publications,
+    )
+    return DriftGuardSession(
+        telemetry=replace(telemetry, event_sink=capture.emit),
+        event_log_capture=capture,
+        generated_file_allowance=allowance,
+        runtime_publications=publications,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _DriftGuardContext:
+    monitoring_window: DriftMonitoringWindow
+    captured_telemetry: ExecutionTelemetry | None
+    event_log_capture: EventLogAppendCapture | None
+    event_log_start_index: int
+
+
+async def run_provider_call_with_drift_guard(
+    request: DriftGuardCallRequest,
+) -> int:
+    context = _prepare_drift_guard_context(request)
+    provider_error = await _invoke_provider_capturing_error(
+        request,
+        context.captured_telemetry,
+    )
+    drift = _detect_and_restore_drift(request, context, provider_error)
+    _emit_drift_telemetry(request, drift, provider_error)
+
+    if provider_error is not None:
+        _raise_for_provider_failure(request, drift, provider_error)
+    if drift.fatal_paths:
+        raise fatal_artifact_drift_error(request)
+    return 1 if drift.warning_paths else 0
+
+
+def _prepare_drift_guard_context(
+    request: DriftGuardCallRequest,
+) -> _DriftGuardContext:
+    monitoring_window = capture_drift_monitoring_window(
+        node_id=request.node.id,
+        node_dir=request.node_dir,
+        output=request.output,
+        telemetry=request.telemetry,
+        runtime_publications=request.runtime_context.runtime_publications,
+        runtime_owned_paths=request.runtime_owned_paths,
+        runtime_owned_roots=request.runtime_owned_roots,
+        recovery_baseline=(
+            request.drift_session.recovery_baseline
+            if request.drift_session is not None
+            else None
+        ),
+    )
+    captured_telemetry, event_log_capture, event_log_start_index = (
+        drift_guard_telemetry_context(request)
+    )
+    return _DriftGuardContext(
+        monitoring_window=monitoring_window,
+        captured_telemetry=captured_telemetry,
+        event_log_capture=event_log_capture,
+        event_log_start_index=event_log_start_index,
+    )
+
+
+async def _invoke_provider_capturing_error(
+    request: DriftGuardCallRequest,
+    captured_telemetry: ExecutionTelemetry | None,
+) -> Exception | None:
+    try:
+        await invoke_provider_under_drift_guard(request, captured_telemetry)
+    except Exception as exc:
+        return exc
+    return None
+
+
+def _detect_and_restore_drift(
+    request: DriftGuardCallRequest,
+    context: _DriftGuardContext,
+    provider_error: Exception | None,
+) -> DriftCheckResult:
+    try:
+        drift = detect_provider_call_drift(
+            request,
+            context.monitoring_window,
+            context.event_log_capture,
+            context.event_log_start_index,
+        )
+        restore_fatal_artifacts(
+            request,
+            context.monitoring_window,
+            drift.fatal_paths,
+        )
+    except Exception as drift_exc:
+        if provider_error is None:
+            raise
+        mixed_error = mixed_provider_and_drift_guard_error(
+            provider_error,
+            drift_exc,
+            "artifact drift detection failed",
+        )
+    else:
+        return drift
+    raise_preserving_cause(mixed_error)
+
+
+def _emit_drift_telemetry(
+    request: DriftGuardCallRequest,
+    drift: DriftCheckResult,
+    provider_error: Exception | None,
+) -> None:
+    try:
+        emit_artifact_drift(
+            telemetry=request.telemetry,
+            output=request.output,
+            node_id=request.node.id,
+            task_id=request.task_id,
+            provider=request.provider,
+            role_label=request.role_label,
+            audit_round_num=request.audit_round_num,
+            round_num=request.round_num,
+            drift=drift,
+        )
+    except Exception as drift_emit_exc:
+        if provider_error is None:
+            raise
+        mixed_error = mixed_provider_and_drift_guard_error(
+            provider_error,
+            drift_emit_exc,
+            "artifact drift telemetry failed",
+        )
+    else:
+        return
+    raise_preserving_cause(mixed_error)
+
+
+def _raise_for_provider_failure(
+    request: DriftGuardCallRequest,
+    drift: DriftCheckResult,
+    provider_error: Exception,
+) -> Never:
+    if drift.warning_paths or drift.fatal_paths:
+        provider_error.add_note(
+            "artifact drift detected after provider failure: "
+            f"{len(drift.warning_paths)} warning path(s), "
+            f"{len(drift.fatal_paths)} fatal path(s)"
+        )
+    if drift.fatal_paths:
+        if not is_expected_execution_failure(provider_error):
+            raise provider_error
+        raise fatal_artifact_drift_error(request) from provider_error
+    raise provider_error
+
+
+def mixed_provider_and_drift_guard_error(
+    provider_error: Exception,
+    drift_guard_error: Exception,
+    context: str,
+) -> Exception:
+    if is_expected_execution_failure(provider_error):
+        drift_guard_error.add_note(f"provider call failed first: {provider_error}")
+        return drift_guard_error
+    provider_error.add_note(f"{context}: {drift_guard_error}")
+    return provider_error
+
+
+def raise_preserving_cause(exc: Exception) -> Never:
+    if exc.__cause__ is not None:
+        raise exc from exc.__cause__
+    raise exc
+
+
+def fatal_artifact_drift_error(request: DriftGuardCallRequest) -> NodeExecutionError:
+    return NodeExecutionError(
+        f"Invocation for node '{request.node.id}' task "
+        f"'{request.task_id}' modified fatal artifacts."
+    )
+
+
+def drift_guard_telemetry_context(
+    request: DriftGuardCallRequest,
+) -> tuple[ExecutionTelemetry | None, EventLogAppendCapture | None, int]:
+    session = request.drift_session
+    if session is None:
+        session = create_drift_guard_session(
+            request.telemetry,
+            request.runtime_context.runtime_publications,
+        )
+    event_log_capture = session.event_log_capture
+    event_log_start_index = (
+        event_log_capture.event_count() if event_log_capture is not None else 0
+    )
+    return session.telemetry, event_log_capture, event_log_start_index
+
+
+async def invoke_provider_under_drift_guard(
+    request: DriftGuardCallRequest,
+    captured_telemetry: ExecutionTelemetry | None,
+) -> None:
+    generated_file_allowance = (
+        request.drift_session.generated_file_allowance
+        if request.drift_session is not None
+        else GeneratedFileDriftAllowance()
+    )
+    request.generated_file_allowance = generated_file_allowance
+    request.runtime_publications = request.runtime_context.runtime_publications
+
+    def register_runtime_log(path: Path) -> None:
+        if request.runtime_owned_roots and not any(
+            path == owned_path or path.is_relative_to(owned_path)
+            for owned_path in request.runtime_owned_roots
+        ):
+            raise RuntimeError(f"Unexpected runtime log path: {path}")
+        request.allow_runtime_log_path(path)
+
+    await run_provider_call(
+        ProviderCallRequest(
+            runtime_context=request.runtime_context,
+            output=request.output,
+            node_id=request.node.id,
+            provider=request.provider,
+            task_id=request.task_id,
+            audit_round_num=request.audit_round_num,
+            round_num=request.round_num,
+            prompt=request.prompt,
+            output_file=request.output_file,
+            role_label=request.role_label,
+            invoker=request.invoker,
+            telemetry=captured_telemetry,
+            findings_enabled=request.findings_enabled,
+            provider_output_policy=request.provider_output_policy,
+            on_log_file_resolved=register_runtime_log,
+            on_generated_file_snapshot_started=(
+                generated_file_allowance.start_snapshot
+            ),
+            on_generated_file_snapshot_finished=(
+                generated_file_allowance.finish_snapshot
+            ),
+            rendered_workspace_files=request.rendered_workspace_files,
+            invocation_output_file=request.invocation_output_file,
+            defer_output_publication=request.defer_output_publication,
+        ),
+        display=replace(request.display, telemetry=captured_telemetry),
+    )

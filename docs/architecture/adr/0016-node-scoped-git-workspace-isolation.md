@@ -794,21 +794,31 @@ rather than continuing from an untracked directory.
 ## Lifecycle and Cleanup
 Cancellation and cleanup are explicit:
 
-1. Mark the run cancelled in run-root metadata.
-2. Stop or drain active provider invocations according to existing timeout and
-   subprocess policy.
-3. Capture terminal node artifacts that can be safely attributed.
-4. Run idempotent cleanup for disposable snapshots and unlocked failed
+1. Stop scheduling and stop or drain active provider invocations according to
+   existing timeout and subprocess policy.
+2. Capture terminal node artifacts that can be safely attributed.
+3. Run idempotent cleanup for disposable snapshots and unlocked failed
    worktree materializations.
-5. Preserve completed worktree checkpoints, bundles, manifests, and branch
+4. Preserve completed worktree checkpoints, bundles, manifests, and branch
    export records.
+5. Publish the cancelled terminal event, observer result, and summary, stop
+   required observers, then publish the terminal manifest as the durable commit
+   marker before releasing recovery ownership.
+
+Stale-lock takeover is a recovery exception. If the prior process stopped
+before terminal publication completed, takeover publishes a cancelled manifest
+with `stale_lock_recovered`; the interrupted event log and summary may remain
+incomplete.
 
 Cleanup tolerates missing worktree directories, missing Git admin entries, and
 already-removed cache paths. It must never delete a user-created branch or a
 worktree not recorded as Crewplane-managed for the current run.
 
-`crewplane cleanup workspaces` may remove stale Crewplane-managed
-workspace cache entries, but canonical audit artifacts remain under
+For the current project, `crewplane cleanup workspaces` requires terminal run
+evidence and inactive lock and provider-process state. Orphans may omit
+workspace state but require the same run and activity evidence. Unverifiable
+entries are retained. `--all-projects --yes` explicitly bypasses checks that
+cannot be performed across projects. Canonical audit artifacts remain under
 `.crewplane/`.
 
 ## Observability and User Feedback

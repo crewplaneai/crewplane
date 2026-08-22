@@ -7,7 +7,7 @@ import typer
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.bootstrap import RuntimeConfigSnapshotBuildResult
-from crewplane.core.config import Config, Settings
+from crewplane.core.config import Config
 from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightExecutionPlan,
@@ -117,7 +117,7 @@ def workspace_real_execution_error(
     config: Config,
     preview: PreflightCompilationPreview,
 ) -> str | None:
-    settings = config.settings if config.settings is not None else Settings()
+    settings = config.settings
     if not settings.workspace.enabled:
         return None
     if not workspace_enabled(preview):
@@ -161,17 +161,12 @@ def write_initial_run_manifest(
     source: PreflightWorkflowSource,
     resume_plan: ResumePlan,
 ) -> None:
-    resume_source = resume_plan.decision.resume_source
     manifest = build_run_manifest_from_plan(
         plan=plan,
         source=source,
         workflow_identity=resume_plan.workflow_identity,
-        resumed_nodes=resume_plan.resumed_node_ids,
-        resume_source_run_id=(
-            resume_source.manifest.run_id if resume_source is not None else None
-        ),
-        resume_source_run_key_name=(
-            resume_source.manifest.run_key_name if resume_source is not None else None
-        ),
+        resumed_nodes=(),
+        resume_source_run_id=None,
+        resume_source_run_key_name=None,
     )
     write_running_run_manifest(output, manifest)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -13,7 +14,6 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
 from ...run_history import RunHistoryRecord
-from ...safe_files import contained_regular_file
 from ..bundle_validation import workspace_bundle_contains_result_tree
 from ..rendered_file_validation import (
     provider_rendered_workspace_files_match,

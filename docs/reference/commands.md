@@ -190,7 +190,10 @@ crewplane cleanup workspaces --yes
 ```
 
 The command is advisory by default. Destructive cleanup happens only when
-`--yes` is set and `--dry-run` is not set.
+`--yes` is set and `--dry-run` is not set. With no status flags, current-project
+cleanup selects only workspaces from completed runs. Explicitly selected
+orphans are removed only when Crewplane can confirm that their run has ended and
+no provider process is active. Other entries are kept and reported.
 
 See [Cleaning Up Workspace Caches](../guides/cleanup.md) for the operational
 guide and run-record retention note.
@@ -213,7 +216,9 @@ Options:
 By default, cleanup is scoped to the current Git repository. Non-Git projects
 must use `--all-projects`. `--all-projects` cannot be combined with
 `--orphans`, `--successful`, `--failed`, or `--cancelled` because those filters
-depend on current-project workspace-state artifacts.
+depend on current-project artifacts. Cross-project ownership and activity are
+not verifiable, so preview the scan first. `--all-projects --yes` confirms that
+you accept this risk.
 
 Cleanup rejects workspace cache roots that are relative, symlinks, overlap the
 project, overlap `.crewplane/`, overlap run artifact directories, or overlap Git

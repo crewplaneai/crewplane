@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -54,7 +55,7 @@ class DagRenderStatusTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-running-elapsed",
                 node_id="node.a",
@@ -93,7 +94,7 @@ class DagRenderStatusTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_started",
+                event_type=EventType.NODE_STARTED,
                 workflow_name=workflow.name,
                 run_id="run-parallel-elapsed",
                 node_id="node.a",
@@ -107,7 +108,7 @@ class DagRenderStatusTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_started",
+                    event_type=EventType.INVOCATION_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-parallel-elapsed",
                     node_id="node.a",
@@ -122,7 +123,7 @@ class DagRenderStatusTests(unittest.TestCase):
             apply_event(
                 state,
                 make_execution_event(
-                    event_type="invocation_finished",
+                    event_type=EventType.INVOCATION_FINISHED,
                     workflow_name=workflow.name,
                     run_id="run-parallel-elapsed",
                     node_id="node.a",
@@ -138,7 +139,7 @@ class DagRenderStatusTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_finished",
+                event_type=EventType.NODE_FINISHED,
                 workflow_name=workflow.name,
                 run_id="run-parallel-elapsed",
                 node_id="node.a",
@@ -223,7 +224,7 @@ class DagRenderStatusTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_failed",
+                event_type=EventType.NODE_FAILED,
                 workflow_name=workflow.name,
                 run_id="run-status",
                 node_id="compile.api",
@@ -233,7 +234,7 @@ class DagRenderStatusTests(unittest.TestCase):
         apply_event(
             state,
             make_execution_event(
-                event_type="node_blocked",
+                event_type=EventType.NODE_BLOCKED,
                 workflow_name=workflow.name,
                 run_id="run-status",
                 node_id="deploy.api",

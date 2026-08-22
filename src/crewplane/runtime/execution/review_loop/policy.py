@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.safe_files import ensure_contained_directory
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
@@ -41,9 +42,10 @@ def audit_round_context(audit_rounds: int, audit_round_num: int) -> int | None:
 def audit_round_dir(node_dir: Path, audit_rounds: int, audit_round_num: int) -> Path:
     if audit_rounds == 1:
         return node_dir
-    review_dir = node_dir / f"review-audit-round-{audit_round_num}"
-    review_dir.mkdir(parents=True, exist_ok=True)
-    return review_dir
+    return ensure_contained_directory(
+        node_dir,
+        f"review-audit-round-{audit_round_num}",
+    )
 
 
 def split_sequential_review_loop_providers(
@@ -75,11 +77,10 @@ def split_sequential_review_loop_providers(
 
 def consensus_failure_allows_continuation(
     node: PreflightExecutionNode,
-    sequential_consensus_on_exhaustion: str,
 ) -> tuple[bool, str]:
     if node.execution_policy.continue_on_failure:
         return True, "continue_on_failure=true"
-    if sequential_consensus_on_exhaustion == "continue":
+    if node.execution_policy.consensus_on_exhaustion == "continue":
         return True, "settings.sequential_consensus_on_exhaustion=continue"
     return False, "settings.sequential_consensus_on_exhaustion=fatal"
 

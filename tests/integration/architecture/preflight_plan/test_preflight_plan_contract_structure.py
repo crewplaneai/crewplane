@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,7 @@ from crewplane.core.config import (
 )
 from crewplane.core.preflight import (
     PreflightCompileOptions,
+    PreflightExecutionPlan,
     PreflightWorkflowSource,
     compile_preflight_preview,
 )
@@ -28,6 +31,7 @@ from crewplane.core.workflow.models import (
     WorkflowPlan,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.resume import make_plan
 
 
 def _mock_config() -> Config:
@@ -46,7 +50,7 @@ def _mock_config() -> Config:
                 ui=IntegrationSpec(implementation="tmux", options={}),
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
-                    options={"allowed_template_paths": [], "log_cli_output": True},
+                    options={"log_cli_output": True},
                 ),
             )
         ),
@@ -109,7 +113,7 @@ class SensitiveOptionInvokerAdapter:
             implementation=implementation,
             resolved_identity=resolved_identity,
             options={"api_token": api_token},
-            sensitive_options=["api_token"],
+            sensitive_options=["/api_token"],
             option_scopes={"api_token": "execution"},
         )
 
@@ -338,3 +342,116 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
     }
     assert token_edge.first_token_signature == token.signature
     assert token_edge.target_locator == "build.output"
+
+
+@pytest.mark.parametrize(
+    ("source_lineage_producer", "target_worktree", "message"),
+    [
+        (True, "secondary", "same logical worktree"),
+        (False, "primary", "lineage producer"),
+    ],
+)
+def test_serialized_plan_rejects_invalid_workspace_source_lineage(
+    source_lineage_producer: bool,
+    target_worktree: str,
+    message: str,
+) -> None:
+    payload = make_plan().model_dump(mode="json")
+    payload["nodes"][0]["workspace_policy"] = {
+        "enabled": True,
+        "logical_worktree_name": "primary",
+        "declaration_kind": "worktree",
+        "source_kind": "project",
+        "materialization": "worktree_checkout",
+        "writable": True,
+        "lineage_producer": source_lineage_producer,
+    }
+    payload["nodes"][1]["workspace_policy"] = {
+        "enabled": True,
+        "logical_worktree_name": target_worktree,
+        "declaration_kind": "worktree",
+        "source_kind": "node",
+        "source_node_id": "a",
+        "materialization": "worktree_checkout",
+        "writable": True,
+        "lineage_producer": True,
+    }
+
+    with pytest.raises(ValueError, match=message):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def test_serialized_plan_rejects_project_source_lineage_rollback() -> None:
+    payload = make_plan().model_dump(mode="json")
+    payload["nodes"][0]["workspace_policy"] = _worktree_policy("primary")
+    payload["nodes"][1]["workspace_policy"] = _worktree_policy("primary")
+
+    with pytest.raises(ValueError, match="latest same-worktree lineage source 'a'"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def test_serialized_plan_rejects_direct_cross_worktree_dependency() -> None:
+    payload = make_plan().model_dump(mode="json")
+    payload["nodes"][0]["workspace_policy"] = _worktree_policy("primary")
+    payload["nodes"][1]["workspace_policy"] = _worktree_policy("secondary")
+
+    with pytest.raises(ValueError, match="same logical worktree"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def test_serialized_plan_rejects_older_transitive_lineage_source() -> None:
+    payload = make_plan().model_dump(mode="json")
+    payload["nodes"][0]["workspace_policy"] = _worktree_policy("primary")
+    payload["nodes"][1]["workspace_policy"] = _worktree_policy(
+        "primary",
+        source_node_id="a",
+    )
+    third_node = deepcopy(payload["nodes"][1])
+    third_node.update(
+        {
+            "id": "c",
+            "render_plan_id": "c",
+            "dependencies": ["b"],
+            "artifact_contract": {
+                "stage_path": "c",
+                "output_path": "c-result.md",
+                "findings_path": None,
+                "log_path": "c/logs",
+                "result_path": "c-result.md",
+            },
+        }
+    )
+    payload["nodes"].append(third_node)
+    payload["execution_order"].append("c")
+    third_render_plan = deepcopy(payload["render_plans"][1])
+    third_render_plan.update({"render_plan_id": "c", "node_id": "c"})
+    payload["render_plans"].append(third_render_plan)
+    payload["dependency_graph"].append(
+        {
+            "source_node": "b",
+            "target_node": "c",
+            "artifact_name": "output",
+            "dependency_signature": "b-to-c",
+            "target_locator": "b.output",
+            "artifact_key": "output",
+        }
+    )
+
+    with pytest.raises(ValueError, match="latest same-worktree lineage source 'b'"):
+        PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+def _worktree_policy(
+    logical_worktree_name: str,
+    source_node_id: str | None = None,
+) -> dict[str, object]:
+    return {
+        "enabled": True,
+        "logical_worktree_name": logical_worktree_name,
+        "declaration_kind": "worktree",
+        "source_kind": "node" if source_node_id is not None else "project",
+        "source_node_id": source_node_id,
+        "materialization": "worktree_checkout",
+        "writable": True,
+        "lineage_producer": True,
+    }

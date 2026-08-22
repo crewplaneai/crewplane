@@ -44,7 +44,10 @@ class CliInvokerAdapterTests(unittest.TestCase):
     def test_workspace_capabilities_declare_runtime_command_runner(self) -> None:
         adapter = CliInvokerAdapter()
 
-        capabilities = adapter.workspace_capabilities().as_dict()["workspace"]
+        capabilities = adapter.canonicalize_options(
+            "cli",
+            "crewplane.adapters.invokers.cli:CliInvokerAdapter",
+        ).capabilities["workspace"]
 
         self.assertEqual(capabilities["supported"], True)
         self.assertEqual(capabilities["launch_mode"], "runtime_command_runner")

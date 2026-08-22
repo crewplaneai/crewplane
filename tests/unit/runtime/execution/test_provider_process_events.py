@@ -12,6 +12,9 @@ from crewplane.runtime.agent.invocation.command import run_command_once
 from crewplane.runtime.execution.activity.events import InvocationMetadata
 from crewplane.runtime.execution.provider_call.display import ProviderCallDisplay
 from crewplane.runtime.execution.provider_call.events import build_invocation_context
+from crewplane.runtime.execution.publication_registry import (
+    RuntimePublicationRegistry,
+)
 
 
 class _LegacyArtifactStore:
@@ -35,6 +38,7 @@ def test_initial_reviewer_round_persists_provider_process_lifecycle(tmp_path) ->
         ),
         display=ProviderCallDisplay(telemetry=None),
         output=output,
+        runtime_publications=RuntimePublicationRegistry(),
     )
     assert context.process_event_sink is not None
 
@@ -81,6 +85,7 @@ def test_legacy_artifact_store_keeps_cli_invocation_working(tmp_path) -> None:
         ),
         display=ProviderCallDisplay(telemetry=None),
         output=cast(ArtifactStorePort, _LegacyArtifactStore()),
+        runtime_publications=RuntimePublicationRegistry(),
     )
 
     assert context.process_event_sink is None

@@ -6,13 +6,12 @@ from typing import get_args
 
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.cli.run import historical_summary
-from crewplane.observability.events.reader import EVENT_TYPES, LOG_LEVELS
+from crewplane.observability.events.reader import LOG_LEVELS
 from crewplane.observability.events.types import EventType, LogLevel
 from tests.helpers.resume import make_plan, make_run_manifest
 
 
-def test_historical_event_constants_track_observability_literals() -> None:
-    assert frozenset(get_args(EventType)) == EVENT_TYPES
+def test_historical_log_levels_track_observability_literal() -> None:
     assert frozenset(get_args(LogLevel)) == LOG_LEVELS
 
 
@@ -53,8 +52,7 @@ def test_refresh_historical_summary_handles_each_declared_event_type(
     event_log_path.parent.mkdir(parents=True, exist_ok=True)
     event_log_path.write_text(
         "\n".join(
-            json.dumps(_record_for_event(event_type))
-            for event_type in get_args(EventType)
+            json.dumps(_record_for_event(event_type)) for event_type in tuple(EventType)
         )
         + "\n",
         encoding="utf-8",
@@ -68,10 +66,10 @@ def test_refresh_historical_summary_handles_each_declared_event_type(
     assert "Run Summary" in summary_path.read_text(encoding="utf-8")
 
 
-def _record_for_event(event_type: str) -> dict[str, object]:
-    if event_type == "runtime_log":
+def _record_for_event(event_type: EventType) -> dict[str, object]:
+    if event_type == EventType.RUNTIME_LOG:
         return _runtime_log_record(level="info")
-    return _base_record(event_type)
+    return _base_record(event_type.value)
 
 
 def _runtime_log_record(level: str) -> dict[str, object]:

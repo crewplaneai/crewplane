@@ -31,6 +31,7 @@ def _node(
             depth=depth,
             audit_rounds=audit_rounds,
             continue_on_failure=continue_on_failure,
+            consensus_on_exhaustion="fatal",
         ),
         artifact_contract=ArtifactContract(output_path="review.node-result.md"),
     )
@@ -103,19 +104,29 @@ def test_audit_round_context_and_dir_are_only_nested_for_multi_audit_rounds(
     assert audit_dir.exists()
 
 
-def test_consensus_failure_continuation_policy_respects_node_and_global_settings() -> (
-    None
-):
+def test_audit_round_dir_rejects_symlinked_round_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    round_dir = tmp_path / "review-audit-round-2"
+    try:
+        round_dir.symlink_to(outside, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="real directory"):
+        audit_round_dir(tmp_path, 2, 2)
+
+
+def test_consensus_failure_continuation_policy_uses_compiled_node_policy() -> None:
     node = _node()
 
-    assert consensus_failure_allows_continuation(node, "fatal") == (
+    assert consensus_failure_allows_continuation(node) == (
         False,
         "settings.sequential_consensus_on_exhaustion=fatal",
     )
 
     assert consensus_failure_allows_continuation(
         _node(continue_on_failure=True),
-        "fatal",
     ) == (
         True,
         "continue_on_failure=true",

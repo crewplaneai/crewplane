@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
 from threading import Event, get_ident
 from types import SimpleNamespace
@@ -9,8 +11,13 @@ from types import SimpleNamespace
 import pytest
 
 import crewplane.runtime.execution.workflow.cleanup as workflow_cleanup_module
+import crewplane.runtime.execution.workflow.execution_session as workflow_execution_session_module
 import crewplane.runtime.execution.workflow.node as workflow_node_module
 import crewplane.runtime.execution.workflow.orchestration as workflow_module
+import crewplane.runtime.execution.workflow.postconditions as workflow_postconditions_module
+import crewplane.runtime.execution.workflow.scheduling as workflow_scheduling_module
+from crewplane.architecture.contracts import EventType, is_workflow_event_type
+from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts import OutputManager
 from crewplane.core.preflight.models import (
     ArtifactContract,
@@ -19,6 +26,9 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.observability.events import ExecutionEvent
+from crewplane.runtime.execution.publication_registry import (
+    RuntimePublicationRegistry,
+)
 from crewplane.runtime.execution.workspace_files.generated import (
     GeneratedFileWorkspaceCleanupResult,
     GeneratedFileWorkspaceRegistry,
@@ -26,7 +36,145 @@ from crewplane.runtime.execution.workspace_files.generated import (
 from crewplane.version import SCHEMA_VERSION
 
 
-def test_successful_workflow_keeps_success_when_workspace_ref_cleanup_fails(
+def _recovery_payload(
+    registry: RuntimePublicationRegistry,
+    path: Path,
+) -> bytes | None:
+    destination = BytesIO()
+    if not registry.copy_recovery_payload_to(path, destination):
+        return None
+    return destination.getvalue()
+
+
+def test_stage_publications_retain_all_recovery_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    result_file = tmp_path / "result.md"
+    findings_file = tmp_path / "findings.md"
+    generated_file = tmp_path / "generated.bin"
+    node_state_file = tmp_path / "node-state.json"
+    result_file.write_bytes(b"result")
+    findings_file.write_bytes(b"findings")
+    generated_file.write_bytes(b"generated")
+    node_state_file.write_bytes(b"state")
+    publications = RuntimePublicationRegistry()
+
+    def do_nothing(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+
+    def return_node_state(*args: object, **kwargs: object) -> Path:
+        del args, kwargs
+        return node_state_file
+
+    def return_finalize_result(
+        *args: object,
+        **kwargs: object,
+    ) -> StageFinalizeResult:
+        del args, kwargs
+        return StageFinalizeResult(
+            stage_name="node",
+            result_file=result_file,
+            findings_file=findings_file,
+            included_outputs=(),
+            skipped_empty_outputs=(),
+            warnings=(),
+            generated_files=(generated_file,),
+        )
+
+    monkeypatch.setattr(
+        workflow_node_module,
+        "execute_input_stage",
+        do_nothing,
+    )
+    monkeypatch.setattr(
+        workflow_node_module,
+        "emit_stage_finalize_logs",
+        do_nothing,
+    )
+    monkeypatch.setattr(
+        workflow_node_module,
+        "write_successful_node_state",
+        return_node_state,
+    )
+    monkeypatch.setattr(
+        output,
+        "finalize_node",
+        return_finalize_result,
+    )
+    node = PreflightExecutionNode(
+        id="input",
+        mode="input",
+        artifact_contract=ArtifactContract(
+            stage_path="input",
+            output_path="input-result.md",
+            log_path="input/logs",
+            result_path="input-result.md",
+        ),
+    )
+    runtime_context = SimpleNamespace(
+        plan=_single_node_plan(output),
+        generated_file_workspaces=GeneratedFileWorkspaceRegistry(),
+        runtime_publications=publications,
+    )
+
+    asyncio.run(
+        workflow_node_module.execute_node(
+            node,
+            output,
+            invoker=object(),
+            runtime_context=runtime_context,
+            telemetry=None,
+            workflow_identity="workflow",
+        )
+    )
+
+    assert _recovery_payload(publications, result_file) == b"result"
+    assert _recovery_payload(publications, findings_file) == b"findings"
+    assert _recovery_payload(publications, node_state_file) == b"state"
+    assert _recovery_payload(publications, generated_file) == b"generated"
+    publications.close()
+
+
+def test_workflow_closes_runtime_publication_registry_when_cleanup_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    closed_registries: list[RuntimePublicationRegistry] = []
+    original_close = RuntimePublicationRegistry.close
+
+    def record_close(registry: RuntimePublicationRegistry) -> None:
+        original_close(registry)
+        closed_registries.append(registry)
+
+    def fail_cleanup(registry: GeneratedFileWorkspaceRegistry) -> None:
+        del registry
+        raise RuntimeError("cleanup exploded")
+
+    monkeypatch.setattr(RuntimePublicationRegistry, "close", record_close)
+    monkeypatch.setattr(GeneratedFileWorkspaceRegistry, "cleanup_all", fail_cleanup)
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    with pytest.raises(RuntimeError, match="cleanup exploded"):
+        asyncio.run(
+            workflow_module.execute_workflow(
+                _empty_plan(output),
+                output,
+                invoker=object(),
+                secret_context=SecretContext(),
+                suppress_progress_output=True,
+            )
+        )
+
+    assert len(closed_registries) == 1
+    with pytest.raises(RuntimeError, match="registry is closed"):
+        closed_registries[0].publish(
+            tmp_path / "late.md", (0, hashlib.sha256().hexdigest())
+        )
+
+
+def test_successful_scheduler_becomes_failure_when_workspace_ref_cleanup_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -41,26 +189,27 @@ def test_successful_workflow_keeps_success_when_workspace_ref_cleanup_fails(
     output = OutputManager("Workflow", base_dir=tmp_path)
     events: list[ExecutionEvent] = []
 
-    asyncio.run(
-        workflow_module.execute_workflow(
-            _empty_plan(output),
-            output,
-            invoker=object(),
-            secret_context=SecretContext(),
-            event_sink=events.append,
-            suppress_progress_output=True,
+    with pytest.raises(RuntimeError, match="Workspace reference cleanup failed"):
+        asyncio.run(
+            workflow_module.execute_workflow(
+                _empty_plan(output),
+                output,
+                invoker=object(),
+                secret_context=SecretContext(),
+                event_sink=events.append,
+                suppress_progress_output=True,
+            )
         )
-    )
 
     cleanup_warnings = [
         event
         for event in events
-        if event.event_type == "runtime_log"
+        if event.event_type == EventType.RUNTIME_LOG
         and event.payload.operation == "workspace_ref_cleanup"
     ]
     assert len(cleanup_warnings) == 1
     assert cleanup_warnings[0].payload.level == "warning"
-    assert events[-1].event_type == "workflow_finished"
+    assert not any(is_workflow_event_type(event.event_type) for event in events[1:])
 
 
 def test_successful_node_cleanup_retains_failed_generated_file_callbacks(
@@ -92,9 +241,18 @@ def test_successful_node_cleanup_retains_failed_generated_file_callbacks(
             return self.cleanup_node_best_effort(node_id, retain_failed_callbacks)
 
     class Output:
-        def finalize_stage(self, *args: object, **kwargs: object) -> object:
+        def finalize_node(self, *args: object, **kwargs: object) -> StageFinalizeResult:
             del args, kwargs
-            return object()
+            result_file = tmp_path / "input.md"
+            result_file.write_text("input\n", encoding="utf-8")
+            return StageFinalizeResult(
+                stage_name="input",
+                result_file=result_file,
+                findings_file=None,
+                included_outputs=(),
+                skipped_empty_outputs=(),
+                warnings=(),
+            )
 
     def execute_input_stage(*args: object, **kwargs: object) -> None:
         del args, kwargs
@@ -102,8 +260,11 @@ def test_successful_node_cleanup_retains_failed_generated_file_callbacks(
     def ignore_stage_finalize_logs(*args: object) -> None:
         del args
 
-    def ignore_successful_node_state(*args: object) -> None:
+    def ignore_successful_node_state(*args: object) -> Path:
         del args
+        state_file = tmp_path / "node-state.json"
+        state_file.write_text("{}\n", encoding="utf-8")
+        return state_file
 
     monkeypatch.setattr(
         workflow_node_module,
@@ -124,11 +285,17 @@ def test_successful_node_cleanup_retains_failed_generated_file_callbacks(
     runtime_context = SimpleNamespace(
         plan=_empty_plan(OutputManager("Workflow", base_dir=tmp_path)),
         generated_file_workspaces=registry,
+        runtime_publications=RuntimePublicationRegistry(),
     )
     node = PreflightExecutionNode(
         id="input",
         mode="input",
-        artifact_contract=ArtifactContract(output_path="input.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="input-stage",
+            output_path="input.md",
+            log_path="input-stage/logs",
+            result_path="input.md",
+        ),
         input_content_ref="static-files/input.txt",
     )
 
@@ -266,6 +433,7 @@ def test_workflow_refreshes_generated_file_cleanup_node_manifests(
             self.generated_file_workspaces = GeneratedFileRegistry()
             self.worktree_reuse_cache = WorktreeReuseCache()
             self.deferred_workspace_cleanups = DeferredWorkspaceCleanups()
+            self.runtime_publications = RuntimePublicationRegistry()
 
         def validate_execution_contract(self) -> None:
             return None
@@ -294,8 +462,12 @@ def test_workflow_refreshes_generated_file_cleanup_node_manifests(
         ref_cleanup_thread_ids.append(get_ident())
         return 0
 
-    monkeypatch.setattr(workflow_module, "CompiledRuntimeContext", RuntimeContext)
-    monkeypatch.setattr(workflow_module, "execute_node", execute_node)
+    monkeypatch.setattr(
+        workflow_execution_session_module,
+        "CompiledRuntimeContext",
+        RuntimeContext,
+    )
+    monkeypatch.setattr(workflow_scheduling_module, "execute_node", execute_node)
     monkeypatch.setattr(
         workflow_cleanup_module,
         "refresh_node_workspace_descriptor",
@@ -362,6 +534,7 @@ def test_workflow_reports_deferred_workspace_cleanup_errors(
             self.generated_file_workspaces = GeneratedFileRegistry()
             self.worktree_reuse_cache = WorktreeReuseCache()
             self.deferred_workspace_cleanups = DeferredWorkspaceCleanups()
+            self.runtime_publications = RuntimePublicationRegistry()
 
         def validate_execution_contract(self) -> None:
             return None
@@ -376,31 +549,39 @@ def test_workflow_reports_deferred_workspace_cleanup_errors(
         del plan
         return 0
 
-    monkeypatch.setattr(workflow_module, "CompiledRuntimeContext", RuntimeContext)
+    monkeypatch.setattr(
+        workflow_execution_session_module,
+        "CompiledRuntimeContext",
+        RuntimeContext,
+    )
     monkeypatch.setattr(
         workflow_cleanup_module,
         "cleanup_plan_workspace_refs",
         cleanup_refs,
     )
 
-    asyncio.run(
-        workflow_module.execute_workflow(
-            _empty_plan(output),
-            output,
-            invoker=object(),
-            secret_context=SecretContext(),
-            event_sink=events.append,
-            suppress_progress_output=True,
+    with pytest.raises(
+        RuntimeError,
+        match="Workflow postconditions failed.*deferred cleanup failed",
+    ):
+        asyncio.run(
+            workflow_module.execute_workflow(
+                _empty_plan(output),
+                output,
+                invoker=object(),
+                secret_context=SecretContext(),
+                event_sink=events.append,
+                suppress_progress_output=True,
+            )
         )
-    )
 
     assert drained_timeouts == [
-        workflow_module.DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS
+        workflow_postconditions_module.DEFERRED_WORKSPACE_CLEANUP_DRAIN_TIMEOUT_SECONDS
     ]
     cleanup_warnings = [
         event
         for event in events
-        if event.event_type == "runtime_log"
+        if event.event_type == EventType.RUNTIME_LOG
         and event.payload.operation == "workspace_preparation_cancellation_cleanup"
     ]
     assert len(cleanup_warnings) == 1
@@ -409,7 +590,7 @@ def test_workflow_reports_deferred_workspace_cleanup_errors(
         "deferred cleanup failed"
         in cleanup_warnings[0].payload.attributes["first_error"]
     )
-    assert events[-1].event_type == "workflow_finished"
+    assert not any(event.event_type == EventType.WORKFLOW_FINISHED for event in events)
 
 
 async def _run_execute_node_generated_file_cleanup_does_not_block_event_loop(
@@ -435,8 +616,11 @@ async def _run_execute_node_generated_file_cleanup_does_not_block_event_loop(
     def ignore_stage_finalize_logs(*args: object) -> None:
         del args
 
-    def ignore_successful_node_state(*args: object) -> None:
+    def ignore_successful_node_state(*args: object) -> Path:
         del args
+        state_file = tmp_path / "node-state.json"
+        state_file.write_text("{}\n", encoding="utf-8")
+        return state_file
 
     monkeypatch.setattr(
         workflow_node_module,
@@ -453,15 +637,36 @@ async def _run_execute_node_generated_file_cleanup_does_not_block_event_loop(
         "write_successful_node_state",
         ignore_successful_node_state,
     )
+    result_file = tmp_path / "input-result.md"
+    result_file.write_text("input\n", encoding="utf-8")
+
+    def finalize_node(*args: object, **kwargs: object) -> StageFinalizeResult:
+        del args, kwargs
+        return StageFinalizeResult(
+            stage_name="input",
+            result_file=result_file,
+            findings_file=None,
+            included_outputs=(),
+            skipped_empty_outputs=(),
+            warnings=(),
+        )
+
+    monkeypatch.setattr(output, "finalize_node", finalize_node)
 
     node = PreflightExecutionNode(
         id="input",
         mode="input",
-        artifact_contract=ArtifactContract(output_path="input.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="input-stage",
+            output_path="input.md",
+            log_path="input-stage/logs",
+            result_path="input.md",
+        ),
     )
     runtime_context = SimpleNamespace(
         plan=_single_node_plan(output),
         generated_file_workspaces=registry,
+        runtime_publications=RuntimePublicationRegistry(),
     )
     registry.record("input", tmp_path / "output.md", None, blocking_cleanup)
     task = asyncio.create_task(
@@ -492,6 +697,7 @@ async def _run_execute_node_generated_file_cleanup_does_not_block_event_loop(
 
 def _empty_plan(output: OutputManager) -> PreflightExecutionPlan:
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id=output.run_id,
         run_key_name=output.run_key_name,
         project_root=output.base_dir.as_posix(),

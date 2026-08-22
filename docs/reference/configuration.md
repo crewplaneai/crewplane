@@ -11,6 +11,7 @@ For practical setup, start with [Provider setup](../getting-started/provider-set
 | One real provider | [Minimal Config](#minimal-config) |
 | Full field list | [Top Level](#top-level) and [`agents.<name>`](#agentsname) |
 | Adapter options | [Built-In Integration Options](#built-in-integration-options) |
+| File-template access | [`settings.file_access`](#settingsfile_access) |
 | Workspace isolation | [`settings.workspace`](#settingsworkspace) |
 
 ## Minimal Config
@@ -152,9 +153,20 @@ Pricing values are per million tokens.
 | `settings.max_audit_rounds` | Maximum allowed node `audit_rounds`. Defaults to `5`. |
 | `settings.max_concurrent_nodes` | Optional cap on concurrent ready nodes. |
 | `settings.max_parallel_invocations` | Optional cap on provider invocations inside a parallel node. |
+| `settings.file_access` | Core file-template authorization policy. |
 | `settings.token_budget` | Global token budget warning/failure thresholds. |
 | `settings.workspace` | Experimental workspace isolation settings. |
 | `settings.integrations` | Adapter implementation and option settings. |
+
+## `settings.file_access`
+
+| Field | Description |
+| --- | --- |
+| `allowed_template_paths` | External paths authorized for `{{file:...}}` templates. Defaults to `[]`. Relative paths resolve from the current working directory; symlinks are resolved before containment checks. |
+
+This is a core file-access policy. It applies independently of the selected
+artifact adapter and participates in workflow signatures. The built-in
+`filesystem` adapter rejects `allowed_template_paths` as an artifact option.
 
 ## `settings.token_budget`
 
@@ -264,7 +276,6 @@ options.
 | Option | Description |
 | --- | --- |
 | `log_cli_output` | Capture provider CLI output logs. Defaults to `true`. |
-| `allowed_template_paths` | Absolute external paths allowed for `{{file:...}}` templates. Defaults to `[]`. |
 
 ### Dotted-Path Adapters
 
@@ -272,4 +283,5 @@ External adapters can be selected with a dotted path. Their `options` payload
 must be finite JSON-compatible data and is validated by the adapter. The
 canonical result must assign exactly one `execution`, `artifact`, `observer`,
 or `validation` signature scope to every canonical option; missing scopes and
-scopes for unknown options are rejected during adapter wiring.
+scopes for unknown options are rejected during adapter wiring. Explicit
+sensitive option locations must be RFC 6901 JSON Pointers beginning with `/`.

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -20,6 +21,7 @@ from crewplane.runtime.execution.consensus import (
     extract_verdict,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     OptionalOutputInvoker,
@@ -71,7 +73,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
 
@@ -132,7 +134,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 invoker=MockAgentInvoker(outputs=["executor output", malformed_review]),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
 
@@ -216,7 +218,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             state_payload = json.loads(
@@ -240,7 +242,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(len(warning_events), 1)
@@ -280,7 +282,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 invoker=MockAgentInvoker(outputs=["executor output", "  "]),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             state_payload = json.loads(
@@ -339,7 +341,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -416,7 +418,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             normalized_output = (node_dir / "review_reviewer_0_round1.md").read_text(
@@ -437,7 +439,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             warning_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_output_normalization"
             ]
             self.assertEqual(warning_events, [])
@@ -490,7 +492,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
             self.assertEqual(len(invoker.calls), 4)
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -502,7 +504,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             exhaustion_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_consensus_exhausted"
             ]
             self.assertEqual(len(exhaustion_events), 1)
@@ -603,7 +605,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -619,7 +621,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -683,7 +685,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertFalse((node_dir / "exec_executor_0_round2.md").exists())
@@ -694,7 +696,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -759,7 +761,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
                 (ProviderRole.REVIEWER, 2),
                 [(call["role"], call["round_num"]) for call in invoker.calls],
             )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -770,7 +772,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             no_progress_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_no_progress"
             ]
             self.assertEqual(len(no_progress_events), 1)
@@ -831,7 +833,7 @@ class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(invalid_events, [])

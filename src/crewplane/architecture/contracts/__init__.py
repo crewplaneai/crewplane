@@ -1,6 +1,17 @@
 """Stable data contracts shared across architecture ports and runtime wiring."""
 
+from .artifacts import (
+    ArtifactContract,
+    NodeArtifactRequest,
+    VerifiedNodeArtifact,
+    artifact_contract_for_node,
+    build_findings_filename,
+    build_result_filename,
+    build_stage_directory_name,
+    safe_artifact_name,
+)
 from .execution_event import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
     EventPayload,
     EventSink,
     EventType,
@@ -20,6 +31,9 @@ from .execution_event import (
     WorkspaceEventPayload,
     WorkspaceEventType,
     emit_event,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
     validate_payload_type,
 )
 from .integration import (
@@ -27,6 +41,7 @@ from .integration import (
     SignatureScope,
     redacted_integration_option_value,
     sensitive_integration_option_keys,
+    sensitive_integration_option_pointers,
 )
 from .integration_options import (
     CliInvokerOptions,
@@ -36,6 +51,11 @@ from .integration_options import (
     MockOutputMode,
     NullUiOptions,
     TmuxUiOptions,
+)
+from .integration_secrets import (
+    json_pointer,
+    parse_json_pointer,
+    transform_sensitive_integration_options,
 )
 from .invocation import (
     SUPPORTED_PROVIDER_KIND_VALUE_SET,
@@ -85,7 +105,6 @@ from .invocation import (
     StructuredOutputMode,
     UsageDecoder,
     UsageDecodeResult,
-    WorkspaceCompatibleInvokerAdapter,
     normalize_log_presentation_profile,
     validate_log_presentation_descriptor,
     validate_log_presentation_format,
@@ -111,6 +130,9 @@ from .observer import (
 __all__ = [
     "AgentInvoker",
     "AggregateCostConfidence",
+    "ArtifactContract",
+    "NodeArtifactRequest",
+    "VerifiedNodeArtifact",
     "CanonicalIntegrationConfig",
     "ChildProcessEnvironment",
     "CliInvokerOptions",
@@ -181,6 +203,7 @@ __all__ = [
     "QuotaParserProfile",
     "RuntimeLogValue",
     "RuntimeLogEventPayload",
+    "TERMINAL_WORKFLOW_EVENT_TYPES",
     "RunContext",
     "RunResult",
     "RuntimeObserver",
@@ -200,11 +223,22 @@ __all__ = [
     "WorkflowTopology",
     "WorkspaceEventPayload",
     "WorkspaceEventType",
-    "WorkspaceCompatibleInvokerAdapter",
+    "artifact_contract_for_node",
+    "safe_artifact_name",
+    "build_findings_filename",
+    "build_result_filename",
+    "build_stage_directory_name",
     "emit_event",
+    "is_invocation_event_type",
+    "is_node_event_type",
+    "is_workflow_event_type",
     "normalize_log_presentation_profile",
     "redacted_integration_option_value",
     "sensitive_integration_option_keys",
+    "sensitive_integration_option_pointers",
+    "json_pointer",
+    "parse_json_pointer",
+    "transform_sensitive_integration_options",
     "validate_payload_type",
     "validate_log_presentation_descriptor",
     "validate_log_presentation_format",

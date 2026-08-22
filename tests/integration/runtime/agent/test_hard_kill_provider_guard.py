@@ -203,6 +203,7 @@ from crewplane.runtime.agent.invocation.command import run_command_once
 from crewplane.runtime.execution.activity.events import InvocationMetadata
 from crewplane.runtime.execution.provider_call.display import ProviderCallDisplay
 from crewplane.runtime.execution.provider_call.events import build_invocation_context
+from crewplane.runtime.execution.publication_registry import RuntimePublicationRegistry
 
 state_dir = Path(sys.argv[1])
 workflow_name = sys.argv[2]
@@ -232,6 +233,7 @@ context, _ = build_invocation_context(
     ),
     display=ProviderCallDisplay(telemetry=None),
     output=output,
+    runtime_publications=RuntimePublicationRegistry(),
 )
 asyncio.run(
     run_command_once(
@@ -262,6 +264,7 @@ from crewplane.runtime.agent.invocation.command import run_command_once
 from crewplane.runtime.execution.activity.events import InvocationMetadata
 from crewplane.runtime.execution.provider_call.display import ProviderCallDisplay
 from crewplane.runtime.execution.provider_call.events import build_invocation_context
+from crewplane.runtime.execution.publication_registry import RuntimePublicationRegistry
 
 state_dir = Path(sys.argv[1])
 workflow_name = sys.argv[2]
@@ -292,6 +295,7 @@ context, _ = build_invocation_context(
     ),
     display=ProviderCallDisplay(telemetry=None),
     output=output,
+    runtime_publications=RuntimePublicationRegistry(),
 )
 provider_script = r'''\
 import subprocess

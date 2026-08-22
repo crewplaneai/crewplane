@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
@@ -22,6 +23,7 @@ from crewplane.runtime.workspace.invocation import (
     invocation_slug,
     workspace_state_path,
 )
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
 
@@ -34,8 +36,23 @@ class ArtifactStore:
         path = self.stages_dir / stage_name
         return path if path.is_dir() else None
 
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        stage_path = request.contract.stage_path
+        if stage_path is None:
+            return None
+        path = self.stages_dir / stage_path
+        return path if path.is_dir() else None
+
     def create_stage_dir(self, stage_name: str) -> Path:
         path = self.stages_dir / stage_name
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def create_node_dir(self, request: NodeArtifactRequest) -> Path:
+        stage_path = request.contract.stage_path
+        if stage_path is None:
+            raise ValueError("missing stage path")
+        path = self.stages_dir / stage_path
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -97,9 +114,13 @@ def test_executor_locator_switches_to_candidate_only_when_requested(
     repo = create_git_repo(tmp_path)
     output = ArtifactStore(tmp_path / "stages")
     plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=True)
-    upstream_state = output.create_stage_dir("implement") / "workspace-state.json"
+    upstream_state = (
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
     current_state = (
-        output.create_stage_dir("verify") / "workspace-state-verify-alpha-round1.json"
+        output.create_node_dir(node_artifact_request("verify"))
+        / "workspace-state-verify-alpha-round1.json"
     )
     _write_lineage_state(upstream_state, "1" * 40)
     _write_lineage_state(current_state, "2" * 40)
@@ -118,7 +139,6 @@ def test_executor_locator_switches_to_candidate_only_when_requested(
         project_root_relative_to_git_top=".",
         git_top_relative_path="generated.md",
         workspace_relative_path="generated.md",
-        runtime_dynamic_after_candidate=True,
     )
 
     assert (
@@ -157,8 +177,8 @@ def _node(
             materialization="worktree_checkout",
         ),
         artifact_contract=ArtifactContract(
-            stage_path="implement",
-            output_path="implement/output.md",
+            stage_path=node_id,
+            output_path=f"{node_id}/output.md",
         ),
     )
 

@@ -23,6 +23,7 @@ def _plan(
     workspace_file_locators: list[WorkspaceFileLocator] | None = None,
 ) -> PreflightExecutionPlan:
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id="run",
         run_key_name="workflow-run",
         project_root=context_root.as_posix(),
@@ -66,7 +67,12 @@ def _input_node(
     return PreflightExecutionNode(
         id="input.node",
         mode="input",
-        artifact_contract=ArtifactContract(output_path="input.node-result.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="input.node",
+            output_path="input.node-result.md",
+            log_path="input.node/logs",
+            result_path="input.node-result.md",
+        ),
         input_content_ref=content_ref,
         input_workspace_file_locator_id=workspace_locator_id,
     )
@@ -145,12 +151,58 @@ def test_input_stage_reads_compiled_workspace_file_locator(tmp_path: Path) -> No
     assert not (output.stages_dir / "input.node" / "workspace-state.json").exists()
 
 
+def test_input_stage_rejects_symlinked_workspace_content(tmp_path: Path) -> None:
+    context_root = tmp_path / "stages" / "workflow-run"
+    payload = b"outside workspace input"
+    locator = _workspace_file_locator(payload)
+    workspace_file = context_root / "preflight" / str(locator.content_ref)
+    workspace_file.parent.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(payload)
+    try:
+        workspace_file.symlink_to(outside)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+    output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
+    node = _input_node(workspace_locator_id=locator.locator_id)
+
+    with pytest.raises(RuntimeError, match="missing or unsafe"):
+        execute_input_stage(
+            node,
+            output,
+            runtime_context=_runtime_context(context_root, node, [locator]),
+        )
+
+
 def test_input_stage_rejects_path_traversal_content_ref(tmp_path: Path) -> None:
     context_root = tmp_path / "stages" / "workflow-run"
     output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
     node = _input_node(content_ref="../secret.txt")
 
     with pytest.raises(ValueError, match="Invalid input content reference"):
+        execute_input_stage(
+            node,
+            output,
+            runtime_context=_runtime_context(context_root, node),
+        )
+
+
+def test_input_stage_rejects_symlinked_preflight_content(tmp_path: Path) -> None:
+    context_root = tmp_path / "stages" / "workflow-run"
+    payload = b"outside input"
+    content_ref = _static_content_ref(payload)
+    static_file = context_root / "preflight" / content_ref
+    static_file.parent.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(payload)
+    try:
+        static_file.symlink_to(outside)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+    output = OutputManager("workflow", base_dir=tmp_path / "artifacts")
+    node = _input_node(content_ref)
+
+    with pytest.raises(ValueError, match="missing or unsafe"):
         execute_input_stage(
             node,
             output,

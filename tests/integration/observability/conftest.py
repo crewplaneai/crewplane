@@ -12,11 +12,12 @@ import pytest
 import yaml
 from rich.console import Console
 
-from crewplane.architecture.contracts import ObserverCapabilities
+from crewplane.architecture.contracts import EventType, ObserverCapabilities
 from crewplane.bootstrap.container import build_runtime_components
 from crewplane.core.config import Config, load_config
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.observability import PersistentRunLogger, render_dag_summary
+from crewplane.observability.events import workflow_event
 from crewplane.observability.runtime import ObservabilityHub
 from crewplane.observability.types import (
     DashboardSnapshot,
@@ -32,7 +33,7 @@ CONFIG_TEMPLATE_PATH = Path(__file__).with_name("fixtures") / "config.yml"
 
 @dataclass(frozen=True)
 class RecordedSnapshot:
-    event_type: str | None
+    event_type: EventType | None
     node_id: str | None
     snapshot: DashboardSnapshot
 
@@ -69,7 +70,7 @@ class SnapshotRecorder:
 class VisualizationCase:
     case_id: str
     build_workflow: Callable[[Path], WorkflowPlan]
-    snapshot_event_type: str
+    snapshot_event_type: EventType
     snapshot_node_id: str | None = None
     selected_node_id: str | None = None
     expected_fragments: tuple[str, ...] = ()
@@ -147,7 +148,7 @@ def _load_case_config(
 
 def _select_snapshot(
     snapshots: tuple[RecordedSnapshot, ...],
-    event_type: str,
+    event_type: EventType,
     node_id: str | None,
 ) -> DashboardSnapshot:
     for recorded_snapshot in reversed(snapshots):
@@ -188,6 +189,9 @@ def run_visualization_case() -> Callable[
         case_kwargs = {
             key: value for key, value in case_data.items() if key in case_field_names
         }
+        case_kwargs["snapshot_event_type"] = EventType(
+            case_kwargs["snapshot_event_type"]
+        )
         case = VisualizationCase(**case_kwargs)
         workflow = case.build_workflow(tmp_path)
         config = _load_case_config(tmp_path, workflow, case.mock_options)
@@ -220,17 +224,37 @@ def run_visualization_case() -> Callable[
                     components=components,
                     project_root=tmp_path,
                 )
-                asyncio.run(
-                    execute_workflow(
-                        plan=plan,
-                        output=components.artifact_store,
-                        invoker=components.base_invoker,
-                        secret_context=secret_context,
-                        event_sink=hub.emit,
+                try:
+                    asyncio.run(
+                        execute_workflow(
+                            plan=plan,
+                            output=components.artifact_store,
+                            invoker=components.base_invoker,
+                            secret_context=secret_context,
+                            event_sink=hub.emit,
+                            run_id=components.artifact_store.run_id,
+                            suppress_progress_output=True,
+                        )
+                    )
+                except Exception as exc:
+                    hub.emit(
+                        workflow_event(
+                            EventType.WORKFLOW_FAILED,
+                            workflow_name=plan.workflow_name,
+                            run_id=components.artifact_store.run_id,
+                            error=str(exc),
+                        )
+                    )
+                    hub.set_terminal_result(RunResult(status="failed"))
+                    raise
+                hub.emit(
+                    workflow_event(
+                        EventType.WORKFLOW_FINISHED,
+                        workflow_name=plan.workflow_name,
                         run_id=components.artifact_store.run_id,
-                        suppress_progress_output=True,
                     )
                 )
+                hub.set_terminal_result(RunResult(status="succeeded"))
 
         error: Exception | None = None
         if case.expect_error is None:

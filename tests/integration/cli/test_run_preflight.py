@@ -43,7 +43,7 @@ def _config() -> Config:
                 ),
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
-                    options={"allowed_template_paths": [], "log_cli_output": True},
+                    options={"log_cli_output": True},
                 ),
                 ui=IntegrationSpec(implementation="none", options={}),
             )
@@ -387,7 +387,7 @@ def test_reasoning_control_checks_relative_claude_settings_file(
                 invoker=IntegrationSpec(implementation="cli", options={}),
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
-                    options={"allowed_template_paths": [], "log_cli_output": True},
+                    options={"log_cli_output": True},
                 ),
                 ui=IntegrationSpec(implementation="none", options={}),
             )

@@ -13,7 +13,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import (
     Config,
-    Settings,
+    FileAccessSettings,
     TokenPricing,
 )
 from crewplane.core.token_budget import TokenBudgetSettings
@@ -55,6 +55,12 @@ class RuntimeExecutionSnapshot(BaseModel):
     max_parallel_invocations: int | None = None
     sequential_consensus_on_exhaustion: SequentialConsensusPolicy
     token_budget: TokenBudgetSettings
+
+
+class RuntimeFileAccessSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    allowed_template_paths: list[str] = Field(default_factory=list)
 
 
 class RuntimeWorkspaceSettingsSnapshot(BaseModel):
@@ -231,6 +237,9 @@ class RuntimeConfigSnapshot(BaseModel):
 
     schema_version: str = SCHEMA_VERSION
     execution: RuntimeExecutionSnapshot
+    file_access: RuntimeFileAccessSnapshot = Field(
+        default_factory=RuntimeFileAccessSnapshot
+    )
     agents: dict[str, RuntimeAgentConfigSnapshot] = Field(default_factory=dict)
     invoker: CanonicalIntegrationConfig
     artifacts: CanonicalIntegrationConfig
@@ -245,17 +254,23 @@ class RuntimeConfigSnapshot(BaseModel):
     sensitive_config_paths: list[str] = Field(default_factory=list)
     config_fingerprints: list[dict[str, str]] = Field(default_factory=list)
     effective_runtime_config_signature: str
-    raw_agents: JsonObject = Field(default_factory=dict, exclude=True)
-    raw_workspace: JsonObject = Field(default_factory=dict, exclude=True)
+    raw_agents: JsonObject = Field(default_factory=dict, exclude=True, repr=False)
+    raw_workspace: JsonObject = Field(default_factory=dict, exclude=True, repr=False)
     raw_invoker: CanonicalIntegrationConfig | None = Field(
         default=None,
         exclude=True,
+        repr=False,
     )
     raw_artifacts: CanonicalIntegrationConfig | None = Field(
         default=None,
         exclude=True,
+        repr=False,
     )
-    raw_ui: CanonicalIntegrationConfig | None = Field(default=None, exclude=True)
+    raw_ui: CanonicalIntegrationConfig | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
 
     @classmethod
     def build(
@@ -265,8 +280,12 @@ class RuntimeConfigSnapshot(BaseModel):
         artifacts: CanonicalIntegrationConfig,
         ui: CanonicalIntegrationConfig,
         options: RuntimeConfigSnapshotOptions,
+        file_access: FileAccessSettings | None = None,
     ) -> RuntimeConfigSnapshot:
-        settings = config.settings if config.settings is not None else Settings()
+        settings = config.settings
+        resolved_file_access = (
+            settings.file_access if file_access is None else file_access
+        )
         execution = RuntimeExecutionSnapshot(
             log_level=settings.log_level,
             max_audit_rounds=settings.max_audit_rounds,
@@ -329,6 +348,7 @@ class RuntimeConfigSnapshot(BaseModel):
             "agents": runtime_agent_snapshot_payloads(agent_snapshots),
             "artifacts": redacted_artifacts.scoped_payload({"artifact", "execution"}),
             "execution": execution_effective_payload(execution),
+            "file_access": resolved_file_access.model_dump(mode="json"),
             "invoker": redacted_invoker.scoped_payload({"execution", "artifact"}),
             "schema_version": config.version,
             "workspace": workspace_signature_payload(workspace),
@@ -336,6 +356,9 @@ class RuntimeConfigSnapshot(BaseModel):
         return cls(
             schema_version=config.version,
             execution=execution,
+            file_access=RuntimeFileAccessSnapshot.model_validate(
+                resolved_file_access.model_dump(mode="python")
+            ),
             agents=agent_snapshots,
             invoker=redacted_invoker,
             artifacts=redacted_artifacts,
@@ -448,6 +471,7 @@ class RuntimeConfigSnapshot(BaseModel):
             "agents": runtime_agent_effective_payloads(agents),
             "artifacts": signature_artifacts.scoped_payload({"artifact", "execution"}),
             "execution": execution_effective_payload(self.execution),
+            "file_access": self.file_access.model_dump(mode="json"),
             "invoker": signature_invoker.scoped_payload({"execution", "artifact"}),
             "schema_version": self.schema_version,
             "workspace": workspace_signature_payload(workspace or self.workspace),
@@ -511,6 +535,7 @@ def runtime_config_signature(
         ),
         "artifacts": snapshot.artifacts.scoped_payload({"artifact", "execution"}),
         "execution": execution_signature_payload(snapshot.execution, nodes),
+        "file_access": snapshot.file_access.model_dump(mode="json"),
         "invoker": snapshot.invoker.scoped_payload({"execution", "artifact"}),
         "schema_version": snapshot.schema_version,
         "workspace": workspace_payload,

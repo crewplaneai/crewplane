@@ -37,7 +37,9 @@ ALLOWED_SEQUENTIAL_CONSENSUS_POLICY_SET = frozenset(
     ALLOWED_SEQUENTIAL_CONSENSUS_POLICIES
 )
 ALLOWED_NODE_ARTIFACT_NAME_SET = frozenset(ALLOWED_NODE_ARTIFACT_NAMES)
-RESERVED_RUN_ROOT_NAMES = frozenset({"logs", "manifests", "workspace-exports"})
+RESERVED_RUN_ROOT_NAMES = frozenset(
+    {"logs", "manifests", "preflight", "workspace-exports"}
+)
 
 
 def validate_exact_keyword(

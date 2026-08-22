@@ -47,7 +47,7 @@ def _config() -> Config:
                 ),
                 artifacts=IntegrationSpec(
                     implementation="filesystem",
-                    options={"allowed_template_paths": [], "log_cli_output": True},
+                    options={"log_cli_output": True},
                 ),
                 ui=IntegrationSpec(implementation="none", options={}),
             )

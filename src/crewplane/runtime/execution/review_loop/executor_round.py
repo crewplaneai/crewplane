@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from crewplane.architecture.safe_files import (
+    contained_directory,
+    contained_regular_file,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details
-from ..provider_call import ProviderOutputPolicy
+from ..provider_call import ProviderOutputPolicy, read_bound_invocation_output
 from ..workspace_files import WorkspaceCandidateSourceContext
 from .drift import run_provider_call_with_drift_guard
 from .prompts import (
@@ -93,8 +99,13 @@ async def run_executor_round(
                 rendered_workspace_files=rendered_workspace_files,
             )
         )
-        content = (
-            output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
+        published_signatures, _version = (
+            request.runtime_context.runtime_publications.snapshot()
+        )
+        content, output_signature = _read_executor_output(
+            output_file,
+            request.node_dir,
+            published_signatures.get(output_file),
         )
         executor_outputs.append(
             ExecutorRoundArtifact(
@@ -102,6 +113,9 @@ async def run_executor_round(
                 task_id=task_id,
                 content=content,
                 output_file=output_file,
+                audit_round_num=request.audit_round_num,
+                round_num=request.round_num,
+                output_signature=output_signature,
             )
         )
     return ExecutorRoundRunResult(
@@ -116,3 +130,55 @@ def executor_output_policy(
     if request.round_num > 1:
         return ProviderOutputPolicy.ALLOW_MISSING_OUTPUT
     return ProviderOutputPolicy.REQUIRE_OUTPUT
+
+
+def _read_executor_output(
+    output_file: Path,
+    node_dir: Path,
+    expected_signature: tuple[int, str] | None,
+) -> tuple[str, tuple[int, str] | None]:
+    try:
+        relative_path = output_file.relative_to(node_dir).as_posix()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Executor output is outside its node stage: {output_file.as_posix()}"
+        ) from exc
+    _safe_output_parent(node_dir, relative_path, output_file)
+    safe_output = contained_regular_file(node_dir, relative_path)
+    if safe_output is None:
+        try:
+            output_file.lstat()
+        except FileNotFoundError:
+            return "", None
+        raise RuntimeError(
+            f"Executor output is missing or unsafe: {output_file.as_posix()}"
+        )
+    if expected_signature is None:
+        raise RuntimeError(
+            "Executor output does not have a bound runtime publication: "
+            f"{output_file.as_posix()}"
+        )
+    return (
+        read_bound_invocation_output(safe_output, expected_signature),
+        expected_signature,
+    )
+
+
+def _safe_output_parent(
+    node_dir: Path,
+    relative_path: str,
+    output_file: Path,
+) -> None:
+    parent_relative_path = Path(relative_path).parent.as_posix()
+    if parent_relative_path == ".":
+        parent_relative_path = ""
+    try:
+        safe_parent = contained_directory(node_dir, parent_relative_path)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Executor output parent is unsafe: {output_file.as_posix()}"
+        ) from exc
+    if safe_parent is None:
+        raise RuntimeError(
+            f"Executor output parent is missing or unsafe: {output_file.as_posix()}"
+        )

@@ -7,7 +7,7 @@ import typer
 
 import crewplane.cli.app as cli
 from crewplane.architecture.contracts import ObserverCapabilities
-from crewplane.observability.types import RunContext, RunResult
+from crewplane.observability import ObservabilityHub
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import (
@@ -169,19 +169,8 @@ class CliLiveDashboardTests(unittest.TestCase):
                     self.auto_close_session = auto_close_session
                     captured_live_config["log_tail_lines"] = log_tail_lines
 
-            class StubHub:
-                def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
-                    self.active_observer_count = 2
-                    self.stop_requested = False
-
-                def __enter__(self):  # type: ignore[no-untyped-def]
-                    return self
-
-                def __exit__(self, exc_type, exc, tb):  # type: ignore[no-untyped-def]
-                    return None
-
-                def emit(self, event):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
-                    return None
+            class StubHub(ObservabilityHub):
+                pass
 
             cli.Console = ConsoleFactory(
                 file=stream,
@@ -269,49 +258,18 @@ class CliLiveDashboardTests(unittest.TestCase):
             original_hub = cli.ObservabilityHub
             hub_instances = []
 
-            class StopRequestedHub:
-                def __init__(
-                    self,
-                    workflow_topology,
-                    run_id: str,
-                    observers,
-                    refresh_per_second: int = 4,
-                    warning_sink=None,
-                ) -> None:
-                    self._context = RunContext(
-                        workflow_topology=workflow_topology,
-                        run_id=run_id,
-                        refresh_per_second=refresh_per_second,
-                    )
-                    self._observers = list(observers)
-                    self._terminal_result: RunResult | None = None
-                    self.stop_requested = False
-                    self.active_observer_count = 0
-                    self.warning_sink = warning_sink
+            class StopRequestedHub(ObservabilityHub):
+                def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+                    super().__init__(*args, **kwargs)
+                    self._test_stop_requested = False
                     hub_instances.append(self)
 
-                def __enter__(self):
-                    for observer in self._observers:
-                        observer.start(self._context)
-                    self.active_observer_count = len(self._observers)
-                    return self
-
-                def __exit__(self, exc_type, _exc, _traceback) -> None:
-                    result = self._terminal_result or RunResult(
-                        status="failed" if exc_type is not None else "succeeded"
-                    )
-                    for observer in reversed(self._observers):
-                        observer.stop(result)
-
-                def emit(self, event) -> None:
-                    del event
-                    return None
-
-                def set_terminal_result(self, result: RunResult) -> None:
-                    self._terminal_result = result
+                @property
+                def stop_requested(self) -> bool:
+                    return self._test_stop_requested
 
                 def request_stop(self) -> None:
-                    self.stop_requested = True
+                    self._test_stop_requested = True
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 hub_instances[-1].request_stop()
@@ -408,28 +366,24 @@ class CliLiveDashboardTests(unittest.TestCase):
                     captured_live_config["quiet_after_seconds"] = quiet_after_seconds
                     captured_live_config["log_tail_lines"] = log_tail_lines
 
-            class StubHub:
+            class StubHub(ObservabilityHub):
                 def __init__(
                     self,
-                    workflow_topology,  # noqa: ARG002 - Required by test double or callback signature.
+                    workflow_topology,
                     run_id,  # noqa: ARG002 - Required by test double or callback signature.
                     observers,
                     refresh_per_second,
-                    warning_sink,  # noqa: ARG002 - Required by test double or callback signature.
+                    warning_sink,
                 ):  # type: ignore[no-untyped-def]
-                    self.active_observer_count = 2
-                    self.stop_requested = False
                     captured_live_config["observer_count"] = len(observers)
                     captured_live_config["refresh_per_second"] = refresh_per_second
-
-                def __enter__(self):  # type: ignore[no-untyped-def]
-                    return self
-
-                def __exit__(self, exc_type, exc, tb):  # type: ignore[no-untyped-def]
-                    return None
-
-                def emit(self, event):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
-                    return None
+                    super().__init__(
+                        workflow_topology=workflow_topology,
+                        run_id=run_id,
+                        observers=observers,
+                        refresh_per_second=refresh_per_second,
+                        warning_sink=warning_sink,
+                    )
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001 - Required by test double or callback signature.
                 return None
@@ -582,19 +536,10 @@ class CliLiveDashboardTests(unittest.TestCase):
                 ):
                     pass
 
-            class StubHub:
-                def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
-                    self.active_observer_count = 0
-                    self.stop_requested = False
-
-                def __enter__(self):  # type: ignore[no-untyped-def]
-                    return self
-
-                def __exit__(self, exc_type, exc, tb):  # type: ignore[no-untyped-def]
-                    return None
-
-                def emit(self, event):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by test double or callback signature.
-                    return None
+            class StubHub(ObservabilityHub):
+                def observer_is_active(self, observer: object) -> bool:
+                    capabilities = getattr(observer, "capabilities", None)
+                    return bool(getattr(capabilities, "required", False))
 
             cli.Console = ConsoleFactory(
                 file=stream,

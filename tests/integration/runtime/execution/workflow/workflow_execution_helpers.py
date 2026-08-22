@@ -9,6 +9,7 @@ from rich.console import Console
 from crewplane.architecture.contracts import (
     AgentInvoker,
     LogPresentationDescriptor,
+    NodeArtifactRequest,
     ObserverCapabilities,
 )
 from crewplane.artifacts import OutputManager, safe_artifact_name
@@ -438,9 +439,9 @@ class FailingLogOutputManager(OutputManager):
         self.on_failure = on_failure
         self.log_setup_providers: list[str] = []
 
-    def get_log_file(
+    def get_node_log_file(
         self,
-        stage_name: str,
+        request: NodeArtifactRequest,
         provider: str,
         task_id: str,
         audit_round_num: int | None = None,
@@ -451,8 +452,8 @@ class FailingLogOutputManager(OutputManager):
             if self.on_failure is not None:
                 self.on_failure()
             raise RuntimeError("log setup failed")
-        return super().get_log_file(
-            stage_name,
+        return super().get_node_log_file(
+            request,
             provider,
             task_id,
             audit_round_num,

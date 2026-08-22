@@ -10,8 +10,11 @@ import pytest
 import crewplane.core.preflight.references as preflight_references
 import crewplane.core.workflow.models as workflow_models
 import crewplane.core.workflow.validation as workflow_validation
+from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
+from crewplane.core.preflight.dependency_edges import dependency_signature
 from crewplane.core.preflight.models import (
     ArtifactContract,
+    DependencyEdge,
     ExecutionPolicy,
     Fragment,
     PreflightExecutionNode,
@@ -51,15 +54,35 @@ class _ArtifactStore:
         self.stages_dir.mkdir(parents=True)
         self.results_dir.mkdir(parents=True)
 
-    def get_stage_output_path(self, stage_name: str) -> Path:
-        return self.results_dir / f"{stage_name}-result.md"
-
-    def get_stage_findings_path(self, stage_name: str) -> Path:
-        return self.results_dir / f"{stage_name}-findings.md"
-
     def get_stage_dir(self, stage_name: str) -> Path | None:
         path = self.stages_dir / stage_name
         return path if path.is_dir() else None
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        stage_path = request.contract.stage_path
+        assert stage_path is not None
+        path = self.stages_dir / stage_path
+        return path if path.is_dir() else None
+
+    def read_verified_node_artifact(
+        self,
+        request: NodeArtifactRequest,
+        kind: str,
+    ) -> VerifiedNodeArtifact:
+        relative_path = (
+            request.contract.output_path
+            if kind == "output"
+            else request.contract.findings_path
+        )
+        assert relative_path is not None
+        path = self.results_dir / relative_path
+        payload = path.read_bytes()
+        return VerifiedNodeArtifact(
+            path=path,
+            payload=payload,
+            size_bytes=len(payload),
+            sha256=hashlib.sha256(payload).hexdigest(),
+        )
 
 
 def _static_content_ref(payload: bytes) -> str:
@@ -108,15 +131,26 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
     upstream = PreflightExecutionNode(
         id="input",
         mode="input",
-        artifact_contract=ArtifactContract(output_path="compiled-input.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="input-stage",
+            output_path="compiled-input.md",
+            log_path="input-stage/logs",
+            result_path="compiled-input.md",
+        ),
         execution_policy=ExecutionPolicy(),
         input_content_ref="static-files/input.txt",
     )
     node = PreflightExecutionNode(
         id="build",
         mode="sequential",
+        dependencies=["input"],
         render_plan_id="build",
-        artifact_contract=ArtifactContract(output_path="build-result.md"),
+        artifact_contract=ArtifactContract(
+            stage_path="build-stage",
+            output_path="build-result.md",
+            log_path="build-stage/logs",
+            result_path="build-result.md",
+        ),
         execution_policy=ExecutionPolicy(),
         provider_records=[
             ProviderRecord(
@@ -131,6 +165,7 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
         ],
     )
     return PreflightExecutionPlan(
+        plan_schema_version=SCHEMA_VERSION,
         run_id="run",
         run_key_name="demo-run",
         project_root=root.as_posix(),
@@ -144,6 +179,7 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
         render_plans=[
             RenderPlan(
                 render_plan_id="build",
+                node_id="build",
                 streams=[
                     RenderStream(
                         target_role=ProviderRole.EXECUTOR,
@@ -195,7 +231,20 @@ def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
         ],
         static_resources=[],
         token_catalog=[],
-        dependency_graph=[],
+        dependency_graph=[
+            DependencyEdge(
+                source_node="input",
+                target_node="build",
+                artifact_name="output",
+                dependency_signature=dependency_signature(
+                    "input",
+                    "build",
+                    "output",
+                ),
+                target_locator="input.output",
+                artifact_key="output",
+            )
+        ],
         runtime_config_snapshot={"schema_version": SCHEMA_VERSION},
         effective_runtime_config_signature="1" * 64,
         fingerprint_metadata={"payload_version": "1"},
@@ -284,6 +333,34 @@ def test_assemble_prompt_reads_static_bundle_not_original_source_path(
     assert prompt == "A bundled B node C secret"
 
 
+def test_assemble_prompt_rejects_symlinked_static_bundle(
+    tmp_path: Path,
+) -> None:
+    context_root = tmp_path / "execution-stages" / "demo-run"
+    content_ref = _static_content_ref(b"outside")
+    static_path = context_root / "preflight" / content_ref
+    static_path.parent.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    try:
+        static_path.symlink_to(outside)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+    store = _ArtifactStore(tmp_path)
+    (store.results_dir / "compiled-input.md").write_text("node", encoding="utf-8")
+    secrets = SecretContext()
+    secrets.put("env:API_TOKEN", "secret")
+
+    with pytest.raises(ValueError, match="missing or unsafe"):
+        assemble_prompt(
+            _plan(context_root, content_ref),
+            _plan(context_root, content_ref).nodes[1],
+            ProviderRole.EXECUTOR,
+            store,
+            secrets,
+        )
+
+
 def test_assemble_prompt_reads_project_initial_workspace_file_locator(
     tmp_path: Path,
 ) -> None:
@@ -322,6 +399,7 @@ def test_assemble_prompt_reads_project_initial_workspace_file_locator(
             "render_plans": [
                 RenderPlan(
                     render_plan_id="build",
+                    node_id="build",
                     streams=[
                         RenderStream(
                             target_role=ProviderRole.EXECUTOR,
@@ -420,6 +498,7 @@ def test_assemble_prompt_rejects_runtime_dynamic_workspace_file_locator(
             "render_plans": [
                 RenderPlan(
                     render_plan_id="build",
+                    node_id="build",
                     streams=[
                         RenderStream(
                             target_role=ProviderRole.EXECUTOR,
@@ -464,7 +543,7 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
 
     context_root = tmp_path / "execution-stages" / "demo-run"
     store = _ArtifactStore(tmp_path)
-    upstream_stage = store.stages_dir / "input"
+    upstream_stage = store.stages_dir / "input-stage"
     _write_lineage_state_with_bundle(
         repo=repo,
         stage_dir=upstream_stage,
@@ -524,6 +603,7 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
             "render_plans": [
                 RenderPlan(
                     render_plan_id="build",
+                    node_id="build",
                     streams=[
                         RenderStream(
                             target_role=ProviderRole.EXECUTOR,
@@ -604,7 +684,7 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
 
     context_root = tmp_path / "execution-stages" / "demo-run"
     store = _ArtifactStore(tmp_path)
-    upstream_stage = store.stages_dir / "input"
+    upstream_stage = store.stages_dir / "input-stage"
     bundle_dir = upstream_stage / "workspace-bundles"
     bundle_dir.mkdir(parents=True)
     result_ref = "refs/crewplane/tests/input/result"
@@ -690,6 +770,7 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
             "render_plans": [
                 RenderPlan(
                     render_plan_id="build",
+                    node_id="build",
                     streams=[
                         RenderStream(
                             target_role=ProviderRole.EXECUTOR,
@@ -794,7 +875,7 @@ def test_initial_pre_review_reads_upstream_runtime_dynamic_workspace_file(
     store = _ArtifactStore(tmp_path)
     _write_lineage_state_with_bundle(
         repo=repo,
-        stage_dir=store.stages_dir / "input",
+        stage_dir=store.stages_dir / "input-stage",
         result_commit=upstream_commit,
         result_tree=upstream_tree,
         result_ref="refs/crewplane/tests/input/result",
@@ -889,7 +970,7 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
     preflight_file.parent.mkdir(parents=True)
     preflight_file.write_text("base\n", encoding="utf-8")
     store = _ArtifactStore(tmp_path)
-    build_stage = store.stages_dir / "build"
+    build_stage = store.stages_dir / "build-stage"
     _write_lineage_state_with_bundle(
         repo=repo,
         stage_dir=build_stage,
@@ -910,7 +991,7 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
         occurrence_id="build:executor:0:file:future.md",
         node_id="build",
         target="executor_prompt",
-        source_class="project_initial",
+        source_class="project_initial_then_candidate",
         raw_token="{{file:future.md}}",
         raw_path="future.md",
         source_root=repo.as_posix(),
@@ -918,9 +999,12 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
         project_root_relative_to_git_top=".",
         git_top_relative_path="future.md",
         workspace_relative_path="future.md",
-        runtime_dynamic_after_candidate=True,
+        git_blob="a" * 40,
+        git_file_mode="100644",
         byte_size=len("base\n"),
         canonical_blob_sha256=hashlib.sha256(b"base\n").hexdigest(),
+        literal_path_verified=True,
+        utf8_validated=True,
     )
     plan = _plan(context_root).model_copy(
         update={
@@ -956,6 +1040,7 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
             "render_plans": [
                 RenderPlan(
                     render_plan_id="build",
+                    node_id="build",
                     streams=[
                         RenderStream(
                             target_role=ProviderRole.EXECUTOR,
@@ -966,7 +1051,7 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
                                     source_role=PromptSegmentRole.SHARED,
                                     locator={
                                         "locator_id": "workspace-file-after-candidate",
-                                        "source_class": "project_initial",
+                                        "source_class": "project_initial_then_candidate",
                                         "workspace_relative_path": "future.md",
                                     },
                                 )
@@ -1058,6 +1143,7 @@ def _reviewer_workspace_plan(
             "render_plans": [
                 RenderPlan(
                     render_plan_id="build",
+                    node_id="build",
                     streams=[
                         RenderStream(
                             target_role=ProviderRole.REVIEWER,

@@ -538,13 +538,11 @@ def _nonfilesystem_config() -> Config:
 
 def _provider_workspace_preview() -> PreflightCompilationPreview:
     plan = make_plan()
-    return PreflightCompilationPreview(
-        workflow_name=WORKFLOW_NAME,
-        workflow_signature=WORKFLOW_SIGNATURE,
-        nodes=[plan.nodes[0]],
-        runtime_config_snapshot=_runtime_snapshot(),
-        effective_runtime_config_signature="f" * 64,
-        fingerprint_metadata={"payload_version": "1"},
+    return _preview_from_plan(plan).model_copy(
+        update={
+            "runtime_config_snapshot": _runtime_snapshot(),
+            "effective_runtime_config_signature": "f" * 64,
+        }
     )
 
 

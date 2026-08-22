@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import crewplane.cli.app as cli
+from crewplane.adapters.artifacts.filesystem import FilesystemArtifactsAdapter
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.isolated_git import (
     IsolatedGit,
@@ -27,9 +28,17 @@ from tests.integration.cli.cli_workflow_helpers import (
 )
 from tests.integration.cli.dry_run_helpers import (
     artifact_tree,
+    compile_preview,
     run_dry_run,
     write_standard_project,
 )
+
+
+class InheritedFilesystemArtifactsAdapter(FilesystemArtifactsAdapter):
+    pass
+
+
+ExternalFilesystemArtifactsAlias = FilesystemArtifactsAdapter
 
 
 class CliDryRunTests(unittest.TestCase):
@@ -196,6 +205,68 @@ class CliDryRunTests(unittest.TestCase):
 
             self.assertIn("✓ Valid", stream.getvalue())
             self.assertEqual(artifact_tree(tmp_path / ".crewplane"), ())
+
+
+@pytest.mark.parametrize(
+    "implementation",
+    [
+        f"{__name__}:InheritedFilesystemArtifactsAdapter",
+        f"{__name__}:ExternalFilesystemArtifactsAlias",
+    ],
+)
+def test_external_filesystem_adapter_rejects_removed_file_access_option(
+    tmp_path: Path,
+    implementation: str,
+) -> None:
+    project_root = tmp_path / "project"
+    workflow_dir = project_root / ".crewplane/workflows"
+    workflow_dir.mkdir(parents=True)
+    external_root = tmp_path / "external"
+    external_root.mkdir()
+    external_file = external_root / "context.txt"
+    external_file.write_text("external context", encoding="utf-8")
+    config_path = project_root / ".crewplane/config.yml"
+    workflow_path = workflow_dir / "workflow.task.md"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'version: "{SCHEMA_VERSION}"',
+                "agents:",
+                "  alpha:",
+                '    cli_cmd: ["echo"]',
+                "settings:",
+                "  integrations:",
+                "    artifacts:",
+                f'      implementation: "{implementation}"',
+                "      options:",
+                "        allowed_template_paths:",
+                f'          - "{external_root.as_posix()}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    workflow_path.write_text(
+        "\n".join(
+            [
+                "---",
+                f'schema_version: "{SCHEMA_VERSION}"',
+                "name: Task",
+                "nodes:",
+                "  - id: review.node",
+                "    mode: parallel",
+                "    providers: [alpha]",
+                "---",
+                "",
+                "## review.node",
+                "",
+                f"load={{{{file:{external_file.as_posix()}}}}}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Failed to canonicalize artifacts"):
+        compile_preview(project_root, config_path, workflow_path)
 
 
 def _write_workflow_provider_model(path: Path) -> None:

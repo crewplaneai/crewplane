@@ -107,8 +107,6 @@ def is_commented_cli_invoker_block(block: str, indent: int) -> bool:
 
 def extract_active_mock_invoker_block(default_config: str) -> str:
     config = load_config_mapping(default_config, "default config")
-    if config.settings is None:
-        raise OnboardingRenderingError("Default config is missing settings.")
     invoker = config.settings.integrations.invoker
     if invoker.implementation != "mock":
         raise OnboardingRenderingError("Default config is not using the mock invoker.")

@@ -4,9 +4,11 @@ import hashlib
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Protocol
 
-from crewplane.architecture.contracts import JsonObject, JsonValue
-from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.contracts import JsonObject, JsonValue, NodeArtifactRequest
+from crewplane.architecture.ports.artifacts import StageTaskSpec
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import NodeState
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -23,20 +25,29 @@ from ..results.review_loop_status import (
     REVIEW_LOOP_STATUS_RELATIVE_PATH,
     ReviewLoopStatusEntry,
     resolve_review_loop_status,
+    task_specs_for_producers,
 )
-from ..safe_files import contained_regular_file
 from .state.fields import without_branch_export
+
+
+class NodeArtifactStateStore(Protocol):
+    @property
+    def stages_dir(self) -> Path: ...
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None: ...
 
 
 def build_node_workspace_descriptor(
     node: PreflightExecutionNode,
     plan: PreflightExecutionPlan,
-    output: ArtifactStorePort,
+    output: NodeArtifactStateStore,
 ) -> JsonObject | None:
     policy = node.workspace_policy
     if policy is None or not policy.enabled:
         return None
-    stage_dir = output.get_stage_dir(node.id)
+    stage_dir = output.get_node_dir(
+        NodeArtifactRequest(node.id, node.artifact_contract)
+    )
     if stage_dir is None:
         raise RuntimeError(
             f"Workspace-enabled node '{node.id}' has no stage directory."
@@ -66,7 +77,12 @@ def build_node_workspace_descriptor(
         ),
         "states": [_state_descriptor(output.stages_dir, path) for path in state_paths],
     }
-    review_loop = _review_loop_descriptor(output.stages_dir, stage_dir, node.id)
+    review_loop = _review_loop_descriptor(
+        output.stages_dir,
+        stage_dir,
+        node.id,
+        task_specs_for_producers(node.provider_records),
+    )
     if review_loop is not None:
         descriptor["review_loop"] = review_loop
     invoker = invoker_workspace_descriptor(plan.runtime_config_snapshot)
@@ -78,7 +94,7 @@ def build_node_workspace_descriptor(
 def refresh_node_workspace_descriptor(
     node: PreflightExecutionNode,
     plan: PreflightExecutionPlan,
-    output: ArtifactStorePort,
+    output: NodeArtifactStateStore,
 ) -> Path | None:
     node_state_path = (
         output.stages_dir / "manifests" / "nodes" / build_node_state_filename(node.id)
@@ -158,8 +174,9 @@ def _review_loop_descriptor(
     stages_dir: Path,
     stage_dir: Path,
     node_id: str,
+    task_specs: tuple[StageTaskSpec, ...],
 ) -> JsonObject | None:
-    resolved = resolve_review_loop_status(node_id, stage_dir)
+    resolved = resolve_review_loop_status(node_id, stage_dir, task_specs)
     if resolved is None:
         return None
     status_path = stage_dir / REVIEW_LOOP_STATUS_RELATIVE_PATH

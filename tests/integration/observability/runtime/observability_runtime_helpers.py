@@ -1,6 +1,6 @@
 from threading import Event
 
-from crewplane.architecture.contracts import ObserverCapabilities
+from crewplane.architecture.contracts import EventType, ObserverCapabilities
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
@@ -87,7 +87,7 @@ class RecordingObserver:
         self.started = False
         self.stopped = False
         self._stop_requested = False
-        self.event_types: list[str | None] = []
+        self.event_types: list[EventType | None] = []
         self.workflow_statuses: list[str] = []
 
     def start(self, context) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by callback or protocol signature.

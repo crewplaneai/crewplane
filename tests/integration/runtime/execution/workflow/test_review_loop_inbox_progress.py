@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -17,6 +18,7 @@ from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     MockAgentInvoker,
     execute_sequential_stage,
@@ -74,7 +76,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             inbox_text = review_inbox_path(node_dir, 1).read_text(encoding="utf-8")
@@ -140,7 +142,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             inbox_text = review_inbox_path(node_dir, 2).read_text(encoding="utf-8")
@@ -164,7 +166,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
@@ -221,7 +223,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             no_progress_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_no_progress"
             ]
             self.assertEqual(len(no_progress_events), 1)
@@ -288,7 +290,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
@@ -360,7 +362,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(len(stall_events), 1)
@@ -428,7 +430,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
             stall_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_stall_detection"
             ]
             self.assertEqual(stall_events, [])
@@ -471,7 +473,7 @@ class ExecutorReviewLoopInboxProgressTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
 

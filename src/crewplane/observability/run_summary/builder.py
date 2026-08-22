@@ -141,7 +141,12 @@ def node_outcome_summaries(
     )
     summaries: list[NodeOutcomeSummary] = []
     for node in ordered_nodes:
-        result_path = artifact_store.get_stage_output_path(node.node_id)
+        request = artifact_store.get_node_artifact_request(node.node_id)
+        result_path = (
+            artifact_store.get_node_output_path(request)
+            if request is not None
+            else None
+        )
         summaries.append(
             NodeOutcomeSummary(
                 node_id=node.node_id,
@@ -151,7 +156,11 @@ def node_outcome_summaries(
                     node.finished_at,
                     snapshot.now,
                 ),
-                result_path=result_path if result_path.exists() else None,
+                result_path=(
+                    result_path
+                    if result_path is not None and result_path.exists()
+                    else None
+                ),
             )
         )
     return tuple(summaries)

@@ -17,12 +17,16 @@ from time import monotonic
 from typing import cast
 
 from crewplane.architecture.contracts import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
+)
+from crewplane.architecture.contracts import (
     DashboardSnapshot as PublicDashboardSnapshot,
 )
 from crewplane.observability.events import (
     ExecutionEvent,
     apply_event,
     build_initial_state,
+    format_execution_event_log_line,
 )
 from crewplane.observability.layout import compute_topology_layout
 from crewplane.observability.observer import Observer, validate_observer_contract
@@ -90,6 +94,8 @@ class ObservabilityHub:
         self._pending_deliveries: deque[_SnapshotDelivery] = deque()
         self._delivery_queue_warning_emitted = False
         self._terminal_result: RunResult | None = None
+        self._published_terminal_event_line: bytes | None = None
+        self._synchronous_terminal_deliveries: list[tuple[bytes, Observer]] = []
 
     def __enter__(self) -> ObservabilityHub:
         active: list[Observer] = []
@@ -146,8 +152,16 @@ class ObservabilityHub:
             raise
 
     def emit(self, event: ExecutionEvent) -> None:
+        terminal_event_line = _terminal_event_line(event)
+        if terminal_event_line is not None:
+            with self._lock:
+                if self._published_terminal_event_line == terminal_event_line:
+                    return
         snapshot, observers = self._prepare_snapshot(event)
         self._enqueue_snapshot(event, snapshot, observers, coalesce=False)
+        if terminal_event_line is not None:
+            with self._lock:
+                self._published_terminal_event_line = terminal_event_line
 
     @property
     def active_observer_count(self) -> int:
@@ -238,35 +252,70 @@ class ObservabilityHub:
     ) -> tuple[Observer, ...]:
         remaining: list[Observer] = []
         failed: list[Observer] = []
+        terminal_event_line = _terminal_event_line(event)
         for observer in observers:
             if not self.observer_is_active(observer):
                 continue
             if not observer.capabilities.synchronous_snapshot_delivery:
                 remaining.append(observer)
                 continue
+            if terminal_event_line is not None and self._terminal_event_was_delivered(
+                terminal_event_line,
+                observer,
+            ):
+                continue
             try:
                 observer.on_snapshot(event, cast(PublicDashboardSnapshot, snapshot))
             except Exception as exc:
+                if observer.capabilities.required:
+                    self._warn(
+                        f"required observability observer delivery failed: {exc}"
+                    )
+                    self._disable_observers(failed)
+                    raise
                 self._warn(f"observability observer disabled after error: {exc}")
                 failed.append(observer)
-                if observer.capabilities.required:
-                    with self._lock:
-                        self._active_observers = [
-                            existing
-                            for existing in self._active_observers
-                            if existing not in failed
-                        ]
-                    raise
+            else:
+                if terminal_event_line is not None:
+                    self._record_terminal_event_delivery(
+                        terminal_event_line,
+                        observer,
+                    )
 
-        if failed:
-            with self._lock:
-                self._active_observers = [
-                    observer
-                    for observer in self._active_observers
-                    if observer not in failed
-                ]
+        self._disable_observers(failed)
 
         return tuple(remaining)
+
+    def _terminal_event_was_delivered(
+        self,
+        event_line: bytes,
+        observer: Observer,
+    ) -> bool:
+        with self._lock:
+            return any(
+                delivered_line == event_line and delivered_observer is observer
+                for delivered_line, delivered_observer in (
+                    self._synchronous_terminal_deliveries
+                )
+            )
+
+    def _record_terminal_event_delivery(
+        self,
+        event_line: bytes,
+        observer: Observer,
+    ) -> None:
+        with self._lock:
+            self._synchronous_terminal_deliveries.append((event_line, observer))
+
+    def _disable_observers(self, failed: Sequence[Observer]) -> None:
+        if not failed:
+            return
+        with self._lock:
+            self._active_observers = [
+                observer
+                for observer in self._active_observers
+                if observer not in failed
+            ]
 
     def _start_delivery_worker(self) -> None:
         self._delivery_stop_event.clear()
@@ -386,3 +435,9 @@ def _new_lifecycle_thread(
     daemon: bool,
 ) -> Thread:
     return Thread(target=target, name=name, daemon=daemon)
+
+
+def _terminal_event_line(event: ExecutionEvent | None) -> bytes | None:
+    if event is None or event.event_type not in TERMINAL_WORKFLOW_EVENT_TYPES:
+        return None
+    return format_execution_event_log_line(event).encode("utf-8")

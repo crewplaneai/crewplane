@@ -1018,9 +1018,16 @@ def test_repository_automation_matches_supported_platform_and_publish_policy() -
     assert "skip-existing" not in testpypi
 
 
-def test_nightly_uv_update_job_is_repository_scoped_and_uses_a_pull_request() -> None:
+def test_weekly_uv_update_job_only_uses_an_existing_dependabot_pull_request() -> None:
     nightly = yaml.safe_load(read_text(".github", "workflows", "nightly.yml"))
-    update_job = nightly["jobs"]["ci-tooling-update"]
+    workflow_text = read_text(".github", "workflows", "ci-tooling-update.yml")
+    workflow = yaml.safe_load(workflow_text)
+    update_job = workflow["jobs"]["ci-tooling-update"]
+
+    assert "ci-tooling-update" not in nightly["jobs"]
+    assert 'cron: "30 20 * * 1"' in workflow_text
+    assert "workflow_dispatch:" in workflow_text
+    assert 'cron: "11 11 * * *"' not in workflow_text
 
     assert update_job["permissions"] == {
         "actions": "write",
@@ -1035,11 +1042,29 @@ def test_nightly_uv_update_job_is_repository_scoped_and_uses_a_pull_request() ->
         "scripts/update_uv_bootstrap.py update latest",
         "packaging/uv-bootstrap-version.txt",
         "--app dependabot",
-        "select(.isCrossRepository == false)",
-        "gh pr create",
+        "active=false",
+        "active=true",
+        "gh pr edit",
         "gh workflow run ci.yml",
     ):
         assert fragment in commands
+    for fragment in (
+        "automation/ci-tooling",
+        "automation_pr",
+        "gh pr create",
+    ):
+        assert fragment not in commands
+
+    steps = {step["name"]: step for step in update_job["steps"] if "name" in step}
+    assert steps["Update and validate pinned uv metadata"]["if"] == (
+        "steps.lane.outputs.active == 'true'"
+    )
+    assert steps["Publish the ci-tooling branch"]["if"] == (
+        "steps.lane.outputs.active == 'true'"
+    )
+    assert steps["Label the updated ci-tooling PR"]["if"] == (
+        "steps.update.outputs.changed == 'true'"
+    )
     assert ".github/workflows" not in workflow_step_run(
         update_job,
         "Update and validate pinned uv metadata",

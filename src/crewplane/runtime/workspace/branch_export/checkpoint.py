@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from typing import Protocol
 
-from crewplane.artifacts.safe_files import contained_regular_file
+from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -32,7 +33,7 @@ from crewplane.version import SCHEMA_VERSION
 
 
 class StageLookup(Protocol):
-    def get_stage_dir(self, stage_name: str) -> Path | None: ...
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None: ...
 
 
 def validated_checkpoint(
@@ -44,7 +45,7 @@ def validated_checkpoint(
     state_lookup: StageLookup,
     import_result_commit: bool,
 ) -> BranchExportCheckpoint:
-    state_path = required_lineage_state_path(state_lookup, node.id)
+    state_path = required_lineage_state_path(state_lookup, node)
     payload = _workspace_state_payload(state_path)
     _validate_state_header(plan, node, policy, payload)
     result = _mapping(payload.get("result"))

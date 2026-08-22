@@ -3,6 +3,7 @@ from threading import Event, Lock
 from time import monotonic
 from unittest.mock import patch
 
+from crewplane.architecture.contracts import EventType
 from crewplane.observability.runtime import ObservabilityHub
 from tests.helpers.observability import (
     make_execution_event,
@@ -48,7 +49,7 @@ class ObservabilityHubDeliveryTests(unittest.TestCase):
                 started_at = monotonic()
                 hub.emit(
                     make_execution_event(
-                        event_type="workflow_started",
+                        event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id="run-blocked-observer",
                     )
@@ -173,7 +174,7 @@ class ObservabilityHubDeliveryTests(unittest.TestCase):
         ) as hub:
             hub.emit(
                 make_execution_event(
-                    event_type="workflow_started",
+                    event_type=EventType.WORKFLOW_STARTED,
                     workflow_name=workflow.name,
                     run_id="run-required-fail",
                 )

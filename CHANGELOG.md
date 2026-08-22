@@ -4,6 +4,57 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Configuration:** Template allowlists now use
+  `settings.file_access.allowed_template_paths`; explicit `settings: null` is
+  rejected.
+- **Workflows:** `preflight` is now a reserved node ID.
+- **Custom integrations:** Use JSON Pointers for sensitive options and canonical
+  metadata for invoker capabilities; artifact adapters must implement the
+  node-based store and terminal-history APIs.
+- **Execution-event consumers:** `EventType` is now a public runtime enum, and
+  in-memory consumers use enum members. Persisted lowercase NDJSON event values
+  remain unchanged.
+
+### Migration
+
+- Move any existing template allowlist from
+  `settings.integrations.artifacts.options.allowed_template_paths` to
+  `settings.file_access.allowed_template_paths`.
+- Remove `settings: null` to use the defaults, or replace it with `settings: {}`.
+- Rename any workflow node whose ID is `preflight`, update all references to it,
+  and rename its `## preflight` section when present.
+
+### Changed
+
+- Preflight now rejects schema mismatches and inconsistent dependencies,
+  policies, artifact locations, runtime references, or workspace lineage.
+- Review-loop results now require producer/role/round/size/hash-bound status;
+  findings-enabled nodes always publish a findings artifact.
+- Terminal manifests now commit only after required post-run work; post-run
+  failures fail the run, and stale-lock recovery resumes interrupted publication.
+- Workspace cleanup now retains active or unverifiable assets by default and
+  requires `--all-projects --yes` for unverifiable cross-project cleanup.
+
+### Fixed
+
+- Allowed provider-prompt file templates to consume result files from prior
+  terminal runs while keeping running-run results and other runtime-owned paths
+  blocked.
+- Prevented nested secrets, forged redaction metadata, unsafe links, path
+  substitution, and concurrent writes from leaking or corrupting artifacts.
+- Corrected worktree file templates to use the project snapshot before the
+  first candidate and candidate lineage thereafter.
+- Prevented project-local Python `.venv` environments beside unrelated
+  `package.json` files from being misclassified as npm-managed.
+- Prevented provider invocations from deadlocking when a provider writes output
+  while receiving a large prompt.
+- Preserved valid UTF-8 and CRLF line endings across provider-log read boundaries.
+- Reported workspace cleanup mutation failures and unavailable installed-version
+  metadata as stable CLI errors instead of uncaught exceptions.
+- Rejected dangling workspace-cache symlinks during run and cleanup validation.
+
 ## [0.1.10] - 2026-08-11
 
 ### Fixed

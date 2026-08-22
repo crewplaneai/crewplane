@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TypeGuard, get_args
 
 from crewplane.architecture.contracts import OutputExtractionStatus
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
@@ -20,9 +21,15 @@ from crewplane.observability.events.payloads import (
     WorkflowEventPayload,
     WorkspaceEventPayload,
 )
-from crewplane.observability.events.types import EventType, LogLevel, RuntimeLogValue
+from crewplane.observability.events.types import (
+    EventType,
+    LogLevel,
+    RuntimeLogValue,
+    is_invocation_event_type,
+    is_node_event_type,
+    is_workflow_event_type,
+)
 
-EVENT_TYPES: frozenset[str] = frozenset(get_args(EventType))
 LOG_LEVELS: frozenset[str] = frozenset(get_args(LogLevel))
 _OUTPUT_EXTRACTION_STATUSES: frozenset[str] = frozenset(
     get_args(OutputExtractionStatus)
@@ -31,10 +38,14 @@ _OUTPUT_EXTRACTION_STATUSES: frozenset[str] = frozenset(
 
 def read_event_log(event_log_path: Path) -> list[ExecutionEvent]:
     """Read valid execution events from one durable NDJSON event log."""
-    if not event_log_path.is_file() or event_log_path.is_symlink():
+    safe_event_log = contained_regular_file(
+        event_log_path.parent,
+        event_log_path.name,
+    )
+    if safe_event_log is None:
         return []
     try:
-        lines = event_log_path.read_text(encoding="utf-8").splitlines()
+        lines = safe_event_log.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         return []
     return [event for line in lines if (event := event_from_line(line)) is not None]
@@ -53,16 +64,17 @@ def event_from_line(line: str) -> ExecutionEvent | None:
 
 
 def event_from_record(record: Mapping[str, object]) -> ExecutionEvent | None:
-    event_type = record.get("event_type")
+    raw_event_type = record.get("event_type")
+    if not isinstance(raw_event_type, str):
+        return None
+    try:
+        event_type = EventType(raw_event_type)
+    except ValueError:
+        return None
     workflow_name = _string(record.get("workflow_name"))
     run_id = _string(record.get("run_id"))
     timestamp_utc = _string(record.get("timestamp"))
-    if (
-        not _is_event_type(event_type)
-        or workflow_name is None
-        or run_id is None
-        or timestamp_utc is None
-    ):
+    if workflow_name is None or run_id is None or timestamp_utc is None:
         return None
     payload = _payload_from_record(event_type, record)
     if payload is None:
@@ -86,16 +98,17 @@ def _payload_from_record(
     record: Mapping[str, object],
 ) -> EventPayload | None:
     match event_type:
-        case "workflow_started" | "workflow_finished" | "workflow_failed":
+        case _ if is_workflow_event_type(event_type):
             return _workflow_payload_from_record(record)
-        case "node_started" | "node_finished" | "node_failed" | "node_blocked":
+        case _ if is_node_event_type(event_type):
             return _node_payload_from_record(record)
-        case "invocation_started" | "invocation_finished" | "invocation_failed":
+        case _ if is_invocation_event_type(event_type):
             return _invocation_payload_from_record(record)
-        case "workspace_context_recorded":
+        case EventType.WORKSPACE_CONTEXT_RECORDED:
             return _workspace_payload_from_record(record)
-        case "runtime_log":
+        case EventType.RUNTIME_LOG:
             return _runtime_log_payload_from_record(record)
+    return None
 
 
 def _workflow_payload_from_record(
@@ -216,10 +229,6 @@ def _timestamp_value(timestamp_utc: str) -> float:
         return datetime.fromisoformat(timestamp_utc).timestamp()
     except ValueError:
         return 0.0
-
-
-def _is_event_type(value: object) -> TypeGuard[EventType]:
-    return isinstance(value, str) and value in EVENT_TYPES
 
 
 def _is_log_level(value: str | None) -> TypeGuard[LogLevel]:

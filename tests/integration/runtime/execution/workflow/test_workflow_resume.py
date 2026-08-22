@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType, build_result_filename
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -75,19 +76,21 @@ class WorkflowResumeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([call["node_id"] for call in invoker.calls], ["b"])
             self.assertIn(
                 "b result",
-                output.get_stage_output_path("b").read_text(encoding="utf-8"),
+                (output.results_dir / build_result_filename("b")).read_text(
+                    encoding="utf-8"
+                ),
             )
             node_events = [
                 (event.event_type, event.context.node_id)
                 for event in events
-                if event.event_type in {"node_started", "node_finished"}
+                if event.event_type in {EventType.NODE_STARTED, EventType.NODE_FINISHED}
             ]
             self.assertEqual(
                 node_events[:3],
                 [
-                    ("node_started", "a"),
-                    ("node_finished", "a"),
-                    ("node_started", "b"),
+                    (EventType.NODE_STARTED, "a"),
+                    (EventType.NODE_FINISHED, "a"),
+                    (EventType.NODE_STARTED, "b"),
                 ],
             )
             resumed_logs = [

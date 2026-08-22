@@ -21,6 +21,7 @@ from crewplane.runtime.workspace.worktree.lineage import (
 from crewplane.runtime.workspace.worktree.source_refs import (
     required_lineage_state,
 )
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -76,7 +77,7 @@ def test_worktree_reviewer_workspace_discards_drift_without_lineage(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output, role_label=ProviderRole.REVIEWER),
@@ -98,7 +99,8 @@ def test_worktree_reviewer_workspace_discards_drift_without_lineage(
     prepared.mark_succeeded()
 
     state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     result = state["result"]
     assert isinstance(result, dict)
@@ -126,7 +128,7 @@ def test_worktree_reviewer_workspace_reports_branch_attachment_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output, role_label=ProviderRole.REVIEWER),
@@ -139,7 +141,8 @@ def test_worktree_reviewer_workspace_reports_branch_attachment_drift(
     prepared.mark_succeeded()
 
     state = read_json_object(
-        output.create_stage_dir("implement") / "workspace-state.json"
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
     )
     diagnostics = state["diagnostics"]
     assert isinstance(diagnostics, list)
@@ -150,10 +153,16 @@ def test_worktree_reviewer_workspace_reports_branch_attachment_drift(
 def test_required_lineage_state_skips_disposable_reviewer_state(
     tmp_path: Path,
 ) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
+    repo = create_git_repo(tmp_path)
     output = workspace_output_manager(tmp_path, repo)
-    stage_dir = output.create_stage_dir("implement")
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    node = next(node for node in plan.nodes if node.id == "implement")
+    stage_dir = output.create_node_dir(node_artifact_request("implement"))
     reviewer_state = stage_dir / "workspace-state-a-reviewer.json"
     executor_state = stage_dir / "workspace-state-z-executor.json"
     reviewer_state.write_text(
@@ -188,7 +197,7 @@ def test_required_lineage_state_skips_disposable_reviewer_state(
         encoding="utf-8",
     )
 
-    assert required_lineage_state(output, "implement") == executor_state
+    assert required_lineage_state(output, node) == executor_state
 
 
 def test_worktree_workspace_rejects_source_tree_mismatch_before_checkout(

@@ -60,25 +60,28 @@ class WorkflowValidationNodeModeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not support review_starts_with"):
             validate_workflow_plan(workflow)
 
-    def test_workspace_exports_is_reserved_run_root_node_id(self) -> None:
-        workflow = WorkflowPlan(
-            name="Reserved workspace exports",
-            nodes=[
-                WorkflowNode(
-                    id="workspace-exports",
-                    mode="sequential",
-                    prompt_segments=[
-                        PromptSegment(
-                            role=PromptSegmentRole.SHARED, content="implement"
+    def test_run_root_node_ids_are_reserved(self) -> None:
+        for node_id in ("workspace-exports", "preflight"):
+            with self.subTest(node_id=node_id):
+                workflow = WorkflowPlan(
+                    name=f"Reserved {node_id}",
+                    nodes=[
+                        WorkflowNode(
+                            id=node_id,
+                            mode="sequential",
+                            prompt_segments=[
+                                PromptSegment(
+                                    role=PromptSegmentRole.SHARED,
+                                    content="implement",
+                                )
+                            ],
+                            providers=[ProviderSpec(provider="gpt4")],
                         )
                     ],
-                    providers=[ProviderSpec(provider="gpt4")],
                 )
-            ],
-        )
 
-        with self.assertRaisesRegex(ValueError, "workspace-exports.*reserved"):
-            validate_workflow_plan(workflow)
+                with self.assertRaisesRegex(ValueError, f"{node_id}.*reserved"):
+                    validate_workflow_plan(workflow)
 
     def test_input_node_rejects_audit_rounds(self) -> None:
         workflow = WorkflowPlan(

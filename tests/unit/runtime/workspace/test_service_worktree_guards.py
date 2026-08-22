@@ -8,6 +8,7 @@ import pytest
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.worktree import policy as worktree_policy
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
     run_git_text,
@@ -55,7 +56,7 @@ def test_worktree_retry_reset_rejects_own_protected_ref_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -105,7 +106,7 @@ def test_worktree_retry_reset_rejects_sibling_protected_ref_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -140,7 +141,7 @@ def test_worktree_capture_rejects_sibling_protected_ref_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -175,7 +176,7 @@ def test_worktree_retry_reset_allows_unprotected_user_branch_updates(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -209,7 +210,7 @@ def test_worktree_retry_reset_rejects_common_config_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -269,7 +270,7 @@ def test_worktree_capture_rejects_own_protected_ref_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -320,7 +321,7 @@ def test_worktree_capture_rejects_branch_attachment_without_head_movement(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -353,7 +354,7 @@ def test_worktree_capture_rejects_case_colliding_result_paths(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -388,7 +389,7 @@ def test_worktree_capture_rejects_unicode_colliding_result_paths(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),
@@ -423,7 +424,7 @@ def test_worktree_capture_rejects_common_config_drift(
         kind="worktree",
     )
     output = workspace_output_manager(tmp_path, repo)
-    output.create_stage_dir("implement")
+    output.create_node_dir(node_artifact_request("implement"))
 
     prepared = prepare_invocation_workspace(
         workspace_invocation_request(plan, output),

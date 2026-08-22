@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import PreflightExecutionNode
 
 from .common import (
@@ -25,7 +28,9 @@ def execute_input_stage(
     runtime_context: CompiledRuntimeContext,
     telemetry: ExecutionTelemetry | None = None,
 ) -> None:
-    node_dir = output.create_stage_dir(stage.id)
+    node_dir = output.create_node_dir(
+        NodeArtifactRequest(stage.id, stage.artifact_contract)
+    )
     if stage.input_workspace_file_locator_id is not None:
         input_content = _read_workspace_input_content(
             runtime_context,
@@ -45,7 +50,7 @@ def execute_input_stage(
         )
 
     output_file = _input_output_file(node_dir)
-    output_file.write_text(input_content, encoding="utf-8")
+    atomic_write_text(output_file, input_content)
     emit_runtime_log(
         telemetry,
         level="info",
@@ -66,7 +71,14 @@ def _read_input_content(context_root: str, content_ref: str) -> str:
     normalized_ref = Path(content_ref)
     if normalized_ref.is_absolute() or ".." in normalized_ref.parts:
         raise ValueError(f"Invalid input content reference '{content_ref}'.")
-    source_path = Path(context_root) / "preflight" / normalized_ref
+    source_path = contained_regular_file(
+        Path(context_root) / "preflight",
+        normalized_ref.as_posix(),
+    )
+    if source_path is None:
+        raise ValueError(
+            f"Input content reference is missing or unsafe: '{content_ref}'."
+        )
     return source_path.read_text(encoding="utf-8")
 
 

@@ -10,11 +10,16 @@ from time import monotonic, sleep
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
+from crewplane.core.execution_state import TerminalRunStatus
+
 from ..atomic import atomic_write_json, atomic_write_json_if_absent
 from ..naming import build_lock_name, validate_run_key_name
 from .manifest import (
+    TERMINAL_RECOVERY_PHASES,
     LockManifestError,
     LockRunMetadata,
+    TerminalRecoveryIntent,
+    TerminalRecoveryPhase,
     finalize_stale_running_run,
 )
 from .process_identity import ProcessIdentity, ProcessInspector
@@ -25,6 +30,34 @@ LOCK_OWNER_FILENAME = "owner.json"
 
 class ResumeLockError(RuntimeError):
     """Raised when a same-context resume lock cannot be acquired safely."""
+
+
+def run_lock_activity(
+    state_dir: Path,
+    run_key_name: str,
+    process_inspector: ProcessInspector | None = None,
+) -> str:
+    """Return ``live``, ``stale``, ``none``, or ``unverifiable`` for a run lock."""
+
+    inspector = process_inspector or ProcessInspector()
+    locks_root = state_dir / "locks"
+    if not locks_root.exists():
+        return "none"
+    if not locks_root.is_dir() or locks_root.is_symlink():
+        return "unverifiable"
+    matched_stale = False
+    for lock_dir in sorted(locks_root.iterdir()):
+        if not lock_dir.is_dir() or lock_dir.is_symlink():
+            continue
+        owner = _read_owner(lock_dir)
+        if owner is None:
+            return "unverifiable"
+        if owner.run_key_name != run_key_name:
+            continue
+        if _owner_process_is_live(owner, inspector):
+            return "live"
+        matched_stale = True
+    return "stale" if matched_stale else "none"
 
 
 class LockOwner(BaseModel):
@@ -39,6 +72,7 @@ class LockOwner(BaseModel):
     workflow_signature: str
     run_id: str | None = None
     run_key_name: str | None = None
+    terminal_recovery: TerminalRecoveryIntent | None = None
 
     @field_validator("run_key_name")
     @classmethod
@@ -62,6 +96,44 @@ class SameContextLock:
             update={"run_id": run_id, "run_key_name": validated_run_key_name}
         )
         _write_owner(self.lock_dir, updated)
+
+    def record_terminal_recovery(
+        self,
+        phase: TerminalRecoveryPhase,
+        status: TerminalRunStatus,
+        reason: str | None,
+    ) -> None:
+        owner = _read_owner(self.lock_dir)
+        if owner is None or owner.owner_token != self.owner_token:
+            raise ResumeLockError("Cannot update a lock owned by another process.")
+        if owner.run_id is None or owner.run_key_name is None:
+            raise ResumeLockError(
+                "Cannot record terminal recovery before run ownership."
+            )
+        recovery = TerminalRecoveryIntent(
+            phase=phase,
+            status=status,
+            reason=reason,
+        )
+        previous = owner.terminal_recovery
+        if previous is None:
+            if phase != TERMINAL_RECOVERY_PHASES[0]:
+                raise ResumeLockError(
+                    "Terminal recovery must begin with outcome_selected."
+                )
+        else:
+            if previous.status != status or previous.reason != reason:
+                raise ResumeLockError("Terminal recovery outcome cannot change.")
+            if previous.phase == phase:
+                return
+            previous_index = TERMINAL_RECOVERY_PHASES.index(previous.phase)
+            phase_index = TERMINAL_RECOVERY_PHASES.index(phase)
+            if phase_index != previous_index + 1:
+                raise ResumeLockError("Terminal recovery phase cannot skip or regress.")
+        _write_owner(
+            self.lock_dir,
+            owner.model_copy(update={"terminal_recovery": recovery}),
+        )
 
     def release(self) -> None:
         owner = _read_owner(self.lock_dir)
@@ -161,6 +233,7 @@ def _recover_or_raise(
         run_key_name=owner.run_key_name,
         workflow_identity=owner.workflow_identity,
         workflow_signature=owner.workflow_signature,
+        terminal_recovery=owner.terminal_recovery,
     )
     try:
         ensure_no_live_provider_processes(state_dir, metadata, inspector)
@@ -228,6 +301,7 @@ def _recover_stale_lock(
             run_key_name=reread_owner.run_key_name,
             workflow_identity=reread_owner.workflow_identity,
             workflow_signature=reread_owner.workflow_signature,
+            terminal_recovery=reread_owner.terminal_recovery,
         )
         try:
             finalize_stale_running_run(state_dir, metadata)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -180,20 +181,22 @@ def write_review_status_file(stage_dir: Path, canonical_path: str) -> None:
     status_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "node_id": "a",
-        "executed_audit_rounds": 1,
-        "final_local_round_num": 2,
+        "executed_audit_rounds": _review_output_audit(canonical_path) or 1,
+        "attempted_local_round_num": _review_output_round(canonical_path),
+        "final_local_round_num": _review_output_round(canonical_path),
         "invalid_candidate_round_count": 0,
         "no_progress_round_count": 0,
         "artifact_drift_warning_count": 0,
         "consensus_reached": True,
         "continued_after_consensus_exhaustion": False,
         "canonical_executor_outputs": [
-            {
-                "task_id": "alpha",
-                "provider": "codex",
-                "role": "executor",
-                "path": canonical_path,
-            }
+            review_status_output_entry(
+                stage_dir,
+                canonical_path,
+                task_id="alpha",
+                provider="alpha",
+                role="executor",
+            )
         ],
         "reviewer_outputs": [],
     }
@@ -422,6 +425,7 @@ def write_review_status_with_reviewer(stage_dir: Path) -> None:
     payload = {
         "node_id": "a",
         "executed_audit_rounds": 1,
+        "attempted_local_round_num": 1,
         "final_local_round_num": 1,
         "invalid_candidate_round_count": 0,
         "no_progress_round_count": 0,
@@ -429,23 +433,61 @@ def write_review_status_with_reviewer(stage_dir: Path) -> None:
         "consensus_reached": True,
         "continued_after_consensus_exhaustion": False,
         "canonical_executor_outputs": [
-            {
-                "task_id": "alpha",
-                "provider": "alpha",
-                "role": "executor",
-                "path": "alpha_round1.md",
-            }
+            review_status_output_entry(
+                stage_dir,
+                "alpha_round1.md",
+                task_id="alpha",
+                provider="alpha",
+                role="executor",
+            )
         ],
         "reviewer_outputs": [
-            {
-                "task_id": "beta",
-                "provider": "beta",
-                "role": "reviewer",
-                "path": "beta_round1.md",
-            }
+            review_status_output_entry(
+                stage_dir,
+                "beta_round1.md",
+                task_id="beta",
+                provider="beta",
+                role="reviewer",
+            )
         ],
     }
     (status_dir / "review-loop-status.json").write_text(
         json.dumps(payload),
         encoding="utf-8",
     )
+
+
+def review_status_output_entry(
+    stage_dir: Path,
+    relative_path: str,
+    task_id: str,
+    provider: str,
+    role: str,
+) -> dict[str, object]:
+    output_path = stage_dir / relative_path
+    content = output_path.read_bytes() if output_path.is_file() else b"candidate\n"
+    return {
+        "task_id": task_id,
+        "provider": provider,
+        "role": role,
+        "path": relative_path,
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size_bytes": len(content),
+        "audit_round_num": _review_output_audit(relative_path),
+        "round_num": _review_output_round(relative_path),
+    }
+
+
+def _review_output_round(relative_path: str) -> int:
+    match = re.search(r"_round(\d+)\.md$", relative_path)
+    if match is None:
+        raise ValueError(
+            f"Review output path has no round attribution: {relative_path}"
+        )
+    return int(match.group(1))
+
+
+def _review_output_audit(relative_path: str) -> int | None:
+    parent_name = Path(relative_path).parent.name
+    match = re.fullmatch(r"review-audit-round-(\d+)", parent_name)
+    return int(match.group(1)) if match else None

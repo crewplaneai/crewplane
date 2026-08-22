@@ -8,6 +8,9 @@ from typing import Any
 from rich.console import Console
 
 import crewplane.cli.app as cli
+from crewplane.adapters.artifacts.terminal_history import (
+    FilesystemTerminalHistoryReader,
+)
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.artifacts.naming import build_run_key_name
 from crewplane.cli.run.preflight import (
@@ -56,6 +59,14 @@ class DryRunUnavailableArtifactsAdapter:
             f"{workflow_name}, {state_dir}, {project_root}, {options}"
         )
 
+    def create_terminal_history_reader(
+        self,
+        state_dir: Path,
+        options: dict[str, Any] | None = None,
+    ) -> FilesystemTerminalHistoryReader:
+        del options
+        return FilesystemTerminalHistoryReader(state_dir.resolve())
+
 
 def write_standard_project(
     root: Path,
@@ -72,7 +83,13 @@ def write_standard_project(
     return config_path, workflow_path
 
 
-def write_nonfilesystem_config(path: Path) -> None:
+def write_nonfilesystem_config(
+    path: Path,
+    artifact_implementation: str | None = None,
+) -> None:
+    implementation = artifact_implementation or (
+        f"{__name__}:DryRunUnavailableArtifactsAdapter"
+    )
     path.write_text(
         "\n".join(
             [
@@ -91,7 +108,7 @@ def write_nonfilesystem_config(path: Path) -> None:
                 '      implementation: "none"',
                 "      options: {}",
                 "    artifacts:",
-                f'      implementation: "{__name__}:DryRunUnavailableArtifactsAdapter"',
+                f'      implementation: "{implementation}"',
                 "      options: {}",
             ]
         ),

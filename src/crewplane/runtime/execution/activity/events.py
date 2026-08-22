@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from crewplane.architecture.contracts import InvocationWorkspaceContext
+from crewplane.architecture.contracts import EventType, InvocationWorkspaceContext
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     ExecutionEventContext,
@@ -14,6 +14,7 @@ from crewplane.observability.events import (
     WorkflowEventType,
     emit_event,
     invocation_event,
+    is_workflow_event_type,
     node_event,
     runtime_log_event,
     workflow_event,
@@ -25,10 +26,10 @@ from crewplane.runtime.agent.usage import InvocationUsage
 
 from .telemetry import ExecutionTelemetry
 
-INVOCATION_WORKSPACE_STATUSES = {
-    "invocation_started": "running",
-    "invocation_finished": "succeeded",
-    "invocation_failed": "failed",
+INVOCATION_WORKSPACE_STATUSES: dict[InvocationEventType, str] = {
+    EventType.INVOCATION_STARTED: "running",
+    EventType.INVOCATION_FINISHED: "succeeded",
+    EventType.INVOCATION_FAILED: "failed",
 }
 
 
@@ -193,61 +194,30 @@ class InvocationEventCapture:
 
 def emit_workflow_event(
     telemetry: ExecutionTelemetry | None,
-    event_type: WorkflowEventType | NodeEventType | InvocationEventType,
+    event_type: WorkflowEventType | NodeEventType,
     node_id: str | None = None,
-    provider: str | None = None,
-    role: ProviderRole | None = None,
-    model: str | None = None,
-    task_id: str | None = None,
-    round_num: int | None = None,
-    output_file: Path | None = None,
-    log_file: Path | None = None,
-    duration_ms: int | None = None,
     error: str | None = None,
 ) -> None:
     if telemetry is None:
         return
-    if event_type in {"workflow_started", "workflow_finished", "workflow_failed"}:
-        event = workflow_event(
-            event_type,  # type: ignore[arg-type]
-            workflow_name=telemetry.workflow_name,
-            run_id=telemetry.run_id,
-            error=error,
-        )
-    elif event_type in {"node_started", "node_finished", "node_failed", "node_blocked"}:
-        if node_id is None:
-            raise ValueError(f"Node event '{event_type}' requires node_id.")
-        event = node_event(
-            event_type,  # type: ignore[arg-type]
-            workflow_name=telemetry.workflow_name,
-            run_id=telemetry.run_id,
-            node_id=node_id,
-            error=error,
-        )
-    else:
-        if node_id is None or provider is None or role is None or task_id is None:
-            raise ValueError(
-                f"Invocation event '{event_type}' requires invocation context."
+    match event_type:
+        case _ if is_workflow_event_type(event_type):
+            event = workflow_event(
+                event_type,
+                workflow_name=telemetry.workflow_name,
+                run_id=telemetry.run_id,
+                error=error,
             )
-        event = invocation_event(
-            event_type,  # type: ignore[arg-type]
-            workflow_name=telemetry.workflow_name,
-            run_id=telemetry.run_id,
-            context=ExecutionEventContext(
+        case _:
+            if node_id is None:
+                raise ValueError(f"Node event '{event_type}' requires node_id.")
+            event = node_event(
+                event_type,
                 workflow_name=telemetry.workflow_name,
                 run_id=telemetry.run_id,
                 node_id=node_id,
-                provider=provider,
-                role=role,
-                model=model,
-                task_id=task_id,
-                round_num=round_num,
-                output_file=str(output_file) if output_file is not None else None,
-                log_file=str(log_file) if log_file is not None else None,
-            ),
-            duration_ms=duration_ms,
-            error=error,
-        )
+                error=error,
+            )
     emit_event(telemetry.event_sink, event)
 
 
@@ -306,7 +276,7 @@ def emit_invocation_event(
     emit_event(
         telemetry.event_sink,
         invocation_event(
-            event_type,  # type: ignore[arg-type]
+            event_type,
             workflow_name=telemetry.workflow_name,
             run_id=telemetry.run_id,
             context=event_context,
@@ -339,7 +309,7 @@ def emit_workspace_context_event(
     emit_event(
         telemetry.event_sink,
         workspace_event(
-            "workspace_context_recorded",
+            EventType.WORKSPACE_CONTEXT_RECORDED,
             telemetry.workflow_name,
             telemetry.run_id,
             event_context,

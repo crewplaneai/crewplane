@@ -105,6 +105,25 @@ class _AlreadyExitedOnTerminateProcessDouble:
         raise ProcessLookupError
 
 
+async def _render_pipe_log(payload: bytes, prefix: bytes) -> tuple[bytes, bytes]:
+    reader = asyncio.StreamReader()
+    reader.feed_data(payload)
+    reader.feed_eof()
+    log_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=LOG_QUEUE_MAX_ITEMS)
+    capture = RealCapturedStream()
+    try:
+        await pipe_stream(reader, log_queue, prefix, capture)
+        capture.close()
+        log_payloads: list[bytes] = []
+        while not log_queue.empty():
+            log_payload = await log_queue.get()
+            if log_payload is not None:
+                log_payloads.append(log_payload)
+        return capture.path.read_bytes(), b"".join(log_payloads)
+    finally:
+        capture.cleanup()
+
+
 class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
     def test_captured_stream_keeps_full_file_and_bounded_tail(self) -> None:
         capture = RealCapturedStream(max_memory_bytes=4)
@@ -236,7 +255,7 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         process = _ProcessDouble()
         log_handle = _RecordingLogHandle()
         process.stdout.feed_data(b"partial stdout")
-        process.stderr.feed_data(b"partial stderr")
+        process.stderr.feed_data(b"partial stderr\r")
         process.exit_without_stream_eof()
 
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
@@ -246,9 +265,9 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
 
         log_payload = b"".join(log_handle.writes)
         self.assertEqual(stdout_bytes, b"partial stdout")
-        self.assertEqual(stderr_bytes, b"partial stderr")
+        self.assertEqual(stderr_bytes, b"partial stderr\r")
         self.assertIn(b"partial stdout", log_payload)
-        self.assertIn(b"[stderr] partial stderr", log_payload)
+        self.assertIn(b"[stderr] partial stderr\r", log_payload)
 
     async def test_pipe_stream_logs_long_lines_in_bounded_chunks(self) -> None:
         reader = asyncio.StreamReader()
@@ -280,6 +299,43 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
             )
         finally:
             capture.cleanup()
+
+    async def test_pipe_stream_preserves_utf8_split_across_read_boundaries(
+        self,
+    ) -> None:
+        character = "🛩".encode()
+        for bytes_in_first_chunk in (1, 2, 3):
+            with self.subTest(bytes_in_first_chunk=bytes_in_first_chunk):
+                payload = b"x" * (1024 - bytes_in_first_chunk) + character + b"\n"
+
+                captured, rendered = await _render_pipe_log(payload, b"[stderr] ")
+
+                self.assertEqual(captured, payload)
+                self.assertEqual(rendered, b"[stderr] " + payload)
+
+    async def test_pipe_stream_treats_split_crlf_as_one_line_ending(self) -> None:
+        payload = b"x" * 1023 + b"\r\nnext"
+
+        captured, rendered = await _render_pipe_log(payload, b"[stderr] ")
+
+        self.assertEqual(captured, payload)
+        self.assertEqual(
+            rendered,
+            b"[stderr] " + b"x" * 1023 + b"\r\n[stderr] next",
+        )
+
+    async def test_pipe_stream_preserves_standalone_carriage_return_boundary(
+        self,
+    ) -> None:
+        payload = b"x" * 1023 + b"\rnext"
+
+        captured, rendered = await _render_pipe_log(payload, b"[stderr] ")
+
+        self.assertEqual(captured, payload)
+        self.assertEqual(
+            rendered,
+            b"[stderr] " + b"x" * 1023 + b"\r[stderr] next",
+        )
 
     async def test_collect_process_output_reaps_process_when_log_writer_fails(
         self,

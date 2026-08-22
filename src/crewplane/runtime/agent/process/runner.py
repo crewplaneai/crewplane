@@ -8,6 +8,7 @@ from .streams import (
     close_log_handle,
     collect_process_output,
     write_stdin,
+    write_stdin_and_collect_output,
 )
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "collect_process_output",
     "reap_failed_process",
     "write_stdin",
+    "write_stdin_and_collect_output",
 ]
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
@@ -24,6 +25,7 @@ from ..common import CompiledRuntimeContext, ExecutionTelemetry
 from ..consensus import EvaluatedReviewResult
 from ..provider_call.display import ProviderCallDisplay
 from ..provider_call.types import ProviderOutputPolicy
+from ..publication_registry import RuntimePublicationRegistry
 
 DEFAULT_REMEDIATION_DEPTH = 1
 DEFAULT_AUDIT_ROUNDS = 1
@@ -37,11 +39,16 @@ class ReviewLoopStatusOutputEntry(TypedDict):
     provider: str
     role: ProviderRole
     path: str
+    sha256: str
+    size_bytes: int
+    audit_round_num: int | None
+    round_num: int
 
 
 class ReviewLoopStatusPayload(TypedDict):
     node_id: str
     executed_audit_rounds: int
+    attempted_local_round_num: int
     final_local_round_num: int
     consensus_reached: bool
     continued_after_consensus_exhaustion: bool
@@ -59,9 +66,31 @@ class DriftCheckResult:
 
 
 @dataclass(frozen=True)
+class DirectorySnapshot:
+    mode: int
+    device: int
+    inode: int
+    user_id: int
+    group_id: int
+    link_count: int
+    changed_at_ns: int
+    entry_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ActivityWindow:
     is_exclusive: bool
     version: int | None
+
+
+@dataclass(frozen=True)
+class DriftRecoveryBaseline:
+    node_snapshot: dict[Path, tuple[int, str]]
+    shared_reserved_snapshot: dict[Path, tuple[int, str]]
+    node_original_bytes: dict[Path, bytes]
+    shared_reserved_original_bytes: dict[Path, bytes]
+    node_directory_snapshot: dict[Path, DirectorySnapshot]
+    shared_reserved_directory_snapshot: dict[Path, DirectorySnapshot]
 
 
 @dataclass
@@ -71,17 +100,32 @@ class DriftMonitoringWindow:
     summary_before: bytes | None
     event_log_before: bytes | None
     activity_window: ActivityWindow
+    node_original_bytes: dict[Path, bytes] = field(default_factory=dict)
+    shared_reserved_original_bytes: dict[Path, bytes] = field(default_factory=dict)
+    node_directory_snapshot: dict[Path, DirectorySnapshot] = field(default_factory=dict)
+    shared_reserved_directory_snapshot: dict[Path, DirectorySnapshot] | None = None
+    node_original_directories: set[Path] = field(default_factory=set)
+    shared_reserved_original_directories: set[Path] = field(default_factory=set)
+    event_publication_cursor: int | None = None
 
 
 @dataclass
 class EventLogAppendCapture:
     event_sink: EventSink | None
     events: list[ExecutionEvent]
+    owner_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    runtime_publications: RuntimePublicationRegistry | None = None
 
     def emit(self, event: ExecutionEvent) -> None:
-        self.events.append(event)
-        if self.event_sink is not None:
+        if self.event_sink is None:
+            return
+        line = format_execution_event_log_line(event).encode("utf-8")
+        if self.runtime_publications is None:
             self.event_sink(event)
+        else:
+            with self.runtime_publications.event_publication(self.owner_id, line):
+                self.event_sink(event)
+        self.events.append(event)
 
     def expected_append_bytes_since(self, start_index: int) -> bytes:
         if self.event_sink is None:
@@ -130,25 +174,6 @@ class GeneratedFileDriftAllowance:
             )
 
 
-@dataclass
-class RuntimePublicationAllowance:
-    _published_signatures: dict[Path, tuple[int, str]] = field(
-        default_factory=dict,
-        repr=False,
-    )
-    _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
-    _version: int = field(default=0, repr=False, compare=False)
-
-    def publish(self, path: Path, signature: tuple[int, str]) -> None:
-        with self._lock:
-            self._published_signatures[path] = signature
-            self._version += 1
-
-    def snapshot(self) -> tuple[dict[Path, tuple[int, str]], int]:
-        with self._lock:
-            return dict(self._published_signatures), self._version
-
-
 @dataclass(frozen=True)
 class DriftGuardSession:
     telemetry: ExecutionTelemetry | None
@@ -156,9 +181,10 @@ class DriftGuardSession:
     generated_file_allowance: GeneratedFileDriftAllowance = field(
         default_factory=GeneratedFileDriftAllowance
     )
-    runtime_publication_allowance: RuntimePublicationAllowance = field(
-        default_factory=RuntimePublicationAllowance
+    runtime_publications: RuntimePublicationRegistry = field(
+        default_factory=RuntimePublicationRegistry
     )
+    recovery_baseline: DriftRecoveryBaseline | None = None
 
 
 @dataclass
@@ -181,9 +207,17 @@ class DriftGuardCallRequest:
     display: ProviderCallDisplay
     drift_session: DriftGuardSession | None = None
     generated_file_allowance: GeneratedFileDriftAllowance | None = None
-    runtime_publication_allowance: RuntimePublicationAllowance | None = None
+    runtime_publications: RuntimePublicationRegistry | None = None
     provider_output_policy: ProviderOutputPolicy = ProviderOutputPolicy.REQUIRE_OUTPUT
     rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+    invocation_output_file: Path | None = None
+    defer_output_publication: bool = False
+    protected_paths: set[Path] = field(default_factory=set)
+    runtime_owned_paths: set[Path] = field(default_factory=set)
+    runtime_owned_roots: set[Path] = field(default_factory=set)
+
+    def allow_runtime_log_path(self, path: Path) -> None:
+        self.allowed_paths.add(path)
 
 
 @dataclass(frozen=True)
@@ -192,6 +226,9 @@ class ExecutorRoundArtifact:
     task_id: str
     content: str
     output_file: Path
+    audit_round_num: int | None
+    round_num: int
+    output_signature: tuple[int, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -200,6 +237,9 @@ class ReviewerRoundArtifact:
     task_id: str
     evaluation: EvaluatedReviewResult
     output_file: Path
+    audit_round_num: int | None
+    round_num: int
+    output_signature: tuple[int, str] | None = None
 
 
 @dataclass
@@ -221,6 +261,8 @@ class ReviewerInvocationResult:
     provider: ProviderRecord
     task_id: str
     output_file: Path
+    invocation_output_file: Path
+    output_signature: tuple[int, str]
     drift_warning_count: int
 
 
@@ -252,6 +294,7 @@ class AuditRoundResult:
     no_progress_round_count: int
     artifact_drift_warning_count: int
     last_round_num: int
+    selected_round_num: int = 0
 
 
 @dataclass
@@ -267,6 +310,7 @@ class AuditRoundProgress:
     no_progress_round_count: int = 0
     artifact_drift_warning_count: int = 0
     last_round_num: int = 0
+    selected_round_num: int = 0
 
     def add_artifact_drift_warnings(self, count: int) -> None:
         self.artifact_drift_warning_count += count
@@ -308,6 +352,7 @@ class AuditRoundProgress:
             no_progress_round_count=self.no_progress_round_count,
             artifact_drift_warning_count=self.artifact_drift_warning_count,
             last_round_num=self.last_round_num,
+            selected_round_num=self.selected_round_num,
         )
 
 
@@ -322,6 +367,7 @@ class ReviewLoopProgress:
     invalid_candidate_round_count: int = 0
     no_progress_round_count: int = 0
     artifact_drift_warning_count: int = 0
+    selected_round_num: int = 0
 
     def record_initial_executor_run(self, executor_run: ExecutorRoundRunResult) -> None:
         self.artifact_drift_warning_count += executor_run.drift_warning_count
@@ -334,13 +380,14 @@ class ReviewLoopProgress:
         self.no_progress_round_count += audit_result.no_progress_round_count
         self.artifact_drift_warning_count += audit_result.artifact_drift_warning_count
         self.last_round_num = audit_result.last_round_num
+        if audit_result.selected_round_num > 0:
+            self.selected_round_num = audit_result.selected_round_num
         self.consensus_reached = audit_result.consensus_reached
         self.continued_after_exhaustion = False
 
         if audit_result.latest_executor_outputs is not None:
             self.latest_executor_outputs = audit_result.latest_executor_outputs
-        if audit_result.latest_reviewer_outputs:
-            self.latest_reviewer_outputs = audit_result.latest_reviewer_outputs
+        self.latest_reviewer_outputs = audit_result.latest_reviewer_outputs
 
     def mark_consensus_exhausted(self, continued: bool) -> None:
         self.consensus_reached = False
@@ -392,7 +439,9 @@ class ReviewerRoundRuntime:
     reviewer_prompt: str
     invocation_semaphore: asyncio.Semaphore | None
     drift_session: DriftGuardSession
-    allowed_paths: set[Path]
+    protected_output_paths: set[Path]
+    runtime_owned_paths: set[Path]
+    runtime_owned_roots: set[Path]
 
 
 @dataclass

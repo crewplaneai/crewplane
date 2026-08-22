@@ -389,10 +389,13 @@ The important file is:
 <node-id>/review-state/review-loop-status.json
 ```
 
-It records the selected executor candidate, reviewer verdicts, and exhaustion
-state. Crewplane uses that status file to choose the final node result, so
-downstream `{{node.output}}` points at the executor result chosen by the review
+It records the selected executor candidate, reviewer verdicts, exhaustion state,
+and enough information to verify that the selected files have not changed.
+Crewplane checks them before choosing the final node result. Downstream
+`{{node.output}}` therefore points at the executor result chosen by the review
 loop.
+
+Each provider’s response remains separate until that provider finishes. While providers are running, Crewplane protects the current candidate, reviewer results, and other run data from unexpected changes. If protected data changes, Crewplane fails the node. An audit that produces no valid reviewer results does not carry forward results from an earlier audit.
 
 ## Workspace Notes
 

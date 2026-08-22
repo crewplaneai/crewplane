@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -21,6 +23,7 @@ from ..fragment_assembler import (
     ResolvedPrompt,
     stream_has_runtime_dynamic_workspace_locator,
 )
+from ..provider_call import publish_invocation_output
 from ..reviews.consensus import check_consensus
 from ..workspace_files import ResolvedWorkspaceFile, WorkspaceCandidateSourceContext
 from .policy import (
@@ -185,7 +188,6 @@ async def execute_review_loop_stage(
 
     should_continue, continuation_reason = consensus_failure_allows_continuation(
         context.stage,
-        context.runtime_context.sequential_consensus_on_exhaustion(),
     )
     if not should_continue:
         progress.mark_consensus_exhausted(continued=False)
@@ -322,6 +324,7 @@ async def _initial_audit_executor_outputs(
             node_id=context.stage.id,
             artifact_dir=audit_dir,
             executor_outputs=progress.latest_executor_outputs,
+            audit_round_num=audit_context,
             round_num=1,
         )
 
@@ -448,12 +451,26 @@ def seed_executor_outputs(
     node_id: str,
     artifact_dir: Path,
     executor_outputs: list[ExecutorRoundArtifact],
+    audit_round_num: int | None,
     round_num: int,
 ) -> list[ExecutorRoundArtifact]:
     seeded_outputs: list[ExecutorRoundArtifact] = []
     for artifact in executor_outputs:
         output_file = artifact_dir / f"{artifact.task_id}_round{round_num}.md"
-        output_file.write_text(artifact.content, encoding="utf-8")
+        if artifact.output_signature is None:
+            raise RuntimeError(
+                "Cannot seed an executor output without a bound runtime publication: "
+                f"{artifact.output_file.as_posix()}"
+            )
+        with tempfile.TemporaryDirectory(prefix="crewplane-review-seed-") as temp_dir:
+            invocation_output = Path(temp_dir) / "provider-output.md"
+            atomic_write_text(invocation_output, artifact.content)
+            output_signature = publish_invocation_output(
+                invocation_output,
+                output_file,
+                runtime_context.runtime_publications,
+                artifact.output_signature,
+            )
         runtime_context.generated_file_workspaces.alias_output_file(
             node_id,
             artifact.output_file,
@@ -465,6 +482,9 @@ def seed_executor_outputs(
                 task_id=artifact.task_id,
                 content=artifact.content,
                 output_file=output_file,
+                audit_round_num=audit_round_num,
+                round_num=round_num,
+                output_signature=output_signature,
             )
         )
     return seeded_outputs

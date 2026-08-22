@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType, build_result_filename
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -67,7 +68,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             def record_event(event: ExecutionEvent) -> None:
                 events.append(event)
                 if (
-                    event.event_type == "invocation_finished"
+                    event.event_type == EventType.INVOCATION_FINISHED
                     and event.context.provider == "fast"
                 ):
                     release_slow_model.set()
@@ -83,7 +84,9 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
 
             finished = [
-                event for event in events if event.event_type == "invocation_finished"
+                event
+                for event in events
+                if event.event_type == EventType.INVOCATION_FINISHED
             ]
             self.assertEqual(len(finished), 2)
             self.assertTrue(
@@ -153,7 +156,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             started_nodes = [
                 event.context.node_id
                 for event in events
-                if event.event_type == "node_started"
+                if event.event_type == EventType.NODE_STARTED
             ]
             self.assertGreaterEqual(len(started_nodes), 2)
             self.assertEqual(started_nodes[:2], ["node.z", "node.a"])
@@ -302,7 +305,7 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 events.append(event)
                 persistent_logger.record_event(event)
                 if (
-                    event.event_type == "node_finished"
+                    event.event_type == EventType.NODE_FINISHED
                     and event.context.node_id == "aux.node"
                 ):
                     release_review_executor.set()
@@ -317,14 +320,14 @@ class WorkflowVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 suppress_progress_output=True,
             )
 
-            review_result = output.get_stage_output_path("review.node").read_text(
-                encoding="utf-8"
-            )
+            review_result = (
+                output.results_dir / build_result_filename("review.node")
+            ).read_text(encoding="utf-8")
             self.assertIn("review-loop executor output", review_result)
             drift_errors = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_artifact_drift"
                 and event.payload.level == "error"
             ]

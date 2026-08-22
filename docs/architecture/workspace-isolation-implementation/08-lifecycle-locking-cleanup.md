@@ -266,10 +266,11 @@ Cleanup is idempotent and safe to retry.
 
 Terminal cleanup order:
 
-1. Mark run terminal in run manifest.
-2. Stop scheduling new nodes.
-3. Terminate or drain active provider invocations.
-4. Wait for in-flight artifact and workspace-state writes where possible.
+1. Stop scheduling new nodes.
+2. Terminate or drain active provider invocations.
+3. Wait for in-flight artifact and workspace-state writes.
+4. Complete required branch export, workspace cleanup, descriptor refresh, and
+   resume-provenance recording.
 5. Unlock worktrees selected for cleanup.
 6. Remove Crewplane-owned registered worktrees with
    `git worktree remove --force <path>`.
@@ -279,6 +280,13 @@ Terminal cleanup order:
 10. Remove disposable reviewer workspaces.
 11. Preserve or remove canonical artifacts according to artifact retention
     behavior.
+12. Emit the matching terminal event, observer result, and summary, stop
+    required observers, then atomically publish the one terminal run manifest
+    as the final commit marker before releasing the run lock.
+
+Stale-lock takeover is the exception: when the prior process stops before this
+sequence completes, recovery publishes a cancelled manifest with
+`stale_lock_recovered`. The interrupted event log and summary may be incomplete.
 
 Cleanup must never use raw directory deletion as the normal path for registered
 worktrees. Raw deletion is limited to snapshots, temporary indexes,
@@ -310,9 +318,11 @@ V1 CLI cleanup surface:
 crewplane cleanup workspaces [--dry-run] [--run <run-key>] [--older-than <duration>] [--successful] [--failed] [--cancelled] [--orphans] [--all-projects] [--yes]
 ```
 
-Default mode is advisory. Destructive cleanup requires `--yes`. Status and
-orphan filters use current-project workspace-state artifacts, so they are not
-valid with `--all-projects`.
+Default mode is advisory. Destructive cleanup requires `--yes`, defaults to
+terminal states, and retains live or unverifiable entries after checking
+workspace state, the run manifest, lock ownership, and provider receipts.
+Status and orphan filters require current-project artifacts and are invalid with
+`--all-projects`.
 
 The command removes workspace cache directories, worktree registrations,
 reviewer workspaces, temporary indexes, and run-owned cached refs. It does not

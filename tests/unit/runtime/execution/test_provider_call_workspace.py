@@ -22,6 +22,7 @@ from crewplane.runtime.execution.runtime_context import (
 from crewplane.runtime.workspace import PreparedWorkspace
 from crewplane.runtime.workspace.setup import WorkspaceSetupCancellation
 from crewplane.runtime.workspace.snapshot import WorkspaceSnapshotCancelled
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     disabled_workspace_plan,
     workspace_invocation_context,
@@ -144,7 +145,7 @@ async def _run_deferred_workspace_snapshot_cancellation_is_not_cleanup_failure(
     repo = tmp_path / "repo"
     repo.mkdir()
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     request = _provider_call_request(
         tmp_path,
         repo,
@@ -206,7 +207,7 @@ async def _run_pre_invocation_generated_file_baseline_observes_task_cancellation
     repo = tmp_path / "repo"
     repo.mkdir()
     output = workspace_output_manager(tmp_path, repo)
-    node_dir = output.create_stage_dir("implement")
+    node_dir = output.create_node_dir(node_artifact_request("implement"))
     invocation_context = workspace_invocation_context()
     prepared_workspace = PreparedWorkspace(
         repo,

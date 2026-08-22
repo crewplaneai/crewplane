@@ -1,11 +1,11 @@
 import asyncio
 import json
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager, safe_artifact_name
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -27,8 +27,8 @@ from crewplane.runtime.execution.fragment_assembler import ResolvedPrompt
 from crewplane.runtime.execution.provider_call import (
     generated_files as provider_generated_files,
 )
-from crewplane.runtime.execution.review_loop import drift as review_loop_drift
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     FailingLogOutputManager,
@@ -39,6 +39,42 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
     review_loop_status_path,
     review_output,
 )
+
+
+class ParallelReviewerStreamingLogInvoker(ParallelReviewerBarrierInvoker):
+    def __init__(self) -> None:
+        super().__init__()
+        self.slow_log_ready = asyncio.Event()
+        self.release_slow_reviewer = asyncio.Event()
+        self.slow_log_path: Path | None = None
+
+    async def invoke(
+        self,
+        config: AgentConfig,  # noqa: ARG002 - Required by test double signature.
+        model: str,  # noqa: ARG002 - Required by test double signature.
+        prompt: str,  # noqa: ARG002 - Required by test double signature.
+        output_file: Path,
+        cwd: Path,  # noqa: ARG002 - Required by test double signature.
+        log_file: Path | None = None,
+        invocation_context=None,  # type: ignore[no-untyped-def]
+    ) -> None:
+        assert invocation_context is not None
+        if invocation_context.role == ProviderRole.EXECUTOR:
+            output_file.write_text("executor output", encoding="utf-8")
+            return
+        if invocation_context.task_id == "review-b_reviewer_1":
+            assert log_file is not None
+            self.slow_log_path = log_file
+            log_file.write_text("review-b streaming", encoding="utf-8")
+            self.slow_log_ready.set()
+            await asyncio.wait_for(self.release_slow_reviewer.wait(), timeout=1.0)
+        else:
+            await asyncio.wait_for(self.slow_log_ready.wait(), timeout=1.0)
+            asyncio.get_running_loop().call_later(
+                0.05,
+                self.release_slow_reviewer.set,
+            )
+        output_file.write_text(review_output(verdict="NO_FINDINGS"), encoding="utf-8")
 
 
 class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
@@ -73,7 +109,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
 
             await execute_sequential_stage(config, node, output, invoker=invoker)
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
 
@@ -257,7 +293,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Current executor output(s):", reviewer_prompt)
             self.assertIn("canonical executor output", reviewer_prompt)
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertTrue((node_dir / "review_reviewer_0_round0.md").exists())
@@ -533,7 +569,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("executor one output", reviewer_prompt)
             self.assertIn("executor two output", reviewer_prompt)
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertIn(
@@ -591,7 +627,7 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             await execute_sequential_stage(config, node, output, invoker=invoker)
 
             self.assertEqual(len(invoker.calls), 4)
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             self.assertFalse((node_dir / "exec_executor_0_round3.md").exists())
@@ -643,7 +679,62 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 {"review-a_reviewer_0", "review-b_reviewer_1"},
             )
 
-    async def test_parallel_reviewer_snapshot_detects_unregistered_concurrent_write(
+    async def test_parallel_reviewer_peer_log_is_not_read_by_drift_snapshot(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    "exec": AgentConfig(cli_cmd=["mock"], default_model="exec-model"),
+                    "review-a": AgentConfig(
+                        cli_cmd=["mock"],
+                        default_model="review-a-model",
+                    ),
+                    "review-b": AgentConfig(
+                        cli_cmd=["mock"],
+                        default_model="review-b-model",
+                    ),
+                },
+            )
+            node = WorkflowNode(
+                id="review.node.parallel.logs",
+                mode="sequential",
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+                ],
+                providers=[
+                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                    ProviderSpec(provider="review-a", role=ProviderRole.REVIEWER),
+                    ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
+                ],
+            )
+            invoker = ParallelReviewerStreamingLogInvoker()
+            output = OutputManager(
+                "workflow",
+                base_dir=tmp_path,
+                log_cli_output=True,
+            )
+            original_read_bytes = Path.read_bytes
+            peer_log_read_count = 0
+
+            def append_after_peer_log_read(path: Path) -> bytes:
+                nonlocal peer_log_read_count
+                payload = original_read_bytes(path)
+                if path == invoker.slow_log_path:
+                    peer_log_read_count += 1
+                    with path.open("ab") as stream:
+                        stream.write(b" still running")
+                return payload
+
+            with patch.object(Path, "read_bytes", new=append_after_peer_log_read):
+                await execute_sequential_stage(config, node, output, invoker=invoker)
+
+            self.assertIsNotNone(invoker.slow_log_path)
+            self.assertEqual(peer_log_read_count, 0)
+
+    async def test_parallel_reviewer_private_snapshots_do_not_overlap(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -698,97 +789,71 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
                 events.append(event)
                 persistent_logger.record_event(event)
 
-            review_a_snapshot_created = threading.Event()
-            release_review_a_snapshot = threading.Event()
-            coordination_timed_out = threading.Event()
-            review_a_snapshot_root: Path | None = None
-            unexpected_snapshot_file: Path | None = None
+            snapshot_output_paths: list[Path] = []
+            snapshot_roots: list[Path] = []
             original_snapshot = (
                 provider_generated_files.snapshot_generated_file_workspace
             )
-            original_detect_drift = review_loop_drift.detect_provider_call_drift
 
             def coordinate_snapshot(*args, **kwargs):  # type: ignore[no-untyped-def]
-                nonlocal review_a_snapshot_root, unexpected_snapshot_file
                 snapshot_root = original_snapshot(*args, **kwargs)
-                output_file = args[0]
-                if output_file.stem == "review-a_reviewer_0_round1":
-                    review_a_snapshot_root = snapshot_root
-                    review_a_snapshot_created.set()
-                    if not release_review_a_snapshot.wait(timeout=5):
-                        coordination_timed_out.set()
-                elif output_file.stem == "review-b_reviewer_1_round1":
-                    if not review_a_snapshot_created.wait(timeout=5):
-                        coordination_timed_out.set()
-                    if review_a_snapshot_root is not None:
-                        unexpected_snapshot_file = (
-                            review_a_snapshot_root / "provider-injected.txt"
-                        )
-                        unexpected_snapshot_file.write_text(
-                            "provider mutation",
-                            encoding="utf-8",
-                        )
+                snapshot_output_paths.append(args[0])
+                snapshot_roots.append(snapshot_root)
                 return snapshot_root
 
-            def detect_drift_and_release_review_a(*args, **kwargs):  # type: ignore[no-untyped-def]
-                try:
-                    return original_detect_drift(*args, **kwargs)
-                finally:
-                    if args[0].task_id == "review-b_reviewer_1":
-                        release_review_a_snapshot.set()
-
-            try:
-                with (
-                    patch.object(
-                        provider_generated_files,
-                        "snapshot_generated_file_workspace",
-                        side_effect=coordinate_snapshot,
+            with patch.object(
+                provider_generated_files,
+                "snapshot_generated_file_workspace",
+                side_effect=coordinate_snapshot,
+            ):
+                await execute_sequential_stage(
+                    config,
+                    node,
+                    output,
+                    invoker=invoker,
+                    telemetry=ExecutionTelemetry(
+                        workflow_name="workflow",
+                        run_id=output.run_id,
+                        event_sink=record_event,
                     ),
-                    patch.object(
-                        review_loop_drift,
-                        "detect_provider_call_drift",
-                        side_effect=detect_drift_and_release_review_a,
-                    ),
-                ):
-                    await execute_sequential_stage(
-                        config,
-                        node,
-                        output,
-                        invoker=invoker,
-                        telemetry=ExecutionTelemetry(
-                            workflow_name="workflow",
-                            run_id=output.run_id,
-                            event_sink=record_event,
-                        ),
-                    )
-            finally:
-                release_review_a_snapshot.set()
+                )
 
-            self.assertFalse(coordination_timed_out.is_set())
-            drift_events = [
-                event
-                for event in events
-                if event.event_type == "runtime_log"
-                and event.payload.operation == "review_loop_artifact_drift"
+            reviewer_snapshot_paths = [
+                path
+                for path in snapshot_output_paths
+                if path.name == "provider-output.md"
             ]
-            self.assertEqual(len(drift_events), 1)
-            self.assertEqual(
-                drift_events[0].payload.attributes["unexpected_path_count"],
-                1,
+            self.assertEqual(len(reviewer_snapshot_paths), 2)
+            self.assertNotEqual(
+                reviewer_snapshot_paths[0].parent,
+                reviewer_snapshot_paths[1].parent,
             )
-            self.assertIsNotNone(unexpected_snapshot_file)
-            assert unexpected_snapshot_file is not None
-            self.assertIn(
-                unexpected_snapshot_file.name,
-                drift_events[0].payload.message,
-            )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
+            reviewer_snapshot_roots = [
+                root
+                for source, root in zip(
+                    snapshot_output_paths, snapshot_roots, strict=True
+                )
+                if source.name == "provider-output.md"
+            ]
+            self.assertTrue(all(root.exists() for root in reviewer_snapshot_roots))
+            self.assertEqual(
+                set(reviewer_snapshot_roots),
+                {
+                    provider_generated_files.generated_file_source_root(
+                        node_dir / "review-a_reviewer_0_round1.md"
+                    ),
+                    provider_generated_files.generated_file_source_root(
+                        node_dir / "review-b_reviewer_1_round1.md"
+                    ),
+                },
+            )
             status_payload = json.loads(
                 review_loop_status_path(node_dir).read_text(encoding="utf-8")
             )
-            self.assertEqual(status_payload["artifact_drift_warning_count"], 1)
+            self.assertEqual(status_payload["artifact_drift_warning_count"], 0)
 
     async def test_parallel_reviewer_log_setup_failure_uses_invocation_lifecycle(
         self,
@@ -862,14 +927,14 @@ class ExecutorSequentialStageBasicsTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 release_review_a.set()
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
-            self.assertTrue((node_dir / "review-a_reviewer_0_round1.md").exists())
+            self.assertFalse((node_dir / "review-a_reviewer_0_round1.md").exists())
             failed_events = [
                 event
                 for event in events
-                if event.event_type == "invocation_failed"
+                if event.event_type == EventType.INVOCATION_FAILED
                 and event.context.provider == "review-b"
             ]
             self.assertEqual(len(failed_events), 1)

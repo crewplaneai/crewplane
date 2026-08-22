@@ -71,6 +71,13 @@ class ResumeOrigin(BaseModel):
     source_node_id: str
     hydrated_at: str
 
+    @field_validator("source_run_id", "source_run_key_name", "source_node_id")
+    @classmethod
+    def _validate_nonblank_provenance(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Resume provenance fields cannot be blank.")
+        return value
+
     @field_validator("hydrated_at")
     @classmethod
     def _validate_hydrated_at(cls, value: str) -> str:
@@ -95,6 +102,19 @@ class NodeState(BaseModel):
     workspace: JsonObject | None = None
     resume_origin: ResumeOrigin | None = None
 
+    @field_validator(
+        "workflow_identity",
+        "workflow_name",
+        "run_id",
+        "run_key_name",
+        "node_id",
+    )
+    @classmethod
+    def _validate_nonblank_identity(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Node state identity fields cannot be blank.")
+        return value
+
     @field_validator("run_state_schema_version")
     @classmethod
     def _validate_state_schema_version(cls, value: int) -> int:
@@ -118,6 +138,29 @@ class NodeState(BaseModel):
     @classmethod
     def _validate_completed_at(cls, value: str) -> str:
         return _validate_iso_datetime(value)
+
+    @model_validator(mode="after")
+    def _validate_artifact_descriptor_sets(self) -> NodeState:
+        artifact_kinds = [descriptor.kind for descriptor in self.artifacts]
+        if len(artifact_kinds) != len(set(artifact_kinds)):
+            raise ValueError("Node state artifact kinds must be unique.")
+        if any(descriptor.kind == "generated_file" for descriptor in self.artifacts):
+            raise ValueError(
+                "Generated-file descriptors must be stored in generated_files."
+            )
+        if any(
+            descriptor.kind != "generated_file" for descriptor in self.generated_files
+        ):
+            raise ValueError(
+                "generated_files may contain only generated-file descriptors."
+            )
+        paths = [
+            descriptor.relative_path
+            for descriptor in (*self.artifacts, *self.generated_files)
+        ]
+        if len(paths) != len(set(paths)):
+            raise ValueError("Node state artifact paths must be unique.")
+        return self
 
 
 class RunManifest(BaseModel):
@@ -147,6 +190,43 @@ class RunManifest(BaseModel):
     resume_source_run_key_name: str | None = None
     failure_message: str | None = None
     cancel_reason: str | None = None
+
+    @field_validator(
+        "workflow_identity",
+        "workflow_name",
+        "run_id",
+        "run_key_name",
+        "preflight_plan_path",
+        "preflight_manifest_path",
+        "runtime_config_snapshot_path",
+        "workflow_source",
+    )
+    @classmethod
+    def _validate_nonblank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Run manifest identity and path fields cannot be blank.")
+        return value
+
+    @field_validator("failure_message", "cancel_reason")
+    @classmethod
+    def _validate_nonblank_reason(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Terminal run reasons cannot be blank.")
+        return value
+
+    @field_validator("resumed_nodes")
+    @classmethod
+    def _validate_resumed_nodes(cls, value: list[str]) -> list[str]:
+        if any(not node_id.strip() for node_id in value):
+            raise ValueError("resumed_nodes cannot contain blank node ids.")
+        return value
+
+    @field_validator("resume_source_run_id", "resume_source_run_key_name")
+    @classmethod
+    def _validate_resume_source(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Resume source provenance fields cannot be blank.")
+        return value
 
     @field_validator("run_state_schema_version")
     @classmethod
@@ -191,4 +271,24 @@ class RunManifest(BaseModel):
             raise ValueError("failure_message is only valid for failed runs.")
         if self.status != RUN_STATUS_CANCELLED and self.cancel_reason is not None:
             raise ValueError("cancel_reason is only valid for cancelled runs.")
+        if self.status == RUN_STATUS_FAILED and self.failure_message is None:
+            raise ValueError("Failed manifests require failure_message.")
+        if self.status == RUN_STATUS_CANCELLED and self.cancel_reason is None:
+            raise ValueError("Cancelled manifests require cancel_reason.")
+        source_values = (
+            self.resume_source_run_id,
+            self.resume_source_run_key_name,
+        )
+        if any(value is not None for value in source_values) != all(
+            value is not None for value in source_values
+        ):
+            raise ValueError("Resume source provenance must be all-or-none.")
+        if bool(self.resumed_nodes) != all(
+            value is not None for value in source_values
+        ):
+            raise ValueError(
+                "Resume source provenance is required exactly when nodes were hydrated."
+            )
+        if len(self.resumed_nodes) != len(set(self.resumed_nodes)):
+            raise ValueError("resumed_nodes cannot contain duplicates.")
         return self

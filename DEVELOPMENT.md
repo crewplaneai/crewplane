@@ -90,10 +90,11 @@ Current CI policy:
 - Workflow actions and `uv` are version-pinned. `packaging/uv-bootstrap.json`
   is the source of truth for the `uv` version and installer checksums. The
   updater generates `packaging/uv-bootstrap-version.txt` from this manifest for
-  workflows; do not edit the generated file directly. This keeps nightly
+  workflows; do not edit the generated file directly. This keeps scheduled
   updates from rewriting workflow definitions.
-- Nightly automation proposes `uv` updates through the shared `ci-tooling` PR
-  lane.
+- Weekly automation runs on Mondays at 20:30 UTC, after the scheduled
+  Dependabot `ci-tooling` update, and contributes `uv` updates only while that
+  PR is open. When no matching PR exists, the updater waits for the next week.
 
 Operational notes:
 

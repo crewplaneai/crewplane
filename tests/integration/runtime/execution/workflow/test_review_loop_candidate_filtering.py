@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -16,7 +17,9 @@ from crewplane.observability.events import ExecutionEvent
 from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
+from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     ArtifactDriftInvoker,
     MockAgentInvoker,
@@ -85,7 +88,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -152,7 +155,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(len(invalid_events), 1)
@@ -217,7 +220,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             invalid_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_invalid_candidate"
             ]
             self.assertEqual(invalid_events, [])
@@ -268,7 +271,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             self.assertTrue(
                 all(call["role"] == ProviderRole.EXECUTOR for call in invoker.calls)
             )
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             status_payload = json.loads(
@@ -279,12 +282,12 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             no_candidate_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_no_canonical_candidate"
             ]
             self.assertEqual(len(no_candidate_events), 1)
 
-    async def test_multi_provider_sequential_warns_on_executor_artifact_drift(
+    async def test_multi_provider_sequential_rejects_and_restores_executor_artifact_drift(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -309,7 +312,7 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
                 ],
             )
             output = OutputManager("workflow", base_dir=tmp_path)
-            node_dir = output.create_stage_dir(node.id)
+            node_dir = output.create_node_dir(node_artifact_request(node.id))
             invoker = ArtifactDriftInvoker(
                 outputs=[
                     "executor output round 1",
@@ -331,31 +334,28 @@ class ExecutorReviewLoopCandidateFilteringTests(unittest.IsolatedAsyncioTestCase
             )
             events: list[ExecutionEvent] = []
 
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id="run-1",
-                    event_sink=events.append,
-                ),
-            )
+            with self.assertRaisesRegex(NodeExecutionError, "modified fatal artifacts"):
+                await execute_sequential_stage(
+                    config,
+                    node,
+                    output,
+                    invoker=invoker,
+                    telemetry=ExecutionTelemetry(
+                        workflow_name="workflow",
+                        run_id="run-1",
+                        event_sink=events.append,
+                    ),
+                )
 
             drift_events = [
                 event
                 for event in events
-                if event.event_type == "runtime_log"
+                if event.event_type == EventType.RUNTIME_LOG
                 and event.payload.operation == "review_loop_artifact_drift"
-                and event.payload.level == "warning"
+                and event.payload.level == "error"
             ]
             self.assertEqual(len(drift_events), 1)
-            status_payload = json.loads(
-                review_loop_status_path(node_dir).read_text(encoding="utf-8")
-            )
-            self.assertEqual(status_payload["artifact_drift_warning_count"], 1)
             self.assertEqual(
-                status_payload["canonical_executor_outputs"][0]["path"],
-                "exec_executor_0_round2.md",
+                (node_dir / "exec_executor_0_round1.md").read_text(encoding="utf-8"),
+                "executor output round 1",
             )

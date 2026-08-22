@@ -5,8 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.artifacts.results.review_loop_status import ReviewLoopStatusError
 from crewplane.artifacts.results.writer import ResultWriter
+from crewplane.core.workflow.keywords import ProviderRole
 from tests.unit.artifacts.test_review_loop_status import (
     INVALID_STATUS_CASES,
     StatusMutator,
@@ -175,6 +177,58 @@ def test_valid_empty_status_produces_empty_selection_without_fallback(
     assert "should not be included" not in result_file.read_text(encoding="utf-8")
 
 
+def test_findings_enabled_publishes_empty_findings_artifact(
+    tmp_path: Path,
+) -> None:
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    (stage_dir / "executor_round1.md").write_text("", encoding="utf-8")
+    result_file = tmp_path / "result.md"
+    findings_file = tmp_path / "findings.md"
+    writer = build_writer(result_file, findings_file)
+
+    result = writer.finalize_stage(
+        "stage",
+        stage_dir,
+        findings_enabled=True,
+        task_specs=(StageTaskSpec(task_id="executor", role=ProviderRole.EXECUTOR),),
+    )
+
+    assert result.findings_file == findings_file
+    assert findings_file.exists()
+    assert findings_file.read_text(encoding="utf-8") == ""
+
+
+def test_reviewer_stage_requires_review_loop_status(tmp_path: Path) -> None:
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    (stage_dir / "reviewer_round1.md").write_text("review", encoding="utf-8")
+    result_file = tmp_path / "result.md"
+    writer = build_writer(result_file, tmp_path / "findings.md")
+
+    with pytest.raises(ReviewLoopStatusError, match="required status is missing"):
+        writer.finalize_stage(
+            "stage",
+            stage_dir,
+            task_specs=(StageTaskSpec(task_id="reviewer", role=ProviderRole.REVIEWER),),
+        )
+
+    assert not result_file.exists()
+
+
+def test_reviewer_stage_without_artifact_directory_requires_status(
+    tmp_path: Path,
+) -> None:
+    writer = build_writer(tmp_path / "result.md", tmp_path / "findings.md")
+
+    with pytest.raises(ReviewLoopStatusError, match="required status is missing"):
+        writer.finalize_stage(
+            "stage",
+            None,
+            task_specs=(StageTaskSpec(task_id="reviewer", role=ProviderRole.REVIEWER),),
+        )
+
+
 def test_valid_status_selects_declared_outputs_only(tmp_path: Path) -> None:
     stage_dir = tmp_path / "stage"
     stage_dir.mkdir()
@@ -190,8 +244,54 @@ def test_valid_status_selects_declared_outputs_only(tmp_path: Path) -> None:
     result_text = result_file.read_text(encoding="utf-8")
     assert tuple(path.name for path in result.included_outputs) == (
         "executor_round2.md",
-        "reviewer_round1.md",
+        "reviewer_round2.md",
     )
     assert "executor" in result_text
     assert "reviewer" in result_text
     assert "stale" not in result_text
+
+
+def test_status_producer_must_match_compiled_task_spec(tmp_path: Path) -> None:
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    create_referenced_outputs(stage_dir)
+    write_status(stage_dir, valid_status_payload())
+    writer = build_writer(tmp_path / "result.md", tmp_path / "findings.md")
+
+    with pytest.raises(ReviewLoopStatusError, match="unexpected producer provider"):
+        writer.finalize_stage(
+            "stage",
+            stage_dir,
+            task_specs=(
+                StageTaskSpec(
+                    task_id="executor",
+                    role=ProviderRole.EXECUTOR,
+                    provider="not-codex",
+                ),
+                StageTaskSpec(
+                    task_id="reviewer",
+                    role=ProviderRole.REVIEWER,
+                    provider="claude",
+                ),
+            ),
+        )
+
+
+def test_unsafe_latest_candidate_does_not_get_aggregated(
+    tmp_path: Path,
+) -> None:
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside", encoding="utf-8")
+    candidate = stage_dir / "executor_round1.md"
+    try:
+        candidate.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+    writer = build_writer(tmp_path / "result.md", tmp_path / "findings.md")
+
+    with pytest.raises(ValueError, match="single-link regular file"):
+        writer.finalize_stage("stage", stage_dir)
+
+    assert not (tmp_path / "result.md").exists()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from crewplane.core.workflow.models import WorkflowNode
 from crewplane.core.workflow.source_locations import SourceSpan
@@ -22,6 +22,9 @@ from .models import (
 from .references import TemplateReference
 from .secrets import FingerprintKeyCache, FingerprintKeyPolicy, SecretContext
 from .source import PreflightWorkflowSource
+
+if TYPE_CHECKING:
+    from crewplane.architecture.ports import TerminalHistoryReaderPort
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,7 @@ class PreflightCompileOptions:
         default_factory=dict
     )
     allowed_template_paths: tuple[Path, ...] = ()
+    terminal_history_reader: TerminalHistoryReaderPort | None = None
     runtime_variables: dict[str, str] = field(default_factory=dict)
     environment: dict[str, str] | None = None
     fingerprint_key_policy: FingerprintKeyPolicy = "read_only"

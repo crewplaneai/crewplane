@@ -7,6 +7,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import yaml
+
 from . import build
 from .state import (
     COMMAND_TIMEOUT_SECONDS,
@@ -422,37 +424,20 @@ def exercise_installed_cli(
 
 
 def write_mock_config(path: Path) -> None:
-    path.write_text(
-        "\n".join(
-            [
-                'version: "1.0"',
-                "agents:",
-                "  mock:",
-                '    cli_cmd: ["__crewplane_mock_invoker_never_executes__"]',
-                '    provider_kind: "generic"',
-                '    prompt_transport: "stdin"',
-                '    default_model: "mock"',
-                "settings:",
-                "  integrations:",
-                "    invoker:",
-                '      implementation: "mock"',
-                "      options:",
-                "        delay_seconds: 0",
-                "        observation_delay_seconds: 0",
-                '        output_mode: "lorem"',
-                "    ui:",
-                '      implementation: "none"',
-                "      options: {}",
-                "    artifacts:",
-                '      implementation: "filesystem"',
-                "      options:",
-                "        log_cli_output: true",
-                "        allowed_template_paths: []",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    match config:
+        case {
+            "settings": {
+                "integrations": {
+                    "invoker": {"implementation": "mock", "options": dict() as options}
+                }
+            }
+        }:
+            options["delay_seconds"] = 0
+            options["observation_delay_seconds"] = 0
+        case _:
+            raise ReleaseError("scaffolded config does not define the mock invoker")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
 def current_python(root: Path, runner: CommandRunner) -> str:

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import math
-import re
-from typing import Literal
+from copy import deepcopy
+from typing import Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
+from .integration_secrets import (
+    parse_json_pointer,
+    transform_sensitive_integration_options,
+    validate_sensitive_integration_option_pointers,
+)
 from .json import JsonObject, JsonValue
 
 SignatureScope = Literal["execution", "artifact", "observer", "validation"]
-
-_SENSITIVE_OPTION_PATTERN = re.compile(
-    r"(secret|token|password|passwd|api[_-]?key|credential|private)",
-    re.IGNORECASE,
-)
 
 
 class CanonicalIntegrationConfig(BaseModel):
@@ -23,15 +23,19 @@ class CanonicalIntegrationConfig(BaseModel):
     boundary intentionally preserves JSON-compatible payloads.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     implementation: str
     resolved_identity: str
-    options: JsonObject = Field(default_factory=dict)
+    options: JsonObject = Field(default_factory=dict, repr=False)
     sensitive_options: list[str] = Field(default_factory=list)
-    option_fingerprints: list[dict[str, str]] = Field(default_factory=list)
+    option_fingerprints: list[dict[str, str]] = Field(
+        default_factory=list,
+        repr=False,
+    )
     option_scopes: dict[str, SignatureScope] = Field(default_factory=dict)
     capabilities: JsonObject = Field(default_factory=dict)
+    _options_are_generated_redacted: bool = PrivateAttr(default=False)
 
     @model_validator(mode="after")
     def _validate_option_metadata(self) -> CanonicalIntegrationConfig:
@@ -51,12 +55,10 @@ class CanonicalIntegrationConfig(BaseModel):
                 "Canonical integration option scopes must exactly match option keys: "
                 + "; ".join(details)
             )
-        unknown_sensitive = sorted(set(self.sensitive_options) - option_keys)
-        if unknown_sensitive:
-            raise ValueError(
-                "Canonical integration sensitive options must name canonical options: "
-                f"{unknown_sensitive}"
-            )
+        validate_sensitive_integration_option_pointers(
+            self.options,
+            self.sensitive_options,
+        )
         return self
 
     def scoped_payload(self, scopes: set[SignatureScope]) -> JsonObject:
@@ -74,52 +76,77 @@ class CanonicalIntegrationConfig(BaseModel):
         return payload
 
     def redacted_payload(self) -> JsonObject:
-        sensitive_keys = sensitive_integration_option_keys(self)
-        sensitive_options: list[JsonValue] = []
-        sensitive_options.extend(sorted(sensitive_keys))
-        redacted_options: JsonObject = {
-            key: (
-                redacted_integration_option_value(value)
-                if key in sensitive_keys
-                else value
+        option_fingerprints: list[JsonValue] = []
+        if self._options_are_generated_redacted:
+            redacted_options = deepcopy(self.options)
+            sensitive_options = list(self.sensitive_options)
+            option_fingerprints = [
+                cast(JsonValue, dict(item)) for item in self.option_fingerprints
+            ]
+        else:
+            redacted_options, sensitive_options = (
+                transform_sensitive_integration_options(
+                    self.options,
+                    self.sensitive_options,
+                    _redact_sensitive_option,
+                )
             )
-            for key, value in self.options.items()
-        }
         payload: JsonObject = {
             "capabilities": self.capabilities,
             "implementation": self.implementation,
-            "option_fingerprints": [dict(item) for item in self.option_fingerprints],
+            "option_fingerprints": option_fingerprints,
             "option_scopes": dict(self.option_scopes),
             "options": redacted_options,
             "resolved_identity": self.resolved_identity,
-            "sensitive_options": sensitive_options,
+            "sensitive_options": list(sensitive_options),
         }
         return payload
+
+    def with_generated_redaction(
+        self,
+        options: JsonObject,
+        sensitive_options: list[str],
+        option_fingerprints: list[dict[str, str]],
+    ) -> CanonicalIntegrationConfig:
+        """Record redaction metadata produced by Crewplane's runtime boundary."""
+        redacted = self.model_copy(
+            update={
+                "options": options,
+                "option_fingerprints": option_fingerprints,
+                "sensitive_options": sensitive_options,
+            }
+        )
+        redacted._options_are_generated_redacted = True
+        return redacted
+
+
+def sensitive_integration_option_pointers(
+    config: CanonicalIntegrationConfig,
+) -> list[str]:
+    _, pointers = transform_sensitive_integration_options(
+        config.options,
+        config.sensitive_options,
+    )
+    return pointers
 
 
 def sensitive_integration_option_keys(
     config: CanonicalIntegrationConfig,
 ) -> set[str]:
     return {
-        key
-        for key in config.options
-        if key in config.sensitive_options
-        or _SENSITIVE_OPTION_PATTERN.search(key) is not None
+        parse_json_pointer(pointer)[0]
+        for pointer in sensitive_integration_option_pointers(config)
     }
 
 
 def redacted_integration_option_value(
-    value: JsonValue,
+    value: JsonValue = None,
     fingerprint: str | None = None,
     value_handle: str | None = None,
 ) -> JsonObject:
-    redacted: JsonObject
-    if _is_redacted_integration_option(value):
-        if not isinstance(value, dict):
-            raise AssertionError("redacted integration options must be mappings")
-        redacted = dict(value)
-    else:
-        redacted = {"redacted": True}
+    """Build trusted redaction metadata without retaining the raw value."""
+    del value
+    redacted: JsonObject = {"redacted": True}
     if fingerprint is not None:
         redacted["fingerprint"] = fingerprint
     if value_handle is not None:
@@ -127,12 +154,13 @@ def redacted_integration_option_value(
     return redacted
 
 
-def _is_redacted_integration_option(value: JsonValue) -> bool:
-    if not isinstance(value, dict):
-        return False
-    if value.get("redacted") is not True:
-        return False
-    return set(value) <= {"fingerprint", "redacted", "value_handle"}
+def _redact_sensitive_option(
+    pointer: str,
+    value: JsonValue,  # noqa: ARG001 - Required by the recursive transform callback.
+) -> JsonValue:
+    if not pointer:
+        raise AssertionError("Sensitive integration option paths must not be empty.")
+    return redacted_integration_option_value()
 
 
 def _validate_finite_json(value: JsonValue, path: str) -> None:

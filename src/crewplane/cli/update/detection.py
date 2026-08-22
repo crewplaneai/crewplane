@@ -276,6 +276,8 @@ def _npm_package_root(environment_root: Path) -> Path | None:
     if environment_root.name != ".venv":
         return None
     package_root = environment_root.parent
+    if package_root.parent.name != "node_modules":
+        return None
     if not (package_root / "package.json").is_file():
         return None
     return package_root

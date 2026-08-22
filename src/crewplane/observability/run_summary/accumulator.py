@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import deque
 
 from crewplane.observability.events import (
+    TERMINAL_WORKFLOW_EVENT_TYPES,
+    EventType,
     ExecutionEvent,
     RuntimeLogEventPayload,
 )
@@ -35,9 +37,9 @@ class RunSummaryAccumulator:
         self._completed_at = "n/a"
 
     def record(self, event: ExecutionEvent) -> None:
-        if event.event_type == "workflow_started":
+        if event.event_type == EventType.WORKFLOW_STARTED:
             self._started_at = event.timestamp_utc
-        if event.event_type in {"workflow_finished", "workflow_failed"}:
+        if event.event_type in TERMINAL_WORKFLOW_EVENT_TYPES:
             self._completed_at = event.timestamp_utc
         usage_summary = invocation_usage_summary_from_event(event)
         if usage_summary is not None:
@@ -68,7 +70,7 @@ class RunSummaryAccumulator:
 
 def _is_unresolved_consensus_event(event: ExecutionEvent) -> bool:
     return (
-        event.event_type == "runtime_log"
+        event.event_type == EventType.RUNTIME_LOG
         and isinstance(event.payload, RuntimeLogEventPayload)
         and event.payload.operation == "review_loop_consensus_exhausted"
         and event.payload.attributes is not None

@@ -123,6 +123,7 @@ def worktree_preparation_plan(
 ) -> WorktreePreparationPlan:
     source_ref = invocation_source_ref(
         request.output,
+        request.plan,
         node,
         policy,
         source,

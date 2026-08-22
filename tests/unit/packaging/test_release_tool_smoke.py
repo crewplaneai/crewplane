@@ -4,7 +4,9 @@ import hashlib
 from pathlib import Path
 
 import pytest
+import yaml
 
+from crewplane.cli.templates import CONFIG_TEMPLATE, render_template_content
 from scripts.release import smoke, state
 from tests.unit.packaging.release_tool_support import write_minimal_repo
 
@@ -50,7 +52,12 @@ class InstalledCliRecordingRunner:
         command_tuple = tuple(command)
         self.calls.append((command_tuple, cwd))
         if command_tuple[-1:] == ("init",):
-            (cwd / ".crewplane").mkdir()
+            state_dir = cwd / ".crewplane"
+            state_dir.mkdir()
+            template = CONFIG_TEMPLATE.read_text(encoding="utf-8")
+            (state_dir / "config.yml").write_text(
+                render_template_content(template), encoding="utf-8"
+            )
         stdout = (
             f"crewplane {self.version}\n"
             if command_tuple[-1:] == ("--version",)
@@ -75,6 +82,32 @@ def test_installed_cli_smoke_exercises_a_workflow(tmp_path: Path) -> None:
         (str(executable), "validate"),
         (str(executable), "run", "--no-live"),
     ]
+
+
+def test_installed_cli_smoke_preserves_scaffolded_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yml"
+    template = CONFIG_TEMPLATE.read_text(encoding="utf-8")
+    config_path.write_text(render_template_content(template), encoding="utf-8")
+    expected_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    invoker_options = expected_config["settings"]["integrations"]["invoker"]["options"]
+    invoker_options["delay_seconds"] = 0
+    invoker_options["observation_delay_seconds"] = 0
+
+    smoke.write_mock_config(config_path)
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert config == expected_config
+
+
+def test_installed_cli_smoke_rejects_non_mock_scaffold(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        "settings:\n  integrations:\n    invoker:\n      implementation: cli\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(state.ReleaseError, match="does not define the mock invoker"):
+        smoke.write_mock_config(config_path)
 
 
 def test_brew_smoke_uses_built_sdist_sha_for_local_formula(

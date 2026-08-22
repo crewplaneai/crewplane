@@ -247,12 +247,28 @@ class IntegrationsConfig(BaseModel):
     artifacts: IntegrationSpec = Field(
         default_factory=lambda: IntegrationSpec(
             implementation="filesystem",
-            options={
-                "log_cli_output": True,
-                "allowed_template_paths": [],
-            },
+            options={"log_cli_output": True},
         )
     )
+
+
+class FileAccessSettings(BaseModel):
+    """Core-owned authorization policy for authored file references."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    allowed_template_paths: list[str] = Field(default_factory=list)
+
+    @field_validator("allowed_template_paths")
+    @classmethod
+    def _validate_allowed_template_paths(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw_path in value:
+            if not raw_path.strip():
+                raise ValueError("allowed_template_paths cannot contain blank paths")
+            path = Path(raw_path).expanduser()
+            normalized.append(path.resolve(strict=False).as_posix())
+        return normalized
 
 
 class Settings(BaseModel):
@@ -265,6 +281,7 @@ class Settings(BaseModel):
     max_concurrent_nodes: int | None = Field(default=None, ge=1)
     max_parallel_invocations: int | None = Field(default=None, ge=1)
     token_budget: TokenBudgetSettings = Field(default_factory=TokenBudgetSettings)
+    file_access: FileAccessSettings = Field(default_factory=FileAccessSettings)
     integrations: IntegrationsConfig = Field(default_factory=IntegrationsConfig)
 
     @field_validator("sequential_consensus_on_exhaustion", mode="before")
@@ -283,7 +300,7 @@ class Config(BaseModel):
 
     version: str
     agents: dict[str, AgentConfig]
-    settings: Settings | None = None
+    settings: Settings = Field(default_factory=Settings)
 
     @field_validator("agents", mode="before")
     @classmethod

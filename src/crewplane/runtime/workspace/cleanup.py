@@ -13,6 +13,17 @@ WorkspaceStatusLookup = Callable[[str, str], WorkspaceStatus]
 
 
 @dataclass(frozen=True)
+class WorkspaceCleanupEligibility:
+    deletable: bool
+    reason: str | None = None
+
+
+WorkspaceCleanupEligibilityLookup = Callable[
+    [str, str, WorkspaceStatus], WorkspaceCleanupEligibility
+]
+
+
+@dataclass(frozen=True)
 class WorkspaceCleanupFilter:
     run_key_name: str | None = None
     repository_id: str | None = None
@@ -30,6 +41,7 @@ class WorkspaceCleanupEntry:
     removed: bool
     status: WorkspaceStatus
     orphan: bool
+    retained_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +55,10 @@ class WorkspaceCleanupResult:
         return sum(1 for entry in self.entries if entry.removed)
 
     @property
+    def selected_count(self) -> int:
+        return sum(1 for entry in self.entries if entry.retained_reason is None)
+
+    @property
     def total_size_bytes(self) -> int:
         return sum(entry.size_bytes for entry in self.entries)
 
@@ -53,9 +69,11 @@ def cleanup_workspace_cache(
     dry_run: bool,
     status_lookup: WorkspaceStatusLookup | None = None,
     ref_cleanup: WorkspaceRunRefCleanup | None = None,
+    eligibility_lookup: WorkspaceCleanupEligibilityLookup | None = None,
 ) -> WorkspaceCleanupResult:
     entries: list[WorkspaceCleanupEntry] = []
     selected_run_keys: set[str] = set()
+    retained_run_keys: set[str] = set()
     for run_key_name, workspace_path in cleanup_candidates_for_filter(
         cache_root,
         cleanup_filter,
@@ -66,9 +84,30 @@ def cleanup_workspace_cache(
         ):
             continue
         if not older_than_matches(workspace_path, cleanup_filter.older_than_seconds):
+            retained_run_keys.add(run_key_name)
             continue
         status = workspace_status(run_key_name, workspace_path, status_lookup)
+        eligibility = (
+            eligibility_lookup(run_key_name, workspace_path.name, status)
+            if eligibility_lookup is not None
+            else WorkspaceCleanupEligibility(deletable=True)
+        )
+        if not eligibility.deletable:
+            retained_run_keys.add(run_key_name)
+            entries.append(
+                WorkspaceCleanupEntry(
+                    path=workspace_path,
+                    run_key_name=run_key_name,
+                    size_bytes=worktree_disk_usage(workspace_path),
+                    removed=False,
+                    status=status,
+                    orphan=status is None,
+                    retained_reason=eligibility.reason or "cleanup eligibility unknown",
+                )
+            )
+            continue
         if not status_matches(status, cleanup_filter):
+            retained_run_keys.add(run_key_name)
             continue
         size_bytes = worktree_disk_usage(workspace_path)
         removed = False
@@ -91,7 +130,7 @@ def cleanup_workspace_cache(
         )
     removed_ref_count = 0
     if not dry_run and ref_cleanup is not None:
-        for run_key_name in sorted(selected_run_keys):
+        for run_key_name in sorted(selected_run_keys - retained_run_keys):
             removed_ref_count += ref_cleanup(run_key_name)
     return WorkspaceCleanupResult(
         cache_root=cache_root,
@@ -228,10 +267,12 @@ def status_matches(
     status: WorkspaceStatus,
     cleanup_filter: WorkspaceCleanupFilter,
 ) -> bool:
-    if not cleanup_filter.statuses and not cleanup_filter.orphans:
-        return True
     if status is None:
         return cleanup_filter.orphans
+    if not cleanup_filter.statuses and not cleanup_filter.orphans:
+        return status in {"succeeded", "failed", "cancelled"} or (
+            cleanup_filter.repository_id is None and status == "unknown"
+        )
     return status in cleanup_filter.statuses
 
 

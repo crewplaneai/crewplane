@@ -3,6 +3,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from crewplane.architecture.contracts import (
+    EventType,
+    build_findings_filename,
+    build_result_filename,
+)
 from crewplane.artifacts import OutputManager, safe_artifact_name
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -19,6 +24,7 @@ from crewplane.runtime.execution.common import (
 )
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     FailingLogOutputManager,
     FindingsSelectiveFailInvoker,
@@ -91,7 +97,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(RuntimeError, "exceeded failure threshold"):
                 await execute_parallel_stage(config, node, output, invoker=invoker)
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             failed_file = (
@@ -134,7 +140,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await execute_parallel_stage(config, node, output, invoker=invoker)
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             success_file = (
@@ -180,8 +186,12 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
 
             await execute_workflow(config, workflow, output, invoker=invoker)
 
-            findings_file = output.get_stage_findings_path("parallel.threshold")
-            result_file = output.get_stage_output_path("parallel.threshold")
+            findings_file = output.results_dir / build_findings_filename(
+                "parallel.threshold"
+            )
+            result_file = output.results_dir / build_result_filename(
+                "parallel.threshold"
+            )
             self.assertTrue(findings_file.exists())
             findings_text = findings_file.read_text(encoding="utf-8")
             self.assertIn("concise finding: ok", findings_text)
@@ -243,7 +253,9 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
 
             await execute_workflow(config, workflow, output, invoker=invoker)
 
-            findings_file = output.get_stage_findings_path("parallel.review")
+            findings_file = output.results_dir / build_findings_filename(
+                "parallel.review"
+            )
             self.assertTrue(findings_file.exists())
             findings_text = findings_file.read_text(encoding="utf-8")
             self.assertIn("alpha_executor_0", findings_text)
@@ -289,9 +301,11 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             )
 
             # Check for failure events
-            failed_events = [e for e in events if e.event_type == "invocation_failed"]
+            failed_events = [
+                e for e in events if e.event_type == EventType.INVOCATION_FAILED
+            ]
             finished_events = [
-                e for e in events if e.event_type == "invocation_finished"
+                e for e in events if e.event_type == EventType.INVOCATION_FINISHED
             ]
 
             self.assertEqual(len(failed_events), 1)
@@ -344,7 +358,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             output = OutputManager("workflow", base_dir=tmp_path, log_cli_output=True)
 
             def event_sink(event: ExecutionEvent) -> None:
-                if event.event_type == "invocation_failed":
+                if event.event_type == EventType.INVOCATION_FAILED:
                     raise RuntimeError("failed-event sink boom")
 
             telemetry = ExecutionTelemetry(
@@ -362,7 +376,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                 telemetry=telemetry,
             )
 
-            node_dir = output.get_stage_dir(node.id)
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
             if node_dir is None:
                 self.fail("Expected node directory to be created")
             failed_file = (
@@ -437,7 +451,7 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
 
             def event_sink(event: ExecutionEvent) -> None:
                 if (
-                    event.event_type == "invocation_started"
+                    event.event_type == EventType.INVOCATION_STARTED
                     and event.context.provider == "beta"
                 ):
                     raise RuntimeError("event sink boom")
@@ -504,7 +518,8 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
             invocation_events = [
                 event
                 for event in events
-                if event.event_type in {"invocation_started", "invocation_finished"}
+                if event.event_type
+                in {EventType.INVOCATION_STARTED, EventType.INVOCATION_FINISHED}
             ]
             self.assertEqual(
                 [
@@ -512,12 +527,23 @@ class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
                     for event in invocation_events
                 ],
                 [
-                    ("invocation_started", "alpha"),
-                    ("invocation_finished", "alpha"),
-                    ("invocation_started", "beta"),
-                    ("invocation_finished", "beta"),
+                    (EventType.INVOCATION_STARTED, "alpha"),
+                    (EventType.INVOCATION_FINISHED, "alpha"),
+                    (EventType.INVOCATION_STARTED, "beta"),
+                    (EventType.INVOCATION_FINISHED, "beta"),
                 ],
             )
+            for event, expected_type in zip(
+                invocation_events,
+                (
+                    EventType.INVOCATION_STARTED,
+                    EventType.INVOCATION_FINISHED,
+                    EventType.INVOCATION_STARTED,
+                    EventType.INVOCATION_FINISHED,
+                ),
+                strict=True,
+            ):
+                self.assertIs(event.event_type, expected_type)
             alpha_finished = invocation_events[1]
             beta_started = invocation_events[2]
             beta_finished = invocation_events[3]

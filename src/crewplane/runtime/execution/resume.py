@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
+from crewplane.architecture.contracts import EventType
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts.workspace.node_state import (
@@ -33,8 +34,8 @@ def write_successful_node_state(
     output: ArtifactStorePort,
     workflow_identity: str,
     finalize_result: StageFinalizeResult,
-) -> None:
-    output.write_node_success_state(
+) -> Path:
+    return output.write_node_success_state(
         NodeState(
             run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
             plan_schema_version=plan.plan_schema_version,
@@ -56,7 +57,7 @@ def emit_resumed_node_events(
     node_id: str,
     telemetry: ExecutionTelemetry | None,
 ) -> None:
-    emit_workflow_event(telemetry, "node_started", node_id=node_id)
+    emit_workflow_event(telemetry, EventType.NODE_STARTED, node_id=node_id)
     emit_runtime_log(
         telemetry,
         level="info",
@@ -64,7 +65,7 @@ def emit_resumed_node_events(
         operation="node_resumed",
         context=RuntimeEventContext(node_id=node_id),
     )
-    emit_workflow_event(telemetry, "node_finished", node_id=node_id)
+    emit_workflow_event(telemetry, EventType.NODE_FINISHED, node_id=node_id)
 
 
 def _descriptors_for_result(

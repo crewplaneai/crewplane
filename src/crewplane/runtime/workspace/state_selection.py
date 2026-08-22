@@ -3,17 +3,19 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
-from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.artifacts.results.review_loop_status import (
     ReviewLoopStatusEntry,
     resolve_review_loop_status,
+    task_specs_for_producers,
 )
 from crewplane.artifacts.results.selection import (
     parse_audit_round,
     parse_task_round,
 )
-from crewplane.artifacts.safe_files import contained_regular_file
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -25,13 +27,22 @@ class WorkspaceStateInvocation:
     audit_round_num: int | None
 
 
-def required_lineage_state_path(output: ArtifactStorePort, node_id: str) -> Path:
-    stage_dir = output.get_stage_dir(node_id)
+class NodeArtifactLookup(Protocol):
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None: ...
+
+
+def required_lineage_state_path(
+    output: NodeArtifactLookup,
+    node: PreflightExecutionNode,
+) -> Path:
+    stage_dir = output.get_node_dir(
+        NodeArtifactRequest(node.id, node.artifact_contract)
+    )
     if stage_dir is None:
         raise RuntimeError(
-            f"Workspace lineage source '{node_id}' has no stage directory."
+            f"Workspace lineage source '{node.id}' has no stage directory."
         )
-    review_state = review_loop_canonical_lineage_state_path(stage_dir, node_id)
+    review_state = review_loop_canonical_lineage_state_path(stage_dir, node)
     if review_state is not None:
         return review_state
     latest = latest_executor_lineage_state_path(stage_dir)
@@ -41,18 +52,20 @@ def required_lineage_state_path(output: ArtifactStorePort, node_id: str) -> Path
     if canonical is not None and workspace_state_is_lineage_source(canonical):
         return canonical
     raise RuntimeError(
-        f"Workspace lineage source '{node_id}' has no succeeded workspace state."
+        f"Workspace lineage source '{node.id}' has no succeeded workspace state."
     )
 
 
 def same_node_executor_state_path(
-    output: ArtifactStorePort,
+    output: NodeArtifactLookup,
     node: PreflightExecutionNode,
     round_num: int,
     audit_round_num: int | None,
     allow_prior_fallback: bool = False,
 ) -> Path | None:
-    stage_dir = output.get_stage_dir(node.id)
+    stage_dir = output.get_node_dir(
+        NodeArtifactRequest(node.id, node.artifact_contract)
+    )
     if stage_dir is None:
         return None
     task_ids = {
@@ -114,15 +127,19 @@ def find_lineage_state_path(
 
 def review_loop_canonical_lineage_state_path(
     stage_dir: Path,
-    node_id: str,
+    node: PreflightExecutionNode,
 ) -> Path | None:
-    resolved = resolve_review_loop_status(node_id, stage_dir)
+    resolved = resolve_review_loop_status(
+        node.id,
+        stage_dir,
+        task_specs_for_producers(node.provider_records),
+    )
     if resolved is None:
         return None
     canonical_outputs = resolved.canonical_executor_outputs
     if len(canonical_outputs) != 1:
         raise RuntimeError(
-            f"Workspace lineage source '{node_id}' must have exactly one "
+            f"Workspace lineage source '{node.id}' must have exactly one "
             f"canonical executor output, found {len(canonical_outputs)}."
         )
     invocation = invocation_from_review_status(canonical_outputs[0])
@@ -138,7 +155,7 @@ def review_loop_canonical_lineage_state_path(
         if seeded_source is not None:
             return seeded_source
     raise RuntimeError(
-        f"Workspace lineage source '{node_id}' canonical executor output has no "
+        f"Workspace lineage source '{node.id}' canonical executor output has no "
         "matching succeeded workspace state."
     )
 
