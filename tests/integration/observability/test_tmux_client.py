@@ -2,14 +2,71 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from unittest.mock import Mock
 
 import pytest
 
 from crewplane.observability.tmux.client import (
+    DEFAULT_TMUX_COMMAND_TIMEOUT_SECONDS,
     TMUX_TIMEOUT_RETURN_CODE,
     TMUX_TIMEOUT_STDERR,
     TmuxCommandClient,
 )
+
+
+def test_tmux_command_success_uses_socket_and_returns_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    command = ["tmux-test", "-L", "crewplane-test", "display-message", "ready"]
+    completed = subprocess.CompletedProcess(
+        command,
+        0,
+        stdout="ready\n",
+        stderr="",
+    )
+    run = Mock(return_value=completed)
+    monkeypatch.setattr(subprocess, "run", run)
+    client = TmuxCommandClient(
+        tmux_executable="tmux-test",
+        socket_name="crewplane-test",
+    )
+
+    result = client.run(["display-message", "ready"], capture_output=True)
+
+    assert result is completed
+    assert result.stdout == "ready\n"
+    run.assert_called_once_with(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TMUX_COMMAND_TIMEOUT_SECONDS,
+    )
+
+
+def test_pane_dimension_successfully_parses_positive_dimension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed = subprocess.CompletedProcess(
+        ["tmux", "display-message"],
+        0,
+        stdout="132\n",
+        stderr="",
+    )
+    run = Mock(return_value=completed)
+    monkeypatch.setattr(subprocess, "run", run)
+    client = TmuxCommandClient()
+
+    dimension = client.pane_dimension("%1", "#{pane_width}", 80)
+
+    assert dimension == (132, False)
+    run.assert_called_once_with(
+        ["tmux", "display-message", "-p", "-t", "%1", "#{pane_width}"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=DEFAULT_TMUX_COMMAND_TIMEOUT_SECONDS,
+    )
 
 
 def test_unchecked_tmux_command_timeout_returns_sentinel() -> None:
