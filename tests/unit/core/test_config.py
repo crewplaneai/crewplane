@@ -611,7 +611,10 @@ class ConfigTests(unittest.TestCase):
             settings.integrations.artifacts.options["log_cli_output"],
             False,
         )
-        self.assertEqual(settings.file_access.allowed_template_paths, ["/tmp"])
+        self.assertEqual(
+            settings.file_access.allowed_template_paths,
+            [Path("/tmp").resolve(strict=False).as_posix()],
+        )
 
     def test_settings_does_not_treat_artifact_options_as_core_file_policy(self) -> None:
         settings = Settings.model_validate(

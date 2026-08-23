@@ -118,6 +118,29 @@ def _running_manifest(
 
 
 class OutputManagerTests(unittest.TestCase):
+    def test_artifacts_support_symlinked_base_directory_ancestor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            temp_root = Path(tmp_dir)
+            real_parent = temp_root / "real-parent"
+            real_parent.mkdir()
+            alias = temp_root / "alias"
+            try:
+                alias.symlink_to(real_parent, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+
+            base_dir = alias / "nested" / "state"
+            output = OutputManager("Workflow", base_dir=base_dir)
+            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
+            (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
+
+            output.finalize_node(node_artifact_request("build.node"))
+
+            self.assertEqual(output.base_dir, base_dir.resolve(strict=True))
+            self.assertTrue(
+                (output.results_dir / build_result_filename("build.node")).is_file()
+            )
+
     def test_legacy_stage_path_and_resume_methods_remain_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             output = OutputManager("Workflow", base_dir=Path(tmp_dir))

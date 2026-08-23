@@ -32,8 +32,9 @@ class DirectoryManager:
         base_dir: Path,
         log_cli_output: bool,
     ) -> None:
-        self.base_dir = base_dir.absolute()
-        ensure_contained_directory(self.base_dir.parent, self.base_dir.name)
+        absolute_base_dir = base_dir.absolute()
+        ensure_contained_directory(absolute_base_dir.parent, absolute_base_dir.name)
+        self.base_dir = absolute_base_dir.resolve(strict=True)
         self._workflow_name = task_name
         self.task_name = safe_artifact_name(task_name)
         self.log_cli_output = log_cli_output
