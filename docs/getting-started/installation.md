@@ -85,10 +85,12 @@ then rerun the script.
 On macOS, use the Crewplane Homebrew tap:
 
 ```bash
-brew tap crewplaneai/crewplane
-brew install crewplane
+brew install crewplaneai/crewplane/crewplane
 crewplane --help
 ```
+
+The fully qualified name adds the tap automatically and trusts only the
+Crewplane formula.
 
 ## Install With pip
 
