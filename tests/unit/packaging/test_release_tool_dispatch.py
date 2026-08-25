@@ -83,6 +83,13 @@ def test_dispatches_build_commands(
             True,
             0,
         ),
+        (
+            ("homebrew-formula", "--expected-tag", EXPECTED_TAG),
+            "homebrew.prepare_formula",
+            False,
+            True,
+            0,
+        ),
         (("confirm",), "publish.confirm_release", False, False, 0),
         (("changelog-check",), "changelog_check", False, False, 0),
     ),
@@ -140,6 +147,43 @@ def test_dispatches_publish_commands_with_execute_flag(
 
     assert result == HANDLER_RESULT
     handler.assert_called_once_with(tmp_path, runner, execute)
+
+
+@pytest.mark.parametrize("execute", (False, True), ids=("plan", "execute"))
+def test_dispatches_homebrew_pr_publication_with_typed_options(
+    release_script: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    execute: bool,
+) -> None:
+    handler = _mock_handler(
+        release_script, monkeypatch, "homebrew.publish_formula_pull_request"
+    )
+    runner = object()
+    arguments = [
+        "publish-homebrew-pr",
+        "--expected-tag",
+        EXPECTED_TAG,
+        "--source-commit",
+        "a" * 40,
+        "--tap-root",
+        "homebrew-tap",
+    ]
+    if execute:
+        arguments.append("--execute")
+
+    result = release_script.dispatch(
+        release_script.parse_args(arguments), tmp_path, runner
+    )
+
+    assert result == HANDLER_RESULT
+    options = release_script.homebrew.HomebrewPrOptions(
+        expected_tag=EXPECTED_TAG,
+        source_commit="a" * 40,
+        tap_root=Path("homebrew-tap"),
+        execute=execute,
+    )
+    handler.assert_called_once_with(tmp_path, runner, options)
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,11 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Stable releases now open a Homebrew tap pull request automatically; bottle
+  publication remains a manual `brew pr-pull` step.
+
 ## [0.2.0] - 2026-08-23
 
 ### Breaking Changes

@@ -231,6 +231,9 @@ class PypiFile:
     filename: str
     size: int
     sha256: str
+    url: str = ""
+    package_type: str = ""
+    yanked: bool = False
 
 
 @dataclass(frozen=True)
@@ -493,10 +496,24 @@ def query_pypi_release(context: ReleaseContext) -> PypiRelease:
         digests = file_payload.get("digests")
         if not filename or not isinstance(digests, dict) or "sha256" not in digests:
             raise ReleaseError(f"PyPI file metadata is incomplete for {version_key!r}")
+        if filename in files_by_name:
+            raise ReleaseError(
+                f"PyPI release {version_key!r} includes duplicate file {filename!r}"
+            )
+        url = file_payload.get("url", "")
+        package_type = file_payload.get("packagetype", "")
+        yanked = file_payload.get("yanked", False)
+        if not isinstance(url, str) or not isinstance(package_type, str):
+            raise ReleaseError(f"PyPI file metadata is incomplete for {version_key!r}")
+        if not isinstance(yanked, bool):
+            raise ReleaseError(f"PyPI file metadata is malformed for {version_key!r}")
         files_by_name[filename] = PypiFile(
             filename=filename,
             size=int(file_payload.get("size", 0)),
             sha256=str(digests["sha256"]),
+            url=url,
+            package_type=package_type,
+            yanked=yanked,
         )
     return PypiRelease(
         exists=True,

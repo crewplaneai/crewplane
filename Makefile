@@ -85,7 +85,7 @@ help:
 		'  NPM_DIST_TAG_OTP   npm one-time password for npm dist-tag add in non-TTY mode' \
 		'  NPM_PUBLISH_ARGS   Extra arguments passed to npm publish and dist-tag' \
 		'' \
-		'Homebrew tap publishing is separate: copy the prepared formula into the tap, audit/test there, and push the tap update.'
+		'Eligible GitHub releases open a Homebrew tap PR; publish it with the tap brew pr-pull workflow after checks pass.'
 
 setup:
 	$(INSTALL_CMD)

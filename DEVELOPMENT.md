@@ -84,9 +84,10 @@ Current CI policy:
 - Default branch: `master`.
 - The supported platform matrix is defined in
   [Supported Platforms](#supported-platforms).
-- Production publishing is local-only. Follow the
-  [Release Workflow](#release-workflow). GitHub Actions does not publish
-  production PyPI or npm packages and does not need their credentials.
+- Production PyPI and npm publishing is local-only. Follow the
+  [Release Workflow](#release-workflow). After `make release` publishes the
+  packages and Git tag, the source repository's release Action publishes the
+  GitHub Release and opens the Homebrew pull request.
 - Workflow actions and `uv` are version-pinned. `packaging/uv-bootstrap.json`
   is the source of truth for the `uv` version and installer checksums. The
   updater generates `packaging/uv-bootstrap-version.txt` from this manifest for
@@ -164,9 +165,10 @@ During the public-alpha `0.x` period, support the current schema only. Persisted
 
 ## Release Workflow
 
-Production releases have two publication phases: publish the packages and Git
-tag locally, then publish the GitHub Release. Use `make help` for target
-details.
+Production releases publish PyPI, npm, and the Git tag locally. The release
+Action then publishes the GitHub Release and opens a Homebrew pull request for
+the newest stable release. Publishing the tested bottles remains a manual
+`brew pr-pull` step.
 
 ### 1. Prepare and validate
 
@@ -200,22 +202,28 @@ For a non-interactive npm release that requires two-factor authentication, set
 
 ### 3. Publish the GitHub Release
 
-Immediately after `make release` pushes the tag, dispatch
-`.github/workflows/release.yml` from `master`. Use the full Git tag, including
-the `v` prefix, as the required `tag` input: for package version `0.1.4`, enter
-`v0.1.4`, not `0.1.4`. Do this before `master` advances: dispatching from
-another ref, backfilling a historical tag, or dispatching after a newer commit
-reaches `master` is unsupported.
+After `make release` pushes the tag, run the source repository's `release`
+GitHub Action from `master`. Enter the full Git tag, including the `v` prefix:
+for package version `0.1.4`, enter `v0.1.4`.
+Dispatch it before `master` advances; the tag must point to the currently
+selected `master` commit.
 
-The workflow verifies the tagged release and publishes the GitHub Release. It
-does not publish the production PyPI or npm packages. Prereleases are never
-marked as GitHub `Latest`; a stable release is marked `Latest` only when it is
-the highest published stable version on PyPI.
+The Action publishes the GitHub Release. For the newest stable release, it also
+automatically opens a pull request in `crewplaneai/homebrew-crewplane`.
 
-### 4. Publish Homebrew separately
+### 4. Publish the tested Homebrew pull request
 
-Copy the prepared formula into the Homebrew tap, run the tap's audit and test
-steps, and push the tap update.
+1. Wait for both the macOS and Linux `brew test-bot` checks to pass and upload
+   their bottles.
+2. Do **not** click the pull request's normal Merge button.
+3. In `homebrew-crewplane`, run the `brew pr-pull` Action with:
+
+   - The pull request number.
+   - Preferably the pull request's current head SHA, which prevents publishing
+     a revision that was not tested.
+
+The `brew pr-pull` Action collects the tested bottles, updates the formula's
+bottle metadata, and pushes the completed release to `main`.
 
 ### Recover an interrupted release
 
