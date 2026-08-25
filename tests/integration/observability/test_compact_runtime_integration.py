@@ -39,6 +39,7 @@ from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
 
 CONFIG_TEMPLATE_PATH = Path(__file__).with_name("fixtures") / "config.yml"
 FAKE_TMUX_BIND_ARG_THRESHOLD = 800
+FAKE_TMUX_OBSERVER_START_TIMEOUT_SECONDS = 30.0
 
 
 def provider(name: str, role: ProviderRole = ProviderRole.EXECUTOR) -> ProviderSpec:
@@ -514,6 +515,10 @@ def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+        FAKE_TMUX_OBSERVER_START_TIMEOUT_SECONDS,
+    )
     workflow = build_compact_linear_workflow(tmp_path)
     fake_tmux_path = tmp_path / "fake-tmux"
     fake_tmux_log_path = tmp_path / "fake-tmux-log.jsonl"
@@ -554,7 +559,7 @@ def test_compact_runtime_live_tmux_startup_uses_short_script_backed_bindings(
             refresh_per_second=0,
             warning_sink=warnings.append,
         ) as hub:
-            assert hub.active_observer_count == 1
+            assert hub.active_observer_count == 1, warnings
             plan, secret_context = compile_plan_for_components(
                 config=config,
                 workflow=workflow,
