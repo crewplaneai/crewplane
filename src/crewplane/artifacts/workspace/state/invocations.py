@@ -14,10 +14,10 @@ from ...results.review_loop_status import (
     resolve_review_loop_status,
     task_specs_for_producers,
 )
-from ...results.selection import parse_audit_round, parse_task_round
 from ...run_history import RunHistoryRecord
 from .fields import int_field, nullable_int_field
 from .fields import mapping_value as _mapping
+from .lineage import invocation_round_order, review_output_coordinates
 
 
 class WorkspaceStateStatus(StrEnum):
@@ -199,19 +199,14 @@ def expected_review_status_invocation(
     entry: ReviewLoopStatusEntry,
     lineage_source_required: bool = False,
 ) -> ExpectedWorkspaceInvocation | None:
-    relative_path = Path(entry.relative_path)
-    task_id, round_num = parse_task_round(relative_path.stem)
-    if task_id != entry.task_id or round_num <= 0:
+    coordinates = review_output_coordinates(entry.relative_path, entry.task_id)
+    if coordinates is None:
         return None
-    audit_round_num = None
-    if len(relative_path.parts) > 1:
-        parsed_audit_round = parse_audit_round(relative_path.parts[0])
-        audit_round_num = parsed_audit_round if parsed_audit_round > 0 else None
     return ExpectedWorkspaceInvocation(
-        task_id=task_id,
+        task_id=coordinates.task_id,
         role=entry.role,
-        round_num=round_num,
-        audit_round_num=audit_round_num,
+        round_num=coordinates.round_num,
+        audit_round_num=coordinates.audit_round_num,
         lineage_source_required=lineage_source_required,
     )
 
@@ -273,12 +268,4 @@ def lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
         and workspace.get("lineage_producer") is True
     ):
         return (-1, -1)
-    round_num = int_field(payload, "round_num")
-    if round_num is None:
-        return (-1, -1)
-    audit_round_num = nullable_int_field(payload, "audit_round_num")
-    if not audit_round_num.valid:
-        return (-1, -1)
-    if audit_round_num.value is None:
-        return (0, round_num)
-    return (audit_round_num.value, round_num)
+    return invocation_round_order(payload)

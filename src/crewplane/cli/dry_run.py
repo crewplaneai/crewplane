@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from rich.console import Console
 
 from crewplane.core.preflight import (
@@ -126,7 +128,7 @@ def _print_workspace_summary(
         )
 
 
-def _workspace_contract_label(descriptor: dict[str, object]) -> object:
+def _workspace_contract_label(descriptor: Mapping[str, object]) -> object:
     contract = descriptor.get("worktree_contract")
     if isinstance(contract, dict):
         return contract.get("mode")

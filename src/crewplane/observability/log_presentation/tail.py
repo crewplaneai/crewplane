@@ -4,16 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+from crewplane.observability.log_headers import provider_log_body_start
+
 from .limits import DEFAULT_LIMITS, LogPresentationLimits
 from .models import LogReadResult
 
-_INITIAL_HEADER_PREFIXES = (
-    "started_at:",
-    "cli_executable:",
-    "model:",
-    "output_file:",
-)
-_OPTIONAL_REASONING_PREFIX = "requested_reasoning:"
 _RETRY_MARKER = b"\n---\nretry_attempt:"
 
 
@@ -125,25 +120,4 @@ def find_initial_body_start(
     except OSError:
         return 0
 
-    header_lines: list[str] = []
-    body_start = 0
-    for raw_line in head.splitlines(keepends=True):
-        stripped = raw_line.rstrip(b"\r\n")
-        body_start += len(raw_line)
-        if stripped == b"---":
-            break
-        if stripped:
-            header_lines.append(stripped.decode("utf-8", errors="replace").strip())
-    else:
-        return 0
-
-    if len(header_lines) == len(_INITIAL_HEADER_PREFIXES) + 1 and header_lines[
-        3
-    ].startswith(_OPTIONAL_REASONING_PREFIX):
-        header_lines.pop(3)
-    if len(header_lines) != len(_INITIAL_HEADER_PREFIXES):
-        return 0
-    for line, prefix in zip(header_lines, _INITIAL_HEADER_PREFIXES, strict=True):
-        if not line.startswith(prefix):
-            return 0
-    return body_start
+    return provider_log_body_start(head)

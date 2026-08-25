@@ -51,7 +51,7 @@ def workspace_policy_diagnostics(
 
 def _duplicate_branch_export_diagnostics(
     workflow: WorkflowPlan,
-    selected_worktrees: set[str | None],
+    selected_worktrees: set[str],
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
     worktrees_by_branch: dict[str, list[str]] = {}
     for name, declaration in workflow.worktrees.items():
@@ -90,7 +90,7 @@ def _duplicate_branch_export_diagnostics(
 
 def _unselected_branch_export_diagnostics(
     workflow: WorkflowPlan,
-    selected_worktrees: set[str | None],
+    selected_worktrees: set[str],
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
     diagnostics: list[WorkflowValidationDiagnostic] = []
     for name, declaration in workflow.worktrees.items():

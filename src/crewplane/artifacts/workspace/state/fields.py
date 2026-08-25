@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TypeGuard
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ def bool_field_matches(
     return isinstance(value, bool) and value == expected
 
 
-def is_hex_object(value: object) -> bool:
+def is_hex_object(value: object) -> TypeGuard[str]:
     return (
         isinstance(value, str)
         and len(value) in {40, 64}

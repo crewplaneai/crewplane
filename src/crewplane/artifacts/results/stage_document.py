@@ -6,10 +6,12 @@ from pathlib import Path
 from crewplane.artifacts.atomic import atomic_write_text
 
 from ..generated_files.catalog import (
-    GeneratedFileLink,
-    GeneratedFileReferenceDetector,
     build_generated_file_links_section,
     build_generated_files_section,
+)
+from ..generated_files.detection import (
+    GeneratedFileLink,
+    GeneratedFileReferenceDetector,
 )
 
 

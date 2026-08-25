@@ -17,9 +17,9 @@ def prepare_workspace_child_environment(
     invocation_context: InvocationContext | None,
     child_environment: ChildProcessEnvironment | None,
 ) -> tuple[InvocationContext | None, ChildProcessEnvironment | None]:
-    workspace = invocation_context.workspace if invocation_context is not None else None
-    if workspace is None:
+    if invocation_context is None or invocation_context.workspace is None:
         return invocation_context, child_environment
+    workspace = invocation_context.workspace
     if not workspace.child_environment_required and child_environment is None:
         return invocation_context, None
 

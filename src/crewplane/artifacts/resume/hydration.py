@@ -8,6 +8,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import JsonObject, JsonValue, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
@@ -27,7 +28,6 @@ from ..workspace.state.fields import without_branch_export
 from .generated_files import copy_generated_file_descriptors
 from .validation import (
     ValidatedResumeFrontier,
-    contained_regular_file,
     required_resume_artifact_paths,
 )
 from .verified_copy import VerifiedCopyLabels, copy_verified_artifact

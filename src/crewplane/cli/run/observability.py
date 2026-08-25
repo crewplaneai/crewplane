@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Protocol, cast
+from typing import Protocol
 
 from rich.console import Console
 
@@ -138,8 +138,11 @@ class WorkflowWarningRecorder:
 
 
 class ObservabilityHubInstance(Protocol):
-    active_observer_count: int
-    stop_requested: bool
+    @property
+    def active_observer_count(self) -> int: ...
+
+    @property
+    def stop_requested(self) -> bool: ...
 
     def __enter__(self) -> ObservabilityHubInstance: ...
 
@@ -264,7 +267,7 @@ def _resolve_observability_hub(
 ) -> ObservabilityHubFactory:
     if observability_hub_cls is not None:
         return observability_hub_cls
-    return cast(ObservabilityHubFactory, ObservabilityHub)
+    return ObservabilityHub
 
 
 def _is_live_dashboard_available(

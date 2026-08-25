@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from crewplane.architecture.contracts import RuntimeLogValue
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
@@ -15,7 +16,8 @@ from .fragment_assembler import (
     inspect_runtime_locators,
 )
 from .runtime_context import CompiledRuntimeContext
-from .workspace_files import ResolvedWorkspaceFile, WorkspaceCandidateSourceContext
+from .workspace_files import ResolvedWorkspaceFile
+from .workspace_files.source_resolution import WorkspaceCandidateSourceContext
 
 
 class PromptBudgetExceededError(NodeExecutionError):
@@ -33,7 +35,7 @@ class PromptBudgetInspection:
     display_name: str
     char_count: int
     shorten_advice: str
-    warning_attributes: dict[str, object]
+    warning_attributes: dict[str, RuntimeLogValue]
 
 
 def compiled_token_budget(node: PreflightExecutionNode) -> dict[str, int | None]:
@@ -89,19 +91,21 @@ def resolve_prompt_with_output_budget_details(
         role,
         output,
     )
-    for inspection in inspections:
+    for locator_inspection in inspections:
         _enforce_prompt_budget(
             node,
             PromptBudgetInspection(
-                display_name=f"'{inspection.node_id}.{inspection.artifact_name}'",
-                char_count=inspection.char_count,
+                display_name=(
+                    f"'{locator_inspection.node_id}.{locator_inspection.artifact_name}'"
+                ),
+                char_count=locator_inspection.char_count,
                 shorten_advice=(
                     "Shorten the upstream artifact or raise the threshold "
                     "intentionally."
                 ),
                 warning_attributes={
-                    "upstream_node_id": inspection.node_id,
-                    "upstream_artifact_name": inspection.artifact_name,
+                    "upstream_node_id": locator_inspection.node_id,
+                    "upstream_artifact_name": locator_inspection.artifact_name,
                 },
             ),
             thresholds,

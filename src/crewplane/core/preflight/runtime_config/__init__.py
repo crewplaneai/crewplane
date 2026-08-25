@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
     JsonObject,
+    JsonValue,
     PromptTransport,
     ProviderKind,
 )
@@ -214,7 +215,7 @@ def runtime_agent_execution_payload(config: RuntimeAgentConfigSnapshot) -> JsonO
 
 def runtime_agent_snapshot_payloads(
     agents: Mapping[str, RuntimeAgentConfigSnapshot],
-) -> dict[str, JsonObject]:
+) -> JsonObject:
     return {
         name: runtime_agent_snapshot_payload(agent)
         for name, agent in sorted(agents.items())
@@ -223,7 +224,7 @@ def runtime_agent_snapshot_payloads(
 
 def runtime_agent_effective_payloads(
     agents: Mapping[str, RuntimeAgentConfigSnapshot],
-) -> dict[str, JsonObject]:
+) -> JsonObject:
     return {
         name: runtime_agent_effective_payload(agent)
         for name, agent in sorted(agents.items())
@@ -294,7 +295,7 @@ class RuntimeConfigSnapshot(BaseModel):
             sequential_consensus_on_exhaustion=settings.sequential_consensus_on_exhaustion,
             token_budget=settings.token_budget,
         )
-        raw_agents = {
+        raw_agents: JsonObject = {
             name: agent_config_input_payload(agent)
             for name, agent in sorted(config.agents.items())
         }
@@ -344,7 +345,7 @@ class RuntimeConfigSnapshot(BaseModel):
             "ui",
             None,
         )
-        payload = {
+        payload: JsonObject = {
             "agents": runtime_agent_snapshot_payloads(agent_snapshots),
             "artifacts": redacted_artifacts.scoped_payload({"artifact", "execution"}),
             "execution": execution_effective_payload(execution),
@@ -394,8 +395,12 @@ class RuntimeConfigSnapshot(BaseModel):
                     )
                 }
             )
+        raw_agents = self.raw_agents or {
+            name: runtime_agent_snapshot_payload(agent)
+            for name, agent in self.agents.items()
+        }
         agents, fingerprints = redact_sensitive_config_with_fingerprints(
-            self.raw_agents or self.agents,
+            raw_agents,
             fingerprint_key,
         )
         agent_snapshots = runtime_agent_snapshots(agents)
@@ -467,7 +472,7 @@ class RuntimeConfigSnapshot(BaseModel):
     ) -> str:
         signature_invoker = invoker or self.invoker
         signature_artifacts = artifacts or self.artifacts
-        payload = {
+        payload: JsonObject = {
             "agents": runtime_agent_effective_payloads(agents),
             "artifacts": signature_artifacts.scoped_payload({"artifact", "execution"}),
             "execution": execution_effective_payload(self.execution),
@@ -528,7 +533,7 @@ def runtime_config_signature(
     workspace_payload: JsonObject,
     nodes: list[PreflightExecutionNode],
 ) -> str:
-    payload = {
+    payload: JsonObject = {
         "agent_invocations": runtime_agent_invocation_payloads(
             snapshot.agents,
             nodes,
@@ -546,7 +551,7 @@ def runtime_config_signature(
 def runtime_agent_invocation_payloads(
     agents: Mapping[str, RuntimeAgentConfigSnapshot],
     nodes: list[PreflightExecutionNode],
-) -> list[JsonObject]:
+) -> list[JsonValue]:
     return [
         {
             "agent_config": runtime_agent_signature_payload(

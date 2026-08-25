@@ -334,13 +334,11 @@ def build_review_loop_status_payload(
 
 
 def _selected_round_num(progress: ReviewLoopProgress) -> int:
-    artifacts = [
-        *(progress.latest_executor_outputs or []),
-        *progress.latest_reviewer_outputs,
-    ]
-    if not artifacts:
-        return 0
-    return artifacts[0].round_num
+    if progress.latest_executor_outputs:
+        return progress.latest_executor_outputs[0].round_num
+    if progress.latest_reviewer_outputs:
+        return progress.latest_reviewer_outputs[0].round_num
+    return 0
 
 
 def persist_review_loop_status(

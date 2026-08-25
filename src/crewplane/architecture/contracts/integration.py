@@ -140,12 +140,11 @@ def sensitive_integration_option_keys(
 
 
 def redacted_integration_option_value(
-    value: JsonValue = None,
+    value: JsonValue = None,  # noqa: ARG001 - Raw secrets must not affect redaction.
     fingerprint: str | None = None,
     value_handle: str | None = None,
 ) -> JsonObject:
     """Build trusted redaction metadata without retaining the raw value."""
-    del value
     redacted: JsonObject = {"redacted": True}
     if fingerprint is not None:
         redacted["fingerprint"] = fingerprint

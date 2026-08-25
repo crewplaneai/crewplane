@@ -11,7 +11,11 @@ from pathlib import Path
 from threading import Lock
 from typing import TextIO
 
-from crewplane.architecture.contracts import ChildProcessEnvironment, JsonObject
+from crewplane.architecture.contracts import (
+    ChildProcessEnvironment,
+    JsonObject,
+    JsonValue,
+)
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.core.platform import supports_posix_process_groups
 from crewplane.core.preflight.models import (
@@ -100,7 +104,7 @@ def run_workspace_setup(
     started_at = datetime.now(UTC).isoformat()
     started = time.monotonic()
     deadline = started + timeout_seconds
-    records: list[JsonObject] = []
+    records: list[JsonValue] = []
     status = "succeeded"
     timed_out = False
     failure_message: str | None = None

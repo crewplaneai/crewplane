@@ -61,6 +61,10 @@ def workspace_source_descriptor(
 ) -> JsonObject | None:
     if source is None:
         return None
+    local_config_policy: JsonObject = {
+        key: list(values) for key, values in source.local_config_policy.items()
+    }
+    filesystem_capabilities: JsonObject = dict(source.filesystem_capabilities)
     return {
         "object_format": source.object_format,
         "repo_id": source.repository_id,
@@ -70,8 +74,8 @@ def workspace_source_descriptor(
         "project_root_relative_path": source.project_root_relative_path,
         "clean_start": source.clean_start,
         "worktree_contract": source.worktree_contract.model_dump(mode="json"),
-        "local_config_policy": source.local_config_policy,
-        "filesystem_capabilities": source.filesystem_capabilities,
+        "local_config_policy": local_config_policy,
+        "filesystem_capabilities": filesystem_capabilities,
     }
 
 

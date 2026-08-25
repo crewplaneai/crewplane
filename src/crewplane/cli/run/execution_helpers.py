@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Never
 
 import typer
 
@@ -40,7 +41,7 @@ def raise_run_preflight_errors(
     snapshot_result: RuntimeConfigSnapshotBuildResult,
     preview: PreflightCompilationPreview,
     workflow_name: str,
-) -> None:
+) -> Never:
     write_preflight_failure_artifacts(
         context=context,
         snapshot_result=snapshot_result,

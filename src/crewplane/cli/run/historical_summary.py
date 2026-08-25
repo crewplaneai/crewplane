@@ -6,10 +6,10 @@ from pathlib import Path
 from crewplane.architecture.contracts import (
     ArtifactContract,
     NodeArtifactRequest,
-    VerifiedNodeArtifact,
 )
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.core.execution_state import TerminalRunStatus
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.observability.events import (
     ExecutionEvent,
@@ -33,24 +33,8 @@ class _HistoricalArtifactStore:
     artifact_contracts: dict[str, ArtifactContract]
 
     @property
-    def run_id(self) -> str:
-        return self.source.manifest.run_id
-
-    @property
-    def run_key_name(self) -> str:
-        return self.source.manifest.run_key_name
-
-    @property
-    def task_name(self) -> str:
-        return self.source.manifest.workflow_name
-
-    @property
     def stages_dir(self) -> Path:
         return self.source.run_dir
-
-    @property
-    def results_dir(self) -> Path:
-        return self.source.results_dir
 
     @property
     def logs_dir(self) -> Path:
@@ -70,20 +54,7 @@ class _HistoricalArtifactStore:
         return None if contract is None else NodeArtifactRequest(node_id, contract)
 
     def get_node_output_path(self, request: NodeArtifactRequest) -> Path:
-        return self.results_dir / request.contract.output_path
-
-    def get_node_findings_path(self, request: NodeArtifactRequest) -> Path | None:
-        findings_path = request.contract.findings_path
-        return None if findings_path is None else self.results_dir / findings_path
-
-    def read_verified_node_artifact(
-        self,
-        request: NodeArtifactRequest,
-        kind: str,
-    ) -> VerifiedNodeArtifact:
-        raise NotImplementedError(
-            f"Historical artifact '{request.node_id}.{kind}' is not a runtime input."
-        )
+        return self.source.results_dir / request.contract.output_path
 
 
 def refresh_historical_run_summary(
@@ -110,7 +81,7 @@ def refresh_historical_run_summary(
     )
 
 
-def _run_result_status(source: RunHistoryRecord) -> str:
+def _run_result_status(source: RunHistoryRecord) -> TerminalRunStatus:
     status = source.manifest.status
     if status in {"failed", "cancelled"}:
         return status

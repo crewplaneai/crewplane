@@ -215,7 +215,7 @@ def _unsupported_install_error(context: UpdateContext) -> UpdateError:
         )
 
     if context.metadata.installer == "pip":
-        command = (
+        command: tuple[str, ...] = (
             str(context.python_executable),
             "-m",
             "pip",

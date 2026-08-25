@@ -111,7 +111,7 @@ class ProcessOutputCapture:
     stdout: ProcessStreamCapture
     stderr: ProcessStreamCapture
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[bytes]:
         return iter((self.stdout.tail_bytes, self.stderr.tail_bytes))
 
     def cleanup(self) -> None:

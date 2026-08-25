@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import JsonObject, JsonValue
 from crewplane.core.workflow.models import WorkflowNode
 
 from .compile_state import PreflightCompileOptions
@@ -76,7 +77,7 @@ def effective_runtime_config_signature_for_plan(
 def semantic_workspace_runtime_payload(
     runtime_snapshot: RuntimeConfigSnapshot,
     nodes: list[PreflightExecutionNode],
-) -> dict[str, object]:
+) -> JsonObject:
     policies = [
         node.workspace_policy
         for node in nodes
@@ -103,7 +104,7 @@ def template_hash(node: WorkflowNode) -> str:
 
 def workspace_source_signature_payload(
     snapshot: WorkspaceSourceSnapshot | None,
-) -> dict[str, object] | None:
+) -> JsonObject | None:
     if snapshot is None:
         return None
     return {
@@ -119,18 +120,18 @@ def workspace_source_signature_payload(
 
 def semantic_referenced_workflows(
     source: PreflightWorkflowSource,
-) -> list[dict[str, str]]:
+) -> list[JsonObject]:
     return [{"path": record.path.as_posix()} for record in source.referenced_workflows]
 
 
-def semantic_workflow_payload(payload: object) -> object:
+def semantic_workflow_payload(payload: object) -> JsonValue:
     semantic_payload = to_json_safe(payload)
     if not isinstance(semantic_payload, dict):
         return semantic_payload
 
     nodes = semantic_payload.get("nodes")
     if isinstance(nodes, list):
-        normalized_nodes = []
+        normalized_nodes: list[JsonValue] = []
         for node in nodes:
             if isinstance(node, dict) and node.get("review_starts_with") == "executor":
                 normalized_node = dict(node)
@@ -153,7 +154,7 @@ def semantic_workflow_payload(payload: object) -> object:
     return semantic_payload
 
 
-def semantic_worktree_declaration(declaration: object) -> object:
+def semantic_worktree_declaration(declaration: object) -> JsonValue:
     payload = to_json_safe(declaration)
     if not isinstance(payload, dict):
         return payload
@@ -166,11 +167,11 @@ def semantic_worktree_declaration(declaration: object) -> object:
 
 def semantic_node_payloads(
     nodes: list[PreflightExecutionNode],
-) -> list[object]:
+) -> list[JsonValue]:
     return [semantic_node_payload(node) for node in nodes]
 
 
-def semantic_node_payload(node: PreflightExecutionNode) -> object:
+def semantic_node_payload(node: PreflightExecutionNode) -> JsonValue:
     payload = semantic_source_location_payload(node)
     if not isinstance(payload, dict):
         return payload
@@ -179,8 +180,8 @@ def semantic_node_payload(node: PreflightExecutionNode) -> object:
 
 
 def semantic_execution_policy_payload(
-    payload: dict[str, object],
-) -> dict[str, object]:
+    payload: JsonObject,
+) -> JsonObject:
     execution_policy = payload.get("execution_policy")
     if not isinstance(execution_policy, dict):
         return payload
@@ -191,7 +192,7 @@ def semantic_execution_policy_payload(
     return {**payload, "execution_policy": normalized_policy}
 
 
-def semantic_workspace_policy_payload(payload: dict[str, object]) -> dict[str, object]:
+def semantic_workspace_policy_payload(payload: JsonObject) -> JsonObject:
     workspace_policy = payload.get("workspace_policy")
     if not isinstance(workspace_policy, dict):
         return payload
@@ -200,11 +201,11 @@ def semantic_workspace_policy_payload(payload: dict[str, object]) -> dict[str, o
     return {**payload, "workspace_policy": normalized_policy}
 
 
-def semantic_source_location_payload(payload: object) -> object:
+def semantic_source_location_payload(payload: object) -> JsonValue:
     return _without_source_location_metadata(to_json_safe(payload))
 
 
-def _without_source_location_metadata(payload: object) -> object:
+def _without_source_location_metadata(payload: JsonValue) -> JsonValue:
     if isinstance(payload, dict):
         return {
             key: _without_source_location_metadata(value)

@@ -50,7 +50,7 @@ jobs:
       - name: Lint
         run: make lint
 
-      - name: Check typed extension contracts
+      - name: Check strict typing
         run: make typecheck
 
   test:

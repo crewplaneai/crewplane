@@ -37,6 +37,8 @@ def canonical_json(value: object) -> str:
 
 
 def canonical_json_bytes(value: object) -> bytes:
+    """Return deterministic UTF-8 JSON bytes for signing or persistence."""
+
     return canonical_json(value).encode("utf-8")
 
 

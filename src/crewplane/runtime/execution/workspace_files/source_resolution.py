@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeGuard
 
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import (
@@ -13,6 +13,7 @@ from crewplane.core.preflight.models import (
     WorkspaceFileTarget,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.workspace.plan_nodes import workspace_plan_node
 from crewplane.runtime.workspace.state_selection import (
     required_lineage_state_path,
     same_node_executor_state_path,
@@ -108,7 +109,7 @@ def initial_pre_review_source(
         return load_source_ref_from_state(
             required_lineage_state_path(
                 output,
-                _plan_node(plan, node.workspace_policy.source_node_id),
+                workspace_plan_node(plan, node.workspace_policy.source_node_id),
             )
         )
 
@@ -123,7 +124,7 @@ def initial_pre_review_source(
 
 def is_initial_pre_review_context(
     context: WorkspaceCandidateSourceContext | None,
-) -> bool:
+) -> TypeGuard[WorkspaceCandidateSourceContext]:
     return (
         context is not None
         and context.role_label == ProviderRole.REVIEWER
@@ -141,16 +142,6 @@ def project_source_ref(plan: PreflightExecutionPlan) -> WorktreeSourceRef | None
         source_tree=plan.workspace_source.source_tree,
         candidate_sequence=None,
     )
-
-
-def _plan_node(
-    plan: PreflightExecutionPlan,
-    node_id: str,
-) -> PreflightExecutionNode:
-    for node in plan.nodes:
-        if node.id == node_id:
-            return node
-    raise RuntimeError(f"Workspace source references unknown node '{node_id}'.")
 
 
 def candidate_source_ref_from_state(path: Path) -> WorktreeSourceRef:

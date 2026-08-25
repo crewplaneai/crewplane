@@ -121,6 +121,8 @@ async def collect_process_output(
                     )
                 )
                 if log_handle is not None and log_queue is not None:
+                    if writer_status is None:
+                        raise RuntimeError("Log writer status was not initialized.")
                     task_group.create_task(
                         drain_log_queue(log_handle, log_queue, writer_status)
                     )
@@ -176,6 +178,8 @@ async def capture_process_streams(
     process_group_id: int | None = None,
     idle_timeout_seconds: float | None = None,
 ) -> None:
+    if process.stdout is None or process.stderr is None:
+        raise RuntimeError("Failed to capture process streams.")
     activity = ProcessActivity()
     stdout_task = asyncio.create_task(
         pipe_stream(process.stdout, log_queue, b"", stdout_capture, activity)

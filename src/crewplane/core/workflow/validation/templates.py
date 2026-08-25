@@ -31,6 +31,8 @@ class NodeArtifactReference:
 
 
 def extract_template_tokens(prompt: str) -> list[str]:
+    """Return template tokens in their source order, including delimiters."""
+
     return [match.group(0) for match in TEMPLATE_TOKEN_PATTERN.finditer(prompt)]
 
 

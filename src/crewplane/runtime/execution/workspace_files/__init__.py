@@ -21,6 +21,7 @@ from crewplane.core.preflight.workspace.files.git_reads import (
     valid_utf8_without_nul,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.workspace.plan_nodes import workspace_plan_node
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 from crewplane.runtime.workspace.state_selection import (
     latest_executor_lineage_state_path,
@@ -249,7 +250,7 @@ def dynamic_locator_source_state_path(
     ):
         state_path = required_lineage_state_path(
             output,
-            _plan_node(plan, node.workspace_policy.source_node_id),
+            workspace_plan_node(plan, node.workspace_policy.source_node_id),
         )
     else:
         raise RuntimeError(
@@ -368,16 +369,6 @@ def latest_executor_workspace_state(
             f"Workspace source node has no succeeded executor state: {node.id}."
         )
     return load_workspace_state(state_path)
-
-
-def _plan_node(
-    plan: PreflightExecutionPlan,
-    node_id: str,
-) -> PreflightExecutionNode:
-    for node in plan.nodes:
-        if node.id == node_id:
-            return node
-    raise RuntimeError(f"Workspace source references unknown node '{node_id}'.")
 
 
 def load_workspace_state(path: Path) -> dict[str, object]:

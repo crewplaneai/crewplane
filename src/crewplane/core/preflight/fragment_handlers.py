@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import (
     ALLOWED_NODE_ARTIFACT_NAME_SET,
@@ -326,8 +327,8 @@ def static_value_fragment(
 
 def static_value_resolved_payload(
     resolution: ResolvedStaticValueReference,
-) -> dict[str, str]:
-    payload = {
+) -> JsonObject:
+    payload: JsonObject = {
         "kind": "static_env" if resolution.kind == "env" else "static_var",
         "key": resolution.key,
     }
@@ -355,6 +356,10 @@ def resolve_static_value_reference(
     state: CompileState,
     occurrence_id: str,
 ) -> None:
+    if reference.kind not in {"env", "var"}:
+        raise ValueError(
+            f"Static value resolution requires an env or var reference, got {reference.kind}."
+        )
     key = reference.key or ""
     value = lookup_static_value(reference.kind, key, variables, options, state, node.id)
     if value is None:

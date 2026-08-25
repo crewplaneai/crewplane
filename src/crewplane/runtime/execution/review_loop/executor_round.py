@@ -10,7 +10,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details
 from ..provider_call import ProviderOutputPolicy, read_bound_invocation_output
-from ..workspace_files import WorkspaceCandidateSourceContext
+from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
 from .drift import run_provider_call_with_drift_guard
 from .prompts import (
     build_executor_prompt,

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from time import monotonic, sleep
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
@@ -26,6 +27,7 @@ from .process_identity import ProcessIdentity, ProcessInspector
 from .provider_processes import ensure_no_live_provider_processes
 
 LOCK_OWNER_FILENAME = "owner.json"
+type LockActivity = Literal["live", "stale", "none", "unverifiable"]
 
 
 class ResumeLockError(RuntimeError):
@@ -36,7 +38,7 @@ def run_lock_activity(
     state_dir: Path,
     run_key_name: str,
     process_inspector: ProcessInspector | None = None,
-) -> str:
+) -> LockActivity:
     """Return ``live``, ``stale``, ``none``, or ``unverifiable`` for a run lock."""
 
     inspector = process_inspector or ProcessInspector()

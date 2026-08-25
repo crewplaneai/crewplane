@@ -25,6 +25,7 @@ dev = [
     "pytest-cov>=7.0",
     "ruff>=0.6",
     "twine>=6.0",
+    "types-PyYAML>=6.0.12",
 ]
 stress = [
     "pytest-randomly>=4.0.1",

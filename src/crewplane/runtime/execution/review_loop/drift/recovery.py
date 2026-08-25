@@ -6,6 +6,7 @@ import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO, cast
 
 from crewplane.architecture.safe_files import ensure_contained_directory
 from crewplane.runtime.execution.publication_registry import (
@@ -193,7 +194,10 @@ def _atomic_restore_registered(
         _remove_existing_directory(path)
         with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as temporary:
             temporary_path = Path(temporary.name)
-            if not publications.copy_recovery_payload_to(path, temporary):
+            if not publications.copy_recovery_payload_to(
+                path,
+                cast(BinaryIO, temporary),
+            ):
                 return False
             temporary.flush()
             os.fsync(temporary.fileno())

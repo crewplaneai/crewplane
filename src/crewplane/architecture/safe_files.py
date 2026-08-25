@@ -54,7 +54,7 @@ def contained_regular_file(root: Path, relative_path: str) -> Path | None:
     parts = _relative_path_parts_optional(relative_path)
     if not parts:
         return None
-    if _has_symlink_component(root):
+    if path_has_symlink_component(root):
         return None
     candidate = _walk_without_symlink(root, parts)
     if candidate is None:
@@ -154,7 +154,7 @@ def _walk_without_symlink(root: Path, parts: tuple[str, ...]) -> Path | None:
     candidate = root
     for part in parts:
         candidate = candidate / part
-        if _path_is_symlink(candidate):
+        if path_is_symlink(candidate):
             return None
     return candidate
 
@@ -318,17 +318,21 @@ def _ensure_directory_component(path: Path) -> None:
         raise ValueError(f"Directory component must be a real directory: {path}")
 
 
-def _has_symlink_component(path: Path) -> bool:
+def path_has_symlink_component(path: Path) -> bool:
+    """Return whether any existing component in ``path`` is a symlink."""
+
     current = Path(path.anchor) if path.is_absolute() else Path()
     parts = path.parts[1:] if path.is_absolute() else path.parts
     for part in parts:
         current = current / part
-        if _path_is_symlink(current):
+        if path_is_symlink(current):
             return True
     return False
 
 
-def _path_is_symlink(path: Path) -> bool:
+def path_is_symlink(path: Path) -> bool:
+    """Return whether ``path`` itself is a symlink without following it."""
+
     try:
         return stat.S_ISLNK(path.lstat().st_mode)
     except PermissionError:

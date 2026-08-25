@@ -13,6 +13,8 @@ from .spend import spend_overview_rows
 
 
 def render_run_summary_markdown(summary: RunSummary) -> str:
+    """Render a complete persisted run summary as Markdown."""
+
     lines = [
         "# Run Summary\n\n",
         f"- Workflow: {summary.workflow_name}\n",

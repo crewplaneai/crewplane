@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from crewplane.architecture.contracts import (
-    CanonicalIntegrationConfig,
     InvocationProcessEvent,
     JsonObject,
     NodeArtifactRequest,
@@ -14,6 +13,8 @@ from crewplane.architecture.contracts import (
 from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
+
+from .options import IntegrationOptionsCanonicalizerPort
 
 
 @dataclass(frozen=True)
@@ -118,13 +119,33 @@ class ProviderProcessStorePort(Protocol):
 class ArtifactStorePort(Protocol):
     """Runtime-facing artifact store used during a single workflow run."""
 
-    run_id: str
-    run_key_name: str
-    task_name: str
-    stages_dir: Path
-    results_dir: Path
-    logs_dir: Path
-    log_cli_output: bool
+    @property
+    def run_id(self) -> str:
+        """Return the unique run identifier."""
+
+    @property
+    def run_key_name(self) -> str:
+        """Return the filesystem-safe run key."""
+
+    @property
+    def task_name(self) -> str:
+        """Return the normalized workflow name."""
+
+    @property
+    def stages_dir(self) -> Path:
+        """Return the run's execution-stage directory."""
+
+    @property
+    def results_dir(self) -> Path:
+        """Return the run's execution-result directory."""
+
+    @property
+    def logs_dir(self) -> Path:
+        """Return the run-level log directory."""
+
+    @property
+    def log_cli_output(self) -> bool:
+        """Return whether provider output is captured in invocation logs."""
 
     def create_node_dir(self, request: NodeArtifactRequest) -> Path:
         """Create the stage directory at the compiled locator."""
@@ -246,16 +267,31 @@ class ArtifactStorePort(Protocol):
         """Persist a run-level workspace branch export record."""
 
 
-class ArtifactAdapterPort(Protocol):
-    """Factory contract for artifact storage integrations."""
+class RunSummaryArtifactReaderPort(Protocol):
+    """Read-only artifact surface required to construct a run summary."""
 
-    def canonicalize_options(
+    @property
+    def stages_dir(self) -> Path:
+        """Return the run's execution-stage directory."""
+
+    def get_run_event_log_path(self) -> Path:
+        """Return the persistent execution-event log path."""
+
+    def get_run_summary_path(self) -> Path:
+        """Return the persistent run-summary path."""
+
+    def get_node_artifact_request(
         self,
-        implementation: str,
-        resolved_identity: str,
-        options: JsonObject | None = None,
-    ) -> CanonicalIntegrationConfig:
-        """Validate and canonicalize artifact options without side effects."""
+        node_id: str,
+    ) -> NodeArtifactRequest | None:
+        """Return the compiled request for an observed node when available."""
+
+    def get_node_output_path(self, request: NodeArtifactRequest) -> Path:
+        """Resolve the compiled output locator for a node."""
+
+
+class ArtifactAdapterPort(IntegrationOptionsCanonicalizerPort, Protocol):
+    """Factory contract for artifact storage integrations."""
 
     def create_store(
         self,

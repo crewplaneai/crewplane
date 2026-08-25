@@ -1,6 +1,9 @@
 """Preflight compiler contracts for compiled workflow execution."""
 
-from .compiler import PreflightCompileOptions, compile_preflight_preview
+from crewplane.architecture.contracts import ArtifactContract
+
+from .compile_state import PreflightCompileOptions
+from .compiler import compile_preflight_preview
 from .diagnostics import (
     PreflightDiagnostic,
     PreflightDiagnosticCode,
@@ -9,7 +12,6 @@ from .diagnostics import (
 from .models import (
     PREFLIGHT_STATUS_FAILED,
     PREFLIGHT_STATUS_SUCCEEDED,
-    ArtifactContract,
     DependencyEdge,
     Fragment,
     PreflightCompilationPreview,

@@ -25,7 +25,8 @@ from ..fragment_assembler import (
 )
 from ..provider_call import publish_invocation_output
 from ..reviews.consensus import check_consensus
-from ..workspace_files import ResolvedWorkspaceFile, WorkspaceCandidateSourceContext
+from ..workspace_files import ResolvedWorkspaceFile
+from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
 from .policy import (
     audit_round_context,
     audit_round_dir,

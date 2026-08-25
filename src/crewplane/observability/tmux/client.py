@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 from collections.abc import Callable
 from typing import Protocol
+
+from .warnings import dispatch_tmux_warning
 
 DEFAULT_TMUX_COMMAND_TIMEOUT_SECONDS = 1.0
 TMUX_TIMEOUT_RETURN_CODE = 124
@@ -126,13 +127,7 @@ class TmuxCommandClient:
         )
 
     def _warn(self, message: str) -> None:
-        if self._warning_sink is not None:
-            try:
-                self._warning_sink(message)
-            except Exception:
-                return
-            return
-        print(f"WARN: {message}", file=sys.stderr)
+        dispatch_tmux_warning(self._warning_sink, message)
 
 
 def tmux_result_timed_out(result: subprocess.CompletedProcess[str]) -> bool:

@@ -17,8 +17,8 @@ from .mock_invoker.selectors import selector_to_json
 class MockInvokerAdapter:
     """Create deterministic mock invokers for local orchestration runs."""
 
+    @staticmethod
     def canonicalize_options(
-        self,
         implementation: str,
         resolved_identity: str,
         options: JsonObject | None = None,
@@ -44,8 +44,8 @@ class MockInvokerAdapter:
             ).as_dict(),
         )
 
+    @staticmethod
     def create_invoker(
-        self,
         config: Config,
         options: JsonObject | None = None,
     ) -> AgentInvoker:

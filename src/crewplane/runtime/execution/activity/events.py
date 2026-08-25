@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -229,7 +230,7 @@ def emit_runtime_log(
     context: RuntimeEventContext | None = None,
     duration_ms: int | None = None,
     error: str | None = None,
-    attributes: dict[str, RuntimeLogValue] | None = None,
+    attributes: Mapping[str, RuntimeLogValue] | None = None,
 ) -> None:
     if telemetry is None:
         return

@@ -4,6 +4,7 @@ import hashlib
 import re
 from pathlib import Path
 
+from crewplane.architecture.contracts import RuntimeLogValue
 from crewplane.artifacts.failure_artifacts import (
     is_synthetic_invocation_failure,
 )
@@ -166,7 +167,7 @@ def emit_review_evaluation_warnings(
         round_num=round_num,
         output_file=output_file,
     )
-    attributes = {
+    attributes: dict[str, RuntimeLogValue] = {
         "approved": evaluation.approved,
         "evaluation_kind": evaluation.evaluation_kind,
         "had_leading_text": evaluation.had_leading_text,

@@ -10,9 +10,7 @@ from crewplane.architecture.ports.artifacts import (
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.workflow.keywords import ProviderRole
 
-from ..generated_files.catalog import (
-    GeneratedFileReferenceDetector,
-)
+from ..generated_files.detection import GeneratedFileReferenceDetector
 from .aggregation import aggregate_stage_outputs
 from .findings import (
     build_findings_document,

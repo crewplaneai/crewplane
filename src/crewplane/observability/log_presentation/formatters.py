@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from json import JSONDecodeError
 from pathlib import Path
 from time import time
-from typing import Any
 
 from crewplane.architecture.contracts import (
     LogPresentationDescriptor,
@@ -30,7 +29,7 @@ _STDERR_PREFIX = "[stderr] "
 
 @dataclass(frozen=True)
 class _JsonObjectRecovery:
-    parsed: Any
+    parsed: object
     diagnostics: tuple[str, ...] = ()
 
 
@@ -193,9 +192,6 @@ def format_json_object(request: LogPresentationRequest) -> LogPresentationSnapsh
         )
 
     JSON_OBJECT_THROTTLE.clear_path(request.log_path)
-    notices: list[LogPresentationNotice] = []
-    if result.truncated:
-        notices.append(warning_notice("Structured log was read from a bounded tail."))
     if exceeds_json_depth(parsed, request.limits.max_json_depth):
         return fallback_text_snapshot(
             result,
@@ -211,7 +207,7 @@ def format_json_object(request: LogPresentationRequest) -> LogPresentationSnapsh
         size_bytes=result.size_bytes,
         updated_age_seconds=result.updated_age_seconds,
         lines=tuple(rendered[: request.line_budget]),
-        notices=tuple(notices),
+        notices=(),
         truncated=result.truncated,
     )
 
@@ -332,7 +328,7 @@ def _recover_claude_json_with_inner_diagnostics(
     )
 
 
-def _parse_claude_shaped_json(candidate: str) -> Any | None:
+def _parse_claude_shaped_json(candidate: str) -> object | None:
     try:
         parsed = json.loads(candidate)
     except (RecursionError, ValueError):

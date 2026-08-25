@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,6 +26,7 @@ from crewplane.observability.tmux.session import (
     TmuxSessionIdentity,
     TmuxSessionTargets,
 )
+from crewplane.observability.tmux.warnings import dispatch_tmux_warning
 from crewplane.observability.types import RunContext
 
 TmuxClientFactory = Callable[[str | None], TmuxSessionClient]
@@ -324,13 +324,7 @@ class TmuxCompactSessionLifecycle:
             self._warn(f"tmux compact temp cleanup failed: {exc}")
 
     def _warn(self, message: str) -> None:
-        if self._warning_sink is not None:
-            try:
-                self._warning_sink(message)
-            except Exception:
-                return
-            return
-        print(f"WARN: {message}", file=sys.stderr)
+        dispatch_tmux_warning(self._warning_sink, message)
 
 
 def _terminate_attach_process(process: subprocess.Popen[str]) -> None:

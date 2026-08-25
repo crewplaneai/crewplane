@@ -124,15 +124,15 @@ def cleanup_workspaces(
     console = Console()
     try:
         context = resolve_cleanup_workspace_context(
-            console,
-            config_file,
-            successful,
-            failed,
-            cancelled,
-            all_projects,
-            run_key_name,
-            older_than,
-            orphans,
+            console=console,
+            config_file=config_file,
+            successful=successful,
+            failed=failed,
+            cancelled=cancelled,
+            all_projects=all_projects,
+            run_key_name=run_key_name,
+            older_than=older_than,
+            orphans=orphans,
         )
         destructive = yes and not dry_run
         warn_all_projects_cleanup(console, context.all_projects)

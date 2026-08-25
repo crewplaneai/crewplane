@@ -297,7 +297,7 @@ class PreparedWorkspace:
                 self.worktree_capture.source,
                 self.workspace_path,
             )
-        elif cache_entry is not None:
+        elif cache_entry is not None and self.reuse_cache is not None:
             self.reuse_cache.store(cache_entry)
         update_workspace_state(
             self.state_path,
@@ -405,8 +405,6 @@ class PreparedWorkspace:
                 )
             )
             return "retained", f"{reason}_cleanup_failed"
-        if self.workspace_kind == "snapshot":
-            return "deleted", None
         return "retained", reason
 
     def _remove_failed_worktree(self) -> None:

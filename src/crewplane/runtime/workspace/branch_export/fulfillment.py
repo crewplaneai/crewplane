@@ -91,7 +91,7 @@ def record_branch_export_fulfillment(
     except ValueError:
         record_relative_path = record_path.as_posix()
     state_payload = _workspace_state_payload(checkpoint.state_path)
-    state_payload["branch_export"] = {
+    branch_export: JsonObject = {
         "status": record_payload["status"],
         "operation": operation,
         "branch_name": record_payload["branch_name"],
@@ -102,9 +102,8 @@ def record_branch_export_fulfillment(
         "completed_at": record_payload["created_at"],
     }
     if "failure_message" in record_payload:
-        state_payload["branch_export"]["failure_message"] = record_payload[
-            "failure_message"
-        ]
+        branch_export["failure_message"] = record_payload["failure_message"]
+    state_payload["branch_export"] = branch_export
     atomic_write_json(checkpoint.state_path, state_payload)
     _refresh_node_manifest_workspace_descriptor(plan, node, stages_dir, results_dir)
 

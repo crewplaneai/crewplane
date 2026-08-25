@@ -114,7 +114,7 @@ def dependent_map_for(
     dependencies: dict[str, tuple[str, ...]],
     layout: TopologyLayout,
 ) -> dict[str, tuple[str, ...]]:
-    dependents = {node_id: [] for node_id in layout.node_order}
+    dependents: dict[str, list[str]] = {node_id: [] for node_id in layout.node_order}
     for node_id, dependency_ids in dependencies.items():
         for dependency_id in dependency_ids:
             dependents[dependency_id].append(node_id)

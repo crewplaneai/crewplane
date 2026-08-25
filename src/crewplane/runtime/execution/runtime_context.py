@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.core.config import AgentConfig
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
@@ -62,7 +63,9 @@ class CompiledRuntimeContext:
         if not isinstance(resolved_payload, dict):
             raise ValueError("Runtime agent config metadata must be a mapping.")
         runtime_agent = RuntimeAgentConfigSnapshot.model_validate(resolved_payload)
-        return AgentConfig(**runtime_agent_execution_payload(runtime_agent))
+        return AgentConfig.model_validate(
+            runtime_agent_execution_payload(runtime_agent)
+        )
 
     def _validate_provider_record(self, provider: ProviderRecord) -> None:
         expected_agent_signature = agent_config_signature_from_plan(
@@ -132,7 +135,7 @@ def agent_config_signature_from_plan(
 def agent_config_payload_from_plan(
     plan: PreflightExecutionPlan,
     agent_config_key: str,
-) -> dict[str, object]:
+) -> JsonObject:
     agents = plan.runtime_config_snapshot.get("agents")
     if not isinstance(agents, dict):
         raise ValueError("Compiled plan is missing runtime agent config metadata.")
@@ -142,7 +145,7 @@ def agent_config_payload_from_plan(
             "Compiled provider record references missing agent config "
             f"'{agent_config_key}'."
         )
-    return payload
+    return dict(payload)
 
 
 def resolve_secret_config_values(

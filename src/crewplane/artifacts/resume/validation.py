@@ -12,6 +12,7 @@ from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
     RUN_STATUS_SUCCEEDED,
     ArtifactDescriptor,
+    ArtifactKind,
     NodeState,
 )
 from crewplane.core.file_hashing import sha256_file
@@ -262,8 +263,8 @@ def _node_state_matches_context(
 def required_resume_artifact_paths(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
-) -> dict[str, str]:
-    required = {"output": node.artifact_contract.output_path}
+) -> dict[ArtifactKind, str]:
+    required: dict[ArtifactKind, str] = {"output": node.artifact_contract.output_path}
     findings_required = node.findings or any(
         edge.source_node == node.id and edge.artifact_name in _FINDINGS_KEYS
         for edge in plan.dependency_graph
@@ -295,7 +296,7 @@ def _descriptor_matches_file(
 def _dependents_by_node(
     dependencies: dict[str, set[str]],
 ) -> dict[str, set[str]]:
-    dependents = {node_id: set() for node_id in dependencies}
+    dependents: dict[str, set[str]] = {node_id: set() for node_id in dependencies}
     for node_id, node_dependencies in dependencies.items():
         for dependency in node_dependencies:
             dependents.setdefault(dependency, set()).add(node_id)
@@ -303,7 +304,7 @@ def _dependents_by_node(
 
 
 def _dependencies_by_node(plan: PreflightExecutionPlan) -> dict[str, set[str]]:
-    dependencies = {node.id: set() for node in plan.nodes}
+    dependencies: dict[str, set[str]] = {node.id: set() for node in plan.nodes}
     for edge in plan.dependency_graph:
         if edge.target_node in dependencies:
             dependencies[edge.target_node].add(edge.source_node)

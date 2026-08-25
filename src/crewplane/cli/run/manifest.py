@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
@@ -9,6 +10,7 @@ from crewplane.core.execution_state import (
     RunStatus,
 )
 from crewplane.core.preflight import PreflightExecutionPlan
+from crewplane.core.preflight.serialization import to_json_safe
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.preflight.workspace.observability import (
     workspace_observability_descriptor,
@@ -86,10 +88,17 @@ def build_run_manifest_from_plan(
         runtime_config_snapshot_path="preflight/runtime-config-snapshot.json",
         runtime_config_snapshot=plan.runtime_config_snapshot,
         workflow_source=source.workflow_content,
-        composed_workflow=source.composed_workflow,
+        composed_workflow=_json_object(source.composed_workflow),
         referenced_workflows=source.referenced_workflow_payloads(),
         workspace=workspace_observability_descriptor(plan),
         resumed_nodes=list(resumed_nodes),
         resume_source_run_id=resume_source_run_id,
         resume_source_run_key_name=resume_source_run_key_name,
     )
+
+
+def _json_object(value: object) -> JsonObject:
+    payload = to_json_safe(value)
+    if not isinstance(payload, dict):
+        raise TypeError("Expected workflow payload to serialize as a JSON object.")
+    return payload

@@ -3,6 +3,8 @@ import inspect
 import json
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import get_protocol_members
 
 import pytest
 
@@ -140,6 +142,20 @@ def test_filesystem_output_manager_implements_current_artifact_store_port(
 
     assert isinstance(output, ArtifactStorePort)
     assert require_artifact_store(output) is output
+
+
+def test_artifact_store_contract_does_not_require_filesystem_base_dir(
+    tmp_path: Path,
+) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    store = SimpleNamespace(
+        **{
+            member: getattr(output, member)
+            for member in get_protocol_members(ArtifactStorePort) - {"base_dir"}
+        }
+    )
+
+    assert require_artifact_store(store) is store
 
 
 def test_artifact_store_loader_rejects_removed_store_contract() -> None:

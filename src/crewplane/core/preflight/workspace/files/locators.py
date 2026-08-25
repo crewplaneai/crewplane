@@ -4,6 +4,7 @@ import hashlib
 import subprocess
 from pathlib import Path, PurePosixPath
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 
 from ...compile_state import (
@@ -285,8 +286,8 @@ def token_signature_for_workspace_locator(locator: WorkspaceFileLocator) -> str:
 
 def workspace_locator_resolved_payload(
     locator: WorkspaceFileLocator,
-) -> dict[str, str]:
-    payload = {
+) -> JsonObject:
+    payload: JsonObject = {
         "kind": "workspace_file_locator",
         "locator_id": locator.locator_id,
         "source_class": locator.source_class,
