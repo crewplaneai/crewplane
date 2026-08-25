@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-24
+
 ### Changed
 
 - Stable releases now open a Homebrew tap pull request automatically; bottle
