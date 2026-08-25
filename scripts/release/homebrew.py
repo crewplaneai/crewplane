@@ -33,6 +33,10 @@ TAP_FORMULA_PATH = Path("Formula/crewplane.rb")
 TAP_FORMULA_ARTIFACT = Path(".release/homebrew/Formula/crewplane.rb")
 AUTOMATION_MARKER = "<!-- crewplane-homebrew-release:v1 -->"
 SOURCE_REPOSITORY = "crewplaneai/crewplane"
+PUBLICATION_DETAILS_PATTERN = re.compile(
+    r"- Pull request number: `(?P<number>[1-9][0-9]*)`\n"
+    r"- Homebrew PR head SHA: `(?P<head_sha>[0-9a-f]{40})`\n"
+)
 
 
 class HomebrewEligibility(StrEnum):
@@ -69,6 +73,12 @@ class PullRequestSnapshot:
     head_branch: str
     base_branch: str
     title: str
+
+
+@dataclass(frozen=True)
+class PullRequestPublication:
+    number: int
+    head_sha: str
 
 
 def prepare_formula(root: Path, expected_tag: str) -> Path:
@@ -337,11 +347,12 @@ def update_pull_request(
 
     branch = f"automation/crewplane-{release.context.version.project}"
     title = f"crewplane {release.context.version.project}"
-    body = pull_request_body(release, source_commit)
+    provisional_body = pull_request_body(release, source_commit)
     pull_request = query_pull_request(tap_root, runner, branch)
     remote_sha = remote_branch_sha(tap_root, runner, branch)
+    validate_pull_request_body(pull_request, release, source_commit)
     validate_existing_automation(
-        tap_root, runner, pull_request, remote_sha, branch, title, body, release.formula
+        tap_root, runner, pull_request, remote_sha, branch, title, release.formula
     )
 
     if remote_sha:
@@ -351,10 +362,16 @@ def update_pull_request(
         if parent_sha == base_sha and pull_request is not None:
             if pull_request.state == "CLOSED":
                 reopen_pull_request(tap_root, runner, pull_request.number)
-            verify_published_pull_request(
-                tap_root, runner, branch, title, body, remote_sha
+            snapshot = finalize_pull_request_body(
+                tap_root,
+                runner,
+                branch,
+                title,
+                release,
+                source_commit,
+                remote_sha,
             )
-            print(f"Verified existing Homebrew pull request: {pull_request.url}")
+            print(f"Verified existing Homebrew pull request: {snapshot.url}")
             return 0
 
     new_sha = commit_formula_update(
@@ -363,11 +380,11 @@ def update_pull_request(
     if fetch_tap_main(tap_root, runner) != base_sha:
         raise ReleaseError("Homebrew tap main changed during publication; rerun safely")
     if pull_request is None:
-        create_pull_request(tap_root, runner, branch, title, body)
+        create_pull_request(tap_root, runner, branch, title, provisional_body)
     elif pull_request.state == "CLOSED":
         reopen_pull_request(tap_root, runner, pull_request.number)
-    snapshot = verify_published_pull_request(
-        tap_root, runner, branch, title, body, new_sha
+    snapshot = finalize_pull_request_body(
+        tap_root, runner, branch, title, release, source_commit, new_sha
     )
     print(f"Published Homebrew pull request: {snapshot.url}")
     return 0
@@ -508,7 +525,6 @@ def validate_existing_automation(
     remote_sha: str,
     branch: str,
     title: str,
-    body: str,
     expected_formula: str,
 ) -> None:
     if pull_request is not None:
@@ -520,7 +536,6 @@ def validate_existing_automation(
             pull_request.head_branch != branch
             or pull_request.base_branch != TAP_BASE_BRANCH
             or pull_request.title != title
-            or pull_request.body != body
         ):
             raise ReleaseError("existing Homebrew pull request metadata was changed")
         if remote_sha and pull_request.head_sha != remote_sha:
@@ -622,6 +637,46 @@ def reopen_pull_request(tap_root: Path, runner: CommandRunner, number: int) -> N
     )
 
 
+def update_pull_request_body(
+    tap_root: Path, runner: CommandRunner, number: int, body: str
+) -> None:
+    runner.run(
+        [
+            "gh",
+            "api",
+            f"repos/{TAP_REPOSITORY}/pulls/{number}",
+            "--method",
+            "PATCH",
+            "--raw-field",
+            f"body={body}",
+        ],
+        cwd=tap_root,
+    )
+
+
+def finalize_pull_request_body(
+    tap_root: Path,
+    runner: CommandRunner,
+    branch: str,
+    title: str,
+    release: HomebrewRelease,
+    source_commit: str,
+    head_sha: str,
+) -> PullRequestSnapshot:
+    snapshot = query_pull_request(tap_root, runner, branch)
+    if snapshot is None:
+        raise ReleaseError("Homebrew pull request is missing after publication")
+    validate_published_pull_request(snapshot, branch, title, head_sha)
+    validate_pull_request_body(snapshot, release, source_commit)
+    publication = PullRequestPublication(snapshot.number, head_sha)
+    body = pull_request_body(release, source_commit, publication)
+    if snapshot.body != body:
+        update_pull_request_body(tap_root, runner, snapshot.number, body)
+    return verify_published_pull_request(
+        tap_root, runner, branch, title, body, head_sha
+    )
+
+
 def verify_published_pull_request(
     tap_root: Path,
     runner: CommandRunner,
@@ -633,30 +688,80 @@ def verify_published_pull_request(
     snapshot = query_pull_request(tap_root, runner, branch)
     if snapshot is None:
         raise ReleaseError("Homebrew pull request is missing after publication")
+    validate_published_pull_request(snapshot, branch, title, head_sha)
+    if snapshot.body != body:
+        raise ReleaseError("Homebrew pull request does not match the published update")
+    return snapshot
+
+
+def validate_published_pull_request(
+    snapshot: PullRequestSnapshot, branch: str, title: str, head_sha: str
+) -> None:
     if (
         snapshot.state != "OPEN"
         or snapshot.merged_at is not None
         or snapshot.title != title
-        or snapshot.body != body
         or snapshot.head_sha != head_sha
         or snapshot.head_branch != branch
         or snapshot.base_branch != TAP_BASE_BRANCH
     ):
         raise ReleaseError("Homebrew pull request does not match the published update")
-    return snapshot
 
 
-def pull_request_body(release: HomebrewRelease, source_commit: str) -> str:
+def validate_pull_request_body(
+    snapshot: PullRequestSnapshot | None,
+    release: HomebrewRelease,
+    source_commit: str,
+) -> None:
+    if snapshot is None or snapshot.body == pull_request_body(release, source_commit):
+        return
+    match = PUBLICATION_DETAILS_PATTERN.search(snapshot.body)
+    if match is not None:
+        publication = PullRequestPublication(
+            number=int(match.group("number")),
+            head_sha=match.group("head_sha"),
+        )
+        expected = pull_request_body(release, source_commit, publication)
+        if publication.number == snapshot.number and snapshot.body == expected:
+            return
+    raise ReleaseError("existing Homebrew pull request metadata was changed")
+
+
+def pull_request_body(
+    release: HomebrewRelease,
+    source_commit: str,
+    publication: PullRequestPublication | None = None,
+) -> str:
     tag = release.context.version.tag
+    if publication is None:
+        publication_instructions = (
+            "### Publish this tested Homebrew revision\n\n"
+            "The release automation will add the pull request number and Homebrew "
+            "PR head SHA after GitHub creates the pull request.\n"
+        )
+    else:
+        publication_instructions = (
+            "### Publish this tested Homebrew revision\n\n"
+            "After both macOS and Linux `brew test-bot` checks pass and upload "
+            "their bottles, run the tap's `brew pr-pull` workflow with:\n\n"
+            f"- Pull request number: `{publication.number}`\n"
+            f"- Homebrew PR head SHA: `{publication.head_sha}`\n\n"
+            "Do **not** click GitHub's normal Merge button. Use the values above, "
+            "not the Crewplane source commit or PyPI sdist SHA-256 below. The "
+            "`brew pr-pull` workflow collects the tested bottles, updates the "
+            "formula's bottle metadata, and publishes the completed release to "
+            "`main`.\n"
+        )
     return (
         f"{AUTOMATION_MARKER}\n"
         f"Automated Homebrew update for Crewplane `{release.context.version.project}`.\n\n"
-        f"- Source release: https://github.com/{SOURCE_REPOSITORY}/releases/tag/{tag}\n"
-        f"- Source commit: `{source_commit}`\n"
+        f"{publication_instructions}\n"
+        "### Release provenance\n\n"
+        f"- Crewplane source release: "
+        f"https://github.com/{SOURCE_REPOSITORY}/releases/tag/{tag}\n"
+        f"- Crewplane source commit: `{source_commit}`\n"
         f"- PyPI sdist: {release.sdist.url}\n"
-        f"- SHA-256: `{release.sdist.sha256}`\n\n"
-        "After the Homebrew checks pass, publish this PR with the tap's "
-        "`brew pr-pull` workflow.\n"
+        f"- PyPI sdist SHA-256: `{release.sdist.sha256}`\n"
     )
 
 

@@ -78,10 +78,12 @@ For a quick question, a one-off patch, or exploratory work that fits in a single
 On macOS:
 
 ```bash
-brew tap crewplaneai/crewplane
-brew install crewplane
+brew install crewplaneai/crewplane/crewplane
 crewplane --help
 ```
+
+The fully qualified name adds the tap automatically and trusts only the
+Crewplane formula.
 
 ## Run Your First Workflow
 

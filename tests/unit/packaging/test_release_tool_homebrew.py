@@ -45,6 +45,19 @@ class LocalTapRunner(state.CommandRunner):
             )
         if command_tuple[:2] == ("gh", "api"):
             self.gh_calls.append(command_tuple)
+            if command_value(command_tuple, "--method") == "PATCH":
+                assert self.pull_request is not None
+                number = self.pull_request["number"]
+                assert command_tuple[2] == (
+                    f"repos/{homebrew.TAP_REPOSITORY}/pulls/{number}"
+                )
+                body_field = command_value(command_tuple, "--raw-field")
+                prefix = "body="
+                assert body_field.startswith(prefix)
+                self.pull_request["body"] = body_field.removeprefix(prefix)
+                return state.CommandResult(
+                    command_tuple, 0, json.dumps(self.pull_request), ""
+                )
             records = [] if self.pull_request is None else [self.pull_request]
             return state.CommandResult(command_tuple, 0, json.dumps(records), "")
         if command_tuple[:3] == ("gh", "pr", "create"):
@@ -413,12 +426,28 @@ def test_publish_homebrew_pr_creates_one_branch_and_is_idempotent(
     )
     assert setup.runner.pull_request is not None
     assert setup.runner.pull_request["state"] == "open"
-    assert str(setup.runner.pull_request["body"]).startswith(homebrew.AUTOMATION_MARKER)
+    body = str(setup.runner.pull_request["body"])
+    branch_sha = git(setup.origin, "rev-parse", f"refs/heads/{branch}")
+    assert body.startswith(homebrew.AUTOMATION_MARKER)
+    assert "- Pull request number: `7`" in body
+    assert f"- Homebrew PR head SHA: `{branch_sha}`" in body
+    assert f"- Crewplane source commit: `{setup.options.source_commit}`" in body
+    assert "- PyPI sdist SHA-256: `" in body
     create_calls = [
         call for call in setup.runner.gh_calls if call[:3] == ("gh", "pr", "create")
     ]
+    patch_calls = [
+        call
+        for call in setup.runner.gh_calls
+        if call[:2] == ("gh", "api") and command_value(call, "--method") == "PATCH"
+    ]
     assert len(create_calls) == 1
-    query_calls = [call for call in setup.runner.gh_calls if call[:2] == ("gh", "api")]
+    assert len(patch_calls) == 1
+    query_calls = [
+        call
+        for call in setup.runner.gh_calls
+        if call[:2] == ("gh", "api") and command_value(call, "--method") == "GET"
+    ]
     assert query_calls
     assert all(
         f"head={homebrew.TAP_OWNER}:{branch}" in call and "per_page=2" in call
@@ -478,6 +507,54 @@ def test_publish_homebrew_pr_rebases_stale_automation_branch(
     head = setup.runner.pull_request["head"]
     assert isinstance(head, dict)
     assert head["sha"] == updated_branch
+    body = str(setup.runner.pull_request["body"])
+    assert f"- Homebrew PR head SHA: `{updated_branch}`" in body
+    assert original_branch_sha not in body
+
+
+@pytest.mark.usefixtures("isolated_git")
+def test_publish_homebrew_pr_repairs_generated_description(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup = publication_setup(tmp_path, monkeypatch)
+    homebrew.publish_formula_pull_request(tmp_path, setup.runner, setup.options)
+    assert setup.runner.pull_request is not None
+    create_call = next(
+        call for call in setup.runner.gh_calls if call[:3] == ("gh", "pr", "create")
+    )
+    setup.runner.pull_request["body"] = command_value(create_call, "--body")
+
+    result = homebrew.publish_formula_pull_request(
+        tmp_path, setup.runner, setup.options
+    )
+
+    branch = f"automation/crewplane-{setup.context.version.project}"
+    branch_sha = git(setup.origin, "rev-parse", f"refs/heads/{branch}")
+    body = str(setup.runner.pull_request["body"])
+    assert result == 0
+    assert "- Pull request number: `7`" in body
+    assert f"- Homebrew PR head SHA: `{branch_sha}`" in body
+    patch_calls = [
+        call
+        for call in setup.runner.gh_calls
+        if call[:2] == ("gh", "api") and command_value(call, "--method") == "PATCH"
+    ]
+    assert len(patch_calls) == 2
+
+
+@pytest.mark.usefixtures("isolated_git")
+def test_publish_homebrew_pr_rejects_manually_edited_description(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup = publication_setup(tmp_path, monkeypatch)
+    homebrew.publish_formula_pull_request(tmp_path, setup.runner, setup.options)
+    assert setup.runner.pull_request is not None
+    setup.runner.pull_request["body"] = (
+        str(setup.runner.pull_request["body"]) + "\nPublish this another way.\n"
+    )
+
+    with pytest.raises(state.ReleaseError, match="metadata was changed"):
+        homebrew.publish_formula_pull_request(tmp_path, setup.runner, setup.options)
 
 
 @pytest.mark.usefixtures("isolated_git")
