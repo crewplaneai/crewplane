@@ -533,6 +533,8 @@ def test_release_script_exposes_stateful_commands() -> None:
         "check",
         "verify-complete",
         "github-release-plan",
+        "homebrew-formula",
+        "publish-homebrew-pr",
         "publish-pypi",
         "publish-npm",
         "finalize",
@@ -666,8 +668,8 @@ def test_production_release_workflow_reuses_release_tool_without_pypi_publish() 
         "Release tag must point to the dispatched master commit."
         in (release_source_guard["run"])
     )
-    assert workflow.count("TAG_NAME: ${{ inputs.tag }}") == 2
-    assert workflow.count("fetch-depth: 0") == 2
+    assert workflow.count("TAG_NAME: ${{ inputs.tag }}") == 3
+    assert workflow.count("fetch-depth: 0") == 4
     assert workflow.count("git fetch --quiet --no-tags origin refs/heads/master") == 1
     assert workflow.count("git merge-base --is-ancestor") == 1
     assert "ref: refs/tags/${{ inputs.tag }}" in workflow
@@ -679,7 +681,7 @@ def test_production_release_workflow_reuses_release_tool_without_pypi_publish() 
     assert "group: github-release-publication" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "queue: max" in workflow
-    assert workflow.count("uses: actions/checkout@") == 2
+    assert workflow.count("uses: actions/checkout@") == 4
     assert "github.event.inputs" not in workflow
     assert "github.ref_name" not in workflow
     assert "path: tooling" not in workflow
@@ -689,8 +691,11 @@ def test_production_release_workflow_reuses_release_tool_without_pypi_publish() 
     assert workflow.count("python scripts/release.py github-release-plan") == 1
     assert "python scripts/release.py github-release-plan" in release_script
     assert "github-release-metadata" not in workflow
-    assert workflow.count("needs.verify.outputs.release_commit") == 1
-    assert "steps.release-plan.outputs" not in workflow
+    assert workflow.count("needs.verify.outputs.release_commit") == 3
+    assert (
+        "homebrew_eligible: ${{ steps.release-plan.outputs.homebrew_eligible }}"
+        in workflow
+    )
     assert "name: release-bundle" in workflow
     assert "dist/*" in workflow
     assert ".release/npm/*.tgz" in workflow
@@ -698,6 +703,14 @@ def test_production_release_workflow_reuses_release_tool_without_pypi_publish() 
     assert "include-hidden-files: true" in workflow
     assert "overwrite: true" in workflow
     assert "scripts/publish_github_release.sh dist" in workflow
+    assert "python scripts/release.py homebrew-formula" in workflow
+    assert "python scripts/release.py publish-homebrew-pr" in workflow
+    homebrew_upload = next(
+        step
+        for step in workflow_config["jobs"]["verify"]["steps"]
+        if step["name"] == "Upload verified Homebrew formula"
+    )
+    assert homebrew_upload["with"]["include-hidden-files"] == "true"
     assert "release_flags=(--prerelease --latest=false)" in release_script
     assert "release_flags=(--prerelease=false --latest)" in release_script
     assert "release_flags=(--prerelease=false --latest=false)" in release_script
@@ -728,7 +741,33 @@ def test_production_release_workflow_reuses_release_tool_without_pypi_publish() 
     assert "--verify-tag" in release_script
     assert "GH_REPO: ${{ github.repository }}" in workflow
     assert '--repo "$repository"' in release_script
-    assert workflow.count("contents: write") == 1
+    assert workflow_config["jobs"]["github-release"]["permissions"] == {
+        "contents": "write"
+    }
+    homebrew_job = workflow_config["jobs"]["homebrew-pr"]
+    assert homebrew_job["needs"] == ["verify", "github-release"]
+    assert homebrew_job["if"] == ("needs.verify.outputs.homebrew_eligible == 'true'")
+    assert homebrew_job["permissions"] == {"contents": "read"}
+    homebrew_steps = {step["name"]: step for step in homebrew_job["steps"]}
+    token_step = homebrew_steps["Create Homebrew tap token"]
+    assert token_step["uses"].startswith("actions/create-github-app-token@")
+    assert token_step["with"] == {
+        "client-id": "${{ vars.HOMEBREW_UPDATER_CLIENT_ID }}",
+        "private-key": "${{ secrets.HOMEBREW_UPDATER_PRIVATE_KEY }}",
+        "owner": "crewplaneai",
+        "repositories": "homebrew-crewplane",
+        "permission-contents": "write",
+        "permission-pull-requests": "write",
+    }
+    tap_checkout = homebrew_steps["Check out Homebrew tap"]
+    assert tap_checkout["with"]["repository"] == "crewplaneai/homebrew-crewplane"
+    assert tap_checkout["with"]["token"] == "${{ steps.tap-token.outputs.token }}"
+    assert tap_checkout["with"]["persist-credentials"] == "false"
+    assert (
+        "gh auth setup-git"
+        in homebrew_steps["Configure Homebrew tap authentication"]["run"]
+    )
+    assert "--execute" in homebrew_steps["Publish Homebrew pull request"]["run"]
     assert "uv build" not in workflow
     assert "urllib.request" not in workflow
     assert "pypa/gh-action-pypi-publish" not in workflow
@@ -1622,6 +1661,7 @@ def test_homebrew_formula_uses_normalized_python_artifact_and_virtualenv() -> No
     assert f'depends_on "python@{default_python}"' in formula
     assert 'depends_on "maturin" => :build' in formula
     assert 'depends_on "rust" => :build' in formula
+    assert 'depends_on "libyaml"' in formula
     assert 'branch: "master"' in formula
     assert f'def python3\n    "python{default_python}"\n  end' in formula
     assert "virtualenv_create(libexec, python3)" in formula

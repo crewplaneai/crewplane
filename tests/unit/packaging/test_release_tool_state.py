@@ -349,7 +349,9 @@ def test_prepare_refuses_existing_remote_versions(
 
 
 def test_prepare_builds_offline_wheelhouse(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     context, manifest, _formula, _git = release_state_fixture(tmp_path)
     missing_releases = (
@@ -376,7 +378,11 @@ def test_prepare_builds_offline_wheelhouse(
 
     build.prepare_release(tmp_path, FakeRunner())
 
+    output = capsys.readouterr().out
     assert calls == ["wheelhouse"]
+    assert "brew pr-pull" in output
+    assert "Copy it to:" not in output
+    assert "push the tap update" not in output
 
 
 def test_release_artifact_build_does_not_download_wheelhouse(

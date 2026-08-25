@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from markdown_it import MarkdownIt
-from release import build, publish, smoke
+from release import build, homebrew, publish, smoke
 from release.state import (
     CommandRunner,
     ReleaseError,
@@ -59,9 +59,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "--expected-tag",
             help="The tag expected by the release workflow. Must match context.version.tag.",
         )
+    homebrew_formula_parser = subparsers.add_parser("homebrew-formula")
+    homebrew_formula_parser.add_argument("--expected-tag", required=True)
     for command in ("publish-pypi", "publish-npm", "finalize"):
         command_parser = subparsers.add_parser(command)
         command_parser.add_argument("--execute", action="store_true")
+    homebrew_pr_parser = subparsers.add_parser("publish-homebrew-pr")
+    homebrew_pr_parser.add_argument("--expected-tag", required=True)
+    homebrew_pr_parser.add_argument("--source-commit", required=True)
+    homebrew_pr_parser.add_argument("--tap-root", type=Path, required=True)
+    homebrew_pr_parser.add_argument("--execute", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -90,6 +97,9 @@ def dispatch(args: argparse.Namespace, root: Path, runner: CommandRunner) -> int
     if command == "github-release-plan":
         publish.print_github_release_plan(root, runner, args.expected_tag)
         return 0
+    if command == "homebrew-formula":
+        homebrew.prepare_formula(root, args.expected_tag)
+        return 0
     if command == "confirm":
         publish.confirm_release(root)
         return 0
@@ -99,6 +109,14 @@ def dispatch(args: argparse.Namespace, root: Path, runner: CommandRunner) -> int
         return publish.publish_npm(root, runner, bool(args.execute))
     if command == "finalize":
         return publish.finalize_release(root, runner, bool(args.execute))
+    if command == "publish-homebrew-pr":
+        options = homebrew.HomebrewPrOptions(
+            expected_tag=args.expected_tag,
+            source_commit=args.source_commit,
+            tap_root=args.tap_root,
+            execute=bool(args.execute),
+        )
+        return homebrew.publish_formula_pull_request(root, runner, options)
     if command == "package-build":
         build.package_build(root, runner)
         return 0

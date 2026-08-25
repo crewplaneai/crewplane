@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       release_commit: ${{ steps.release-source.outputs.release_commit }}
+      homebrew_eligible: ${{ steps.release-plan.outputs.homebrew_eligible }}
     env:
       TAG_NAME: ${{ inputs.tag }}
     steps:
@@ -69,9 +70,29 @@ jobs:
             python scripts/release.py release-artifacts
 
       - name: Verify GitHub release inputs
+        id: release-plan
         run: |
+          plan_file="$RUNNER_TEMP/github-release-plan.txt"
           uv run --locked --extra dev \
             python scripts/release.py github-release-plan \
+            --expected-tag "$TAG_NAME" > "$plan_file"
+          cat "$plan_file"
+          mapfile -t plan < "$plan_file"
+          if [[ "${#plan[@]}" -ne 3 \
+            || ! "${plan[0]}" =~ ^prerelease=(true|false)$ \
+            || ! "${plan[1]}" =~ ^latest=(true|false)$ \
+            || ! "${plan[2]}" =~ ^notes_start_tag=(v[0-9A-Za-z._!-]+)?$ ]]
+          then
+            echo "The verified release plan returned malformed output." >&2
+            exit 1
+          fi
+          echo "homebrew_eligible=${plan[1]#latest=}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Homebrew tap formula
+        if: steps.release-plan.outputs.homebrew_eligible == 'true'
+        run: |
+          uv run --locked --extra dev \
+            python scripts/release.py homebrew-formula \
             --expected-tag "$TAG_NAME"
 
       - name: Upload verified release bundle
@@ -82,6 +103,17 @@ jobs:
             dist/*
             .release/npm/*.tgz
             .release/release-manifest.json
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+      - name: Upload verified Homebrew formula
+        if: steps.release-plan.outputs.homebrew_eligible == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: homebrew-formula
+          path: .release/homebrew/Formula/crewplane.rb
           include-hidden-files: true
           if-no-files-found: error
           overwrite: true
@@ -134,3 +166,92 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/publish_github_release.sh dist
+
+  homebrew-pr:
+    name: homebrew-pr
+    needs: [verify, github-release]
+    if: needs.verify.outputs.homebrew_eligible == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TAG_NAME: ${{ inputs.tag }}
+      SOURCE_COMMIT: ${{ needs.verify.outputs.release_commit }}
+    steps:
+      - name: Check out verified release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.release_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version-file: "packaging/uv-bootstrap-version.txt"
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Download verified release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-bundle
+          path: .
+
+      - name: Download verified Homebrew formula
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: homebrew-formula
+          path: .release/homebrew/Formula
+
+      - name: Create Homebrew tap token
+        id: tap-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HOMEBREW_UPDATER_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_UPDATER_PRIVATE_KEY }}
+          owner: crewplaneai
+          repositories: homebrew-crewplane
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: crewplaneai/homebrew-crewplane
+          ref: main
+          fetch-depth: 0
+          path: homebrew-tap
+          token: ${{ steps.tap-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Configure Homebrew tap authentication
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+          APP_SLUG: ${{ steps.tap-token.outputs.app-slug }}
+        run: |
+          app_user="${APP_SLUG}[bot]"
+          app_user_id="$(gh api "/users/$app_user" --jq .id)"
+          git -C homebrew-tap config user.name "$app_user"
+          git -C homebrew-tap config user.email \
+            "${app_user_id}+${app_user}@users.noreply.github.com"
+          gh auth setup-git
+
+      - name: Publish Homebrew pull request
+        env:
+          GH_TOKEN: ${{ steps.tap-token.outputs.token }}
+        run: |
+          uv run --locked --extra dev \
+            python scripts/release.py publish-homebrew-pr \
+            --expected-tag "$TAG_NAME" \
+            --source-commit "$SOURCE_COMMIT" \
+            --tap-root homebrew-tap \
+            --execute

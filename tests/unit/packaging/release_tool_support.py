@@ -122,6 +122,7 @@ def write_minimal_repo(root: Path, version: str = "1.2.3-alpha.4") -> None:
                 '  version "0.0.0"',
                 f'  sha256 "{"0" * 64}"',
                 '  head "https://github.com/crewplaneai/crewplane.git", branch: "main"',
+                '  depends_on "libyaml"',
                 '  resource "hatchling" do',
                 '    url "https://example.com/hatchling-0.0.0.tar.gz"',
                 f'    sha256 "{"f" * 64}"',
@@ -314,8 +315,28 @@ def matching_pypi(
         True,
         context.version.python,
         {
-            sdist.filename: state.PypiFile(sdist.filename, sdist.size, sdist.sha256),
-            wheel.filename: state.PypiFile(wheel.filename, wheel.size, wheel.sha256),
+            sdist.filename: state.PypiFile(
+                filename=sdist.filename,
+                size=sdist.size,
+                sha256=sdist.sha256,
+                url=(
+                    "https://files.pythonhosted.org/packages/aa/bb/"
+                    f"{'c' * 60}/{sdist.filename}"
+                ),
+                package_type="sdist",
+                yanked=False,
+            ),
+            wheel.filename: state.PypiFile(
+                filename=wheel.filename,
+                size=wheel.size,
+                sha256=wheel.sha256,
+                url=(
+                    "https://files.pythonhosted.org/packages/dd/ee/"
+                    f"{'f' * 60}/{wheel.filename}"
+                ),
+                package_type="bdist_wheel",
+                yanked=False,
+            ),
         },
         latest_stable=(
             latest_stable
