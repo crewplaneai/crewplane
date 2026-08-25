@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
@@ -8,6 +8,7 @@ from crewplane.architecture.contracts import (
     InvocationContext,
     InvocationDiagnostic,
     InvocationProcessEvent,
+    RuntimeLogValue,
 )
 from crewplane.architecture.ports import (
     ArtifactStorePort,
@@ -153,7 +154,7 @@ def emit_artifact_capture_event(
     invocation_metadata: InvocationMetadata | None,
     operation: str,
     message: str,
-    attributes: dict[str, object] | None = None,
+    attributes: Mapping[str, RuntimeLogValue] | None = None,
 ) -> None:
     if telemetry is None or invocation_metadata is None:
         return

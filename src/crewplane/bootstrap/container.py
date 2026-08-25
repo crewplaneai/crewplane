@@ -107,9 +107,8 @@ def build_runtime_components(
 
 
 def _validate_invoker_contract(invoker: object) -> None:
-    if not callable(getattr(invoker, "invoke", None)):
-        raise TypeError("invoker adapter returned object without callable invoke")
-    if not callable(getattr(invoker, "log_presentation_for", None)):
-        raise TypeError(
-            "invoker adapter returned object without callable log_presentation_for"
-        )
+    for method_name in ("invoke", "log_presentation_for"):
+        if not callable(getattr(invoker, method_name, None)):
+            raise TypeError(
+                f"invoker adapter returned object without callable {method_name}"
+            )

@@ -89,6 +89,36 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         finally:
             result.cleanup_stream_files()
 
+    async def test_run_command_once_disables_unsupported_process_groups(self) -> None:
+        events: list[InvocationProcessEvent] = []
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="generic_executor_0",
+            provider="generic",
+            role=ProviderRole.EXECUTOR,
+            process_event_sink=events.append,
+        )
+
+        with patch(
+            "crewplane.runtime.agent.invocation.command.supports_posix_process_groups",
+            return_value=False,
+        ):
+            result = await run_command_once(
+                cmd=[sys.executable, "-c", "print('ok')"],
+                stdin_data=None,
+                log_file=None,
+                append_log=False,
+                log_header=None,
+                cwd=Path.cwd(),
+                invocation_context=context,
+                idle_timeout_seconds=None,
+            )
+        try:
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual([event.process_group_id for event in events], [None, None])
+        finally:
+            result.cleanup_stream_files()
+
     async def test_process_start_reporting_failure_reaps_spawned_process(
         self,
     ) -> None:
@@ -183,6 +213,43 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 for note in caught.exception.__notes__
             )
         )
+
+    async def test_file_not_found_after_spawn_reaps_process(self) -> None:
+        created_processes: list[asyncio.subprocess.Process] = []
+        original_create_subprocess_exec = asyncio.create_subprocess_exec
+
+        async def tracking_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
+            process = await original_create_subprocess_exec(*args, **kwargs)
+            created_processes.append(process)
+            return process
+
+        with (
+            patch(
+                "crewplane.runtime.agent.invocation.command.asyncio.create_subprocess_exec",
+                new=tracking_create_subprocess_exec,
+            ),
+            patch(
+                "crewplane.runtime.agent.invocation.command.open_log_handle",
+                side_effect=FileNotFoundError("log directory disappeared"),
+            ),
+            self.assertRaisesRegex(
+                RuntimeError,
+                "Execution error: log directory disappeared",
+            ),
+        ):
+            await run_command_once(
+                cmd=[sys.executable, "-c", "import time; time.sleep(10)"],
+                stdin_data=None,
+                log_file=Path("provider.log"),
+                append_log=False,
+                log_header=None,
+                cwd=Path.cwd(),
+                invocation_context=None,
+                idle_timeout_seconds=None,
+            )
+
+        self.assertEqual(len(created_processes), 1)
+        self.assertIsNotNone(created_processes[0].returncode)
 
     async def test_process_exit_reporting_failure_cleans_stream_capture(self) -> None:
         cleanup_calls = 0

@@ -6,13 +6,11 @@ from typing import Protocol
 
 from rich.console import Console
 
-from crewplane.architecture.contracts import (
-    CanonicalIntegrationConfig,
-    JsonObject,
-    WorkflowTopology,
-)
+from crewplane.architecture.contracts import JsonObject, WorkflowTopology
 from crewplane.architecture.ports.runtime import UIRuntimePlan
 from crewplane.core.config import Config
+
+from .options import IntegrationOptionsCanonicalizerPort
 
 
 @dataclass(frozen=True)
@@ -23,18 +21,10 @@ class UIAdapterCapabilities:
     accepts_which_override: bool = False
 
 
-class UIAdapterPort(Protocol):
+class UIAdapterPort(IntegrationOptionsCanonicalizerPort, Protocol):
     """Factory contract for optional live runtime integrations."""
 
     capabilities: UIAdapterCapabilities
-
-    def canonicalize_options(
-        self,
-        implementation: str,
-        resolved_identity: str,
-        options: JsonObject | None = None,
-    ) -> CanonicalIntegrationConfig:
-        """Validate and canonicalize UI options without side effects."""
 
     def create_runtime(
         self,

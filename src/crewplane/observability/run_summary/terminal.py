@@ -11,6 +11,8 @@ from .spend import spend_overview_rows
 
 
 def render_run_summary_terminal(summary: RunSummary) -> str:
+    """Render the concise terminal form of a run summary."""
+
     lines = [
         "Run Summary",
         f"  Workflow: {summary.workflow_name}",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
@@ -466,7 +468,7 @@ def _failed_workspace_state_invoker_matches(
 
 
 def _child_process_environment_matches(
-    invoker: dict[str, object],
+    invoker: Mapping[str, object],
     payload: dict[str, object],
 ) -> bool:
     if not _controlled_child_environment_required(invoker):
@@ -479,7 +481,7 @@ def _child_process_environment_matches(
 
 
 def _failed_child_process_environment_matches(
-    invoker: dict[str, object],
+    invoker: Mapping[str, object],
     payload: dict[str, object],
 ) -> bool:
     if not _controlled_child_environment_required(invoker):
@@ -490,7 +492,7 @@ def _failed_child_process_environment_matches(
     )
 
 
-def _controlled_child_environment_required(invoker: dict[str, object]) -> bool:
+def _controlled_child_environment_required(invoker: Mapping[str, object]) -> bool:
     return (
         invoker.get("launch_mode") == "runtime_command_runner"
         and invoker.get("controlled_child_environment") is True

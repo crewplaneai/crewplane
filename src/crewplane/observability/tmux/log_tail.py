@@ -4,13 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-_LOG_HEADER_PREFIXES = (
-    "started_at:",
-    "cli_executable:",
-    "model:",
-    "output_file:",
-)
-_OPTIONAL_REASONING_PREFIX = "requested_reasoning:"
+from crewplane.observability.log_headers import provider_log_body_start
 
 
 @dataclass(frozen=True)
@@ -144,27 +138,4 @@ def _find_log_body_start(log_path: Path, file_size: int) -> int:
         return 0
     with log_path.open("rb") as handle:
         head = handle.read(read_size)
-    header_lines: list[str] = []
-    body_start = 0
-    for raw_line in head.splitlines(keepends=True):
-        stripped = raw_line.rstrip(b"\r\n")
-        body_start += len(raw_line)
-        if stripped == b"---":
-            break
-        if stripped:
-            header_lines.append(stripped.decode("utf-8", errors="replace").strip())
-    else:
-        return 0
-
-    if len(header_lines) == len(_LOG_HEADER_PREFIXES) + 1 and header_lines[
-        3
-    ].startswith(_OPTIONAL_REASONING_PREFIX):
-        header_lines.pop(3)
-    if len(header_lines) != len(_LOG_HEADER_PREFIXES):
-        return 0
-    if any(
-        not line.startswith(prefix)
-        for line, prefix in zip(header_lines, _LOG_HEADER_PREFIXES, strict=True)
-    ):
-        return 0
-    return body_start
+    return provider_log_body_start(head)

@@ -58,6 +58,8 @@ def validate_workflow_plan(workflow: WorkflowPlan) -> WorkflowPlan:
 def collect_workflow_validation_diagnostics(
     workflow: WorkflowPlan,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
+    """Collect structural, topology, and template diagnostics for a workflow."""
+
     return (
         *collect_workflow_node_diagnostics(workflow),
         *collect_workflow_topology_diagnostics(workflow),
@@ -68,6 +70,8 @@ def collect_workflow_validation_diagnostics(
 def collect_workflow_topology_diagnostics(
     workflow: WorkflowPlan,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
+    """Collect diagnostics that require a structurally valid dependency graph."""
+
     node_ids = {node.id for node in workflow.nodes}
     if len(node_ids) != len(workflow.nodes):
         return ()
@@ -94,6 +98,8 @@ def collect_provider_validation_diagnostics(
     workflow: WorkflowPlan,
     config: Config,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
+    """Collect diagnostics for workflow provider references and role policies."""
+
     return tuple(
         WorkflowValidationDiagnostic(
             code="WORKFLOW-PROVIDER",
@@ -108,6 +114,8 @@ def collect_workflow_policy_diagnostics(
     workflow: WorkflowPlan,
     config: Config,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
+    """Collect workspace, audit-round, and token-budget policy diagnostics."""
+
     audit_round_messages = collect_audit_rounds_validation_errors(workflow, config)
     token_budget_messages = collect_token_budget_validation_errors(workflow, config)
     return (

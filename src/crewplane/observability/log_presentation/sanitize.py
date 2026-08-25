@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any
 
 from .limits import DEFAULT_LIMITS, LogPresentationLimits
 
@@ -60,7 +59,7 @@ def sanitize_lines(
     return tuple(sanitize_line(value, limits) for value in values if value.strip())
 
 
-def redact_json_value(value: Any) -> Any:
+def redact_json_value(value: object) -> object:
     if isinstance(value, Mapping):
         return {
             str(key): (

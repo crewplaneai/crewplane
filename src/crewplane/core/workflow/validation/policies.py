@@ -10,6 +10,8 @@ from crewplane.core.workflow.validation.workspace import (
 
 
 def validate_audit_rounds_settings(workflow: WorkflowPlan, config: Config) -> None:
+    """Raise when a node exceeds the configured audit-round limit."""
+
     errors = collect_audit_rounds_validation_errors(workflow, config)
     if errors:
         raise ValueError("\n".join(errors))
@@ -19,6 +21,8 @@ def collect_audit_rounds_validation_errors(
     workflow: WorkflowPlan,
     config: Config,
 ) -> list[str]:
+    """Return audit-round policy validation errors in stable display form."""
+
     max_audit_rounds = config.settings.max_audit_rounds
     return [
         (
@@ -34,6 +38,8 @@ def collect_provider_validation_errors(
     workflow: WorkflowPlan,
     config: Config,
 ) -> list[str]:
+    """Return unknown-provider validation errors in stable display form."""
+
     return _format_unknown_provider_errors(
         collect_missing_provider_locations(workflow, config)
     )
@@ -43,6 +49,8 @@ def collect_token_budget_validation_errors(
     workflow: WorkflowPlan,
     config: Config,
 ) -> list[str]:
+    """Return node-scoped token-budget policy errors for a workflow."""
+
     errors: list[str] = []
     settings_budget = config.settings.token_budget
     for node in workflow.nodes:
@@ -59,6 +67,8 @@ def collect_workspace_validation_diagnostics(
     workflow: WorkflowPlan,
     config: Config,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
+    """Return workspace policy diagnostics for a workflow and configuration."""
+
     return collect_workspace_policy_diagnostics(workflow, config)
 
 
@@ -66,6 +76,8 @@ def collect_missing_provider_locations(
     workflow: WorkflowPlan,
     config: Config,
 ) -> dict[str, tuple[str, ...]]:
+    """Map each unknown provider to the workflow locations that reference it."""
+
     missing_provider_locations: dict[str, list[str]] = {}
     for node in workflow.nodes:
         for provider in node.providers:
@@ -85,12 +97,16 @@ def validate_provider_references(
     workflow: WorkflowPlan,
     config: Config,
 ) -> None:
+    """Raise when the workflow references providers absent from configuration."""
+
     errors = collect_provider_validation_errors(workflow, config)
     if errors:
         raise ValueError("\n".join(errors))
 
 
 def validate_token_budget_settings(workflow: WorkflowPlan, config: Config) -> None:
+    """Raise when an executable node has an invalid effective token budget."""
+
     errors = collect_token_budget_validation_errors(workflow, config)
     if errors:
         raise ValueError("\n".join(errors))

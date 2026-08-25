@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..generated_files.catalog import GeneratedFileLink
+from ..generated_files.detection import GeneratedFileLink
 
 
 @dataclass

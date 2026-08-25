@@ -7,7 +7,7 @@ from crewplane.core.workflow.models import WorkflowNode
 from crewplane.core.workflow.source_locations import SourceSpan
 
 from .compile_state import CompileState, PreflightCompileOptions, source_file
-from .models import TokenCatalogEntry
+from .models import TokenCatalogEntry, TokenKind
 from .references import TemplateReference
 
 
@@ -18,7 +18,7 @@ def append_token_catalog(
     target_role: ProviderRole,
     source_role: PromptSegmentRole,
     reference: TemplateReference,
-    token_kind: str,
+    token_kind: TokenKind,
     fragment_index: int,
     signature: str,
     metadata: dict[str, str],

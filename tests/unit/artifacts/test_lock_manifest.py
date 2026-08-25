@@ -3,15 +3,17 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.safe_files import (
+    path_has_symlink_component,
+    path_is_symlink,
+)
 from crewplane.artifacts.locks.manifest import (
     LockManifestError,
     LockRunMetadata,
     ensure_no_symlink_manifest_components,
     ensure_owner_path_contained,
     finalize_stale_running_run,
-    has_symlink_component,
     owner_manifest_path,
-    path_is_symlink,
     read_owner_manifest,
     safe_owner_manifest_path,
 )
@@ -147,7 +149,7 @@ def test_containment_helpers_reject_escape_and_symlink(tmp_path: Path) -> None:
         pytest.skip("symlink creation is unavailable")
     with pytest.raises(LockManifestError, match="contains a symlink"):
         ensure_no_symlink_manifest_components(root, linked / "run.json")
-    assert has_symlink_component(linked / "run.json")
+    assert path_has_symlink_component(linked / "run.json")
     assert path_is_symlink(linked)
 
 

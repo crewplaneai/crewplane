@@ -4,6 +4,7 @@ import asyncio
 import io
 import shutil
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -22,6 +23,8 @@ from crewplane.core.preflight import (
 from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.observability import ObservabilityHub
+from crewplane.observability.observer import Observer
+from crewplane.observability.types import WorkflowTopology
 from crewplane.runtime.execution import WorkflowExecutionError, execute_workflow
 
 from . import workflow_runner
@@ -33,6 +36,7 @@ from .paths import (
     resolve_tasks_file,
 )
 from .project_init import initialize_project_templates
+from .run.observability import ObservabilityHubInstance
 from .run.resume import print_dry_run_resume_advisory
 from .update import UpdateError, installed_package_identity, update_crewplane
 
@@ -191,8 +195,24 @@ async def _execute_workflow(
         no_live=no_live,
         console=console,
         execute_workflow_impl=execute_workflow,
-        observability_hub_cls=ObservabilityHub,
+        observability_hub_cls=_create_observability_hub,
         which_fn=shutil.which,
+    )
+
+
+def _create_observability_hub(
+    workflow_topology: WorkflowTopology,
+    run_id: str,
+    observers: list[Observer],
+    refresh_per_second: int = 4,
+    warning_sink: Callable[[str], None] | None = None,
+) -> ObservabilityHubInstance:
+    return ObservabilityHub(
+        workflow_topology=workflow_topology,
+        run_id=run_id,
+        observers=observers,
+        refresh_per_second=refresh_per_second,
+        warning_sink=warning_sink,
     )
 
 

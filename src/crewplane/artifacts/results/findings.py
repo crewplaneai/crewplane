@@ -10,7 +10,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from ..failure_artifacts import is_synthetic_invocation_failure
 
-FINDINGS_BLOCK_PATTERN = re.compile(
+FINDINGS_BLOCK_PATTERN: re.Pattern[str] = re.compile(
     r"<!--\s*findings\s*-->\s*(.*?)\s*<!--\s*/findings\s*-->",
     re.DOTALL,
 )
@@ -70,7 +70,7 @@ def extract_findings_content(raw_output: str, output_file: Path) -> str:
             "Expected exactly one findings block in "
             f"'{output_file}'. Use <!-- findings --> ... <!-- /findings -->."
         )
-    findings_content = matches[0].strip()
+    findings_content = str(matches[0]).strip()
     if findings_content:
         return findings_content
     raise FindingsExtractionError(

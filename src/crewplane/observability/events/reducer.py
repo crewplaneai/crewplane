@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import validate_log_presentation_format
+from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.dashboard_state import (
     InvocationRuntimeState,
     NodeRuntimeState,
@@ -133,6 +135,12 @@ def require_invocation(
         raise ValueError("Invocation event missing provider.")
     if not context.role:
         raise ValueError("Invocation event missing role.")
+    role = ProviderRole(context.role)
+    presentation_format = (
+        validate_log_presentation_format(context.log_presentation_format)
+        if context.log_presentation_format is not None
+        else None
+    )
 
     invocation_key = invocation_key_for(
         context.task_id,
@@ -144,13 +152,13 @@ def require_invocation(
         invocation = InvocationRuntimeState(
             task_id=context.task_id,
             provider=context.provider or "",
-            role=context.role or "",
+            role=role,
             model=context.model,
             audit_round_num=context.audit_round_num,
             round_num=context.round_num,
             output_file=context.output_file,
             log_file=context.log_file,
-            log_presentation_format=context.log_presentation_format,
+            log_presentation_format=presentation_format,
             log_presentation_profile=context.log_presentation_profile,
         )
         node.invocations[invocation_key] = invocation
@@ -160,7 +168,7 @@ def require_invocation(
     if context.log_file is not None:
         invocation.log_file = context.log_file
     if context.log_presentation_format is not None:
-        invocation.log_presentation_format = context.log_presentation_format
+        invocation.log_presentation_format = presentation_format
     if context.log_presentation_profile is not None:
         invocation.log_presentation_profile = context.log_presentation_profile
 

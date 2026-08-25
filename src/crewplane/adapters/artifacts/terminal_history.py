@@ -158,8 +158,8 @@ class FilesystemTerminalHistoryReader:
             payload=payload,
         )
 
+    @staticmethod
     def _matched_error(
-        self,
         message: str,
         path: Path | None = None,
     ) -> TerminalHistoryRead:

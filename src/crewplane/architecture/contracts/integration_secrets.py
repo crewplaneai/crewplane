@@ -114,7 +114,8 @@ class _SensitiveOptionWalker:
             isinstance(value, (dict, list)) and self._has_explicit_descendant(pointer)
         )
 
-    def _is_sensitive_name(self, path: tuple[JsonPathSegment, ...]) -> bool:
+    @staticmethod
+    def _is_sensitive_name(path: tuple[JsonPathSegment, ...]) -> bool:
         segment = path[-1]
         return (
             isinstance(segment, str)

@@ -48,7 +48,7 @@ help:
 		'Development:' \
 		'  setup              Install editable dev environment' \
 		'  test               Run pytest' \
-		'  typecheck          Check typed extension contracts and a public consumer' \
+		'  typecheck          Check strict typing for the package and fixtures' \
 		'  lint               Run ruff checks' \
 		'  format             Run ruff import fixes and formatter' \
 		'  format-check       Check formatting' \
@@ -96,27 +96,10 @@ uninstall:
 test:
 	$(RUN_PYTEST) -p pytest_cov --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=$(COVERAGE_FLOOR)
 
-# Strict mypy adoption currently covers public extension contracts and their
-# direct consumers; the rest of the package is not yet strict-mypy clean.
+# Keep the full production package and repository typecheck fixtures under
+# strict mypy coverage.
 typecheck:
-	$(RUN_MYPY) \
-		src/crewplane/architecture/contracts \
-		src/crewplane/architecture/ports \
-		src/crewplane/bootstrap/container.py \
-		src/crewplane/adapters/ui \
-		src/crewplane/adapters/invokers/mock_invoker/context.py \
-		src/crewplane/observability/observer.py \
-		src/crewplane/observability/runtime.py \
-		src/crewplane/observability/tmux/selection.py \
-		src/crewplane/observability/tmux/snapshot_types.py \
-		src/crewplane/observability/tmux/compact.py \
-		src/crewplane/observability/tmux/rendering.py \
-		src/crewplane/observability/tmux/refresh.py \
-		src/crewplane/observability/tmux/selected_invocation.py \
-		src/crewplane/observability/run_summary/builder.py \
-		src/crewplane/observability/run_summary/logger.py \
-		tests/typecheck/public_observer_consumer.py \
-		tests/typecheck/public_artifacts_consumer.py
+	$(RUN_MYPY) src/crewplane tests/typecheck
 
 lint:
 	$(RUN_RUFF) check src tests scripts

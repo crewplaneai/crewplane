@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
@@ -107,7 +108,7 @@ def record_failed_preparation_state(
 
 def worktree_preparation_failure_state(
     failure: Exception,
-) -> tuple[list[dict[str, str]], str, dict[str, object] | None]:
+) -> tuple[list[dict[str, str]], str, JsonObject | None]:
     if isinstance(failure, WorkspaceSetupError):
         return (
             [{"level": "error", "message": str(failure)}],

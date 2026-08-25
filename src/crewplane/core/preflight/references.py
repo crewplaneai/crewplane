@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeIs
 
 from crewplane.core.workflow.syntax import (
     KEY_VALUE_TEMPLATE_PATTERN,
@@ -10,6 +10,14 @@ from crewplane.core.workflow.syntax import (
 )
 
 TemplateReferenceKind = Literal["node", "file", "env", "var", "param", "unknown"]
+KeyValueTemplateReferenceKind = Literal["file", "env", "var", "param"]
+_KEY_VALUE_REFERENCE_KINDS = frozenset({"file", "env", "var", "param"})
+
+
+def _is_key_value_reference_kind(
+    value: str,
+) -> TypeIs[KeyValueTemplateReferenceKind]:
+    return value in _KEY_VALUE_REFERENCE_KINDS
 
 
 @dataclass(frozen=True)
@@ -53,7 +61,7 @@ def iter_template_references(text: str) -> tuple[TemplateReference, ...]:
             continue
         reference_kind = key_value_match.group(1).strip()
         key = key_value_match.group(2).strip()
-        if reference_kind in {"file", "env", "var", "param"}:
+        if _is_key_value_reference_kind(reference_kind):
             references.append(
                 TemplateReference(
                     raw_token=raw_token,

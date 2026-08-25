@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
@@ -66,14 +65,11 @@ class FilesystemArtifactsAdapter:
 
         parsed_options = _parse_options(options)
 
-        return cast(
-            ArtifactStorePort,
-            OutputManager(
-                workflow_name,
-                base_dir=state_dir,
-                template_base_dir=project_root,
-                log_cli_output=parsed_options.log_cli_output,
-            ),
+        return OutputManager(
+            workflow_name,
+            base_dir=state_dir,
+            template_base_dir=project_root,
+            log_cli_output=parsed_options.log_cli_output,
         )
 
     def create_terminal_history_reader(

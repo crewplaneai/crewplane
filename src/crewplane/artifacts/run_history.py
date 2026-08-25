@@ -8,6 +8,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from crewplane.architecture.safe_files import (
+    path_has_symlink_component,
+    path_is_symlink,
+)
 from crewplane.core.execution_state import RunManifest
 
 from .naming import validate_run_key_name
@@ -167,7 +171,7 @@ def _ensure_contained_run_path(root: Path, candidate: Path) -> None:
 
 
 def _ensure_no_symlink_metadata_components(root: Path, candidate: Path) -> None:
-    if _has_symlink_component(root):
+    if path_has_symlink_component(root):
         raise RunHistoryError("Run history metadata path contains a symlink.")
     try:
         relative = candidate.relative_to(root)
@@ -178,27 +182,8 @@ def _ensure_no_symlink_metadata_components(root: Path, candidate: Path) -> None:
     current = root
     for part in relative.parts:
         current = current / part
-        if _path_is_symlink(current):
+        if path_is_symlink(current):
             raise RunHistoryError("Run history metadata path contains a symlink.")
-
-
-def _has_symlink_component(path: Path) -> bool:
-    current = Path(path.anchor) if path.is_absolute() else Path()
-    parts = path.parts[1:] if path.is_absolute() else path.parts
-    for part in parts:
-        current = current / part
-        if _path_is_symlink(current):
-            return True
-    return False
-
-
-def _path_is_symlink(path: Path) -> bool:
-    try:
-        return stat.S_ISLNK(path.lstat().st_mode)
-    except PermissionError:
-        raise
-    except OSError:
-        return False
 
 
 def _started_at(record: RunHistoryRecord) -> datetime:

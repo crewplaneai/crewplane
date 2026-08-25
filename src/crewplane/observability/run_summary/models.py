@@ -16,6 +16,8 @@ from crewplane.architecture.contracts import (
 
 @dataclass(frozen=True)
 class NodeCounts:
+    """Counts of workflow nodes grouped by runtime status."""
+
     pending: int
     running: int
     succeeded: int
@@ -25,6 +27,8 @@ class NodeCounts:
 
 @dataclass(frozen=True)
 class SpendTotals:
+    """Run-wide invocation, token-estimate, and configured-cost totals."""
+
     terminal_invocations: int
     total_attempts: int
     cli_captured_invocations: int
@@ -56,6 +60,8 @@ class SpendOverviewRow:
 
 @dataclass(frozen=True)
 class ProviderUsageRollup:
+    """Spend observability totals grouped by provider."""
+
     provider: str
     terminal_invocations: int
     total_attempts: int
@@ -70,6 +76,8 @@ class ProviderUsageRollup:
 
 @dataclass(frozen=True)
 class ProviderTokenAggregate:
+    """Exact provider-reported token totals for one provider scope."""
+
     provider: str | None
     report_count: int
     input: int | None = None
@@ -82,6 +90,8 @@ class ProviderTokenAggregate:
 
 @dataclass(frozen=True)
 class ProviderTokenAggregates:
+    """Overall and per-provider exact token aggregates."""
+
     overall: ProviderTokenAggregate | None = None
     providers: tuple[ProviderTokenAggregate, ...] = ()
 
@@ -101,6 +111,8 @@ class UsageRollupValues:
 
 @dataclass(frozen=True)
 class InvocationUsageSummary:
+    """Captured usage, extraction, cost, and failure facts for one invocation."""
+
     provider: str
     node_id: str | None
     task_id: str | None
@@ -133,6 +145,8 @@ class InvocationUsageSummary:
 
 @dataclass(frozen=True)
 class NodeOutcomeSummary:
+    """Terminal display facts and result path for one workflow node."""
+
     node_id: str
     status: str
     duration_label: str
@@ -141,6 +155,8 @@ class NodeOutcomeSummary:
 
 @dataclass(frozen=True)
 class IssueSummary:
+    """One warning or error retained in a run summary."""
+
     level: str
     timestamp_utc: str
     message: str
@@ -148,6 +164,8 @@ class IssueSummary:
 
 @dataclass(frozen=True)
 class ArtifactReferenceSummary:
+    """Output and log references for one recorded invocation."""
+
     node_id: str
     task_id: str
     audit_round_num: int | None
@@ -158,6 +176,8 @@ class ArtifactReferenceSummary:
 
 @dataclass(frozen=True)
 class WorkspacePlanSummary:
+    """Persisted workspace plan facts relevant to run observability."""
+
     worktree_contract_mode: str | None
     worktree_contract_schema_version: str | None
     source_commit: str | None
@@ -177,6 +197,8 @@ class WorkspacePlanSummary:
 
 @dataclass(frozen=True)
 class WorkspaceInvocationSourceSummary:
+    """Source lineage selected for a workspace invocation."""
+
     kind: str | None = None
     node_id: str | None = None
     commit: str | None = None
@@ -187,6 +209,8 @@ class WorkspaceInvocationSourceSummary:
 
 @dataclass(frozen=True)
 class WorkspaceInvocationExecutionSummary:
+    """Materialization paths, size, and timing for a workspace invocation."""
+
     cache_root: str | None = None
     workspace_path: str | None = None
     checkout_root: str | None = None
@@ -197,6 +221,8 @@ class WorkspaceInvocationExecutionSummary:
 
 @dataclass(frozen=True)
 class WorkspaceInvocationSetupSummary:
+    """Setup-profile outcome for a workspace invocation."""
+
     profile_name: str | None = None
     status: str | None = None
     duration_seconds: float | None = None
@@ -208,6 +234,8 @@ class WorkspaceInvocationSetupSummary:
 
 @dataclass(frozen=True)
 class WorkspaceInvocationReuseSummary:
+    """Checkout reuse decision and fallback details for an invocation."""
+
     strategy: str | None = None
     reused: bool | None = None
     fallback: bool | None = None
@@ -218,6 +246,8 @@ class WorkspaceInvocationReuseSummary:
 
 @dataclass(frozen=True)
 class WorkspaceInvocationBranchExportSummary:
+    """Post-run branch-export outcome for a workspace invocation."""
+
     status: str | None = None
     operation: str | None = None
     branch_name: str | None = None
@@ -228,6 +258,8 @@ class WorkspaceInvocationBranchExportSummary:
 
 @dataclass(frozen=True)
 class WorkspaceInvocationSummary:
+    """Complete observable workspace lifecycle for one provider invocation."""
+
     node_id: str | None
     task_id: str | None
     audit_round_num: int | None
@@ -276,12 +308,16 @@ class WorkspaceInvocationSummary:
 
 @dataclass(frozen=True)
 class WorkspaceRunSummary:
+    """Workspace plan and invocation details retained for a run."""
+
     plan: WorkspacePlanSummary | None
     invocations: tuple[WorkspaceInvocationSummary, ...]
 
 
 @dataclass(frozen=True)
 class RunSummary:
+    """Durable human-facing summary of one workflow run."""
+
     workflow_name: str
     run_id: str
     workflow_status: str

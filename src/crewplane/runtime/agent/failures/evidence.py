@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from itertools import chain
 
 from crewplane.architecture.contracts import CommandResult, ProviderKind
@@ -147,7 +147,7 @@ def _json_failure_message(payload: dict[str, object]) -> str | None:
     return _first_string(payload, ("message", "detail", "result", "status"))
 
 
-def _first_string(payload: dict[object, object], keys: tuple[str, ...]) -> str | None:
+def _first_string(payload: Mapping[str, object], keys: tuple[str, ...]) -> str | None:
     for key in keys:
         value = payload.get(key)
         if isinstance(value, str) and value.strip():

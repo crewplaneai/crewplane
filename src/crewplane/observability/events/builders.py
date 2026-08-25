@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import NotRequired, TypedDict
 
 from crewplane.architecture.contracts import OutputExtractionStatus
 from crewplane.observability.events.execution_event import (
@@ -24,6 +25,16 @@ from crewplane.observability.events.types import (
     WorkflowEventType,
     WorkspaceEventType,
 )
+
+
+class _ExecutionEventKwargs(TypedDict):
+    event_type: EventType
+    workflow_name: str
+    run_id: str
+    context: ExecutionEventContext
+    payload: EventPayload
+    timestamp: NotRequired[float]
+    timestamp_utc: NotRequired[str]
 
 
 def workflow_event(
@@ -203,7 +214,7 @@ def _build_event(
     timestamp: float | None,
     timestamp_utc: str | None,
 ) -> ExecutionEvent:
-    kwargs: dict[str, object] = {
+    kwargs: _ExecutionEventKwargs = {
         "event_type": event_type,
         "workflow_name": workflow_name,
         "run_id": run_id,

@@ -9,6 +9,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
 )
+from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.core.workspace.policy import generated_branch_name
 from crewplane.runtime.workspace.branch_export.fulfillment import (
     BranchExportCheckpoint,
@@ -170,7 +171,7 @@ def checkpoint_from_record(
         or result_ref is None
         or bundle_path is None
         or bundle_sha256 is None
-        or not _valid_size_bytes(bundle_size_bytes)
+        or not is_nonnegative_int(bundle_size_bytes)
     ):
         raise RuntimeError("Invalid branch export checkpoint record.")
     return BranchExportCheckpoint(
@@ -227,7 +228,3 @@ def _checkpoint_fields_present(payload: JsonObject) -> bool:
 
 def _required_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
-
-
-def _valid_size_bytes(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0

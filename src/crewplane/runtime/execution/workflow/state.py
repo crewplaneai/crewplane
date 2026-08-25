@@ -53,7 +53,7 @@ def dependencies_by_node_from_plan(
     plan: PreflightExecutionPlan,
 ) -> dict[str, set[str]]:
     node_ids = {node.id for node in plan.nodes}
-    dependencies = {node.id: set() for node in plan.nodes}
+    dependencies: dict[str, set[str]] = {node.id: set() for node in plan.nodes}
     for edge in plan.dependency_graph:
         validate_dependency_edge(edge, node_ids)
         dependencies[edge.target_node].add(edge.source_node)

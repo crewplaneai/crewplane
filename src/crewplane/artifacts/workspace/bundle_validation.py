@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from crewplane.core.workspace.git_policy import (
     sanitized_workspace_git_environment,
@@ -27,6 +29,16 @@ class WorkspaceBlobDescriptor:
     git_file_mode: str
     byte_size: int
     canonical_sha256: str
+
+
+class _GitRunner(Protocol):
+    def __call__(
+        self,
+        repo_root: Path,
+        env: dict[str, str],
+        /,  # Keep runner-specific root parameter names out of protocol matching.
+        *args: str,
+    ) -> subprocess.CompletedProcess[bytes]: ...
 
 
 def workspace_bundle_contains_result(
@@ -117,13 +129,7 @@ def workspace_blob_descriptor_matches(
         if bundle_path is None:
             return _repo_blob_descriptor_matches(
                 repo_root,
-                descriptor.source_commit,
-                descriptor.source_tree,
-                descriptor.git_path,
-                descriptor.git_blob,
-                descriptor.git_file_mode,
-                descriptor.byte_size,
-                descriptor.canonical_sha256,
+                descriptor,
             )
         _run_git(repo_root, "bundle", "verify", bundle_path.as_posix())
         if bundle_ref is not None:
@@ -142,13 +148,7 @@ def workspace_blob_descriptor_matches(
                 return False
         return _bundle_blob_descriptor_matches(
             bundle_path,
-            descriptor.source_commit,
-            descriptor.source_tree,
-            descriptor.git_path,
-            descriptor.git_blob,
-            descriptor.git_file_mode,
-            descriptor.byte_size,
-            descriptor.canonical_sha256,
+            descriptor,
             object_format,
         )
     except (
@@ -249,13 +249,7 @@ def _bundle_result_tree_matches(
 
 def _bundle_blob_descriptor_matches(
     bundle_path: Path,
-    source_commit: str,
-    source_tree: str,
-    git_path: str,
-    git_blob: str,
-    git_file_mode: str,
-    byte_size: int,
-    canonical_sha256: str,
+    descriptor: WorkspaceBlobDescriptor,
     object_format: str,
 ) -> bool:
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -266,99 +260,77 @@ def _bundle_blob_descriptor_matches(
         return _git_dir_blob_descriptor_matches(
             git_dir,
             env,
-            source_commit,
-            source_tree,
-            git_path,
-            git_blob,
-            git_file_mode,
-            byte_size,
-            canonical_sha256,
+            descriptor,
         )
 
 
 def _repo_blob_descriptor_matches(
     repo_root: Path,
-    source_commit: str,
-    source_tree: str,
-    git_path: str,
-    git_blob: str,
-    git_file_mode: str,
-    byte_size: int,
-    canonical_sha256: str,
+    descriptor: WorkspaceBlobDescriptor,
 ) -> bool:
     env = _sanitized_git_env()
-    actual_tree = _run_git_with_env(
+    return _blob_descriptor_matches(
         repo_root,
         env,
-        "rev-parse",
-        f"{source_commit}^{{tree}}",
-    ).stdout.decode("utf-8")
-    if actual_tree.strip() != source_tree:
-        return False
-    entry = _tree_blob_entry(
-        _run_git_with_env(
-            repo_root,
-            env,
-            "--literal-pathspecs",
-            "ls-tree",
-            "-z",
-            source_commit,
-            "--",
-            git_path,
-        ).stdout,
-        git_path,
-    )
-    if entry is None:
-        return False
-    mode, object_id = entry
-    return (
-        mode == git_file_mode
-        and object_id == git_blob
-        and _repo_blob_size(repo_root, env, object_id) == byte_size
-        and _repo_blob_sha256(repo_root, env, object_id) == canonical_sha256
+        descriptor,
+        _run_git_with_env,
+        _repo_blob_size,
+        _repo_blob_sha256,
     )
 
 
 def _git_dir_blob_descriptor_matches(
     git_dir: Path,
     env: dict[str, str],
-    source_commit: str,
-    source_tree: str,
-    git_path: str,
-    git_blob: str,
-    git_file_mode: str,
-    byte_size: int,
-    canonical_sha256: str,
+    descriptor: WorkspaceBlobDescriptor,
 ) -> bool:
-    actual_tree = _run_git_dir(
+    return _blob_descriptor_matches(
         git_dir,
         env,
+        descriptor,
+        _run_git_dir,
+        _git_dir_blob_size,
+        _git_dir_blob_sha256,
+    )
+
+
+def _blob_descriptor_matches(
+    repo_root: Path,
+    env: dict[str, str],
+    descriptor: WorkspaceBlobDescriptor,
+    run_git: _GitRunner,
+    blob_size: Callable[[Path, dict[str, str], str], int],
+    blob_sha256: Callable[[Path, dict[str, str], str], str],
+) -> bool:
+    actual_tree = run_git(
+        repo_root,
+        env,
         "rev-parse",
-        f"{source_commit}^{{tree}}",
+        f"{descriptor.source_commit}^{{tree}}",
     ).stdout.decode("utf-8")
-    if actual_tree.strip() != source_tree:
+    if actual_tree.strip() != descriptor.source_tree:
         return False
     entry = _tree_blob_entry(
-        _run_git_dir(
-            git_dir,
+        run_git(
+            repo_root,
             env,
             "--literal-pathspecs",
             "ls-tree",
             "-z",
-            source_commit,
+            descriptor.source_commit,
             "--",
-            git_path,
+            descriptor.git_path,
         ).stdout,
-        git_path,
+        descriptor.git_path,
     )
     if entry is None:
         return False
     mode, object_id = entry
     return (
-        mode == git_file_mode
-        and object_id == git_blob
-        and _git_dir_blob_size(git_dir, env, object_id) == byte_size
-        and _git_dir_blob_sha256(git_dir, env, object_id) == canonical_sha256
+        mode == descriptor.git_file_mode
+        and object_id == descriptor.git_blob
+        and blob_size(repo_root, env, object_id) == descriptor.byte_size
+        and blob_sha256(repo_root, env, object_id) == descriptor.canonical_sha256
     )
 
 

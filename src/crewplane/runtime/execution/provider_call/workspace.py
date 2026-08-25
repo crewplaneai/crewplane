@@ -12,7 +12,7 @@ from crewplane.runtime.workspace import (
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.setup import WorkspaceSetupCancellation
 
-from ..runtime_context import DeferredAsyncCleanupRegistry
+from ..deferred_cleanup import DeferredAsyncCleanupRegistry
 
 PREPARATION_CANCELLATION_TIMEOUT_SECONDS = 0.5
 PREPARATION_CANCELLATION_MESSAGE = (

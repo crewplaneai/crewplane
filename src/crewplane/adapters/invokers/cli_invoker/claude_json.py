@@ -44,10 +44,6 @@ def extract_claude_output(
     """Extract Claude's result string into an owned temporary output file."""
     extraction = _extract_claude_document(
         result,
-        use_stderr_fallback=True,
-        capture_result=True,
-        parse_result=True,
-        parse_model_usage=False,
         max_captured_usage_bytes=max_captured_usage_bytes,
     )
     if extraction.error is not None:
@@ -78,27 +74,23 @@ class ClaudeJsonDocument:
 
 def _extract_claude_document(
     result: CommandResult,
-    use_stderr_fallback: bool,
-    capture_result: bool,
-    parse_result: bool,
-    parse_model_usage: bool,
     max_captured_usage_bytes: int,
 ) -> ClaudeJsonDocument:
     document = _parse_claude_source(
         stdout_source(result),
-        capture_result=capture_result,
-        parse_result=parse_result,
-        parse_model_usage=parse_model_usage,
+        capture_result=True,
+        parse_result=True,
+        parse_model_usage=False,
         max_captured_usage_bytes=max_captured_usage_bytes,
     )
-    if use_stderr_fallback and document.error is None and document.result_path is None:
+    if document.error is None and document.result_path is None:
         stderr_source = stream_source(result.stderr_text, result.stderr_path)
         if stderr_source is not None:
             document = _parse_claude_source(
                 stderr_source,
-                capture_result=capture_result,
-                parse_result=parse_result,
-                parse_model_usage=parse_model_usage,
+                capture_result=True,
+                parse_result=True,
+                parse_model_usage=False,
                 max_captured_usage_bytes=max_captured_usage_bytes,
             )
     return document

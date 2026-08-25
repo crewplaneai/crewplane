@@ -8,13 +8,14 @@ from crewplane.architecture.contracts import (
     FailureClassificationProfile,
     InvocationLogLevel,
     OneShotFailureRetryPolicy,
+    OutputExtractionStatus,
     OutputExtractor,
     QuotaParserProfile,
     RuntimeLogValue,
     UsageDecoder,
 )
 
-from ..usage import InvocationUsageAccumulator, OutputExtractionStatus
+from ..usage import InvocationUsageAccumulator
 
 
 @dataclass(frozen=True)

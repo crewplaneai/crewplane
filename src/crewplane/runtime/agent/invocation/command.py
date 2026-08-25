@@ -6,16 +6,18 @@ import sys
 from collections.abc import Awaitable
 from dataclasses import replace
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     CommandRunner,
     InvocationContext,
+    InvocationDiagnosticSink,
     InvocationPlan,
     InvocationProcessEvent,
 )
+from crewplane.core.platform import supports_posix_process_groups
 
 from ..process.runner import (
     build_retry_log_header,
@@ -38,7 +40,7 @@ def open_log_handle(
         return None
     log_file.parent.mkdir(parents=True, exist_ok=True)
     mode = "ab" if append else "wb"
-    handle = log_file.open(mode)
+    handle = cast(BinaryIO, log_file.open(mode))
     if header_bytes:
         handle.write(header_bytes)
         handle.flush()
@@ -64,7 +66,7 @@ async def run_command_once(
         invocation_context.diagnostics if invocation_context is not None else None
     )
     try:
-        process_kwargs = {"start_new_session": True} if os.name == "posix" else {}
+        start_new_session = supports_posix_process_groups()
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE if stdin_data else asyncio.subprocess.DEVNULL,
@@ -72,10 +74,10 @@ async def run_command_once(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=_child_process_env(child_environment),
-            **process_kwargs,
+            start_new_session=start_new_session,
         )
         # start_new_session=True makes the child both session and process-group leader.
-        process_group_id = process.pid if os.name == "posix" else None
+        process_group_id = process.pid if start_new_session else None
         record_workspace_child_environment_applied(
             invocation_context,
             child_environment,
@@ -99,22 +101,32 @@ async def run_command_once(
             idle_timeout_seconds,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(f"CLI executable not found: {cmd[0]}") from exc
+        await _cleanup_failed_command(
+            process,
+            process_group_id,
+            output_capture,
+            diagnostic_sink,
+        )
+        if process is None:
+            raise RuntimeError(f"CLI executable not found: {cmd[0]}") from exc
+        raise RuntimeError(f"Execution error: {exc}") from exc
     except asyncio.CancelledError:
-        if process is not None:
-            await reap_failed_process(process, process_group_id, diagnostic_sink)
-        if output_capture is not None:
-            output_capture.cleanup()
+        await _cleanup_failed_command(
+            process,
+            process_group_id,
+            output_capture,
+            diagnostic_sink,
+        )
         raise
     except Exception as exc:
-        if process is not None:
-            await reap_failed_process(process, process_group_id, diagnostic_sink)
+        await _cleanup_failed_command(
+            process,
+            process_group_id,
+            output_capture,
+            diagnostic_sink,
+        )
         if isinstance(exc, RuntimeError):
-            if output_capture is not None:
-                output_capture.cleanup()
             raise
-        if output_capture is not None:
-            output_capture.cleanup()
         raise RuntimeError(f"Execution error: {exc}") from exc
     finally:
         active_exception = sys.exception()
@@ -137,6 +149,18 @@ async def run_command_once(
         stdout_path=output_capture.stdout.path,
         stderr_path=output_capture.stderr.path,
     )
+
+
+async def _cleanup_failed_command(
+    process: asyncio.subprocess.Process | None,
+    process_group_id: int | None,
+    output_capture: ProcessOutputCapture | None,
+    diagnostic_sink: InvocationDiagnosticSink | None,
+) -> None:
+    if process is not None:
+        await reap_failed_process(process, process_group_id, diagnostic_sink)
+    if output_capture is not None:
+        output_capture.cleanup()
 
 
 def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:

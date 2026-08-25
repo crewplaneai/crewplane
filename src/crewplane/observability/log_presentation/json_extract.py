@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
 
 from .limits import DEFAULT_LIMITS, LogPresentationLimits
 from .sanitize import clip_text, redact_json_value, sanitize_line
@@ -18,8 +17,8 @@ _CODEX_ITEM_OUTPUT_FIELDS = (
 )
 
 
-def exceeds_json_depth(value: Any, max_depth: int) -> bool:
-    stack: list[tuple[Any, int]] = [(value, 1)]
+def exceeds_json_depth(value: object, max_depth: int) -> bool:
+    stack: list[tuple[object, int]] = [(value, 1)]
     while stack:
         current, depth = stack.pop()
         if depth > max_depth:
@@ -33,7 +32,7 @@ def exceeds_json_depth(value: Any, max_depth: int) -> bool:
 
 
 def compact_json_line(
-    value: Any,
+    value: object,
     limits: LogPresentationLimits = DEFAULT_LIMITS,
 ) -> str:
     redacted = redact_json_value(value)
@@ -50,7 +49,7 @@ def compact_json_line(
 
 
 def render_json_record(
-    record: Any,
+    record: object,
     profile: str,
     limits: LogPresentationLimits = DEFAULT_LIMITS,
 ) -> list[str]:
@@ -58,6 +57,8 @@ def render_json_record(
         return [compact_json_line(record, limits)]
 
     redacted = redact_json_value(record)
+    if not isinstance(redacted, Mapping):
+        return [compact_json_line(redacted, limits)]
     if profile == "mock":
         return render_mock_record(redacted, limits)
     if profile == "codex":
@@ -68,13 +69,15 @@ def render_json_record(
 
 
 def render_json_object(
-    value: Any,
+    value: object,
     profile: str,
     limits: LogPresentationLimits = DEFAULT_LIMITS,
 ) -> list[str]:
     if not isinstance(value, Mapping):
         return [compact_json_line(value, limits)]
     redacted = redact_json_value(value)
+    if not isinstance(redacted, Mapping):
+        return [compact_json_line(redacted, limits)]
     if profile == "claude":
         return render_claude_object(redacted, limits)
     if profile == "gemini":
@@ -83,7 +86,7 @@ def render_json_object(
 
 
 def render_mock_record(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> list[str]:
     fields = [
@@ -97,7 +100,7 @@ def render_mock_record(
 
 
 def render_codex_record(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> list[str]:
     for key in _CODEX_DIRECT_CONTENT_FIELDS:
@@ -115,14 +118,14 @@ def render_codex_record(
         return [sanitize_line(label, limits)]
     item = record.get("item")
     if isinstance(item, Mapping):
-        detail = _codex_item_detail(record, item, limits)
-        if detail:
-            return [sanitize_line(f"item: {detail}", limits)]
+        item_detail = _codex_item_detail(record, item, limits)
+        if item_detail:
+            return [sanitize_line(f"item: {item_detail}", limits)]
     return render_generic_record(record, limits)
 
 
 def render_kilo_record(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> list[str]:
     event_type = _string_field(record, "type")
@@ -139,7 +142,7 @@ def render_kilo_record(
 
 
 def render_gemini_object(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> list[str]:
     response = _string_field(record, "response")
@@ -149,7 +152,7 @@ def render_gemini_object(
 
 
 def render_claude_object(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> list[str]:
     lines: list[str] = []
@@ -173,7 +176,7 @@ def render_claude_object(
 
 
 def render_generic_record(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> list[str]:
     for key in ("message", "content", "text", "result", "error"):
@@ -200,14 +203,17 @@ def display_string_lines(
     return lines
 
 
-def _field(key: str, record: Mapping[str, Any]) -> str | None:
+def _field(key: str, record: Mapping[object, object]) -> str | None:
     value = record.get(key)
     if value is None:
         return None
     return f"{key}={value}"
 
 
-def _codex_detail(record: Mapping[str, Any], limits: LogPresentationLimits) -> str:
+def _codex_detail(
+    record: Mapping[object, object],
+    limits: LogPresentationLimits,
+) -> str:
     for key in ("message", "content", "text"):
         value = record.get(key)
         if isinstance(value, str) and value.strip():
@@ -225,7 +231,7 @@ def _codex_detail(record: Mapping[str, Any], limits: LogPresentationLimits) -> s
 
 
 def _codex_item_event_lines(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     event_type: str,
     limits: LogPresentationLimits,
 ) -> list[str] | None:
@@ -251,8 +257,8 @@ def _codex_item_event_lines(
 
 
 def _codex_command_execution_lines(
-    record: Mapping[str, Any],
-    item: Mapping[str, Any],
+    record: Mapping[object, object],
+    item: Mapping[object, object],
     item_type: str,
     phase: str,
     limits: LogPresentationLimits,
@@ -274,8 +280,8 @@ def _codex_command_execution_lines(
 
 
 def _codex_command_execution_metadata(
-    record: Mapping[str, Any],
-    item: Mapping[str, Any],
+    record: Mapping[object, object],
+    item: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> str:
     components: list[str] = []
@@ -293,8 +299,8 @@ def _codex_command_execution_metadata(
 
 
 def _codex_item_detail(
-    record: Mapping[str, Any],
-    item: Mapping[str, Any],
+    record: Mapping[object, object],
+    item: Mapping[object, object],
     limits: LogPresentationLimits,
 ) -> str | None:
     components: list[str] = []
@@ -328,16 +334,18 @@ def _codex_item_detail(
     return None
 
 
-def _codex_web_search_detail(item: Mapping[str, Any]) -> str | None:
+def _codex_web_search_detail(item: Mapping[object, object]) -> str | None:
     for value in _codex_web_search_detail_candidates(item):
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
 
 
-def _codex_web_search_detail_candidates(item: Mapping[str, Any]) -> list[Any]:
+def _codex_web_search_detail_candidates(
+    item: Mapping[object, object],
+) -> list[object]:
     action = item.get("action")
-    candidates: list[Any] = []
+    candidates: list[object] = []
     if isinstance(action, Mapping):
         candidates.append(action.get("query"))
         queries = action.get("queries")
@@ -347,12 +355,12 @@ def _codex_web_search_detail_candidates(item: Mapping[str, Any]) -> list[Any]:
     return candidates
 
 
-def _codex_is_empty_web_search_event(item: Mapping[str, Any]) -> bool:
+def _codex_is_empty_web_search_event(item: Mapping[object, object]) -> bool:
     return _string_field(item, "type") == "web_search"
 
 
 def _first_display_value(
-    record: Mapping[str, Any],
+    record: Mapping[object, object],
     keys: tuple[str, ...],
     limits: LogPresentationLimits,
 ) -> str | None:
@@ -364,7 +372,7 @@ def _first_display_value(
 
 
 def _display_field_value(
-    value: Any,
+    value: object,
     limits: LogPresentationLimits,
 ) -> str | None:
     if value is None:
@@ -377,7 +385,10 @@ def _display_field_value(
     return compact_json_line(value, limits)
 
 
-def _string_field(record: Mapping[str, Any], key: str) -> str | None:
+def _string_field(
+    record: Mapping[object, object],
+    key: str,
+) -> str | None:
     value = record.get(key)
     if isinstance(value, str) and value.strip():
         return value.strip()

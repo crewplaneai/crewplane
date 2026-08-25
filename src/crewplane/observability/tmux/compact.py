@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
 from threading import Event, Thread
 from typing import cast
@@ -26,6 +25,7 @@ from crewplane.observability.tmux.session_lifecycle import (
     TmuxClientFactory,
     TmuxCompactSessionLifecycle,
 )
+from crewplane.observability.tmux.warnings import dispatch_tmux_warning
 from crewplane.observability.tmux.window import TmuxCompactWindowOptions
 from crewplane.observability.types import (
     DashboardSnapshot,
@@ -185,13 +185,7 @@ class TmuxCompactRuntime:
         self._stop_event.set()
 
     def _warn(self, message: str) -> None:
-        if self._warning_sink is not None:
-            try:
-                self._warning_sink(message)
-            except Exception:
-                return
-            return
-        print(f"WARN: {message}", file=sys.stderr)
+        dispatch_tmux_warning(self._warning_sink, message)
 
 
 def _clock_kwargs(

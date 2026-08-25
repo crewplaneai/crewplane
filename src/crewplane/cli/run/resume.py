@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
 
+from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.errors import IntegrationResolutionError
 from crewplane.architecture.loader import resolve_implementation_path
 from crewplane.artifacts.resume.decision import ResumeDecision
@@ -144,7 +146,7 @@ def print_dry_run_resume_advisory(
     match resume_plan.decision.kind:
         case "skip":
             successful_run = resume_plan.decision.successful_run
-            branch_export_records = ()
+            branch_export_records: tuple[JsonObject, ...] = ()
             if successful_run is not None:
                 branch_plan = _preview_plan_for_run(
                     preview,
@@ -204,7 +206,9 @@ def _preview_plan_for_validation(
     )
 
 
-def _branch_export_verification_failed(records: tuple[dict[str, object], ...]) -> bool:
+def _branch_export_verification_failed(
+    records: tuple[Mapping[str, object], ...],
+) -> bool:
     return any(record.get("status") == "failed_verification" for record in records)
 
 

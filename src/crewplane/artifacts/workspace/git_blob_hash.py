@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import selectors
 import subprocess
+from io import BufferedReader
 from time import monotonic
+from typing import Never, cast
 
 
 def git_stdout_sha256(
@@ -30,7 +32,7 @@ def git_stdout_sha256(
             selector.register(stdout, selectors.EVENT_READ)
             while True:
                 wait_for_stdout(process, selector, command, deadline, timeout_seconds)
-                chunk = stdout.read1(1024 * 1024)
+                chunk = cast(BufferedReader, stdout).read1(1024 * 1024)
                 if chunk:
                     digest.update(chunk)
                     continue
@@ -87,7 +89,7 @@ def kill_timed_out_process(
     process: subprocess.Popen[bytes],
     command: list[str],
     timeout_seconds: float,
-) -> None:
+) -> Never:
     kill_unfinished_process(process)
     raise subprocess.TimeoutExpired(command, timeout_seconds)
 

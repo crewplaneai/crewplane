@@ -18,11 +18,13 @@ from .compile_state import (
     source_root,
 )
 from .models import (
+    ConcurrencyPolicy,
     DependencyEdge,
     ExecutionPolicy,
     PreflightExecutionNode,
     ProviderRecord,
     RenderPlan,
+    TokenBudgetPolicy,
     WorkspaceSelectionRecord,
 )
 from .runtime_config import RuntimeConfigSnapshot, runtime_agent_signature_payload
@@ -53,12 +55,12 @@ def compile_execution_node(
             if uses_review_loop
             else None
         ),
-        concurrency_policy={
-            "max_concurrent_nodes": runtime_snapshot.execution.max_concurrent_nodes,
-            "max_parallel_invocations": (
+        concurrency_policy=ConcurrencyPolicy(
+            max_concurrent_nodes=runtime_snapshot.execution.max_concurrent_nodes,
+            max_parallel_invocations=(
                 runtime_snapshot.execution.max_parallel_invocations
             ),
-        },
+        ),
     )
     return PreflightExecutionNode(
         id=node.id,
@@ -89,7 +91,7 @@ def nodes_with_graph_dependencies(
     dependency_graph: list[DependencyEdge],
 ) -> list[PreflightExecutionNode]:
     node_order = {node.id: index for index, node in enumerate(nodes)}
-    dependencies_by_node = {node.id: set() for node in nodes}
+    dependencies_by_node: dict[str, set[str]] = {node.id: set() for node in nodes}
     for edge in dependency_graph:
         dependencies_by_node.setdefault(edge.target_node, set()).add(edge.source_node)
     return [
@@ -162,7 +164,7 @@ def agent_config_signature(
 def resolved_token_budget_payload(
     node: WorkflowNode,
     config: Config,
-) -> dict[str, int | None] | None:
+) -> TokenBudgetPolicy | None:
     if node.mode == "input":
         return None
     try:
@@ -172,10 +174,10 @@ def resolved_token_budget_payload(
         )
     except ValueError:
         return None
-    return {
-        "fail_threshold_chars": budget.fail_threshold_chars,
-        "warn_threshold_chars": budget.warn_threshold_chars,
-    }
+    return TokenBudgetPolicy(
+        fail_threshold_chars=budget.fail_threshold_chars,
+        warn_threshold_chars=budget.warn_threshold_chars,
+    )
 
 
 def artifact_task_id(provider: ProviderSpec, index: int) -> str:

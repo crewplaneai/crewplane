@@ -26,6 +26,7 @@ from .snapshot_policy import (
     GeneratedFileRejectionLog,
     GeneratedFileSnapshotCandidate,
     GeneratedFileSnapshotPolicy,
+    GeneratedFileSnapshotSelection,
     generated_file_rejection_metadata,
     generated_file_snapshot_candidate_metadata,
     select_generated_file_snapshot_candidates,
@@ -149,30 +150,12 @@ def snapshot_generated_file_workspace(
     content = output_file.read_text(encoding="utf-8") if output_file.is_file() else ""
     selected_snapshot_root = snapshot_root or generated_file_source_root(output_file)
     resolved_workspace_root = workspace_root.resolve(strict=True)
-    detector = GeneratedFileReferenceDetector(resolved_workspace_root)
-    explicit_files = detector.detect_explicit_section(content)
-    explicit_labels = {
-        path.relative_to(resolved_workspace_root).as_posix() for path in explicit_files
-    }
-    generated_files = _ordered_generated_files_for_content(
+    selection = _select_snapshot_candidates(
         content,
-        detector,
         resolved_workspace_root,
+        changed_paths,
         candidate_files,
         explicit_claims_only,
-    )
-    selection = select_generated_file_snapshot_candidates(
-        generated_files,
-        GeneratedFileSnapshotPolicy(
-            resolved_workspace_root=resolved_workspace_root,
-            changed_paths=changed_paths,
-            explicit_labels=explicit_labels,
-            baseline_supplied=candidate_files is not None,
-            file_count_limit=MAX_GENERATED_FILE_SNAPSHOT_FILES,
-            per_file_size_limit=MAX_GENERATED_FILE_SNAPSHOT_BYTES,
-            total_size_limit=MAX_GENERATED_FILE_SNAPSHOT_TOTAL_BYTES,
-            rejection_detail_limit=MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS,
-        ),
     )
     _replace_generated_file_source_root(selected_snapshot_root)
     source_metadata_signature = _write_generated_file_source_metadata(
@@ -186,29 +169,14 @@ def snapshot_generated_file_workspace(
         )
     copied_candidates: list[GeneratedFileSnapshotCandidate] = []
     for candidate in selection.candidates:
-        target = selected_snapshot_root.joinpath(*candidate.relative_path.parts)
-        _ensure_contained_directory(
+        if _publish_snapshot_candidate(
+            candidate,
             selected_snapshot_root,
-            candidate.relative_path.parent,
-        )
-        try:
-            target_signature = copy_generated_file_snapshot_candidate(
-                candidate,
-                target,
-                resolved_workspace_root,
-            )
-        except (OSError, RuntimeError) as exc:
-            selection.rejections.record(
-                generated_file_rejection_metadata(
-                    candidate,
-                    reason="copy_failed",
-                    error=str(exc),
-                )
-            )
-            continue
-        copied_candidates.append(candidate)
-        if on_file_published is not None:
-            on_file_published(target, target_signature)
+            resolved_workspace_root,
+            selection.rejections,
+            on_file_published,
+        ):
+            copied_candidates.append(candidate)
     snapshot_metadata_signature = _write_generated_file_snapshot_metadata(
         selected_snapshot_root,
         [
@@ -223,6 +191,69 @@ def snapshot_generated_file_workspace(
             snapshot_metadata_signature,
         )
     return selected_snapshot_root
+
+
+def _select_snapshot_candidates(
+    content: str,
+    resolved_workspace_root: Path,
+    changed_paths: set[str] | None,
+    candidate_files: Sequence[Path] | None,
+    explicit_claims_only: bool,
+) -> GeneratedFileSnapshotSelection:
+    detector = GeneratedFileReferenceDetector(resolved_workspace_root)
+    explicit_labels = {
+        path.relative_to(resolved_workspace_root).as_posix()
+        for path in detector.detect_explicit_section(content)
+    }
+    generated_files = _ordered_generated_files_for_content(
+        content,
+        detector,
+        resolved_workspace_root,
+        candidate_files,
+        explicit_claims_only,
+    )
+    return select_generated_file_snapshot_candidates(
+        generated_files,
+        GeneratedFileSnapshotPolicy(
+            resolved_workspace_root=resolved_workspace_root,
+            changed_paths=changed_paths,
+            explicit_labels=explicit_labels,
+            baseline_supplied=candidate_files is not None,
+            file_count_limit=MAX_GENERATED_FILE_SNAPSHOT_FILES,
+            per_file_size_limit=MAX_GENERATED_FILE_SNAPSHOT_BYTES,
+            total_size_limit=MAX_GENERATED_FILE_SNAPSHOT_TOTAL_BYTES,
+            rejection_detail_limit=MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS,
+        ),
+    )
+
+
+def _publish_snapshot_candidate(
+    candidate: GeneratedFileSnapshotCandidate,
+    snapshot_root: Path,
+    resolved_workspace_root: Path,
+    rejections: GeneratedFileRejectionLog,
+    on_file_published: Callable[[Path, tuple[int, str]], None] | None,
+) -> bool:
+    target = snapshot_root.joinpath(*candidate.relative_path.parts)
+    _ensure_contained_directory(snapshot_root, candidate.relative_path.parent)
+    try:
+        target_signature = copy_generated_file_snapshot_candidate(
+            candidate,
+            target,
+            resolved_workspace_root,
+        )
+    except (OSError, RuntimeError) as exc:
+        rejections.record(
+            generated_file_rejection_metadata(
+                candidate,
+                reason="copy_failed",
+                error=str(exc),
+            )
+        )
+        return False
+    if on_file_published is not None:
+        on_file_published(target, target_signature)
+    return True
 
 
 def _ordered_generated_files_for_content(

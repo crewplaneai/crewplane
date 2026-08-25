@@ -13,6 +13,7 @@ from crewplane.artifacts.workspace.node_state import (
 from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
+    ArtifactKind,
     NodeState,
 )
 from crewplane.core.preflight.models import (
@@ -92,7 +93,7 @@ def _generated_file_descriptors(
     ]
 
 
-def _descriptor(kind: str, root: Path, path: Path) -> ArtifactDescriptor:
+def _descriptor(kind: ArtifactKind, root: Path, path: Path) -> ArtifactDescriptor:
     return ArtifactDescriptor(
         kind=kind,
         relative_path=path.relative_to(root).as_posix(),

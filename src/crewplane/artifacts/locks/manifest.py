@@ -16,7 +16,11 @@ from crewplane.architecture.contracts import (
     EventType,
     WorkflowEventType,
 )
-from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.architecture.safe_files import (
+    contained_regular_file,
+    path_has_symlink_component,
+    path_is_symlink,
+)
 from crewplane.core.execution_state import (
     RUN_STATUS_RUNNING,
     RunManifest,
@@ -396,7 +400,7 @@ def ensure_owner_path_contained(root: Path, candidate: Path) -> None:
 
 
 def ensure_no_symlink_manifest_components(root: Path, candidate: Path) -> None:
-    if has_symlink_component(root):
+    if path_has_symlink_component(root):
         raise LockManifestError("Stale run manifest path contains a symlink.")
     try:
         relative = candidate.relative_to(root)
@@ -409,22 +413,3 @@ def ensure_no_symlink_manifest_components(root: Path, candidate: Path) -> None:
         current = current / part
         if path_is_symlink(current):
             raise LockManifestError("Stale run manifest path contains a symlink.")
-
-
-def has_symlink_component(path: Path) -> bool:
-    current = Path(path.anchor) if path.is_absolute() else Path()
-    parts = path.parts[1:] if path.is_absolute() else path.parts
-    for part in parts:
-        current = current / part
-        if path_is_symlink(current):
-            return True
-    return False
-
-
-def path_is_symlink(path: Path) -> bool:
-    try:
-        return stat.S_ISLNK(path.lstat().st_mode)
-    except PermissionError:
-        raise
-    except OSError:
-        return False

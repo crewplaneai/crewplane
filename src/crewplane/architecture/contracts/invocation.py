@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast
 
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -127,6 +127,23 @@ class ProviderTokenUsage:
         )
 
 
+class InvocationEventFields(TypedDict, total=False):
+    """Keyword fields persisted with terminal invocation events."""
+
+    attempt_count: int
+    cli_captured: bool
+    output_extraction_status: OutputExtractionStatus
+    provider_usage_status: ProviderUsageStatus
+    provider_usage_report_count: int | None
+    provider_tokens: dict[str, int | None]
+    visible_estimate_tokens: int | None
+    visible_estimate_method: str | None
+    visible_estimate_is_lower_bound: bool
+    configured_cost_usd: float | None
+    invocation_cost_confidence: InvocationCostConfidence
+    usage_parse_error: str | None
+
+
 @dataclass(frozen=True)
 class InvocationUsage:
     """Normalized usage and cost evidence for one terminal invocation."""
@@ -160,7 +177,7 @@ class InvocationUsage:
             MappingProxyType(dict(self.provider_tokens)),
         )
 
-    def as_event_fields(self) -> JsonObject:
+    def as_event_fields(self) -> InvocationEventFields:
         """Return a JSON-compatible shallow copy for event persistence."""
         return {
             "attempt_count": self.attempt_count,
@@ -436,12 +453,10 @@ class CommandResult:
 
     def cleanup_stream_files(self) -> None:
         """Remove persisted stream capture files for this invocation result."""
-        if self.stdout_path is not None:
-            with suppress(OSError):
-                self.stdout_path.unlink(missing_ok=True)
-        if self.stderr_path is not None:
-            with suppress(OSError):
-                self.stderr_path.unlink(missing_ok=True)
+        for path in (self.stdout_path, self.stderr_path):
+            if path is not None:
+                with suppress(OSError):
+                    path.unlink(missing_ok=True)
 
 
 @dataclass(frozen=True)

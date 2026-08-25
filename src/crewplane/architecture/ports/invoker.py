@@ -2,24 +2,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from crewplane.architecture.contracts import (
-    AgentInvoker,
-    CanonicalIntegrationConfig,
-    JsonObject,
-)
+from crewplane.architecture.contracts import AgentInvoker, JsonObject
 from crewplane.core.config import Config
 
+from .options import IntegrationOptionsCanonicalizerPort
 
-class InvokerAdapterPort(Protocol):
+
+class InvokerAdapterPort(IntegrationOptionsCanonicalizerPort, Protocol):
     """Factory contract for provider invocation integrations."""
-
-    def canonicalize_options(
-        self,
-        implementation: str,
-        resolved_identity: str,
-        options: JsonObject | None = None,
-    ) -> CanonicalIntegrationConfig:
-        """Validate and canonicalize invoker options without side effects."""
 
     def create_invoker(
         self,

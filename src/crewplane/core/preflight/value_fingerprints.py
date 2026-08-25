@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from crewplane.architecture.contracts import JsonObject
+
 from .compile_state import CompileState, PreflightCompileOptions, extend_diagnostics
 from .secrets import (
     FINGERPRINT_PAYLOAD_VERSION,
@@ -35,7 +37,7 @@ def backfill_value_fingerprints(state: CompileState) -> None:
         return
     for record in state.value_fingerprints:
         raw_value = record.pop("value")
-        payload = {
+        payload: JsonObject = {
             "fingerprint_payload_version": FINGERPRINT_PAYLOAD_VERSION,
             "key": record["key"],
             "kind": record["kind"],

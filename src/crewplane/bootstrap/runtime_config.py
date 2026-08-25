@@ -113,4 +113,5 @@ def _canonicalize_integration_options(
         )
     else:
         return canonical_config
+    # Raise outside the handler so adapter internals are not retained in __context__.
     raise ValueError(error_message)

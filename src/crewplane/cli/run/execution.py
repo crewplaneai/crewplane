@@ -110,7 +110,7 @@ async def run_and_finalize_workflow(
     terminalization: TerminalizationCoordinator,
     resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
-    branch_export_records = []
+    branch_export_records: tuple[Path, ...] = ()
     persistent_logger: PersistentRunLogger | None = None
 
     def complete_scheduler_postconditions() -> None:

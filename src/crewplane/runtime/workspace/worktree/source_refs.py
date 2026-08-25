@@ -11,6 +11,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.workflow.keywords import ProviderRole
 
+from ..plan_nodes import workspace_plan_node
 from ..state_selection import (
     required_lineage_state_path,
     same_node_executor_state_path,
@@ -47,7 +48,7 @@ def invocation_source_ref(
         return load_source_ref_from_state(
             required_lineage_state(
                 output,
-                _plan_node(plan, policy.source_node_id),
+                workspace_plan_node(plan, policy.source_node_id),
             )
         )
     return WorktreeSourceRef(
@@ -84,13 +85,3 @@ def same_node_executor_state(
 
 def _candidate_ref_from_state(state_path: Path) -> WorktreeSourceRef:
     return candidate_source_ref(load_source_ref_from_state(state_path))
-
-
-def _plan_node(
-    plan: PreflightExecutionPlan,
-    node_id: str,
-) -> PreflightExecutionNode:
-    for node in plan.nodes:
-        if node.id == node_id:
-            return node
-    raise RuntimeError(f"Workspace source references unknown node '{node_id}'.")

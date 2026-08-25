@@ -14,7 +14,6 @@ from ..results.review_loop_status import (
     resolve_review_loop_status,
     task_specs_for_producers,
 )
-from ..results.selection import parse_audit_round, parse_task_round
 from ..run_history import RunHistoryRecord
 from .state.fields import (
     int_field,
@@ -24,6 +23,7 @@ from .state.fields import (
     mapping_value as _mapping,
 )
 from .state.invocations import workspace_state_payloads
+from .state.lineage import invocation_round_order, review_output_coordinates
 
 
 def workspace_invocation_source_matches(
@@ -328,25 +328,26 @@ def _review_loop_canonical_payload(
     if resolved is None or len(resolved.canonical_executor_outputs) != 1:
         return None
     entry = resolved.canonical_executor_outputs[0]
-    task_id, round_num = parse_task_round(entry.output_file.stem)
-    if task_id != entry.task_id or round_num <= 0:
+    coordinates = review_output_coordinates(entry.relative_path, entry.task_id)
+    if coordinates is None:
         return None
-    audit_round_num = None
-    relative_path = entry.relative_path
-    path_parts = relative_path.split("/")
-    if len(path_parts) > 1:
-        parsed_audit_round = parse_audit_round(path_parts[0])
-        audit_round_num = parsed_audit_round if parsed_audit_round > 0 else None
     exact = _lineage_payload_by_invocation(
         payloads,
         entry.task_id,
-        round_num,
-        audit_round_num,
+        coordinates.round_num,
+        coordinates.audit_round_num,
     )
     if exact is not None:
         return exact
-    if audit_round_num is not None and audit_round_num > 1 and round_num == 1:
-        return _latest_lineage_payload(payloads, before=(audit_round_num, round_num))
+    if (
+        coordinates.audit_round_num is not None
+        and coordinates.audit_round_num > 1
+        and coordinates.round_num == 1
+    ):
+        return _latest_lineage_payload(
+            payloads,
+            before=(coordinates.audit_round_num, coordinates.round_num),
+        )
     return None
 
 
@@ -382,15 +383,7 @@ def _latest_lineage_payload(
 
 
 def _lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
-    round_num = int_field(payload, "round_num")
-    if round_num is None:
-        return (-1, -1)
-    audit_round_num = nullable_int_field(payload, "audit_round_num")
-    if not audit_round_num.valid:
-        return (-1, -1)
-    if audit_round_num.value is None:
-        return (0, round_num)
-    return (audit_round_num.value, round_num)
+    return invocation_round_order(payload)
 
 
 def _lineage_payload_is_ordered_source(payload: dict[str, object]) -> bool:

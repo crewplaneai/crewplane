@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 import yaml
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode
@@ -54,7 +52,7 @@ UniqueKeyLoader.add_constructor(
 )
 
 
-def load_yaml_unique(text: str) -> Any:
+def load_yaml_unique(text: str) -> object:
     """Load YAML text while rejecting duplicate mapping keys."""
 
     return yaml.load(text, Loader=UniqueKeyLoader)

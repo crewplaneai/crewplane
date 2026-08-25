@@ -16,7 +16,7 @@ from .common import (
     run_provider_call,
 )
 from .review_loop import execute_review_loop_stage
-from .workspace_files import WorkspaceCandidateSourceContext
+from .workspace_files.source_resolution import WorkspaceCandidateSourceContext
 
 DEFAULT_SINGLE_PROVIDER_ROUNDS = 1
 

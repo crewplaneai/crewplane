@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import TypedDict, TypeGuard
 
 from crewplane.architecture.contracts import (
     AggregateCostConfidence,
     EventType,
     InvocationCostConfidence,
     InvocationEventType,
+    ProviderUsageStatus,
 )
+from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.observability.events import ExecutionEvent, InvocationEventPayload
 
 from .formatting import format_cost, format_count
@@ -72,12 +74,9 @@ class _MutableProviderTokenAggregate:
         for bucket in TOKEN_BUCKETS:
             value = provider_tokens.get(bucket)
             current = self.values[bucket]
-            valid_value = (
-                isinstance(value, int) and not isinstance(value, bool) and value >= 0
-            )
             if not had_reports:
-                self.values[bucket] = value if valid_value else None
-            elif current is None or not valid_value:
+                self.values[bucket] = value if is_nonnegative_int(value) else None
+            elif current is None or not is_nonnegative_int(value):
                 self.values[bucket] = None
             else:
                 self.values[bucket] = current + value
@@ -234,20 +233,49 @@ def invocation_usage_summary_from_event(
         attempt_count=payload.attempt_count,
         cli_captured=bool(payload.cli_captured),
         output_extraction_status=payload.output_extraction_status or "missing",
-        provider_usage_status=payload.provider_usage_status or "none",
+        provider_usage_status=_provider_usage_status(payload.provider_usage_status),
         provider_usage_report_count=payload.provider_usage_report_count,
         provider_tokens=dict(payload.provider_tokens or {}),
         visible_estimate_tokens=payload.visible_estimate_tokens,
         visible_estimate_method=payload.visible_estimate_method,
         visible_estimate_is_lower_bound=bool(payload.visible_estimate_is_lower_bound),
         configured_cost_usd=payload.configured_cost_usd,
-        invocation_cost_confidence=payload.invocation_cost_confidence or "none",
+        invocation_cost_confidence=_invocation_cost_confidence(
+            payload.invocation_cost_confidence
+        ),
         usage_parse_error=payload.usage_parse_error,
         failure_kind=payload.failure_kind,
         failure_phase=payload.failure_phase,
         failure_source=payload.failure_source,
         failure_advice=payload.failure_advice,
     )
+
+
+def _provider_usage_status(value: object) -> ProviderUsageStatus:
+    if _is_provider_usage_status(value):
+        return value
+    return "none"
+
+
+def _is_provider_usage_status(value: object) -> TypeGuard[ProviderUsageStatus]:
+    return isinstance(value, str) and value in {
+        "full",
+        "partial",
+        "none",
+        "malformed",
+    }
+
+
+def _invocation_cost_confidence(value: object) -> InvocationCostConfidence:
+    if _is_invocation_cost_confidence(value):
+        return value
+    return "none"
+
+
+def _is_invocation_cost_confidence(
+    value: object,
+) -> TypeGuard[InvocationCostConfidence]:
+    return isinstance(value, str) and value in {"full", "partial", "none"}
 
 
 def invocation_payload(event: ExecutionEvent) -> InvocationEventPayload:

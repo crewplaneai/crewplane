@@ -8,6 +8,7 @@ for deterministic signatures and persisted plans.
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
@@ -33,6 +34,7 @@ _SENSITIVE_ARGV_PATTERN = re.compile(
 )
 _ARGV_FIELD_NAMES = frozenset({"argv", "cli_cmd", "extra_args"})
 _ARGV_SCALAR_FIELD_NAMES = frozenset({"model_arg", "prompt_transport_arg"})
+type RedactionOutput = Literal["redacted", "fingerprinted"]
 
 
 def config_value_handle(path: str) -> str:
@@ -43,7 +45,12 @@ def redact_sensitive_config(
     payload: JsonObject,
     root_path: tuple[str, ...] = ("agents",),
 ) -> tuple[JsonObject, list[str]]:
-    redacted, paths = _redact_sensitive_value(payload, root_path, None)
+    redacted, paths, _ = _redact_sensitive_value(
+        payload,
+        root_path,
+        None,
+        "redacted",
+    )
     return _ensure_dict(redacted), sorted(paths)
 
 
@@ -52,10 +59,11 @@ def redact_sensitive_config_with_fingerprints(
     fingerprint_key: bytes | None,
     root_path: tuple[str, ...] = ("agents",),
 ) -> tuple[JsonObject, list[dict[str, str]]]:
-    redacted, _, fingerprints = _redact_sensitive_value_with_fingerprints(
+    redacted, _, fingerprints = _redact_sensitive_value(
         payload,
         root_path,
         fingerprint_key,
+        "fingerprinted",
     )
     return _ensure_dict(redacted), sorted(fingerprints, key=lambda item: item["path"])
 
@@ -142,46 +150,16 @@ def config_fingerprint(
 def _redact_sensitive_value(
     value: JsonValue,
     path: tuple[str, ...],
-    list_parent: str | None,
-) -> tuple[JsonValue, list[str]]:
-    if _is_sensitive_config_value(value, path, list_parent):
-        return {"redacted": True}, [_path_label(path)]
-    if isinstance(value, dict):
-        paths: list[str] = []
-        redacted: JsonObject = {}
-        for key, child in sorted(value.items()):
-            child_value, child_paths = _redact_sensitive_value(
-                child,
-                (*path, str(key)),
-                None,
-            )
-            redacted[str(key)] = child_value
-            paths.extend(child_paths)
-        boundary_secret = _command_field_boundary_secret(value, path)
-        if boundary_secret is not None:
-            secret_path = boundary_secret[1]
-            path_label = _path_label(secret_path)
-            if path_label not in paths:
-                _replace_first_extra_arg(redacted, {"redacted": True})
-                paths.append(path_label)
-        return redacted, paths
-    if isinstance(value, list):
-        return _redact_sensitive_list_without_fingerprints(value, path)
-    return value, []
-
-
-def _redact_sensitive_value_with_fingerprints(
-    value: JsonValue,
-    path: tuple[str, ...],
     fingerprint_key: bytes | None,
+    output: RedactionOutput,
     list_parent: str | None = None,
 ) -> tuple[JsonValue, list[str], list[dict[str, str]]]:
     if _is_sensitive_config_value(value, path, list_parent):
-        return _redacted_sensitive_leaf(value, path, fingerprint_key)
+        return _redacted_sensitive_leaf(value, path, fingerprint_key, output)
     if isinstance(value, dict):
-        return _redacted_sensitive_dict(value, path, fingerprint_key)
+        return _redacted_sensitive_dict(value, path, fingerprint_key, output)
     if isinstance(value, list):
-        return _redacted_sensitive_list(value, path, fingerprint_key)
+        return _redacted_sensitive_list(value, path, fingerprint_key, output)
     return value, [], []
 
 
@@ -189,13 +167,13 @@ def _redacted_sensitive_leaf(
     value: JsonValue,
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
+    output: RedactionOutput,
 ) -> tuple[JsonObject, list[str], list[dict[str, str]]]:
     path_label = _path_label(path)
     fingerprint = config_fingerprint(fingerprint_key, path_label, value)
-    redacted_value: JsonObject = {
-        "redacted": True,
-        "value_handle": config_value_handle(path_label),
-    }
+    redacted_value: JsonObject = {"redacted": True}
+    if output == "fingerprinted":
+        redacted_value["value_handle"] = config_value_handle(path_label)
     if fingerprint is None:
         return redacted_value, [path_label], []
     redacted_value["fingerprint"] = fingerprint
@@ -210,17 +188,17 @@ def _redacted_sensitive_dict(
     value: dict[str, JsonValue],
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
+    output: RedactionOutput,
 ) -> tuple[JsonObject, list[str], list[dict[str, str]]]:
     paths: list[str] = []
     fingerprints: list[dict[str, str]] = []
     redacted: JsonObject = {}
     for key, child in sorted(value.items()):
-        child_value, child_paths, child_fingerprints = (
-            _redact_sensitive_value_with_fingerprints(
-                child,
-                (*path, str(key)),
-                fingerprint_key,
-            )
+        child_value, child_paths, child_fingerprints = _redact_sensitive_value(
+            child,
+            (*path, str(key)),
+            fingerprint_key,
+            output,
         )
         redacted[str(key)] = child_value
         paths.extend(child_paths)
@@ -231,7 +209,10 @@ def _redacted_sensitive_dict(
         path_label = _path_label(secret_path)
         if path_label not in paths:
             redacted_value, child_paths, child_fingerprints = _redacted_sensitive_leaf(
-                secret_value, secret_path, fingerprint_key
+                secret_value,
+                secret_path,
+                fingerprint_key,
+                output,
             )
             _replace_first_extra_arg(redacted, redacted_value)
             paths.extend(child_paths)
@@ -243,30 +224,31 @@ def _redacted_sensitive_list(
     value: list[JsonValue],
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
+    output: RedactionOutput,
 ) -> tuple[list[JsonValue], list[str], list[dict[str, str]]]:
-    paths = []
-    fingerprints = []
-    redacted_list = []
+    paths: list[str] = []
+    fingerprints: list[dict[str, str]] = []
+    redacted_list: list[JsonValue] = []
     sensitive_indices = _sensitive_argv_indices(value, path)
     for index, child in enumerate(value):
         child_path = (*path, str(index))
         if index in sensitive_indices:
-            child_value, child_paths, child_fingerprints = _redacted_sensitive_leaf(
+            sensitive_value, child_paths, child_fingerprints = _redacted_sensitive_leaf(
                 child,
                 child_path,
                 fingerprint_key,
+                output,
             )
-            redacted_list.append(child_value)
+            redacted_list.append(sensitive_value)
             paths.extend(child_paths)
             fingerprints.extend(child_fingerprints)
             continue
-        child_value, child_paths, child_fingerprints = (
-            _redact_sensitive_value_with_fingerprints(
-                child,
-                child_path,
-                fingerprint_key,
-                path[-1] if path else None,
-            )
+        child_value, child_paths, child_fingerprints = _redact_sensitive_value(
+            child,
+            child_path,
+            fingerprint_key,
+            output,
+            path[-1] if path else None,
         )
         redacted_list.append(child_value)
         paths.extend(child_paths)
@@ -317,29 +299,6 @@ def _replace_first_extra_arg(
     if not isinstance(extra_args, list) or not extra_args:
         raise TypeError("Redacted agent extra_args must remain a non-empty list.")
     extra_args[0] = value
-
-
-def _redact_sensitive_list_without_fingerprints(
-    value: list[JsonValue],
-    path: tuple[str, ...],
-) -> tuple[list[JsonValue], list[str]]:
-    paths = []
-    redacted_list = []
-    sensitive_indices = _sensitive_argv_indices(value, path)
-    for index, child in enumerate(value):
-        child_path = (*path, str(index))
-        if index in sensitive_indices:
-            redacted_list.append({"redacted": True})
-            paths.append(_path_label(child_path))
-            continue
-        child_value, child_paths = _redact_sensitive_value(
-            child,
-            child_path,
-            path[-1] if path else None,
-        )
-        redacted_list.append(child_value)
-        paths.extend(child_paths)
-    return redacted_list, paths
 
 
 def _sensitive_argv_indices(

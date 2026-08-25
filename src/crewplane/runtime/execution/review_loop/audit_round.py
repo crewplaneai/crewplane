@@ -11,7 +11,7 @@ from ..common import (
     should_print_console,
 )
 from ..consensus import check_consensus
-from ..workspace_files import WorkspaceCandidateSourceContext
+from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
 from .executor_round import run_executor_round
 from .prompts import build_review_context
 from .reviewer_round import run_reviewer_round

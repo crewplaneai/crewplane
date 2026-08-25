@@ -298,7 +298,7 @@ def update_workspace_state(
 
 def update_workspace_setup(
     state_path: Path,
-    setup: dict[str, object],
+    setup: Mapping[str, object],
     base_payload: Mapping[str, object] | None = None,
 ) -> None:
     payload = (

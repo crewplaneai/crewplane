@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TypeIs
 
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 
-from .types import WorktreeCaptureResult, WorktreeSourceRef
+from .types import WorkspaceSourceKind, WorktreeCaptureResult, WorktreeSourceRef
 
 
 def load_source_ref_from_state(path: Path) -> WorktreeSourceRef:
@@ -135,7 +136,7 @@ def _source_ref_from_payload(
     source_kind = _string(payload.get("kind"))
     source_commit = _string(payload.get("commit"))
     source_tree = _string(payload.get("tree"))
-    if source_kind not in {"project", "node", "candidate"}:
+    if not _is_workspace_source_kind(source_kind):
         return None
     if source_commit is None or source_tree is None:
         return None
@@ -151,6 +152,10 @@ def _source_ref_from_payload(
         bundle_ref=_string(payload.get("bundle_ref")),
         upstream_sources=_nested_upstream_sources(state_path, payload),
     )
+
+
+def _is_workspace_source_kind(value: str | None) -> TypeIs[WorkspaceSourceKind]:
+    return value in {"project", "node", "candidate"}
 
 
 def _nested_upstream_sources(

@@ -22,9 +22,9 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from .workspace_files import (
     ResolvedWorkspaceFile,
-    WorkspaceCandidateSourceContext,
     resolve_workspace_file,
 )
+from .workspace_files.source_resolution import WorkspaceCandidateSourceContext
 
 OUTPUT_ARTIFACT_KEYS = {"output", "output_path", "output_size", "output_sha256"}
 FINDINGS_ARTIFACT_KEYS = {

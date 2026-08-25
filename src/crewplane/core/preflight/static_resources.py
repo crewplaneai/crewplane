@@ -179,7 +179,7 @@ def _file_diagnostic(
     message: str,
     resolved_path: Path | None = None,
 ) -> StaticFileResult:
-    metadata = {}
+    metadata: dict[str, str | int | bool | None] = {}
     if resolved_path is not None:
         metadata["resolved_path"] = resolved_path.as_posix()
     return StaticFileResult(

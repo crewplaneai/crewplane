@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.ports import RunSummaryArtifactReaderPort
 from crewplane.observability.events import EventType, ExecutionEvent
 from crewplane.observability.events.payloads import WorkspaceEventPayload
 
@@ -58,7 +58,7 @@ def workspace_invocation_summary_from_event(
 
 
 def build_workspace_run_summary(
-    artifact_store: ArtifactStorePort,
+    artifact_store: RunSummaryArtifactReaderPort,
     event_invocations: tuple[WorkspaceInvocationSummary, ...],
 ) -> WorkspaceRunSummary | None:
     plan = workspace_plan_summary(artifact_store.stages_dir)

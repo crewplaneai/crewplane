@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.ports import RunSummaryArtifactReaderPort
 from crewplane.observability.events import ExecutionEvent
 from crewplane.observability.timing import format_elapsed_seconds
 from crewplane.observability.types import DashboardSnapshot, RunResult
@@ -22,7 +22,7 @@ from .workspace import build_workspace_run_summary
 
 
 def build_run_summary(
-    artifact_store: ArtifactStorePort,
+    artifact_store: RunSummaryArtifactReaderPort,
     snapshot: DashboardSnapshot | None,
     events: list[ExecutionEvent],
     result: RunResult,
@@ -32,6 +32,8 @@ def build_run_summary(
     summary_facts: RunSummaryFacts | None = None,
     token_aggregates: ProviderTokenAggregates | None = None,
 ) -> RunSummary:
+    """Build a durable run summary from artifacts, events, and the latest snapshot."""
+
     workflow_name = (
         snapshot.state.workflow_name if snapshot is not None else fallback_workflow_name
     )
@@ -77,7 +79,7 @@ def run_summary_facts_from_events(events: list[ExecutionEvent]) -> RunSummaryFac
 
 
 def summary_issues(
-    artifact_store: ArtifactStorePort,
+    artifact_store: RunSummaryArtifactReaderPort,
     events: list[ExecutionEvent],
     dropped_event_count: int,
 ) -> tuple[IssueSummary, ...]:
@@ -130,7 +132,7 @@ def node_counts(snapshot: DashboardSnapshot | None) -> NodeCounts:
 
 
 def node_outcome_summaries(
-    artifact_store: ArtifactStorePort,
+    artifact_store: RunSummaryArtifactReaderPort,
     snapshot: DashboardSnapshot | None,
 ) -> tuple[NodeOutcomeSummary, ...]:
     if snapshot is None:
