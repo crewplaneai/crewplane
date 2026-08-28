@@ -82,6 +82,9 @@ def test_claude_output_extractor_uses_stderr_when_stdout_is_empty() -> None:
         '{"result":123}',
         '{"result":"bad\\q"}',
         '{"result":"bad\\uZZZZ"}',
+        '{"result":"accepted","metadata":invalid}',
+        '{"result":"accepted","metadata":"bad\\q"}',
+        '{"result":"accepted","metadata":{"ok":true "bad":false}}',
         '{"result":"unterminated',
         '{"result":"ok"} trailing',
         '{"result":"ok" "other":1}',
@@ -127,6 +130,60 @@ def test_claude_output_extractor_accepts_deeply_nested_ignored_value() -> None:
         assert extracted.output_path.read_text(encoding="utf-8") == "ok"
     finally:
         extracted.output_path.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize(
+    "ignored_value",
+    [
+        "null",
+        "true",
+        "false",
+        "0",
+        "-0",
+        "1234567890",
+        "-12.5",
+        "6.022e23",
+        "1E-9",
+    ],
+)
+def test_claude_output_extractor_accepts_valid_ignored_scalars(
+    ignored_value: str,
+) -> None:
+    extracted = extract_claude_output(
+        CommandResult(0, f'{{"ignored":{ignored_value},"result":"ok"}}', ""),
+        None,
+    )
+
+    assert extracted.output_extraction_status == "success"
+    assert extracted.output_path is not None
+    extracted.output_path.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize(
+    "ignored_value",
+    ["Null", "tru", "falsehood", "+1", "01", "1.", ".1", "1e", "1e+"],
+)
+def test_claude_output_extractor_rejects_invalid_ignored_scalars(
+    ignored_value: str,
+) -> None:
+    extracted = extract_claude_output(
+        CommandResult(0, f'{{"result":"ok","ignored":{ignored_value}}}', ""),
+        None,
+    )
+
+    assert extracted.output_extraction_status == "malformed"
+
+
+def test_claude_output_extractor_streams_large_ignored_number() -> None:
+    ignored_value = "1" * 1_000_000
+    extracted = extract_claude_output(
+        CommandResult(0, f'{{"ignored":{ignored_value},"result":"ok"}}', ""),
+        None,
+    )
+
+    assert extracted.output_extraction_status == "success"
+    assert extracted.output_path is not None
+    extracted.output_path.unlink(missing_ok=True)
 
 
 def test_claude_usage_parser_reports_missing_and_malformed_payloads() -> None:

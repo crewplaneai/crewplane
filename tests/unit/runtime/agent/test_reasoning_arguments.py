@@ -240,6 +240,11 @@ def test_env_prefix_can_remove_inherited_reasoning_or_use_safe_options(
             id="unknown-long",
         ),
         pytest.param(
+            ["env", "--path=bin", "claude"],
+            "Cannot validate env option '--path=bin'",
+            id="unsupported-path-long",
+        ),
+        pytest.param(
             ["env", "--unset"],
             "--unset requires a value",
             id="unset-missing-value",

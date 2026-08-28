@@ -39,6 +39,11 @@ def validate_reasoning_request(
     )
     cli_arguments = cli_context.command_arguments
     effective_reasoning_environment = cli_context.tracked_environment_value
+    if cli_context.command_working_directory_option is not None:
+        raise ValueError(
+            f"{cli_context.command_working_directory_option} cannot be combined "
+            "with a workflow reasoning request."
+        )
     _reject_cli_command_terminator(cli_arguments)
     if provider_kind == ProviderKind.CODEX:
         _reject_codex_reasoning_conflict(cli_arguments)
@@ -46,7 +51,7 @@ def validate_reasoning_request(
         return
     _reject_claude_reasoning_conflict(cli_arguments, working_directory)
     _reject_claude_reasoning_conflict(config.extra_args, working_directory)
-    if effective_reasoning_environment.strip():
+    if effective_reasoning_environment and effective_reasoning_environment.strip():
         raise ValueError(
             f"{CLAUDE_REASONING_ENV} conflicts with the workflow reasoning request."
         )

@@ -35,6 +35,9 @@ _SIMPLE_JSON_ESCAPES = {
     "r": "\r",
     "t": "\t",
 }
+_JSON_WHITESPACE = frozenset(" \t\r\n")
+_JSON_LITERAL_SUFFIXES = {"f": "alse", "n": "ull", "t": "rue"}
+_JSON_NUMBER_TERMINAL_STATES = frozenset({"zero", "integer", "fraction", "exponent"})
 
 
 def extract_claude_output(
@@ -254,40 +257,155 @@ class _ClaudeJsonParser:
             self._skip_string(captured)
             return
         if char == "{":
-            self._skip_bracketed_value("{", "}", captured)
+            self._skip_bracketed_value("{", captured)
             return
         if char == "[":
-            self._skip_bracketed_value("[", "]", captured)
+            self._skip_bracketed_value("[", captured)
             return
         self._skip_scalar(captured)
 
     def _skip_bracketed_value(
         self,
         opener: str,
-        closer: str,
         captured: list[str] | None,
     ) -> None:
         self._expect(opener, captured)
-        stack = [closer]
+        stack = [(opener, "first")]
         while stack:
-            char = self._read_required()
-            self._capture(captured, char)
-            if char == '"':
-                self._skip_string_tail(captured)
-            elif char == "{":
-                stack.append("}")
-            elif char == "[":
-                stack.append("]")
-            elif char == stack[-1]:
+            container, state = stack[-1]
+            self._skip_whitespace(captured)
+            expected_closer = "}" if container == "{" else "]"
+            if state == "first" and self._peek() == expected_closer:
+                self._expect(expected_closer, captured)
                 stack.pop()
+                continue
+            if container == "{" and state in {"first", "item"}:
+                self._skip_string(captured)
+                stack[-1] = (container, "colon")
+                continue
+            if container == "{" and state == "colon":
+                self._expect(":", captured)
+                stack[-1] = (container, "value")
+                continue
+            if state in {"first", "item", "value"}:
+                nested_opener = self._skip_value_start(captured)
+                stack[-1] = (container, "separator")
+                if nested_opener is not None:
+                    stack.append((nested_opener, "first"))
+                continue
+            separator = self._read_required()
+            self._capture(captured, separator)
+            if separator == expected_closer:
+                stack.pop()
+                continue
+            if separator != ",":
+                raise _ClaudeJsonParseError("Expected JSON value separator.")
+            stack[-1] = (container, "item")
+
+    def _skip_value_start(self, captured: list[str] | None) -> str | None:
+        self._skip_whitespace(captured)
+        char = self._peek()
+        if char is None:
+            raise _ClaudeJsonParseError("Unexpected end of JSON value.")
+        if char == '"':
+            self._skip_string(captured)
+            return None
+        if char in {"{", "["}:
+            self._expect(char, captured)
+            return char
+        self._skip_scalar(captured)
+        return None
 
     def _skip_scalar(self, captured: list[str] | None) -> None:
-        while True:
+        first = self._read_required()
+        self._capture(captured, first)
+        literal_suffix = _JSON_LITERAL_SUFFIXES.get(first)
+        if literal_suffix is not None:
+            self._skip_literal_suffix(literal_suffix, captured)
+            return
+        self._skip_number(first, captured)
+
+    def _skip_literal_suffix(
+        self,
+        suffix: str,
+        captured: list[str] | None,
+    ) -> None:
+        for expected in suffix:
             char = self._read_required()
-            if char in {",", "}", "]"}:
-                self._cursor.push((char,))
-                return
             self._capture(captured, char)
+            if char != expected:
+                raise _ClaudeJsonParseError("Invalid JSON scalar value.")
+        self._require_scalar_end()
+
+    def _skip_number(self, first: str, captured: list[str] | None) -> None:
+        state = self._initial_number_state(first)
+        while True:
+            char = self._cursor.read()
+            if char is None:
+                break
+            if char in _JSON_WHITESPACE or char in {",", "}", "]"}:
+                self._cursor.push((char,))
+                break
+            self._capture(captured, char)
+            state = self._next_number_state(state, char)
+        if state not in _JSON_NUMBER_TERMINAL_STATES:
+            raise _ClaudeJsonParseError("Invalid JSON scalar value.")
+
+    @staticmethod
+    def _initial_number_state(first: str) -> str:
+        if first == "-":
+            return "sign"
+        if first == "0":
+            return "zero"
+        if first in "123456789":
+            return "integer"
+        raise _ClaudeJsonParseError("Invalid JSON scalar value.")
+
+    @staticmethod
+    def _next_number_state(state: str, char: str) -> str:
+        if state == "sign":
+            if char == "0":
+                return "zero"
+            if char in "123456789":
+                return "integer"
+        elif state == "zero":
+            if char == ".":
+                return "decimal"
+            if char in "eE":
+                return "exponent_start"
+        elif state == "integer":
+            if char.isascii() and char.isdigit():
+                return "integer"
+            if char == ".":
+                return "decimal"
+            if char in "eE":
+                return "exponent_start"
+        elif state == "decimal":
+            if char.isascii() and char.isdigit():
+                return "fraction"
+        elif state == "fraction":
+            if char.isascii() and char.isdigit():
+                return "fraction"
+            if char in "eE":
+                return "exponent_start"
+        elif state == "exponent_start":
+            if char in "+-":
+                return "exponent_sign"
+            if char.isascii() and char.isdigit():
+                return "exponent"
+        elif (
+            state in {"exponent_sign", "exponent"} and char.isascii() and char.isdigit()
+        ):
+            return "exponent"
+        raise _ClaudeJsonParseError("Invalid JSON scalar value.")
+
+    def _require_scalar_end(self) -> None:
+        char = self._cursor.read()
+        if char is None:
+            return
+        if char not in _JSON_WHITESPACE and char not in {",", "}", "]"}:
+            raise _ClaudeJsonParseError("Invalid JSON scalar value.")
+        self._cursor.push((char,))
 
     def _skip_string(self, captured: list[str] | None) -> None:
         self._expect('"', captured)
@@ -299,15 +417,21 @@ class _ClaudeJsonParser:
             self._capture(captured, char)
             if char == '"':
                 return
+            if ord(char) < 0x20:
+                raise _ClaudeJsonParseError("Unescaped control character.")
             if char != "\\":
                 continue
             escaped = self._read_required()
             self._capture(captured, escaped)
-            if escaped == "u":
-                self._capture(captured, self._read_required())
-                self._capture(captured, self._read_required())
-                self._capture(captured, self._read_required())
-                self._capture(captured, self._read_required())
+            if escaped in _SIMPLE_JSON_ESCAPES:
+                continue
+            if escaped != "u":
+                raise _ClaudeJsonParseError("Invalid JSON string escape.")
+            hex_chars = [self._read_required() for _ in range(4)]
+            for hex_char in hex_chars:
+                self._capture(captured, hex_char)
+            if any(hex_char not in "0123456789abcdefABCDEF" for hex_char in hex_chars):
+                raise _ClaudeJsonParseError("Invalid unicode escape.")
 
     def _read_string(self) -> str:
         self._expect('"')
@@ -316,6 +440,8 @@ class _ClaudeJsonParser:
             char = self._read_required()
             if char == '"':
                 return "".join(chars)
+            if ord(char) < 0x20:
+                raise _ClaudeJsonParseError("Unescaped control character.")
             if char == "\\":
                 char = self._read_escape()
             chars.append(char)
@@ -327,6 +453,8 @@ class _ClaudeJsonParser:
             char = self._read_required()
             if char == '"':
                 return count
+            if ord(char) < 0x20:
+                raise _ClaudeJsonParseError("Unescaped control character.")
             if char == "\\":
                 char = self._read_escape()
             if sink is not None:
@@ -374,7 +502,7 @@ class _ClaudeJsonParser:
     def _skip_whitespace(self, captured: list[str] | None = None) -> None:
         while True:
             char = self._read_required()
-            if not char.isspace():
+            if char not in _JSON_WHITESPACE:
                 self._cursor.push((char,))
                 return
             self._capture(captured, char)
@@ -384,7 +512,7 @@ class _ClaudeJsonParser:
             char = self._cursor.read()
             if char is None:
                 return
-            if not char.isspace():
+            if char not in _JSON_WHITESPACE:
                 raise _ClaudeJsonParseError("Unexpected trailing JSON data.")
 
     def _peek(self) -> str | None:
