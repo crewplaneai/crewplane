@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from crewplane.architecture.contracts import (
     JsonObject,
     ProviderKind,
 )
-from crewplane.core.config import Config
+from crewplane.core.config import AgentConfig, Config
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.runtime.agent.invoker import PlannedAgentInvoker
 
@@ -22,6 +23,24 @@ from .cli_invoker.env_command import EnvCommandContext, parse_env_command_contex
 from .cli_invoker.reasoning import validate_reasoning_request
 
 _PLATFORM_ENV_EXECUTABLES = (Path("/bin/env"), Path("/usr/bin/env"))
+
+
+@dataclass(frozen=True, slots=True)
+class _ExecutableRequirement:
+    """Executable lookup parameters for one required CLI command."""
+
+    executable: str
+    base_dir: Path
+    search_path: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ReasoningValidationTarget:
+    """Configured workflow provider requiring reasoning validation."""
+
+    location: str
+    agent_config: AgentConfig
+    requested_reasoning: str
 
 
 def collect_cli_availability_errors(
@@ -40,22 +59,17 @@ def collect_cli_availability_errors(
             agent_config = config.agents.get(provider.provider)
             if agent_config is None:
                 continue
-            for cli_executable, search_path, base_dir in _required_cli_executables(
+            for requirement in _required_cli_executables(
                 agent_config.cli_cmd,
                 executable_base_dir,
                 executable_lookup,
             ):
-                if _cli_executable_available(
-                    cli_executable,
-                    executable_lookup,
-                    base_dir,
-                    search_path,
-                ):
+                if _cli_executable_available(requirement, executable_lookup):
                     continue
                 location = f"workflow '{workflow.name}' -> node '{node.id}'"
                 missing_cli_locations.setdefault(
-                    (provider.provider, cli_executable), []
-                ).append(f"{location} (CLI: {cli_executable})")
+                    (provider.provider, requirement.executable), []
+                ).append(f"{location} (CLI: {requirement.executable})")
     return _format_missing_cli_errors(missing_cli_locations)
 
 
@@ -65,7 +79,26 @@ def collect_cli_reasoning_errors(
     environment: Mapping[str, str] | None = None,
     working_directory: Path | None = None,
 ) -> list[str]:
+    """Collect reasoning validation errors for configured workflow providers."""
+
     errors: list[str] = []
+    for target in _reasoning_validation_targets(workflow, config):
+        try:
+            validate_reasoning_request(
+                target.agent_config,
+                target.requested_reasoning,
+                environment,
+                working_directory,
+            )
+        except ValueError as exc:
+            errors.append(f"{target.location}: {exc}")
+    return errors
+
+
+def _reasoning_validation_targets(
+    workflow: WorkflowPlan,
+    config: Config,
+) -> Iterator[_ReasoningValidationTarget]:
     for node in workflow.nodes:
         for provider in node.providers:
             if provider.reasoning is None:
@@ -73,19 +106,14 @@ def collect_cli_reasoning_errors(
             agent_config = config.agents.get(provider.provider)
             if agent_config is None:
                 continue
-            try:
-                validate_reasoning_request(
-                    agent_config,
-                    provider.reasoning,
-                    environment,
-                    working_directory,
-                )
-            except ValueError as exc:
-                errors.append(
+            yield _ReasoningValidationTarget(
+                location=(
                     f"workflow '{workflow.name}' -> node '{node.id}' -> provider "
-                    f"'{provider.provider}': {exc}"
-                )
-    return errors
+                    f"'{provider.provider}'"
+                ),
+                agent_config=agent_config,
+                requested_reasoning=provider.reasoning,
+            )
 
 
 def collect_cli_model_arg_warnings(config: Config) -> list[str]:
@@ -126,17 +154,40 @@ def _required_cli_executables(
     cli_command: list[str],
     executable_base_dir: Path,
     executable_lookup: Callable[[str], str | None],
-) -> tuple[tuple[str, str | None, Path], ...]:
-    wrapper_executable = cli_command[0]
-    wrapper_path = Path(wrapper_executable)
-    resolved_wrapper = (
-        str(executable_base_dir / wrapper_path)
-        if not wrapper_path.is_absolute()
-        and _contains_path_separator(wrapper_executable)
-        else executable_lookup(wrapper_executable)
+) -> tuple[_ExecutableRequirement, ...]:
+    wrapper = _ExecutableRequirement(
+        executable=cli_command[0],
+        base_dir=executable_base_dir,
     )
-    if wrapper_path.name != "env" or not _is_platform_env_executable(resolved_wrapper):
-        return ((wrapper_executable, None, executable_base_dir),)
+    if not _is_platform_env_wrapper(wrapper, executable_lookup):
+        return (wrapper,)
+
+    wrapped = _env_wrapped_executable_requirement(cli_command, executable_base_dir)
+    if wrapped is None or wrapped == wrapper:
+        return (wrapper,)
+    return wrapper, wrapped
+
+
+def _is_platform_env_wrapper(
+    requirement: _ExecutableRequirement,
+    executable_lookup: Callable[[str], str | None],
+) -> bool:
+    wrapper_path = Path(requirement.executable)
+    if wrapper_path.name != "env":
+        return False
+    resolved_wrapper = (
+        str(requirement.base_dir / wrapper_path)
+        if not wrapper_path.is_absolute()
+        and _contains_path_separator(requirement.executable)
+        else executable_lookup(requirement.executable)
+    )
+    return _is_platform_env_executable(resolved_wrapper)
+
+
+def _env_wrapped_executable_requirement(
+    cli_command: list[str],
+    executable_base_dir: Path,
+) -> _ExecutableRequirement | None:
     try:
         command_context = parse_env_command_context(
             cli_command,
@@ -144,25 +195,13 @@ def _required_cli_executables(
             tracked_environment_name="PATH",
         )
     except ValueError:
-        return ((wrapper_executable, None, executable_base_dir),)
-    wrapped_executable = command_context.command_executable
-    if wrapped_executable is None:
-        return ((wrapper_executable, None, executable_base_dir),)
-    wrapped_base_dir = _env_command_base_dir(command_context, executable_base_dir)
-    search_path = _env_command_search_path(command_context)
-    if command_context.command_working_directory is not None and search_path is None:
-        search_path = command_context.tracked_environment_value
-        if search_path is None:
-            search_path = os.defpath
-    if (
-        wrapped_executable == wrapper_executable
-        and search_path is None
-        and wrapped_base_dir == executable_base_dir
-    ):
-        return ((wrapper_executable, None, executable_base_dir),)
-    return (
-        (wrapper_executable, None, executable_base_dir),
-        (wrapped_executable, search_path, wrapped_base_dir),
+        return None
+    if command_context.command_executable is None:
+        return None
+    return _ExecutableRequirement(
+        executable=command_context.command_executable,
+        base_dir=_env_command_base_dir(command_context, executable_base_dir),
+        search_path=_env_command_search_path(command_context),
     )
 
 
@@ -192,16 +231,17 @@ def _env_command_base_dir(
 def _env_command_search_path(command_context: EnvCommandContext) -> str | None:
     if command_context.command_search_path is not None:
         return command_context.command_search_path
-    if not command_context.tracked_environment_changed:
-        inherited_search_path = command_context.tracked_environment_value
-        if inherited_search_path is not None and _has_relative_search_path_entry(
-            inherited_search_path
-        ):
-            return inherited_search_path
-        return None
-    if command_context.tracked_environment_value is None:
-        return os.defpath
-    return command_context.tracked_environment_value
+    tracked_search_path = command_context.tracked_environment_value
+    if (
+        command_context.tracked_environment_changed
+        or command_context.command_working_directory is not None
+    ):
+        return os.defpath if tracked_search_path is None else tracked_search_path
+    if tracked_search_path is not None and _has_relative_search_path_entry(
+        tracked_search_path
+    ):
+        return tracked_search_path
+    return None
 
 
 def _has_relative_search_path_entry(search_path: str) -> bool:
@@ -209,20 +249,20 @@ def _has_relative_search_path_entry(search_path: str) -> bool:
 
 
 def _cli_executable_available(
-    executable: str,
+    requirement: _ExecutableRequirement,
     executable_lookup: Callable[[str], str | None],
-    executable_base_dir: Path,
-    search_path: str | None,
 ) -> bool:
-    executable_path = Path(executable)
+    executable_path = Path(requirement.executable)
     if executable_path.is_absolute():
         return _is_executable_file(executable_path)
-    if _contains_path_separator(executable):
-        return _is_executable_file(executable_base_dir / executable_path)
-    if search_path is None:
-        return executable_lookup(executable) is not None
+    if _contains_path_separator(requirement.executable):
+        return _is_executable_file(requirement.base_dir / executable_path)
+    if requirement.search_path is None:
+        return executable_lookup(requirement.executable) is not None
     return _search_path_executable_available(
-        executable, search_path, executable_base_dir
+        requirement.executable,
+        requirement.search_path,
+        requirement.base_dir,
     )
 
 
