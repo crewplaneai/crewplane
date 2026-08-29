@@ -2,10 +2,12 @@
   <h1>Crewplane</h1>
   <p><strong>Agents do the work. You own the workflow.</strong></p>
   <p>
-    Define the whole process in Markdown — the prompts, stages, agents, handoffs,
-    and rules for what happens next.
+    Crewplane is an open-source workflow runner for reviewable, resumable
+    coding-agent workflows. Define the whole process in Markdown — the prompts,
+    stages, agents, handoffs, and rules for what happens next.
     Crewplane runs Claude Code, Codex, Copilot CLI, Gemini, Kilo, or another CLI.
-    Review becomes a gate, completed work survives failure, and every workflow handoff stays on disk.
+    Review becomes a gate, completed work survives failure, and every handoff
+    stays on disk.
   </p>
   <p>
     <a href="https://github.com/crewplaneai/crewplane/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/crewplaneai/crewplane/actions/workflows/ci.yml/badge.svg?branch=master"></a>
@@ -17,12 +19,17 @@
 </div>
 
 <div align="center">
-  <img
-    src="https://github.com/user-attachments/assets/dca2dacb-49e4-4849-b92b-7a47b493ea52"
-    alt="Crewplane dashboard showing a coding-agent workflow in progress"
-    width="80%"
-  >
-  <p><em>Watch the workflow run. Keep the full record after the terminal closes.</em></p>
+  <a href="#demo-walkthrough">
+    <img
+      src="https://github.com/user-attachments/assets/dca2dacb-49e4-4849-b92b-7a47b493ea52"
+      alt="Crewplane dashboard showing a coding-agent workflow in progress"
+      width="80%"
+    >
+  </a>
+  <p>
+    <em>Watch the workflow run. Keep the full record after the terminal closes.
+    Click the dashboard for the walkthrough.</em>
+  </p>
   <p>
     ⭐ If this is how you think coding-agent workflows should work,
     click <strong>Star</strong> in the top-right to keep Crewplane in your
@@ -31,7 +38,7 @@
   <p>
     <a href="#quick-start"><strong>Try it without API keys</strong></a>
     &nbsp;·&nbsp;
-    <a href="docs/examples/index.md">See example workflows</a>
+    <a href="https://github.com/crewplaneai/crewplane-lab/tree/master/leetcode-3348-gpt-8-agents"><strong>Inspect a real 8-agent run</strong></a>
     &nbsp;·&nbsp;
     <a href="docs/index.md">Read the documentation</a>
   </p>
@@ -64,6 +71,46 @@ start over.
 > **Bring the agent setup you already trust.** Crewplane invokes the coding-agent
 > CLIs you already use; their models, tools, skills, MCP servers, repository
 > instructions, authentication, and permissions remain under their native control.
+
+## Eight agents. One comparison. Every receipt.
+
+[Crewplane Lab](https://github.com/crewplaneai/crewplane-lab) publishes
+reproducible experiments with the workflow definition, generated responses,
+comparison output, telemetry, manifests, and provider logs.
+
+Eight Codex model and reasoning configurations. One algorithm challenge. Watch
+them work it in parallel—then follow every saved output into a dedicated
+comparison stage.
+
+<p align="center">
+  <a href="https://github.com/crewplaneai/crewplane-lab/tree/master/leetcode-3348-gpt-8-agents">
+    <img
+      src="https://raw.githubusercontent.com/crewplaneai/crewplane-lab/master/docs/images/eight-agent-run.png"
+      alt="Eight agent runs converging into one comparison stage, followed by preserved workflow, response, telemetry, and log artifacts"
+      width="90%"
+    >
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/crewplaneai/crewplane-lab/tree/master/leetcode-3348-gpt-8-agents">
+    <strong>Explore the complete recorded experiment →</strong>
+  </a>
+</p>
+
+**Inspect the evidence:**
+[workflow](https://github.com/crewplaneai/crewplane-lab/blob/master/leetcode-3348-gpt-8-agents/.crewplane/workflows/gpt-models-reasoning-comparison.task.md)
+·
+[eight responses](https://github.com/crewplaneai/crewplane-lab/blob/master/leetcode-3348-gpt-8-agents/.crewplane/execution-results/gpt-model-and-reasoning-comparison--e32358d21c7f-20260807-010927/reasoning.runs-result.md)
+·
+[comparison](https://github.com/crewplaneai/crewplane-lab/blob/master/leetcode-3348-gpt-8-agents/.crewplane/execution-results/gpt-model-and-reasoning-comparison--e32358d21c7f-20260807-010927/reasoning.compare-result.md)
+·
+[complete run record](https://github.com/crewplaneai/crewplane-lab/tree/master/leetcode-3348-gpt-8-agents/.crewplane/execution-stages/gpt-model-and-reasoning-comparison--e32358d21c7f-20260807-010927)
+
+> [!TIP]
+> **Explore the complete run without installing anything.** You do not need
+> Crewplane or a provider account to inspect the saved artifacts. This is one
+> recorded experiment rather than a general-purpose model benchmark.
 
 ## Quick start
 
@@ -271,14 +318,15 @@ A final answer tells you what an agent said. A run record tells you how the work
 actually happened. Crewplane keeps the answers to questions that disappear when
 the process lives only inside terminal sessions:
 
+<details>
+<summary><strong>See what Crewplane records for every run</strong></summary>
+
 * Which workflow and compiled execution plan ran?
-* Which configured agent and role handled each stage?
-* What rendered context did that stage receive?
-* What output and findings did it produce?
+* Which agent, role, and rendered context handled each stage?
+* What output and findings did each stage produce?
 * Which reviewers approved or blocked the candidate?
-* Which nodes succeeded, failed, were skipped, or were resumed?
+* Which nodes succeeded, failed, were skipped, resumed, or reused?
 * Which provider-reported usage totals were available?
-* Which prior result supplied reused work?
 
 Check the results for each node:
 ```text
@@ -308,19 +356,7 @@ See:
 * [Inspect run records](docs/guides/inspecting-artifacts.md)
 * [Artifact reference](docs/reference/artifacts.md)
 
-## When one agent is enough
-
-Crewplane is not a reason to orchestrate everything.
-
-For a quick question, one-off patch, or exploratory session, use the provider directly.
-
-Crewplane begins to earn its place when agent work becomes a process: multiple
-stages, provider handoffs, parallel work, review loops, repeated runs, or work
-that must survive failure and remain inspectable afterward.
-
-A useful shell script may also be the right answer for a simple one-time
-handoff. Crewplane is for the point where the process itself needs to be
-reviewed, reused, shared, measured, or recovered.
+</details>
 
 ## Where Crewplane fits
 
@@ -331,6 +367,19 @@ native execution behavior. It controls the process around them: what runs, in
 what order, with which context, under which review rules, and what remains
 afterward.
 
+> [!TIP]
+> **Choose the lightest tool that fits.**
+>
+> **Use a coding agent directly** for a quick question, one-off patch, or
+> exploratory session. **Use a shell script** for a quick experiment,
+> disposable automation, or a small workflow you do not expect to maintain
+> long term.
+>
+> **Crewplane is built for reliable, reviewable, reusable agent workflows.**
+> Define stages, dependencies, provider assignments, parallel work, review
+> gates, and handoffs in Markdown. Crewplane validates and runs the graph,
+> records the artifacts and manifests, and reuses completed stages it can
+> validate—without turning a shell script into a workflow engine.
 
 ```text
 ┌──────────────────────────────────────────────┐
@@ -395,11 +444,6 @@ Watch the demo below for the full setup flow: install Crewplane, initialize a pr
   <video src="https://github.com/user-attachments/assets/b6573226-ba31-473e-aaae-ba3ddca2d3cd" autoplay loop muted playsinline width="1000"></video>
 </p>
 
----
-
-At this point you have seen the core path: install, run the generated mock
-workflow, inspect artifacts, and prepare a real provider when ready.
-
 ## Documentation and examples
 
 The full documentation starts at [docs/index.md](https://github.com/crewplaneai/crewplane/blob/master/docs/index.md).
@@ -414,15 +458,15 @@ real provider.
 to walk through workflow runs, run records, authoring, provider roles, review
 loops, composition, validation, troubleshooting, and cleanup.
 
+<details>
+<summary><strong>Run the full examples without starting provider CLIs</strong></summary>
+
 **Want to see Crewplane at full strength?** → start with one of the generated
 workflows:
 
 - `example-templates/code-review-example.task.md` for parallel agent review and reviewer loops.
 - `example-templates/feature-implement-example.task.md` for brief → plan → build → review → handoff.
 - `example-templates/composition/review-fix-composed-example.task.md` for reusable workflow composition.
-
-<details>
-<summary><strong>Run the full examples without starting provider CLIs</strong></summary>
 
 With `settings.integrations.invoker.implementation: "mock"`, Crewplane validates
 those agent profiles but still writes deterministic mock output and does not
@@ -455,17 +499,19 @@ Ready to hook up a real provider? Run `crewplane onboarding`, or follow the
 
 Here is a quick reference table:
 
-| Goal                                    | Start here                                                  |
-| --------------------------------------- | ----------------------------------------------------------- |
-| Complete the first project              | [First Project Path](docs/index.md#first-project-path)      |
-| Learn workflow authoring                | [Workflow syntax](docs/reference/workflow-syntax.md)        |
-| Choose sequential or parallel execution | [Node modes and provider roles](docs/guides/node-modes.md)  |
-| Add executor/reviewer behavior          | [Review loops](docs/guides/review-loops.md)                 |
-| Configure real provider CLIs            | [Provider setup](docs/getting-started/provider-setup.md)    |
-| Inspect stored execution records        | [Inspecting artifacts](docs/guides/inspecting-artifacts.md) |
-| Try generated workflows                 | [Examples guide](docs/examples/index.md)                    |
-| Browse all documentation                | [Documentation home](docs/index.md)                         |
-| Review changes between releases         | [Changelog](CHANGELOG.md)                                   |
+| Goal                                    | Start here                                                    |
+| --------------------------------------- | ------------------------------------------------------------- |
+| Complete the first project              | [First Project Path](docs/index.md#first-project-path)        |
+| Follow the guided tutorial              | [Guided Tutorial Track](docs/index.md#guided-tutorial-track)  |
+| Learn workflow authoring                | [Workflow syntax](docs/reference/workflow-syntax.md)          |
+| Choose sequential or parallel execution | [Node modes and provider roles](docs/guides/node-modes.md)    |
+| Add executor/reviewer behavior          | [Review loops](docs/guides/review-loops.md)                   |
+| Configure real provider CLIs            | [Provider setup](docs/getting-started/provider-setup.md)      |
+| Inspect stored execution records        | [Inspecting artifacts](docs/guides/inspecting-artifacts.md)   |
+| Inspect a published provider-backed run | [Crewplane Lab](https://github.com/crewplaneai/crewplane-lab) |
+| Try generated workflows                 | [Examples guide](docs/examples/index.md)                      |
+| Browse all documentation                | [Documentation home](docs/index.md)                           |
+| Review changes between releases         | [Changelog](CHANGELOG.md)                                     |
 
 </details>
 
