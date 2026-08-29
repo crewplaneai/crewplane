@@ -4,6 +4,23 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-29
+
+### Changed
+
+- Strict mypy checking now covers the full production package and repository
+  typing fixtures.
+
+### Fixed
+
+- Homebrew release pull requests now provide the exact pull request number and
+  tested head SHA for manual bottle publication and refresh them after rebases.
+- CLI preflight now validates executables behind system `env` wrappers against
+  their effective `PATH` and working directory.
+- Claude JSON parsing now validates complete streams, handles empty chunks and
+  deep payloads, bounds usage capture, and cleans up temporary files on failure.
+- Provider processes are now reaped when post-spawn log setup fails.
+
 ## [0.2.1] - 2026-08-24
 
 ### Changed
