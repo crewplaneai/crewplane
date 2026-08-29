@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker import machine_json
+from crewplane.adapters.invokers.cli_invoker import (
+    claude_json,
+    machine_json,
+)
 from crewplane.adapters.invokers.cli_invoker.machine_json import (
     extract_claude_output,
     extract_codex_output,
@@ -75,6 +79,40 @@ def test_claude_output_extractor_uses_stderr_when_stdout_is_empty() -> None:
     extracted.output_path.unlink(missing_ok=True)
 
 
+def test_claude_output_extractor_uses_stderr_after_valid_missing_stdout() -> None:
+    extracted = extract_claude_output(
+        CommandResult(0, "{}", '{"result":"stderr response"}'),
+        None,
+    )
+
+    assert extracted.output_extraction_status == "success"
+    assert extracted.output_path is not None
+    try:
+        assert extracted.output_path.read_text(encoding="utf-8") == "stderr response"
+    finally:
+        extracted.output_path.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize(
+    ("stdout_text", "expected_status"),
+    [
+        ('{"result":', "malformed"),
+        ('{"result":"   "}', "missing"),
+    ],
+)
+def test_claude_output_extractor_does_not_fall_back_after_selected_stdout_result(
+    stdout_text: str,
+    expected_status: str,
+) -> None:
+    extracted = extract_claude_output(
+        CommandResult(0, stdout_text, '{"result":"stderr response"}'),
+        None,
+    )
+
+    assert extracted.output_extraction_status == expected_status
+    assert extracted.output_path is None
+
+
 @pytest.mark.parametrize(
     "stdout_text",
     [
@@ -85,6 +123,10 @@ def test_claude_output_extractor_uses_stderr_when_stdout_is_empty() -> None:
         '{"result":"accepted","metadata":invalid}',
         '{"result":"accepted","metadata":"bad\\q"}',
         '{"result":"accepted","metadata":{"ok":true "bad":false}}',
+        '{"result":"accepted","metadata":[1 2]}',
+        '{"result":"accepted","metadata":[1,]}',
+        '{"result":"accepted","metadata":{"item":1,}}',
+        '{"result":"accepted","metadata":{1:"bad"}}',
         '{"result":"unterminated',
         '{"result":"ok"} trailing',
         '{"result":"ok" "other":1}',
@@ -115,6 +157,93 @@ def test_claude_output_extractor_decodes_escaped_and_nested_values() -> None:
     assert extracted.output_path is not None
     assert extracted.output_path.read_text(encoding="utf-8") == "emoji 😀"
     extracted.output_path.unlink(missing_ok=True)
+
+
+def test_claude_output_extractor_uses_last_duplicate_result() -> None:
+    extracted = extract_claude_output(
+        CommandResult(0, '{"result":"first","result":"last"}', ""),
+        None,
+    )
+
+    assert extracted.output_extraction_status == "success"
+    assert extracted.output_path is not None
+    try:
+        assert extracted.output_path.read_text(encoding="utf-8") == "last"
+        assert extracted.output_char_count == 4
+    finally:
+        extracted.output_path.unlink(missing_ok=True)
+
+
+def test_claude_output_extractor_removes_owned_file_after_unexpected_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "owned-result.txt"
+
+    def create_output_file() -> Path:
+        output_path.touch()
+        return output_path
+
+    def raise_read_error(chunks: Iterable[str], selected_path: Path) -> int | None:
+        assert list(chunks)
+        assert selected_path == output_path
+        raise OSError("read failed")
+
+    monkeypatch.setattr(claude_json, "new_owned_output_file", create_output_file)
+    monkeypatch.setattr(claude_json, "parse_claude_result", raise_read_error)
+
+    with pytest.raises(OSError, match="read failed"):
+        claude_json.extract_claude_output(
+            CommandResult(0, '{"result":"ignored"}', ""),
+            1,
+        )
+
+    assert not output_path.exists()
+
+
+def test_claude_output_extractor_removes_owned_file_after_scan_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "owned-result.txt"
+
+    def create_output_file() -> Path:
+        output_path.touch()
+        return output_path
+
+    def raise_scan_error(selected_path: Path) -> bool:
+        assert selected_path == output_path
+        raise OSError("scan failed")
+
+    monkeypatch.setattr(claude_json, "new_owned_output_file", create_output_file)
+    monkeypatch.setattr(
+        claude_json,
+        "path_has_non_whitespace_text",
+        raise_scan_error,
+    )
+
+    with pytest.raises(OSError, match="scan failed"):
+        claude_json.extract_claude_output(
+            CommandResult(0, '{"result":"ignored"}', ""),
+            1,
+        )
+
+    assert not output_path.exists()
+
+
+def test_claude_output_extractor_accepts_mixed_empty_nested_values() -> None:
+    stdout_text = (
+        '{"ignored":[{},[],{"items":[null,true,false,{"nested":[]}]}],"result":"ok"}'
+    )
+
+    extracted = extract_claude_output(CommandResult(0, stdout_text, ""), None)
+
+    assert extracted.output_extraction_status == "success"
+    assert extracted.output_path is not None
+    try:
+        assert extracted.output_path.read_text(encoding="utf-8") == "ok"
+    finally:
+        extracted.output_path.unlink(missing_ok=True)
 
 
 def test_claude_output_extractor_accepts_deeply_nested_ignored_value() -> None:
@@ -210,11 +339,24 @@ def test_claude_usage_parser_uses_stderr_when_stdout_is_empty() -> None:
     assert usage == {"model": {"inputTokens": 4}}
 
 
+def test_claude_usage_parser_does_not_fall_back_after_valid_stdout() -> None:
+    usage, error = machine_json.read_claude_model_usage(
+        CommandResult(
+            0,
+            "{}",
+            '{"modelUsage":{"model":{"inputTokens":4}}}',
+        )
+    )
+
+    assert usage is None
+    assert error is None
+
+
 def test_claude_usage_parser_bounds_captured_model_usage(monkeypatch) -> None:
     monkeypatch.setattr(machine_json, "MAX_CAPTURED_CLAUDE_USAGE_BYTES", 1)
 
     usage, error = machine_json.read_claude_model_usage(
-        CommandResult(0, '{"modelUsage":{"model":{"inputTokens":1}}}', "")
+        CommandResult(0, '{"modelUsage":12}', "")
     )
 
     assert usage is None

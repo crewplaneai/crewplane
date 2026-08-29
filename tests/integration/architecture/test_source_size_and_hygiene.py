@@ -7,9 +7,23 @@ from pathlib import Path
 import pytest
 
 from tests.integration.architecture.static_checks import (
+    SRC_ROOT,
     text_rule_files,
     walk_ast,
 )
+
+MAX_CLAUDE_JSON_MODULE_LINES = 500
+CLAUDE_JSON_MODULES = tuple(
+    SRC_ROOT / "crewplane" / "adapters" / "invokers" / "cli_invoker" / filename
+    for filename in ("claude_json.py", "claude_json_parser.py", "json_number.py")
+)
+
+
+@pytest.mark.parametrize("module", CLAUDE_JSON_MODULES, ids=lambda path: path.name)
+def test_claude_json_modules_remain_reviewable(module: Path) -> None:
+    line_count = len(module.read_text(encoding="utf-8").splitlines())
+
+    assert line_count <= MAX_CLAUDE_JSON_MODULE_LINES
 
 
 def test_ast_walker_does_not_depend_on_mutable_stdlib_walk_helpers(
