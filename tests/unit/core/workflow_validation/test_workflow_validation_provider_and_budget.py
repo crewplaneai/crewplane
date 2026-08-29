@@ -1,7 +1,10 @@
+import shutil
 import stat
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+from unittest.mock import patch
 
 from crewplane.adapters.invokers.cli import collect_cli_availability_errors
 from crewplane.core.config import AgentConfig, Config, Settings
@@ -84,6 +87,251 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
         )
         self.assertEqual(len(errors), 1)
         self.assertIn("ghost-agent", errors[0])
+
+    def test_cli_adapter_validation_reports_missing_env_wrapped_cli(self) -> None:
+        workflow = WorkflowPlan(
+            name="Workflow",
+            nodes=[
+                WorkflowNode(
+                    id="node.a",
+                    mode="parallel",
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                    ],
+                    providers=[ProviderSpec(provider="wrapped-agent")],
+                )
+            ],
+        )
+        missing_executable = "crewplane-provider-that-does-not-exist"
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "wrapped-agent": AgentConfig(
+                    cli_cmd=["env", "CREWPLANE_REPRO=1", missing_executable],
+                    default_model="x",
+                ),
+            },
+        )
+
+        probed_executables: list[str] = []
+
+        def executable_lookup(executable: str) -> str | None:
+            probed_executables.append(executable)
+            return _platform_env_executable(executable)
+
+        errors = collect_cli_availability_errors(
+            workflow,
+            config,
+            which_fn=executable_lookup,
+        )
+
+        self.assertEqual(probed_executables, ["env", missing_executable])
+        self.assertEqual(len(errors), 1)
+        self.assertIn(f"CLI '{missing_executable}' not found in PATH", errors[0])
+        self.assertIn("wrapped-agent", errors[0])
+
+    def test_cli_adapter_validation_reports_missing_path_qualified_env_cli(
+        self,
+    ) -> None:
+        missing_executable = "crewplane-provider-that-does-not-exist"
+
+        errors = _collect_wrapped_cli_errors(
+            ["/usr/bin/env", missing_executable],
+            Path.cwd(),
+            _platform_env_executable,
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn(f"CLI '{missing_executable}' not found in PATH", errors[0])
+
+    def test_cli_adapter_validation_resolves_path_qualified_custom_env_from_project_root(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "env")
+
+            def launcher_lookup(executable: str) -> str | None:
+                return "/usr/bin/env" if executable == "./env" else None
+
+            errors = _collect_wrapped_cli_errors(
+                ["./env", "serve"],
+                project_root,
+                launcher_lookup,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_preserves_path_resolved_custom_env(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "env")
+
+            with patch.dict("os.environ", {"PATH": str(project_root)}):
+                errors = _collect_wrapped_cli_errors(
+                    ["env", "serve"],
+                    project_root,
+                    shutil.which,
+                )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_uses_env_path_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "configured-bin" / "custom-provider")
+
+            errors = _collect_wrapped_cli_errors(
+                ["env", "PATH=configured-bin", "custom-provider"],
+                project_root,
+                _platform_env_executable,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_uses_env_reset_after_option_terminator(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "configured-bin" / "custom-provider")
+
+            errors = _collect_wrapped_cli_errors(
+                [
+                    "env",
+                    "--",
+                    "-",
+                    "PATH=configured-bin",
+                    "custom-provider",
+                ],
+                project_root,
+                _platform_env_executable,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_treats_env_terminator_after_reset_as_command(
+        self,
+    ) -> None:
+        errors = _collect_wrapped_cli_errors(
+            ["env", "-", "--"],
+            Path.cwd(),
+            _platform_env_executable,
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("CLI '--' not found in PATH", errors[0])
+
+    def test_cli_adapter_validation_resolves_inherited_relative_env_path_from_project(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "inherited-bin" / "custom-provider")
+
+            with patch.dict("os.environ", {"PATH": "inherited-bin"}):
+                errors = _collect_wrapped_cli_errors(
+                    ["env", "custom-provider"],
+                    project_root,
+                    _platform_env_executable,
+                )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_uses_env_explicit_search_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "explicit-bin" / "custom-provider")
+
+            errors = _collect_wrapped_cli_errors(
+                [
+                    "env",
+                    "-Pexplicit-bin",
+                    "PATH=missing-bin",
+                    "custom-provider",
+                ],
+                project_root,
+                _platform_env_executable,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_reports_missing_cli_after_env_chdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            (project_root / "work").mkdir()
+
+            errors = _collect_wrapped_cli_errors(
+                ["env", "-C", "work", "missing-provider"],
+                project_root,
+                _platform_env_executable,
+            )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("CLI 'missing-provider' not found in PATH", errors[0])
+
+    def test_cli_adapter_validation_uses_env_chdir_for_relative_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "work" / "bin" / "custom-provider")
+
+            errors = _collect_wrapped_cli_errors(
+                ["env", "--chdir=work", "./bin/custom-provider"],
+                project_root,
+                _platform_env_executable,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_uses_env_chdir_for_relative_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            _write_executable(project_root / "work" / "bin" / "custom-provider")
+
+            errors = _collect_wrapped_cli_errors(
+                ["env", "-Cwork", "PATH=bin", "custom-provider"],
+                project_root,
+                _platform_env_executable,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_cli_adapter_validation_rejects_provider_outside_env_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            (project_root / "configured-bin").mkdir()
+
+            def executable_lookup(executable: str) -> str | None:
+                if executable == "env":
+                    return _platform_env_executable(executable)
+                return f"/parent/{executable}"
+
+            errors = _collect_wrapped_cli_errors(
+                ["env", "PATH=configured-bin", "parent-provider"],
+                project_root,
+                executable_lookup,
+            )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("CLI 'parent-provider' not found in PATH", errors[0])
+
+    def test_cli_adapter_validation_rechecks_env_when_wrapped_with_custom_path(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_root = Path(tmp_dir)
+            (project_root / "configured-bin").mkdir()
+
+            errors = _collect_wrapped_cli_errors(
+                ["env", "PATH=configured-bin", "env"],
+                project_root,
+                _platform_env_executable,
+            )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("CLI 'env' not found in PATH", errors[0])
 
     def test_cli_adapter_validation_checks_relative_path_executable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -303,3 +551,47 @@ class WorkflowValidationProviderAndBudgetTests(unittest.TestCase):
 
 def _missing_executable(executable: str) -> str | None:  # noqa: ARG001
     return None
+
+
+def _platform_env_executable(executable: str) -> str | None:
+    if executable not in {"env", "/usr/bin/env"}:
+        return None
+    return "/usr/bin/env"
+
+
+def _write_executable(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+
+
+def _collect_wrapped_cli_errors(
+    cli_cmd: list[str],
+    project_root: Path,
+    which_fn: Callable[[str], str | None],
+) -> list[str]:
+    workflow = WorkflowPlan(
+        name="Workflow",
+        nodes=[
+            WorkflowNode(
+                id="node.a",
+                mode="parallel",
+                prompt_segments=[
+                    PromptSegment(role=PromptSegmentRole.SHARED, content="p")
+                ],
+                providers=[ProviderSpec(provider="wrapped-agent")],
+            )
+        ],
+    )
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={
+            "wrapped-agent": AgentConfig(cli_cmd=cli_cmd, default_model="x"),
+        },
+    )
+    return collect_cli_availability_errors(
+        workflow,
+        config,
+        which_fn=which_fn,
+        project_root=project_root,
+    )
