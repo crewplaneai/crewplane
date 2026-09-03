@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from pathlib import Path
-from threading import Event, Lock
-from typing import Any
+from threading import Event
 
 from crewplane.artifacts.generated_files.catalog import (
     generated_file_source_root,
@@ -12,7 +11,6 @@ from crewplane.artifacts.generated_files.catalog import (
 )
 from crewplane.runtime.workspace import PreparedWorkspace
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
-from crewplane.runtime.workspace.snapshot import WorkspaceSnapshotCancelled
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 
 from ..deferred_cleanup import DeferredAsyncCleanupRegistry, workspace_worker_task
@@ -23,7 +21,15 @@ from .generated_file_changes import (
     changed_generated_file_paths,
     resolved_real_directory,
 )
-from .types import ProviderCallRequest, ProviderOutputPolicy
+from .generated_file_snapshot_source import (
+    resolve_generated_file_snapshot_source,
+    validated_generated_file_workspace_root,
+)
+from .types import ProviderCallRequest
+from .workspace_worker_cancellation import (
+    WorkspaceWorkerCancellation,
+    WorkspaceWorkerFence,
+)
 
 __all__ = (
     "GeneratedFileChangeBaseline",
@@ -39,45 +45,6 @@ __all__ = (
 )
 
 WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS = 0.5
-
-
-class _WorkspaceWorkerFence:
-    def __init__(self, state_path: Path | None, operation: str) -> None:
-        self._state_path = state_path
-        self._operation = operation
-        self._lock = Lock()
-        self._finished = False
-        self._fenced = False
-        self._durable = False
-
-    def install_if_running(self) -> bool:
-        with self._lock:
-            if self._finished or self._state_path is None:
-                return False
-            _install_workspace_worker_fence(self._state_path)
-            self._fenced = True
-            return True
-
-    def persist(self) -> bool:
-        with self._lock:
-            if self._finished or not self._fenced or self._state_path is None:
-                return False
-            _persist_workspace_worker_state(self._state_path, self._operation)
-            self._durable = True
-            return True
-
-    def finish(self) -> None:
-        with self._lock:
-            self._finished = True
-            if not self._fenced or self._state_path is None:
-                return
-            if self._durable:
-                _release_workspace_worker_fence(
-                    self._state_path,
-                    self._operation,
-                )
-            else:
-                _release_in_memory_workspace_worker_fence(self._state_path)
 
 
 def rendered_workspace_file_descriptors(
@@ -140,7 +107,7 @@ async def capture_generated_file_change_baseline_async(
     cleanup_registry: DeferredAsyncCleanupRegistry,
 ) -> GeneratedFileChangeBaseline | None:
     cancel_requested = Event()
-    worker_fence = _WorkspaceWorkerFence(
+    worker_fence = WorkspaceWorkerFence(
         getattr(prepared_workspace, "state_path", None),
         "generated_file_baseline",
     )
@@ -154,9 +121,8 @@ async def capture_generated_file_change_baseline_async(
         return await asyncio.shield(baseline_task)
     except asyncio.CancelledError as cancel:
         cancel_requested.set()
-        await _handle_cancelled_workspace_thread_task(
+        await _workspace_worker_cancellation(cleanup_registry).wait_for_completion(
             baseline_task,
-            cleanup_registry,
             "Workspace generated-file baseline after cancellation",
             cancel,
             worker_fence,
@@ -167,7 +133,7 @@ async def capture_generated_file_change_baseline_async(
 def _run_generated_file_change_baseline(
     prepared_workspace: PreparedWorkspace,
     cancel_requested: Event,
-    worker_fence: _WorkspaceWorkerFence,
+    worker_fence: WorkspaceWorkerFence,
 ) -> GeneratedFileChangeBaseline | None:
     try:
         return capture_generated_file_change_baseline(
@@ -184,7 +150,7 @@ async def mark_workspace_succeeded(
     cleanup_registry: DeferredAsyncCleanupRegistry,
 ) -> None:
     cancel_requested = Event()
-    worker_fence = _WorkspaceWorkerFence(
+    worker_fence = WorkspaceWorkerFence(
         getattr(prepared_workspace, "state_path", None),
         "success_finalizer",
     )
@@ -198,9 +164,8 @@ async def mark_workspace_succeeded(
         await asyncio.shield(finalization)
     except asyncio.CancelledError as cancel:
         cancel_requested.set()
-        await _handle_cancelled_workspace_thread_task(
+        await _workspace_worker_cancellation(cleanup_registry).wait_for_completion(
             finalization,
-            cleanup_registry,
             "Workspace success finalization after cancellation",
             cancel,
             worker_fence,
@@ -215,7 +180,7 @@ async def finalize_successful_workspace(
     generated_file_workspace: Path | None,
 ) -> None:
     cancel_requested = Event()
-    worker_fence = _WorkspaceWorkerFence(
+    worker_fence = WorkspaceWorkerFence(
         getattr(prepared_workspace, "state_path", None),
         "success_finalizer",
     )
@@ -254,7 +219,7 @@ async def _handle_cancelled_success_finalization(
     child_environment_applied: bool | None,
     generated_file_workspace: Path | None,
     finalization: asyncio.Task[None],
-    worker_fence: _WorkspaceWorkerFence,
+    worker_fence: WorkspaceWorkerFence,
     cancel: asyncio.CancelledError,
 ) -> bool:
     try:
@@ -264,7 +229,7 @@ async def _handle_cancelled_success_finalization(
         )
     except TimeoutError:
         request.runtime_context.deferred_workspace_cleanups.register(
-            _record_generated_file_workspace_after_finalization(
+            _complete_deferred_success_finalization(
                 request,
                 prepared_workspace,
                 child_environment_applied,
@@ -273,9 +238,10 @@ async def _handle_cancelled_success_finalization(
             ),
             False,
         )
-        await _persist_workspace_worker_fence_after_timeout(
+        await _workspace_worker_cancellation(
+            request.runtime_context.deferred_workspace_cleanups
+        ).persist_fence_after_timeout(
             worker_fence,
-            request.runtime_context.deferred_workspace_cleanups,
             "Workspace success finalizer fence persistence",
             cancel,
         )
@@ -306,7 +272,7 @@ def _success_finalization_task(
     prepared_workspace: PreparedWorkspace,
     child_environment_applied: bool | None,
     cancel_requested: Event,
-    worker_fence: _WorkspaceWorkerFence,
+    worker_fence: WorkspaceWorkerFence,
 ) -> asyncio.Task[None]:
     return workspace_worker_task(
         _run_success_finalizer,
@@ -321,7 +287,7 @@ def _run_success_finalizer(
     prepared_workspace: PreparedWorkspace,
     child_environment_applied: bool | None,
     cancel_requested: Event,
-    worker_fence: _WorkspaceWorkerFence,
+    worker_fence: WorkspaceWorkerFence,
 ) -> None:
     try:
         prepared_workspace.mark_succeeded(
@@ -333,51 +299,7 @@ def _run_success_finalizer(
         worker_fence.finish()
 
 
-def _install_workspace_worker_fence(state_path: Path) -> None:
-    from crewplane.runtime.workspace.mutator_fence import fence_workspace_mutator
-
-    fence_workspace_mutator(state_path)
-
-
-def _persist_workspace_worker_state(state_path: Path, operation: str) -> None:
-    from crewplane.runtime.workspace.state import mutate_workspace_state
-
-    mutate_workspace_state(
-        state_path,
-        lambda payload: payload.__setitem__(
-            "workspace_mutator",
-            {"status": "unresolved", "operation": operation},
-        ),
-    )
-
-
-def _release_in_memory_workspace_worker_fence(state_path: Path) -> None:
-    from crewplane.runtime.workspace.mutator_fence import release_workspace_mutator
-
-    release_workspace_mutator(state_path)
-
-
-def _release_workspace_worker_fence(state_path: Path, operation: str) -> None:
-    from crewplane.runtime.workspace.mutator_fence import release_workspace_mutator
-    from crewplane.runtime.workspace.state import mutate_workspace_state
-
-    try:
-        mutate_workspace_state(
-            state_path,
-            lambda payload: payload.__setitem__(
-                "workspace_mutator",
-                {
-                    "status": "confirmed",
-                    "operation": operation,
-                    "outcome": "finished",
-                },
-            ),
-        )
-    finally:
-        release_workspace_mutator(state_path)
-
-
-async def _record_generated_file_workspace_after_finalization(
+async def _complete_deferred_success_finalization(
     request: ProviderCallRequest,
     prepared_workspace: PreparedWorkspace,
     child_environment_applied: bool | None,
@@ -399,6 +321,12 @@ async def _record_generated_file_workspace_after_finalization(
         prepared_workspace,
         generated_file_workspace,
     )
+    _cleanup_generated_file_workspaces_after_deferred_finalization(request)
+
+
+def _cleanup_generated_file_workspaces_after_deferred_finalization(
+    request: ProviderCallRequest,
+) -> None:
     cleanup_errors = (
         request.runtime_context.generated_file_workspaces.cleanup_node_best_effort(
             request.node_id
@@ -431,7 +359,7 @@ async def _mark_workspace_cancelled_after_finalization_failure(
         )
     except TimeoutError:
         cleanup_deadline_expired.set()
-        cleanup_registry.register(_await_workspace_thread_task(cleanup_task), False)
+        _workspace_worker_cancellation(cleanup_registry).defer_completion(cleanup_task)
     except Exception as exc:
         note_cleanup_failure(
             primary,
@@ -446,7 +374,7 @@ async def snapshot_invocation_generated_files_async(
     change_baseline: GeneratedFileChangeBaseline | None = None,
 ) -> Path | None:
     cancel_requested = Event()
-    worker_fence = _WorkspaceWorkerFence(
+    worker_fence = WorkspaceWorkerFence(
         getattr(prepared_workspace, "state_path", None),
         "generated_file_snapshot",
     )
@@ -462,9 +390,10 @@ async def snapshot_invocation_generated_files_async(
         return await asyncio.shield(snapshot_task)
     except asyncio.CancelledError as cancel:
         cancel_requested.set()
-        await _handle_cancelled_workspace_thread_task(
+        await _workspace_worker_cancellation(
+            request.runtime_context.deferred_workspace_cleanups
+        ).wait_for_completion(
             snapshot_task,
-            request.runtime_context.deferred_workspace_cleanups,
             "Workspace generated-file snapshot after cancellation",
             cancel,
             worker_fence,
@@ -477,7 +406,7 @@ def _run_generated_file_snapshot(
     prepared_workspace: PreparedWorkspace,
     change_baseline: GeneratedFileChangeBaseline | None,
     cancel_requested: Event,
-    worker_fence: _WorkspaceWorkerFence,
+    worker_fence: WorkspaceWorkerFence,
 ) -> Path | None:
     try:
         return snapshot_invocation_generated_files(
@@ -490,55 +419,13 @@ def _run_generated_file_snapshot(
         worker_fence.finish()
 
 
-async def _handle_cancelled_workspace_thread_task(
-    task: asyncio.Task[Any],
+def _workspace_worker_cancellation(
     cleanup_registry: DeferredAsyncCleanupRegistry,
-    failure_context: str,
-    cancel: asyncio.CancelledError,
-    worker_fence: _WorkspaceWorkerFence | None = None,
-) -> None:
-    try:
-        await asyncio.wait_for(
-            asyncio.shield(task),
-            WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS,
-        )
-    except TimeoutError:
-        cleanup_registry.register(_await_workspace_thread_task(task), False)
-        if worker_fence is not None:
-            await _persist_workspace_worker_fence_after_timeout(
-                worker_fence,
-                cleanup_registry,
-                f"{failure_context} fence persistence",
-                cancel,
-            )
-    except WorkspaceSnapshotCancelled:
-        return
-    except Exception as exc:
-        note_cleanup_failure(cancel, failure_context, exc)
-
-
-async def _persist_workspace_worker_fence_after_timeout(
-    worker_fence: _WorkspaceWorkerFence,
-    cleanup_registry: DeferredAsyncCleanupRegistry,
-    failure_context: str,
-    cancel: asyncio.CancelledError,
-) -> None:
-    if not worker_fence.install_if_running():
-        return
-    fence_persistence = workspace_worker_task(worker_fence.persist)
-    await _handle_cancelled_workspace_thread_task(
-        fence_persistence,
+) -> WorkspaceWorkerCancellation:
+    return WorkspaceWorkerCancellation(
         cleanup_registry,
-        failure_context,
-        cancel,
+        WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS,
     )
-
-
-async def _await_workspace_thread_task(task: asyncio.Task[Any]) -> None:
-    try:
-        await asyncio.shield(task)
-    except WorkspaceSnapshotCancelled:
-        return
 
 
 def snapshot_invocation_generated_files(
@@ -547,32 +434,14 @@ def snapshot_invocation_generated_files(
     change_baseline: GeneratedFileChangeBaseline | None = None,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> Path | None:
-    provider_output_file = (
-        request.invocation_output_file
-        if request.defer_output_publication
-        and request.invocation_output_file is not None
-        else request.output_file
+    source = resolve_generated_file_snapshot_source(
+        request,
+        prepared_workspace,
+        change_baseline,
+        cancel_requested,
     )
-    if not provider_output_file.is_file():
-        if request.provider_output_policy == ProviderOutputPolicy.ALLOW_MISSING_OUTPUT:
-            return None
-        raise RuntimeError(
-            "Generated-file snapshot requires an existing provider output file: "
-            f"{provider_output_file.as_posix()}"
-        )
-    workspace_root = validated_generated_file_workspace_root(prepared_workspace)
-    candidate_files = (
-        change_baseline.candidate_files(cancel_requested)
-        if change_baseline is not None
-        else None
-    )
-    if workspace_root is None:
-        try:
-            workspace_root = resolved_real_directory(
-                prepared_workspace.cwd, "Workspace cwd"
-            )
-        except RuntimeError:
-            return None
+    if source is None:
+        return None
     snapshot_root = generated_file_source_root(request.output_file)
     if request.on_generated_file_snapshot_started is not None:
         request.on_generated_file_snapshot_started(snapshot_root)
@@ -580,9 +449,9 @@ def snapshot_invocation_generated_files(
     published_signatures: dict[Path, tuple[int, str]] = {}
     try:
         result = snapshot_generated_file_workspace(
-            provider_output_file,
-            workspace_root,
-            candidate_files=candidate_files,
+            source.provider_output_file,
+            source.workspace_root,
+            candidate_files=source.candidate_files,
             explicit_claims_only=prepared_workspace.workspace_kind == "project_root",
             on_file_published=published_signatures.__setitem__,
             snapshot_root=snapshot_root,
@@ -595,19 +464,3 @@ def snapshot_invocation_generated_files(
                 snapshot_root,
                 dict(published_signatures) if succeeded else None,
             )
-
-
-def validated_generated_file_workspace_root(
-    prepared_workspace: PreparedWorkspace,
-) -> Path | None:
-    workspace_path = prepared_workspace.workspace_path
-    if workspace_path is None:
-        return None
-    workspace_root = resolved_real_directory(workspace_path, "Workspace root")
-    cwd = resolved_real_directory(prepared_workspace.cwd, "Workspace cwd")
-    if not cwd.is_relative_to(workspace_root):
-        raise RuntimeError(
-            "Workspace cwd is outside the managed workspace: "
-            f"{prepared_workspace.cwd.as_posix()}"
-        )
-    return cwd
