@@ -590,6 +590,32 @@ def test_cleanup_evidence_rejects_invalid_worktree_generations_and_identity(
     )
 
 
+def test_logical_blocker_precedes_variant_and_physical_checks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_root = tmp_path / "cache"
+    stage_root = tmp_path / "stages"
+    workspace_path = _worktree_path(cache_root, RUN_KEY, "workspace")
+    payload = _worktree_payload(workspace_path, generation=None)
+    payload["workspace_mutator"] = {"status": "unresolved"}
+    _write_claim(stage_root, RUN_KEY, payload)
+
+    def unexpected_physical_check(*args: object) -> None:
+        del args
+        raise AssertionError("physical validation must follow logical validation")
+
+    monkeypatch.setattr(
+        WorkspaceCleanupEvidence,
+        "_physical_claim_blocker",
+        unexpected_physical_check,
+    )
+
+    decision = _evidence(stage_root, cache_root).decision(RUN_KEY, workspace_path)
+
+    assert decision.reason == "workspace has an unresolved mutator fence"
+
+
 @pytest.mark.parametrize("physical_state", ("symlink", "missing_git", "unregistered"))
 def test_persisted_worktree_identity_retains_unsafe_checkout_shapes(
     tmp_path: Path,
