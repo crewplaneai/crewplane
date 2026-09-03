@@ -234,6 +234,84 @@ def test_workspace_state_contract_validates_snapshot_reporting_shape() -> None:
     assert "incomplete snapshot drift contains exact claims" in errors
 
 
+def test_workspace_contract_preserves_workspace_error_order() -> None:
+    payload = _valid_worktree_payload()
+    workspace = payload["workspace"]
+    assert isinstance(workspace, dict)
+    workspace["materialization"] = "snapshot_checkout"
+    workspace["writable"] = False
+    workspace["retention"] = "not_applicable"
+    payload["status"] = "failed"
+
+    errors = workspace_state_contract_errors(payload, "resume")
+
+    assert errors == (
+        "worktree materialization mismatch",
+        "managed workspace must be writable",
+        "resume requires a succeeded workspace",
+        "terminal workspace has invalid retention",
+    )
+
+
+def test_workspace_contract_preserves_source_error_order() -> None:
+    payload = _valid_worktree_payload()
+    source = payload["source"]
+    assert isinstance(source, dict)
+    source.update(
+        {
+            "kind": "node",
+            "node_id": "",
+            "commit": "invalid",
+            "tree": "invalid",
+            "bundle_path": "",
+            "bundle_sha256": "",
+            "bundle_size_bytes": -1,
+            "bundle_ref": "",
+            "upstream_sources": [None],
+        }
+    )
+
+    errors = workspace_state_contract_errors(payload, "resume")
+
+    assert errors[:7] == (
+        "node source requires a source node",
+        "node source lacks bundle_path",
+        "node source lacks bundle_sha256",
+        "node source lacks bundle_size_bytes",
+        "node source lacks bundle_ref",
+        "node source upstream descriptor is invalid",
+        "source commit or tree is invalid",
+    )
+
+
+def test_workspace_contract_preserves_lineage_result_error_order() -> None:
+    payload = _valid_worktree_payload()
+    result = payload["result"]
+    bundle = payload["bundle"]
+    assert isinstance(result, dict)
+    assert isinstance(bundle, dict)
+    for field in (
+        "candidate_commit",
+        "result_commit",
+        "candidate_tree",
+        "result_tree",
+    ):
+        result[field] = None
+    result["changed_path_count"] = -1
+    bundle["verified"] = False
+
+    errors = workspace_state_contract_errors(payload, "resume")
+
+    assert errors[:6] == (
+        "lineage result lacks candidate_commit",
+        "lineage result lacks result_commit",
+        "lineage result lacks candidate_tree",
+        "lineage result lacks result_tree",
+        "lineage result lacks changed_path_count",
+        "lineage result lacks verified bundle evidence",
+    )
+
+
 def test_cleanup_contract_rejects_unresolved_failed_process_liveness() -> None:
     payload = _valid_worktree_payload()
     payload["status"] = "failed"
