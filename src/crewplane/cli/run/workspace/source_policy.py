@@ -14,6 +14,7 @@ from crewplane.core.workflow.validation.workspace import (
     workflow_has_selected_managed_workspaces,
 )
 from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.core.workspace.repository_identity import workspace_repository_id
 
 from .cache_policy import validate_cache_root
 from .disk_policy import warn_storage_pressure
@@ -23,7 +24,6 @@ from .git_source import (
     GitSourceContext,
     discover_git_context,
     git_error,
-    repository_id,
     validate_git_capabilities,
     validate_git_head_unchanged,
     validate_git_version,
@@ -208,7 +208,11 @@ def workspace_source_snapshot(
         run_base_commit=git_context.run_base_commit,
         source_tree=git_context.source_tree,
         object_format=git_context.object_format,
-        repository_id=repository_id(git_context, project_root),
+        repository_id=workspace_repository_id(
+            git_context.common_git_dir,
+            project_root,
+            git_context.object_format,
+        ),
         git_version=git_context.git_version,
         git_top_level=git_context.git_top_level.as_posix(),
         project_root_relative_path=git_context.project_root_relative_path,

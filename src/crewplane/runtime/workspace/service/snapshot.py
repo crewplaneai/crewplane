@@ -16,6 +16,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
     invocation_slug,
@@ -37,6 +38,8 @@ from crewplane.runtime.workspace.snapshot import (
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
     WorkspaceStateMaterializationRequest,
+    WorkspaceStateRetention,
+    update_workspace_retention,
     write_running_workspace_state,
 )
 from crewplane.runtime.workspace.worktree.cleanup import worktree_disk_usage
@@ -46,6 +49,7 @@ from .common import (
     record_failed_preparation_state,
     remove_workspace_after_failure,
     trusted_workspace_state_payload,
+    unmaterialized_workspace_retention,
     workspace_cwd,
     workspace_state_request,
 )
@@ -65,7 +69,11 @@ def prepare_snapshot_invocation_workspace(
 ) -> PreparedWorkspace:
     snapshot_plan = snapshot_preparation_plan(request, node, policy, source)
     write_running_snapshot_workspace_state(request, snapshot_plan)
-    materialized_snapshot = materialize_snapshot_workspace(request, snapshot_plan)
+    try:
+        materialized_snapshot = materialize_snapshot_workspace(request, snapshot_plan)
+    except Exception as exc:
+        _terminalize_unhandled_snapshot_materialization_failure(snapshot_plan, exc)
+        raise
     try:
         return prepared_snapshot_workspace(
             request,
@@ -74,17 +82,48 @@ def prepare_snapshot_invocation_workspace(
             materialized_snapshot,
         )
     except Exception as exc:
-        removed = remove_workspace_after_failure(
-            materialized_snapshot.workspace_path,
-            exc,
-        )
-        record_failed_preparation_state(
+        state_published = record_failed_preparation_state(
             snapshot_plan.state_path,
             exc,
-            workspace_retention="deleted" if removed else "retained",
-            retained_reason=None if removed else "preparation_failed_cleanup_failed",
+            workspace_retention="pending_cleanup",
         )
+        if state_published:
+            removed = remove_workspace_after_failure(
+                materialized_snapshot.workspace_path,
+                exc,
+            )
+            update_workspace_retention(
+                snapshot_plan.state_path,
+                WorkspaceStateRetention(
+                    "deleted" if removed else "retained",
+                    None if removed else "preparation_failed_cleanup_failed",
+                ),
+            )
         raise
+
+
+def _terminalize_unhandled_snapshot_materialization_failure(
+    plan: SnapshotPreparationPlan,
+    failure: Exception,
+) -> None:
+    try:
+        payload = trusted_workspace_state_payload(plan.state_path)
+    except Exception as state_error:
+        note_cleanup_failure(
+            failure,
+            "Workspace state inspection after snapshot materialization failure",
+            state_error,
+        )
+        return
+    if payload.get("status") != "running":
+        return
+    record_failed_preparation_state(
+        plan.state_path,
+        failure,
+        workspace_retention=unmaterialized_workspace_retention(
+            plan.planned_workspace_path,
+        ),
+    )
 
 
 def snapshot_preparation_plan(
@@ -142,7 +181,13 @@ def materialize_snapshot_workspace(
     request: WorkspaceInvocationRequest,
     plan: SnapshotPreparationPlan,
 ) -> MaterializedSnapshotWorkspace:
-    with workspace_materialization_slot(request.plan, request.materialization_limiter):
+    with workspace_materialization_slot(
+        request.plan,
+        request.materialization_limiter,
+        plan.planned_workspace_path,
+        plan.source,
+        False,
+    ):
         provisioning_started = monotonic()
         try:
             workspace_path = create_snapshot_workspace(
@@ -151,7 +196,13 @@ def materialize_snapshot_workspace(
                 plan.source,
             )
         except Exception as exc:
-            record_failed_preparation_state(plan.state_path, exc)
+            record_failed_preparation_state(
+                plan.state_path,
+                exc,
+                workspace_retention=unmaterialized_workspace_retention(
+                    plan.planned_workspace_path,
+                ),
+            )
             raise
         try:
             checkout_root = workspace_path / "checkout"
@@ -172,15 +223,20 @@ def materialize_snapshot_workspace(
                 ),
             )
         except Exception as exc:
-            removed = remove_workspace_after_failure(workspace_path, exc)
-            record_failed_preparation_state(
+            state_published = record_failed_preparation_state(
                 plan.state_path,
                 exc,
-                workspace_retention="deleted" if removed else "retained",
-                retained_reason=None
-                if removed
-                else "preparation_failed_cleanup_failed",
+                workspace_retention="pending_cleanup",
             )
+            if state_published:
+                removed = remove_workspace_after_failure(workspace_path, exc)
+                update_workspace_retention(
+                    plan.state_path,
+                    WorkspaceStateRetention(
+                        "deleted" if removed else "retained",
+                        None if removed else "preparation_failed_cleanup_failed",
+                    ),
+                )
             raise
         provisioning_duration_seconds = round(monotonic() - provisioning_started, 6)
     cwd = workspace_cwd(checkout_root, plan.source)

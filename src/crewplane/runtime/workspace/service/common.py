@@ -73,12 +73,18 @@ def remove_workspace_after_failure(
         return False
 
 
+def unmaterialized_workspace_retention(planned_workspace_path: Path) -> str:
+    if planned_workspace_path.exists() or planned_workspace_path.is_symlink():
+        return "retained"
+    return "deleted"
+
+
 def record_failed_preparation_state(
     state_path: Path,
     failure: Exception,
     workspace_retention: str = "retained",
     retained_reason: str | None = None,
-) -> None:
+) -> bool:
     diagnostics, default_retained_reason, setup = worktree_preparation_failure_state(
         failure
     )
@@ -98,12 +104,14 @@ def record_failed_preparation_state(
                 setup=setup,
             ),
         )
+        return True
     except Exception as exc:
         note_cleanup_failure(
             failure,
             "Workspace failure-state recording after preparation failure",
             exc,
         )
+        return False
 
 
 def worktree_preparation_failure_state(

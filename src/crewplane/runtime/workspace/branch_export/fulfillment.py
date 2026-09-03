@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from crewplane.runtime.workspace.branch_export.git import (
     BranchExportOperation,
     create_or_verify_branch_ref,
 )
+from crewplane.runtime.workspace.state import mutate_workspace_state
 
 
 @dataclass(frozen=True)
@@ -67,12 +67,15 @@ def create_branch_export_ref(
     source: WorkspaceSourceSnapshot,
     branch_ref: str,
     checkpoint: BranchExportCheckpoint,
+    allow_existing: bool = False,
+    allow_create: bool = True,
 ) -> BranchExportOperation:
     return create_or_verify_branch_ref(
         source,
         branch_ref,
         checkpoint.result_commit,
-        allow_existing=True,
+        allow_existing=allow_existing,
+        allow_create=allow_create,
     )
 
 
@@ -90,7 +93,6 @@ def record_branch_export_fulfillment(
         record_relative_path = record_path.relative_to(stages_dir).as_posix()
     except ValueError:
         record_relative_path = record_path.as_posix()
-    state_payload = _workspace_state_payload(checkpoint.state_path)
     branch_export: JsonObject = {
         "status": record_payload["status"],
         "operation": operation,
@@ -103,8 +105,10 @@ def record_branch_export_fulfillment(
     }
     if "failure_message" in record_payload:
         branch_export["failure_message"] = record_payload["failure_message"]
-    state_payload["branch_export"] = branch_export
-    atomic_write_json(checkpoint.state_path, state_payload)
+    mutate_workspace_state(
+        checkpoint.state_path,
+        lambda payload: payload.__setitem__("branch_export", branch_export),
+    )
     _refresh_node_manifest_workspace_descriptor(plan, node, stages_dir, results_dir)
 
 
@@ -123,8 +127,7 @@ def record_skipped_branch_export_fulfillment(
         record_relative_path = record_path.relative_to(stages_dir).as_posix()
     except ValueError:
         record_relative_path = record_path.as_posix()
-    state_payload = _workspace_state_payload(state_path)
-    state_payload["branch_export"] = {
+    branch_export: JsonObject = {
         "status": record_payload["status"],
         "operation": record_payload["operation"],
         "branch_name": record_payload["branch_name"],
@@ -133,17 +136,11 @@ def record_skipped_branch_export_fulfillment(
         "skip_reason": record_payload.get("skip_reason"),
         "completed_at": record_payload["created_at"],
     }
-    atomic_write_json(state_path, state_payload)
+    mutate_workspace_state(
+        state_path,
+        lambda payload: payload.__setitem__("branch_export", branch_export),
+    )
     _refresh_node_manifest_workspace_descriptor(plan, node, stages_dir, results_dir)
-
-
-def _workspace_state_payload(state_path: Path) -> dict[str, object]:
-    payload = json.loads(state_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError(
-            f"Workspace branch export state is invalid: {state_path.as_posix()}"
-        )
-    return payload
 
 
 def _node_workspace_state_path(

@@ -399,13 +399,13 @@ Each provider’s response remains separate until that provider finishes. While 
 
 ## Workspace Notes
 
-When Experimental worktrees are enabled, reviewer invocations inspect the
+When Worktrees are enabled, reviewer invocations inspect the
 current executor candidate but do not advance source lineage. Executor and
 remediation rounds produce candidate lineage. A mutable `kind: worktree` node
 can have only one provider in the executor role; providers in the reviewer role
 remain allowed in sequential review loops.
 
-With Experimental managed workspaces, reviewer-first `{{file:...}}` context
+With Managed workspaces, reviewer-first `{{file:...}}` context
 uses compiled Git source state: same-node candidate if one already exists,
 otherwise upstream lineage for node-sourced worktrees, otherwise project initial
 source. It does not add support for uncommitted manual edits inside managed

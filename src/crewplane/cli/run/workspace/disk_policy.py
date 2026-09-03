@@ -7,10 +7,15 @@ from pathlib import Path
 
 from crewplane.core.config import Settings
 from crewplane.core.workspace.cache import workspace_cache_root
+from crewplane.core.workspace.checkout_size import (
+    estimated_tree_checkout_size_bytes,
+)
+from crewplane.core.workspace.checkout_size import (
+    estimated_working_tree_size_bytes as scan_working_tree_size_bytes,
+)
 
 from .filesystem_policy import existing_probe_parent
 from .git_source import GitSourceContext, git_zero_records
-from .repo_policy import is_reserved_source_path
 from .source_types import WorkspacePolicyBuilder
 
 DEFAULT_DISK_WARN_FREE_BYTES = 2 * 1024 * 1024 * 1024
@@ -105,26 +110,18 @@ def estimated_git_checkout_size_bytes(
     git_context: GitSourceContext,
     estimate_full_repository: bool = False,
 ) -> int | None:
-    total = 0
-    for record in git_zero_records(
-        git_context.git_top_level,
-        "ls-tree",
-        "-l",
-        "-r",
-        "-z",
-        git_context.source_tree,
-    ):
-        header, _, path = record.partition("\t")
-        if not estimate_full_repository and not project_path_selected(
-            path,
-            git_context.project_root_relative_path,
-        ):
-            continue
-        size_text = header.rsplit(" ", 1)[-1]
-        if not size_text.isdigit():
-            return None
-        total += int(size_text)
-    return total
+    return estimated_tree_checkout_size_bytes(
+        git_zero_records(
+            git_context.git_top_level,
+            "ls-tree",
+            "-l",
+            "-r",
+            "-z",
+            git_context.source_tree,
+        ),
+        git_context.project_root_relative_path,
+        estimate_full_repository,
+    )
 
 
 def estimated_working_tree_size_bytes(
@@ -140,53 +137,10 @@ def estimated_working_tree_size_bytes(
     reserved_roots: tuple[Path, ...] = (scan_root,)
     if project_root != scan_root and project_root.is_relative_to(scan_root):
         reserved_roots = (scan_root, project_root)
-    if not scan_root.exists():
-        return 0
-    total = 0
-    for current_root, dir_names, file_names in scan_root.walk():
-        filter_estimate_dirs(current_root, dir_names, reserved_roots)
-        for file_name in file_names:
-            try:
-                total += (current_root / file_name).lstat().st_size
-            except OSError:
-                continue
-    return total
-
-
-def filter_estimate_dirs(
-    current_root: Path,
-    dir_names: list[str],
-    reserved_roots: tuple[Path, ...],
-) -> None:
-    retained: list[str] = []
-    for dir_name in dir_names:
-        candidate = current_root / dir_name
-        if dir_name == ".git" or is_reserved_path(candidate, reserved_roots):
-            continue
-        retained.append(dir_name)
-    dir_names[:] = retained
-
-
-def is_reserved_path(path: Path, reserved_roots: tuple[Path, ...]) -> bool:
-    for root in reserved_roots:
-        try:
-            relative = path.relative_to(root).as_posix()
-        except ValueError:
-            continue
-        if is_reserved_source_path(relative):
-            return True
-    return False
+    return scan_working_tree_size_bytes(scan_root, reserved_roots)
 
 
 def project_root_from_git_context(git_context: GitSourceContext) -> Path:
     if git_context.project_root_relative_path == ".":
         return git_context.git_top_level
     return git_context.git_top_level / git_context.project_root_relative_path
-
-
-def project_path_selected(path: str, project_root_relative_path: str) -> bool:
-    if project_root_relative_path == ".":
-        return True
-    return path == project_root_relative_path or path.startswith(
-        f"{project_root_relative_path}/"
-    )

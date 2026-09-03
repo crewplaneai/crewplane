@@ -188,6 +188,9 @@ async def _prepare_provider_workspace(
         invocation_context,
         workspace=prepared_workspace.invocation_context.workspace,
         retry_reset=prepared_workspace.invocation_context.retry_reset,
+        retry_reset_canceller=(
+            prepared_workspace.invocation_context.retry_reset_canceller
+        ),
         workspace_environment_applied_recorder=state.record_child_environment_applied,
     )
 

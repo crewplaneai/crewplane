@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .state import WorkspaceStateRetention, update_workspace_retention
 from .worktree.cleanup import remove_unknown_workspace_path, worktree_disk_usage
 from .worktree.ref_cleanup import WorkspaceRunRefCleanup
 
@@ -16,10 +17,12 @@ WorkspaceStatusLookup = Callable[[str, str], WorkspaceStatus]
 class WorkspaceCleanupEligibility:
     deletable: bool
     reason: str | None = None
+    state_paths: tuple[Path, ...] = ()
+    expected_worktree_git_dir: Path | None = None
 
 
 WorkspaceCleanupEligibilityLookup = Callable[
-    [str, str, WorkspaceStatus], WorkspaceCleanupEligibility
+    [str, Path, WorkspaceStatus], WorkspaceCleanupEligibility
 ]
 
 
@@ -70,6 +73,10 @@ def cleanup_workspace_cache(
     status_lookup: WorkspaceStatusLookup | None = None,
     ref_cleanup: WorkspaceRunRefCleanup | None = None,
     eligibility_lookup: WorkspaceCleanupEligibilityLookup | None = None,
+    ref_cleanup_run_keys: Iterable[str] = (),
+    absent_state_projections: Iterable[
+        tuple[str, Path, WorkspaceStatus, tuple[Path, ...]]
+    ] = (),
 ) -> WorkspaceCleanupResult:
     entries: list[WorkspaceCleanupEntry] = []
     selected_run_keys: set[str] = set()
@@ -88,7 +95,7 @@ def cleanup_workspace_cache(
             continue
         status = workspace_status(run_key_name, workspace_path, status_lookup)
         eligibility = (
-            eligibility_lookup(run_key_name, workspace_path.name, status)
+            eligibility_lookup(run_key_name, workspace_path, status)
             if eligibility_lookup is not None
             else WorkspaceCleanupEligibility(deletable=True)
         )
@@ -115,7 +122,9 @@ def cleanup_workspace_cache(
             remove_unknown_workspace_path(
                 workspace_path,
                 cleanup_filter.expected_common_git_dir,
+                eligibility.expected_worktree_git_dir,
             )
+            _update_deleted_state_paths(eligibility.state_paths)
             removed = True
             selected_run_keys.add(run_key_name)
         entries.append(
@@ -128,15 +137,67 @@ def cleanup_workspace_cache(
                 orphan=status is None,
             )
         )
+    if not dry_run:
+        selected_absent_runs, retained_absent_runs = (
+            _reconcile_absent_state_projections(
+                absent_state_projections,
+                cleanup_filter,
+            )
+        )
+        selected_run_keys.update(selected_absent_runs)
+        retained_run_keys.update(retained_absent_runs)
     removed_ref_count = 0
     if not dry_run and ref_cleanup is not None:
-        for run_key_name in sorted(selected_run_keys - retained_run_keys):
+        cleanup_run_keys = (selected_run_keys - retained_run_keys) | set(
+            ref_cleanup_run_keys
+        )
+        for run_key_name in sorted(cleanup_run_keys):
             removed_ref_count += ref_cleanup(run_key_name)
     return WorkspaceCleanupResult(
         cache_root=cache_root,
         entries=tuple(entries),
         removed_ref_count=removed_ref_count,
     )
+
+
+def _reconcile_absent_state_projections(
+    projections: Iterable[tuple[str, Path, WorkspaceStatus, tuple[Path, ...]]],
+    cleanup_filter: WorkspaceCleanupFilter,
+) -> tuple[set[str], set[str]]:
+    selected_run_keys: set[str] = set()
+    retained_run_keys: set[str] = set()
+    for run_key_name, workspace_path, status, state_paths in projections:
+        if (
+            cleanup_filter.run_key_name is not None
+            and run_key_name != cleanup_filter.run_key_name
+        ):
+            continue
+        if cleanup_filter.older_than_seconds is not None or not status_matches(
+            status, cleanup_filter
+        ):
+            retained_run_keys.add(run_key_name)
+            continue
+        try:
+            workspace_path.lstat()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            retained_run_keys.add(run_key_name)
+            continue
+        else:
+            retained_run_keys.add(run_key_name)
+            continue
+        _update_deleted_state_paths(state_paths)
+        selected_run_keys.add(run_key_name)
+    return selected_run_keys, retained_run_keys
+
+
+def _update_deleted_state_paths(state_paths: Iterable[Path]) -> None:
+    for state_path in state_paths:
+        update_workspace_retention(
+            state_path,
+            WorkspaceStateRetention("deleted"),
+        )
 
 
 def cleanup_candidates(cache_root: Path) -> tuple[tuple[str, Path], ...]:

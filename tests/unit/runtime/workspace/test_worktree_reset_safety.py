@@ -15,9 +15,15 @@ class GitCommand:
 
     def run(self, *args: str) -> None:
         self.runs.append(args)
+        if args[:2] == ("checkout", "--detach"):
+            self.branch = ""
 
     def text(self, *args: str) -> str:
-        return self.head if args[0] == "rev-parse" else self.branch
+        if args[0] == "rev-parse":
+            return self.head
+        if args[0] == "symbolic-ref":
+            return self.branch
+        return self.branch
 
 
 def worktree_layout(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -88,7 +94,6 @@ def test_reset_removes_policy_files_and_runs_full_git_sequence(
     assert not (git_dir / "config.worktree").exists()
     assert command.runs == [
         ("reset", "--hard", "expected"),
-        ("checkout", "--detach", "expected"),
         ("clean", "-dffx"),
     ]
 
@@ -294,7 +299,7 @@ def test_reset_resolves_relative_gitdir_backlink(
         pytest.param(
             GitCommand(branch="main"),
             (),
-            "detached HEAD",
+            "must be disposed",
             id="branch",
         ),
         pytest.param(

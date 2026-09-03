@@ -14,6 +14,7 @@ from ..common import (
 from ..errors import WorkflowExecutionError
 from ..workspace_files.generated import GeneratedFileWorkspaceCleanupResult
 from .cleanup import (
+    cleanup_successful_workspace_run_refs,
     emit_cleanup_errors,
     refresh_workspace_node_manifests,
     refresh_workspace_node_manifests_for_state_paths,
@@ -41,23 +42,39 @@ async def collect_workflow_postconditions(
     runtime_context = session.runtime_context
     try:
         await _cancel_running_node_tasks(session)
-        postcondition_errors.extend(
-            await _collect_deferred_workspace_cleanup_errors(
+        deferred_errors = await _collect_deferred_workspace_cleanup_errors(
+            runtime_context=runtime_context,
+            telemetry=session.telemetry,
+        )
+        postcondition_errors.extend(deferred_errors)
+        cleanup_fenced = getattr(
+            runtime_context.deferred_workspace_cleanups,
+            "has_unfinished_protected_tasks",
+            False,
+        )
+        if not cleanup_fenced:
+            try:
+                await cleanup_successful_workspace_run_refs(
+                    runtime_context.plan,
+                    session.telemetry,
+                )
+            except Exception as exc:
+                postcondition_errors.append(exc)
+        if deferred_errors or cleanup_fenced:
+            generated_file_cleanup = GeneratedFileWorkspaceCleanupResult((), ())
+            worktree_cleanup = WorktreeReuseCleanupResult((), ())
+        else:
+            generated_file_cleanup = await _collect_generated_file_workspace_cleanup(
                 runtime_context=runtime_context,
                 telemetry=session.telemetry,
             )
-        )
-        generated_file_cleanup = await _collect_generated_file_workspace_cleanup(
-            runtime_context=runtime_context,
-            telemetry=session.telemetry,
-        )
-        postcondition_errors.extend(generated_file_cleanup.errors)
+            postcondition_errors.extend(generated_file_cleanup.errors)
 
-        worktree_cleanup = await _collect_worktree_reuse_cache_cleanup(
-            runtime_context=runtime_context,
-            telemetry=session.telemetry,
-        )
-        postcondition_errors.extend(worktree_cleanup.errors)
+            worktree_cleanup = await _collect_worktree_reuse_cache_cleanup(
+                runtime_context=runtime_context,
+                telemetry=session.telemetry,
+            )
+            postcondition_errors.extend(worktree_cleanup.errors)
 
         postcondition_errors.extend(
             await _collect_descriptor_refresh_errors(
@@ -68,7 +85,12 @@ async def collect_workflow_postconditions(
             )
         )
     finally:
-        runtime_context.runtime_publications.close()
+        if not getattr(
+            runtime_context.deferred_workspace_cleanups,
+            "has_unfinished_protected_tasks",
+            False,
+        ):
+            runtime_context.runtime_publications.close()
 
     return postcondition_errors
 
@@ -134,7 +156,12 @@ async def _collect_descriptor_refresh_errors(
         plan,
         output,
         statuses,
-        set(generated_file_cleanup.cleaned_node_ids),
+        set(generated_file_cleanup.cleaned_node_ids)
+        | {
+            node.id
+            for node in plan.nodes
+            if node.workspace_policy is not None and node.workspace_policy.enabled
+        },
         session.telemetry,
     )
     postcondition_errors.extend(exc for _, exc in state_refresh_failures)

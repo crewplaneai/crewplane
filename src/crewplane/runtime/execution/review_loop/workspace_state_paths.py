@@ -26,8 +26,8 @@ def workspace_artifact_allowed_paths(
         return set()
     slug = invocation_slug(node.id, task_id, audit_round_num, round_num)
     state_path = workspace_state_path(output, node, slug, audit_round_num, round_num)
-    # Runtime writes this during provider calls; terminal updates rebase from a
-    # trusted pre-provider payload so provider edits are not preserved.
+    # Runtime writes this during provider calls; finalization validates all
+    # provider-invariant fields against the trusted pre-provider payload.
     allowed_paths = {state_path}
     if _can_write_setup_artifacts(node):
         setup_artifacts = workspace_setup_artifacts(state_path)

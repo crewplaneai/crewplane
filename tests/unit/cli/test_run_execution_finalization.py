@@ -655,6 +655,7 @@ def test_branch_export_failure_preserves_failed_run_finalization(
     def fail_branch_export(
         plan_arg: object,  # noqa: ARG001 - Required by branch-export test double.
         output_arg: object,  # noqa: ARG001 - Required by branch-export test double.
+        resumed_node_ids: tuple[str, ...],  # noqa: ARG001 - Test double contract.
     ) -> tuple[Path, ...]:
         raise export_error
 

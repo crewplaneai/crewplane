@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -8,8 +9,7 @@ from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 
 from ..state import (
     WorkspaceStateRetention,
-    WorkspaceStateUpdateRequest,
-    update_workspace_state,
+    update_workspace_retention,
 )
 from . import remove_worktree_workspace
 from .types import WorktreeSourceRef
@@ -28,6 +28,9 @@ class ReusableWorktreeCheckout:
     source: WorkspaceSourceSnapshot
     state_path: Path
     cleanup_on_success: bool
+    repository_id: str
+    run_key_name: str
+    reuse_generation: int = 1
 
 
 @dataclass(frozen=True)
@@ -38,10 +41,14 @@ class WorktreeReuseCleanupResult:
 
 class WorktreeReuseCache:
     def __init__(self) -> None:
-        self._entries: dict[str, ReusableWorktreeCheckout] = {}
+        self._entries: dict[
+            tuple[str, str, str],
+            ReusableWorktreeCheckout,
+        ] = {}
         self._leased_entries: dict[Path, ReusableWorktreeCheckout] = {}
         self._failed_cleanup_entries: dict[Path, ReusableWorktreeCheckout] = {}
         self._state_paths_by_workspace: dict[Path, set[Path]] = {}
+        self._physically_removed_workspaces: set[Path] = set()
         self._pending_updated_state_paths: set[Path] = set()
         self._lock = Lock()
 
@@ -49,9 +56,13 @@ class WorktreeReuseCache:
         self,
         logical_worktree_name: str,
         source_ref: WorktreeSourceRef,
+        repository_id: str,
+        run_key_name: str,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> ReusableWorktreeCheckout | None:
+        cache_key = (repository_id, run_key_name, logical_worktree_name)
         with self._lock:
-            entry = self._entries.pop(logical_worktree_name, None)
+            entry = self._entries.pop(cache_key, None)
             if entry is None:
                 return None
             if _matches_source(entry, source_ref) and entry.checkout_root.exists():
@@ -59,20 +70,25 @@ class WorktreeReuseCache:
                 self._leased_entries[entry_key] = entry
                 self._remember_state_path(entry_key, entry.state_path)
                 return entry
-        self.cleanup_entry_best_effort(entry)
+        self.cleanup_entry_best_effort(entry, cancel_requested)
         return None
 
-    def store(self, entry: ReusableWorktreeCheckout) -> None:
+    def store(
+        self,
+        entry: ReusableWorktreeCheckout,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> None:
         entry_key = _workspace_key(entry.workspace_path)
+        cache_key = _entry_cache_key(entry)
         with self._lock:
-            previous = self._entries.get(entry.logical_worktree_name)
+            previous = self._entries.get(cache_key)
             leased = self._leased_entries.pop(entry_key, None)
             if leased is not None:
                 self._remember_state_path(entry_key, leased.state_path)
             self._remember_state_path(entry_key, entry.state_path)
-            self._entries[entry.logical_worktree_name] = entry
+            self._entries[cache_key] = entry
         if previous is not None and previous.workspace_path != entry.workspace_path:
-            self.cleanup_entry_best_effort(previous)
+            self.cleanup_entry_best_effort(previous, cancel_requested)
 
     def owns(self, workspace_path: Path | None) -> bool:
         if workspace_path is None:
@@ -93,25 +109,37 @@ class WorktreeReuseCache:
         with self._lock:
             self._leased_entries.pop(resolved, None)
             stale_keys = [
-                logical_worktree_name
-                for logical_worktree_name, entry in self._entries.items()
+                cache_key
+                for cache_key, entry in self._entries.items()
                 if _workspace_key(entry.workspace_path) == resolved
             ]
-            for logical_worktree_name in stale_keys:
-                self._entries.pop(logical_worktree_name, None)
+            for cache_key in stale_keys:
+                self._entries.pop(cache_key, None)
             self._failed_cleanup_entries.pop(resolved, None)
             self._state_paths_by_workspace.pop(resolved, None)
+            self._physically_removed_workspaces.discard(resolved)
 
     def cleanup_workspace(
         self,
         workspace_path: Path,
+        cancel_requested: Callable[[], bool] | None = None,
+        state_path: Path | None = None,
     ) -> tuple[Path, ...]:
         entry = self._entry_for_workspace(workspace_path)
         if entry is None:
             return ()
+        if state_path is not None:
+            with self._lock:
+                self._remember_state_path(
+                    _workspace_key(entry.workspace_path), state_path
+                )
         state_paths = self._state_paths_for_entry(entry)
-        remove_worktree_workspace(entry.source, entry.workspace_path)
-        updated = _update_deleted_state_paths(state_paths)
+        try:
+            self._remove_entry_workspace(entry, cancel_requested)
+            updated = _update_deleted_state_paths(state_paths)
+        except Exception:
+            self._retain_failed_cleanup_entry(entry)
+            raise
         self._forget_entry(entry)
         self._remember_pending_updated_state_paths(updated)
         return updated
@@ -129,10 +157,11 @@ class WorktreeReuseCache:
     def cleanup_entry(
         self,
         entry: ReusableWorktreeCheckout,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> tuple[Path, ...]:
         state_paths = self._state_paths_for_entry(entry)
         if entry.cleanup_on_success:
-            remove_worktree_workspace(entry.source, entry.workspace_path)
+            self._remove_entry_workspace(entry, cancel_requested)
             updated = _update_deleted_state_paths(state_paths)
             self._forget_entry(entry)
             return updated
@@ -142,9 +171,12 @@ class WorktreeReuseCache:
     def cleanup_entry_best_effort(
         self,
         entry: ReusableWorktreeCheckout,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> Exception | None:
         try:
-            self._remember_pending_updated_state_paths(self.cleanup_entry(entry))
+            self._remember_pending_updated_state_paths(
+                self.cleanup_entry(entry, cancel_requested)
+            )
         except Exception as exc:
             self._retain_failed_cleanup_entry(entry)
             return exc
@@ -158,13 +190,19 @@ class WorktreeReuseCache:
             entries = _unique_entries(
                 (
                     *self._entries.values(),
-                    *self._leased_entries.values(),
                     *self._failed_cleanup_entries.values(),
                 )
             )
+            unresolved_leases = _unique_entries(tuple(self._leased_entries.values()))
             pending_state_paths = self._pending_updated_state_paths
             self._pending_updated_state_paths = set()
-        errors: list[Exception] = []
+        errors: list[Exception] = [
+            RuntimeError(
+                "Reusable workspace remains leased by an unresolved invocation: "
+                f"{entry.workspace_path.as_posix()}."
+            )
+            for entry in unresolved_leases
+        ]
         updated_state_paths: list[Path] = list(pending_state_paths)
         for entry in entries:
             try:
@@ -198,15 +236,17 @@ class WorktreeReuseCache:
     def _forget_entry(self, entry: ReusableWorktreeCheckout) -> set[Path]:
         entry_key = _workspace_key(entry.workspace_path)
         with self._lock:
-            cached_entry = self._entries.get(entry.logical_worktree_name)
+            cache_key = _entry_cache_key(entry)
+            cached_entry = self._entries.get(cache_key)
             if (
                 cached_entry is not None
                 and cached_entry.workspace_path == entry.workspace_path
             ):
-                self._entries.pop(entry.logical_worktree_name, None)
+                self._entries.pop(cache_key, None)
             self._leased_entries.pop(entry_key, None)
             self._failed_cleanup_entries.pop(entry_key, None)
             state_paths = self._state_paths_by_workspace.pop(entry_key, set())
+            self._physically_removed_workspaces.discard(entry_key)
         state_paths.add(entry.state_path)
         return state_paths
 
@@ -236,7 +276,45 @@ class WorktreeReuseCache:
 
     def _retain_failed_cleanup_entry(self, entry: ReusableWorktreeCheckout) -> None:
         with self._lock:
-            self._failed_cleanup_entries[_workspace_key(entry.workspace_path)] = entry
+            entry_key = _workspace_key(entry.workspace_path)
+            self._leased_entries.pop(entry_key, None)
+            self._failed_cleanup_entries[entry_key] = entry
+
+    def _remove_entry_workspace(
+        self,
+        entry: ReusableWorktreeCheckout,
+        cancel_requested: Callable[[], bool] | None,
+    ) -> None:
+        entry_key = _workspace_key(entry.workspace_path)
+        with self._lock:
+            removal_completed = entry_key in self._physically_removed_workspaces
+        if removal_completed:
+            if not _path_is_absent(entry.workspace_path):
+                raise RuntimeError(
+                    "Reusable workspace reappeared after physical cleanup."
+                )
+            return
+        if _path_is_absent(entry.workspace_path):
+            raise RuntimeError(
+                "Reusable workspace is absent without completed cleanup evidence."
+            )
+        if cancel_requested is None:
+            remove_worktree_workspace(
+                entry.source,
+                entry.workspace_path,
+                entry.git_dir,
+            )
+        else:
+            remove_worktree_workspace(
+                entry.source,
+                entry.workspace_path,
+                entry.git_dir,
+                cancel_requested,
+            )
+        if not _path_is_absent(entry.workspace_path):
+            raise RuntimeError("Reusable workspace cleanup left its path present.")
+        with self._lock:
+            self._physically_removed_workspaces.add(entry_key)
 
     def _remember_state_path(self, entry_key: Path, state_path: Path) -> None:
         self._state_paths_by_workspace.setdefault(entry_key, set()).add(state_path)
@@ -262,6 +340,26 @@ def _workspace_key(workspace_path: Path) -> Path:
     return workspace_path.resolve(strict=False)
 
 
+def _path_is_absent(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    return False
+
+
+def _entry_cache_key(
+    entry: ReusableWorktreeCheckout,
+) -> tuple[str, str, str]:
+    if not entry.repository_id or not entry.run_key_name:
+        raise RuntimeError("Reusable workspace lacks repository and run ownership.")
+    return (
+        entry.repository_id,
+        entry.run_key_name,
+        entry.logical_worktree_name,
+    )
+
+
 def _unique_entries(
     entries: tuple[ReusableWorktreeCheckout, ...],
 ) -> tuple[ReusableWorktreeCheckout, ...]:
@@ -274,14 +372,11 @@ def _unique_entries(
 def _update_deleted_state_paths(state_paths: set[Path]) -> tuple[Path, ...]:
     ordered = _sorted_unique_paths(state_paths)
     for state_path in ordered:
-        update_workspace_state(
+        update_workspace_retention(
             state_path,
-            WorkspaceStateUpdateRequest(
-                status="succeeded",
-                retention=WorkspaceStateRetention(
-                    retention="deleted",
-                    retained_reason=None,
-                ),
+            WorkspaceStateRetention(
+                retention="deleted",
+                retained_reason=None,
             ),
         )
     return ordered

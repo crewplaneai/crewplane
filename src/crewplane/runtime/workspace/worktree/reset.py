@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..git import git, git_error
+from ..locks import git_metadata_lock
+from .head import prove_detached_head, reject_attached_head_after_safe_detachment
 from .inspection import changed_paths
 from .policy import (
     reject_common_git_policy_drift,
@@ -15,9 +17,12 @@ from .policy import (
 from .protected_refs import ProtectedRefSnapshot, reject_protected_ref_drift
 from .types import WorktreeCaptureRequest
 
+RETRY_RESET_GIT_TIMEOUT_SECONDS = 30.0
+
 
 def worktree_retry_reset(
     capture_request: WorktreeCaptureRequest,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Callable[[], None]:
     def reset() -> None:
         reset_worktree_attempt(
@@ -27,6 +32,7 @@ def worktree_retry_reset(
             Path(capture_request.source.common_git_dir),
             capture_request.git_dir,
             capture_request.protected_refs,
+            cancel_requested,
         )
 
     return reset
@@ -39,23 +45,35 @@ def reset_worktree_attempt(
     common_git_dir: Path,
     expected_git_dir: Path,
     protected_refs: ProtectedRefSnapshot,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> None:
     try:
-        reject_common_git_policy_drift(repo_root, common_git_dir)
-        git_dir = _verified_worktree_git_dir(
-            checkout_root,
-            common_git_dir,
-            expected_git_dir,
-        )
-        reject_protected_ref_drift(checkout_root, protected_refs)
-        _clear_worktree_policy_files(git_dir)
-        command = git(checkout_root)
-        command.run("reset", "--hard", source_commit)
-        command.run("checkout", "--detach", source_commit)
-        command.run("clean", "-dffx")
-        _clear_worktree_policy_files(git_dir)
-        reject_common_git_policy_drift(repo_root, common_git_dir)
-        _verify_reset_state(checkout_root, source_commit)
+        with git_metadata_lock(common_git_dir, cancel_requested):
+            _raise_if_cancelled(cancel_requested)
+            reject_common_git_policy_drift(repo_root, common_git_dir)
+            _raise_if_cancelled(cancel_requested)
+            git_dir = _verified_worktree_git_dir(
+                checkout_root,
+                common_git_dir,
+                expected_git_dir,
+            )
+            reject_protected_ref_drift(checkout_root, protected_refs)
+            command = git(
+                checkout_root,
+                timeout_seconds=RETRY_RESET_GIT_TIMEOUT_SECONDS,
+            )
+            reject_attached_head_after_safe_detachment(checkout_root, command)
+            prove_detached_head(checkout_root, source_commit, command)
+            _clear_worktree_policy_files(git_dir)
+            _raise_if_cancelled(cancel_requested)
+            command.run("reset", "--hard", source_commit)
+            _raise_if_cancelled(cancel_requested)
+            command.run("clean", "-dffx")
+            _raise_if_cancelled(cancel_requested)
+            _clear_worktree_policy_files(git_dir)
+            reject_common_git_policy_drift(repo_root, common_git_dir)
+            _raise_if_cancelled(cancel_requested)
+            _verify_reset_state(checkout_root, source_commit, cancel_requested)
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"Workspace retry reset failed: {git_error(exc)}") from exc
 
@@ -74,10 +92,14 @@ def reset_reusable_worktree_checkout(
             common_git_dir,
             expected_git_dir,
         )
+        command = git(
+            checkout_root,
+            timeout_seconds=RETRY_RESET_GIT_TIMEOUT_SECONDS,
+        )
+        reject_attached_head_after_safe_detachment(checkout_root, command)
+        prove_detached_head(checkout_root, source_commit, command)
         _clear_worktree_policy_files(git_dir)
-        command = git(checkout_root)
         command.run("reset", "--hard", source_commit)
-        command.run("checkout", "--detach", source_commit)
         command.run("clean", "-dffx")
         _clear_worktree_policy_files(git_dir)
         reject_common_git_policy_drift(repo_root, common_git_dir)
@@ -88,17 +110,30 @@ def reset_reusable_worktree_checkout(
         ) from exc
 
 
-def _verify_reset_state(checkout_root: Path, source_commit: str) -> None:
-    command = git(checkout_root)
+def _verify_reset_state(
+    checkout_root: Path,
+    source_commit: str,
+    cancel_requested: Callable[[], bool] | None = None,
+) -> None:
+    command = git(checkout_root, timeout_seconds=RETRY_RESET_GIT_TIMEOUT_SECONDS)
+    _raise_if_cancelled(cancel_requested)
     head = command.text("rev-parse", "HEAD^{commit}")
     if head != source_commit:
         raise RuntimeError("Workspace retry reset did not restore the source commit.")
+    _raise_if_cancelled(cancel_requested)
     if command.text("branch", "--show-current"):
         raise RuntimeError("Workspace retry reset did not restore detached HEAD.")
+    _raise_if_cancelled(cancel_requested)
     reject_worktree_git_policy_drift(checkout_root)
+    _raise_if_cancelled(cancel_requested)
     paths = changed_paths(checkout_root)
     if paths:
         raise RuntimeError("Workspace retry reset left changed paths behind.")
+
+
+def _raise_if_cancelled(cancel_requested: Callable[[], bool] | None) -> None:
+    if cancel_requested is not None and cancel_requested():
+        raise RuntimeError("Workspace retry reset was cancelled.")
 
 
 def _clear_worktree_policy_files(git_dir: Path) -> None:

@@ -6,7 +6,8 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
+from types import SimpleNamespace
 from typing import NoReturn, cast
 
 import pytest
@@ -24,6 +25,7 @@ from crewplane.runtime.agent.workspace_environment import (
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.git import git
 from crewplane.runtime.workspace.snapshot import (
+    WorkspaceSnapshotPolicy,
     remove_workspace_path,
     runtime_git_env,
 )
@@ -64,7 +66,6 @@ def test_prepare_snapshot_workspace_materializes_writable_state(
         workspace_invocation_request(plan, output),
         workspace_invocation_context(),
     )
-
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
@@ -97,11 +98,55 @@ def test_prepare_snapshot_workspace_materializes_writable_state(
     assert succeeded_state["workspace"]["retention"] == "deleted"
     assert succeeded_state["result"] == {
         "lineage_produced": False,
+        "drift_scan_complete": True,
         "snapshot_drift_discarded": False,
         "changed_path_count": 0,
         "changed_paths": [],
         "changed_paths_truncated": False,
     }
+    assert not prepared.workspace_path.exists()
+
+
+@pytest.mark.parametrize(
+    "policy",
+    (
+        WorkspaceSnapshotPolicy(max_entries=1),
+        WorkspaceSnapshotPolicy(max_file_bytes=1),
+        WorkspaceSnapshotPolicy(max_elapsed_seconds=0.000_001),
+    ),
+)
+def test_snapshot_reporting_limits_still_terminalize_and_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    policy: WorkspaceSnapshotPolicy,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=True)
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+    prepared = prepare_invocation_workspace(
+        workspace_invocation_request(plan, output),
+        workspace_invocation_context(),
+    )
+    (prepared.cwd / "reporting-limit.txt").write_text("limit", encoding="utf-8")
+    monkeypatch.setattr(
+        "crewplane.runtime.workspace.prepared_workspace.WorkspaceSnapshotPolicy",
+        lambda cancel_requested=None: WorkspaceSnapshotPolicy(
+            max_entries=policy.max_entries,
+            max_file_bytes=policy.max_file_bytes,
+            max_elapsed_seconds=policy.max_elapsed_seconds,
+            cancel_requested=cancel_requested,
+        ),
+    )
+
+    prepared.mark_succeeded()
+
+    assert prepared.state_path is not None
+    state = read_json_object(prepared.state_path)
+    assert state["status"] == "succeeded"
+    assert state["result"]["drift_scan_complete"] is False
+    assert state["workspace"]["retention"] == "deleted"
+    assert prepared.workspace_path is not None
     assert not prepared.workspace_path.exists()
 
 
@@ -253,8 +298,10 @@ def test_snapshot_retry_reset_rejects_replaced_workspace_parent(
     remove_workspace_path(workspace_path)
 
 
-def test_snapshot_workspace_final_state_ignores_state_file_mutation(
+@pytest.mark.parametrize("mutation_kind", ("workspace", "premature_terminal"))
+def test_snapshot_workspace_final_state_rejects_state_identity_mutation(
     tmp_path: Path,
+    mutation_kind: str,
 ) -> None:
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
@@ -270,22 +317,21 @@ def test_snapshot_workspace_final_state_ignores_state_file_mutation(
     )
     assert prepared.workspace_path is not None
     assert prepared.state_path is not None
-    trusted_state = read_json_object(prepared.state_path)
-    mutated_state = json.loads(json.dumps(trusted_state))
-    mutated_state["run_id"] = "provider-mutated-run"
-    workspace = mutated_state["workspace"]
-    assert isinstance(workspace, dict)
-    workspace["cache_key"] = "provider-mutated-cache"
+    mutated_state = read_json_object(prepared.state_path)
+    if mutation_kind == "workspace":
+        workspace = mutated_state["workspace"]
+        assert isinstance(workspace, dict)
+        workspace["cache_key"] = "provider-mutated-cache"
+    else:
+        mutated_state["status"] = "succeeded"
+        mutated_state["result"] = {"provider_forged": True}
     prepared.state_path.write_text(json.dumps(mutated_state), encoding="utf-8")
 
-    prepared.mark_succeeded()
+    with pytest.raises(RuntimeError, match="state identity changed"):
+        prepared.mark_succeeded()
 
-    finalized_state = read_json_object(prepared.state_path)
-    assert finalized_state["run_id"] == trusted_state["run_id"]
-    assert (
-        finalized_state["workspace"]["cache_key"]
-        == (trusted_state["workspace"]["cache_key"])
-    )
+    assert prepared.workspace_path.exists()
+    assert read_json_object(prepared.state_path) == mutated_state
     remove_workspace_path(prepared.workspace_path)
 
 
@@ -380,6 +426,90 @@ def test_snapshot_workspace_preparation_failure_removes_workspace_path(
         / "implement-alpha-round1"
     )
     assert not workspace_path.exists()
+
+
+@pytest.mark.parametrize("collision_kind", ("directory", "dangling_symlink"))
+def test_snapshot_workspace_collision_is_retained_without_removal(
+    tmp_path: Path,
+    collision_kind: str,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    cache_root = tmp_path / "cache"
+    plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
+    output = workspace_output_manager(tmp_path, repo)
+    stage_dir = output.create_node_dir(node_artifact_request("implement"))
+    source = plan.workspace_source
+    assert source is not None
+    workspace_path = (
+        cache_root
+        / "snapshots"
+        / source.repository_id
+        / plan.run_key_name
+        / "implement-alpha-round1"
+    )
+    workspace_path.parent.mkdir(parents=True)
+    sentinel = workspace_path / "must-survive.txt"
+    if collision_kind == "directory":
+        workspace_path.mkdir()
+        sentinel.write_text("unowned data\n", encoding="utf-8")
+    else:
+        try:
+            workspace_path.symlink_to(tmp_path / "missing", target_is_directory=True)
+        except OSError:
+            pytest.skip("symlink creation is unavailable")
+
+    with pytest.raises(RuntimeError, match="Workspace path already exists"):
+        prepare_invocation_workspace(
+            workspace_invocation_request(plan, output),
+            workspace_invocation_context(),
+        )
+
+    failed_state = read_json_object(stage_dir / "workspace-state.json")
+    assert failed_state["status"] == "failed"
+    assert failed_state["workspace"]["retention"] == "retained"
+    assert workspace_path.exists() or workspace_path.is_symlink()
+    if collision_kind == "directory":
+        assert sentinel.read_text(encoding="utf-8") == "unowned data\n"
+
+
+def test_snapshot_capacity_rejection_writes_failed_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    cache_root = tmp_path / "cache"
+    plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
+    runtime_snapshot = dict(plan.runtime_config_snapshot)
+    workspace = dict(runtime_snapshot["workspace"])
+    workspace["disk"] = {"fail_free_bytes": 1}
+    runtime_snapshot["workspace"] = workspace
+    plan = plan.model_copy(update={"runtime_config_snapshot": runtime_snapshot})
+    output = workspace_output_manager(tmp_path, repo)
+    stage_dir = output.create_node_dir(node_artifact_request("implement"))
+
+    def exhausted_disk(path: Path) -> SimpleNamespace:
+        del path
+        return SimpleNamespace(free=0)
+
+    monkeypatch.setattr(
+        "crewplane.runtime.workspace.materialization.shutil.disk_usage",
+        exhausted_disk,
+    )
+
+    with pytest.raises(RuntimeError, match="fail_free_bytes"):
+        prepare_invocation_workspace(
+            workspace_invocation_request(plan, output),
+            workspace_invocation_context(),
+        )
+
+    failed_state = read_json_object(stage_dir / "workspace-state.json")
+    assert failed_state["status"] == "failed"
+    assert failed_state["workspace"]["retention"] == "deleted"
+    assert not cache_root.exists()
 
 
 def test_worktree_workspace_preparation_failure_writes_failed_state(
@@ -628,6 +758,44 @@ def test_git_metadata_lock_is_reentrant_for_same_repository(tmp_path: Path) -> N
         workspace_locks.git_metadata_lock(tmp_path),
         workspace_locks.git_metadata_lock(tmp_path),
     ):
+        assert (tmp_path / "crewplane" / "workspace.lock").exists()
+
+
+def test_git_metadata_lock_cancellation_stops_in_process_lock_wait(
+    tmp_path: Path,
+) -> None:
+    locked = Event()
+    release = Event()
+
+    def hold_lock() -> None:
+        with workspace_locks.git_metadata_lock(tmp_path):
+            locked.set()
+            assert release.wait(2)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        holder = executor.submit(hold_lock)
+        assert locked.wait(2)
+        try:
+            with (
+                pytest.raises(RuntimeError, match="lock acquisition was cancelled"),
+                workspace_locks.git_metadata_lock(tmp_path, lambda: True),
+            ):
+                pass
+        finally:
+            release.set()
+        holder.result()
+
+
+def test_git_metadata_lock_releases_immediate_cancelled_acquisition(
+    tmp_path: Path,
+) -> None:
+    with (
+        pytest.raises(RuntimeError, match="lock acquisition was cancelled"),
+        workspace_locks.git_metadata_lock(tmp_path, lambda: True),
+    ):
+        pass
+
+    with workspace_locks.git_metadata_lock(tmp_path):
         assert (tmp_path / "crewplane" / "workspace.lock").exists()
 
 

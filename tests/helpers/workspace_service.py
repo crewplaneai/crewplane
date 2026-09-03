@@ -27,6 +27,7 @@ from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.version import SCHEMA_VERSION
@@ -211,12 +212,13 @@ def _node(
 
 def _workspace_source(repo: Path) -> WorkspaceSourceSnapshot:
     git_dir = repo / ".git"
+    object_format = run_git_text(repo, "rev-parse", "--show-object-format=storage")
     return WorkspaceSourceSnapshot(
         worktree_contract=WorktreeContract(),
         run_base_commit=run_git_text(repo, "rev-parse", "HEAD^{commit}"),
         source_tree=run_git_text(repo, "rev-parse", "HEAD^{tree}"),
-        object_format=run_git_text(repo, "rev-parse", "--show-object-format=storage"),
-        repository_id="test-repo",
+        object_format=object_format,
+        repository_id=workspace_repository_id(git_dir, repo, object_format),
         git_version=run_git_text(repo, "--version"),
         git_top_level=repo.as_posix(),
         project_root_relative_path=".",

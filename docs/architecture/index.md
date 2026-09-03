@@ -7,11 +7,11 @@ User task guidance lives in the public docs sections linked from
 Start here:
 
 - [Modular orchestration architecture](modular-orchestration-architecture.md)
+- [Workspace isolation architecture](workspace-isolation.md)
+  - [ADR 0016: Node-scoped Git workspace isolation](adr/0016-node-scoped-git-workspace-isolation.md)
 - [UI compact dashboard](ui_compact_dashboard.md)
 - [ADR 0001: Ports, adapters, and runtime integrations](adr/0001-ports-adapters-runtime-integrations.md)
 - [ADR 0012: Preflight compiled runtime execution plan](adr/0012-preflight-compiled-runtime-execution-plan.md)
-- [ADR 0016: Node-scoped Git workspace isolation (Experimental)](adr/0016-node-scoped-git-workspace-isolation.md)
-  - [Workspace isolation implementation](workspace-isolation-implementation/index.md)
 
 Key architectural constraints:
 
@@ -19,6 +19,5 @@ Key architectural constraints:
   shared in-memory state.
 - Provider integration is CLI-first.
 - Runtime execution consumes compiled preflight plans.
-- Workspace isolation is Experimental, optional Git-backed source-tree
-  isolation, not sandboxing.
+- Workspace isolation is optional Git-backed source-tree isolation, not sandboxing.
 - Adapter boundaries keep invoker, UI, and artifact implementations replaceable.

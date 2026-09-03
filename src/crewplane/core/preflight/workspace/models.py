@@ -94,6 +94,31 @@ class WorkspaceSelectionRecord(BaseModel):
     writable: bool = False
     lineage_producer: bool = False
 
+    @model_validator(mode="after")
+    def _validate_workspace_contract(self) -> Self:
+        if not self.enabled:
+            if self.materialization != "project_root":
+                raise ValueError("disabled workspace selection must use project_root")
+            return self
+        if self.logical_worktree_name is None or self.declaration_kind is None:
+            raise ValueError("enabled workspace selection requires a declaration")
+        if self.source_kind == "node" and self.source_node_id is None:
+            raise ValueError("node workspace source requires source_node_id")
+        if self.source_kind != "node" and self.source_node_id is not None:
+            raise ValueError("only node workspace sources may name source_node_id")
+        expected_materialization = (
+            "snapshot_checkout"
+            if self.declaration_kind == "snapshot"
+            else "worktree_checkout"
+        )
+        if self.materialization != expected_materialization:
+            raise ValueError("workspace kind and materialization are inconsistent")
+        if not self.writable:
+            raise ValueError("managed workspace selection must be writable")
+        if self.declaration_kind == "snapshot" and self.lineage_producer:
+            raise ValueError("snapshot workspace cannot produce lineage")
+        return self
+
 
 class WorkspaceSourceSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")

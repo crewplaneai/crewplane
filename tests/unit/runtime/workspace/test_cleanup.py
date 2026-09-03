@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -26,6 +27,55 @@ from crewplane.runtime.workspace.worktree.ref_cleanup import (
     delete_run_workspace_refs,
 )
 from tests.helpers.workspace_service import workspace_plan
+
+
+@pytest.mark.parametrize("name", ('cache"quoted', r"cache\literal"))
+def test_nul_worktree_paths_accept_printable_literal_path_characters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    checkout = tmp_path / name
+    output = (f"worktree {checkout.as_posix()}\0HEAD {'a' * 40}\0detached\0\0").encode()
+
+    def return_worktree_records(*args, **kwargs) -> subprocess.CompletedProcess[bytes]:
+        command = args[0] if args else kwargs["args"]
+        return subprocess.CompletedProcess(command, 0, stdout=output, stderr=b"")
+
+    monkeypatch.setattr(workspace_git.subprocess, "run", return_worktree_records)
+
+    assert worktree_cleanup.registered_worktree_paths(tmp_path / ".git") == (
+        checkout.resolve(strict=False),
+    )
+
+
+@pytest.mark.parametrize("name", ('cache"quoted', r"cache\literal"))
+def test_legacy_worktree_paths_remain_strict_for_quoted_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    checkout = tmp_path / name
+    output = (
+        f"worktree {json.dumps(checkout.as_posix())}\nHEAD {'a' * 40}\ndetached\n\n"
+    ).encode()
+
+    def return_legacy_worktree_records(
+        *args, **kwargs
+    ) -> subprocess.CompletedProcess[bytes]:
+        command = args[0] if args else kwargs["args"]
+        if "-z" in command:
+            raise subprocess.CalledProcessError(129, command)
+        return subprocess.CompletedProcess(command, 0, stdout=output, stderr=b"")
+
+    monkeypatch.setattr(
+        workspace_git.subprocess,
+        "run",
+        return_legacy_worktree_records,
+    )
+
+    with pytest.raises(RuntimeError, match="quoted, escaped, or malformed"):
+        worktree_cleanup.registered_worktree_paths(tmp_path / ".git")
 
 
 def test_cleanup_workspace_cache_dry_run_preserves_paths(tmp_path: Path) -> None:
@@ -60,6 +110,45 @@ def test_worktree_disk_usage_does_not_follow_symlinks(tmp_path: Path) -> None:
         worktree_cleanup.worktree_disk_usage(workspace_path)
         == link_path.lstat().st_size
     )
+
+
+def test_claimed_worktree_cleanup_does_not_fall_through_after_git_probe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_path = tmp_path / "workspace"
+    checkout_root = workspace_path / "checkout"
+    checkout_root.mkdir(parents=True)
+    common_git_dir = tmp_path / "repo.git"
+    worktree_git_dir = common_git_dir / "worktrees" / "claimed"
+    (checkout_root / ".git").write_text(
+        f"gitdir: {worktree_git_dir.as_posix()}\n",
+        encoding="utf-8",
+    )
+    git_file = checkout_root / ".git"
+    git_probe_count = 0
+    original_lstat = Path.lstat
+
+    def remove_git_file_between_probes(path: Path) -> os.stat_result:
+        nonlocal git_probe_count
+        if path == git_file:
+            git_probe_count += 1
+            if git_probe_count == 2:
+                git_file.unlink()
+                raise FileNotFoundError(git_file)
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", remove_git_file_between_probes)
+
+    with pytest.raises(RuntimeError):
+        worktree_cleanup.remove_unknown_workspace_path(
+            workspace_path,
+            common_git_dir,
+            worktree_git_dir,
+        )
+
+    assert git_probe_count == 2
+    assert workspace_path.exists()
 
 
 def test_cleanup_workspace_cache_ignores_symlink_candidates(tmp_path: Path) -> None:
@@ -202,7 +291,7 @@ def test_remove_worktree_workspace_does_not_git_remove_checkout_symlink(
     assert external_checkout.as_posix() in _git(repo, "worktree", "list", "--porcelain")
 
 
-def test_remove_worktree_workspace_prunes_registered_missing_checkout(
+def test_remove_worktree_workspace_retains_registered_missing_checkout(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -222,10 +311,11 @@ def test_remove_worktree_workspace_prunes_registered_missing_checkout(
     _git(repo, "worktree", "add", "--detach", checkout_root.as_posix(), "HEAD")
     shutil.rmtree(checkout_root)
 
-    remove_worktree_workspace(source, workspace_path)
+    with pytest.raises(RuntimeError, match="checkout is missing"):
+        remove_worktree_workspace(source, workspace_path)
 
-    assert not workspace_path.exists()
-    assert checkout_root.as_posix() not in _git(repo, "worktree", "list", "--porcelain")
+    assert workspace_path.exists()
+    assert checkout_root.as_posix() in _git(repo, "worktree", "list", "--porcelain")
 
 
 def test_cleanup_workspace_cache_removes_matching_paths(tmp_path: Path) -> None:
@@ -561,6 +651,94 @@ def test_cleanup_workspace_cache_deletes_refs_once_per_removed_run(
     assert result.removed_ref_count == 2
 
 
+def test_cleanup_workspace_cache_deletes_refs_for_selected_absent_workspace(
+    tmp_path: Path,
+) -> None:
+    deleted_runs: list[str] = []
+
+    result = cleanup_workspace_cache(
+        tmp_path,
+        WorkspaceCleanupFilter(statuses=frozenset({"failed"})),
+        dry_run=False,
+        ref_cleanup=lambda run_key: deleted_runs.append(run_key) or 2,
+        absent_state_projections=(
+            ("run-1", tmp_path / "already-absent", "failed", ()),
+        ),
+    )
+
+    assert deleted_runs == ["run-1"]
+    assert result.removed_ref_count == 2
+
+
+def test_cleanup_workspace_cache_preserves_refs_when_absent_workspace_run_remains(
+    tmp_path: Path,
+) -> None:
+    retained = _workspace_path(tmp_path, "workspaces", "run-1", "retained")
+    retained.mkdir(parents=True)
+    deleted_runs: list[str] = []
+
+    def succeeded_status(run_key: str, cache_key: str) -> str:
+        del run_key, cache_key
+        return "succeeded"
+
+    result = cleanup_workspace_cache(
+        tmp_path,
+        WorkspaceCleanupFilter(statuses=frozenset({"failed"})),
+        dry_run=False,
+        status_lookup=succeeded_status,
+        ref_cleanup=lambda run_key: deleted_runs.append(run_key) or 2,
+        absent_state_projections=(
+            ("run-1", tmp_path / "already-absent", "failed", ()),
+        ),
+    )
+
+    assert retained.exists()
+    assert deleted_runs == []
+    assert result.removed_ref_count == 0
+
+
+def test_cleanup_workspace_cache_preserves_refs_for_excluded_absent_workspace(
+    tmp_path: Path,
+) -> None:
+    deleted_runs: list[str] = []
+
+    result = cleanup_workspace_cache(
+        tmp_path,
+        WorkspaceCleanupFilter(statuses=frozenset({"failed"})),
+        dry_run=False,
+        ref_cleanup=lambda run_key: deleted_runs.append(run_key) or 2,
+        absent_state_projections=(
+            ("run-1", tmp_path / "failed-absent", "failed", ()),
+            ("run-1", tmp_path / "succeeded-absent", "succeeded", ()),
+        ),
+    )
+
+    assert deleted_runs == []
+    assert result.removed_ref_count == 0
+
+
+def test_cleanup_workspace_cache_does_not_age_select_absent_workspace(
+    tmp_path: Path,
+) -> None:
+    deleted_runs: list[str] = []
+
+    result = cleanup_workspace_cache(
+        tmp_path,
+        WorkspaceCleanupFilter(
+            older_than_seconds=3600,
+            statuses=frozenset({"failed"}),
+        ),
+        dry_run=False,
+        ref_cleanup=lambda run_key: deleted_runs.append(run_key) or 2,
+        absent_state_projections=(
+            ("run-1", tmp_path / "already-absent", "failed", ()),
+        ),
+    )
+
+    assert deleted_runs == []
+    assert result.removed_ref_count == 0
+
+
 @pytest.mark.parametrize("retained_by", ["age", "status", "eligibility"])
 def test_cleanup_workspace_cache_preserves_refs_when_same_run_candidate_remains(
     tmp_path: Path,
@@ -586,10 +764,11 @@ def test_cleanup_workspace_cache_preserves_refs_when_same_run_candidate_remains(
 
     def eligibility_lookup(
         run_key: str,
-        cache_key: str,
+        workspace_path: Path,
         status: str | None,
     ) -> WorkspaceCleanupEligibility:
         assert run_key == "run-1"
+        cache_key = workspace_path.name
         assert status == statuses[cache_key]
         return WorkspaceCleanupEligibility(
             deletable=not (retained_by == "eligibility" and cache_key == "retained"),
@@ -637,7 +816,7 @@ def test_cleanup_workspace_cache_filters_current_repository_by_default(
     assert other.exists()
 
 
-def test_delete_run_workspace_refs_removes_only_selected_run_refs(
+def test_delete_run_workspace_refs_preserves_unrecorded_run_refs(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -648,10 +827,15 @@ def test_delete_run_workspace_refs_removes_only_selected_run_refs(
     _git(repo, "update-ref", "refs/crewplane/runs/run-1/node/b", "HEAD")
     _git(repo, "update-ref", "refs/crewplane/runs/run-2/node/a", "HEAD")
 
-    removed = delete_run_workspace_refs(repo, common_git_dir, "run-1")
+    removed = delete_run_workspace_refs(repo, common_git_dir, repo, "run-1")
 
-    assert removed == 2
-    assert _git(repo, "for-each-ref", "refs/crewplane/runs/run-1") == ""
+    assert removed == 0
+    assert "refs/crewplane/runs/run-1/node/a" in _git(
+        repo,
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/crewplane/runs/run-1",
+    )
     assert "refs/crewplane/runs/run-2/node/a" in _git(
         repo,
         "for-each-ref",
@@ -660,7 +844,7 @@ def test_delete_run_workspace_refs_removes_only_selected_run_refs(
     )
 
 
-def test_cleanup_plan_workspace_refs_respects_cleanup_on_success(
+def test_cleanup_plan_workspace_refs_does_not_delete_unrecorded_refs(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -694,8 +878,13 @@ def test_cleanup_plan_workspace_refs_respects_cleanup_on_success(
         kind="worktree",
     )
 
-    assert cleanup_plan_workspace_refs(cleanup_plan) == 1
-    assert _git(repo, "for-each-ref", "refs/crewplane/runs/workspace-run-001") == ""
+    assert cleanup_plan_workspace_refs(cleanup_plan) == 0
+    assert "refs/crewplane/runs/workspace-run-001/node/a" in _git(
+        repo,
+        "for-each-ref",
+        "--format=%(refname)",
+        "refs/crewplane/runs/workspace-run-001",
+    )
 
 
 @pytest.mark.parametrize(

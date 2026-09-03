@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.runtime.workspace.git import git
 from crewplane.runtime.workspace.worktree.result_validation import (
     validate_portable_path_collisions,
     validate_result_tree,
@@ -26,6 +27,26 @@ def test_validate_result_tree_rejects_reserved_paths_under_project_root(
 
     with pytest.raises(RuntimeError, match="reserved runtime artifact paths"):
         validate_result_tree(repo, tree, "packages/app")
+
+
+def test_validate_result_tree_rejects_missing_blob_object(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    missing_oid = "f" * 40
+    tree = (
+        git(repo)
+        .run_with_input(
+            f"100644 blob {missing_oid}\tmissing.txt\n".encode(),
+            "mktree",
+            "--missing",
+        )
+        .stdout.decode()
+        .strip()
+    )
+
+    with pytest.raises(RuntimeError, match="missing or non-blob object"):
+        validate_result_tree(repo, tree)
 
 
 @pytest.mark.parametrize(

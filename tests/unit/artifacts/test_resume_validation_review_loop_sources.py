@@ -264,6 +264,7 @@ def test_validate_frontier_accepts_seeded_audit_candidate_source(
         "retention": "retained",
         "retained_reason": None,
         "project_root_relative_path": ".",
+        "reuse_generation": 1,
     }
     reviewer_payload["result"] = {
         "changed_path_count": 0,
@@ -272,6 +273,7 @@ def test_validate_frontier_accepts_seeded_audit_candidate_source(
     }
     reviewer_payload.pop("refs")
     reviewer_payload.pop("bundle")
+    reviewer_payload.pop("ref_publication", None)
     for path, payload in (
         (
             source.run_dir / "a" / "workspace-state-alpha-audit1-round1.json",
@@ -418,6 +420,7 @@ def _initial_reviewer_payload(
         "retention": "retained",
         "retained_reason": None,
         "project_root_relative_path": ".",
+        "reuse_generation": 1,
     }
     payload["result"] = {
         "changed_path_count": 0,
@@ -426,6 +429,7 @@ def _initial_reviewer_payload(
     }
     payload.pop("refs", None)
     payload.pop("bundle", None)
+    payload.pop("ref_publication", None)
     return payload
 
 

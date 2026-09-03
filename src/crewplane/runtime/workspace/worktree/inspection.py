@@ -54,6 +54,22 @@ def changed_paths(checkout_root: Path) -> tuple[str, ...]:
     return tuple(paths)
 
 
+def changed_tree_paths(
+    checkout_root: Path,
+    source_tree: str,
+    result_tree: str,
+) -> tuple[str, ...]:
+    return git(checkout_root).zero_records(
+        "diff-tree",
+        "-r",
+        "--no-commit-id",
+        "--name-only",
+        "-z",
+        source_tree,
+        result_tree,
+    )
+
+
 def reject_gitattributes_drift(
     checkout_root: Path,
     source_commit: str,
@@ -129,8 +145,9 @@ def inspect_disposable_checkout(
                 ),
             }
         )
-    _append_policy_diagnostics(checkout_root, repo_root, common_git_dir, diagnostics)
-    _append_protected_ref_diagnostics(checkout_root, protected_refs, diagnostics)
+    reject_common_git_policy_drift(repo_root, common_git_dir)
+    reject_worktree_git_policy_drift(checkout_root)
+    reject_protected_ref_drift(checkout_root, protected_refs)
     paths = _changed_paths_or_diagnostic(checkout_root, diagnostics)
     if paths:
         diagnostics.append(

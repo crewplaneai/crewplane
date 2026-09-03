@@ -4,7 +4,7 @@ import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
 
-from ..git import git
+from ..git import GitCommand, git
 from .inspection import reserved_runtime_path
 
 
@@ -13,7 +13,8 @@ def validate_result_tree(
     tree: str,
     project_root_relative_path: str = ".",
 ) -> None:
-    records = git(checkout_root).zero_records(
+    command = git(checkout_root)
+    records = command.zero_records(
         "ls-tree",
         "-r",
         "-z",
@@ -21,19 +22,65 @@ def validate_result_tree(
         tree,
     )
     paths: list[str] = []
+    object_ids: list[str] = []
     for record in records:
         header, separator, path = record.partition("\t")
         if separator != "\t":
             raise RuntimeError("Workspace result tree contains an invalid entry.")
-        mode = header.split(" ", 1)[0]
-        if mode == "160000":
-            raise RuntimeError("Workspace result tree contains unsupported gitlinks.")
+        fields = header.split()
+        if len(fields) != 3:
+            raise RuntimeError(
+                "Workspace result tree contains invalid object metadata."
+            )
+        mode, object_type, object_id = fields
+        if mode not in {"100644", "100755", "120000"}:
+            raise RuntimeError(
+                f"Workspace result tree contains unsupported mode {mode}."
+            )
+        if object_type != "blob":
+            raise RuntimeError(
+                f"Workspace result tree contains unsupported object type {object_type}."
+            )
+        _validate_result_path(path)
         if reserved_runtime_path(path, project_root_relative_path):
             raise RuntimeError(
                 "Workspace result tree contains reserved runtime artifact paths."
             )
         paths.append(path)
+        object_ids.append(object_id)
+    _validate_result_blobs(command, object_ids)
     validate_portable_path_collisions(paths)
+
+
+def _validate_result_blobs(command: GitCommand, object_ids: list[str]) -> None:
+    if not object_ids:
+        return
+    output = command.run_with_input(
+        "".join(f"{object_id}\n" for object_id in object_ids).encode(),
+        "cat-file",
+        "--batch-check=%(objectname) %(objecttype)",
+    ).stdout.decode("utf-8", errors="strict")
+    records = output.splitlines()
+    if len(records) != len(object_ids):
+        raise RuntimeError("Workspace result tree object verification was incomplete.")
+    for expected_oid, record in zip(object_ids, records, strict=True):
+        actual_oid, separator, object_type = record.partition(" ")
+        if separator != " " or actual_oid != expected_oid or object_type != "blob":
+            raise RuntimeError(
+                "Workspace result tree contains a missing or non-blob object."
+            )
+
+
+def _validate_result_path(path: str) -> None:
+    candidate = Path(path)
+    if (
+        not path
+        or candidate.is_absolute()
+        or ".." in candidate.parts
+        or ".git" in candidate.parts
+        or "\x00" in path
+    ):
+        raise RuntimeError(f"Workspace result tree contains unsafe path: {path!r}.")
 
 
 def _collision_key(path: str) -> str:

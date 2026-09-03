@@ -24,11 +24,15 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.serialization import to_json_safe
+from crewplane.runtime.agent.process.drain import ProcessDrainError, drain_popen_process
 from crewplane.runtime.agent.workspace_environment import (
     workspace_child_environment,
 )
-
-SETUP_PROCESS_TERMINATION_GRACE_SECONDS = 5.0
+from crewplane.runtime.workspace.mutator_fence import (
+    fence_workspace_mutator,
+    release_workspace_mutator,
+)
+from crewplane.runtime.workspace.state import record_workspace_process_drain
 
 
 class WorkspaceSetupError(RuntimeError):
@@ -48,28 +52,35 @@ class WorkspaceSetupCancellation:
     _lock: Lock = field(default_factory=Lock)
     _cancelled: bool = False
     _process: subprocess.Popen[str] | None = None
+    _state_path: Path | None = None
 
     def cancel(self) -> None:
         process: subprocess.Popen[str] | None = None
         with self._lock:
             self._cancelled = True
             process = self._process
+            state_path = self._state_path
         if process is not None:
-            _terminate_setup_process(process)
+            _terminate_setup_process(process, state_path)
 
     def is_cancelled(self) -> bool:
         with self._lock:
             return self._cancelled
 
-    def register_process(self, process: subprocess.Popen[str]) -> bool:
+    def register_process(
+        self,
+        process: subprocess.Popen[str],
+        state_path: Path | None = None,
+    ) -> bool:
         with self._lock:
             if self._cancelled:
                 should_terminate = True
             else:
                 self._process = process
+                self._state_path = state_path
                 should_terminate = False
         if should_terminate:
-            _terminate_setup_process(process)
+            _terminate_setup_process(process, state_path)
             return False
         return True
 
@@ -77,6 +88,7 @@ class WorkspaceSetupCancellation:
         with self._lock:
             if self._process is process:
                 self._process = None
+                self._state_path = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +111,7 @@ def run_workspace_setup(
         return None
 
     artifacts = workspace_setup_artifacts(state_path)
+    process_state_path = state_path if state_path.is_file() else None
     child_environment = workspace_child_environment(cwd, checkout_root)
     timeout_seconds = _setup_timeout_seconds(plan)
     started_at = datetime.now(UTC).isoformat()
@@ -132,6 +145,7 @@ def run_workspace_setup(
                 child_environment,
                 log_handle,
                 cancellation,
+                process_state_path,
             )
             records.append(record)
             if record.get("cancelled") is True:
@@ -220,6 +234,7 @@ def _run_setup_command(
     child_environment: ChildProcessEnvironment,
     log_handle: TextIO,
     cancellation: WorkspaceSetupCancellation | None,
+    state_path: Path | None,
 ) -> JsonObject:
     started_at = datetime.now(UTC).isoformat()
     started = time.monotonic()
@@ -243,6 +258,7 @@ def _run_setup_command(
                 stdout_file,
                 stderr_file,
                 cancellation,
+                state_path,
             )
             if cancelled:
                 exit_code = None
@@ -294,6 +310,7 @@ def _run_setup_process(
     stdout_file: TextIO,
     stderr_file: TextIO,
     cancellation: WorkspaceSetupCancellation | None,
+    state_path: Path | None,
 ) -> tuple[int | None, bool, bool]:
     process = subprocess.Popen(
         argv,
@@ -306,49 +323,76 @@ def _run_setup_process(
     )
     registered = True
     if cancellation is not None:
-        registered = cancellation.register_process(process)
+        registered = cancellation.register_process(process, state_path)
         if not registered:
             return None, False, True
     try:
         returncode = process.wait(timeout=timeout_seconds)
+        _terminate_setup_process(process, state_path)
         if cancellation is not None and cancellation.is_cancelled():
             return None, False, True
         return returncode, False, False
     except subprocess.TimeoutExpired:
-        _terminate_setup_process(process)
+        _terminate_setup_process(process, state_path)
         return None, True, False
     finally:
         if cancellation is not None and registered:
             cancellation.clear_process(process)
 
 
-def _terminate_setup_process(process: subprocess.Popen[str]) -> None:
-    if process.poll() is not None:
-        return
-    terminate_process_group = supports_posix_process_groups()
-    if terminate_process_group:
-        _send_setup_process_group_signal(process, signal.SIGTERM)
-    else:
-        process.terminate()
+def _terminate_setup_process(
+    process: subprocess.Popen[str],
+    state_path: Path | None = None,
+) -> None:
+    process_group_id = process.pid if supports_posix_process_groups() else None
     try:
-        process.wait(timeout=SETUP_PROCESS_TERMINATION_GRACE_SECONDS)
-        return
-    except subprocess.TimeoutExpired:
-        if terminate_process_group:
-            _send_setup_process_group_signal(process, signal.SIGKILL)
-        else:
-            process.kill()
-        process.wait()
+        evidence = drain_popen_process(
+            process,
+            process_group_id,
+            _send_setup_process_group_signal,
+        )
+    except ProcessDrainError as exc:
+        if state_path is not None:
+            _record_unresolved_process_drain(state_path, exc)
+        raise
+    if state_path is not None:
+        record_workspace_process_drain(
+            state_path,
+            "confirmed",
+            evidence.pid,
+            evidence.process_group_id,
+        )
+        release_workspace_mutator(state_path)
+
+
+def _record_unresolved_process_drain(
+    state_path: Path,
+    error: ProcessDrainError,
+) -> None:
+    fence_workspace_mutator(state_path)
+    try:
+        record_workspace_process_drain(
+            state_path,
+            "unresolved",
+            error.evidence.pid,
+            error.evidence.process_group_id,
+            str(error),
+        )
+    except Exception as persistence_error:
+        error.add_note(
+            f"Workspace process-drain evidence persistence failed: {persistence_error}"
+        )
 
 
 def _send_setup_process_group_signal(
-    process: subprocess.Popen[str],
+    process_group_id: int,
     termination_signal: signal.Signals,
-) -> None:
+) -> bool:
     try:
-        os.killpg(process.pid, termination_signal)
+        os.killpg(process_group_id, termination_signal)
     except ProcessLookupError:
-        return
+        return True
+    return True
 
 
 def _setup_command_record(

@@ -160,9 +160,9 @@ Mock file mode searches from node/task/round-specific fixtures down to
 `default-<role>.md` and `default.md`. Use `strict_file_mode: true` when you want
 missing fixtures to fail instead of falling back to generated mock output.
 
-## Experimental Workspace Unsupported Repository
+## Workspace Unsupported Repository
 
-Experimental workspace isolation requires an ordinary Git repository compatible
+Workspace isolation requires an ordinary Git repository compatible
 with the `blob_exact` source contract. Disable workspace support for non-Git
 projects, Git LFS, custom filters, text/eol conversions, submodules, sparse
 clone, or partial clone unless support has been verified locally.

@@ -1,17 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+from pathlib import Path
 
+from crewplane.artifacts.manager import OutputManager
+from crewplane.artifacts.resume.hydration import hydrate_resume_frontier
 from crewplane.artifacts.resume.validation import validate_resume_frontier
+from crewplane.artifacts.run_history import find_same_context_runs
 from crewplane.artifacts.workspace.rendered_file_validation import (
     provider_rendered_workspace_files_match,
 )
 from crewplane.core.preflight.models import WorkspaceFileLocator
+from crewplane.runtime.execution.workflow.cleanup import (
+    cleanup_successful_workspace_run_refs,
+)
+from crewplane.runtime.execution.workspace_files import resolve_workspace_file
+from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
 from tests.helpers.resume import (
+    WORKFLOW_IDENTITY,
+    WORKFLOW_NAME,
+    WORKFLOW_SIGNATURE,
     attach_workspace_descriptor,
     make_node_state,
     make_plan,
+    make_run_manifest,
     write_node_state,
     write_result,
 )
@@ -103,6 +117,66 @@ def test_rendered_workspace_file_rejects_dynamic_source_blob_mismatch(
         payload,
         source,
     )
+
+
+def test_hydrated_lineage_survives_source_rendering_and_resume_consumers(
+    tmp_path,
+) -> None:
+    source, plan, payload = _source_with_rendered_workspace_file_descriptor(tmp_path)
+    assert plan.workspace_source is not None
+    repo = plan.workspace_source.git_top_level
+    locator = _dynamic_workspace_file_locator(Path(repo))
+    plan = plan.model_copy(update={"workspace_file_locators": [locator]})
+    payload["rendered_workspace_files"] = [
+        _rendered_workspace_file_descriptor(plan, locator)
+    ]
+    source_state_path = source.run_dir / "a" / "workspace-state.json"
+    source_state_path.parent.mkdir(parents=True, exist_ok=True)
+    source_state_path.write_text(json.dumps(payload), encoding="utf-8")
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+    frontier = validate_resume_frontier(source, plan)
+    state_dir = Path(repo) / ".crewplane"
+    output = OutputManager("Workflow", base_dir=state_dir)
+    output.write_run_manifest(
+        make_run_manifest(output.run_id, output.run_key_name, status="running")
+    )
+
+    hydrate_resume_frontier(frontier, plan, output)
+
+    hydrated_state_path = output.stages_dir / "a" / "workspace-state.json"
+    hydrated_payload = json.loads(hydrated_state_path.read_text(encoding="utf-8"))
+    source_ref = load_source_ref_from_state(hydrated_state_path)
+    assert source_ref.source_commit == payload["result"]["result_commit"]
+    assert provider_rendered_workspace_files_match(
+        plan,
+        plan.nodes[0],
+        hydrated_payload,
+    )
+    resolved = resolve_workspace_file(
+        plan,
+        output,
+        "workspace-file-dynamic",
+        workspace_candidate_source=True,
+    )
+    assert resolved.text == "ready\n"
+    target_plan = plan.model_copy(
+        update={"run_id": output.run_id, "run_key_name": output.run_key_name}
+    )
+    assert asyncio.run(cleanup_successful_workspace_run_refs(target_plan, None)) == 0
+    output.write_run_manifest(
+        make_run_manifest(output.run_id, output.run_key_name, status="failed")
+    )
+    hydrated_source = next(
+        record
+        for record in find_same_context_runs(
+            state_dir,
+            WORKFLOW_IDENTITY,
+            WORKFLOW_NAME,
+            WORKFLOW_SIGNATURE,
+        )
+        if record.manifest.run_key_name == output.run_key_name
+    )
+    assert validate_resume_frontier(hydrated_source, plan).resumed_node_ids == ("a",)
 
 
 def _source_with_rendered_workspace_file_descriptor(tmp_path):

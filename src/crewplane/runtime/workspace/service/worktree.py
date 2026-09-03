@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
-from threading import Lock
 from time import monotonic
 
 from crewplane.architecture.contracts import (
@@ -14,11 +12,9 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
-    PreflightExecutionPlan,
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
@@ -26,14 +22,9 @@ from crewplane.runtime.workspace.invocation import (
     workspace_cleanup_on_success,
     workspace_state_path,
 )
-from crewplane.runtime.workspace.materialization import (
-    workspace_materialization_slot,
-)
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
 from crewplane.runtime.workspace.setup import (
-    WorkspaceSetupCancellation,
     WorkspaceSetupCancelled,
-    WorkspaceSetupError,
     run_workspace_setup,
 )
 from crewplane.runtime.workspace.snapshot import (
@@ -44,10 +35,12 @@ from crewplane.runtime.workspace.snapshot import (
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
     WorkspaceStateMaterializationRequest,
+    read_workspace_state,
     update_workspace_setup,
     write_running_workspace_state,
 )
 from crewplane.runtime.workspace.worktree import WorktreeCaptureRequest
+from crewplane.runtime.workspace.worktree.cache import ReusableWorktreeCheckout
 from crewplane.runtime.workspace.worktree.cleanup import worktree_disk_usage
 from crewplane.runtime.workspace.worktree.lineage import (
     worktree_protected_ref_scopes,
@@ -55,15 +48,19 @@ from crewplane.runtime.workspace.worktree.lineage import (
 from crewplane.runtime.workspace.worktree.materialization import (
     materialize_worktree_workspace,
 )
-from crewplane.runtime.workspace.worktree.reset import worktree_retry_reset
 from crewplane.runtime.workspace.worktree.source_refs import (
     invocation_source_ref,
 )
+from crewplane.runtime.workspace.worktree.types import WorktreeProvisioningClaim
 
 from .common import (
     planned_workspace_path,
     refresh_trusted_workspace_state_payload,
     workspace_state_request,
+)
+from .retry_reset import (
+    worktree_retry_reset_canceller,
+    worktree_retry_reset_with_setup,
 )
 from .types import (
     MaterializedWorktreeWorkspace,
@@ -71,6 +68,7 @@ from .types import (
     WorktreePreparationPlan,
 )
 from .worktree_failures import (
+    record_cancelled_unmaterialized_worktree_preparation,
     record_cancelled_worktree_preparation,
     record_failed_unmaterialized_worktree_preparation,
     record_failed_worktree_preparation,
@@ -103,6 +101,7 @@ def prepare_worktree_invocation_workspace(
             materialized_worktree.materialized.worktree.workspace_path,
             worktree_plan.state_path,
             exc,
+            request.worktree_reuse_cache,
         )
         raise
     except Exception as exc:
@@ -111,6 +110,7 @@ def prepare_worktree_invocation_workspace(
             materialized_worktree.materialized.worktree.workspace_path,
             worktree_plan.state_path,
             exc,
+            request.worktree_reuse_cache,
         )
         raise
 
@@ -199,24 +199,123 @@ def materialize_worktree_invocation_workspace(
     request: WorkspaceInvocationRequest,
     plan: WorktreePreparationPlan,
 ) -> MaterializedWorktreeWorkspace:
-    with workspace_materialization_slot(request.plan, request.materialization_limiter):
-        provisioning_started = monotonic()
-        try:
-            materialized = materialize_worktree_workspace(
-                request.plan,
-                plan.slug,
-                plan.source,
-                plan.source_ref,
-                plan.protected_ref_scopes,
-                parent_slug=None if plan.lineage_producer else plan.node.id,
-                logical_worktree_name=plan.policy.logical_worktree_name,
+    cancel_requested = (
+        request.setup_cancellation.is_cancelled
+        if request.setup_cancellation is not None
+        else None
+    )
+    fresh_claim_recorded = False
+
+    def record_reuse_claim(
+        reusable: ReusableWorktreeCheckout,
+        reuse_generation: int,
+    ) -> None:
+        write_running_workspace_state(
+            plan.state_path,
+            workspace_state_request(request),
+            plan.node,
+            plan.source,
+            plan.policy,
+            WorkspaceStateMaterializationRequest(
+                workspace_path=reusable.workspace_path,
+                child_environment_required=plan.child_environment_required,
+                cache_root=runtime_workspace_cache_root(request.plan),
+                effective_cwd=reusable.cwd,
+                checkout_root=reusable.checkout_root,
+                worktree_git_dir=reusable.git_dir,
+                source_ref=plan.source_ref,
+                materialization=plan.policy.materialization,
+                writable=True,
                 lineage_producer=plan.lineage_producer,
-                reuse_cache=request.worktree_reuse_cache,
-            )
-        except Exception as exc:
-            record_failed_unmaterialized_worktree_preparation(plan, exc)
+                worktree_lock_mode="reuse_leased",
+                reuse={
+                    "strategy": "incremental_reset",
+                    "reused": True,
+                    "fallback": False,
+                    "previous_workspace_state": reusable.state_path.name,
+                },
+                reuse_generation=reuse_generation,
+            ),
+        )
+
+    def record_fresh_claim(
+        worktree: WorktreeProvisioningClaim,
+        reuse_generation: int,
+    ) -> None:
+        nonlocal fresh_claim_recorded
+        write_running_workspace_state(
+            plan.state_path,
+            workspace_state_request(request),
+            plan.node,
+            plan.source,
+            plan.policy,
+            WorkspaceStateMaterializationRequest(
+                workspace_path=worktree.workspace_path,
+                child_environment_required=plan.child_environment_required,
+                cache_root=runtime_workspace_cache_root(request.plan),
+                effective_cwd=worktree.cwd,
+                checkout_root=worktree.checkout_root,
+                worktree_git_dir=worktree.git_dir,
+                source_ref=plan.source_ref,
+                materialization=plan.policy.materialization,
+                writable=True,
+                lineage_producer=plan.lineage_producer,
+                worktree_lock_mode=worktree.lock_mode,
+                reuse={
+                    "strategy": "fresh_checkout",
+                    "reused": False,
+                    "fallback": False,
+                },
+                reuse_generation=reuse_generation,
+            ),
+        )
+        fresh_claim_recorded = True
+
+    provisioning_started = monotonic()
+    try:
+        materialized = materialize_worktree_workspace(
+            request.plan,
+            plan.slug,
+            plan.source,
+            plan.source_ref,
+            plan.protected_ref_scopes,
+            parent_slug=None if plan.lineage_producer else plan.node.id,
+            logical_worktree_name=plan.policy.logical_worktree_name,
+            lineage_producer=plan.lineage_producer,
+            reuse_cache=request.worktree_reuse_cache,
+            record_reuse_claim=record_reuse_claim,
+            record_fresh_claim=record_fresh_claim,
+            materialization_limiter=request.materialization_limiter,
+            planned_workspace_path=plan.planned_workspace_path,
+            state_path=plan.state_path,
+            cancel_requested=cancel_requested,
+        )
+    except Exception as exc:
+        if cancel_requested is not None and cancel_requested():
+            if read_workspace_state(plan.state_path).get("status") != "cancelled":
+                if fresh_claim_recorded:
+                    record_cancelled_worktree_preparation(
+                        plan.source,
+                        plan.planned_workspace_path,
+                        plan.state_path,
+                        exc,
+                        request.worktree_reuse_cache,
+                    )
+                else:
+                    record_cancelled_unmaterialized_worktree_preparation(plan, exc)
             raise
-        provisioning_duration_seconds = round(monotonic() - provisioning_started, 6)
+        if fresh_claim_recorded:
+            record_failed_worktree_preparation(
+                plan.source,
+                plan.planned_workspace_path,
+                plan.state_path,
+                exc,
+                request.worktree_reuse_cache,
+            )
+        else:
+            record_failed_unmaterialized_worktree_preparation(plan, exc)
+        raise
+    provisioning_duration_seconds = round(monotonic() - provisioning_started, 6)
     worktree = materialized.worktree
     capture_request = WorktreeCaptureRequest(
         plan=request.plan,
@@ -344,6 +443,7 @@ def write_materialized_worktree_state(
             cache_root=runtime_workspace_cache_root(request.plan),
             effective_cwd=worktree.cwd,
             checkout_root=worktree.checkout_root,
+            worktree_git_dir=worktree.git_dir,
             provisioning=WorkspaceProvisioningMetadata(
                 checkout_size_bytes=materialized_workspace.checkout_size_bytes,
                 duration_seconds=materialized_workspace.provisioning_duration_seconds,
@@ -354,6 +454,7 @@ def write_materialized_worktree_state(
             lineage_producer=plan.lineage_producer,
             worktree_lock_mode=worktree.lock_mode,
             reuse=materialized_workspace.materialized.reuse,
+            reuse_generation=materialized_workspace.materialized.reuse_generation,
         ),
     )
 
@@ -382,120 +483,3 @@ def run_worktree_setup(
         base_payload=trusted_state_payload,
     )
     refresh_trusted_workspace_state_payload(trusted_state_payload, plan.state_path)
-
-
-def worktree_retry_reset_with_setup(
-    capture_request: WorktreeCaptureRequest,
-    plan: PreflightExecutionPlan,
-    policy: WorkspaceSelectionRecord,
-    cwd: Path,
-    state_path: Path,
-    checkout_root: Path,
-    trusted_state_payload: dict[str, object],
-    secret_context: SecretContext,
-) -> Callable[[], None]:
-    reset = worktree_retry_reset(capture_request)
-    if policy.setup is None:
-        return reset
-    return _WorktreeRetryResetWithSetup(
-        reset_workspace=reset,
-        plan=plan,
-        policy=policy,
-        cwd=cwd,
-        state_path=state_path,
-        checkout_root=checkout_root,
-        trusted_state_payload=trusted_state_payload,
-        secret_context=secret_context,
-    )
-
-
-@dataclass
-class _WorktreeRetryResetWithSetup:
-    reset_workspace: Callable[[], None]
-    plan: PreflightExecutionPlan
-    policy: WorkspaceSelectionRecord
-    cwd: Path
-    state_path: Path
-    checkout_root: Path
-    trusted_state_payload: dict[str, object]
-    secret_context: SecretContext
-    _lock: Lock = field(default_factory=Lock)
-    _cancelled: bool = False
-    _setup_cancellation: WorkspaceSetupCancellation | None = None
-
-    def cancel(self) -> None:
-        setup_cancellation: WorkspaceSetupCancellation | None = None
-        with self._lock:
-            self._cancelled = True
-            setup_cancellation = self._setup_cancellation
-        if setup_cancellation is not None:
-            setup_cancellation.cancel()
-
-    def __call__(self) -> None:
-        try:
-            self._reset_and_setup()
-        finally:
-            with self._lock:
-                self._cancelled = False
-
-    def _reset_and_setup(self) -> None:
-        self.reset_workspace()
-        setup_cancellation = self._new_setup_cancellation()
-        try:
-            setup_summary = run_workspace_setup(
-                self.plan,
-                self.policy,
-                self.cwd,
-                self.state_path,
-                self.checkout_root,
-                setup_cancellation,
-                self.secret_context,
-            )
-        except WorkspaceSetupError as exc:
-            update_workspace_setup(
-                self.state_path,
-                exc.summary,
-                base_payload=self.trusted_state_payload,
-            )
-            refresh_trusted_workspace_state_payload(
-                self.trusted_state_payload,
-                self.state_path,
-            )
-            raise
-        finally:
-            self._clear_setup_cancellation(setup_cancellation)
-        if setup_summary is None:
-            return
-        update_workspace_setup(
-            self.state_path,
-            setup_summary,
-            base_payload=self.trusted_state_payload,
-        )
-        refresh_trusted_workspace_state_payload(
-            self.trusted_state_payload,
-            self.state_path,
-        )
-
-    def _new_setup_cancellation(self) -> WorkspaceSetupCancellation:
-        setup_cancellation = WorkspaceSetupCancellation()
-        with self._lock:
-            self._setup_cancellation = setup_cancellation
-            cancelled = self._cancelled
-        if cancelled:
-            setup_cancellation.cancel()
-        return setup_cancellation
-
-    def _clear_setup_cancellation(
-        self,
-        setup_cancellation: WorkspaceSetupCancellation,
-    ) -> None:
-        with self._lock:
-            if self._setup_cancellation is setup_cancellation:
-                self._setup_cancellation = None
-
-
-def worktree_retry_reset_canceller(
-    retry_reset: Callable[[], None],
-) -> Callable[[], None] | None:
-    canceller = getattr(retry_reset, "cancel", None)
-    return canceller if callable(canceller) else None

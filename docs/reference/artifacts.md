@@ -80,7 +80,7 @@ workspace-exports/*.json
 ```
 
 Exact files depend on node mode and enabled features. Workspace files are
-present only for Experimental workspace isolation runs.
+present only for Workspace isolation runs.
 
 For review-loop nodes, `review-loop-status.json` records the executor and
 reviewer outputs selected when the loop ends. Each entry identifies the
@@ -151,7 +151,7 @@ handles. It does not re-read original `{{file:...}}` source paths.
 ## Manifests
 
 Run and node manifests record status, artifact descriptors, workflow identity,
-`workflow_signature`, resumed nodes, and Experimental workspace descriptors
+`workflow_signature`, resumed nodes, and Workspace descriptors
 when applicable.
 
 Terminal fields in `manifests/run.json` depend on the run status. Failed and

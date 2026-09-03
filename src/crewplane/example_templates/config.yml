@@ -152,7 +152,7 @@ settings:
   file_access:
     allowed_template_paths: []
 
-  # Experimental workspace isolation feature is disabled by default. With enabled:
+  # Workspace isolation feature is disabled by default. With enabled:
   # false, providers run in the project root and non-Git projects work normally.
   #
   # Managed workspaces require settings.workspace.enabled: true, workflow-level

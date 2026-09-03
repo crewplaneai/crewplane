@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, cast
@@ -9,25 +7,32 @@ from typing import Annotated, cast
 import typer
 from rich.console import Console
 
-from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.architecture.safe_files import (
+    contained_directory,
+    contained_regular_file,
+)
 from crewplane.artifacts.locks import run_lock_activity
 from crewplane.artifacts.locks.manifest import LockManifestError, LockRunMetadata
 from crewplane.artifacts.locks.process_identity import ProcessInspector
 from crewplane.artifacts.locks.provider_processes import (
     ensure_no_live_provider_processes,
 )
+from crewplane.artifacts.workspace.node_state import refresh_node_workspace_descriptor
 from crewplane.core.config import Settings, load_config
 from crewplane.core.execution_state import RunManifest
+from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.core.workspace.cache import workspace_cache_root
+from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace.cleanup import (
     WorkspaceCleanupEligibility,
     WorkspaceCleanupEligibilityLookup,
     WorkspaceCleanupFilter,
     WorkspaceCleanupResult,
-    WorkspaceStatusLookup,
     cleanup_workspace_cache,
     parse_duration_seconds,
+    status_matches,
 )
 from crewplane.runtime.workspace.worktree.ref_cleanup import (
     WorkspaceRunRefCleanup,
@@ -39,9 +44,9 @@ from .run.workspace.cache_policy import paths_overlap
 from .run.workspace.git_source import (
     GitSourceContext,
     discover_git_context,
-    repository_id,
 )
 from .run.workspace.source_types import WorkspacePolicyBuilder
+from .workspace_cleanup_evidence import WorkspaceCleanupEvidence
 
 cleanup_app = typer.Typer(help="Remove generated crewplane runtime state.")
 
@@ -62,6 +67,17 @@ class _WorkspaceCleanupContext:
     older_than_seconds: int | None
     all_projects: bool
     orphans: bool
+
+
+@dataclass(frozen=True)
+class _CleanupNodeArtifactStateStore:
+    stages_dir: Path
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        stage_path = request.contract.stage_path
+        if stage_path is None:
+            return None
+        return contained_directory(self.stages_dir, stage_path)
 
 
 @cleanup_app.command("workspaces")
@@ -188,23 +204,196 @@ def execute_workspace_cleanup(
     context: _WorkspaceCleanupContext,
     destructive: bool,
 ) -> WorkspaceCleanupResult:
-    return cleanup_workspace_cache(
-        context.cache_root,
-        workspace_cleanup_filter(context),
-        dry_run=not destructive,
-        status_lookup=cleanup_status_lookup(
+    evidence = _workspace_cleanup_evidence(context)
+    cleanup_filter = workspace_cleanup_filter(context)
+    absent_state_projections = _eligible_absent_state_projections(context, evidence)
+    inactive_ref_cleanup_run_keys = _inactive_ref_cleanup_runs(
+        context.project_root,
+        context.run_key_name,
+        evidence,
+    )
+    ref_cleanup_run_keys = (
+        ()
+        if context.statuses or context.orphans or context.older_than_seconds is not None
+        else inactive_ref_cleanup_run_keys
+    )
+    try:
+        result = cleanup_workspace_cache(
+            context.cache_root,
+            cleanup_filter,
+            dry_run=not destructive,
+            status_lookup=(
+                unknown_workspace_status_lookup
+                if evidence is None
+                else evidence.status_for_cache_key
+            ),
+            ref_cleanup=workspace_ref_cleanup(
+                context.project_root,
+                context.all_projects,
+            ),
+            eligibility_lookup=_workspace_cleanup_eligibility_lookup(
+                context.project_root,
+                context.all_projects,
+                context.orphans,
+                evidence,
+            ),
+            ref_cleanup_run_keys=ref_cleanup_run_keys,
+            absent_state_projections=absent_state_projections,
+        )
+    except Exception as cleanup_error:
+        if destructive:
+            try:
+                _refresh_cleanup_workspace_descriptors(
+                    context.project_root,
+                    inactive_ref_cleanup_run_keys,
+                )
+            except Exception as refresh_error:
+                cleanup_error.add_note(
+                    "Workspace descriptor refresh after partial cleanup failed: "
+                    f"{refresh_error}"
+                )
+        raise
+    if destructive:
+        refresh_run_keys = set(ref_cleanup_run_keys)
+        refresh_run_keys.update(
+            entry.run_key_name for entry in result.entries if entry.removed
+        )
+        refresh_run_keys.update(
+            run_key_name
+            for run_key_name, _path, status, _state_paths in absent_state_projections
+            if (
+                cleanup_filter.run_key_name is None
+                or cleanup_filter.run_key_name == run_key_name
+            )
+            and cleanup_filter.older_than_seconds is None
+            and status_matches(status, cleanup_filter)
+        )
+        _refresh_cleanup_workspace_descriptors(
             context.project_root,
-            context.all_projects,
-        ),
-        ref_cleanup=workspace_ref_cleanup(
-            context.project_root,
-            context.all_projects,
-        ),
-        eligibility_lookup=_workspace_cleanup_eligibility_lookup(
-            context.project_root,
-            context.all_projects,
+            tuple(sorted(refresh_run_keys)),
+        )
+    return result
+
+
+def _refresh_cleanup_workspace_descriptors(
+    project_root: Path,
+    run_key_names: tuple[str, ...],
+) -> None:
+    state_dir = project_root / STATE_DIR_NAME
+    for run_key_name in run_key_names:
+        manifest_path = _run_manifest_path(state_dir, run_key_name)
+        if manifest_path is None:
+            continue
+        run_dir = manifest_path.parent.parent
+        node_manifest_dir = contained_directory(run_dir, "manifests/nodes")
+        if node_manifest_dir is None or not any(node_manifest_dir.iterdir()):
+            continue
+        plan = _load_cleanup_preflight_plan(run_dir, manifest_path, run_key_name)
+        store = _CleanupNodeArtifactStateStore(run_dir)
+        for node in plan.nodes:
+            policy = node.workspace_policy
+            if policy is not None and policy.enabled:
+                refresh_node_workspace_descriptor(node, plan, store)
+
+
+def _load_cleanup_preflight_plan(
+    run_dir: Path,
+    manifest_path: Path,
+    run_key_name: str,
+) -> PreflightExecutionPlan:
+    manifest = _read_workspace_manifest(manifest_path)
+    if isinstance(manifest, str) or manifest.run_key_name != run_key_name:
+        raise RuntimeError(
+            f"Cannot refresh workspace descriptors for '{run_key_name}'."
+        )
+    plan_path = contained_regular_file(run_dir, manifest.preflight_plan_path)
+    if plan_path is None:
+        raise RuntimeError(f"Preflight plan is missing for run '{run_key_name}'.")
+    try:
+        plan = PreflightExecutionPlan.model_validate_json(
+            plan_path.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"Preflight plan is invalid for run '{run_key_name}'."
+        ) from exc
+    if (
+        plan.run_id != manifest.run_id
+        or plan.run_key_name != manifest.run_key_name
+        or plan.workflow_name != manifest.workflow_name
+        or plan.workflow_signature != manifest.workflow_signature
+    ):
+        raise RuntimeError(
+            f"Preflight plan identity is invalid for run '{run_key_name}'."
+        )
+    return plan
+
+
+def _inactive_ref_cleanup_runs(
+    project_root: Path,
+    requested_run_key: str | None,
+    evidence: WorkspaceCleanupEvidence | None,
+) -> tuple[str, ...]:
+    if evidence is None:
+        return ()
+    state_dir = project_root / STATE_DIR_NAME
+    inspector = ProcessInspector()
+    inactive: list[str] = []
+    for run_key_name in evidence.ref_cleanup_run_keys():
+        if requested_run_key is not None and run_key_name != requested_run_key:
+            continue
+        manifest_path = _run_manifest_path(state_dir, run_key_name)
+        if manifest_path is None:
+            continue
+        manifest = _read_workspace_manifest(manifest_path)
+        if (
+            isinstance(manifest, str)
+            or manifest.run_key_name != run_key_name
+            or manifest.status == "running"
+        ):
+            continue
+        if _run_lock_blocker(state_dir, run_key_name, inspector) is not None:
+            continue
+        if _provider_process_blocker(state_dir, manifest, inspector) is not None:
+            continue
+        inactive.append(run_key_name)
+    return tuple(inactive)
+
+
+def _eligible_absent_state_projections(
+    context: _WorkspaceCleanupContext,
+    evidence: WorkspaceCleanupEvidence | None,
+) -> tuple[tuple[str, Path, str, tuple[Path, ...]], ...]:
+    if evidence is None:
+        return ()
+    state_dir = context.project_root / STATE_DIR_NAME
+    inspector = ProcessInspector()
+    return tuple(
+        projection
+        for projection in evidence.absent_state_projections()
+        if _first_cleanup_blocker_reason(
+            projection[0],
+            projection[2],
+            state_dir,
             context.orphans,
-        ),
+            inspector,
+        )
+        is None
+    )
+
+
+def _workspace_cleanup_evidence(
+    context: _WorkspaceCleanupContext,
+) -> WorkspaceCleanupEvidence | None:
+    if context.all_projects:
+        return None
+    git_context = cast(GitSourceContext, context.scope.git_context)
+    repository_id_value = cast(str, context.scope.repository_id)
+    return WorkspaceCleanupEvidence(
+        context.project_root / STATE_DIR_NAME / "execution-stages",
+        context.cache_root,
+        repository_id_value,
+        git_context.common_git_dir,
     )
 
 
@@ -288,6 +477,7 @@ def _workspace_cleanup_eligibility_lookup(
     project_root: Path,
     all_projects: bool,
     orphan_cleanup_requested: bool,
+    evidence: WorkspaceCleanupEvidence | None = None,
 ) -> WorkspaceCleanupEligibilityLookup | None:
     """Return project-scoped cleanup checks or no cross-project override."""
     if all_projects:
@@ -298,9 +488,21 @@ def _workspace_cleanup_eligibility_lookup(
 
     def current_project_lookup(
         run_key_name: str,
-        cache_key: str,  # noqa: ARG001 - Required by eligibility callback contract.
+        workspace_path: Path,
         status: str | None,
     ) -> WorkspaceCleanupEligibility:
+        evidence_decision = (
+            evidence.decision(run_key_name, workspace_path)
+            if evidence is not None
+            else None
+        )
+        if evidence_decision is not None and not evidence_decision.deletable:
+            return WorkspaceCleanupEligibility(
+                deletable=False,
+                reason=evidence_decision.reason,
+                state_paths=evidence_decision.state_paths,
+                expected_worktree_git_dir=(evidence_decision.expected_worktree_git_dir),
+            )
         blocker_reason = _first_cleanup_blocker_reason(
             run_key_name,
             status,
@@ -311,6 +513,14 @@ def _workspace_cleanup_eligibility_lookup(
         return WorkspaceCleanupEligibility(
             deletable=blocker_reason is None,
             reason=blocker_reason,
+            state_paths=(
+                evidence_decision.state_paths if evidence_decision is not None else ()
+            ),
+            expected_worktree_git_dir=(
+                evidence_decision.expected_worktree_git_dir
+                if evidence_decision is not None
+                else None
+            ),
         )
 
     return current_project_lookup
@@ -466,7 +676,11 @@ def cleanup_scope(project_root: Path, all_projects: bool) -> CleanupScope:
             f"{suffix} Use --all-projects to clean every repository bucket."
         )
     return CleanupScope(
-        repository_id=repository_id(git_context, project_root),
+        repository_id=workspace_repository_id(
+            git_context.common_git_dir,
+            project_root,
+            git_context.object_format,
+        ),
         git_context=git_context,
     )
 
@@ -518,87 +732,8 @@ def validate_cleanup_cache_root(
     return cache_root
 
 
-def cleanup_status_lookup(
-    project_root: Path,
-    all_projects: bool,
-) -> WorkspaceStatusLookup:
-    if all_projects:
-        return unknown_workspace_status_lookup
-    return workspace_status_lookup(project_root)
-
-
 def unknown_workspace_status_lookup(
-    run_key_name: str,  # noqa: ARG001 - Required by WorkspaceStatusLookup.
-    cache_key: str,  # noqa: ARG001 - Required by WorkspaceStatusLookup.
+    run_key_name: str,  # noqa: ARG001 - Required by the cleanup callback.
+    cache_key: str,  # noqa: ARG001 - Required by the cleanup callback.
 ) -> str:
     return "unknown"
-
-
-def workspace_status_lookup(project_root: Path) -> WorkspaceStatusLookup:
-    stage_root = project_root / ".crewplane" / "execution-stages"
-    cache: dict[tuple[str, str], str] | None = None
-
-    def lookup(run_key_name: str, cache_key: str) -> str | None:
-        nonlocal cache
-        if cache is None:
-            cache = load_workspace_statuses(stage_root)
-        return cache.get((run_key_name, cache_key))
-
-    return lookup
-
-
-def load_workspace_statuses(stage_root: Path) -> dict[tuple[str, str], str]:
-    statuses: dict[tuple[str, str], str] = {}
-    if not stage_root.is_dir():
-        return statuses
-    for state_path in _iter_workspace_state_paths(stage_root):
-        payload = _parse_workspace_state_payload(state_path)
-        if payload is None:
-            continue
-
-        entry = _extract_workspace_status(payload)
-        if entry is None:
-            continue
-
-        run_key_name, cache_key, status = entry
-        statuses[(run_key_name, cache_key)] = status
-    return statuses
-
-
-def _iter_workspace_state_paths(stage_root: Path) -> Iterator[Path]:
-    return stage_root.glob("*/**/workspace-state*.json")
-
-
-def _parse_workspace_state_payload(state_path: Path) -> dict[str, object] | None:
-    if not state_path.is_file() or state_path.is_symlink():
-        return None
-    try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-        return None
-
-    if not isinstance(payload, dict):
-        return None
-
-    return payload
-
-
-def _extract_workspace_status(
-    payload: dict[str, object],
-) -> tuple[str, str, str] | None:
-    run_key_name = payload.get("run_key_name")
-    status = payload.get("status")
-    workspace = payload.get("workspace")
-
-    if not (
-        isinstance(run_key_name, str)
-        and isinstance(status, str)
-        and isinstance(workspace, dict)
-    ):
-        return None
-
-    cache_key = workspace.get("cache_key")
-    if not isinstance(cache_key, str):
-        return None
-
-    return run_key_name, cache_key, status

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 import subprocess
 from collections.abc import Mapping
@@ -160,17 +159,6 @@ def validate_git_head_unchanged(
         "Workspace source policy failed: Git HEAD changed during workspace "
         "source validation. Retry from a stable checkout."
     )
-
-
-def repository_id(git_context: GitSourceContext, project_root: Path) -> str:
-    payload = "|".join(
-        [
-            git_context.common_git_dir.as_posix(),
-            project_root.resolve(strict=False).as_posix(),
-            git_context.object_format,
-        ]
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def git_text(project_root: Path, *args: str) -> str:

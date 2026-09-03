@@ -6,6 +6,9 @@ from typing import Protocol
 
 from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.artifacts.workspace.state.contracts import (
+    require_workspace_state_contract,
+)
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -15,9 +18,11 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace.branch_export.fulfillment import (
     BranchExportCheckpoint,
 )
+from crewplane.runtime.workspace.git import git
 from crewplane.runtime.workspace.state_selection import (
     required_lineage_state_path,
 )
@@ -25,7 +30,6 @@ from crewplane.runtime.workspace.worktree.descriptors import (
     load_source_ref_from_state,
 )
 from crewplane.runtime.workspace.worktree.lineage import (
-    ensure_source_commit_available,
     verify_source_commit_available,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
@@ -43,11 +47,21 @@ def validated_checkpoint(
     policy: WorkspaceSelectionRecord,
     stages_dir: Path,
     state_lookup: StageLookup,
-    import_result_commit: bool,
+    run_id: str,
+    run_key_name: str,
 ) -> BranchExportCheckpoint:
     state_path = required_lineage_state_path(state_lookup, node)
     payload = _workspace_state_payload(state_path)
-    _validate_state_header(plan, node, policy, payload)
+    require_workspace_state_contract(payload, "export")
+    _validate_state_header(
+        plan,
+        source,
+        node,
+        policy,
+        payload,
+        run_id,
+        run_key_name,
+    )
     result = _mapping(payload.get("result"))
     refs = _mapping(payload.get("refs"))
     result_commit = _hex_object(result.get("result_commit"))
@@ -73,10 +87,7 @@ def validated_checkpoint(
         bundle_sha256,
         bundle_size_bytes,
     )
-    if import_result_commit:
-        _ensure_branch_export_source_available(source, source_ref)
-    else:
-        _verify_branch_export_source_available(source, source_ref)
+    _verify_branch_export_source_available(source, source_ref)
     return BranchExportCheckpoint(
         state_path=state_path,
         state_relative_path=state_path.relative_to(stages_dir).as_posix(),
@@ -90,18 +101,6 @@ def validated_checkpoint(
         bundle_sha256=bundle_sha256,
         bundle_size_bytes=bundle_size_bytes,
     )
-
-
-def _ensure_branch_export_source_available(
-    source: WorkspaceSourceSnapshot,
-    source_ref: WorktreeSourceRef,
-) -> None:
-    try:
-        verify_source_commit_available(source, source_ref)
-        ensure_source_commit_available(source, source_ref)
-    except RuntimeError as exc:
-        _raise_branch_export_result_mismatch(exc)
-        raise
 
 
 def _verify_branch_export_source_available(
@@ -120,11 +119,20 @@ def _raise_branch_export_result_mismatch(exc: RuntimeError) -> None:
     if (
         "source tree mismatch" in message
         or "did not provide the expected commit" in message
+        or "result tree mismatch" in message
+        or "result is not a commit" in message
+        or "unexpected parent" in message
     ):
         raise RuntimeError(
             "Workspace branch export bundle final result does not match the "
             "recorded commit and tree."
         ) from exc
+    if message.startswith("Workspace lineage source verification failed"):
+        raise RuntimeError(message) from exc
+    raise RuntimeError(
+        "Workspace lineage source verification failed while validating recorded "
+        f"Git artifacts: {message}"
+    ) from exc
 
 
 def _workspace_state_payload(state_path: Path) -> dict[str, object]:
@@ -143,13 +151,19 @@ def _workspace_state_payload(state_path: Path) -> dict[str, object]:
 
 def _validate_state_header(
     plan: PreflightExecutionPlan,
+    source: WorkspaceSourceSnapshot,
     node: PreflightExecutionNode,
     policy: WorkspaceSelectionRecord,
     payload: dict[str, object],
+    run_id: str,
+    run_key_name: str,
 ) -> None:
     workspace = _mapping(payload.get("workspace"))
+    git_payload = _mapping(payload.get("git"))
     if not (
         payload.get("version") == SCHEMA_VERSION
+        and payload.get("run_id") == run_id
+        and payload.get("run_key_name") == run_key_name
         and payload.get("workflow_name") == plan.workflow_name
         and payload.get("workflow_signature") == plan.workflow_signature
         and payload.get("node_id") == node.id
@@ -161,10 +175,39 @@ def _validate_state_header(
         == policy.worktree_contract.model_dump(mode="json")
         and workspace.get("materialization") == "worktree_checkout"
         and workspace.get("lineage_producer") is True
+        and git_payload.get("repo_id") == source.repository_id
     ):
         raise RuntimeError(
             f"Workspace branch export state does not match node '{node.id}'."
         )
+    _require_current_repository_identity(source)
+
+
+def _require_current_repository_identity(source: WorkspaceSourceSnapshot) -> None:
+    repo_root = Path(source.git_top_level)
+    command = git(repo_root)
+    common_git_dir = _resolved_git_path(
+        repo_root,
+        command.text("rev-parse", "--git-common-dir"),
+    )
+    object_format = command.text("rev-parse", "--show-object-format=storage")
+    current_repository_id = workspace_repository_id(
+        common_git_dir,
+        repo_root / source.project_root_relative_path,
+        object_format,
+    )
+    if (
+        common_git_dir != Path(source.common_git_dir).resolve(strict=False)
+        or current_repository_id != source.repository_id
+    ):
+        raise RuntimeError("Workspace branch export repository identity changed.")
+
+
+def _resolved_git_path(repo_root: Path, raw_path: str) -> Path:
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = repo_root / path
+    return path.resolve(strict=False)
 
 
 def _validated_bundle(

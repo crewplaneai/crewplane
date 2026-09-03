@@ -33,6 +33,7 @@ from crewplane.runtime.workspace.worktree import (
     ensure_source_commit_available,
 )
 from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
+from crewplane.runtime.workspace.worktree.lineage import TemporaryRefOwner
 
 from ..errors import NodeExecutionError
 from .source_resolution import (
@@ -126,7 +127,25 @@ def resolve_workspace_file(
         workspace_candidate_source,
         workspace_candidate_context,
     )
-    payload, git_blob, git_file_mode = read_dynamic_locator_blob(plan, locator, source)
+    workspace_source = plan.workspace_source
+    if workspace_source is None:
+        raise RuntimeError(
+            f"Workspace file locator has no source snapshot: {locator.locator_id}."
+        )
+    consumer_node = workspace_plan_node(plan, locator.node_id)
+    owner = TemporaryRefOwner.dedicated(
+        plan,
+        workspace_source,
+        output.get_run_log_dir(),
+        consumer_node.id,
+        f"workspace-file-{locator.locator_id}",
+    )
+    payload, git_blob, git_file_mode = read_dynamic_locator_blob(
+        plan,
+        locator,
+        source,
+        owner,
+    )
     digest = hashlib.sha256(payload).hexdigest()
     text = _decode_workspace_file(locator_id, payload)
     return ResolvedWorkspaceFile(
@@ -264,28 +283,29 @@ def read_dynamic_locator_blob(
     plan: PreflightExecutionPlan,
     locator: WorkspaceFileLocator,
     source: WorktreeSourceRef,
+    owner: TemporaryRefOwner,
 ) -> tuple[bytes, str, str]:
     if plan.workspace_source is None:
         raise RuntimeError(
             f"Workspace file locator has no source snapshot: {locator.locator_id}."
         )
-    ensure_source_commit_available(plan.workspace_source, source)
-    record = git_ls_tree(
-        plan.workspace_source.git_top_level,
-        source.source_commit,
-        locator.git_top_relative_path,
-    )
-    if record is None or record.path != locator.git_top_relative_path:
-        raise NodeExecutionError(
-            "Runtime-dynamic workspace file locator does not resolve exactly: "
-            f"{locator.locator_id}."
+    with ensure_source_commit_available(plan.workspace_source, source, owner):
+        record = git_ls_tree(
+            plan.workspace_source.git_top_level,
+            source.source_commit,
+            locator.git_top_relative_path,
         )
-    if record.object_type != "blob" or record.mode not in SUPPORTED_FILE_MODES:
-        raise NodeExecutionError(
-            "Runtime-dynamic workspace file locator must resolve to a regular "
-            f"Git blob: {locator.locator_id}."
-        )
-    payload = git_cat_blob(plan.workspace_source.git_top_level, record.object_id)
+        if record is None or record.path != locator.git_top_relative_path:
+            raise NodeExecutionError(
+                "Runtime-dynamic workspace file locator does not resolve exactly: "
+                f"{locator.locator_id}."
+            )
+        if record.object_type != "blob" or record.mode not in SUPPORTED_FILE_MODES:
+            raise NodeExecutionError(
+                "Runtime-dynamic workspace file locator must resolve to a regular "
+                f"Git blob: {locator.locator_id}."
+            )
+        payload = git_cat_blob(plan.workspace_source.git_top_level, record.object_id)
     if not valid_utf8_without_nul(payload):
         raise NodeExecutionError(
             "Runtime-dynamic workspace file locator content must be UTF-8 text "
@@ -378,6 +398,11 @@ def load_workspace_state(path: Path) -> dict[str, object]:
         raise RuntimeError(f"Invalid workspace state file: {path.as_posix()}") from None
     if not isinstance(payload, dict):
         raise RuntimeError(f"Invalid workspace state payload: {path.as_posix()}")
+    from crewplane.artifacts.workspace.state.contracts import (
+        require_workspace_state_contract,
+    )
+
+    require_workspace_state_contract(payload, "rendering")
     return payload
 
 

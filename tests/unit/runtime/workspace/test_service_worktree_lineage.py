@@ -33,7 +33,7 @@ from tests.helpers.workspace_service import (
 )
 
 
-def test_worktree_protected_ref_scope_covers_crewplane_namespace(
+def test_worktree_protected_ref_scope_covers_exact_destination_refs(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -60,7 +60,11 @@ def test_worktree_protected_ref_scope_covers_crewplane_namespace(
         "implement-alpha-round1",
     )
 
-    assert scopes == ("refs/crewplane",)
+    assert scopes == (
+        "refs/crewplane/runs/workspace-run-001/implement/"
+        "implement-alpha-round1/candidate",
+        "refs/crewplane/runs/workspace-run-001/implement/implement-alpha-round1/result",
+    )
 
 
 def test_worktree_reviewer_workspace_discards_drift_without_lineage(
@@ -114,7 +118,7 @@ def test_worktree_reviewer_workspace_discards_drift_without_lineage(
     assert not workspace_path.exists()
 
 
-def test_worktree_reviewer_workspace_reports_branch_attachment_drift(
+def test_worktree_reviewer_workspace_rejects_branch_attachment(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -138,16 +142,58 @@ def test_worktree_reviewer_workspace_reports_branch_attachment_drift(
     workspace_path = prepared.workspace_path
     run_git_text(prepared.cwd, "checkout", "-b", "review-branch")
 
-    prepared.mark_succeeded()
+    with pytest.raises(RuntimeError, match="detached from branches"):
+        prepared.mark_succeeded()
+    prepared.mark_failed("reviewer changed Git policy")
 
     state = read_json_object(
         output.create_node_dir(node_artifact_request("implement"))
         / "workspace-state.json"
     )
-    diagnostics = state["diagnostics"]
-    assert isinstance(diagnostics, list)
-    assert any("detached from branches" in str(item) for item in diagnostics)
+    assert state["status"] == "failed"
+    workspace = state["workspace"]
+    assert isinstance(workspace, dict)
+    assert workspace["retention"] == "deleted"
     assert not workspace_path.exists()
+
+
+@pytest.mark.parametrize("mutation", ("git_policy", "protected_ref"))
+def test_reviewer_integrity_mutation_fails_and_retains_evidence(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+    prepared = prepare_invocation_workspace(
+        workspace_invocation_request(plan, output, role_label=ProviderRole.REVIEWER),
+        workspace_invocation_context(role=ProviderRole.REVIEWER),
+    )
+    assert prepared.workspace_path is not None
+    if mutation == "git_policy":
+        run_git_text(prepared.cwd, "config", "core.attributesfile", "unsafe")
+    else:
+        protected_ref = prepared.worktree_capture.protected_refs.scopes[0]
+        run_git_text(repo, "update-ref", protected_ref, "HEAD")
+
+    with pytest.raises(RuntimeError):
+        prepared.mark_succeeded()
+    prepared.mark_failed("reviewer integrity mutation")
+
+    state = read_json_object(prepared.state_path)
+    assert state["status"] == "failed"
+    workspace = state["workspace"]
+    assert isinstance(workspace, dict)
+    assert workspace["retention"] == "deleted"
+    assert not prepared.workspace_path.exists()
 
 
 def test_required_lineage_state_skips_disposable_reviewer_state(
@@ -225,7 +271,9 @@ def test_worktree_workspace_rejects_source_tree_mismatch_before_checkout(
     wrong_tree = "f" * 40
     assert wrong_tree != source.source_tree
 
-    with pytest.raises(RuntimeError, match="source tree mismatch"):
+    with pytest.raises(
+        RuntimeError, match="project source descriptor is contradictory"
+    ):
         create_worktree_workspace(
             plan,
             "bad-source-tree",

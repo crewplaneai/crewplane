@@ -91,10 +91,21 @@ def validate_current_value_fingerprint_shape(
 
 def validate_persisted_node_contracts(nodes: Sequence[object]) -> None:
     for node in nodes:
+        _validate_persisted_workspace_policy(node)
         if getattr(node, "mode", None) == "input":
             _validate_persisted_input_node_contract(node)
             continue
         _validate_persisted_provider_node_contract(node)
+
+
+def _validate_persisted_workspace_policy(node: object) -> None:
+    policy = getattr(node, "workspace_policy", None)
+    if policy is not None and getattr(policy, "enabled", False) is not True:
+        raise ValueError(
+            "Persisted preflight node "
+            f"'{plan_contract_records.node_id(node)}' must omit a disabled "
+            "workspace_policy."
+        )
 
 
 def _validate_persisted_input_node_contract(node: object) -> None:

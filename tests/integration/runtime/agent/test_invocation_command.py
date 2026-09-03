@@ -1,9 +1,14 @@
 import asyncio
+import json
 import os
+import signal
 import sys
+import time
 import unittest
+from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
@@ -25,8 +30,17 @@ from crewplane.runtime.agent.invocation.command import (
     run_command_once,
     run_invocation_attempt,
 )
+from crewplane.runtime.agent.process.drain import (
+    ProcessDrainError,
+    ProcessDrainEvidence,
+)
 from crewplane.runtime.agent.process.stream_capture import ProcessOutputCapture
 from crewplane.runtime.agent.workspace_environment import workspace_child_environment
+from crewplane.runtime.workspace.mutator_fence import (
+    fence_workspace_mutator,
+    release_workspace_mutator,
+    workspace_mutator_is_fenced,
+)
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -88,6 +102,205 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(events[1].process_group_id, expected_group_id)
         finally:
             result.cleanup_stream_files()
+
+    async def test_cancelled_command_records_confirmed_process_drain(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "workspace-state.json"
+            state_path.write_text(
+                json.dumps({"process_drain": {"status": "not_started"}}),
+                encoding="utf-8",
+            )
+            fence_workspace_mutator(state_path)
+            events: list[InvocationProcessEvent] = []
+            context = _workspace_invocation_context(Path.cwd(), lambda: None)
+            assert context.workspace is not None
+            context = replace(
+                context,
+                process_event_sink=events.append,
+                workspace=replace(
+                    context.workspace,
+                    workspace_state_path=state_path,
+                ),
+            )
+            try:
+                task = asyncio.create_task(
+                    run_command_once(
+                        cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
+                        stdin_data=None,
+                        log_file=None,
+                        append_log=False,
+                        log_header=None,
+                        cwd=Path.cwd(),
+                        invocation_context=context,
+                        idle_timeout_seconds=None,
+                    )
+                )
+                while not events:
+                    await asyncio.sleep(0.01)
+
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+
+                payload = json.loads(state_path.read_text(encoding="utf-8"))
+                self.assertEqual(payload["process_drain"]["status"], "confirmed")
+                self.assertFalse(workspace_mutator_is_fenced(state_path))
+            finally:
+                release_workspace_mutator(state_path)
+
+    async def test_cancelled_command_records_unresolved_process_drain(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "workspace-state.json"
+            state_path.write_text(
+                json.dumps({"process_drain": {"status": "not_started"}}),
+                encoding="utf-8",
+            )
+            collection_started = asyncio.Event()
+            context = _workspace_invocation_context(Path.cwd(), lambda: None)
+            assert context.workspace is not None
+            context = replace(
+                context,
+                workspace=replace(
+                    context.workspace,
+                    workspace_state_path=state_path,
+                ),
+            )
+
+            async def block_collection(*args: object, **kwargs: object) -> None:
+                del args, kwargs
+                collection_started.set()
+                await asyncio.Event().wait()
+
+            async def fail_drain(
+                process: asyncio.subprocess.Process,
+                process_group_id: int | None,
+                diagnostic_sink: object,
+            ) -> None:
+                del diagnostic_sink
+                process.kill()
+                await process.wait()
+                raise ProcessDrainError(
+                    ProcessDrainEvidence(
+                        pid=process.pid,
+                        process_group_id=process_group_id,
+                        leader_stopped=True,
+                        process_group_stopped=False,
+                    ),
+                    "provider process group remained live",
+                )
+
+            with (
+                patch(
+                    "crewplane.runtime.agent.invocation.command."
+                    "write_stdin_and_collect_output",
+                    new=block_collection,
+                ),
+                patch(
+                    "crewplane.runtime.agent.invocation.command.reap_failed_process",
+                    new=fail_drain,
+                ),
+            ):
+                task = asyncio.create_task(
+                    run_command_once(
+                        cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
+                        stdin_data=None,
+                        log_file=None,
+                        append_log=False,
+                        log_header=None,
+                        cwd=Path.cwd(),
+                        invocation_context=context,
+                        idle_timeout_seconds=None,
+                    )
+                )
+                await asyncio.wait_for(collection_started.wait(), timeout=1.0)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError) as caught:
+                    await task
+
+            self.assertIn(
+                "provider process group remained live",
+                getattr(caught.exception, "__notes__", ()),
+            )
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["process_drain"]["status"], "unresolved")
+            self.assertTrue(workspace_mutator_is_fenced(state_path))
+            release_workspace_mutator(state_path)
+
+    async def test_process_drain_write_failure_preserves_error_and_fence(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            state_path = Path(temp_dir) / "workspace-state.json"
+            state_path.write_text(
+                json.dumps({"process_drain": {"status": "not_started"}}),
+                encoding="utf-8",
+            )
+            context = _workspace_invocation_context(Path.cwd(), lambda: None)
+            assert context.workspace is not None
+            context = replace(
+                context,
+                workspace=replace(
+                    context.workspace,
+                    workspace_state_path=state_path,
+                ),
+            )
+
+            async def fail_collection(*args: object, **kwargs: object) -> None:
+                del args, kwargs
+                raise RuntimeError("provider output collection failed")
+
+            async def fail_drain(
+                process: asyncio.subprocess.Process,
+                process_group_id: int | None,
+                diagnostic_sink: object,
+            ) -> None:
+                del diagnostic_sink
+                process.kill()
+                await process.wait()
+                raise ProcessDrainError(
+                    ProcessDrainEvidence(
+                        pid=process.pid,
+                        process_group_id=process_group_id,
+                        leader_stopped=True,
+                        process_group_stopped=False,
+                    ),
+                    "provider process group remained live",
+                )
+
+            with (
+                patch(
+                    "crewplane.runtime.agent.invocation.command."
+                    "write_stdin_and_collect_output",
+                    new=fail_collection,
+                ),
+                patch(
+                    "crewplane.runtime.agent.invocation.command.reap_failed_process",
+                    new=fail_drain,
+                ),
+                patch(
+                    "crewplane.runtime.workspace.state.record_workspace_process_drain",
+                    side_effect=OSError("transient state write failure"),
+                ),
+                self.assertRaises(ProcessDrainError) as caught,
+            ):
+                await run_command_once(
+                    cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
+                    stdin_data=None,
+                    log_file=None,
+                    append_log=False,
+                    log_header=None,
+                    cwd=Path.cwd(),
+                    invocation_context=context,
+                    idle_timeout_seconds=None,
+                )
+
+            self.assertIn(
+                "Workspace process-drain evidence persistence failed: "
+                "transient state write failure",
+                getattr(caught.exception, "__notes__", ()),
+            )
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["process_drain"]["status"], "not_started")
+            self.assertTrue(workspace_mutator_is_fenced(state_path))
+            release_workspace_mutator(state_path)
 
     async def test_run_command_once_disables_unsupported_process_groups(self) -> None:
         events: list[InvocationProcessEvent] = []
@@ -348,6 +561,164 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result.returncode, 0)
+
+    async def test_normal_exit_kills_term_ignoring_process_group_member(
+        self,
+    ) -> None:
+        if os.name != "posix":
+            self.skipTest("process groups are POSIX-only")
+        events: list[InvocationProcessEvent] = []
+        diagnostics = []
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="generic_executor_0",
+            provider="generic",
+            role=ProviderRole.EXECUTOR,
+            process_event_sink=events.append,
+            diagnostics=diagnostics.append,
+        )
+        with TemporaryDirectory(prefix="crewplane-process-drain-") as temp_dir:
+            child_pid_path = Path(temp_dir) / "child.pid"
+            child_script = (
+                "import os, signal, sys, time\n"
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                "open(sys.argv[1], 'w', encoding='utf-8').write(str(os.getpid()))\n"
+                "time.sleep(30)\n"
+            )
+            leader_script = (
+                "import subprocess, sys, time\n"
+                "path = sys.argv[1]\n"
+                "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
+                "while True:\n"
+                "    try:\n"
+                "        open(path, encoding='utf-8').read()\n"
+                "        break\n"
+                "    except FileNotFoundError:\n"
+                "        time.sleep(0.01)\n"
+                "print('leader exited')\n"
+            )
+
+            started_at = time.monotonic()
+            result = await asyncio.wait_for(
+                run_command_once(
+                    cmd=[
+                        sys.executable,
+                        "-c",
+                        leader_script,
+                        child_pid_path.as_posix(),
+                        child_script,
+                    ],
+                    stdin_data=None,
+                    log_file=None,
+                    append_log=False,
+                    log_header=None,
+                    cwd=Path.cwd(),
+                    invocation_context=context,
+                    idle_timeout_seconds=None,
+                ),
+                timeout=3.0,
+            )
+            child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+            process_group_id = events[0].process_group_id
+            try:
+                self.assertLess(time.monotonic() - started_at, 3.0)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stdout_text.strip(), "leader exited")
+                self.assertIsNotNone(process_group_id)
+                self.assertTrue(
+                    any(
+                        diagnostic.operation == "process_pipe_drain_timeout"
+                        for diagnostic in diagnostics
+                    )
+                )
+                deadline = time.monotonic() + 1.0
+                while time.monotonic() < deadline:
+                    try:
+                        os.kill(child_pid, 0)
+                    except ProcessLookupError:
+                        break
+                    await asyncio.sleep(0.01)
+                else:
+                    self.fail("TERM-ignoring process-group member survived KILL")
+            finally:
+                result.cleanup_stream_files()
+                if process_group_id is not None:
+                    with suppress(ProcessLookupError):
+                        os.killpg(process_group_id, signal.SIGKILL)
+
+    async def test_normal_exit_fails_when_escaped_child_keeps_pipes_open(
+        self,
+    ) -> None:
+        if os.name != "posix":
+            self.skipTest("process groups are POSIX-only")
+        diagnostics = []
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="generic_executor_0",
+            provider="generic",
+            role=ProviderRole.EXECUTOR,
+            diagnostics=diagnostics.append,
+        )
+        with TemporaryDirectory(prefix="crewplane-open-pipe-") as temp_dir:
+            child_pid_path = Path(temp_dir) / "child.pid"
+            child_script = (
+                "import os, sys, time\n"
+                "os.setsid()\n"
+                "open(sys.argv[1], 'w', encoding='utf-8').write(str(os.getpid()))\n"
+                "time.sleep(30)\n"
+            )
+            leader_script = (
+                "import subprocess, sys, time\n"
+                "path = sys.argv[1]\n"
+                "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
+                "while True:\n"
+                "    try:\n"
+                "        open(path, encoding='utf-8').read()\n"
+                "        break\n"
+                "    except FileNotFoundError:\n"
+                "        time.sleep(0.01)\n"
+                "print('leader exited')\n"
+            )
+            child_pid: int | None = None
+            try:
+                with self.assertRaisesRegex(
+                    ProcessDrainError,
+                    "pipes remained open",
+                ):
+                    await asyncio.wait_for(
+                        run_command_once(
+                            cmd=[
+                                sys.executable,
+                                "-c",
+                                leader_script,
+                                child_pid_path.as_posix(),
+                                child_script,
+                            ],
+                            stdin_data=None,
+                            log_file=None,
+                            append_log=False,
+                            log_header=None,
+                            cwd=Path.cwd(),
+                            invocation_context=context,
+                            idle_timeout_seconds=None,
+                        ),
+                        timeout=3.0,
+                    )
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+                os.kill(child_pid, 0)
+                self.assertTrue(
+                    any(
+                        diagnostic.operation == "process_pipe_drain_timeout"
+                        for diagnostic in diagnostics
+                    )
+                )
+            finally:
+                if child_pid is None and child_pid_path.is_file():
+                    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+                if child_pid is not None:
+                    with suppress(ProcessLookupError):
+                        os.killpg(child_pid, signal.SIGKILL)
+                    await asyncio.sleep(0.05)
 
     async def test_run_command_once_drains_output_while_sending_large_stdin(
         self,

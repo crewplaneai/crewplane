@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
-from copy import deepcopy
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, TypedDict
+from threading import Lock, RLock
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.artifacts.atomic import atomic_write_json
@@ -18,7 +18,22 @@ from crewplane.core.preflight.models import (
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
-from .worktree import WorktreeSourceRef
+from . import state_evidence as _state_evidence
+from .lineage_discard import apply_lineage_discard
+
+mark_workspace_temporary_ref_removed = (
+    _state_evidence.mark_workspace_temporary_ref_removed
+)
+record_workspace_process_drain = _state_evidence.record_workspace_process_drain
+record_workspace_temporary_ref = _state_evidence.record_workspace_temporary_ref
+update_workspace_ref_publication = _state_evidence.update_workspace_ref_publication
+update_workspace_ref_publication_phase = (
+    _state_evidence.update_workspace_ref_publication_phase
+)
+update_workspace_setup = _state_evidence.update_workspace_setup
+
+if TYPE_CHECKING:
+    from .worktree.types import WorktreeSourceRef
 
 
 class RenderedWorkspaceFileDescriptor(TypedDict):
@@ -72,6 +87,7 @@ class WorkspaceStateMaterializationRequest:
     cache_root: str | None = None
     effective_cwd: Path | None = None
     checkout_root: Path | None = None
+    worktree_git_dir: Path | None = None
     provisioning: WorkspaceProvisioningMetadata | None = None
     source_ref: WorktreeSourceRef | None = None
     materialization: str = "snapshot_checkout"
@@ -79,6 +95,7 @@ class WorkspaceStateMaterializationRequest:
     lineage_producer: bool = False
     worktree_lock_mode: str | None = None
     reuse: Mapping[str, object] | None = None
+    reuse_generation: int | None = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +125,8 @@ def write_running_workspace_state(
     policy: WorkspaceSelectionRecord,
     materialization: WorkspaceStateMaterializationRequest,
 ) -> None:
+    from .worktree.types import WorktreeSourceRef
+
     invocation_source = materialization.source_ref or WorktreeSourceRef(
         source_kind="project",
         source_node_id=None,
@@ -137,6 +156,9 @@ def write_running_workspace_state(
             "repo_id": source.repository_id,
             "run_base_commit": source.run_base_commit,
             "source_tree": source.source_tree,
+            "git_top_level": source.git_top_level,
+            "active_git_dir": source.active_git_dir,
+            "common_git_dir": source.common_git_dir,
             "worktree_config_active": False,
             "worktree_lock_mode": materialization.worktree_lock_mode,
         },
@@ -158,6 +180,11 @@ def write_running_workspace_state(
             "checkout_root": (
                 materialization.checkout_root.as_posix()
                 if materialization.checkout_root is not None
+                else None
+            ),
+            "worktree_git_dir": (
+                materialization.worktree_git_dir.as_posix()
+                if materialization.worktree_git_dir is not None
                 else None
             ),
             "checkout_size_bytes": (
@@ -184,10 +211,14 @@ def write_running_workspace_state(
         "invoker": request.invoker,
         "rendered_workspace_files": list(request.rendered_workspace_files),
         "diagnostics": [],
+        "process_drain": {"status": "not_started"},
         "updated_at": datetime.now(UTC).isoformat(),
     }
     if materialization.reuse is not None:
         payload["reuse"] = dict(materialization.reuse)
+    workspace = payload["workspace"]
+    if materialization.reuse_generation is not None and isinstance(workspace, dict):
+        workspace["reuse_generation"] = materialization.reuse_generation
     if policy.setup is not None:
         payload["setup"] = {
             "profile_name": policy.setup.profile_name,
@@ -196,7 +227,35 @@ def write_running_workspace_state(
                 command.model_dump(mode="json") for command in policy.setup.commands
             ],
         }
-    atomic_write_json(state_path, payload)
+    with _state_lock(state_path):
+        if state_path.exists():
+            current = read_workspace_state(state_path)
+            if current.get("status") in {"succeeded", "failed", "cancelled"}:
+                raise RuntimeError(
+                    "Workspace materialization cannot rewrite a terminal outcome."
+                )
+            if any(
+                current.get(field) != payload.get(field)
+                for field in (
+                    "version",
+                    "run_id",
+                    "run_key_name",
+                    "workflow_name",
+                    "workflow_signature",
+                    "node_id",
+                    "task_id",
+                    "provider",
+                    "role",
+                    "round_num",
+                    "audit_round_num",
+                )
+            ):
+                raise RuntimeError(
+                    "Workspace materialization state identity is contradictory."
+                )
+            current.update(payload)
+            payload = current
+        atomic_write_json(state_path, payload)
 
 
 def _source_payload(
@@ -259,58 +318,188 @@ def _relative_source_bundle_path(bundle_path: Path, state_path: Path) -> str | N
         return None
 
 
+_STATE_LOCKS_GUARD = Lock()
+_STATE_LOCKS: dict[Path, RLock] = {}
+
+
+def _state_lock(state_path: Path) -> RLock:
+    key = state_path.resolve(strict=False)
+    with _STATE_LOCKS_GUARD:
+        lock = _STATE_LOCKS.get(key)
+        if lock is None:
+            lock = RLock()
+            _STATE_LOCKS[key] = lock
+        return lock
+
+
+def read_workspace_state(state_path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise RuntimeError(f"Invalid workspace state: {state_path.as_posix()}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Invalid workspace state: {state_path.as_posix()}")
+    return payload
+
+
+def require_workspace_state_identity(
+    state_path: Path,
+    expected: Mapping[str, object],
+) -> None:
+    current = read_workspace_state(state_path)
+    require_workspace_state_payload_identity(current, expected)
+
+
+_RUNTIME_MUTABLE_WORKSPACE_STATE_FIELDS = frozenset(
+    {"process_drain", "updated_at", "workspace_mutator"}
+)
+_TERMINAL_WORKSPACE_STATE_FIELDS = frozenset(
+    {
+        "branch_export",
+        "bundle",
+        "diagnostics",
+        "ref_publication",
+        "refs",
+        "result",
+        "status",
+        "temporary_refs",
+    }
+)
+
+
+def require_workspace_state_payload_identity(
+    current: Mapping[str, object],
+    expected: Mapping[str, object],
+) -> None:
+    terminal_statuses = {"cancelled", "failed", "succeeded"}
+    terminalized = (
+        current.get("status") in terminal_statuses
+        and expected.get("status") in terminal_statuses
+    )
+    if _workspace_state_identity(current, terminalized) != _workspace_state_identity(
+        expected,
+        terminalized,
+    ):
+        raise RuntimeError(
+            "Workspace state identity changed during execution; the workspace "
+            "was retained."
+        )
+
+
+def _workspace_state_identity(
+    payload: Mapping[str, object],
+    terminalized: bool,
+) -> dict[str, object]:
+    mutable_fields = _RUNTIME_MUTABLE_WORKSPACE_STATE_FIELDS
+    if terminalized:
+        mutable_fields |= _TERMINAL_WORKSPACE_STATE_FIELDS
+    identity = {
+        field: value for field, value in payload.items() if field not in mutable_fields
+    }
+    if not terminalized:
+        return identity
+    workspace = payload.get("workspace")
+    if isinstance(workspace, Mapping):
+        identity["workspace"] = {
+            field: value
+            for field, value in workspace.items()
+            if field not in {"retained_reason", "retention"}
+        }
+    child_environment = payload.get("child_process_environment")
+    if isinstance(child_environment, Mapping):
+        identity["child_process_environment"] = {
+            field: value
+            for field, value in child_environment.items()
+            if field != "applied"
+        }
+    return identity
+
+
+def mutate_workspace_state(
+    state_path: Path,
+    mutation: Callable[[dict[str, object]], None],
+) -> dict[str, object]:
+    with _state_lock(state_path):
+        payload = read_workspace_state(state_path)
+        mutation(payload)
+        payload["updated_at"] = datetime.now(UTC).isoformat()
+        atomic_write_json(state_path, payload)
+        return payload
+
+
 def update_workspace_state(
     state_path: Path,
     request: WorkspaceStateUpdateRequest,
 ) -> None:
-    payload = (
-        deepcopy(dict(request.base_payload))
-        if request.base_payload is not None
-        else json.loads(state_path.read_text(encoding="utf-8"))
-    )
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"Invalid workspace state: {state_path.as_posix()}")
-    previous_status = payload.get("status")
-    payload["status"] = request.status
-    payload["updated_at"] = datetime.now(UTC).isoformat()
-    workspace = payload.get("workspace")
-    if isinstance(workspace, dict):
-        workspace["retention"] = request.retention.retention
-        workspace["retained_reason"] = request.retention.retained_reason
-    if request.diagnostics is not None:
-        payload["diagnostics"] = request.diagnostics
-    if request.result is not None:
-        payload["result"] = dict(request.result)
-    if request.refs is not None:
-        payload["refs"] = dict(request.refs)
-    if request.bundle is not None:
-        payload["bundle"] = dict(request.bundle)
-    if request.setup is not None:
-        payload["setup"] = dict(request.setup)
-    env = payload.get("child_process_environment")
-    if isinstance(env, dict) and env.get("required") is True:
-        if request.child_environment_applied is not None:
-            env["applied"] = request.child_environment_applied
-        elif request.status == "succeeded" and previous_status == "running":
-            env["applied"] = True
-    atomic_write_json(state_path, payload)
+    def apply_update(payload: dict[str, object]) -> None:
+        previous_status = payload.get("status")
+        if (
+            previous_status in {"succeeded", "failed", "cancelled"}
+            and request.status != previous_status
+        ):
+            raise RuntimeError(
+                "Workspace terminal outcome cannot be rewritten from "
+                f"{previous_status!r} to {request.status!r}."
+            )
+        payload["status"] = request.status
+        workspace = payload.get("workspace")
+        if isinstance(workspace, dict):
+            workspace["retention"] = request.retention.retention
+            workspace["retained_reason"] = request.retention.retained_reason
+        if request.diagnostics is not None:
+            payload["diagnostics"] = request.diagnostics
+        if request.result is not None:
+            if previous_status in {"succeeded", "failed", "cancelled"} and (
+                payload.get("result") != dict(request.result)
+            ):
+                raise RuntimeError("Workspace terminal result evidence is immutable.")
+            payload["result"] = dict(request.result)
+        if request.refs is not None:
+            if previous_status in {"succeeded", "failed", "cancelled"} and (
+                payload.get("refs") != dict(request.refs)
+            ):
+                raise RuntimeError("Workspace terminal ref evidence is immutable.")
+            payload["refs"] = dict(request.refs)
+        if request.bundle is not None:
+            if previous_status in {"succeeded", "failed", "cancelled"} and (
+                payload.get("bundle") != dict(request.bundle)
+            ):
+                raise RuntimeError("Workspace terminal bundle evidence is immutable.")
+            payload["bundle"] = dict(request.bundle)
+        if request.setup is not None:
+            payload["setup"] = dict(request.setup)
+        env = payload.get("child_process_environment")
+        if isinstance(env, dict) and env.get("required") is True:
+            if request.child_environment_applied is not None:
+                env["applied"] = request.child_environment_applied
+            elif request.status == "succeeded" and previous_status == "running":
+                env["applied"] = True
+
+    mutate_workspace_state(state_path, apply_update)
 
 
-def update_workspace_setup(
+def update_workspace_retention(
     state_path: Path,
-    setup: Mapping[str, object],
-    base_payload: Mapping[str, object] | None = None,
+    retention: WorkspaceStateRetention,
+    diagnostic: Mapping[str, str] | None = None,
 ) -> None:
-    payload = (
-        deepcopy(dict(base_payload))
-        if base_payload is not None
-        else json.loads(state_path.read_text(encoding="utf-8"))
-    )
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"Invalid workspace state: {state_path.as_posix()}")
-    payload["setup"] = setup
-    payload["updated_at"] = datetime.now(UTC).isoformat()
-    atomic_write_json(state_path, payload)
+    def apply_retention(payload: dict[str, object]) -> None:
+        if payload.get("status") not in {"succeeded", "failed", "cancelled"}:
+            raise RuntimeError(
+                "Workspace retention can change only after terminal outcome publication."
+            )
+        workspace = payload.get("workspace")
+        if not isinstance(workspace, dict):
+            raise RuntimeError("Workspace state lacks workspace retention evidence.")
+        if diagnostic is not None:
+            diagnostics = payload.get("diagnostics")
+            if not isinstance(diagnostics, list):
+                raise RuntimeError("Workspace state lacks diagnostic evidence.")
+            diagnostics.append(dict(diagnostic))
+        workspace["retention"] = retention.retention
+        workspace["retained_reason"] = retention.retained_reason
+
+    mutate_workspace_state(state_path, apply_retention)
 
 
 def discard_workspace_lineage(
@@ -319,47 +508,8 @@ def discard_workspace_lineage(
 ) -> None:
     if not state_path.is_file():
         return
-    payload = json.loads(state_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"Invalid workspace state: {state_path.as_posix()}")
-    workspace = payload.get("workspace")
-    if isinstance(workspace, dict):
-        workspace["lineage_producer"] = False
-    result = payload.get("result")
-    if isinstance(result, dict):
-        sanitized_result: dict[str, object] = {
-            "lineage_produced": False,
-            "lineage_discarded": True,
-            "lineage_discard_reason": reason,
-        }
-        changed_path_count = result.get("changed_path_count")
-        if isinstance(changed_path_count, int) and not isinstance(
-            changed_path_count, bool
-        ):
-            sanitized_result["changed_path_count"] = changed_path_count
-        final_head = result.get("final_head")
-        if final_head is None:
-            final_head = result.get("result_commit") or result.get("candidate_commit")
-        if isinstance(final_head, str):
-            sanitized_result["final_head"] = final_head
-        payload["result"] = sanitized_result
-    else:
-        payload["result"] = {
-            "lineage_produced": False,
-            "lineage_discarded": True,
-            "lineage_discard_reason": reason,
-        }
-    payload.pop("refs", None)
-    payload.pop("bundle", None)
-    diagnostics = payload.get("diagnostics")
-    if not isinstance(diagnostics, list):
-        diagnostics = []
-    diagnostics.append(
-        {
-            "level": "warning",
-            "message": f"Workspace lineage discarded: {reason}",
-        }
+
+    mutate_workspace_state(
+        state_path,
+        lambda payload: apply_lineage_discard(payload, reason),
     )
-    payload["diagnostics"] = diagnostics
-    payload["updated_at"] = datetime.now(UTC).isoformat()
-    atomic_write_json(state_path, payload)

@@ -38,6 +38,7 @@ from .branch_export_output import print_branch_export_fulfillments
 from .components import allocate_run_output, build_components_for_run
 from .context import WorkflowRunContext, resolve_project_root, resolve_state_dir
 from .execution_helpers import (
+    fulfill_historical_branch_exports,
     handle_duplicate_skip,
     raise_for_workspace_runtime_error,
     raise_run_preflight_errors,
@@ -115,7 +116,11 @@ async def run_and_finalize_workflow(
 
     def complete_scheduler_postconditions() -> None:
         nonlocal branch_export_records
-        branch_export_records = fulfill_branch_exports(plan, output)
+        branch_export_records = fulfill_branch_exports(
+            plan,
+            output,
+            resumed_node_ids=resumed_node_ids,
+        )
 
     try:
         persistent_logger = PersistentRunLogger(output)
@@ -252,6 +257,14 @@ async def execute_workflow_run(
         )
         if handle_duplicate_skip(context, preview, resume_plan):
             return
+        resume_source = resume_plan.decision.resume_source
+        if resume_source is not None:
+            fulfill_historical_branch_exports(
+                context,
+                preview,
+                resume_source,
+                resume_plan.resumed_node_ids,
+            )
 
         workflow_topology = workflow_topology_from_preview(preview)
         output = allocate_run_output(context, snapshot_result, warning_recorder)
@@ -272,12 +285,11 @@ async def execute_workflow_run(
         try:
             if resume_plan.frontier is not None:
                 hydrate_resume_frontier(resume_plan.frontier, plan, output)
-                source_run = resume_plan.decision.resume_source
-                if source_run is not None:
+                if resume_source is not None:
                     print_resume_context_message(
                         context,
                         len(resume_plan.resumed_node_ids),
-                        source_run.manifest.run_id,
+                        resume_source.manifest.run_id,
                     )
             components = build_components_for_run(
                 context=context,

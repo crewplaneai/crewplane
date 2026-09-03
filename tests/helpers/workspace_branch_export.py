@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceBranchExportRecord,
 )
+from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_service import run_git_text, workspace_plan
@@ -73,7 +75,7 @@ def write_result_bundle(
         "-m",
         "workspace result",
     )
-    result_ref = "refs/crewplane/tests/branch-export/result"
+    result_ref = _result_ref(stage_dir)
     run_git_text(repo, "update-ref", result_ref, result_commit)
     bundle_dir = stage_dir / "workspace-bundles"
     bundle_dir.mkdir()
@@ -101,7 +103,7 @@ def write_result_bundle_from_clone(
     run_git_text(producer, "commit", "-m", "workspace result")
     result_commit = run_git_text(producer, "rev-parse", "HEAD^{commit}")
     result_tree = run_git_text(producer, "rev-parse", "HEAD^{tree}")
-    result_ref = "refs/crewplane/tests/branch-export/result"
+    result_ref = _result_ref(stage_dir)
     run_git_text(producer, "update-ref", result_ref, result_commit)
     bundle_dir = stage_dir / "workspace-bundles"
     bundle_dir.mkdir()
@@ -115,7 +117,7 @@ def write_tree_bundle(
     stage_dir: Path,
 ) -> tuple[str, str, Path]:
     result_tree = run_git_text(repo, "rev-parse", "HEAD^{tree}")
-    result_ref = "refs/crewplane/tests/branch-export/tree-result"
+    result_ref = _result_ref(stage_dir)
     run_git_text(repo, "update-ref", result_ref, result_tree)
     bundle_dir = stage_dir / "workspace-bundles"
     bundle_dir.mkdir()
@@ -136,26 +138,115 @@ def write_workspace_state(
     node = plan.nodes[0]
     policy = node.workspace_policy
     assert policy is not None
+    source = plan.workspace_source
+    assert source is not None
+    run_key_name = stages_dir.name
+    _workflow_hash, separator, run_id = run_key_name.rsplit("--", 1)[-1].partition("-")
+    assert separator and run_id
+    project_source_ref = WorktreeSourceRef(
+        source_kind="project",
+        source_node_id=None,
+        source_commit=source.run_base_commit,
+        source_tree=source.source_tree,
+        candidate_sequence=None,
+    )
+    invocation_source = source_ref or project_source_ref
+    if source_ref is not None and not source_ref.upstream_sources:
+        invocation_source = replace(
+            source_ref,
+            upstream_sources=(project_source_ref,),
+        )
+    ref_base = result_ref.removesuffix("/result")
+    candidate_ref = f"{ref_base}/candidate"
     payload = {
         "version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "run_key_name": run_key_name,
         "workflow_name": plan.workflow_name,
         "workflow_signature": plan.workflow_signature,
         "node_id": node.id,
         "task_id": "alpha",
+        "provider": "alpha",
         "status": "succeeded",
         "role": "executor",
+        "round_num": 1,
+        "audit_round_num": None,
         "workspace_kind": "worktree",
         "logical_worktree_name": policy.logical_worktree_name,
+        "clean_start": policy.clean_start,
         "worktree_contract": policy.worktree_contract.model_dump(mode="json"),
+        "git": {
+            "object_format": source.object_format,
+            "repo_id": source.repository_id,
+            "run_base_commit": source.run_base_commit,
+            "source_tree": source.source_tree,
+            "git_top_level": source.git_top_level,
+            "active_git_dir": source.active_git_dir,
+            "common_git_dir": source.common_git_dir,
+        },
+        "source": _source_payload(stages_dir, invocation_source),
         "workspace": {
+            "path": None,
+            "effective_cwd": None,
+            "cache_key": "primary",
             "materialization": "worktree_checkout",
+            "writable": True,
             "lineage_producer": True,
+            "retention": "retained",
+            "retained_reason": None,
+            "project_root_relative_path": source.project_root_relative_path,
+            "reuse_generation": 1,
         },
+        "execution": {
+            "cache_root": None,
+            "workspace_path": (stages_dir / "workspace").as_posix(),
+            "checkout_root": (stages_dir / "workspace").as_posix(),
+            "checkout_size_bytes": 0,
+            "effective_cwd": (stages_dir / "workspace").as_posix(),
+            "provisioning_duration_seconds": 0.0,
+            "worktree_git_dir": f"{source.common_git_dir}/worktrees/test",
+        },
+        "invocation_source": _invocation_source_payload(
+            stages_dir,
+            invocation_source,
+        ),
+        "child_process_environment": {"required": True, "applied": True},
+        "invoker": {"implementation": "mock"},
+        "rendered_workspace_files": [],
+        "diagnostics": [],
+        "process_drain": {"status": "confirmed"},
         "result": {
+            "candidate_commit": result_commit,
             "result_commit": result_commit,
+            "candidate_tree": result_tree,
             "result_tree": result_tree,
+            "changed_path_count": 1,
+            "unreachable_object_inclusion": False,
         },
-        "refs": {"result": result_ref},
+        "refs": {"candidate": candidate_ref, "result": result_ref},
+        "ref_publication": {
+            "phase": "published",
+            "repository_id": source.repository_id,
+            "run_id": run_id,
+            "run_key_name": run_key_name,
+            "node_id": node.id,
+            "task_id": "alpha",
+            "role": "executor",
+            "round_num": 1,
+            "audit_round_num": None,
+            "destinations": {
+                "candidate": {
+                    "name": candidate_ref,
+                    "target_oid": result_commit,
+                    "expected_old_oid": None,
+                },
+                "result": {
+                    "name": result_ref,
+                    "target_oid": result_commit,
+                    "expected_old_oid": None,
+                },
+            },
+        },
         "bundle": {
             "path": bundle_path.relative_to(stages_dir).as_posix(),
             "sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
@@ -163,15 +254,16 @@ def write_workspace_state(
             "verified": True,
         },
     }
-    if source_ref is not None:
-        payload["source"] = _source_payload(stages_dir, source_ref)
-        payload["invocation_source"] = _invocation_source_payload(
-            stages_dir,
-            source_ref,
-        )
     state_path = stages_dir / "implement" / "workspace-state.json"
     state_path.write_text(json.dumps(payload), encoding="utf-8")
     return state_path
+
+
+def _result_ref(stage_dir: Path) -> str:
+    run_key_name = stage_dir.parent.name
+    node_id = stage_dir.name
+    slug = invocation_slug(node_id, "alpha", None, 1)
+    return f"refs/crewplane/runs/{run_key_name}/{node_id}/{slug}/result"
 
 
 def write_node_manifest(output: OutputManager, plan: PreflightExecutionPlan) -> Path:

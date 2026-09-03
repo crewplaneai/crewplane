@@ -117,7 +117,7 @@ Packaged composition templates:
 
 ## Next
 
-Optionally continue to [Experimental Workspace Isolation](workspace-isolation.md)
+Optionally continue to [Workspace Isolation](workspace-isolation.md)
 when workflows need isolated source-tree edits.
 
 Otherwise, skip to

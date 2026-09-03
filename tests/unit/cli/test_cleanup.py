@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 from typing import Never
 
@@ -10,10 +11,31 @@ import pytest
 from typer.testing import CliRunner
 
 import crewplane.cli.cleanup as cleanup_cli
+import crewplane.runtime.workspace.cleanup as workspace_cleanup
+from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.cli.app import app
-from crewplane.cli.cleanup import cleanup_repository_id, load_workspace_statuses
+from crewplane.cli.cleanup import cleanup_repository_id
+from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.runtime.workspace.state import WorkspaceStateRetention
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.resume import make_run_manifest, write_run_manifest
+from tests.helpers.resume import (
+    attach_workspace_descriptor,
+    make_node_state,
+    make_plan,
+    make_run_manifest,
+    write_node_state,
+    write_result,
+    write_run_manifest,
+)
+from tests.helpers.resume_validation import (
+    attach_git_workspace_source,
+    snapshot_workspace_state_payload,
+    source_record,
+)
+from tests.helpers.workspace_records import (
+    WORKTREE_CONTRACT_PAYLOAD,
+    workspace_selection_record,
+)
 
 
 def test_cleanup_workspaces_defaults_to_advisory_dry_run(tmp_path: Path) -> None:
@@ -28,7 +50,7 @@ def test_cleanup_workspaces_defaults_to_advisory_dry_run(tmp_path: Path) -> None
         catch_exceptions=False,
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert "Would remove 1 workspace path(s)" in result.output
     assert workspace_path.exists()
     assert project_root.exists()
@@ -45,7 +67,296 @@ def test_cleanup_workspaces_yes_removes_paths(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Removed 1 workspace path(s)" in result.output
-    assert not workspace_path.exists()
+    assert not workspace_path.exists(), result.output
+
+
+def test_cleanup_workspaces_rechecks_exact_worktree_identity_before_removal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    state_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    expected_git_dir = Path(state_payload["execution"]["worktree_git_dir"])
+    original_remove = workspace_cleanup.remove_unknown_workspace_path
+    replacement_marker = workspace_path / "checkout" / "replacement.txt"
+
+    def replace_checkout_before_removal(
+        path: Path,
+        expected_common_git_dir: Path | None,
+        expected_worktree_git_dir: Path | None,
+    ) -> None:
+        checkout_root = path / "checkout"
+        _git(
+            project_root,
+            "worktree",
+            "move",
+            checkout_root.as_posix(),
+            (tmp_path / "moved-original-checkout").as_posix(),
+        )
+        _git(
+            project_root,
+            "worktree",
+            "add",
+            "--detach",
+            checkout_root.as_posix(),
+            "HEAD",
+        )
+        replacement_marker.write_text("replacement", encoding="utf-8")
+        replacement_git_dir = Path(
+            _git(checkout_root, "rev-parse", "--git-dir").strip()
+        ).resolve()
+        assert replacement_git_dir != expected_git_dir
+        original_remove(
+            path,
+            expected_common_git_dir,
+            expected_worktree_git_dir,
+        )
+
+    monkeypatch.setattr(
+        workspace_cleanup,
+        "remove_unknown_workspace_path",
+        replace_checkout_before_removal,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+    )
+
+    assert result.exit_code == 1
+    assert "does not match persisted" in result.output
+    assert "identity" in result.output
+    assert replacement_marker.read_text(encoding="utf-8") == "replacement"
+    retained = json.loads(state_path.read_text(encoding="utf-8"))
+    assert retained["workspace"]["retention"] == "retained"
+
+
+def test_cleanup_workspaces_retains_claim_without_planned_workspace_policy(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    plan_path = (
+        project_root / ".crewplane/execution-stages/run-1/preflight/execution-plan.json"
+    )
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan_payload["nodes"][0]["workspace_policy"] = None
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Removed 0 workspace path(s)" in result.output
+    assert "workspace evidence for the run is malformed" in result.output
+    assert workspace_path.exists()
+
+
+def test_cleanup_workspaces_retains_claim_that_conflicts_with_plan_identity(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["workflow_signature"] = "different-workflow-signature"
+    publication = payload["ref_publication"]
+    publication["phase"] = "published"
+    destinations = publication["destinations"]
+    ref_targets = {
+        destination["name"]: destination["target_oid"]
+        for destination in destinations.values()
+    }
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    for ref_name, target_oid in ref_targets.items():
+        _git(project_root, "update-ref", ref_name, target_oid)
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Removed 0 workspace path(s)" in result.output
+    assert "workspace evidence for the run is malformed" in result.output
+    assert workspace_path.exists()
+    for ref_name, target_oid in ref_targets.items():
+        assert _git(project_root, "rev-parse", ref_name).strip() == target_oid
+
+
+def test_cleanup_workspaces_retains_reappeared_deleted_workspace(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["workspace"]["retention"] = "deleted"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    replacement_path = workspace_path / "checkout" / "replacement.txt"
+    replacement_path.write_text("replacement", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Removed 0 workspace path(s)" in result.output
+    assert "reappeared after deletion" in result.output
+    assert replacement_path.read_text(encoding="utf-8") == "replacement"
+
+
+@pytest.mark.parametrize("moved_temporary_ref", [False, True])
+def test_cleanup_workspaces_preserves_resume_frontier(
+    tmp_path: Path,
+    moved_temporary_ref: bool,
+) -> None:
+    plan, project_root = attach_git_workspace_source(tmp_path, make_plan())
+    repository_id_value = cleanup_repository_id(project_root, all_projects=False)
+    assert repository_id_value is not None
+    assert plan.workspace_source is not None
+    workspace_policy = workspace_selection_record(enabled=True, kind="snapshot")
+    plan = plan.model_copy(
+        update={
+            "workspace_source": plan.workspace_source.model_copy(
+                update={"repository_id": repository_id_value}
+            ),
+            "nodes": [
+                plan.nodes[0].model_copy(update={"workspace_policy": workspace_policy}),
+                plan.nodes[1],
+            ],
+        }
+    )
+    state_dir = project_root / ".crewplane"
+    source = source_record(state_dir, status="failed")
+    plan = plan.model_copy(
+        update={
+            "run_id": source.manifest.run_id,
+            "run_key_name": source.manifest.run_key_name,
+            "project_root": project_root.as_posix(),
+            "context_root": source.run_dir.as_posix(),
+            "manifest_root": (source.run_dir / "manifests").as_posix(),
+        }
+    )
+    plan_path = source.run_dir / source.manifest.preflight_plan_path
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+    result_descriptor = write_result(
+        source.results_dir,
+        "a-result.md",
+        "a output",
+    )
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, "a", [result_descriptor]),
+    )
+    cache_root = tmp_path / "cache"
+    workspace_path = (
+        cache_root
+        / "snapshots"
+        / repository_id_value
+        / source.manifest.run_key_name
+        / "a-alpha-round1"
+    )
+    checkout_root = workspace_path / "checkout"
+    checkout_root.mkdir(parents=True)
+    state_payload = snapshot_workspace_state_payload(source, plan, "alpha")
+    workspace_payload = state_payload["workspace"]
+    assert isinstance(workspace_payload, dict)
+    workspace_payload["cache_key"] = workspace_path.name
+    state_payload["execution"] = {
+        "cache_root": cache_root.as_posix(),
+        "workspace_path": workspace_path.as_posix(),
+        "checkout_root": checkout_root.as_posix(),
+        "effective_cwd": checkout_root.as_posix(),
+        "worktree_git_dir": None,
+    }
+    if moved_temporary_ref:
+        assert plan.workspace_source is not None
+        temporary_ref = (
+            "refs/crewplane/runs/workflow--source/imports/a/a-alpha-round1/moved"
+        )
+        state_payload["temporary_refs"] = [
+            {
+                "phase": "prepared",
+                "name": temporary_ref,
+                "target_oid": plan.workspace_source.run_base_commit,
+                "owner_run_id": source.manifest.run_id,
+                "owner_node_id": "a",
+                "owner_task_id": "alpha",
+                "owner_role": "executor",
+                "owner_round_num": 1,
+                "owner_audit_round_num": None,
+                "repository_id": repository_id_value,
+            }
+        ]
+        (project_root / "moved.txt").write_text("moved\n", encoding="utf-8")
+        _git(project_root, "add", "moved.txt")
+        _git(project_root, "commit", "-m", "move temporary ref")
+        _git(project_root, "update-ref", temporary_ref, "HEAD")
+    state_path = source.run_dir / "a" / "workspace-state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state_payload), encoding="utf-8")
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+    config_path = state_dir / "config.yml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'version: "{SCHEMA_VERSION}"',
+                "agents:",
+                "  alpha:",
+                '    cli_cmd: ["mock"]',
+                '    default_model: "test"',
+                "settings:",
+                "  workspace:",
+                "    enabled: true",
+                f'    cache_root: "{cache_root.as_posix()}"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert validate_resume_frontier(source, plan).resumed_node_ids == ("a",)
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    if moved_temporary_ref:
+        assert result.exit_code == 1
+        assert "Workspace temporary import ref moved and was retained" in result.output
+    else:
+        assert result.exit_code == 0, result.output
+    assert not workspace_path.exists(), result.output
+    assert (
+        json.loads(state_path.read_text(encoding="utf-8"))["workspace"]["retention"]
+        == "deleted"
+    )
+    assert validate_resume_frontier(source, plan).resumed_node_ids == ("a",)
 
 
 @pytest.mark.parametrize(
@@ -132,10 +443,10 @@ def test_cleanup_workspaces_yes_allows_distinct_terminal_node_and_run_states(
     assert result.exit_code == 0
     assert "Removed 1 workspace path(s)" in result.output
     assert not workspace_path.exists()
-    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") == ""
+    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") != ""
 
 
-def test_cleanup_workspaces_yes_removes_run_owned_refs(tmp_path: Path) -> None:
+def test_cleanup_workspaces_yes_preserves_unrecorded_run_refs(tmp_path: Path) -> None:
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
     project_root, config_path, workspace_path = _cleanup_project(
@@ -152,9 +463,172 @@ def test_cleanup_workspaces_yes_removes_run_owned_refs(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Removed 1 workspace path(s)" in result.output
-    assert "Removed 1 run-owned Git ref(s)" in result.output
     assert not workspace_path.exists()
-    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") == ""
+    assert _git(project_root, "for-each-ref", "refs/crewplane/runs/run-1") != ""
+
+
+def test_cleanup_workspaces_reconciles_hydrated_run_temporary_ref_evidence(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    nested_state_path = (
+        state_path.parents[1] / "custom/build-stage/workspace-state.json"
+    )
+    nested_state_path.parent.mkdir(parents=True)
+    state_path.replace(nested_state_path)
+    state_path = nested_state_path
+    plan_path = state_path.parents[2] / "preflight/execution-plan.json"
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    nested_contract = plan_payload["nodes"][0]["artifact_contract"]
+    nested_contract["stage_path"] = "custom/build-stage"
+    nested_contract["output_path"] = "custom/build-stage/output.md"
+    nested_contract["log_path"] = "custom/build-stage/logs"
+    nested_contract["result_path"] = "custom/build-stage/output.md"
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    workspace = payload["workspace"]
+    execution = payload["execution"]
+    payload["resume_origin"] = {
+        "source_run_id": "source-run",
+        "source_run_key_name": "source-run-key",
+        "source_node_id": "node",
+        "hydrated_at": "2026-08-30T00:00:00+00:00",
+        "source_workspace": dict(workspace),
+        "source_execution": dict(execution),
+    }
+    for field in ("path", "effective_cwd", "cache_root", "checkout_root", "cache_key"):
+        workspace[field] = None
+    workspace["retention"] = "not_applicable"
+    workspace["retained_reason"] = "hydrated_resume"
+    for field in (
+        "cache_root",
+        "workspace_path",
+        "checkout_root",
+        "effective_cwd",
+        "worktree_git_dir",
+    ):
+        execution[field] = None
+    payload.pop("ref_publication")
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    _git(
+        project_root,
+        "worktree",
+        "remove",
+        "--force",
+        (workspace_path / "checkout").as_posix(),
+    )
+    workspace_path.rmdir()
+
+    target_oid = _git(project_root, "rev-parse", "HEAD^{commit}").strip()
+    temporary_ref = (
+        "refs/crewplane/runs/run-1/imports/node/"
+        "node-branch-export-primary-round0/temporary"
+    )
+    _git(project_root, "update-ref", temporary_ref, target_oid)
+    evidence_path = state_path.with_name("workspace-temporary-refs-interrupted.json")
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "evidence_kind": "temporary_ref_cleanup",
+                "run_id": "run-1",
+                "run_key_name": "run-1",
+                "node_id": "node",
+                "task_id": "branch-export-primary",
+                "role": "artifact_consumer",
+                "round_num": 0,
+                "audit_round_num": None,
+                "git": {"repo_id": payload["git"]["repo_id"]},
+                "temporary_refs": [
+                    {
+                        "phase": "prepared",
+                        "name": temporary_ref,
+                        "target_oid": target_oid,
+                        "owner_run_id": "run-1",
+                        "owner_node_id": "node",
+                        "owner_task_id": "branch-export-primary",
+                        "owner_role": "artifact_consumer",
+                        "owner_round_num": 0,
+                        "owner_audit_round_num": None,
+                        "repository_id": payload["git"]["repo_id"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Removed 1 run-owned Git ref(s)." in result.output
+    assert _git(project_root, "for-each-ref", temporary_ref).strip() == ""
+    assert not evidence_path.exists()
+
+
+@pytest.mark.parametrize(
+    "filter_args",
+    [
+        ["--failed"],
+        ["--older-than", "1d"],
+        ["--orphans"],
+    ],
+)
+def test_cleanup_workspaces_filters_preserve_refs_for_unselected_state(
+    tmp_path: Path,
+    filter_args: list[str],
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    state_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    publication = state_payload["ref_publication"]
+    publication["phase"] = "published"
+    destinations = publication["destinations"]
+    ref_targets = {
+        destination["name"]: destination["target_oid"]
+        for destination in destinations.values()
+    }
+    state_path.write_text(json.dumps(state_payload), encoding="utf-8")
+    node_manifest_path = state_path.parents[1] / "manifests/nodes/node.json"
+    node_manifest_path.parent.mkdir(parents=True)
+    node_manifest_path.write_text("{}", encoding="utf-8")
+    for ref_name, target_oid in ref_targets.items():
+        _git(project_root, "update-ref", ref_name, target_oid)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cleanup",
+            "workspaces",
+            "--config",
+            config_path.as_posix(),
+            *filter_args,
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Removed 0 workspace path(s)" in result.output
+    assert workspace_path.exists()
+    for ref_name, target_oid in ref_targets.items():
+        assert _git(project_root, "rev-parse", ref_name).strip() == target_oid
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    assert persisted["ref_publication"]["phase"] == "published"
 
 
 def test_cleanup_workspaces_orphans_removes_only_terminal_run_orphan(
@@ -215,6 +689,330 @@ def test_cleanup_workspaces_orphans_retains_unverifiable_run(tmp_path: Path) -> 
     assert "Removed 0 workspace path(s)" in result.output
     assert "run manifest is missing or unsafe" in result.output
     assert orphan_path.exists()
+
+
+def test_cleanup_workspaces_removes_one_coherent_multi_generation_worktree(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    generation_one = json.loads(state_path.read_text(encoding="utf-8"))
+    generation_two = deepcopy(generation_one)
+    generation_two["workspace"]["reuse_generation"] = 2
+    generation_two_path = state_path.with_name(
+        "workspace-reuse-claim-node-generation-2.json"
+    )
+    generation_two_path.write_text(json.dumps(generation_two), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Removed 1 workspace path(s)" in result.output
+    assert not workspace_path.exists()
+    assert (
+        json.loads(state_path.read_text(encoding="utf-8"))["workspace"]["retention"]
+        == "deleted"
+    )
+    assert (
+        json.loads(generation_two_path.read_text(encoding="utf-8"))["workspace"][
+            "retention"
+        ]
+        == "deleted"
+    )
+
+
+def test_cleanup_workspaces_reconciles_generation_states_after_partial_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    generation_one = json.loads(state_path.read_text(encoding="utf-8"))
+    generation_one["status"] = "failed"
+    generation_one["workspace"]["retention"] = "pending_cleanup"
+    state_path.write_text(json.dumps(generation_one), encoding="utf-8")
+    generation_two = deepcopy(generation_one)
+    generation_two["status"] = "cancelled"
+    generation_two["workspace"]["reuse_generation"] = 2
+    generation_two_path = state_path.with_name(
+        "workspace-reuse-claim-node-generation-2.json"
+    )
+    generation_two_path.write_text(json.dumps(generation_two), encoding="utf-8")
+    original_update = workspace_cleanup.update_workspace_retention
+    update_count = 0
+
+    def fail_second_state_update(
+        state_path_arg: Path,
+        retention: WorkspaceStateRetention,
+    ) -> None:
+        nonlocal update_count
+        update_count += 1
+        if update_count == 2:
+            raise OSError("injected second-state write failure")
+        original_update(state_path_arg, retention)
+
+    monkeypatch.setattr(
+        workspace_cleanup,
+        "update_workspace_retention",
+        fail_second_state_update,
+    )
+
+    first_result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+    )
+
+    assert first_result.exit_code == 1
+    assert not workspace_path.exists()
+    first_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    second_payload = json.loads(generation_two_path.read_text(encoding="utf-8"))
+    assert {
+        first_payload["workspace"]["retention"],
+        second_payload["workspace"]["retention"],
+    } == {"pending_cleanup", "deleted"}
+
+    monkeypatch.setattr(
+        workspace_cleanup,
+        "update_workspace_retention",
+        original_update,
+    )
+    retry_result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert retry_result.exit_code == 0, retry_result.output
+    assert "Removed 0 workspace path(s)" in retry_result.output
+    first_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    second_payload = json.loads(generation_two_path.read_text(encoding="utf-8"))
+    assert first_payload["status"] == "failed"
+    assert second_payload["status"] == "cancelled"
+    assert first_payload["workspace"]["retention"] == "deleted"
+    assert second_payload["workspace"]["retention"] == "deleted"
+
+
+@pytest.mark.parametrize("retention", ["pending_cleanup", "deleted"])
+def test_cleanup_workspaces_failed_filter_reconciles_absent_workspace_refs(
+    tmp_path: Path,
+    retention: str,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+        run_status="failed",
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["workspace"]["retention"] = retention
+    payload["ref_publication"]["phase"] = "published"
+    destinations = payload["ref_publication"]["destinations"]
+    ref_targets = {
+        destination["name"]: destination["target_oid"]
+        for destination in destinations.values()
+    }
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    for ref_name, target_oid in ref_targets.items():
+        _git(project_root, "update-ref", ref_name, target_oid)
+    _git(
+        project_root,
+        "worktree",
+        "remove",
+        "--force",
+        (workspace_path / "checkout").as_posix(),
+    )
+    workspace_path.rmdir()
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cleanup",
+            "workspaces",
+            "--config",
+            config_path.as_posix(),
+            "--failed",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Removed 0 workspace path(s)" in result.output
+    for ref_name in ref_targets:
+        assert _git(project_root, "for-each-ref", ref_name).strip() == ""
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    assert persisted["workspace"]["retention"] == "deleted"
+    assert persisted["ref_publication"]["phase"] == "removed"
+
+
+def test_cleanup_workspaces_does_not_reconcile_absent_state_for_active_run(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_dir = project_root / ".crewplane"
+    state_path = state_dir / "execution-stages/run-1/node/workspace-state.json"
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["workspace"]["retention"] = "pending_cleanup"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    write_run_manifest(
+        state_dir,
+        make_run_manifest(
+            run_id="run-1",
+            run_key_name="run-1",
+            status="running",
+        ),
+    )
+    _git(
+        project_root,
+        "worktree",
+        "remove",
+        "--force",
+        (workspace_path / "checkout").as_posix(),
+    )
+    workspace_path.rmdir()
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "Removed 0 workspace path(s)" in result.output
+    retained = json.loads(state_path.read_text(encoding="utf-8"))
+    assert retained["workspace"]["retention"] == "pending_cleanup"
+
+
+def test_cleanup_workspaces_retains_duplicate_generation_claims(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    duplicate_path = state_path.with_name("workspace-reuse-claim-duplicate.json")
+    duplicate_path.write_bytes(state_path.read_bytes())
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "duplicate generation claims" in result.output
+    assert workspace_path.exists()
+
+
+def test_cleanup_workspaces_orphans_retains_corrupt_workspace_claim(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    state_path = (
+        project_root / ".crewplane/execution-stages/run-1/node/workspace-state.json"
+    )
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["execution"].pop("workspace_path")
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cleanup",
+            "workspaces",
+            "--config",
+            config_path.as_posix(),
+            "--orphans",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "evidence for the run is malformed" in result.output
+    assert workspace_path.exists()
+
+
+def test_cleanup_workspaces_orphans_retains_claim_omitted_from_plan(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    plan_path = (
+        project_root / ".crewplane/execution-stages/run-1/preflight/execution-plan.json"
+    )
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    payload["nodes"] = []
+    plan_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cleanup",
+            "workspaces",
+            "--config",
+            config_path.as_posix(),
+            "--orphans",
+            "--yes",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Removed 0 workspace path(s)" in result.output
+    assert "evidence for the run is malformed" in result.output
+    assert workspace_path.exists()
+
+
+def test_cleanup_workspaces_retains_worktree_with_wrong_git_backlink(
+    tmp_path: Path,
+) -> None:
+    project_root, config_path, workspace_path = _cleanup_project(
+        tmp_path,
+        initialize_git=True,
+    )
+    git_dir = Path(_git(workspace_path / "checkout", "rev-parse", "--git-dir").strip())
+    (git_dir / "gitdir").write_text(
+        (tmp_path / "other" / ".git").as_posix(),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert "identity or disposal safety is unverifiable" in result.output
+    assert workspace_path.exists()
 
 
 def test_cleanup_workspaces_yes_ignores_symlink_workspace_candidates(
@@ -402,40 +1200,6 @@ def test_cleanup_workspaces_rejects_project_cache_root(tmp_path: Path) -> None:
     assert project_root.exists()
 
 
-def test_load_workspace_statuses_skips_twice_hydrated_state_without_cache_key(
-    tmp_path: Path,
-) -> None:
-    stage_root = tmp_path / "execution-stages"
-    state_path = stage_root / "workflow--resumed" / "node" / "workspace-state.json"
-    state_path.parent.mkdir(parents=True)
-    state_path.write_text(
-        json.dumps(
-            {
-                "run_key_name": "workflow--resumed",
-                "status": "succeeded",
-                "workspace": {
-                    "cache_key": None,
-                    "retention": "not_applicable",
-                    "retained_reason": "hydrated_resume",
-                },
-                "resume_origin": {
-                    "source_run_id": "first-resume",
-                    "source_run_key_name": "workflow--first-resume",
-                    "source_node_id": "node",
-                    "source_workspace": {
-                        "cache_key": None,
-                        "retention": "not_applicable",
-                        "retained_reason": "hydrated_resume",
-                    },
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert load_workspace_statuses(stage_root) == {}
-
-
 def _cleanup_project(
     tmp_path: Path,
     initialize_git: bool = False,
@@ -460,31 +1224,49 @@ def _cleanup_project(
     )
     workspace_path = cache_root / "workspaces" / repo_id / "run-1" / "node-round1"
     if create_workspace:
-        workspace_path.mkdir(parents=True)
-        (workspace_path / "file.txt").write_text("payload", encoding="utf-8")
+        if initialize_git:
+            workspace_path.parent.mkdir(parents=True)
+            checkout_root = workspace_path / "checkout"
+            _git(
+                project_root,
+                "worktree",
+                "add",
+                "--detach",
+                checkout_root.as_posix(),
+                "HEAD",
+            )
+            (checkout_root / "file.txt").write_text("payload", encoding="utf-8")
+        else:
+            workspace_path.mkdir(parents=True)
+            (workspace_path / "file.txt").write_text("payload", encoding="utf-8")
     state_dir.mkdir(parents=True)
     if create_workspace:
         state_path = (
             state_dir / "execution-stages" / "run-1" / "node" / "workspace-state.json"
         )
         state_path.parent.mkdir(parents=True)
+        state_payload = (
+            _cleanup_workspace_state(
+                project_root,
+                workspace_path,
+                repo_id,
+                run_status,
+            )
+            if initialize_git
+            else {
+                "run_key_name": "run-1",
+                "status": run_status,
+                "workspace": {"cache_key": workspace_path.name},
+            }
+        )
         state_path.write_text(
-            json.dumps(
-                {
-                    "run_key_name": "run-1",
-                    "status": run_status,
-                    "workspace": {"cache_key": workspace_path.name},
-                }
-            ),
+            json.dumps(state_payload),
             encoding="utf-8",
         )
-        write_run_manifest(
+        _write_cleanup_plan_and_manifest(
             state_dir,
-            make_run_manifest(
-                run_id="run-1",
-                run_key_name="run-1",
-                status=run_status,
-            ),
+            project_root,
+            run_status,
         )
     config_path = state_dir / "config.yml"
     config_path.write_text(
@@ -506,6 +1288,192 @@ def _cleanup_project(
         encoding="utf-8",
     )
     return project_root, config_path, workspace_path
+
+
+def _write_cleanup_plan_and_manifest(
+    state_dir: Path,
+    project_root: Path,
+    run_status: str,
+) -> None:
+    manifest = make_run_manifest(
+        run_id="run-1",
+        run_key_name="run-1",
+        status=run_status,
+    )
+    run_dir = state_dir / "execution-stages" / "run-1"
+    payload = make_plan().model_dump(mode="json")
+    payload.update(
+        {
+            "run_id": manifest.run_id,
+            "run_key_name": manifest.run_key_name,
+            "project_root": project_root.as_posix(),
+            "context_root": run_dir.as_posix(),
+            "manifest_root": (run_dir / "manifests").as_posix(),
+            "execution_order": ["node"],
+            "nodes": [payload["nodes"][0]],
+            "render_plans": [payload["render_plans"][0]],
+            "dependency_graph": [],
+        }
+    )
+    node = payload["nodes"][0]
+    assert isinstance(node, dict)
+    node["id"] = "node"
+    node["render_plan_id"] = "node"
+    node["dependencies"] = []
+    node["workspace_policy"] = workspace_selection_record(
+        kind="worktree",
+        logical_name="primary",
+        lineage_producer=True,
+    ).model_dump(mode="json")
+    contract = node["artifact_contract"]
+    assert isinstance(contract, dict)
+    contract.update(
+        {
+            "stage_path": "node",
+            "output_path": "node/output.md",
+            "findings_path": None,
+            "log_path": "node/logs",
+            "result_path": "node/output.md",
+        }
+    )
+    render_plan = payload["render_plans"][0]
+    assert isinstance(render_plan, dict)
+    render_plan["render_plan_id"] = "node"
+    render_plan["node_id"] = "node"
+    plan = PreflightExecutionPlan.model_validate(payload)
+    plan_path = run_dir / manifest.preflight_plan_path
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(plan.model_dump_json(), encoding="utf-8")
+    write_run_manifest(state_dir, manifest)
+
+
+def _cleanup_workspace_state(
+    project_root: Path,
+    workspace_path: Path,
+    repo_id: str,
+    status: str,
+) -> dict[str, object]:
+    manifest = make_run_manifest(
+        run_id="run-1",
+        run_key_name="run-1",
+        status=status,
+    )
+    head = _git(project_root, "rev-parse", "HEAD^{commit}").strip()
+    tree = _git(project_root, "rev-parse", "HEAD^{tree}").strip()
+    checkout_root = workspace_path / "checkout"
+    git_dir_text = _git(checkout_root, "rev-parse", "--git-dir").strip()
+    git_dir_path = Path(git_dir_text)
+    git_dir = (
+        git_dir_path if git_dir_path.is_absolute() else checkout_root / git_dir_path
+    ).resolve()
+    common_git_dir = (
+        project_root / _git(project_root, "rev-parse", "--git-common-dir").strip()
+    ).resolve()
+    invocation_slug = "node-alpha-round1"
+    ref_root = f"refs/crewplane/runs/run-1/node/{invocation_slug}"
+    candidate_ref = f"{ref_root}/candidate"
+    result_ref = f"{ref_root}/result"
+    return {
+        "version": SCHEMA_VERSION,
+        "run_id": "run-1",
+        "run_key_name": "run-1",
+        "workflow_name": manifest.workflow_name,
+        "workflow_signature": manifest.workflow_signature,
+        "node_id": "node",
+        "task_id": "alpha",
+        "provider": "alpha",
+        "role": "executor",
+        "round_num": 1,
+        "audit_round_num": None,
+        "status": status,
+        "workspace_kind": "worktree",
+        "logical_worktree_name": "primary",
+        "clean_start": "strict",
+        "worktree_contract": WORKTREE_CONTRACT_PAYLOAD,
+        "git": {
+            "object_format": _git(
+                project_root, "rev-parse", "--show-object-format=storage"
+            ).strip(),
+            "repo_id": repo_id,
+            "run_base_commit": head,
+            "source_tree": tree,
+            "git_top_level": project_root.as_posix(),
+            "active_git_dir": git_dir.as_posix(),
+            "common_git_dir": common_git_dir.as_posix(),
+        },
+        "source": {
+            "kind": "project",
+            "node_id": None,
+            "commit": head,
+            "tree": tree,
+            "candidate_sequence": None,
+        },
+        "invocation_source": {
+            "source_kind": "project",
+            "source_node_id": None,
+            "source_commit": head,
+            "source_tree": tree,
+            "candidate_sequence": None,
+        },
+        "workspace": {
+            "path": workspace_path.as_posix(),
+            "effective_cwd": checkout_root.as_posix(),
+            "materialization": "worktree_checkout",
+            "writable": True,
+            "lineage_producer": True,
+            "retention": "retained",
+            "retained_reason": None,
+            "project_root_relative_path": ".",
+            "reuse_generation": 1,
+            "cache_key": workspace_path.name,
+        },
+        "execution": {
+            "cache_root": workspace_path.parents[3].as_posix(),
+            "workspace_path": workspace_path.as_posix(),
+            "checkout_root": checkout_root.as_posix(),
+            "effective_cwd": checkout_root.as_posix(),
+            "worktree_git_dir": git_dir.as_posix(),
+        },
+        "process_drain": {"status": "confirmed"},
+        "result": {
+            "candidate_commit": head,
+            "result_commit": head,
+            "candidate_tree": tree,
+            "result_tree": tree,
+            "changed_path_count": 0,
+            "final_head": head,
+        },
+        "bundle": {
+            "path": "node/workspace-bundles/node-alpha-round1.bundle",
+            "sha256": "f" * 64,
+            "size_bytes": 0,
+            "verified": True,
+        },
+        "refs": {"candidate": candidate_ref, "result": result_ref},
+        "ref_publication": {
+            "phase": "removed",
+            "repository_id": repo_id,
+            "run_id": "run-1",
+            "run_key_name": "run-1",
+            "node_id": "node",
+            "task_id": "alpha",
+            "role": "executor",
+            "round_num": 1,
+            "audit_round_num": None,
+            "destinations": {
+                "candidate": {
+                    "name": candidate_ref,
+                    "target_oid": head,
+                    "expected_old_oid": None,
+                },
+                "result": {
+                    "name": result_ref,
+                    "target_oid": head,
+                    "expected_old_oid": None,
+                },
+            },
+        },
+    }
 
 
 def _git(repo: Path, *args: str) -> str:

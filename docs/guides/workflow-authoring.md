@@ -75,7 +75,7 @@ Review the current repository and report high-risk issues.
 ## Frontmatter
 
 Frontmatter declares workflow metadata, optional inputs and imports, optional
-experimental worktree settings, and executable nodes. The generated templates
+worktree settings, and executable nodes. The generated templates
 use the current schema version from `src/crewplane/version.py`.
 
 Node IDs use lower-case letters, digits, `.`, `_`, and `-`. They cannot be `.`,

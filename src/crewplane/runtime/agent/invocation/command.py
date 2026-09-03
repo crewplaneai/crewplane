@@ -19,6 +19,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.platform import supports_posix_process_groups
 
+from ..process.drain import ProcessDrainError
 from ..process.runner import (
     build_retry_log_header,
     close_log_handle,
@@ -100,31 +101,58 @@ async def run_command_once(
             process_group_id,
             idle_timeout_seconds,
         )
+        _record_process_drain_success(invocation_context, process, process_group_id)
     except FileNotFoundError as exc:
-        await _cleanup_failed_command(
+        drain_error = await _cleanup_failed_command(
             process,
             process_group_id,
             output_capture,
             diagnostic_sink,
         )
+        _record_process_drain_outcome(
+            invocation_context,
+            process,
+            process_group_id,
+            drain_error,
+        )
+        if drain_error is not None:
+            raise drain_error from exc
         if process is None:
             raise RuntimeError(f"CLI executable not found: {cmd[0]}") from exc
         raise RuntimeError(f"Execution error: {exc}") from exc
-    except asyncio.CancelledError:
-        await _cleanup_failed_command(
+    except asyncio.CancelledError as exc:
+        drain_error = await _cleanup_failed_command(
             process,
             process_group_id,
             output_capture,
             diagnostic_sink,
         )
+        _record_process_drain_outcome(
+            invocation_context,
+            process,
+            process_group_id,
+            drain_error,
+        )
+        if drain_error is not None:
+            exc.add_note(str(drain_error))
         raise
     except Exception as exc:
-        await _cleanup_failed_command(
+        drain_error = await _cleanup_failed_command(
             process,
             process_group_id,
             output_capture,
             diagnostic_sink,
         )
+        if drain_error is None and isinstance(exc, ProcessDrainError):
+            drain_error = exc
+        _record_process_drain_outcome(
+            invocation_context,
+            process,
+            process_group_id,
+            drain_error,
+        )
+        if drain_error is not None:
+            raise drain_error from exc
         if isinstance(exc, RuntimeError):
             raise
         raise RuntimeError(f"Execution error: {exc}") from exc
@@ -156,11 +184,88 @@ async def _cleanup_failed_command(
     process_group_id: int | None,
     output_capture: ProcessOutputCapture | None,
     diagnostic_sink: InvocationDiagnosticSink | None,
-) -> None:
+) -> ProcessDrainError | None:
     if process is not None:
-        await reap_failed_process(process, process_group_id, diagnostic_sink)
+        try:
+            await reap_failed_process(process, process_group_id, diagnostic_sink)
+        except ProcessDrainError as exc:
+            if output_capture is not None:
+                output_capture.cleanup()
+            return exc
     if output_capture is not None:
         output_capture.cleanup()
+    return None
+
+
+def _record_process_drain_success(
+    invocation_context: InvocationContext | None,
+    process: asyncio.subprocess.Process,
+    process_group_id: int | None,
+) -> None:
+    state_path = _workspace_state_path(invocation_context)
+    if state_path is None:
+        return
+    from crewplane.runtime.workspace.mutator_fence import release_workspace_mutator
+    from crewplane.runtime.workspace.state import record_workspace_process_drain
+
+    record_workspace_process_drain(
+        state_path,
+        "confirmed",
+        process.pid,
+        process_group_id,
+    )
+    release_workspace_mutator(state_path)
+
+
+def _record_process_drain_outcome(
+    invocation_context: InvocationContext | None,
+    process: asyncio.subprocess.Process | None,
+    process_group_id: int | None,
+    error: BaseException | None,
+) -> None:
+    if process is None:
+        return
+    if not isinstance(error, ProcessDrainError):
+        _record_process_drain_success(
+            invocation_context,
+            process,
+            process_group_id,
+        )
+        return
+    _record_unresolved_process_drain(invocation_context, error)
+
+
+def _record_unresolved_process_drain(
+    invocation_context: InvocationContext | None,
+    error: ProcessDrainError,
+) -> None:
+    state_path = _workspace_state_path(invocation_context)
+    if state_path is None:
+        return
+    from crewplane.runtime.workspace.mutator_fence import fence_workspace_mutator
+    from crewplane.runtime.workspace.state import record_workspace_process_drain
+
+    fence_workspace_mutator(state_path)
+    try:
+        record_workspace_process_drain(
+            state_path,
+            "unresolved",
+            error.evidence.pid,
+            error.evidence.process_group_id,
+            str(error),
+        )
+    except Exception as persistence_error:
+        error.add_note(
+            f"Workspace process-drain evidence persistence failed: {persistence_error}"
+        )
+
+
+def _workspace_state_path(
+    invocation_context: InvocationContext | None,
+) -> Path | None:
+    if invocation_context is None or invocation_context.workspace is None:
+        return None
+    return invocation_context.workspace.workspace_state_path
 
 
 def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:
