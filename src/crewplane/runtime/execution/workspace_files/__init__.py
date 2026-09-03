@@ -33,7 +33,7 @@ from crewplane.runtime.workspace.worktree import (
     ensure_source_commit_available,
 )
 from crewplane.runtime.workspace.worktree.descriptors import load_source_ref_from_state
-from crewplane.runtime.workspace.worktree.lineage import TemporaryRefOwner
+from crewplane.runtime.workspace.worktree.temporary_refs import TemporaryRefOwner
 
 from ..errors import NodeExecutionError
 from .source_resolution import (

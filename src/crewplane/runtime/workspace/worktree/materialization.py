@@ -25,8 +25,9 @@ from crewplane.runtime.workspace.terminalization import (
 
 from . import create_worktree_workspace
 from .cache import ReusableWorktreeCheckout, WorktreeReuseCache
-from .lineage import TemporaryRefOwner, ensure_source_commit_available
+from .lineage import ensure_source_commit_available
 from .reuse import reuse_worktree_workspace
+from .temporary_refs import TemporaryRefOwner
 from .types import (
     WorktreeProvisioningClaim,
     WorktreeSourceRef,

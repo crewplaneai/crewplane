@@ -8,7 +8,7 @@ from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 
 from ..git import git, git_error
 from ..locks import git_metadata_lock
-from .lineage import TemporaryRefOwner, ensure_source_commit_available
+from .lineage import ensure_source_commit_available
 from .policy import (
     active_git_dir,
     reject_common_git_policy_drift,
@@ -19,6 +19,7 @@ from .protected_refs import (
     protected_ref_snapshot_for_source,
 )
 from .reset import reset_reusable_worktree_checkout
+from .temporary_refs import TemporaryRefOwner
 from .types import WorktreeSourceRef, WorktreeWorkspace
 
 

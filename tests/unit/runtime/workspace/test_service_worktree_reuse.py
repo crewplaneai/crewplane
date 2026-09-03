@@ -26,7 +26,6 @@ from crewplane.runtime.workspace.state import WorkspaceStateRetention
 from crewplane.runtime.workspace.worktree import (
     cache as worktree_cache,
 )
-from crewplane.runtime.workspace.worktree import lineage as worktree_lineage
 from crewplane.runtime.workspace.worktree import (
     materialization as worktree_materialization,
 )
@@ -37,6 +36,9 @@ from crewplane.runtime.workspace.worktree import reuse as worktree_reuse
 from crewplane.runtime.workspace.worktree.cache import (
     ReusableWorktreeCheckout,
     WorktreeReuseCache,
+)
+from crewplane.runtime.workspace.worktree.temporary_refs import (
+    reconcile_temporary_import_refs,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
@@ -1030,7 +1032,7 @@ def test_preclaim_fallback_failure_preserves_temporary_ref_cleanup_evidence(
     assert not old_workspace_path.exists()
 
     monkeypatch.setattr(GitCommand, "run", original_git_run)
-    removed = worktree_lineage.reconcile_temporary_import_refs(
+    removed = reconcile_temporary_import_refs(
         state_path,
         repo,
         Path(source.common_git_dir),

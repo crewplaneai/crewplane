@@ -18,11 +18,11 @@ from crewplane.runtime.workspace.state import (
     read_workspace_state,
 )
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
-from crewplane.runtime.workspace.worktree.lineage import TemporaryRefOwner
 from crewplane.runtime.workspace.worktree.protected_refs import (
     protected_ref_snapshot_for_scopes,
 )
 from crewplane.runtime.workspace.worktree.ref_cleanup import delete_run_workspace_refs
+from crewplane.runtime.workspace.worktree.temporary_refs import TemporaryRefOwner
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,

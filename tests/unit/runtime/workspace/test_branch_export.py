@@ -19,6 +19,9 @@ from crewplane.runtime.workspace.branch_export import (
 )
 from crewplane.runtime.workspace.branch_export import git as branch_export_git
 from crewplane.runtime.workspace.worktree import lineage as worktree_lineage
+from crewplane.runtime.workspace.worktree import (
+    temporary_refs as worktree_temporary_refs,
+)
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_branch_export import (
@@ -752,7 +755,7 @@ def test_fulfill_branch_exports_preserves_prepared_record_when_import_ref_cleanu
         result_ref,
         bundle_path,
     )
-    original_mark_removed = worktree_lineage.mark_workspace_temporary_ref_removed
+    original_mark_removed = worktree_temporary_refs.mark_workspace_temporary_ref_removed
 
     def fail_after_temporary_ref_cleanup(
         state_path: Path,
@@ -762,7 +765,7 @@ def test_fulfill_branch_exports_preserves_prepared_record_when_import_ref_cleanu
         raise RuntimeError("injected temporary ref cleanup failure")
 
     monkeypatch.setattr(
-        worktree_lineage,
+        worktree_temporary_refs,
         "mark_workspace_temporary_ref_removed",
         fail_after_temporary_ref_cleanup,
     )
@@ -778,7 +781,7 @@ def test_fulfill_branch_exports_preserves_prepared_record_when_import_ref_cleanu
     )
 
     monkeypatch.setattr(
-        worktree_lineage,
+        worktree_temporary_refs,
         "mark_workspace_temporary_ref_removed",
         original_mark_removed,
     )

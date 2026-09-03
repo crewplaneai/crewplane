@@ -48,10 +48,8 @@ from crewplane.runtime.workspace.branch_export.records import (
 from crewplane.runtime.workspace.worktree.descriptors import (
     load_source_ref_from_state,
 )
-from crewplane.runtime.workspace.worktree.lineage import (
-    TemporaryRefOwner,
-    ensure_source_commit_available,
-)
+from crewplane.runtime.workspace.worktree.lineage import ensure_source_commit_available
+from crewplane.runtime.workspace.worktree.temporary_refs import TemporaryRefOwner
 
 
 @dataclass(frozen=True)

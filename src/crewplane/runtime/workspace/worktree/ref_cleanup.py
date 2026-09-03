@@ -17,8 +17,8 @@ from crewplane.core.workspace.repository_identity import workspace_repository_id
 
 from ..git import git
 from ..state import read_workspace_state
-from .lineage import reconcile_temporary_import_refs
 from .ref_publication import reconcile_result_ref_publication
+from .temporary_refs import reconcile_temporary_import_refs
 
 WorkspaceRunRefCleanup = Callable[[str], int]
 

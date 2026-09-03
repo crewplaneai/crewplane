@@ -22,15 +22,17 @@ from crewplane.runtime.workspace.worktree import (
     remove_worktree_workspace,
 )
 from crewplane.runtime.workspace.worktree.lineage import (
-    TemporaryRefOwner,
     ensure_source_commit_available,
     export_bundle,
-    reconcile_temporary_import_refs,
     verify_source_commit_available,
     worktree_protected_ref_scopes,
 )
 from crewplane.runtime.workspace.worktree.protected_refs import (
     ProtectedRefSnapshot,
+)
+from crewplane.runtime.workspace.worktree.temporary_refs import (
+    TemporaryRefOwner,
+    reconcile_temporary_import_refs,
 )
 from crewplane.runtime.workspace.worktree.types import (
     WorkspaceSourceKind,
@@ -216,6 +218,84 @@ def test_existing_bundle_commit_is_temporarily_rooted_during_consumption(
     assert not git_commit_exists(repo, result_commit)
 
 
+def test_temporary_import_ref_cleanup_runs_in_reverse_and_notes_later_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    source = plan.workspace_source
+    assert source is not None
+    first, second = create_full_bundle_chain(
+        repo,
+        tmp_path / "first.bundle",
+        tmp_path / "second.bundle",
+    )
+    if git_commit_exists(repo, first.commit) or git_commit_exists(repo, second.commit):
+        pytest.skip("git retained the test commits after pruning")
+    source_ref = WorktreeSourceRef(
+        source_kind="node",
+        source_node_id="second",
+        source_commit=second.commit,
+        source_tree=second.tree,
+        candidate_sequence=1,
+        bundle_path=second.path,
+        bundle_sha256=second.sha256,
+        bundle_size_bytes=second.size_bytes,
+        bundle_ref=second.ref,
+        upstream_sources=(
+            WorktreeSourceRef(
+                source_kind="node",
+                source_node_id="first",
+                source_commit=first.commit,
+                source_tree=first.tree,
+                candidate_sequence=1,
+                bundle_path=first.path,
+                bundle_sha256=first.sha256,
+                bundle_size_bytes=first.size_bytes,
+                bundle_ref=first.ref,
+                upstream_sources=(_project_source_ref(source),),
+            ),
+        ),
+    )
+    original_run = GitCommand.run
+    cleanup_targets: list[str] = []
+
+    def fail_import_ref_cleanup(
+        command: GitCommand,
+        *args: str,
+    ) -> subprocess.CompletedProcess[bytes]:
+        if args[:3] == ("update-ref", "--no-deref", "-d"):
+            cleanup_targets.append(args[4])
+            raise RuntimeError(f"cleanup failed for {args[4]}")
+        return original_run(command, *args)
+
+    monkeypatch.setattr(GitCommand, "run", fail_import_ref_cleanup)
+
+    with (
+        pytest.raises(RuntimeError, match=f"cleanup failed for {second.commit}") as exc,
+        ensure_source_commit_available(
+            source,
+            source_ref,
+            TemporaryRefOwner(_import_owner_state(tmp_path, source)),
+        ),
+    ):
+        pass
+
+    assert cleanup_targets == [second.commit, first.commit]
+    assert getattr(exc.value, "__notes__", ()) == [
+        "Additional workspace temporary import ref cleanup failed: "
+        f"cleanup failed for {first.commit}"
+    ]
+
+
 def test_worktree_preparation_rejects_live_lineage_ref_at_wrong_commit(
     tmp_path: Path,
 ) -> None:
@@ -328,6 +408,67 @@ def test_temporary_ref_cleanup_rejects_symbolic_ref_without_touching_target(
         json.loads(state_path.read_text(encoding="utf-8"))["temporary_refs"][0]["phase"]
         == "prepared"
     )
+
+
+def test_temporary_ref_reconciliation_keeps_earlier_success_when_later_claim_fails(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    source = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    ).workspace_source
+    assert source is not None
+    state_path = _import_owner_state(tmp_path, source)
+    first_ref = (
+        "refs/crewplane/runs/workspace-run-001/imports/implement/"
+        "implement-alpha-round1/first"
+    )
+    second_ref = (
+        "refs/crewplane/runs/workspace-run-001/imports/implement/"
+        "implement-alpha-round1/second"
+    )
+    expected_oid = source.run_base_commit
+    (repo / "later.txt").write_text("later\n", encoding="utf-8")
+    run_git_text(repo, "add", "later.txt")
+    run_git_text(repo, "commit", "-m", "later")
+    moved_oid = run_git_text(repo, "rev-parse", "HEAD^{commit}")
+    run_git_text(repo, "update-ref", first_ref, expected_oid)
+    run_git_text(repo, "update-ref", second_ref, moved_oid)
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["temporary_refs"] = [
+        {
+            "name": first_ref,
+            "target_oid": expected_oid,
+            "phase": "prepared",
+            "repository_id": source.repository_id,
+        },
+        {
+            "name": second_ref,
+            "target_oid": expected_oid,
+            "phase": "prepared",
+            "repository_id": source.repository_id,
+        },
+    ]
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="moved and was retained"):
+        reconcile_temporary_import_refs(
+            state_path,
+            repo,
+            repo / ".git",
+            source.repository_id,
+        )
+
+    assert not run_git_text(repo, "for-each-ref", "--format=%(refname)", first_ref)
+    assert run_git_text(repo, "rev-parse", second_ref) == moved_oid
+    claims = json.loads(state_path.read_text(encoding="utf-8"))["temporary_refs"]
+    assert claims[0]["phase"] == "removed"
+    assert claims[1]["phase"] == "prepared"
 
 
 def test_export_bundle_rejects_symlinked_bundle_directory(tmp_path: Path) -> None:
@@ -594,6 +735,73 @@ def test_verify_project_source_does_not_mutate_repository_refs(
     assert run_git_text(repo, "for-each-ref", "--format=%(refname)") == (
         source_refs_before
     )
+
+
+def test_source_bundle_descriptor_validation_preserves_fail_fast_order(
+    tmp_path: Path,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    source = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    ).workspace_source
+    assert source is not None
+    bundle_path = tmp_path / "descriptor.bundle"
+    bundle_path.write_bytes(b"not a bundle")
+    digest = hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+    base_ref = WorktreeSourceRef(
+        source_kind="node",
+        source_node_id="upstream",
+        source_commit=source.run_base_commit,
+        source_tree=source.source_tree,
+    )
+    cases = (
+        (base_ref, "bundle path is missing"),
+        (
+            replace(base_ref, bundle_path=tmp_path / "missing.bundle"),
+            "bundle is missing",
+        ),
+        (replace(base_ref, bundle_path=bundle_path), "bundle digest is missing"),
+        (
+            replace(base_ref, bundle_path=bundle_path, bundle_sha256="0" * 64),
+            "bundle digest mismatch",
+        ),
+        (
+            replace(base_ref, bundle_path=bundle_path, bundle_sha256=digest),
+            "bundle size is missing",
+        ),
+        (
+            replace(
+                base_ref,
+                bundle_path=bundle_path,
+                bundle_sha256=digest,
+                bundle_size_bytes=bundle_path.stat().st_size + 1,
+            ),
+            "bundle size mismatch",
+        ),
+        (
+            replace(
+                base_ref,
+                bundle_path=bundle_path,
+                bundle_sha256=digest,
+                bundle_size_bytes=bundle_path.stat().st_size,
+            ),
+            "bundle ref is missing",
+        ),
+    )
+
+    for source_ref, expected_message in cases:
+        with (
+            pytest.raises(RuntimeError, match=expected_message),
+            ensure_source_commit_available(
+                source,
+                source_ref,
+                source_chain_verified=True,
+            ),
+        ):
+            pass
 
 
 def test_verify_source_commit_available_rejects_ambient_omitted_upstream(

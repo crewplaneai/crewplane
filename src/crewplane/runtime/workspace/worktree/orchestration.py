@@ -38,7 +38,6 @@ from .inspection import (
     reject_gitignore_drift,
 )
 from .lineage import (
-    TemporaryRefOwner,
     cleanup_result_refs_after_failure,
     ensure_source_commit_available,
     export_bundle,
@@ -56,6 +55,7 @@ from .protected_refs import (
 )
 from .refs import safe_file_component
 from .result_validation import validate_result_tree
+from .temporary_refs import TemporaryRefOwner
 from .types import (
     WorktreeCaptureRequest,
     WorktreeCaptureResult,
