@@ -3,7 +3,6 @@ from __future__ import annotations
 import stat
 import subprocess
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Protocol, Self
@@ -16,6 +15,7 @@ from .bundle_validation import (
     GIT_BUNDLE_VALIDATION_TIMEOUT_SECONDS,
     sanitized_bundle_git_environment,
 )
+from .persisted_chain import workspace_result_descriptor_from_payload
 
 
 class WorkspaceSourceDescriptor(Protocol):
@@ -47,38 +47,21 @@ class WorkspaceSourceDescriptor(Protocol):
     def upstream_sources(self) -> Sequence[Self]: ...
 
 
-@dataclass(frozen=True)
-class PersistedWorkspaceSourceDescriptor:
-    source_kind: str
-    source_node_id: str | None
-    source_commit: str
-    source_tree: str
-    bundle_path: Path | None
-    bundle_sha256: str | None
-    bundle_size_bytes: int | None
-    bundle_ref: str | None
-    upstream_sources: tuple[PersistedWorkspaceSourceDescriptor, ...] = ()
-
-
 def verify_persisted_workspace_result_chain(
     source: WorkspaceSourceSnapshot,
     run_dir: Path,
     payload: Mapping[str, object],
 ) -> None:
-    source_payload = _mapping(payload.get("source"))
-    result = _mapping(payload.get("result"))
-    bundle = _mapping(payload.get("bundle"))
-    refs = _mapping(payload.get("refs"))
-    descriptor = PersistedWorkspaceSourceDescriptor(
-        source_kind="node",
-        source_node_id=_required_string(payload.get("node_id")),
-        source_commit=_required_string(result.get("result_commit")),
-        source_tree=_required_string(result.get("result_tree")),
-        bundle_path=_contained_bundle_path(run_dir, bundle.get("path")),
-        bundle_sha256=_required_string(bundle.get("sha256")),
-        bundle_size_bytes=_required_int(bundle.get("size_bytes")),
-        bundle_ref=_required_string(refs.get("result")),
-        upstream_sources=(_persisted_source_descriptor(run_dir, source_payload),),
+    """Verify a persisted node result and its recursive workspace source chain.
+
+    Bundle paths are decoded relative to ``run_dir`` before verification in an
+    isolated bare Git repository. Invalid payloads or lineage raise
+    ``RuntimeError``; Git command failures propagate as subprocess errors.
+    """
+
+    descriptor = workspace_result_descriptor_from_payload(
+        run_dir,
+        payload,
     )
     verify_workspace_source_chain(source, descriptor)
 
@@ -87,6 +70,14 @@ def verify_workspace_source_chain(
     source: WorkspaceSourceSnapshot,
     source_ref: WorkspaceSourceDescriptor,
 ) -> None:
+    """Verify a project, node, or candidate source chain in isolation.
+
+    A temporary bare repository is seeded with the recorded project base before
+    validated bundles are imported in dependency order. Contradictory
+    descriptors or invalid lineage raise ``RuntimeError``; Git command failures
+    propagate as subprocess errors.
+    """
+
     with TemporaryDirectory(prefix="crewplane-chain-verify-") as temp_dir_name:
         git_dir = Path(temp_dir_name) / "chain.git"
         _init_bare_repository(git_dir, source.object_format)
@@ -149,10 +140,27 @@ def _verify_bundle_descriptor(
         raise RuntimeError("Workspace source bundle kind is invalid.")
     if not descriptor.source_node_id:
         raise RuntimeError("Workspace source bundle lacks a source node.")
+    if descriptor.bundle_ref is None:
+        raise RuntimeError("Workspace source bundle descriptor is incomplete.")
     bundle_path = _validated_bundle_file(descriptor)
     if _bundle_has_prerequisites(bundle_path):
         raise RuntimeError("Workspace source bundle advertises prerequisites.")
     _run_git_dir(git_dir, "bundle", "verify", bundle_path.as_posix())
+    _verify_offered_bundle_head(git_dir, bundle_path, descriptor)
+    _run_git_dir(git_dir, "bundle", "unbundle", bundle_path.as_posix())
+    if len(descriptor.upstream_sources) != 1:
+        raise RuntimeError(
+            "Workspace non-project source descriptor requires exactly one parent source."
+        )
+    expected_parent = descriptor.upstream_sources[0].source_commit
+    _verify_commit(git_dir, descriptor, expected_parent)
+
+
+def _verify_offered_bundle_head(
+    git_dir: Path,
+    bundle_path: Path,
+    descriptor: WorkspaceSourceDescriptor,
+) -> None:
     listed = (
         _run_git_dir(
             git_dir,
@@ -172,13 +180,6 @@ def _verify_bundle_descriptor(
         or ref_name != descriptor.bundle_ref
     ):
         raise RuntimeError("Workspace source bundle ref or target OID mismatch.")
-    _run_git_dir(git_dir, "bundle", "unbundle", bundle_path.as_posix())
-    if len(descriptor.upstream_sources) != 1:
-        raise RuntimeError(
-            "Workspace non-project source descriptor requires exactly one parent source."
-        )
-    expected_parent = descriptor.upstream_sources[0].source_commit
-    _verify_commit(git_dir, descriptor, expected_parent)
 
 
 def _verify_commit(
@@ -236,9 +237,14 @@ def _validated_bundle_file(descriptor: WorkspaceSourceDescriptor) -> Path:
         path is None
         or descriptor.bundle_sha256 is None
         or descriptor.bundle_size_bytes is None
-        or descriptor.bundle_ref is None
     ):
         raise RuntimeError("Workspace source bundle descriptor is incomplete.")
+    _verify_regular_bundle_file(path)
+    _verify_bundle_file_identity(path, descriptor)
+    return path
+
+
+def _verify_regular_bundle_file(path: Path) -> None:
     try:
         mode = path.lstat().st_mode
         file_stat = path.stat()
@@ -246,12 +252,17 @@ def _validated_bundle_file(descriptor: WorkspaceSourceDescriptor) -> Path:
         raise RuntimeError("Workspace source bundle is missing or unreadable.") from exc
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode) or file_stat.st_nlink != 1:
         raise RuntimeError("Workspace source bundle must be a regular file.")
+
+
+def _verify_bundle_file_identity(
+    path: Path,
+    descriptor: WorkspaceSourceDescriptor,
+) -> None:
     size_bytes, sha256 = file_size_and_sha256(path)
     if size_bytes != descriptor.bundle_size_bytes:
         raise RuntimeError("Workspace source bundle size mismatch.")
     if sha256 != descriptor.bundle_sha256:
         raise RuntimeError("Workspace source bundle digest mismatch.")
-    return path
 
 
 def _bundle_has_prerequisites(bundle_path: Path) -> bool:
@@ -261,14 +272,12 @@ def _bundle_has_prerequisites(bundle_path: Path) -> bool:
             b"git bundle"
         ):
             raise RuntimeError("Workspace source bundle header is invalid.")
-        while True:
-            line = handle.readline()
-            if not line:
-                raise RuntimeError("Workspace source bundle header is incomplete.")
+        for line in handle:
             if line in {b"\n", b"\r\n"}:
                 return False
             if line.startswith(b"-"):
                 return True
+    raise RuntimeError("Workspace source bundle header is incomplete.")
 
 
 def _init_bare_repository(git_dir: Path, object_format: str) -> None:
@@ -314,79 +323,3 @@ def _run_git_dir(git_dir: Path, *args: str) -> subprocess.CompletedProcess[bytes
         f"--git-dir={git_dir.as_posix()}",
         *args,
     )
-
-
-def _persisted_source_descriptor(
-    run_dir: Path,
-    payload: Mapping[str, object],
-) -> PersistedWorkspaceSourceDescriptor:
-    upstream_payloads = payload.get("upstream_sources")
-    if upstream_payloads is None:
-        upstream_payloads = []
-    if not isinstance(upstream_payloads, list) or not all(
-        isinstance(item, dict) for item in upstream_payloads
-    ):
-        raise RuntimeError("Workspace source descriptor chain is invalid.")
-    return PersistedWorkspaceSourceDescriptor(
-        source_kind=_required_string(payload.get("kind")),
-        source_node_id=_optional_string(payload.get("node_id")),
-        source_commit=_required_string(payload.get("commit")),
-        source_tree=_required_string(payload.get("tree")),
-        bundle_path=(
-            _contained_bundle_path(run_dir, payload.get("bundle_path"))
-            if payload.get("bundle_path") is not None
-            else None
-        ),
-        bundle_sha256=_optional_string(payload.get("bundle_sha256")),
-        bundle_size_bytes=_optional_int(payload.get("bundle_size_bytes")),
-        bundle_ref=_optional_string(payload.get("bundle_ref")),
-        upstream_sources=tuple(
-            _persisted_source_descriptor(run_dir, item)
-            for item in upstream_payloads
-            if isinstance(item, dict)
-        ),
-    )
-
-
-def _contained_bundle_path(run_dir: Path, value: object) -> Path:
-    relative_path = _required_string(value)
-    path = Path(relative_path)
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
-        raise RuntimeError("Workspace source bundle path is unsafe.")
-    candidate = run_dir / path
-    try:
-        resolved_run_dir = run_dir.resolve(strict=True)
-        resolved_candidate = candidate.resolve(strict=True)
-    except OSError as exc:
-        raise RuntimeError("Workspace source bundle path is missing.") from exc
-    if not resolved_candidate.is_relative_to(resolved_run_dir):
-        raise RuntimeError("Workspace source bundle path escapes the run directory.")
-    return candidate
-
-
-def _mapping(value: object) -> Mapping[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def _required_string(value: object) -> str:
-    if not isinstance(value, str) or not value:
-        raise RuntimeError("Workspace source descriptor lacks a required string.")
-    return value
-
-
-def _optional_string(value: object) -> str | None:
-    if value is None:
-        return None
-    return _required_string(value)
-
-
-def _required_int(value: object) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise RuntimeError("Workspace source descriptor lacks a required size.")
-    return value
-
-
-def _optional_int(value: object) -> int | None:
-    if value is None:
-        return None
-    return _required_int(value)
