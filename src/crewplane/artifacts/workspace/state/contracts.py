@@ -6,7 +6,7 @@ from typing import Literal
 from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.version import SCHEMA_VERSION
 
-from .fields import is_hex_object, mapping_value
+from .fields import is_hex_object, is_nonempty_string, mapping_value
 from .ref_contracts import validate_ref_contracts
 
 PersistedWorkspaceOperation = Literal[
@@ -76,7 +76,7 @@ def _validate_identity(payload: Mapping[str, object], errors: list[str]) -> None
         "task_id",
         "provider",
     ):
-        if not _nonempty_string(payload.get(field)):
+        if not is_nonempty_string(payload.get(field)):
             errors.append(f"missing {field}")
     if payload.get("role") not in {"executor", "reviewer"}:
         errors.append("invalid provider role")
@@ -95,7 +95,7 @@ def _validate_repository(git: Mapping[str, object], errors: list[str]) -> None:
         "active_git_dir",
         "common_git_dir",
     ):
-        if not _nonempty_string(git.get(field)):
+        if not is_nonempty_string(git.get(field)):
             errors.append(f"missing git.{field}")
 
 
@@ -150,7 +150,7 @@ def _validate_worktree_materialization(
         return
     if not _positive_int(workspace.get("reuse_generation")):
         errors.append("materialized worktree lacks reuse generation")
-    if not _nonempty_string(execution.get("worktree_git_dir")):
+    if not is_nonempty_string(execution.get("worktree_git_dir")):
         errors.append("materialized worktree lacks exact Git directory")
 
 
@@ -160,7 +160,7 @@ def _validate_workspace_operation_eligibility(
     errors: list[str],
 ) -> None:
     status = payload.get("status")
-    if operation == "cleanup" and not _nonempty_string(
+    if operation == "cleanup" and not is_nonempty_string(
         mapping_value(payload.get("execution")).get("workspace_path")
     ):
         errors.append("cleanup workspace lacks its physical path")
@@ -227,15 +227,15 @@ def _validate_bundled_source(
     kind: str,
     errors: list[str],
 ) -> None:
-    if not _nonempty_string(source.get("node_id")):
+    if not is_nonempty_string(source.get("node_id")):
         errors.append(f"{kind} source requires a source node")
-    if not _nonempty_string(source.get("bundle_path")):
+    if not is_nonempty_string(source.get("bundle_path")):
         errors.append(f"{kind} source lacks bundle_path")
     if not _sha256(source.get("bundle_sha256")):
         errors.append(f"{kind} source lacks bundle_sha256")
     if not is_nonnegative_int(source.get("bundle_size_bytes")):
         errors.append(f"{kind} source lacks bundle_size_bytes")
-    if not _nonempty_string(source.get("bundle_ref")):
+    if not is_nonempty_string(source.get("bundle_ref")):
         errors.append(f"{kind} source lacks bundle_ref")
     _validate_upstream_source(source.get("upstream_sources"), kind, errors)
 
@@ -309,7 +309,7 @@ def _validate_workspace_mutator(
     status = value.get("status")
     if status not in {"confirmed", "unresolved"}:
         errors.append("workspace mutator status is invalid")
-    if not _nonempty_string(value.get("operation")):
+    if not is_nonempty_string(value.get("operation")):
         errors.append("workspace mutator operation is invalid")
     if status == "confirmed" and value.get("outcome") != "finished":
         errors.append("confirmed workspace mutator outcome is invalid")
@@ -372,8 +372,8 @@ def _validate_bundle_evidence(
     errors: list[str],
 ) -> None:
     if not (
-        _nonempty_string(bundle.get("path"))
-        and _nonempty_string(bundle.get("sha256"))
+        is_nonempty_string(bundle.get("path"))
+        and is_nonempty_string(bundle.get("sha256"))
         and is_nonnegative_int(bundle.get("size_bytes"))
         and bundle.get("verified") is True
     ):
@@ -409,17 +409,13 @@ def _hydrated_resume_placement(
                 "worktree_git_dir",
             )
         )
-        and _nonempty_string(origin.get("source_run_id"))
-        and _nonempty_string(origin.get("source_run_key_name"))
+        and is_nonempty_string(origin.get("source_run_id"))
+        and is_nonempty_string(origin.get("source_run_key_name"))
         and origin.get("source_node_id") == payload.get("node_id")
-        and _nonempty_string(origin.get("hydrated_at"))
+        and is_nonempty_string(origin.get("hydrated_at"))
         and isinstance(origin.get("source_workspace"), dict)
         and isinstance(origin.get("source_execution"), dict)
     )
-
-
-def _nonempty_string(value: object) -> bool:
-    return isinstance(value, str) and bool(value)
 
 
 def _positive_int(value: object) -> bool:

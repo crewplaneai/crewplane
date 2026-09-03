@@ -312,6 +312,108 @@ def test_workspace_contract_preserves_lineage_result_error_order() -> None:
     )
 
 
+def test_workspace_contract_preserves_ref_error_order() -> None:
+    payload = _valid_worktree_payload()
+    publication = payload["ref_publication"]
+    assert isinstance(publication, dict)
+    publication.update(
+        {
+            "phase": "prepared",
+            "repository_id": "other-repo",
+            "run_id": "other-run",
+            "node_id": "other-node",
+            "task_id": "other-task",
+            "role": "reviewer",
+            "round_num": 2,
+            "audit_round_num": 1,
+        }
+    )
+    destinations = publication["destinations"]
+    assert isinstance(destinations, dict)
+    destinations["candidate"] = {
+        "name": "refs/other-candidate",
+        "target_oid": OID_D,
+    }
+    destinations["result"] = {
+        "name": "refs/other-result",
+        "target_oid": OID_C,
+        "expected_old_oid": "invalid",
+    }
+    payload["temporary_refs"] = [{}, {}]
+
+    errors = workspace_state_contract_errors(payload, "resume")
+
+    assert errors == (
+        "successful lineage has only prepared ref publication",
+        "ref publication repository mismatch",
+        "ref publication run identity mismatch",
+        "ref publication node_id mismatch",
+        "ref publication task_id mismatch",
+        "ref publication role mismatch",
+        "ref publication round_num mismatch",
+        "ref publication audit_round_num mismatch",
+        "ref publication candidate expected OID is invalid",
+        "ref publication candidate name mismatch",
+        "ref publication candidate escapes invocation scope",
+        "ref publication candidate target mismatch",
+        "ref publication result expected OID is invalid",
+        "ref publication result name mismatch",
+        "ref publication result escapes invocation scope",
+        "ref publication result target mismatch",
+        "temporary ref claim is contradictory",
+        "temporary ref claim is contradictory",
+    )
+
+
+def test_workspace_contract_continues_after_malformed_destination() -> None:
+    payload = _valid_worktree_payload()
+    publication = payload["ref_publication"]
+    assert isinstance(publication, dict)
+    destinations = publication["destinations"]
+    assert isinstance(destinations, dict)
+    destinations["candidate"] = {
+        "name": "",
+        "target_oid": OID_C,
+        "expected_old_oid": "invalid",
+    }
+    destinations["result"] = {
+        "name": "refs/other-result",
+        "target_oid": OID_C,
+        "expected_old_oid": "invalid",
+    }
+
+    errors = workspace_state_contract_errors(payload, "resume")
+
+    assert errors == (
+        "invalid ref publication destination",
+        "ref publication result expected OID is invalid",
+        "ref publication result name mismatch",
+        "ref publication result escapes invocation scope",
+        "ref publication result target mismatch",
+    )
+
+
+def test_workspace_contract_preserves_invalid_publication_early_return() -> None:
+    payload = _valid_worktree_payload()
+    publication = payload["ref_publication"]
+    assert isinstance(publication, dict)
+    publication.update(
+        {
+            "phase": "unknown",
+            "repository_id": "other-repo",
+            "run_id": "other-run",
+        }
+    )
+    payload["temporary_refs"] = [{}]
+
+    errors = workspace_state_contract_errors(payload, "resume")
+
+    assert errors == (
+        "lineage result lacks ref publication phase",
+        "temporary ref claim is contradictory",
+    )
+
+
 def test_cleanup_contract_rejects_unresolved_failed_process_liveness() -> None:
     payload = _valid_worktree_payload()
     payload["status"] = "failed"

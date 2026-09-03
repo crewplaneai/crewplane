@@ -34,6 +34,10 @@ def mapping_value(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
 
 
+def is_nonempty_string(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and bool(value)
+
+
 def bool_field_matches(
     payload: dict[str, object],
     field_name: str,
