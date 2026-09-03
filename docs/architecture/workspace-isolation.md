@@ -120,7 +120,7 @@ runtime service, not a provider-specific feature and not a replaceable adapter.
 | Process lifecycle | Launch providers with explicit `cwd`, apply the controlled child environment, and drain process groups with finite deadlines. | `src/crewplane/runtime/agent/` |
 | Artifact validation | Validate workspace state, file descriptors, bundle contents, and complete source chains for skip and resume. | `src/crewplane/artifacts/workspace/` |
 | Run orchestration | Connect preflight, runtime execution, branch export, summaries, and final run status. | `src/crewplane/cli/run/`, `src/crewplane/runtime/execution/` |
-| Cleanup command | Find and remove only workspaces and refs supported by exact project evidence. | `src/crewplane/cli/cleanup.py`, `src/crewplane/runtime/workspace/cleanup.py` |
+| Cleanup command | Find and remove only workspaces and refs supported by exact project evidence. | `src/crewplane/cli/cleanup.py`, `src/crewplane/cli/workspace_cleanup/`, `src/crewplane/runtime/workspace/cleanup.py` |
 | Invoker adapter | Declare whether the invoker honors `cwd` and uses the controlled process-launch path. It does not own workspace policy. | `src/crewplane/architecture/ports/`, `src/crewplane/adapters/invokers/` |
 
 The UI remains an observer. It can display workspace state but cannot choose a
@@ -598,38 +598,6 @@ Use the [artifact reference](../reference/artifacts.md) for the durable layout,
 the [workspace guide](../guides/workspace-isolation.md) for normal usage, and
 the [cleanup guide](../guides/cleanup.md) before removing retained workspaces.
 
-## Source and Test Map
-
-Use this map to find the implementation quickly.
-
-| Concern | Source |
-| --- | --- |
-| Settings and declarations | `src/crewplane/core/workspace/settings.py`, `src/crewplane/core/workspace/policy.py` |
-| Workflow selection and ordering | `src/crewplane/core/workspace/selection.py`, `src/crewplane/core/workflow/validation/` |
-| Preflight models, file locators, and plan identity | `src/crewplane/core/preflight/workspace/`, `src/crewplane/core/preflight/plan_contract_workspace_*.py` |
-| Repository and source policy | `src/crewplane/cli/run/workspace/` |
-| Materialization admission | `src/crewplane/runtime/workspace/materialization.py` |
-| Snapshot and worktree preparation | `src/crewplane/runtime/workspace/service/`, `src/crewplane/runtime/workspace/worktree/materialization.py` |
-| Process drain and retry reset | `src/crewplane/runtime/agent/process/drain.py`, `src/crewplane/runtime/workspace/service/retry_reset.py` |
-| Runtime-owned result capture | `src/crewplane/runtime/workspace/worktree/orchestration.py`, `src/crewplane/runtime/workspace/worktree/result_validation.py` |
-| Atomic ref publication | `src/crewplane/runtime/workspace/worktree/ref_publication.py` |
-| Bundle and source-chain verification | `src/crewplane/artifacts/workspace/bundle_validation.py`, `src/crewplane/artifacts/workspace/chain_validation.py` |
-| Workspace state validation | `src/crewplane/artifacts/workspace/state/` |
-| Terminal state and cleanup | `src/crewplane/runtime/workspace/terminalization.py`, `src/crewplane/runtime/workspace/worktree/cleanup.py` |
-| Branch export and recovery | `src/crewplane/runtime/workspace/branch_export/` |
-| Project cleanup command | `src/crewplane/cli/cleanup.py`, `src/crewplane/cli/workspace_cleanup_evidence.py` |
-
-Deterministic coverage is concentrated under:
-
-- `tests/unit/runtime/workspace/` for lifecycle, capture, reuse, refs, cleanup,
-  branch export, and capacity;
-- `tests/unit/artifacts/` for state, descriptors, bundles, skip, and resume;
-- `tests/unit/cli/` for source policy, disk policy, cleanup, finalization, and
-  branch export;
-- `tests/integration/runtime/` for invocation and execution behavior;
-- `tests/integration/cli/` for command-level workflows; and
-- `tests/integration/architecture/` for plan and documentation contracts.
-
 ## Changing the Architecture Safely
 
 When a change crosses this subsystem:
@@ -646,14 +614,14 @@ When a change crosses this subsystem:
    retry, cancellation, concurrency, cleanup, and resume paths.
 6. Update public references when syntax, configuration, defaults, diagnostics,
    artifact layout, or supported repository behavior changes.
-7. Update this document when a boundary, lifecycle stage, invariant, trust
-   boundary, or maintainer source map changes.
+7. Update this document when a boundary, lifecycle stage, invariant, or trust
+   boundary changes.
 8. Record a new or superseding ADR for a consequential architecture decision;
    do not rewrite ADR 0016 as current implementation documentation.
 
-Use the repository's normal validation targets from `DEVELOPMENT.md`. The most
-relevant focused tests are the source and test directories listed above; run
-the full quality gate when the implementation changes across boundaries.
+Use the repository's normal validation targets from `DEVELOPMENT.md`. Run
+focused tests for the affected boundary first, then run the full quality gate
+when the implementation changes across boundaries.
 
 ## Key Decisions and Limitations
 
