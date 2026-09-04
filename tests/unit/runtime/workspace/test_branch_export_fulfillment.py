@@ -10,6 +10,7 @@ import pytest
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.naming import build_workspace_export_filename
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
+from crewplane.runtime.workspace.branch_export import attempts as branch_export_attempts
 from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
     fulfill_branch_exports_from_history,
@@ -346,7 +347,8 @@ def test_history_fulfillment_recovers_prepared_export_when_policy_is_disabled(
             )
 
         monkeypatch.setattr(
-            "crewplane.runtime.workspace.branch_export.create_branch_export_ref",
+            branch_export_attempts,
+            "create_branch_export_ref",
             delete_branch_before_prepared_recovery,
         )
 
@@ -508,7 +510,8 @@ def test_history_fulfillment_audits_exact_branch_race_from_locked_decision(
         return exists
 
     monkeypatch.setattr(
-        "crewplane.runtime.workspace.branch_export.branch_ref_exists",
+        branch_export_attempts,
+        "branch_ref_exists",
         create_exact_branch_after_probe,
     )
 
@@ -571,7 +574,8 @@ def test_history_fulfillment_does_not_create_branch_that_disappears_after_probe(
         )
 
     monkeypatch.setattr(
-        "crewplane.runtime.workspace.branch_export.create_branch_export_ref",
+        branch_export_attempts,
+        "create_branch_export_ref",
         delete_branch_before_locked_decision,
     )
 

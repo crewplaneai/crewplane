@@ -10,10 +10,10 @@ from pathlib import Path
 
 import pytest
 
-import crewplane.runtime.workspace.branch_export as branch_exports
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.naming import build_workspace_export_filename
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
+from crewplane.runtime.workspace.branch_export import attempts as branch_export_attempts
 from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
 )
@@ -172,7 +172,7 @@ def test_fulfill_branch_exports_keeps_import_ref_until_branch_creation(
     run_git_text(repo, "reflog", "expire", "--expire=now", "--all")
     run_git_text(repo, "gc", "--prune=now")
     assert not git_commit_exists(repo, result_commit)
-    original_create_branch = branch_exports.create_branch_export_ref
+    original_create_branch = branch_export_attempts.create_branch_export_ref
 
     def create_branch_after_prune(
         source: WorkspaceSourceSnapshot,
@@ -199,7 +199,7 @@ def test_fulfill_branch_exports_keeps_import_ref_until_branch_creation(
         )
 
     monkeypatch.setattr(
-        branch_exports,
+        branch_export_attempts,
         "create_branch_export_ref",
         create_branch_after_prune,
     )
@@ -942,7 +942,7 @@ def test_fulfill_branch_exports_terminalizes_current_run_branch_race(
         if race_matches_target
         else run_git_text(repo, "rev-parse", "HEAD^{commit}")
     )
-    original_branch_ref_exists = branch_exports.branch_ref_exists
+    original_branch_ref_exists = branch_export_attempts.branch_ref_exists
     raced = False
 
     def create_branch_after_probe(
@@ -958,7 +958,7 @@ def test_fulfill_branch_exports_terminalizes_current_run_branch_race(
         return exists
 
     monkeypatch.setattr(
-        branch_exports,
+        branch_export_attempts,
         "branch_ref_exists",
         create_branch_after_probe,
     )
