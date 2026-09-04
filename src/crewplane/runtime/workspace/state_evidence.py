@@ -1,41 +1,57 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal, TypeIs
+
+from .state import edit_workspace_state, require_workspace_state_payload_identity
+
+type _RefPublicationPhase = Literal["prepared", "published", "removed"]
+type _RefPublicationTargetPhase = Literal["published", "removed"]
+type _TemporaryRefClaim = dict[str, object]
+
+_REF_PUBLICATION_TRANSITIONS: Final[
+    dict[_RefPublicationPhase, frozenset[_RefPublicationTargetPhase]]
+] = {
+    "prepared": frozenset({"published", "removed"}),
+    "published": frozenset({"removed"}),
+    "removed": frozenset(),
+}
 
 
 def update_workspace_ref_publication(
     state_path: Path, publication: Mapping[str, object]
 ) -> None:
-    def apply(payload: dict[str, object]) -> None:
+    publication_payload = deepcopy(dict(publication))
+    with edit_workspace_state(state_path) as payload:
         existing = payload.get("ref_publication")
-        if existing is not None and existing != dict(publication):
+        if existing is not None and existing != publication_payload:
             raise RuntimeError("Workspace ref publication evidence is immutable.")
-        payload["ref_publication"] = deepcopy(dict(publication))
-
-    _mutate(state_path, apply)
+        payload["ref_publication"] = publication_payload
 
 
-def update_workspace_ref_publication_phase(state_path: Path, phase: str) -> None:
-    def apply(payload: dict[str, object]) -> None:
+def update_workspace_ref_publication_phase(
+    state_path: Path,
+    phase: _RefPublicationTargetPhase,
+) -> None:
+    with edit_workspace_state(state_path) as payload:
         publication = payload.get("ref_publication")
         if not isinstance(publication, dict):
             raise RuntimeError("Workspace state lacks ref publication evidence.")
         current = publication.get("phase")
-        allowed = {
-            "prepared": {"published", "removed"},
-            "published": {"removed"},
-            "removed": set(),
-        }
-        if phase != current and phase not in allowed.get(str(current), set()):
+        if not _is_ref_publication_phase(current) or phase not in (
+            "published",
+            "removed",
+        ):
+            raise RuntimeError(
+                f"Invalid ref publication phase transition: {current!r} -> {phase!r}."
+            )
+        if phase != current and phase not in _REF_PUBLICATION_TRANSITIONS[current]:
             raise RuntimeError(
                 f"Invalid ref publication phase transition: {current!r} -> {phase!r}."
             )
         publication["phase"] = phase
-
-    _mutate(state_path, apply)
 
 
 def record_workspace_process_drain(
@@ -45,7 +61,7 @@ def record_workspace_process_drain(
     process_group_id: int | None,
     reason: str | None = None,
 ) -> None:
-    def apply(payload: dict[str, object]) -> None:
+    with edit_workspace_state(state_path) as payload:
         evidence: dict[str, object] = {
             "status": status,
             "pid": pid,
@@ -55,23 +71,19 @@ def record_workspace_process_drain(
             evidence["reason"] = reason
         payload["process_drain"] = evidence
 
-    _mutate(state_path, apply)
-
 
 def record_workspace_temporary_ref(
     state_path: Path, ref_name: str, target_oid: str
 ) -> None:
-    def apply(payload: dict[str, object]) -> None:
+    with edit_workspace_state(state_path) as payload:
         claims = payload.setdefault("temporary_refs", [])
-        if not isinstance(claims, list):
+        if not _is_temporary_ref_claim_list(claims):
             raise RuntimeError("Workspace temporary ref evidence is invalid.")
-        existing = [
-            claim
-            for claim in claims
-            if isinstance(claim, dict) and claim.get("name") == ref_name
-        ]
-        if existing:
-            if any(claim.get("target_oid") != target_oid for claim in existing):
+        matching = _matching_temporary_ref_claims(claims, ref_name)
+        if len(matching) > 1:
+            raise RuntimeError("Workspace temporary ref evidence is ambiguous.")
+        if matching:
+            if matching[0].get("target_oid") != target_oid:
                 raise RuntimeError("Workspace temporary ref evidence conflicts.")
             return
         git_payload = payload.get("git")
@@ -93,42 +105,59 @@ def record_workspace_temporary_ref(
             }
         )
 
-    _mutate(state_path, apply)
-
 
 def mark_workspace_temporary_ref_removed(state_path: Path, ref_name: str) -> None:
-    def apply(payload: dict[str, object]) -> None:
+    with edit_workspace_state(state_path) as payload:
         claims = payload.get("temporary_refs")
-        if not isinstance(claims, list):
+        if claims is None:
             raise RuntimeError("Workspace temporary ref evidence is missing.")
-        matching = [
-            claim
-            for claim in claims
-            if isinstance(claim, dict) and claim.get("name") == ref_name
-        ]
+        if not _is_temporary_ref_claim_list(claims):
+            raise RuntimeError("Workspace temporary ref evidence is invalid.")
+        matching = _matching_temporary_ref_claims(claims, ref_name)
         if len(matching) != 1:
             raise RuntimeError("Workspace temporary ref evidence is ambiguous.")
         matching[0]["phase"] = "removed"
-
-    _mutate(state_path, apply)
 
 
 def update_workspace_setup(
     state_path: Path,
     setup: Mapping[str, object],
-    base_payload: Mapping[str, object] | None = None,
+    base_payload: Mapping[str, object],
 ) -> None:
-    def apply(payload: dict[str, object]) -> None:
-        if base_payload is not None:
-            from .state import require_workspace_state_payload_identity
-
-            require_workspace_state_payload_identity(payload, base_payload)
+    with edit_workspace_state(state_path) as payload:
+        require_workspace_state_payload_identity(payload, base_payload)
         payload["setup"] = deepcopy(dict(setup))
 
-    _mutate(state_path, apply)
+
+def _is_ref_publication_phase(value: object) -> TypeIs[_RefPublicationPhase]:
+    return isinstance(value, str) and value in {
+        "prepared",
+        "published",
+        "removed",
+    }
 
 
-def _mutate(state_path: Path, mutation: Callable[[dict[str, object]], None]) -> None:
-    from .state import mutate_workspace_state
+def _is_temporary_ref_claim_list(
+    value: object,
+) -> TypeIs[list[_TemporaryRefClaim]]:
+    return isinstance(value, list) and all(
+        _is_temporary_ref_claim(claim) for claim in value
+    )
 
-    mutate_workspace_state(state_path, mutation)
+
+def _is_temporary_ref_claim(value: object) -> TypeIs[_TemporaryRefClaim]:
+    return (
+        isinstance(value, dict)
+        and value.get("phase") in {"prepared", "removed"}
+        and isinstance(value.get("name"), str)
+        and bool(value["name"])
+        and isinstance(value.get("target_oid"), str)
+        and bool(value["target_oid"])
+    )
+
+
+def _matching_temporary_ref_claims(
+    claims: list[_TemporaryRefClaim],
+    ref_name: str,
+) -> list[_TemporaryRefClaim]:
+    return [claim for claim in claims if claim["name"] == ref_name]

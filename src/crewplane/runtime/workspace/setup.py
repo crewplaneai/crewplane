@@ -32,7 +32,7 @@ from crewplane.runtime.workspace.mutator_fence import (
     fence_workspace_mutator,
     release_workspace_mutator,
 )
-from crewplane.runtime.workspace.state import record_workspace_process_drain
+from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
 
 
 class WorkspaceSetupError(RuntimeError):

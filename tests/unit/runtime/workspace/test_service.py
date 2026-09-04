@@ -799,6 +799,39 @@ def test_git_metadata_lock_releases_immediate_cancelled_acquisition(
         assert (tmp_path / "crewplane" / "workspace.lock").exists()
 
 
+def test_git_metadata_lock_releases_file_lock_when_cancelled_after_acquisition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_lock_api = workspace_locks.fcntl
+    if file_lock_api is None:
+        pytest.skip("POSIX fcntl is unavailable")
+    operations: list[int] = []
+
+    def record_file_lock(file_descriptor: int, operation: int) -> None:
+        del file_descriptor
+        operations.append(operation)
+
+    def cancel_after_file_lock_acquisition() -> bool:
+        return bool(operations)
+
+    monkeypatch.setattr(file_lock_api, "flock", record_file_lock)
+
+    with (
+        pytest.raises(RuntimeError, match="lock acquisition was cancelled"),
+        workspace_locks.git_metadata_lock(
+            tmp_path,
+            cancel_after_file_lock_acquisition,
+        ),
+    ):
+        pass
+
+    assert operations == [
+        file_lock_api.LOCK_EX | file_lock_api.LOCK_NB,
+        file_lock_api.LOCK_UN,
+    ]
+
+
 def test_snapshot_runtime_git_env_uses_full_sanitizer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

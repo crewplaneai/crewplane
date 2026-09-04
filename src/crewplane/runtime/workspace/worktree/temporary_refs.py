@@ -16,9 +16,9 @@ from crewplane.core.workspace.invocation_identity import invocation_slug
 from ..cleanup_notes import note_cleanup_failure
 from ..git import GitCommand, git
 from ..locks import git_metadata_lock
-from ..state import (
+from ..state import read_workspace_state
+from ..state_evidence import (
     mark_workspace_temporary_ref_removed,
-    read_workspace_state,
     record_workspace_temporary_ref,
 )
 from .refs import checked_ref, safe_ref_component

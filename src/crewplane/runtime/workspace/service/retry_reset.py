@@ -17,8 +17,8 @@ from crewplane.runtime.workspace.setup import (
 )
 from crewplane.runtime.workspace.state import (
     require_workspace_state_identity,
-    update_workspace_setup,
 )
+from crewplane.runtime.workspace.state_evidence import update_workspace_setup
 from crewplane.runtime.workspace.worktree.reset import worktree_retry_reset
 from crewplane.runtime.workspace.worktree.types import WorktreeCaptureRequest
 

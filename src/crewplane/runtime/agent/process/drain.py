@@ -11,6 +11,13 @@ from dataclasses import dataclass
 PROCESS_GROUP_TERM_GRACE_SECONDS = 0.25
 PROCESS_GROUP_KILL_GRACE_SECONDS = 1.0
 PROCESS_DRAIN_POLL_SECONDS = 0.01
+_PROVIDER_PROCESS_DRAIN_FAILURE = (
+    "Provider process group could not be drained within the finite TERM/KILL deadline."
+)
+_WORKSPACE_SETUP_PROCESS_DRAIN_FAILURE = (
+    "Workspace setup process group could not be drained within the finite "
+    "TERM/KILL deadline."
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +32,12 @@ class ProcessDrainError(RuntimeError):
     def __init__(self, evidence: ProcessDrainEvidence, reason: str) -> None:
         super().__init__(reason)
         self.evidence = evidence
+
+
+@dataclass(frozen=True, slots=True)
+class _DrainPhase:
+    signal_number: signal.Signals
+    grace_seconds: float
 
 
 def process_group_is_alive(process_group_id: int | None) -> bool:
@@ -43,45 +56,20 @@ async def drain_async_process(
     process: asyncio.subprocess.Process,
     process_group_id: int | None,
 ) -> ProcessDrainEvidence:
-    process_missing = False
-    if process.returncode is None or process_group_is_alive(process_group_id):
-        process_missing = _signal_async_process(
-            process,
-            process_group_id,
-            signal.SIGTERM,
+    leader_was_missing = False
+    for phase in _drain_phases():
+        if _async_process_is_drained(process, process_group_id):
+            break
+        leader_was_missing = (
+            await _run_async_drain_phase(process, process_group_id, phase)
+            or leader_was_missing
         )
-        await _wait_for_async_drain(
-            process,
-            process_group_id,
-            PROCESS_GROUP_TERM_GRACE_SECONDS,
-        )
-    if process.returncode is None or process_group_is_alive(process_group_id):
-        process_missing = (
-            _signal_async_process(
-                process,
-                process_group_id,
-                signal.SIGKILL,
-            )
-            or process_missing
-        )
-        await _wait_for_async_drain(
-            process,
-            process_group_id,
-            PROCESS_GROUP_KILL_GRACE_SECONDS,
-        )
-    evidence = ProcessDrainEvidence(
-        pid=getattr(process, "pid", -1),
-        process_group_id=process_group_id,
-        leader_stopped=process.returncode is not None or process_missing,
-        process_group_stopped=not process_group_is_alive(process_group_id),
+    evidence = _process_drain_evidence(
+        process.pid,
+        process_group_id,
+        process.returncode is not None or leader_was_missing,
     )
-    if not evidence.leader_stopped or not evidence.process_group_stopped:
-        raise ProcessDrainError(
-            evidence,
-            "Provider process group could not be drained within the finite "
-            "TERM/KILL deadline.",
-        )
-    return evidence
+    return _require_complete_drain(evidence, _PROVIDER_PROCESS_DRAIN_FAILURE)
 
 
 def drain_popen_process(
@@ -89,43 +77,106 @@ def drain_popen_process(
     process_group_id: int | None,
     group_signaller: Callable[[int, signal.Signals], bool] | None = None,
 ) -> ProcessDrainEvidence:
-    if process.poll() is None or process_group_is_alive(process_group_id):
-        _signal_popen_process(
+    for phase in _drain_phases():
+        if _popen_process_is_drained(process, process_group_id):
+            break
+        _run_popen_drain_phase(
             process,
             process_group_id,
-            signal.SIGTERM,
             group_signaller,
+            phase,
         )
-        _wait_for_popen_drain(
-            process,
-            process_group_id,
-            PROCESS_GROUP_TERM_GRACE_SECONDS,
-        )
-    if process.poll() is None or process_group_is_alive(process_group_id):
-        _signal_popen_process(
-            process,
-            process_group_id,
-            signal.SIGKILL,
-            group_signaller,
-        )
-        _wait_for_popen_drain(
-            process,
-            process_group_id,
-            PROCESS_GROUP_KILL_GRACE_SECONDS,
-        )
-    evidence = ProcessDrainEvidence(
-        pid=process.pid,
+    evidence = _process_drain_evidence(
+        process.pid,
+        process_group_id,
+        process.poll() is not None,
+    )
+    return _require_complete_drain(
+        evidence,
+        _WORKSPACE_SETUP_PROCESS_DRAIN_FAILURE,
+    )
+
+
+def _drain_phases() -> tuple[_DrainPhase, ...]:
+    return (
+        _DrainPhase(signal.SIGTERM, PROCESS_GROUP_TERM_GRACE_SECONDS),
+        _DrainPhase(signal.SIGKILL, PROCESS_GROUP_KILL_GRACE_SECONDS),
+    )
+
+
+async def _run_async_drain_phase(
+    process: asyncio.subprocess.Process,
+    process_group_id: int | None,
+    phase: _DrainPhase,
+) -> bool:
+    leader_was_missing = _signal_async_process(
+        process,
+        process_group_id,
+        phase.signal_number,
+    )
+    await _wait_for_async_drain(
+        process,
+        process_group_id,
+        phase.grace_seconds,
+    )
+    return leader_was_missing
+
+
+def _run_popen_drain_phase(
+    process: subprocess.Popen[str],
+    process_group_id: int | None,
+    group_signaller: Callable[[int, signal.Signals], bool] | None,
+    phase: _DrainPhase,
+) -> None:
+    _signal_popen_process(
+        process,
+        process_group_id,
+        phase.signal_number,
+        group_signaller,
+    )
+    _wait_for_popen_drain(
+        process,
+        process_group_id,
+        phase.grace_seconds,
+    )
+
+
+def _process_drain_evidence(
+    pid: int,
+    process_group_id: int | None,
+    leader_stopped: bool,
+) -> ProcessDrainEvidence:
+    return ProcessDrainEvidence(
+        pid=pid,
         process_group_id=process_group_id,
-        leader_stopped=process.poll() is not None,
+        leader_stopped=leader_stopped,
         process_group_stopped=not process_group_is_alive(process_group_id),
     )
-    if not evidence.leader_stopped or not evidence.process_group_stopped:
-        raise ProcessDrainError(
-            evidence,
-            "Workspace setup process group could not be drained within the finite "
-            "TERM/KILL deadline.",
-        )
-    return evidence
+
+
+def _require_complete_drain(
+    evidence: ProcessDrainEvidence,
+    failure_reason: str,
+) -> ProcessDrainEvidence:
+    if evidence.leader_stopped and evidence.process_group_stopped:
+        return evidence
+    raise ProcessDrainError(evidence, failure_reason)
+
+
+def _async_process_is_drained(
+    process: asyncio.subprocess.Process,
+    process_group_id: int | None,
+) -> bool:
+    return process.returncode is not None and not process_group_is_alive(
+        process_group_id
+    )
+
+
+def _popen_process_is_drained(
+    process: subprocess.Popen[str],
+    process_group_id: int | None,
+) -> bool:
+    return process.poll() is not None and not process_group_is_alive(process_group_id)
 
 
 async def _wait_for_async_drain(
@@ -135,9 +186,7 @@ async def _wait_for_async_drain(
 ) -> None:
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     while asyncio.get_running_loop().time() < deadline:
-        if process.returncode is not None and not process_group_is_alive(
-            process_group_id
-        ):
+        if _async_process_is_drained(process, process_group_id):
             return
         await asyncio.sleep(PROCESS_DRAIN_POLL_SECONDS)
 
@@ -149,7 +198,7 @@ def _wait_for_popen_drain(
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if process.poll() is not None and not process_group_is_alive(process_group_id):
+        if _popen_process_is_drained(process, process_group_id):
             return
         time.sleep(PROCESS_DRAIN_POLL_SECONDS)
 
@@ -166,8 +215,7 @@ def _signal_async_process(
         if signal_number == signal.SIGTERM:
             process.terminate()
         else:
-            kill = getattr(process, "kill", process.terminate)
-            kill()
+            process.kill()
     except ProcessLookupError:
         return True
     except PermissionError:
@@ -181,28 +229,38 @@ def _signal_popen_process(
     signal_number: signal.Signals,
     group_signaller: Callable[[int, signal.Signals], bool] | None,
 ) -> None:
-    if process_group_id is not None and group_signaller is not None:
-        try:
-            group_targeted = group_signaller(process_group_id, signal_number)
-        except PermissionError:
-            return
-        if group_targeted:
-            return
-    else:
+    if _signal_popen_group(process_group_id, signal_number, group_signaller):
+        return
+    _signal_popen_leader(process, signal_number)
+
+
+def _signal_popen_group(
+    process_group_id: int | None,
+    signal_number: signal.Signals,
+    group_signaller: Callable[[int, signal.Signals], bool] | None,
+) -> bool:
+    if process_group_id is None or group_signaller is None:
         group_targeted, _group_missing = _signal_group(
             process_group_id,
             signal_number,
         )
-        if group_targeted:
-            return
+        return group_targeted
+    try:
+        return group_signaller(process_group_id, signal_number)
+    except PermissionError:
+        return True
+
+
+def _signal_popen_leader(
+    process: subprocess.Popen[str],
+    signal_number: signal.Signals,
+) -> None:
     try:
         if signal_number == signal.SIGTERM:
             process.terminate()
         else:
             process.kill()
-    except ProcessLookupError:
-        return
-    except PermissionError:
+    except (PermissionError, ProcessLookupError):
         return
 
 

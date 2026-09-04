@@ -24,6 +24,7 @@ from crewplane.runtime.workspace.invocation import (
     workspace_state_path,
 )
 from crewplane.runtime.workspace.materialization import (
+    MaterializationCapacityRequest,
     workspace_materialization_slot,
 )
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
@@ -184,9 +185,7 @@ def materialize_snapshot_workspace(
     with workspace_materialization_slot(
         request.plan,
         request.materialization_limiter,
-        plan.planned_workspace_path,
-        plan.source,
-        False,
+        MaterializationCapacityRequest(plan.planned_workspace_path, plan.source),
     ):
         provisioning_started = monotonic()
         try:

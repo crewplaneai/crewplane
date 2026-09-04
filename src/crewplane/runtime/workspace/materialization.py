@@ -23,6 +23,29 @@ from .git import git
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class MaterializationCapacityRequest:
+    """Describe the checkout whose disk capacity must be reserved."""
+
+    target_path: Path
+    source: WorkspaceSourceSnapshot
+    estimate_full_repository: bool = False
+    source_tree: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _DiskThresholds:
+    fail_free_bytes: int | None
+    warn_free_bytes: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _CapacityAdmission:
+    probe_parent: Path
+    estimated_bytes: int
+    thresholds: _DiskThresholds
+
+
 @dataclass
 class MaterializationLimiter:
     limit: int
@@ -35,35 +58,45 @@ class MaterializationLimiter:
         limit = materialization_limit(plan)
         return cls(limit, BoundedSemaphore(limit), Lock())
 
+    def _reserve_capacity(self, admission: _CapacityAdmission) -> None:
+        with self.admission_lock:
+            free_bytes = _probe_free_bytes(admission)
+            if free_bytes is not None:
+                remaining = max(
+                    0,
+                    free_bytes
+                    - self.admitted_estimated_bytes
+                    - admission.estimated_bytes,
+                )
+                _enforce_disk_thresholds(remaining, admission.thresholds)
+            self.admitted_estimated_bytes += admission.estimated_bytes
+
+    def _release_capacity(self, estimated_bytes: int) -> None:
+        if estimated_bytes == 0:
+            return
+        with self.admission_lock:
+            self.admitted_estimated_bytes -= estimated_bytes
+
 
 @contextmanager
 def workspace_materialization_slot(
     plan: PreflightExecutionPlan,
     limiter: MaterializationLimiter | None,
-    target_path: Path | None = None,
-    source: WorkspaceSourceSnapshot | None = None,
-    estimate_full_repository: bool = False,
-    source_tree: str | None = None,
+    capacity_request: MaterializationCapacityRequest | None = None,
 ) -> Iterator[None]:
     resolved_limiter = limiter or MaterializationLimiter.from_plan(plan)
-    resolved_limiter.semaphore.acquire()
-    admitted_bytes = 0
-    try:
-        if target_path is not None and source is not None:
-            admitted_bytes = _admit_materialization_capacity(
-                plan,
-                resolved_limiter,
-                target_path,
-                source,
-                estimate_full_repository,
-                source_tree,
-            )
-        yield
-    finally:
-        if admitted_bytes:
-            with resolved_limiter.admission_lock:
-                resolved_limiter.admitted_estimated_bytes -= admitted_bytes
-        resolved_limiter.semaphore.release()
+    with resolved_limiter.semaphore:
+        admitted_bytes = 0
+        try:
+            if capacity_request is not None:
+                admitted_bytes = _admit_materialization_capacity(
+                    plan,
+                    resolved_limiter,
+                    capacity_request,
+                )
+            yield
+        finally:
+            resolved_limiter._release_capacity(admitted_bytes)
 
 
 def materialization_limit(plan: PreflightExecutionPlan) -> int:
@@ -79,50 +112,66 @@ def materialization_limit(plan: PreflightExecutionPlan) -> int:
 def _admit_materialization_capacity(
     plan: PreflightExecutionPlan,
     limiter: MaterializationLimiter,
-    target_path: Path,
-    source: WorkspaceSourceSnapshot,
-    estimate_full_repository: bool,
-    source_tree: str | None,
+    request: MaterializationCapacityRequest,
 ) -> int:
+    admission = _capacity_admission(plan, request)
+    limiter._reserve_capacity(admission)
+    return admission.estimated_bytes
+
+
+def _capacity_admission(
+    plan: PreflightExecutionPlan,
+    request: MaterializationCapacityRequest,
+) -> _CapacityAdmission:
     estimated_bytes = estimated_checkout_size(
-        source,
-        estimate_full_repository,
-        source_tree,
+        request.source,
+        request.estimate_full_repository,
+        request.source_tree,
     )
-    fail_free_bytes, warn_free_bytes = _disk_thresholds(plan)
-    probe_parent = _existing_parent(target_path)
-    with limiter.admission_lock:
-        try:
-            free_bytes = shutil.disk_usage(probe_parent).free
-        except OSError as exc:
-            if fail_free_bytes is not None:
-                raise RuntimeError(
-                    "Workspace materialization capacity probe failed while a "
-                    "failure threshold is configured."
-                ) from exc
-            LOGGER.warning(
-                "Workspace materialization capacity probe failed; continuing "
-                "without a configured failure threshold: %s",
-                exc,
-            )
-            limiter.admitted_estimated_bytes += estimated_bytes
-            return estimated_bytes
-        remaining = max(
-            0,
-            free_bytes - limiter.admitted_estimated_bytes - estimated_bytes,
-        )
-        if fail_free_bytes is not None and remaining < fail_free_bytes:
+    return _CapacityAdmission(
+        probe_parent=_existing_parent(request.target_path),
+        estimated_bytes=estimated_bytes,
+        thresholds=_disk_thresholds(plan),
+    )
+
+
+def _probe_free_bytes(admission: _CapacityAdmission) -> int | None:
+    try:
+        return shutil.disk_usage(admission.probe_parent).free
+    except OSError as exc:
+        if admission.thresholds.fail_free_bytes is not None:
             raise RuntimeError(
-                "Workspace materialization capacity is below "
-                "settings.workspace.disk.fail_free_bytes."
-            )
-        if warn_free_bytes is not None and remaining < warn_free_bytes:
-            LOGGER.warning(
-                "Workspace materialization capacity is below the configured "
-                "warning threshold after current admissions."
-            )
-        limiter.admitted_estimated_bytes += estimated_bytes
-    return estimated_bytes
+                "Workspace materialization capacity probe failed while a "
+                "failure threshold is configured."
+            ) from exc
+        LOGGER.warning(
+            "Workspace materialization capacity probe failed; continuing "
+            "without a configured failure threshold: %s",
+            exc,
+        )
+        return None
+
+
+def _enforce_disk_thresholds(
+    remaining_bytes: int,
+    thresholds: _DiskThresholds,
+) -> None:
+    if (
+        thresholds.fail_free_bytes is not None
+        and remaining_bytes < thresholds.fail_free_bytes
+    ):
+        raise RuntimeError(
+            "Workspace materialization capacity is below "
+            "settings.workspace.disk.fail_free_bytes."
+        )
+    if (
+        thresholds.warn_free_bytes is not None
+        and remaining_bytes < thresholds.warn_free_bytes
+    ):
+        LOGGER.warning(
+            "Workspace materialization capacity is below the configured "
+            "warning threshold after current admissions."
+        )
 
 
 def estimated_checkout_size(
@@ -164,14 +213,17 @@ def _estimated_working_tree_size(
 
 def _disk_thresholds(
     plan: PreflightExecutionPlan,
-) -> tuple[int | None, int | None]:
+) -> _DiskThresholds:
     workspace = plan.runtime_config_snapshot.get("workspace")
     disk = workspace.get("disk") if isinstance(workspace, dict) else None
     if not isinstance(disk, dict):
-        return None, None
+        return _DiskThresholds(None, None)
     fail = disk.get("fail_free_bytes")
     warn = disk.get("warn_free_bytes")
-    return (_optional_nonnegative_int(fail), _optional_nonnegative_int(warn))
+    return _DiskThresholds(
+        _optional_nonnegative_int(fail),
+        _optional_nonnegative_int(warn),
+    )
 
 
 def _optional_nonnegative_int(value: object) -> int | None:

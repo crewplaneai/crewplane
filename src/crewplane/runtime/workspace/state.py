@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,19 +19,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
-from . import state_evidence as _state_evidence
 from .lineage_discard import apply_lineage_discard
-
-mark_workspace_temporary_ref_removed = (
-    _state_evidence.mark_workspace_temporary_ref_removed
-)
-record_workspace_process_drain = _state_evidence.record_workspace_process_drain
-record_workspace_temporary_ref = _state_evidence.record_workspace_temporary_ref
-update_workspace_ref_publication = _state_evidence.update_workspace_ref_publication
-update_workspace_ref_publication_phase = (
-    _state_evidence.update_workspace_ref_publication_phase
-)
-update_workspace_setup = _state_evidence.update_workspace_setup
 
 if TYPE_CHECKING:
     from .worktree.types import WorktreeSourceRef
@@ -415,16 +404,24 @@ def _workspace_state_identity(
     return identity
 
 
+@contextmanager
+def edit_workspace_state(state_path: Path) -> Iterator[dict[str, object]]:
+    """Persist successful workspace state edits atomically under the state lock."""
+
+    with _state_lock(state_path):
+        payload = read_workspace_state(state_path)
+        yield payload
+        payload["updated_at"] = datetime.now(UTC).isoformat()
+        atomic_write_json(state_path, payload)
+
+
 def mutate_workspace_state(
     state_path: Path,
     mutation: Callable[[dict[str, object]], None],
 ) -> dict[str, object]:
-    with _state_lock(state_path):
-        payload = read_workspace_state(state_path)
+    with edit_workspace_state(state_path) as payload:
         mutation(payload)
-        payload["updated_at"] = datetime.now(UTC).isoformat()
-        atomic_write_json(state_path, payload)
-        return payload
+    return payload
 
 
 def update_workspace_state(

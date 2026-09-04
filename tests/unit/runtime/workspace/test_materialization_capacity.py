@@ -18,6 +18,7 @@ from crewplane.cli.run.workspace.git_source import GitSourceContext
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.runtime.workspace.materialization import (
+    MaterializationCapacityRequest,
     MaterializationLimiter,
     estimated_checkout_size,
     workspace_materialization_slot,
@@ -497,12 +498,13 @@ def test_capacity_admission_reprobes_and_applies_current_free_space(
     )
     limiter = MaterializationLimiter.from_plan(plan)
     target = tmp_path / "cache" / "new" / "checkout"
+    capacity_request = MaterializationCapacityRequest(target, source)
 
-    with workspace_materialization_slot(plan, limiter, target, source):
+    with workspace_materialization_slot(plan, limiter, capacity_request):
         pass
     with (
         pytest.raises(RuntimeError, match="fail_free_bytes"),
-        workspace_materialization_slot(plan, limiter, target, source),
+        workspace_materialization_slot(plan, limiter, capacity_request),
     ):
         pass
 
@@ -532,14 +534,49 @@ def test_capacity_admission_accounts_for_an_in_flight_checkout(
     )
     limiter = MaterializationLimiter.from_plan(plan)
     target = tmp_path / "cache" / "new" / "checkout"
+    capacity_request = MaterializationCapacityRequest(target, source)
 
-    with workspace_materialization_slot(plan, limiter, target, source):
+    with workspace_materialization_slot(plan, limiter, capacity_request):
         assert limiter.admitted_estimated_bytes == estimate
         with (
             pytest.raises(RuntimeError, match="fail_free_bytes"),
-            workspace_materialization_slot(plan, limiter, target, source),
+            workspace_materialization_slot(plan, limiter, capacity_request),
         ):
             pass
+
+    assert limiter.admitted_estimated_bytes == 0
+
+
+def test_capacity_admission_releases_reservation_after_slot_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=True)
+    source = plan.workspace_source
+    assert source is not None
+    estimate = estimated_checkout_size(source)
+
+    def sufficient_disk_usage(path: Path) -> SimpleNamespace:
+        del path
+        return SimpleNamespace(free=estimate)
+
+    monkeypatch.setattr(
+        "crewplane.runtime.workspace.materialization.shutil.disk_usage",
+        sufficient_disk_usage,
+    )
+    limiter = MaterializationLimiter.from_plan(plan)
+    capacity_request = MaterializationCapacityRequest(
+        tmp_path / "cache" / "new" / "checkout",
+        source,
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="materialization failed"),
+        workspace_materialization_slot(plan, limiter, capacity_request),
+    ):
+        assert limiter.admitted_estimated_bytes == estimate
+        raise RuntimeError("materialization failed")
 
     assert limiter.admitted_estimated_bytes == 0
 
@@ -563,15 +600,14 @@ def test_capacity_probe_failure_is_advisory_without_a_failure_threshold(
         fail_probe,
     )
     limiter = MaterializationLimiter.from_plan(plan)
+    capacity_request = MaterializationCapacityRequest(
+        tmp_path / "cache" / "new",
+        source,
+    )
 
     with (
         caplog.at_level(logging.WARNING),
-        workspace_materialization_slot(
-            plan,
-            limiter,
-            tmp_path / "cache" / "new",
-            source,
-        ),
+        workspace_materialization_slot(plan, limiter, capacity_request),
     ):
         pass
 
@@ -599,14 +635,17 @@ def test_capacity_probe_failure_is_fatal_with_a_failure_threshold(
         "crewplane.runtime.workspace.materialization.shutil.disk_usage",
         fail_probe,
     )
+    capacity_request = MaterializationCapacityRequest(
+        tmp_path / "cache" / "new",
+        source,
+    )
 
     with (
         pytest.raises(RuntimeError, match="capacity probe failed"),
         workspace_materialization_slot(
             plan,
             MaterializationLimiter.from_plan(plan),
-            tmp_path / "cache" / "new",
-            source,
+            capacity_request,
         ),
     ):
         pass

@@ -86,6 +86,8 @@ class _SignallingStreamReader(asyncio.StreamReader):
 
 
 class _ProcessDouble:
+    pid = 123
+
     def __init__(self) -> None:
         self.stdout = _SignallingStreamReader()
         self.stderr = _SignallingStreamReader()
@@ -118,9 +120,13 @@ class _ProcessDouble:
 
 
 class _AlreadyExitedOnTerminateProcessDouble:
+    pid = 123
     returncode: int | None = None
 
     def terminate(self) -> None:
+        raise ProcessLookupError
+
+    def kill(self) -> None:
         raise ProcessLookupError
 
 

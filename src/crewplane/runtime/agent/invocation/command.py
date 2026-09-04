@@ -19,7 +19,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.platform import supports_posix_process_groups
 from crewplane.runtime.workspace import mutator_fence as workspace_mutator_fence
-from crewplane.runtime.workspace import state as workspace_state
+from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
 
 from ..process.drain import ProcessDrainError
 from ..process.runner import (
@@ -241,7 +241,7 @@ def _record_process_drain_success(
     state_path = _workspace_state_path(invocation_context)
     if state_path is None:
         return
-    workspace_state.record_workspace_process_drain(
+    record_workspace_process_drain(
         state_path,
         "confirmed",
         process.pid,
@@ -277,7 +277,7 @@ def _record_unresolved_process_drain(
         return
     workspace_mutator_fence.fence_workspace_mutator(state_path)
     try:
-        workspace_state.record_workspace_process_drain(
+        record_workspace_process_drain(
             state_path,
             "unresolved",
             error.evidence.pid,

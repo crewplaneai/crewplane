@@ -36,9 +36,9 @@ from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
     WorkspaceStateMaterializationRequest,
     read_workspace_state,
-    update_workspace_setup,
     write_running_workspace_state,
 )
+from crewplane.runtime.workspace.state_evidence import update_workspace_setup
 from crewplane.runtime.workspace.worktree import WorktreeCaptureRequest
 from crewplane.runtime.workspace.worktree.cache import ReusableWorktreeCheckout
 from crewplane.runtime.workspace.worktree.cleanup import worktree_disk_usage

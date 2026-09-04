@@ -134,6 +134,53 @@ def test_popen_process_drain_targets_live_posix_group(
     assert process.kill_calls == 0
 
 
+def test_popen_process_drain_falls_back_to_leader_after_group_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, signal.Signals]] = []
+    process = _StubbornPopenProcess()
+    monkeypatch.setattr(process_drain, "PROCESS_GROUP_TERM_GRACE_SECONDS", 0.0)
+    monkeypatch.setattr(process_drain, "PROCESS_GROUP_KILL_GRACE_SECONDS", 0.0)
+
+    def group_is_alive(process_group_id: int | None) -> bool:
+        assert process_group_id == process.pid
+        return False
+
+    monkeypatch.setattr(process_drain, "process_group_is_alive", group_is_alive)
+    monkeypatch.setattr(
+        process,
+        "terminate",
+        lambda: events.append(("leader", signal.SIGTERM)),
+    )
+    monkeypatch.setattr(
+        process,
+        "kill",
+        lambda: events.append(("leader", signal.SIGKILL)),
+    )
+
+    def reject_group(
+        process_group_id: int,
+        signal_number: signal.Signals,
+    ) -> bool:
+        assert process_group_id == process.pid
+        events.append(("group", signal_number))
+        return False
+
+    with pytest.raises(ProcessDrainError):
+        drain_popen_process(
+            cast(subprocess.Popen[str], process),
+            process.pid,
+            reject_group,
+        )
+
+    assert events == [
+        ("group", signal.SIGTERM),
+        ("leader", signal.SIGTERM),
+        ("group", signal.SIGKILL),
+        ("leader", signal.SIGKILL),
+    ]
+
+
 def test_process_group_permission_error_is_treated_as_live(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

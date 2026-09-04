@@ -276,7 +276,8 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                     new=fail_drain,
                 ),
                 patch(
-                    "crewplane.runtime.workspace.state.record_workspace_process_drain",
+                    "crewplane.runtime.agent.invocation.command."
+                    "record_workspace_process_drain",
                     side_effect=OSError("transient state write failure"),
                 ),
                 self.assertRaises(ProcessDrainError) as caught,

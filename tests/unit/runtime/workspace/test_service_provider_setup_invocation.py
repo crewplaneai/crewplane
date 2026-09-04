@@ -55,7 +55,7 @@ from crewplane.runtime.workspace.setup import (
     WorkspaceSetupCancelled,
     WorkspaceSetupError,
 )
-from crewplane.runtime.workspace.state import record_workspace_process_drain
+from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (

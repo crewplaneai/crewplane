@@ -11,6 +11,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSourceSnapshot,
 )
 from crewplane.runtime.workspace.materialization import (
+    MaterializationCapacityRequest,
     MaterializationLimiter,
     workspace_materialization_slot,
 )
@@ -264,6 +265,16 @@ def _fresh_worktree(
     cancel_requested: Callable[[], bool] | None,
 ) -> WorktreeMaterialization:
     owner = TemporaryRefOwner(state_path) if state_path is not None else None
+    capacity_request = (
+        MaterializationCapacityRequest(
+            planned_workspace_path,
+            source,
+            estimate_full_repository=True,
+            source_tree=source_ref.source_tree,
+        )
+        if planned_workspace_path is not None
+        else None
+    )
     with (
         ensure_source_commit_available(
             source,
@@ -274,10 +285,7 @@ def _fresh_worktree(
         workspace_materialization_slot(
             plan,
             materialization_limiter,
-            planned_workspace_path,
-            source,
-            True,
-            source_ref.source_tree,
+            capacity_request,
         ),
     ):
         worktree = create_worktree_workspace(
