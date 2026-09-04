@@ -12,6 +12,7 @@ from crewplane.artifacts.locks.provider_processes import (
 from crewplane.core.execution_state import RunManifest
 from crewplane.core.state_paths import STATE_DIR_NAME
 from crewplane.runtime.workspace.cleanup import (
+    AbsentWorkspaceStateProjection,
     WorkspaceCleanupEligibility,
     WorkspaceCleanupEligibilityLookup,
 )
@@ -52,7 +53,7 @@ def inactive_ref_cleanup_runs(
 def eligible_absent_state_projections(
     context: WorkspaceCleanupContext,
     evidence: WorkspaceCleanupEvidence | None,
-) -> tuple[tuple[str, Path, str, tuple[Path, ...]], ...]:
+) -> tuple[AbsentWorkspaceStateProjection, ...]:
     if evidence is None:
         return ()
     checks = _eligibility_checks(context)
@@ -60,8 +61,8 @@ def eligible_absent_state_projections(
         projection
         for projection in evidence.absent_state_projections()
         if _first_cleanup_blocker_reason(
-            projection[0],
-            projection[2],
+            projection.run_key_name,
+            projection.status,
             checks,
         )
         is None

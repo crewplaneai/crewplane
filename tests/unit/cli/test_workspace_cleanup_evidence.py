@@ -8,6 +8,7 @@ import pytest
 
 from crewplane.cli.workspace_cleanup_evidence import WorkspaceCleanupEvidence
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.runtime.workspace.cleanup import AbsentWorkspaceStateProjection
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_run_manifest
 from tests.helpers.workspace_records import (
@@ -425,7 +426,12 @@ def test_cleanup_evidence_projects_coherent_terminal_claim_when_path_is_absent(
     )
 
     assert _evidence(stage_root, cache_root).absent_state_projections() == (
-        (RUN_KEY, workspace_path, "succeeded", (state_path,)),
+        AbsentWorkspaceStateProjection(
+            RUN_KEY,
+            workspace_path,
+            "succeeded",
+            (state_path,),
+        ),
     )
 
 

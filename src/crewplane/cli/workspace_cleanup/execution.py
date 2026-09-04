@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
 from crewplane.core.state_paths import STATE_DIR_NAME
 from crewplane.runtime.workspace.cleanup import (
+    AbsentWorkspaceStateProjection,
     WorkspaceCleanupFilter,
     WorkspaceCleanupResult,
     cleanup_workspace_cache,
@@ -26,14 +26,12 @@ from .eligibility import (
 )
 from .run_artifacts import refresh_cleanup_workspace_descriptors
 
-type _AbsentStateProjection = tuple[str, Path, str, tuple[Path, ...]]
-
 
 @dataclass(frozen=True)
 class _WorkspaceCleanupInputs:
     evidence: WorkspaceCleanupEvidence | None
     cleanup_filter: WorkspaceCleanupFilter
-    absent_state_projections: tuple[_AbsentStateProjection, ...]
+    absent_state_projections: tuple[AbsentWorkspaceStateProjection, ...]
     inactive_ref_cleanup_run_keys: tuple[str, ...]
     ref_cleanup_run_keys: tuple[str, ...]
 
@@ -137,11 +135,10 @@ def _successful_cleanup_refresh_run_keys(
         entry.run_key_name for entry in result.entries if entry.removed
     )
     run_key_names.update(
-        run_key_name
-        for run_key_name, _path, status, _state_paths in inputs.absent_state_projections
+        projection.run_key_name
+        for projection in inputs.absent_state_projections
         if _absent_projection_matches_filter(
-            run_key_name,
-            status,
+            projection,
             inputs.cleanup_filter,
         )
     )
@@ -149,17 +146,16 @@ def _successful_cleanup_refresh_run_keys(
 
 
 def _absent_projection_matches_filter(
-    run_key_name: str,
-    status: str,
+    projection: AbsentWorkspaceStateProjection,
     cleanup_filter: WorkspaceCleanupFilter,
 ) -> bool:
     return (
         (
             cleanup_filter.run_key_name is None
-            or cleanup_filter.run_key_name == run_key_name
+            or cleanup_filter.run_key_name == projection.run_key_name
         )
         and cleanup_filter.older_than_seconds is None
-        and status_matches(status, cleanup_filter)
+        and status_matches(projection.status, cleanup_filter)
     )
 
 

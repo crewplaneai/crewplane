@@ -3,62 +3,93 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from threading import Thread
 
 from crewplane.architecture.contracts import InvocationContext
+from crewplane.runtime.workspace import mutator_fence as workspace_mutator_fence
+from crewplane.runtime.workspace import state as workspace_state
 
 RETRY_RESET_DEADLINE_SECONDS = 30.0
 
 
+@dataclass(frozen=True)
+class _RunningRetryReset:
+    task: asyncio.Task[None]
+    canceller: Callable[[], None] | None
+
+
 async def reset_before_retry(invocation_context: InvocationContext | None) -> None:
-    if invocation_context is None or invocation_context.retry_reset is None:
+    running_reset = _start_retry_reset(invocation_context)
+    if running_reset is None:
         return
+    await _await_retry_reset_completion(running_reset)
+
+
+def _start_retry_reset(
+    invocation_context: InvocationContext | None,
+) -> _RunningRetryReset | None:
+    if invocation_context is None or invocation_context.retry_reset is None:
+        return None
     state_path = _retry_reset_state_path(invocation_context)
     if state_path is not None:
         _record_unresolved_retry_reset(state_path)
-    reset_task = _daemon_retry_worker_task(
-        partial(
-            _run_retry_reset_worker,
-            invocation_context.retry_reset,
-            state_path,
-        )
+    worker = partial(
+        _run_retry_reset_worker,
+        invocation_context.retry_reset,
+        state_path,
     )
+    return _RunningRetryReset(
+        task=_daemon_retry_worker_task(worker),
+        canceller=invocation_context.retry_reset_canceller,
+    )
+
+
+async def _await_retry_reset_completion(running_reset: _RunningRetryReset) -> None:
     try:
-        await asyncio.wait_for(
-            asyncio.shield(reset_task),
-            timeout=RETRY_RESET_DEADLINE_SECONDS,
-        )
+        await _wait_for_retry_worker(running_reset.task)
     except TimeoutError as exc:
-        await _cancel_retry_reset(invocation_context, reset_task)
+        await _cancel_timed_out_retry_reset(running_reset)
         raise RuntimeError(
             "Workspace retry reset exceeded its internal deadline."
         ) from exc
     except asyncio.CancelledError as cancel:
-        await finish_cancelled_retry_reset(invocation_context, reset_task, cancel)
+        await _finish_cancelled_retry_reset(running_reset, cancel)
         raise
 
 
-async def finish_cancelled_retry_reset(
-    invocation_context: InvocationContext,
+async def _finish_cancelled_retry_reset(
+    running_reset: _RunningRetryReset,
+    cancel: asyncio.CancelledError,
+) -> None:
+    await _request_retry_reset_cancellation(running_reset.canceller, cancel)
+    await _await_cancelled_retry_worker(running_reset.task, cancel)
+
+
+async def _request_retry_reset_cancellation(
+    canceller: Callable[[], None] | None,
+    cancel: asyncio.CancelledError,
+) -> None:
+    if canceller is None:
+        return
+    try:
+        await _await_retry_reset_canceller(canceller)
+    except TimeoutError:
+        cancel.add_note(
+            "Workspace retry reset canceller did not stop within its deadline."
+        )
+    except Exception as exc:
+        cancel.add_note(f"Workspace retry reset cancellation failed: {exc}")
+
+
+async def _await_cancelled_retry_worker(
     reset_task: asyncio.Task[None],
     cancel: asyncio.CancelledError,
 ) -> None:
-    if invocation_context.retry_reset_canceller is not None:
-        try:
-            await _await_retry_reset_canceller(invocation_context.retry_reset_canceller)
-        except TimeoutError:
-            cancel.add_note(
-                "Workspace retry reset canceller did not stop within its deadline."
-            )
-        except Exception as exc:
-            cancel.add_note(f"Workspace retry reset cancellation failed: {exc}")
     try:
-        await asyncio.wait_for(
-            asyncio.shield(reset_task),
-            timeout=RETRY_RESET_DEADLINE_SECONDS,
-        )
+        await _wait_for_retry_worker(reset_task)
     except TimeoutError:
         reset_task.add_done_callback(_consume_retry_worker_result)
         cancel.add_note("Workspace retry reset did not stop within its deadline.")
@@ -66,20 +97,14 @@ async def finish_cancelled_retry_reset(
         cancel.add_note(f"Workspace retry reset after cancellation failed: {exc}")
 
 
-async def _cancel_retry_reset(
-    invocation_context: InvocationContext,
-    reset_task: asyncio.Task[None],
-) -> None:
-    if invocation_context.retry_reset_canceller is not None:
+async def _cancel_timed_out_retry_reset(running_reset: _RunningRetryReset) -> None:
+    if running_reset.canceller is not None:
         with suppress(Exception):
-            await _await_retry_reset_canceller(invocation_context.retry_reset_canceller)
+            await _await_retry_reset_canceller(running_reset.canceller)
     try:
-        await asyncio.wait_for(
-            asyncio.shield(reset_task),
-            timeout=RETRY_RESET_DEADLINE_SECONDS,
-        )
+        await _wait_for_retry_worker(running_reset.task)
     except TimeoutError:
-        reset_task.add_done_callback(_consume_retry_worker_result)
+        running_reset.task.add_done_callback(_consume_retry_worker_result)
     except Exception:
         return
 
@@ -87,13 +112,17 @@ async def _cancel_retry_reset(
 async def _await_retry_reset_canceller(canceller: Callable[[], None]) -> None:
     task = _daemon_retry_worker_task(canceller)
     try:
-        await asyncio.wait_for(
-            asyncio.shield(task),
-            timeout=RETRY_RESET_DEADLINE_SECONDS,
-        )
+        await _wait_for_retry_worker(task)
     except TimeoutError:
         task.add_done_callback(_consume_retry_worker_result)
         raise
+
+
+async def _wait_for_retry_worker(task: asyncio.Task[None]) -> None:
+    await asyncio.wait_for(
+        asyncio.shield(task),
+        timeout=RETRY_RESET_DEADLINE_SECONDS,
+    )
 
 
 def _daemon_retry_worker_task(worker: Callable[[], None]) -> asyncio.Task[None]:
@@ -144,15 +173,9 @@ def _retry_reset_state_path(invocation_context: InvocationContext) -> Path | Non
 
 
 def _record_unresolved_retry_reset(state_path: Path) -> None:
-    from crewplane.runtime.workspace.mutator_fence import (
-        fence_workspace_mutator,
-        release_workspace_mutator,
-    )
-    from crewplane.runtime.workspace.state import mutate_workspace_state
-
-    fence_workspace_mutator(state_path)
+    workspace_mutator_fence.fence_workspace_mutator(state_path)
     try:
-        mutate_workspace_state(
+        workspace_state.mutate_workspace_state(
             state_path,
             lambda payload: payload.__setitem__(
                 "workspace_mutator",
@@ -160,7 +183,7 @@ def _record_unresolved_retry_reset(state_path: Path) -> None:
             ),
         )
     except BaseException:
-        release_workspace_mutator(state_path)
+        workspace_mutator_fence.release_workspace_mutator(state_path)
         raise
 
 
@@ -176,11 +199,8 @@ def _run_retry_reset_worker(
 
 
 def _confirm_retry_reset_worker_finished(state_path: Path) -> None:
-    from crewplane.runtime.workspace.mutator_fence import release_workspace_mutator
-    from crewplane.runtime.workspace.state import mutate_workspace_state
-
     try:
-        mutate_workspace_state(
+        workspace_state.mutate_workspace_state(
             state_path,
             lambda payload: payload.__setitem__(
                 "workspace_mutator",
@@ -194,4 +214,4 @@ def _confirm_retry_reset_worker_finished(state_path: Path) -> None:
     except Exception:
         pass
     finally:
-        release_workspace_mutator(state_path)
+        workspace_mutator_fence.release_workspace_mutator(state_path)

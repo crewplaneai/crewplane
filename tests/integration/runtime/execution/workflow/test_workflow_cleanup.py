@@ -39,6 +39,7 @@ from crewplane.runtime.workspace.worktree import cache as worktree_cache_module
 from crewplane.runtime.workspace.worktree.cache import (
     ReusableWorktreeCheckout,
     WorktreeReuseCache,
+    WorktreeReuseCleanupResult,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from crewplane.version import SCHEMA_VERSION
@@ -181,6 +182,131 @@ def test_workflow_closes_runtime_publication_registry_when_cleanup_raises(
         closed_registries[0].publish(
             tmp_path / "late.md", (0, hashlib.sha256().hexdigest())
         )
+
+
+@pytest.mark.parametrize("deferred_failure", [False, True])
+def test_workflow_postcondition_errors_preserve_phase_order_before_registry_close(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    deferred_failure: bool,
+) -> None:
+    calls: list[str] = []
+    deferred_error = RuntimeError("deferred cleanup failed")
+    ref_error = RuntimeError("ref cleanup failed")
+    generated_error = RuntimeError("generated cleanup failed")
+    worktree_error = RuntimeError("worktree cleanup failed")
+    state_refresh_error = RuntimeError("state refresh failed")
+    descriptor_refresh_error = RuntimeError("descriptor refresh failed")
+
+    class DeferredWorkspaceCleanups:
+        has_unfinished_protected_tasks = False
+
+        async def drain(self, timeout_seconds: float) -> tuple[Exception, ...]:
+            del timeout_seconds
+            calls.append("deferred")
+            return (deferred_error,) if deferred_failure else ()
+
+    class GeneratedFileRegistry:
+        def cleanup_all(self) -> GeneratedFileWorkspaceCleanupResult:
+            calls.append("generated")
+            return GeneratedFileWorkspaceCleanupResult((generated_error,), ("input",))
+
+    class WorktreeReuseRegistry:
+        def cleanup_all(self) -> WorktreeReuseCleanupResult:
+            calls.append("worktree")
+            return WorktreeReuseCleanupResult(
+                (worktree_error,),
+                (tmp_path / "workspace-state.json",),
+            )
+
+    class PublicationRegistry:
+        def close(self) -> None:
+            calls.append("close")
+
+    async def fail_ref_cleanup(*args: object) -> None:
+        del args
+        calls.append("refs")
+        raise ref_error
+
+    async def fail_state_refresh(*args: object) -> tuple[tuple[str, Exception], ...]:
+        del args
+        calls.append("state-refresh")
+        return (("input", state_refresh_error),)
+
+    async def fail_descriptor_refresh(
+        *args: object,
+    ) -> tuple[tuple[str, Exception], ...]:
+        del args
+        calls.append("descriptor-refresh")
+        return (("input", descriptor_refresh_error),)
+
+    monkeypatch.setattr(
+        workflow_postconditions_module,
+        "cleanup_successful_workspace_run_refs",
+        fail_ref_cleanup,
+    )
+    monkeypatch.setattr(
+        workflow_postconditions_module,
+        "refresh_workspace_node_manifests_for_state_paths",
+        fail_state_refresh,
+    )
+    monkeypatch.setattr(
+        workflow_postconditions_module,
+        "refresh_workspace_node_manifests",
+        fail_descriptor_refresh,
+    )
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    runtime_context = SimpleNamespace(
+        plan=_single_node_plan(output),
+        deferred_workspace_cleanups=DeferredWorkspaceCleanups(),
+        generated_file_workspaces=GeneratedFileRegistry(),
+        worktree_reuse_cache=WorktreeReuseRegistry(),
+        runtime_publications=PublicationRegistry(),
+    )
+    session = SimpleNamespace(
+        runtime_context=runtime_context,
+        telemetry=None,
+        state=SimpleNamespace(running={}, statuses={"input": "succeeded"}),
+    )
+
+    errors = asyncio.run(
+        workflow_postconditions_module.collect_workflow_postconditions(
+            session,
+            output,
+        )
+    )
+
+    if deferred_failure:
+        assert errors == [
+            deferred_error,
+            ref_error,
+            state_refresh_error,
+            descriptor_refresh_error,
+        ]
+        assert calls == [
+            "deferred",
+            "refs",
+            "state-refresh",
+            "descriptor-refresh",
+            "close",
+        ]
+    else:
+        assert errors == [
+            ref_error,
+            generated_error,
+            worktree_error,
+            state_refresh_error,
+            descriptor_refresh_error,
+        ]
+        assert calls == [
+            "deferred",
+            "refs",
+            "generated",
+            "worktree",
+            "state-refresh",
+            "descriptor-refresh",
+            "close",
+        ]
 
 
 def test_successful_scheduler_becomes_failure_when_workspace_ref_cleanup_fails(

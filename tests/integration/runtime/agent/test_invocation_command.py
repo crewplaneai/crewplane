@@ -427,6 +427,78 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_drain_failure_precedes_exit_reporting_failure(self) -> None:
+        def record_process_event(event: InvocationProcessEvent) -> None:
+            if event.status == "exited":
+                raise OSError("cannot record exit")
+
+        async def fail_collection(*args: object, **kwargs: object) -> None:
+            del args, kwargs
+            raise RuntimeError("provider output collection failed")
+
+        async def fail_drain(
+            process: asyncio.subprocess.Process,
+            process_group_id: int | None,
+            diagnostic_sink: object,
+        ) -> None:
+            del diagnostic_sink
+            process.kill()
+            await process.wait()
+            raise ProcessDrainError(
+                ProcessDrainEvidence(
+                    pid=process.pid,
+                    process_group_id=process_group_id,
+                    leader_stopped=True,
+                    process_group_stopped=False,
+                ),
+                "provider process group remained live",
+            )
+
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="generic_executor_0",
+            provider="generic",
+            role=ProviderRole.EXECUTOR,
+            process_event_sink=record_process_event,
+        )
+
+        with (
+            patch(
+                "crewplane.runtime.agent.invocation.command."
+                "write_stdin_and_collect_output",
+                new=fail_collection,
+            ),
+            patch(
+                "crewplane.runtime.agent.invocation.command.reap_failed_process",
+                new=fail_drain,
+            ),
+            self.assertRaises(ProcessDrainError) as caught,
+        ):
+            await run_command_once(
+                cmd=[sys.executable, "-c", "import time; time.sleep(10)"],
+                stdin_data=None,
+                log_file=None,
+                append_log=False,
+                log_header=None,
+                cwd=Path.cwd(),
+                invocation_context=context,
+                idle_timeout_seconds=None,
+            )
+
+        self.assertEqual(str(caught.exception), "provider process group remained live")
+        self.assertIsInstance(caught.exception.__cause__, RuntimeError)
+        self.assertEqual(
+            str(caught.exception.__cause__),
+            "provider output collection failed",
+        )
+        self.assertEqual(
+            caught.exception.__notes__,
+            [
+                "Provider process exit reporting failed: Provider process exited "
+                "reporting failed: cannot record exit"
+            ],
+        )
+
     async def test_file_not_found_after_spawn_reaps_process(self) -> None:
         created_processes: list[asyncio.subprocess.Process] = []
         original_create_subprocess_exec = asyncio.create_subprocess_exec

@@ -20,6 +20,7 @@ from crewplane.cli.workspace_cleanup.evidence_validation import (
     path_is_absent,
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.runtime.workspace.cleanup import AbsentWorkspaceStateProjection
 
 
 @dataclass(frozen=True)
@@ -107,8 +108,8 @@ class WorkspaceCleanupEvidence:
 
     def absent_state_projections(
         self,
-    ) -> tuple[tuple[str, Path, str, tuple[Path, ...]], ...]:
-        projections: list[tuple[str, Path, str, tuple[Path, ...]]] = []
+    ) -> tuple[AbsentWorkspaceStateProjection, ...]:
+        projections: list[AbsentWorkspaceStateProjection] = []
         for (run_key_name, workspace_path), claim_values in sorted(
             self._claims.items(),
             key=lambda item: (item[0][0], item[0][1].as_posix()),
@@ -121,11 +122,11 @@ class WorkspaceCleanupEvidence:
             ):
                 highest = _highest_generation_claim(claims)
                 projections.append(
-                    (
-                        run_key_name,
-                        workspace_path,
-                        str(highest.payload["status"]),
-                        tuple(claim.state_path for claim in claims),
+                    AbsentWorkspaceStateProjection(
+                        run_key_name=run_key_name,
+                        workspace_path=workspace_path,
+                        status=str(highest.payload["status"]),
+                        state_paths=tuple(claim.state_path for claim in claims),
                     )
                 )
         return tuple(projections)
