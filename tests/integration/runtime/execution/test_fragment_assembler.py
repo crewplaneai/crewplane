@@ -10,7 +10,7 @@ import pytest
 import crewplane.core.preflight.references as preflight_references
 import crewplane.core.workflow.models as workflow_models
 import crewplane.core.workflow.validation as workflow_validation
-import crewplane.runtime.execution.workspace_files as workspace_files
+import crewplane.runtime.execution.workspace_files.resolution as workspace_file_resolution
 from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
 from crewplane.core.preflight.dependency_edges import dependency_signature
 from crewplane.core.preflight.models import (
@@ -34,6 +34,7 @@ from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
+    resolve_project_initial_workspace_file,
     resolve_workspace_file,
 )
 from crewplane.version import SCHEMA_VERSION
@@ -528,6 +529,73 @@ def test_assemble_prompt_reads_project_initial_workspace_file_locator(
     assert prompt == "workspace file"
 
 
+def test_project_initial_workspace_file_preserves_validation_precedence(
+    tmp_path: Path,
+) -> None:
+    context_root = tmp_path / "execution-stages" / "demo-run"
+    content_ref = "workspace-files/invalid.txt"
+    payload = b"\xff"
+    workspace_file = context_root / "preflight" / content_ref
+    workspace_file.parent.mkdir(parents=True)
+    workspace_file.write_bytes(payload)
+    locator = WorkspaceFileLocator(
+        locator_id="workspace-file-test",
+        content_ref=content_ref,
+        occurrence_id="build:executor:0:file:README.md",
+        node_id="build",
+        target="executor_prompt",
+        source_class="project_initial",
+        raw_token="{{file:README.md}}",
+        raw_path="README.md",
+        source_root=tmp_path.as_posix(),
+        source_root_relative_to_project=".",
+        project_root_relative_to_git_top=".",
+        git_top_relative_path="README.md",
+        workspace_relative_path="README.md",
+        git_blob="a" * 40,
+        git_file_mode="100644",
+        byte_size=len(payload),
+        canonical_blob_sha256=hashlib.sha256(payload).hexdigest(),
+        literal_path_verified=True,
+        utf8_validated=True,
+    )
+
+    def resolve(candidate: WorkspaceFileLocator) -> None:
+        plan = _plan(context_root).model_copy(
+            update={"workspace_file_locators": [candidate]}
+        )
+        resolve_project_initial_workspace_file(plan, candidate.locator_id)
+
+    with pytest.raises(RuntimeError, match="Runtime-dynamic"):
+        resolve(
+            locator.model_copy(
+                update={"source_class": "runtime_dynamic", "content_ref": None}
+            )
+        )
+    with pytest.raises(RuntimeError, match="missing preflight content"):
+        resolve(locator.model_copy(update={"content_ref": None}))
+    with pytest.raises(ValueError, match="Invalid workspace content reference"):
+        resolve(
+            locator.model_copy(
+                update={
+                    "content_ref": "../outside.txt",
+                    "canonical_blob_sha256": "0" * 64,
+                    "byte_size": 2,
+                }
+            )
+        )
+    with pytest.raises(RuntimeError, match="content digest mismatch"):
+        resolve(
+            locator.model_copy(
+                update={"canonical_blob_sha256": "0" * 64, "byte_size": 2}
+            )
+        )
+    with pytest.raises(RuntimeError, match="content size mismatch"):
+        resolve(locator.model_copy(update={"byte_size": 2}))
+    with pytest.raises(RuntimeError, match="not valid UTF-8"):
+        resolve(locator)
+
+
 def test_reviewer_prompt_reads_project_initial_workspace_file_locator(
     tmp_path: Path,
 ) -> None:
@@ -888,7 +956,7 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
             ],
         }
     )
-    original_cat_blob = workspace_files.git_cat_blob
+    original_cat_blob = workspace_file_resolution.git_cat_blob
 
     def collect_after_prune(repo_root: str, object_id: str) -> bytes:
         imported_refs = _git(
@@ -902,7 +970,11 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
         _git(repo, "gc", "--prune=now")
         return original_cat_blob(repo_root, object_id)
 
-    monkeypatch.setattr(workspace_files, "git_cat_blob", collect_after_prune)
+    monkeypatch.setattr(
+        workspace_file_resolution,
+        "git_cat_blob",
+        collect_after_prune,
+    )
 
     prompt = assemble_prompt(
         plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()

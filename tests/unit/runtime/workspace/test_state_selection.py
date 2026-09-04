@@ -175,6 +175,45 @@ def test_dynamic_locator_source_uses_review_loop_canonical_state(
     assert state_path == canonical_state
 
 
+def test_dynamic_locator_source_state_path_requires_workspace_policy(
+    tmp_path: Path,
+) -> None:
+    locator = _runtime_dynamic_locator()
+    plan = _plan_with_locator(tmp_path, locator).model_copy(
+        update={"nodes": [_same_node().model_copy(update={"workspace_policy": None})]}
+    )
+
+    with pytest.raises(RuntimeError, match="has no workspace policy"):
+        dynamic_locator_source_state_path(plan, ArtifactStore(tmp_path), locator)
+
+
+def test_dynamic_locator_source_state_path_requires_stage_directory(
+    tmp_path: Path,
+) -> None:
+    locator = _runtime_dynamic_locator()
+
+    with pytest.raises(RuntimeError, match="has no stage directory"):
+        dynamic_locator_source_state_path(
+            _plan_with_locator(tmp_path, locator),
+            ArtifactStore(tmp_path),
+            locator,
+        )
+
+
+def test_dynamic_locator_source_state_path_requires_succeeded_state(
+    tmp_path: Path,
+) -> None:
+    locator = _runtime_dynamic_locator()
+    (tmp_path / "implement").mkdir()
+
+    with pytest.raises(RuntimeError, match="has no succeeded executor state"):
+        dynamic_locator_source_state_path(
+            _plan_with_locator(tmp_path, locator),
+            ArtifactStore(tmp_path),
+            locator,
+        )
+
+
 def test_dynamic_locator_source_context_uses_previous_executor_candidate(
     tmp_path: Path,
 ) -> None:
