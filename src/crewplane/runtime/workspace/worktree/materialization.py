@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 
@@ -35,6 +35,33 @@ from .types import (
     WorktreeWorkspace,
 )
 
+type ReuseClaimRecorder = Callable[[ReusableWorktreeCheckout, int], None]
+type FreshClaimRecorder = Callable[[WorktreeProvisioningClaim, int], None]
+
+
+@dataclass(frozen=True, slots=True)
+class WorktreeClaimCallbacks:
+    record_reuse: ReuseClaimRecorder | None = None
+    record_fresh: FreshClaimRecorder | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WorktreeMaterializationRequest:
+    plan: PreflightExecutionPlan
+    slug: str
+    source: WorkspaceSourceSnapshot
+    source_ref: WorktreeSourceRef
+    protected_ref_scopes: tuple[str, ...]
+    parent_slug: str | None
+    logical_worktree_name: str | None
+    lineage_producer: bool
+    reuse_cache: WorktreeReuseCache | None
+    materialization_limiter: MaterializationLimiter | None = None
+    planned_workspace_path: Path | None = None
+    state_path: Path | None = None
+    cancel_requested: Callable[[], bool] | None = None
+    claims: WorktreeClaimCallbacks = field(default_factory=WorktreeClaimCallbacks)
+
 
 @dataclass(frozen=True)
 class WorktreeMaterialization:
@@ -44,172 +71,239 @@ class WorktreeMaterialization:
 
 
 def materialize_worktree_workspace(
-    plan: PreflightExecutionPlan,
-    slug: str,
-    source: WorkspaceSourceSnapshot,
-    source_ref: WorktreeSourceRef,
-    protected_ref_scopes: tuple[str, ...],
-    parent_slug: str | None,
-    logical_worktree_name: str | None,
-    lineage_producer: bool,
-    reuse_cache: WorktreeReuseCache | None,
-    record_reuse_claim: Callable[[ReusableWorktreeCheckout, int], None] | None = None,
-    record_fresh_claim: Callable[[WorktreeProvisioningClaim, int], None] | None = None,
-    materialization_limiter: MaterializationLimiter | None = None,
-    planned_workspace_path: Path | None = None,
-    state_path: Path | None = None,
-    cancel_requested: Callable[[], bool] | None = None,
+    request: WorktreeMaterializationRequest,
 ) -> WorktreeMaterialization:
-    if reuse_cache is None or logical_worktree_name is None or not lineage_producer:
-        return _fresh_worktree(
-            plan,
-            slug,
-            source,
-            source_ref,
-            protected_ref_scopes,
-            parent_slug,
-            lineage_producer,
-            materialization_limiter,
-            planned_workspace_path,
-            state_path,
-            record_fresh_claim,
-            cancel_requested,
-        )
-    reusable = reuse_cache.take(
-        logical_worktree_name,
-        source_ref,
-        source.repository_id,
-        plan.run_key_name,
-        cancel_requested,
+    reuse = _take_reusable_checkout(request)
+    if reuse is None:
+        return _fresh_worktree(request, request.claims.record_fresh)
+    return _materialize_reused_worktree(request, reuse)
+
+
+@dataclass(frozen=True, slots=True)
+class _ReusableCheckoutLease:
+    cache: WorktreeReuseCache
+    checkout: ReusableWorktreeCheckout
+
+
+@dataclass(slots=True)
+class _FreshClaimTracker:
+    recorder: FreshClaimRecorder | None
+    recorded: bool = False
+
+    @property
+    def callback(self) -> FreshClaimRecorder | None:
+        return self.record if self.recorder is not None else None
+
+    def record(self, claim: WorktreeProvisioningClaim, generation: int) -> None:
+        if self.recorder is None:
+            return
+        self.recorder(claim, generation)
+        self.recorded = True
+
+
+def _take_reusable_checkout(
+    request: WorktreeMaterializationRequest,
+) -> _ReusableCheckoutLease | None:
+    cache = request.reuse_cache
+    logical_name = request.logical_worktree_name
+    if cache is None or logical_name is None or not request.lineage_producer:
+        return None
+    checkout = cache.take(
+        logical_name,
+        request.source_ref,
+        request.source.repository_id,
+        request.plan.run_key_name,
+        request.cancel_requested,
     )
-    if reusable is None:
-        return _fresh_worktree(
-            plan,
-            slug,
-            source,
-            source_ref,
-            protected_ref_scopes,
-            parent_slug,
-            lineage_producer,
-            materialization_limiter,
-            planned_workspace_path,
-            state_path,
-            record_fresh_claim,
-            cancel_requested,
-        )
+    if checkout is None:
+        return None
+    return _ReusableCheckoutLease(cache, checkout)
+
+
+def _materialize_reused_worktree(
+    request: WorktreeMaterializationRequest,
+    reuse: _ReusableCheckoutLease,
+) -> WorktreeMaterialization:
+    reusable = reuse.checkout
     reuse_generation = reusable.reuse_generation + 1
-    if record_reuse_claim is not None:
-        record_reuse_claim(reusable, reuse_generation)
+    if request.claims.record_reuse is not None:
+        request.claims.record_reuse(reusable, reuse_generation)
     try:
-        if cancel_requested is None:
-            worktree = reuse_worktree_workspace(
-                reusable.workspace_path,
-                source,
-                source_ref,
-                reusable.git_dir,
-                protected_ref_scopes,
-                state_path,
-            )
-        else:
-            worktree = reuse_worktree_workspace(
-                reusable.workspace_path,
-                source,
-                source_ref,
-                reusable.git_dir,
-                protected_ref_scopes,
-                state_path,
-                cancel_requested,
-            )
+        worktree = _reuse_worktree(request, reusable)
     except Exception as exc:
-        if cancel_requested is not None and cancel_requested():
-            if state_path is None:
-                raise RuntimeError(
-                    "Cancelled workspace reuse lacks durable state evidence."
-                ) from exc
-            _resolve_cancelled_reuse_claim(
-                reuse_cache,
-                reusable,
-                state_path,
-                exc,
-            )
+        if _reuse_was_cancelled(request):
+            _resolve_cancelled_reuse(request, reuse, exc)
             raise
-        if state_path is None:
-            raise RuntimeError(
-                "Unsafe workspace reuse cannot fall back without durable state evidence."
-            ) from exc
-        abandoned_claim_path = _archive_failed_reuse_claim(
+        return _recover_failed_reuse(request, reuse, reuse_generation, exc)
+    return _reused_materialization(worktree, reusable, reuse_generation)
+
+
+def _reuse_worktree(
+    request: WorktreeMaterializationRequest,
+    reusable: ReusableWorktreeCheckout,
+) -> WorktreeWorkspace:
+    if request.cancel_requested is None:
+        return reuse_worktree_workspace(
+            reusable.workspace_path,
+            request.source,
+            request.source_ref,
+            reusable.git_dir,
+            request.protected_ref_scopes,
+            request.state_path,
+        )
+    return reuse_worktree_workspace(
+        reusable.workspace_path,
+        request.source,
+        request.source_ref,
+        reusable.git_dir,
+        request.protected_ref_scopes,
+        request.state_path,
+        request.cancel_requested,
+    )
+
+
+def _reuse_was_cancelled(request: WorktreeMaterializationRequest) -> bool:
+    return request.cancel_requested is not None and request.cancel_requested()
+
+
+def _resolve_cancelled_reuse(
+    request: WorktreeMaterializationRequest,
+    reuse: _ReusableCheckoutLease,
+    failure: BaseException,
+) -> None:
+    state_path = request.state_path
+    if state_path is None:
+        raise RuntimeError(
+            "Cancelled workspace reuse lacks durable state evidence."
+        ) from failure
+    _resolve_cancelled_reuse_claim(
+        reuse.cache,
+        reuse.checkout,
+        state_path,
+        failure,
+    )
+
+
+def _recover_failed_reuse(
+    request: WorktreeMaterializationRequest,
+    reuse: _ReusableCheckoutLease,
+    reuse_generation: int,
+    failure: BaseException,
+) -> WorktreeMaterialization:
+    state_path = _require_fallback_state_path(request, failure)
+    abandoned_claim_path = _archive_failed_reuse_claim(
+        state_path,
+        reuse_generation,
+        failure,
+    )
+    _cleanup_abandoned_reuse(
+        request,
+        reuse,
+        reuse_generation,
+        abandoned_claim_path,
+    )
+    return _materialize_fresh_fallback(
+        request,
+        state_path,
+        abandoned_claim_path,
+        failure,
+    )
+
+
+def _require_fallback_state_path(
+    request: WorktreeMaterializationRequest,
+    failure: BaseException,
+) -> Path:
+    if request.state_path is None:
+        raise RuntimeError(
+            "Unsafe workspace reuse cannot fall back without durable state evidence."
+        ) from failure
+    return request.state_path
+
+
+def _cleanup_abandoned_reuse(
+    request: WorktreeMaterializationRequest,
+    reuse: _ReusableCheckoutLease,
+    reuse_generation: int,
+    abandoned_claim_path: Path,
+) -> None:
+    failed_entry = replace(
+        reuse.checkout,
+        state_path=abandoned_claim_path,
+        reuse_generation=reuse_generation,
+    )
+    cleanup_error = reuse.cache.cleanup_entry_best_effort(
+        failed_entry,
+        request.cancel_requested,
+    )
+    publish_workspace_cleanup_result(
+        abandoned_claim_path,
+        deleted=cleanup_error is None,
+        retained_reason=(
+            None if cleanup_error is None else "unsafe_reuse_cleanup_failed"
+        ),
+    )
+
+
+def _materialize_fresh_fallback(
+    request: WorktreeMaterializationRequest,
+    state_path: Path,
+    abandoned_claim_path: Path,
+    failure: BaseException,
+) -> WorktreeMaterialization:
+    claim_tracker = _FreshClaimTracker(request.claims.record_fresh)
+    try:
+        materialization = _fresh_worktree(request, claim_tracker.callback)
+    except Exception:
+        _record_failed_fallback(
+            request,
             state_path,
-            reuse_generation,
-            exc,
-        )
-        failed_entry = replace(
-            reusable,
-            state_path=abandoned_claim_path,
-            reuse_generation=reuse_generation,
-        )
-        cleanup_error = reuse_cache.cleanup_entry_best_effort(
-            failed_entry,
-            cancel_requested,
-        )
-        publish_workspace_cleanup_result(
             abandoned_claim_path,
-            deleted=cleanup_error is None,
-            retained_reason=(
-                None if cleanup_error is None else "unsafe_reuse_cleanup_failed"
-            ),
+            claim_tracker.recorded,
         )
-        fresh_fallback_claim_recorded = False
+        raise
+    return _fallback_materialization(materialization, abandoned_claim_path, failure)
 
-        def record_fallback_fresh_claim(
-            worktree: WorktreeProvisioningClaim,
-            generation: int,
-        ) -> None:
-            nonlocal fresh_fallback_claim_recorded
-            if record_fresh_claim is None:
-                return
-            record_fresh_claim(worktree, generation)
-            fresh_fallback_claim_recorded = True
 
-        try:
-            materialization = _fresh_worktree(
-                plan,
-                slug,
-                source,
-                source_ref,
-                protected_ref_scopes,
-                parent_slug,
-                lineage_producer,
-                materialization_limiter,
-                planned_workspace_path,
-                state_path,
-                (
-                    record_fallback_fresh_claim
-                    if record_fresh_claim is not None
-                    else None
-                ),
-                cancel_requested,
-            )
-        except Exception:
-            if fresh_fallback_claim_recorded:
-                _record_failed_fallback_metadata(state_path, abandoned_claim_path)
-            else:
-                _restore_failed_fallback_state(
-                    state_path,
-                    abandoned_claim_path,
-                    planned_workspace_path,
-                )
-            raise
-        return WorktreeMaterialization(
-            worktree=materialization.worktree,
-            reuse=_reuse_metadata(
-                strategy="fresh_checkout",
-                reused=False,
-                fallback=True,
-                fallback_reason=str(exc),
-                abandoned_claim_artifact=abandoned_claim_path.name,
-            ),
-            reuse_generation=materialization.reuse_generation,
-        )
+def _fallback_materialization(
+    materialization: WorktreeMaterialization,
+    abandoned_claim_path: Path,
+    failure: BaseException,
+) -> WorktreeMaterialization:
+    return WorktreeMaterialization(
+        worktree=materialization.worktree,
+        reuse=_reuse_metadata(
+            strategy="fresh_checkout",
+            reused=False,
+            fallback=True,
+            fallback_reason=str(failure),
+            abandoned_claim_artifact=abandoned_claim_path.name,
+        ),
+        reuse_generation=materialization.reuse_generation,
+    )
+
+
+def _record_failed_fallback(
+    request: WorktreeMaterializationRequest,
+    state_path: Path,
+    abandoned_claim_path: Path,
+    fresh_claim_recorded: bool,
+) -> None:
+    if fresh_claim_recorded:
+        _record_failed_fallback_metadata(state_path, abandoned_claim_path)
+        return
+    _restore_failed_fallback_state(
+        state_path,
+        abandoned_claim_path,
+        request.planned_workspace_path,
+    )
+
+
+def _reused_materialization(
+    worktree: WorktreeWorkspace,
+    reusable: ReusableWorktreeCheckout,
+    reuse_generation: int,
+) -> WorktreeMaterialization:
     return WorktreeMaterialization(
         worktree=worktree,
         reuse=_reuse_metadata(
@@ -251,56 +345,10 @@ def _resolve_cancelled_reuse_claim(
 
 
 def _fresh_worktree(
-    plan: PreflightExecutionPlan,
-    slug: str,
-    source: WorkspaceSourceSnapshot,
-    source_ref: WorktreeSourceRef,
-    protected_ref_scopes: tuple[str, ...],
-    parent_slug: str | None,
-    lineage_producer: bool,
-    materialization_limiter: MaterializationLimiter | None,
-    planned_workspace_path: Path | None,
-    state_path: Path | None,
-    record_fresh_claim: Callable[[WorktreeProvisioningClaim, int], None] | None,
-    cancel_requested: Callable[[], bool] | None,
+    request: WorktreeMaterializationRequest,
+    record_fresh_claim: FreshClaimRecorder | None,
 ) -> WorktreeMaterialization:
-    owner = TemporaryRefOwner(state_path) if state_path is not None else None
-    capacity_request = (
-        MaterializationCapacityRequest(
-            planned_workspace_path,
-            source,
-            estimate_full_repository=True,
-            source_tree=source_ref.source_tree,
-        )
-        if planned_workspace_path is not None
-        else None
-    )
-    with (
-        ensure_source_commit_available(
-            source,
-            source_ref,
-            owner,
-            cancel_requested,
-        ),
-        workspace_materialization_slot(
-            plan,
-            materialization_limiter,
-            capacity_request,
-        ),
-    ):
-        worktree = create_worktree_workspace(
-            plan,
-            slug,
-            source,
-            source_ref,
-            protected_ref_scopes,
-            workspace_family="workspaces" if lineage_producer else "review-workspaces",
-            parent_slug=parent_slug,
-            state_path=state_path,
-            cancel_requested=cancel_requested,
-            source_chain_verified=True,
-            record_fresh_claim=record_fresh_claim,
-        )
+    worktree = _create_fresh_worktree(request, record_fresh_claim)
     return WorktreeMaterialization(
         worktree=worktree,
         reuse=_reuse_metadata(
@@ -309,6 +357,65 @@ def _fresh_worktree(
             fallback=False,
         ),
         reuse_generation=1,
+    )
+
+
+def _create_fresh_worktree(
+    request: WorktreeMaterializationRequest,
+    record_fresh_claim: FreshClaimRecorder | None,
+) -> WorktreeWorkspace:
+    owner = (
+        TemporaryRefOwner(request.state_path)
+        if request.state_path is not None
+        else None
+    )
+    with (
+        ensure_source_commit_available(
+            request.source,
+            request.source_ref,
+            owner,
+            request.cancel_requested,
+        ),
+        workspace_materialization_slot(
+            request.plan,
+            request.materialization_limiter,
+            _fresh_capacity_request(request),
+        ),
+    ):
+        return _add_fresh_worktree(request, record_fresh_claim)
+
+
+def _add_fresh_worktree(
+    request: WorktreeMaterializationRequest,
+    record_fresh_claim: FreshClaimRecorder | None,
+) -> WorktreeWorkspace:
+    return create_worktree_workspace(
+        request.plan,
+        request.slug,
+        request.source,
+        request.source_ref,
+        request.protected_ref_scopes,
+        workspace_family=(
+            "workspaces" if request.lineage_producer else "review-workspaces"
+        ),
+        parent_slug=request.parent_slug,
+        state_path=request.state_path,
+        cancel_requested=request.cancel_requested,
+        source_chain_verified=True,
+        record_fresh_claim=record_fresh_claim,
+    )
+
+
+def _fresh_capacity_request(
+    request: WorktreeMaterializationRequest,
+) -> MaterializationCapacityRequest | None:
+    if request.planned_workspace_path is None:
+        return None
+    return MaterializationCapacityRequest(
+        request.planned_workspace_path,
+        request.source,
+        estimate_full_repository=True,
+        source_tree=request.source_ref.source_tree,
     )
 
 

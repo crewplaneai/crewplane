@@ -21,7 +21,7 @@ from .common import (
     unmaterialized_workspace_retention,
     worktree_preparation_failure_state,
 )
-from .types import WorktreePreparationPlan
+from .types import WorkspaceInvocationRequest, WorktreePreparationPlan
 
 
 def record_failed_unmaterialized_worktree_preparation(
@@ -60,6 +60,53 @@ def record_cancelled_unmaterialized_worktree_preparation(
             "Workspace cancelled-state recording after preparation cancellation",
             exc,
         )
+
+
+def record_worktree_materialization_failure(
+    request: WorkspaceInvocationRequest,
+    plan: WorktreePreparationPlan,
+    fresh_claim_recorded: bool,
+    failure: Exception,
+) -> None:
+    cancellation = request.setup_cancellation
+    if cancellation is not None and cancellation.is_cancelled():
+        _record_cancelled_materialization(
+            request,
+            plan,
+            fresh_claim_recorded,
+            failure,
+        )
+        return
+    if fresh_claim_recorded:
+        record_failed_worktree_preparation(
+            plan.source,
+            plan.planned_workspace_path,
+            plan.state_path,
+            failure,
+            request.worktree_reuse_cache,
+        )
+        return
+    record_failed_unmaterialized_worktree_preparation(plan, failure)
+
+
+def _record_cancelled_materialization(
+    request: WorkspaceInvocationRequest,
+    plan: WorktreePreparationPlan,
+    fresh_claim_recorded: bool,
+    failure: Exception,
+) -> None:
+    if read_workspace_state(plan.state_path).get("status") == "cancelled":
+        return
+    if fresh_claim_recorded:
+        record_cancelled_worktree_preparation(
+            plan.source,
+            plan.planned_workspace_path,
+            plan.state_path,
+            failure,
+            request.worktree_reuse_cache,
+        )
+        return
+    record_cancelled_unmaterialized_worktree_preparation(plan, failure)
 
 
 def record_failed_worktree_preparation(

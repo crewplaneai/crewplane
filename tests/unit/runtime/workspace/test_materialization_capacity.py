@@ -24,6 +24,7 @@ from crewplane.runtime.workspace.materialization import (
     workspace_materialization_slot,
 )
 from crewplane.runtime.workspace.worktree.materialization import (
+    WorktreeMaterializationRequest,
     materialize_worktree_workspace,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
@@ -254,17 +255,19 @@ def test_nested_fresh_worktree_admission_uses_full_repository_fallback(
 
     with pytest.raises(RuntimeError, match="fail_free_bytes"):
         materialize_worktree_workspace(
-            plan,
-            "a-executor",
-            source,
-            source_ref,
-            (),
-            None,
-            None,
-            False,
-            None,
-            materialization_limiter=MaterializationLimiter.from_plan(plan),
-            planned_workspace_path=tmp_path / "cache" / "a-executor",
+            WorktreeMaterializationRequest(
+                plan=plan,
+                slug="a-executor",
+                source=source,
+                source_ref=source_ref,
+                protected_ref_scopes=(),
+                parent_slug=None,
+                logical_worktree_name=None,
+                lineage_producer=False,
+                reuse_cache=None,
+                materialization_limiter=MaterializationLimiter.from_plan(plan),
+                planned_workspace_path=tmp_path / "cache" / "a-executor",
+            )
         )
 
 
@@ -348,18 +351,20 @@ def test_fresh_worktree_admission_uses_selected_lineage_tree(
 
     with pytest.raises(RuntimeError, match="fail_free_bytes"):
         materialize_worktree_workspace(
-            plan,
-            "downstream-executor",
-            source,
-            source_ref,
-            (),
-            None,
-            None,
-            False,
-            None,
-            materialization_limiter=MaterializationLimiter.from_plan(plan),
-            planned_workspace_path=tmp_path / "cache" / "downstream-executor",
-            state_path=state_path,
+            WorktreeMaterializationRequest(
+                plan=plan,
+                slug="downstream-executor",
+                source=source,
+                source_ref=source_ref,
+                protected_ref_scopes=(),
+                parent_slug=None,
+                logical_worktree_name=None,
+                lineage_producer=False,
+                reuse_cache=None,
+                materialization_limiter=MaterializationLimiter.from_plan(plan),
+                planned_workspace_path=tmp_path / "cache" / "downstream-executor",
+                state_path=state_path,
+            )
         )
 
 
@@ -450,18 +455,20 @@ def test_fresh_worktree_admission_imports_bundle_only_lineage_before_estimate(
 
     with pytest.raises(RuntimeError, match="fail_free_bytes"):
         materialize_worktree_workspace(
-            plan,
-            invocation_slug("implement", "alpha", None, 1),
-            source,
-            source_ref,
-            (),
-            None,
-            None,
-            False,
-            None,
-            materialization_limiter=MaterializationLimiter.from_plan(plan),
-            planned_workspace_path=tmp_path / "cache" / "downstream-executor",
-            state_path=state_path,
+            WorktreeMaterializationRequest(
+                plan=plan,
+                slug=invocation_slug("implement", "alpha", None, 1),
+                source=source,
+                source_ref=source_ref,
+                protected_ref_scopes=(),
+                parent_slug=None,
+                logical_worktree_name=None,
+                lineage_producer=False,
+                reuse_cache=None,
+                materialization_limiter=MaterializationLimiter.from_plan(plan),
+                planned_workspace_path=tmp_path / "cache" / "downstream-executor",
+                state_path=state_path,
+            )
         )
 
     assert git_commit_exists(repo, upstream_commit)

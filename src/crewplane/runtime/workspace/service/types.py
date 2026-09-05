@@ -20,7 +20,10 @@ from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 from crewplane.runtime.workspace.worktree.materialization import (
     WorktreeMaterialization,
 )
-from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
+from crewplane.runtime.workspace.worktree.types import (
+    WorktreeSourceRef,
+    WorktreeWorkspace,
+)
 
 
 @dataclass(frozen=True)
@@ -81,3 +84,7 @@ class MaterializedWorktreeWorkspace:
     capture_request: WorktreeCaptureRequest
     provisioning_duration_seconds: float
     checkout_size_bytes: int
+
+    @property
+    def worktree(self) -> WorktreeWorkspace:
+        return self.materialized.worktree
