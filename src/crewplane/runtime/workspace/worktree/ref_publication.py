@@ -31,39 +31,89 @@ class RefPublicationDestination:
     expected_old_oid: str | None
 
 
+type _ResultRefDestinations = tuple[
+    RefPublicationDestination,
+    RefPublicationDestination,
+]
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicationReconciliation:
+    removed: tuple[RefPublicationDestination, ...]
+    mismatched: tuple[RefPublicationDestination, ...]
+    remaining: tuple[RefPublicationDestination, ...]
+
+
 def publish_result_refs(
     request: WorktreeCaptureRequest,
     candidate_commit: str,
     result_commit: str,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> tuple[str, str]:
+    """Persist and publish candidate and result refs as one transaction."""
+
+    destinations = _result_ref_destinations(
+        request,
+        candidate_commit,
+        result_commit,
+    )
+    _persist_prepared_publication(request, destinations)
+    _publish_destinations(request, destinations, cancel_requested)
+    _record_published_phase(request, cancel_requested)
+    return destinations[0].name, destinations[1].name
+
+
+def _result_ref_destinations(
+    request: WorktreeCaptureRequest,
+    candidate_commit: str,
+    result_commit: str,
+) -> _ResultRefDestinations:
     candidate_ref, result_ref = _result_ref_names(request)
-    destinations = (
+    return (
         RefPublicationDestination(candidate_ref, candidate_commit, None),
         RefPublicationDestination(result_ref, result_commit, None),
     )
-    _persist_prepared_publication(request, destinations)
+
+
+def _publish_destinations(
+    request: WorktreeCaptureRequest,
+    destinations: _ResultRefDestinations,
+    cancel_requested: Callable[[], bool] | None,
+) -> None:
     with git_metadata_lock(Path(request.source.common_git_dir), cancel_requested):
         command = git(request.checkout_root)
         _publish_transaction(command, destinations, request.protected_refs)
+
+
+def _record_published_phase(
+    request: WorktreeCaptureRequest,
+    cancel_requested: Callable[[], bool] | None,
+) -> None:
     try:
         update_workspace_ref_publication_phase(request.state_path, "published")
     except Exception as exc:
-        try:
-            reconcile_result_ref_publication(
-                request.state_path,
-                Path(request.source.git_top_level),
-                Path(request.source.common_git_dir),
-                cancel_requested,
-            )
-        except Exception as cleanup_error:
-            note_cleanup_failure(
-                exc,
-                "Workspace result ref cleanup after publication phase failure",
-                cleanup_error,
-            )
+        _reconcile_after_phase_failure(request, cancel_requested, exc)
         raise
-    return candidate_ref, result_ref
+
+
+def _reconcile_after_phase_failure(
+    request: WorktreeCaptureRequest,
+    cancel_requested: Callable[[], bool] | None,
+    phase_error: Exception,
+) -> None:
+    try:
+        reconcile_result_ref_publication(
+            request.state_path,
+            Path(request.source.git_top_level),
+            Path(request.source.common_git_dir),
+            cancel_requested,
+        )
+    except Exception as cleanup_error:
+        note_cleanup_failure(
+            phase_error,
+            "Workspace result ref cleanup after publication phase failure",
+            cleanup_error,
+        )
 
 
 def reconcile_result_ref_publication(
@@ -72,6 +122,8 @@ def reconcile_result_ref_publication(
     common_git_dir: Path,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> int:
+    """Remove still-owned result refs and record their publication as removed."""
+
     payload = read_workspace_state(state_path)
     _require_repository_identity(payload, repo_root, common_git_dir)
     destinations = publication_destinations(payload)
@@ -79,32 +131,74 @@ def reconcile_result_ref_publication(
         return 0
     with git_metadata_lock(common_git_dir, cancel_requested):
         command = git(repo_root)
-        _require_owned_publication_destinations(command, payload, destinations)
-        matching = tuple(
-            destination
-            for destination in destinations
-            if _ref_oid(command, destination.name) == destination.target_oid
-        )
-        mismatched = tuple(
-            destination
-            for destination in destinations
-            if (current := _ref_oid(command, destination.name)) is not None
-            and current != destination.target_oid
-        )
-        if matching:
-            _delete_transaction(command, matching)
-        remaining = tuple(
-            destination
-            for destination in destinations
-            if _ref_oid(command, destination.name) is not None
-        )
-    if mismatched or remaining:
-        names = ", ".join(destination.name for destination in (*mismatched, *remaining))
-        raise RuntimeError(
-            f"Workspace result refs moved or remain after exact-OID cleanup: {names}."
-        )
+        reconciliation = _reconcile_destinations(command, payload, destinations)
+    _require_complete_reconciliation(reconciliation)
     update_workspace_ref_publication_phase(state_path, "removed")
-    return len(matching)
+    return len(reconciliation.removed)
+
+
+def _reconcile_destinations(
+    command: GitCommand,
+    payload: dict[str, object],
+    destinations: tuple[RefPublicationDestination, ...],
+) -> _PublicationReconciliation:
+    _require_owned_publication_destinations(command, payload, destinations)
+    matching = _matching_destinations(command, destinations)
+    mismatched = _mismatched_destinations(command, destinations)
+    if matching:
+        _delete_transaction(command, matching)
+    remaining = _remaining_destinations(command, destinations)
+    return _PublicationReconciliation(
+        removed=matching,
+        mismatched=mismatched,
+        remaining=remaining,
+    )
+
+
+def _matching_destinations(
+    command: GitCommand,
+    destinations: tuple[RefPublicationDestination, ...],
+) -> tuple[RefPublicationDestination, ...]:
+    return tuple(
+        destination
+        for destination in destinations
+        if _ref_oid(command, destination.name) == destination.target_oid
+    )
+
+
+def _mismatched_destinations(
+    command: GitCommand,
+    destinations: tuple[RefPublicationDestination, ...],
+) -> tuple[RefPublicationDestination, ...]:
+    mismatched: list[RefPublicationDestination] = []
+    for destination in destinations:
+        current = _ref_oid(command, destination.name)
+        if current is not None and current != destination.target_oid:
+            mismatched.append(destination)
+    return tuple(mismatched)
+
+
+def _remaining_destinations(
+    command: GitCommand,
+    destinations: tuple[RefPublicationDestination, ...],
+) -> tuple[RefPublicationDestination, ...]:
+    return tuple(
+        destination
+        for destination in destinations
+        if _ref_oid(command, destination.name) is not None
+    )
+
+
+def _require_complete_reconciliation(
+    reconciliation: _PublicationReconciliation,
+) -> None:
+    unresolved = (*reconciliation.mismatched, *reconciliation.remaining)
+    if not unresolved:
+        return
+    names = ", ".join(destination.name for destination in unresolved)
+    raise RuntimeError(
+        f"Workspace result refs moved or remain after exact-OID cleanup: {names}."
+    )
 
 
 def _require_repository_identity(
@@ -198,7 +292,7 @@ def _publication_destination(value: object) -> RefPublicationDestination:
 
 def _persist_prepared_publication(
     request: WorktreeCaptureRequest,
-    destinations: tuple[RefPublicationDestination, RefPublicationDestination],
+    destinations: _ResultRefDestinations,
 ) -> None:
     state = read_workspace_state(request.state_path)
     require_workspace_state_contract(state, "materialization")
@@ -237,38 +331,72 @@ def _destination_payload(destination: RefPublicationDestination) -> dict[str, ob
 
 def _publish_transaction(
     command: GitCommand,
-    destinations: tuple[RefPublicationDestination, RefPublicationDestination],
+    destinations: _ResultRefDestinations,
     protected_refs: ProtectedRefSnapshot,
+) -> None:
+    _require_absent_destinations(command, destinations)
+    zero_oid = "0" * len(destinations[0].target_oid)
+    operations = (
+        *_protected_ref_verification_operations(
+            destinations,
+            protected_refs,
+            zero_oid,
+        ),
+        *_publication_update_operations(destinations, zero_oid),
+    )
+    _run_ref_transaction(command, operations)
+
+
+def _require_absent_destinations(
+    command: GitCommand,
+    destinations: _ResultRefDestinations,
 ) -> None:
     for destination in destinations:
         if _ref_oid(command, destination.name) is not None:
             raise RuntimeError(
                 f"Workspace result ref already exists: {destination.name}."
             )
-    lines = ["start"]
+
+
+def _protected_ref_verification_operations(
+    destinations: _ResultRefDestinations,
+    protected_refs: ProtectedRefSnapshot,
+    zero_oid: str,
+) -> tuple[str, ...]:
     destination_names = {destination.name for destination in destinations}
     expected_refs = dict(protected_refs.refs)
-    zero_oid = "0" * len(destinations[0].target_oid)
-    for ref_name in protected_refs.scopes:
-        if ref_name in destination_names:
-            continue
-        lines.append("option no-deref")
-        lines.append(f"verify {ref_name} {expected_refs.get(ref_name, zero_oid)}")
-    for destination in destinations:
-        lines.append("option no-deref")
-        lines.append(f"update {destination.name} {destination.target_oid} {zero_oid}")
-    lines.extend(("prepare", "commit", ""))
-    command.run_with_input("\n".join(lines).encode(), "update-ref", "--stdin")
+    return tuple(
+        f"verify {ref_name} {expected_refs.get(ref_name, zero_oid)}"
+        for ref_name in protected_refs.scopes
+        if ref_name not in destination_names
+    )
+
+
+def _publication_update_operations(
+    destinations: _ResultRefDestinations,
+    zero_oid: str,
+) -> tuple[str, ...]:
+    return tuple(
+        f"update {destination.name} {destination.target_oid} {zero_oid}"
+        for destination in destinations
+    )
 
 
 def _delete_transaction(
     command: GitCommand,
     destinations: tuple[RefPublicationDestination, ...],
 ) -> None:
+    operations = tuple(
+        f"delete {destination.name} {destination.target_oid}"
+        for destination in destinations
+    )
+    _run_ref_transaction(command, operations)
+
+
+def _run_ref_transaction(command: GitCommand, operations: tuple[str, ...]) -> None:
     lines = ["start"]
-    for destination in destinations:
-        lines.append("option no-deref")
-        lines.append(f"delete {destination.name} {destination.target_oid}")
+    for operation in operations:
+        lines.extend(("option no-deref", operation))
     lines.extend(("prepare", "commit", ""))
     command.run_with_input("\n".join(lines).encode(), "update-ref", "--stdin")
 

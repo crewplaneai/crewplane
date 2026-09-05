@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..git import git, git_error
+from ..git import GitCommand, git, git_error
 from ..locks import git_metadata_lock
 from .head import prove_detached_head, reject_attached_head_after_safe_detachment
 from .inspection import changed_paths
@@ -117,17 +117,28 @@ def _verify_reset_state(
 ) -> None:
     command = git(checkout_root, timeout_seconds=RETRY_RESET_GIT_TIMEOUT_SECONDS)
     _raise_if_cancelled(cancel_requested)
-    head = command.text("rev-parse", "HEAD^{commit}")
-    if head != source_commit:
-        raise RuntimeError("Workspace retry reset did not restore the source commit.")
+    _verify_source_commit(command, source_commit)
     _raise_if_cancelled(cancel_requested)
-    if command.text("branch", "--show-current"):
-        raise RuntimeError("Workspace retry reset did not restore detached HEAD.")
+    _verify_detached_head(command)
     _raise_if_cancelled(cancel_requested)
     reject_worktree_git_policy_drift(checkout_root)
     _raise_if_cancelled(cancel_requested)
-    paths = changed_paths(checkout_root)
-    if paths:
+    _verify_clean_checkout(checkout_root)
+
+
+def _verify_source_commit(command: GitCommand, source_commit: str) -> None:
+    head = command.text("rev-parse", "HEAD^{commit}")
+    if head != source_commit:
+        raise RuntimeError("Workspace retry reset did not restore the source commit.")
+
+
+def _verify_detached_head(command: GitCommand) -> None:
+    if command.text("branch", "--show-current"):
+        raise RuntimeError("Workspace retry reset did not restore detached HEAD.")
+
+
+def _verify_clean_checkout(checkout_root: Path) -> None:
+    if changed_paths(checkout_root):
         raise RuntimeError("Workspace retry reset left changed paths behind.")
 
 
@@ -203,6 +214,18 @@ def _worktree_git_metadata(
     checkout_root: Path,
     common_git_dir: Path,
 ) -> _WorktreeGitMetadata:
+    git_file = _require_worktree_git_file(checkout_root)
+    raw_git_dir = _read_worktree_git_dir(git_file)
+    git_dir = raw_git_dir.resolve(strict=False)
+    _require_git_dir_within_common_dir(git_dir, common_git_dir)
+    return _WorktreeGitMetadata(
+        git_file=git_file,
+        raw_git_dir=raw_git_dir,
+        git_dir=git_dir,
+    )
+
+
+def _require_worktree_git_file(checkout_root: Path) -> Path:
     git_file = checkout_root / ".git"
     try:
         mode = git_file.lstat().st_mode
@@ -212,6 +235,10 @@ def _worktree_git_metadata(
         ) from exc
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
         raise RuntimeError("Workspace retry reset requires a valid worktree .git file.")
+    return git_file
+
+
+def _read_worktree_git_dir(git_file: Path) -> Path:
     marker = "gitdir:"
     content = git_file.read_text(encoding="utf-8", errors="replace").strip()
     if not content.startswith(marker):
@@ -219,14 +246,22 @@ def _worktree_git_metadata(
     raw_path = content[len(marker) :].strip()
     if not raw_path:
         raise RuntimeError("Workspace retry reset found an empty worktree Git dir.")
-    git_dir = Path(raw_path)
-    if not git_dir.is_absolute():
-        git_dir = git_file.parent / git_dir
-    resolved_git_dir = git_dir.resolve(strict=False)
-    resolved_common_dir = common_git_dir.resolve(strict=False)
-    if not resolved_git_dir.is_relative_to(resolved_common_dir):
+    return _path_from_git_metadata(raw_path, git_file.parent)
+
+
+def _require_git_dir_within_common_dir(
+    git_dir: Path,
+    common_git_dir: Path,
+) -> None:
+    if not git_dir.is_relative_to(common_git_dir.resolve(strict=False)):
         raise RuntimeError("Workspace retry reset Git dir escapes the common Git dir.")
-    return _WorktreeGitMetadata(git_file, git_dir, resolved_git_dir)
+
+
+def _path_from_git_metadata(raw_path: str, relative_to: Path) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return relative_to / path
 
 
 def _reject_symlinked_git_dir(git_dir: Path, common_git_dir: Path) -> None:
@@ -251,6 +286,12 @@ def _reject_symlinked_path(path: Path) -> None:
 
 
 def _gitdir_backlink(git_dir: Path) -> Path:
+    gitdir_file = _require_gitdir_backlink_file(git_dir)
+    raw_path = _read_gitdir_backlink(gitdir_file)
+    return _path_from_git_metadata(raw_path, git_dir).resolve(strict=False)
+
+
+def _require_gitdir_backlink_file(git_dir: Path) -> Path:
     gitdir_file = git_dir / "gitdir"
     try:
         mode = gitdir_file.lstat().st_mode
@@ -260,10 +301,11 @@ def _gitdir_backlink(git_dir: Path) -> Path:
         ) from exc
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
         raise RuntimeError("Workspace retry reset Git dir checkout pointer is invalid.")
+    return gitdir_file
+
+
+def _read_gitdir_backlink(gitdir_file: Path) -> str:
     raw_path = gitdir_file.read_text(encoding="utf-8", errors="replace").strip()
     if not raw_path:
         raise RuntimeError("Workspace retry reset Git dir checkout pointer is empty.")
-    target = Path(raw_path)
-    if not target.is_absolute():
-        target = git_dir / target
-    return target.resolve(strict=False)
+    return raw_path

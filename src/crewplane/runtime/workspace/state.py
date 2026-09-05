@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from threading import Lock, RLock
 from typing import TYPE_CHECKING, Literal, TypedDict
@@ -17,9 +18,9 @@ from crewplane.core.preflight.models import (
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.version import SCHEMA_VERSION
 
 from .lineage_discard import apply_lineage_discard
+from .running_state_payload import build_running_workspace_state_payload
 
 if TYPE_CHECKING:
     from .worktree.types import WorktreeSourceRef
@@ -114,108 +115,15 @@ def write_running_workspace_state(
     policy: WorkspaceSelectionRecord,
     materialization: WorkspaceStateMaterializationRequest,
 ) -> None:
-    from .worktree.types import WorktreeSourceRef
-
-    invocation_source = materialization.source_ref or WorktreeSourceRef(
-        source_kind="project",
-        source_node_id=None,
-        source_commit=source.run_base_commit,
-        source_tree=source.source_tree,
-        candidate_sequence=None,
+    payload = build_running_workspace_state_payload(
+        state_path,
+        request,
+        node,
+        source,
+        policy,
+        materialization,
+        datetime.now(UTC).isoformat(),
     )
-    payload = {
-        "version": SCHEMA_VERSION,
-        "run_id": request.run_id,
-        "run_key_name": request.run_key_name,
-        "workflow_name": request.workflow_name,
-        "workflow_signature": request.workflow_signature,
-        "node_id": node.id,
-        "task_id": request.task_id,
-        "provider": request.provider,
-        "role": request.role_label,
-        "round_num": request.round_num,
-        "audit_round_num": request.audit_round_num,
-        "status": "running",
-        "logical_worktree_name": policy.logical_worktree_name,
-        "workspace_kind": policy.declaration_kind,
-        "clean_start": policy.clean_start,
-        "worktree_contract": policy.worktree_contract.model_dump(mode="json"),
-        "git": {
-            "object_format": source.object_format,
-            "repo_id": source.repository_id,
-            "run_base_commit": source.run_base_commit,
-            "source_tree": source.source_tree,
-            "git_top_level": source.git_top_level,
-            "active_git_dir": source.active_git_dir,
-            "common_git_dir": source.common_git_dir,
-            "worktree_config_active": False,
-            "worktree_lock_mode": materialization.worktree_lock_mode,
-        },
-        "source": _source_payload(invocation_source, state_path),
-        "workspace": {
-            "path": None,
-            "effective_cwd": None,
-            "cache_key": materialization.workspace_path.name,
-            "materialization": materialization.materialization,
-            "writable": materialization.writable,
-            "lineage_producer": materialization.lineage_producer,
-            "retention": "pending",
-            "retained_reason": None,
-            "project_root_relative_path": source.project_root_relative_path,
-        },
-        "execution": {
-            "cache_root": materialization.cache_root,
-            "workspace_path": materialization.workspace_path.as_posix(),
-            "checkout_root": (
-                materialization.checkout_root.as_posix()
-                if materialization.checkout_root is not None
-                else None
-            ),
-            "worktree_git_dir": (
-                materialization.worktree_git_dir.as_posix()
-                if materialization.worktree_git_dir is not None
-                else None
-            ),
-            "checkout_size_bytes": (
-                materialization.provisioning.checkout_size_bytes
-                if materialization.provisioning is not None
-                else None
-            ),
-            "effective_cwd": (
-                materialization.effective_cwd.as_posix()
-                if materialization.effective_cwd is not None
-                else None
-            ),
-            "provisioning_duration_seconds": (
-                materialization.provisioning.duration_seconds
-                if materialization.provisioning is not None
-                else None
-            ),
-        },
-        "invocation_source": _invocation_source_payload(invocation_source, state_path),
-        "child_process_environment": {
-            "required": materialization.child_environment_required,
-            "applied": False if materialization.child_environment_required else None,
-        },
-        "invoker": request.invoker,
-        "rendered_workspace_files": list(request.rendered_workspace_files),
-        "diagnostics": [],
-        "process_drain": {"status": "not_started"},
-        "updated_at": datetime.now(UTC).isoformat(),
-    }
-    if materialization.reuse is not None:
-        payload["reuse"] = dict(materialization.reuse)
-    workspace = payload["workspace"]
-    if materialization.reuse_generation is not None and isinstance(workspace, dict):
-        workspace["reuse_generation"] = materialization.reuse_generation
-    if policy.setup is not None:
-        payload["setup"] = {
-            "profile_name": policy.setup.profile_name,
-            "status": "pending",
-            "commands": [
-                command.model_dump(mode="json") for command in policy.setup.commands
-            ],
-        }
     with _state_lock(state_path):
         if state_path.exists():
             current = read_workspace_state(state_path)
@@ -245,66 +153,6 @@ def write_running_workspace_state(
             current.update(payload)
             payload = current
         atomic_write_json(state_path, payload)
-
-
-def _source_payload(
-    source_ref: WorktreeSourceRef, state_path: Path
-) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "kind": source_ref.source_kind,
-        "node_id": source_ref.source_node_id,
-        "commit": source_ref.source_commit,
-        "tree": source_ref.source_tree,
-        "candidate_sequence": source_ref.candidate_sequence,
-    }
-    payload.update(_source_bundle_payload(source_ref, state_path))
-    if source_ref.upstream_sources:
-        payload["upstream_sources"] = [
-            _source_payload(upstream, state_path)
-            for upstream in source_ref.upstream_sources
-        ]
-    return payload
-
-
-def _invocation_source_payload(
-    source_ref: WorktreeSourceRef,
-    state_path: Path,
-) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "source_kind": source_ref.source_kind,
-        "source_node_id": source_ref.source_node_id,
-        "source_commit": source_ref.source_commit,
-        "source_tree": source_ref.source_tree,
-        "candidate_sequence": source_ref.candidate_sequence,
-    }
-    for key, value in _source_bundle_payload(source_ref, state_path).items():
-        payload[f"source_{key}"] = value
-    return payload
-
-
-def _source_bundle_payload(
-    source_ref: WorktreeSourceRef,
-    state_path: Path,
-) -> dict[str, object]:
-    if source_ref.bundle_sha256 is None:
-        return {}
-    payload: dict[str, object] = {"bundle_sha256": source_ref.bundle_sha256}
-    if source_ref.bundle_size_bytes is not None:
-        payload["bundle_size_bytes"] = source_ref.bundle_size_bytes
-    if source_ref.bundle_ref is not None:
-        payload["bundle_ref"] = source_ref.bundle_ref
-    if source_ref.bundle_path is not None:
-        relative_path = _relative_source_bundle_path(source_ref.bundle_path, state_path)
-        if relative_path is not None:
-            payload["bundle_path"] = relative_path
-    return payload
-
-
-def _relative_source_bundle_path(bundle_path: Path, state_path: Path) -> str | None:
-    try:
-        return bundle_path.relative_to(state_path.parent.parent).as_posix()
-    except ValueError:
-        return None
 
 
 _STATE_LOCKS_GUARD = Lock()
@@ -354,16 +202,16 @@ _TERMINAL_WORKSPACE_STATE_FIELDS = frozenset(
         "temporary_refs",
     }
 )
+_TERMINAL_WORKSPACE_STATUSES = frozenset({"cancelled", "failed", "succeeded"})
 
 
 def require_workspace_state_payload_identity(
     current: Mapping[str, object],
     expected: Mapping[str, object],
 ) -> None:
-    terminal_statuses = {"cancelled", "failed", "succeeded"}
     terminalized = (
-        current.get("status") in terminal_statuses
-        and expected.get("status") in terminal_statuses
+        current.get("status") in _TERMINAL_WORKSPACE_STATUSES
+        and expected.get("status") in _TERMINAL_WORKSPACE_STATUSES
     )
     if _workspace_state_identity(current, terminalized) != _workspace_state_identity(
         expected,
@@ -428,51 +276,89 @@ def update_workspace_state(
     state_path: Path,
     request: WorkspaceStateUpdateRequest,
 ) -> None:
-    def apply_update(payload: dict[str, object]) -> None:
-        previous_status = payload.get("status")
-        if (
-            previous_status in {"succeeded", "failed", "cancelled"}
-            and request.status != previous_status
-        ):
-            raise RuntimeError(
-                "Workspace terminal outcome cannot be rewritten from "
-                f"{previous_status!r} to {request.status!r}."
-            )
-        payload["status"] = request.status
-        workspace = payload.get("workspace")
-        if isinstance(workspace, dict):
-            workspace["retention"] = request.retention.retention
-            workspace["retained_reason"] = request.retention.retained_reason
-        if request.diagnostics is not None:
-            payload["diagnostics"] = request.diagnostics
-        if request.result is not None:
-            if previous_status in {"succeeded", "failed", "cancelled"} and (
-                payload.get("result") != dict(request.result)
-            ):
-                raise RuntimeError("Workspace terminal result evidence is immutable.")
-            payload["result"] = dict(request.result)
-        if request.refs is not None:
-            if previous_status in {"succeeded", "failed", "cancelled"} and (
-                payload.get("refs") != dict(request.refs)
-            ):
-                raise RuntimeError("Workspace terminal ref evidence is immutable.")
-            payload["refs"] = dict(request.refs)
-        if request.bundle is not None:
-            if previous_status in {"succeeded", "failed", "cancelled"} and (
-                payload.get("bundle") != dict(request.bundle)
-            ):
-                raise RuntimeError("Workspace terminal bundle evidence is immutable.")
-            payload["bundle"] = dict(request.bundle)
-        if request.setup is not None:
-            payload["setup"] = dict(request.setup)
-        env = payload.get("child_process_environment")
-        if isinstance(env, dict) and env.get("required") is True:
-            if request.child_environment_applied is not None:
-                env["applied"] = request.child_environment_applied
-            elif request.status == "succeeded" and previous_status == "running":
-                env["applied"] = True
+    mutate_workspace_state(
+        state_path,
+        partial(_apply_workspace_state_update, request=request),
+    )
 
-    mutate_workspace_state(state_path, apply_update)
+
+def _apply_workspace_state_update(
+    payload: dict[str, object],
+    request: WorkspaceStateUpdateRequest,
+) -> None:
+    previous_status = payload.get("status")
+    _require_valid_terminal_transition(previous_status, request.status)
+    payload["status"] = request.status
+    _apply_workspace_retention(payload, request.retention)
+    if request.diagnostics is not None:
+        payload["diagnostics"] = request.diagnostics
+    _apply_terminal_evidence(payload, request, previous_status)
+    if request.setup is not None:
+        payload["setup"] = dict(request.setup)
+    _apply_child_environment_status(payload, request, previous_status)
+
+
+def _require_valid_terminal_transition(
+    previous_status: object,
+    requested_status: str,
+) -> None:
+    if (
+        previous_status in _TERMINAL_WORKSPACE_STATUSES
+        and requested_status != previous_status
+    ):
+        raise RuntimeError(
+            "Workspace terminal outcome cannot be rewritten from "
+            f"{previous_status!r} to {requested_status!r}."
+        )
+
+
+def _apply_workspace_retention(
+    payload: dict[str, object],
+    retention: WorkspaceStateRetention,
+) -> None:
+    workspace = payload.get("workspace")
+    if isinstance(workspace, dict):
+        workspace["retention"] = retention.retention
+        workspace["retained_reason"] = retention.retained_reason
+
+
+def _apply_terminal_evidence(
+    payload: dict[str, object],
+    request: WorkspaceStateUpdateRequest,
+    previous_status: object,
+) -> None:
+    terminalized = previous_status in _TERMINAL_WORKSPACE_STATUSES
+    _apply_evidence_field(payload, "result", request.result, terminalized)
+    _apply_evidence_field(payload, "refs", request.refs, terminalized)
+    _apply_evidence_field(payload, "bundle", request.bundle, terminalized)
+
+
+def _apply_evidence_field(
+    payload: dict[str, object],
+    field_name: Literal["result", "refs", "bundle"],
+    evidence: Mapping[str, object] | None,
+    terminalized: bool,
+) -> None:
+    if evidence is None:
+        return
+    if terminalized and payload.get(field_name) != dict(evidence):
+        evidence_name = "ref" if field_name == "refs" else field_name
+        raise RuntimeError(f"Workspace terminal {evidence_name} evidence is immutable.")
+    payload[field_name] = dict(evidence)
+
+
+def _apply_child_environment_status(
+    payload: dict[str, object],
+    request: WorkspaceStateUpdateRequest,
+    previous_status: object,
+) -> None:
+    environment = payload.get("child_process_environment")
+    if not isinstance(environment, dict) or environment.get("required") is not True:
+        return
+    if request.child_environment_applied is not None:
+        environment["applied"] = request.child_environment_applied
+    elif request.status == "succeeded" and previous_status == "running":
+        environment["applied"] = True
 
 
 def update_workspace_retention(
