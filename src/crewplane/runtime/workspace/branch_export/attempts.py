@@ -30,6 +30,7 @@ from crewplane.runtime.workspace.branch_export.git import (
 from crewplane.runtime.workspace.branch_export.reconciliation import (
     BranchExportOrigin,
     BranchExportReconciliation,
+    BranchExportRecordExpectation,
     classify_branch_export_record,
 )
 from crewplane.runtime.workspace.branch_export.records import (
@@ -201,16 +202,17 @@ def _reconcile_attempt(
     run = request.run
     reconciliation = classify_branch_export_record(
         request.record_path,
-        run.plan,
-        run.run_id,
-        run.run_key_name,
-        run.source.repository_id,
-        request.logical_worktree_name,
-        branch_name_value,
-        branch_ref,
-        checkpoint,
-        request.policy,
-        request.operation_origin,
+        BranchExportRecordExpectation(
+            plan=run.plan,
+            run_id=run.run_id,
+            run_key_name=run.run_key_name,
+            repository_id=run.source.repository_id,
+            logical_worktree_name=request.logical_worktree_name,
+            branch_name=branch_name_value,
+            branch_ref=branch_ref,
+            checkpoint=checkpoint,
+            policy=request.policy,
+        ),
     )
     return _ValidatedBranchExportAttempt(
         request=request,

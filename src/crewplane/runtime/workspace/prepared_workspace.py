@@ -9,16 +9,16 @@ from crewplane.architecture.contracts import InvocationContext
 
 from .locks import git_metadata_lock
 from .snapshot import (
-    WorkspaceSnapshotLimitError,
     WorkspaceSnapshotPolicy,
     remove_workspace_path,
-    snapshot_drift_summary,
-    snapshot_entries,
 )
+from .snapshot_reporting import snapshot_success_outcome
 from .state import read_workspace_state, require_workspace_state_identity
 from .terminalization import (
+    WorkspaceDiagnosticLevel,
     publish_terminal_workspace_state,
     publish_workspace_cleanup_result,
+    workspace_diagnostic,
     workspace_mutators_are_drained,
 )
 from .worktree import (
@@ -28,23 +28,30 @@ from .worktree import (
     remove_worktree_workspace,
 )
 from .worktree.cache import ReusableWorktreeCheckout, WorktreeReuseCache
-from .worktree.descriptors import bundle_descriptor
+from .worktree.descriptors import bundle_descriptor, lineage_result_descriptor
 from .worktree.head import advance_detached_head_for_reuse
 from .worktree.lineage import cleanup_result_refs_after_failure
 from .worktree.types import WorktreeCaptureResult
 
-WorkspaceDiagnosticLevel = Literal["error", "warning"]
+
+@dataclass(frozen=True, slots=True)
+class _WorkspaceSuccessRequest:
+    child_environment_applied: bool | None
+    defer_cleanup: bool
+    cancel_requested: Callable[[], bool] | None
 
 
-def workspace_diagnostic(
-    level: WorkspaceDiagnosticLevel,
-    message: str,
-) -> dict[str, str]:
-    return {"level": level, "message": message}
+@dataclass(frozen=True, slots=True)
+class _LineageSuccessContext:
+    workspace_path: Path
+    state_path: Path
+    capture: WorktreeCaptureRequest
 
 
 @dataclass
 class PreparedWorkspace:
+    """Track a prepared invocation workspace through terminalization and cleanup."""
+
     cwd: Path
     invocation_context: InvocationContext
     workspace_kind: Literal["project_root", "snapshot", "worktree"] = "project_root"
@@ -71,12 +78,37 @@ class PreparedWorkspace:
         defer_cleanup: bool = False,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
+        """Record workspace success and perform cleanup unless deferred."""
+
+        state_path = self._validated_success_state_path()
+        if state_path is None:
+            return
+        request = _WorkspaceSuccessRequest(
+            child_environment_applied=child_environment_applied,
+            defer_cleanup=defer_cleanup,
+            cancel_requested=cancel_requested,
+        )
+        match self.workspace_kind:
+            case "worktree":
+                self._mark_worktree_succeeded(request)
+            case "snapshot":
+                self._mark_snapshot_succeeded(request)
+            case "project_root":
+                raise RuntimeError(
+                    "Workspace success requires worktree capture metadata."
+                )
+            case _:
+                raise RuntimeError(
+                    f"Unsupported prepared workspace kind: {self.workspace_kind}."
+                )
+
+    def _validated_success_state_path(self) -> Path | None:
         if self.workspace_path is None or self.state_path is None:
             if self.workspace_kind != "project_root":
                 raise RuntimeError(
                     "Workspace success requires workspace and state paths."
                 )
-            return
+            return None
         if self.workspace_kind == "worktree" and self.worktree_capture is None:
             raise RuntimeError("Workspace success requires worktree capture metadata.")
         if self.workspace_state_payload is not None:
@@ -89,99 +121,50 @@ class PreparedWorkspace:
                 "Workspace process or worker drain is unresolved; result capture "
                 "and cleanup were fenced."
             )
-        if self.worktree_capture is not None:
-            if not self.lineage_producer:
-                self._mark_disposable_worktree_succeeded(
-                    child_environment_applied,
-                    defer_cleanup,
-                )
-                return
-            self._mark_lineage_worktree_succeeded(
-                child_environment_applied,
-                defer_cleanup,
-                cancel_requested,
-            )
+        return self.state_path
+
+    def _mark_worktree_succeeded(
+        self,
+        request: _WorkspaceSuccessRequest,
+    ) -> None:
+        if self.lineage_producer:
+            self._mark_lineage_worktree_succeeded(request)
             return
-        if self.workspace_kind == "snapshot":
-            self._mark_snapshot_succeeded(
-                child_environment_applied,
-                defer_cleanup,
-                cancel_requested,
-            )
-            return
-        raise RuntimeError("Workspace success requires worktree capture metadata.")
+        self._mark_disposable_worktree_succeeded(request)
 
     def _mark_snapshot_succeeded(
         self,
-        child_environment_applied: bool | None,
-        defer_cleanup: bool,
-        cancel_requested: Callable[[], bool] | None,
+        request: _WorkspaceSuccessRequest,
     ) -> None:
         workspace_path, state_path = self._require_success_workspace_paths(
             "Snapshot success"
         )
         if self.workspace_kind != "snapshot":
             raise RuntimeError("Snapshot success requires a snapshot workspace.")
-        diagnostics: list[dict[str, str]] = []
-        result: dict[str, object] = {"lineage_produced": False}
-        try:
-            current_entries = snapshot_entries(
-                workspace_path / "checkout",
-                WorkspaceSnapshotPolicy(
-                    cancel_requested=(
-                        cancel_requested or self.snapshot_cancel_requested
-                    ),
-                ),
-            )
-        except WorkspaceSnapshotLimitError as exc:
-            result["drift_scan_complete"] = False
-            result["drift_scan_limit_reason"] = str(exc)
-            diagnostics.append(
-                workspace_diagnostic(
-                    "warning",
-                    "Snapshot checkout changes were discarded; final drift is "
-                    f"unknown because reporting reached a limit: {exc}",
-                )
-            )
-        else:
-            summary = snapshot_drift_summary(
-                self.initial_snapshot_entries or {},
-                current_entries,
-            )
-            result.update(
-                {
-                    "drift_scan_complete": True,
-                    "snapshot_drift_discarded": bool(summary.changed_path_count),
-                    "changed_path_count": summary.changed_path_count,
-                    "changed_paths": list(summary.changed_paths),
-                    "changed_paths_truncated": summary.changed_paths_truncated,
-                }
-            )
-            if summary.changed_path_count:
-                diagnostics.append(
-                    workspace_diagnostic(
-                        "warning",
-                        "Snapshot checkout changes were discarded "
-                        f"({summary.changed_path_count} path(s)).",
-                    )
-                )
+        cancel_requested = request.cancel_requested
+        if cancel_requested is None:
+            cancel_requested = self.snapshot_cancel_requested
+        initial_entries = self.initial_snapshot_entries
+        if initial_entries is None:
+            initial_entries = {}
+        outcome = snapshot_success_outcome(
+            workspace_path / "checkout",
+            initial_entries,
+            WorkspaceSnapshotPolicy(cancel_requested=cancel_requested),
+        )
         self._publish_success_before_cleanup(
             state_path,
-            diagnostics,
-            result,
-            child_environment_applied,
-            defer_cleanup,
+            list(outcome.diagnostics),
+            outcome.result,
+            request,
         )
-        if self.cleanup_on_success and not defer_cleanup:
-            remove_workspace_path(workspace_path)
-            publish_workspace_cleanup_result(state_path, deleted=True)
+        self._complete_immediate_success_cleanup(request)
 
     def _mark_disposable_worktree_succeeded(
         self,
-        child_environment_applied: bool | None,
-        defer_cleanup: bool,
+        request: _WorkspaceSuccessRequest,
     ) -> None:
-        workspace_path, state_path = self._require_success_workspace_paths(
+        _, state_path = self._require_success_workspace_paths(
             "Disposable worktree success"
         )
         worktree_capture = self._require_worktree_capture("Disposable worktree success")
@@ -198,27 +181,21 @@ class PreparedWorkspace:
                 "final_head": summary.final_head,
                 "lineage_produced": False,
             },
-            child_environment_applied,
-            defer_cleanup,
+            request,
         )
-        if self.cleanup_on_success and not defer_cleanup:
-            remove_worktree_workspace(
-                worktree_capture.source, workspace_path, worktree_capture.git_dir
-            )
-            publish_workspace_cleanup_result(state_path, deleted=True)
+        self._complete_immediate_success_cleanup(request)
 
     def _publish_success_before_cleanup(
         self,
         state_path: Path,
         diagnostics: list[dict[str, str]],
         result: Mapping[str, object],
-        child_environment_applied: bool | None,
-        defer_cleanup: bool,
+        request: _WorkspaceSuccessRequest,
         refs: Mapping[str, object] | None = None,
         bundle: Mapping[str, object] | None = None,
     ) -> None:
         retained_reason = None
-        if self.cleanup_on_success and defer_cleanup:
+        if self.cleanup_on_success and request.defer_cleanup:
             retained_reason = "stage_finalization_pending"
         elif not self.cleanup_on_success:
             retained_reason = "cleanup_on_success_false"
@@ -230,42 +207,73 @@ class PreparedWorkspace:
             result=result,
             refs=refs,
             bundle=bundle,
-            child_environment_applied=child_environment_applied,
+            child_environment_applied=request.child_environment_applied,
             retained_reason=retained_reason,
         )
         self._refresh_workspace_state_payload(state_path)
 
+    def _complete_immediate_success_cleanup(
+        self,
+        request: _WorkspaceSuccessRequest,
+    ) -> None:
+        if not self.cleanup_on_success or request.defer_cleanup:
+            return
+        workspace_path, state_path = self._require_success_workspace_paths(
+            "Immediate success cleanup"
+        )
+        self._remove_success_workspace(workspace_path)
+        publish_workspace_cleanup_result(state_path, deleted=True)
+
     def _mark_lineage_worktree_succeeded(
         self,
-        child_environment_applied: bool | None,
-        defer_cleanup: bool,
-        cancel_requested: Callable[[], bool] | None,
+        request: _WorkspaceSuccessRequest,
     ) -> None:
-        worktree_capture = self._require_worktree_capture("Lineage success")
+        context = self._require_lineage_success_context()
+        result = self._capture_lineage_result(context, request.cancel_requested)
+        self._commit_lineage_success(context, result, request)
+
+    def _capture_lineage_result(
+        self,
+        context: _LineageSuccessContext,
+        cancel_requested: Callable[[], bool] | None,
+    ) -> WorktreeCaptureResult:
+        try:
+            return capture_worktree_result(context.capture, cancel_requested)
+        except Exception:
+            self._refresh_workspace_state_payload(context.state_path)
+            raise
+
+    def _commit_lineage_success(
+        self,
+        context: _LineageSuccessContext,
+        result: WorktreeCaptureResult,
+        request: _WorkspaceSuccessRequest,
+    ) -> None:
+        try:
+            self._finalize_lineage_success(context, result, request)
+        except Exception as exc:
+            cleanup_result_refs_after_failure(
+                context.capture,
+                exc,
+                request.cancel_requested,
+            )
+            self._refresh_workspace_state_payload(context.state_path)
+            raise
+
+    def _require_lineage_success_context(self) -> _LineageSuccessContext:
+        capture = self._require_worktree_capture("Lineage success")
         if self.workspace_kind != "worktree":
             raise RuntimeError("Lineage success requires a worktree workspace.")
         if not self.lineage_producer:
             raise RuntimeError("Lineage success requires a lineage workspace.")
-        try:
-            result = capture_worktree_result(worktree_capture, cancel_requested)
-        except Exception:
-            self._refresh_workspace_state_payload(worktree_capture.state_path)
-            raise
-        try:
-            self._record_lineage_success(
-                result,
-                child_environment_applied,
-                defer_cleanup,
-                cancel_requested,
-            )
-        except Exception as exc:
-            cleanup_result_refs_after_failure(
-                worktree_capture,
-                exc,
-                cancel_requested,
-            )
-            self._refresh_workspace_state_payload(worktree_capture.state_path)
-            raise
+        workspace_path, state_path = self._require_success_workspace_paths(
+            "Lineage success"
+        )
+        return _LineageSuccessContext(
+            workspace_path=workspace_path,
+            state_path=state_path,
+            capture=capture,
+        )
 
     def _require_success_workspace_paths(self, context: str) -> tuple[Path, Path]:
         if self.workspace_path is None or self.state_path is None:
@@ -278,67 +286,78 @@ class PreparedWorkspace:
         return self.worktree_capture
 
     def cleanup_after_success(self) -> None:
+        """Complete idempotent deferred cleanup for a successful workspace."""
+
+        cleanup_paths = self._success_cleanup_paths()
+        if cleanup_paths is None:
+            return
+        workspace_path, state_path = cleanup_paths
+        if self.reuse_cache is not None and self.reuse_cache.owns(workspace_path):
+            return
+        if self._success_cleanup_physically_removed:
+            self._verify_removed_workspace_still_absent(workspace_path)
+        else:
+            self._remove_success_workspace(workspace_path)
+            self._success_cleanup_physically_removed = True
+        publish_workspace_cleanup_result(state_path, deleted=True)
+
+    def _success_cleanup_paths(self) -> tuple[Path, Path] | None:
         if (
             self.workspace_path is None
             or self.state_path is None
             or not self.cleanup_on_success
         ):
+            return None
+        return self.workspace_path, self.state_path
+
+    def _verify_removed_workspace_still_absent(self, workspace_path: Path) -> None:
+        if workspace_path.exists() or workspace_path.is_symlink():
+            raise RuntimeError(
+                "Workspace path reappeared after successful cleanup; cleanup state "
+                "was retained."
+            )
+
+    def _remove_success_workspace(self, workspace_path: Path) -> None:
+        if self.worktree_capture is None:
+            remove_workspace_path(workspace_path)
             return
-        if self.reuse_cache is not None and self.reuse_cache.owns(self.workspace_path):
-            return
-        if self._success_cleanup_physically_removed:
-            if self.workspace_path.exists() or self.workspace_path.is_symlink():
-                raise RuntimeError(
-                    "Workspace path reappeared after successful cleanup; cleanup "
-                    "state was retained."
-                )
-        else:
-            if self.worktree_capture is not None:
-                remove_worktree_workspace(
-                    self.worktree_capture.source,
-                    self.workspace_path,
-                    self.worktree_capture.git_dir,
-                )
-            else:
-                remove_workspace_path(self.workspace_path)
-            self._success_cleanup_physically_removed = True
-        publish_workspace_cleanup_result(self.state_path, deleted=True)
+        remove_worktree_workspace(
+            self.worktree_capture.source,
+            workspace_path,
+            self.worktree_capture.git_dir,
+        )
 
     def _reusable_checkout(
         self,
-        source_commit: str,
-        source_tree: str,
+        context: _LineageSuccessContext,
+        result: WorktreeCaptureResult,
     ) -> ReusableWorktreeCheckout | None:
         if (
             not self.cleanup_on_success
             or self.reuse_cache is None
             or self.reuse_key is None
-            or self.workspace_path is None
-            or self.state_path is None
-            or self.worktree_capture is None
         ):
             return None
+        capture = context.capture
         return ReusableWorktreeCheckout(
-            node_id=self.worktree_capture.node_id,
+            node_id=capture.node_id,
             logical_worktree_name=self.reuse_key,
-            workspace_path=self.workspace_path,
-            checkout_root=self.worktree_capture.checkout_root,
+            workspace_path=context.workspace_path,
+            checkout_root=capture.checkout_root,
             cwd=self.cwd,
-            git_dir=self.worktree_capture.git_dir,
-            source_commit=source_commit,
-            source_tree=source_tree,
-            source=self.worktree_capture.source,
-            state_path=self.state_path,
+            git_dir=capture.git_dir,
+            source_commit=result.result_commit,
+            source_tree=result.result_tree,
+            source=capture.source,
+            state_path=context.state_path,
             cleanup_on_success=self.cleanup_on_success,
-            repository_id=self.worktree_capture.source.repository_id,
-            run_key_name=self.worktree_capture.plan.run_key_name,
-            reuse_generation=self._reuse_generation(),
+            repository_id=capture.source.repository_id,
+            run_key_name=capture.plan.run_key_name,
+            reuse_generation=self._reuse_generation(context.state_path),
         )
 
-    def _reuse_generation(self) -> int:
-        if self.state_path is None:
-            raise RuntimeError("Reusable workspace requires state evidence.")
-        workspace = read_workspace_state(self.state_path).get("workspace")
+    def _reuse_generation(self, state_path: Path) -> int:
+        workspace = read_workspace_state(state_path).get("workspace")
         generation = (
             workspace.get("reuse_generation") if isinstance(workspace, dict) else None
         )
@@ -346,63 +365,66 @@ class PreparedWorkspace:
             raise RuntimeError("Reusable workspace lacks a valid reuse generation.")
         return generation
 
-    def _record_lineage_success(
+    def _finalize_lineage_success(
         self,
+        context: _LineageSuccessContext,
         result: WorktreeCaptureResult,
-        child_environment_applied: bool | None,
-        defer_cleanup: bool,
-        cancel_requested: Callable[[], bool] | None,
+        request: _WorkspaceSuccessRequest,
     ) -> None:
-        if (
-            self.worktree_capture is None
-            or self.workspace_path is None
-            or self.state_path is None
-        ):
-            raise RuntimeError("Workspace lineage success requires capture metadata.")
-        cache_entry = self._reusable_checkout(result.result_commit, result.result_tree)
+        cache_entry = self._prepare_reusable_checkout(context, result, request)
+        self._publish_lineage_success(context, result, request)
+        self._finish_lineage_retention(context, cache_entry, request)
+
+    def _prepare_reusable_checkout(
+        self,
+        context: _LineageSuccessContext,
+        result: WorktreeCaptureResult,
+        request: _WorkspaceSuccessRequest,
+    ) -> ReusableWorktreeCheckout | None:
+        cache_entry = self._reusable_checkout(context, result)
         if cache_entry is not None:
             with git_metadata_lock(
-                Path(self.worktree_capture.source.common_git_dir),
-                cancel_requested,
+                Path(context.capture.source.common_git_dir),
+                request.cancel_requested,
             ):
                 advance_detached_head_for_reuse(
-                    self.worktree_capture.checkout_root,
-                    self.worktree_capture.source_ref.source_commit,
+                    context.capture.checkout_root,
+                    context.capture.source_ref.source_commit,
                     result.result_commit,
                 )
+        return cache_entry
+
+    def _publish_lineage_success(
+        self,
+        context: _LineageSuccessContext,
+        result: WorktreeCaptureResult,
+        request: _WorkspaceSuccessRequest,
+    ) -> None:
         self._publish_success_before_cleanup(
-            self.state_path,
+            context.state_path,
             [],
-            {
-                "candidate_commit": result.candidate_commit,
-                "result_commit": result.result_commit,
-                "candidate_tree": result.candidate_tree,
-                "result_tree": result.result_tree,
-                "changed_path_count": result.changed_path_count,
-                "empty_result": result.changed_path_count == 0,
-                "final_head": result.final_head,
-                "unreachable_provider_objects_scanned": False,
-            },
-            child_environment_applied,
-            defer_cleanup,
+            lineage_result_descriptor(result),
+            request,
             refs={"candidate": result.candidate_ref, "result": result.result_ref},
             bundle=bundle_descriptor(
-                self.worktree_capture.plan,
+                context.capture.plan,
                 result,
-                self.worktree_capture.state_path,
+                context.state_path,
             ),
         )
-        if not workspace_mutators_are_drained(self.state_path):
+
+    def _finish_lineage_retention(
+        self,
+        context: _LineageSuccessContext,
+        cache_entry: ReusableWorktreeCheckout | None,
+        request: _WorkspaceSuccessRequest,
+    ) -> None:
+        if not workspace_mutators_are_drained(context.state_path):
             return
-        if self.cleanup_on_success and not defer_cleanup:
-            remove_worktree_workspace(
-                self.worktree_capture.source,
-                self.workspace_path,
-                self.worktree_capture.git_dir,
-            )
-            publish_workspace_cleanup_result(self.state_path, deleted=True)
+        if self.cleanup_on_success and not request.defer_cleanup:
+            self._complete_immediate_success_cleanup(request)
         elif cache_entry is not None and self.reuse_cache is not None:
-            self.reuse_cache.store(cache_entry, cancel_requested)
+            self.reuse_cache.store(cache_entry, request.cancel_requested)
 
     def mark_failed(
         self,
@@ -459,7 +481,21 @@ class PreparedWorkspace:
             retained_reason=retention_reason,
         )
         self._refresh_workspace_state_payload(self.state_path)
-        if not cleanup_intended or not workspace_mutators_are_drained(self.state_path):
+        if not cleanup_intended:
+            return
+        self._cleanup_after_terminal_publication(
+            self.state_path,
+            retention_reason,
+            cancel_requested,
+        )
+
+    def _cleanup_after_terminal_publication(
+        self,
+        state_path: Path,
+        retention_reason: str,
+        cancel_requested: Callable[[], bool] | None,
+    ) -> None:
+        if not workspace_mutators_are_drained(state_path):
             return
         try:
             self._remove_failed_workspace(cancel_requested)
@@ -469,13 +505,13 @@ class PreparedWorkspace:
                 f"Workspace cleanup after terminal invocation state failed: {exc}",
             )
             publish_workspace_cleanup_result(
-                self.state_path,
+                state_path,
                 deleted=False,
                 retained_reason=f"{retention_reason}_cleanup_failed",
                 diagnostic=cleanup_diagnostic,
             )
             return
-        publish_workspace_cleanup_result(self.state_path, deleted=True)
+        publish_workspace_cleanup_result(state_path, deleted=True)
 
     def _refresh_workspace_state_payload(self, state_path: Path) -> None:
         if self.workspace_state_payload is None:

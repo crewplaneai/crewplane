@@ -74,6 +74,19 @@ def bundle_descriptor(
     }
 
 
+def lineage_result_descriptor(result: WorktreeCaptureResult) -> dict[str, object]:
+    return {
+        "candidate_commit": result.candidate_commit,
+        "result_commit": result.result_commit,
+        "candidate_tree": result.candidate_tree,
+        "result_tree": result.result_tree,
+        "changed_path_count": result.changed_path_count,
+        "empty_result": result.changed_path_count == 0,
+        "final_head": result.final_head,
+        "unreachable_provider_objects_scanned": False,
+    }
+
+
 def relative_bundle_path(
     plan: PreflightExecutionPlan,
     bundle_path: Path,

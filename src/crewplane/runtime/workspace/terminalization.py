@@ -14,6 +14,14 @@ from .state import (
 )
 
 TerminalWorkspaceStatus = Literal["succeeded", "failed", "cancelled"]
+WorkspaceDiagnosticLevel = Literal["error", "warning"]
+
+
+def workspace_diagnostic(
+    level: WorkspaceDiagnosticLevel,
+    message: str,
+) -> dict[str, str]:
+    return {"level": level, "message": message}
 
 
 def workspace_mutators_are_drained(state_path: Path) -> bool:

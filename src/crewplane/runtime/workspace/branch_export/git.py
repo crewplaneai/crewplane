@@ -43,6 +43,10 @@ class BranchExportOperationCompletedError(RuntimeError):
     pass
 
 
+class _BranchRefUpdateOutcomeAmbiguousError(RuntimeError):
+    pass
+
+
 class _SymbolicBranchRefError(RuntimeError):
     pass
 
@@ -60,45 +64,17 @@ def create_or_verify_branch_ref(
     try:
         with git_metadata_lock(Path(source.common_git_dir)):
             command = git(repo_root)
-            current_commit = branch_commit(command, branch_ref)
-            if current_commit is not None:
-                if allow_existing and current_commit == result_commit:
-                    completed_operation = "verified_existing"
-                else:
-                    raise RuntimeError(
-                        "Workspace branch export refuses to overwrite existing "
-                        f"branch '{branch_ref.removeprefix('refs/heads/')}'."
-                    )
-            elif not allow_create:
-                raise RuntimeError(
-                    "Workspace branch export destination branch disappeared before "
-                    "locked verification."
+            try:
+                completed_operation = _create_or_verify_locked_branch_ref(
+                    command,
+                    branch_ref,
+                    result_commit,
+                    allow_existing,
+                    allow_create,
                 )
-            else:
-                try:
-                    command.run(
-                        "update-ref",
-                        "--no-deref",
-                        branch_ref,
-                        result_commit,
-                        "",
-                    )
-                except subprocess.TimeoutExpired:
-                    operation_outcome_ambiguous = True
-                    raise
-                except subprocess.CalledProcessError as exc:
-                    raced_commit = branch_commit(command, branch_ref)
-                    if allow_existing and raced_commit == result_commit:
-                        completed_operation = "verified_existing"
-                    elif raced_commit is not None:
-                        raise RuntimeError(
-                            "Workspace branch export refuses to overwrite existing "
-                            f"branch '{branch_ref.removeprefix('refs/heads/')}'."
-                        ) from exc
-                    else:
-                        raise
-                else:
-                    completed_operation = "created"
+            except _BranchRefUpdateOutcomeAmbiguousError:
+                operation_outcome_ambiguous = True
+                raise
     except Exception as exc:
         if completed_operation is not None or operation_outcome_ambiguous:
             raise BranchExportOperationCompletedError(str(exc)) from exc
@@ -106,6 +82,58 @@ def create_or_verify_branch_ref(
     if completed_operation is None:
         raise RuntimeError("Workspace branch export operation did not complete.")
     return completed_operation
+
+
+def _create_or_verify_locked_branch_ref(
+    command: GitCommand,
+    branch_ref: str,
+    result_commit: str,
+    allow_existing: bool,
+    allow_create: bool,
+) -> BranchExportOperation:
+    current_commit = branch_commit(command, branch_ref)
+    if current_commit is not None:
+        if allow_existing and current_commit == result_commit:
+            return "verified_existing"
+        raise RuntimeError(_existing_branch_message(branch_ref))
+    if not allow_create:
+        raise RuntimeError(
+            "Workspace branch export destination branch disappeared before "
+            "locked verification."
+        )
+    return _create_missing_branch_ref(
+        command,
+        branch_ref,
+        result_commit,
+        allow_existing,
+    )
+
+
+def _create_missing_branch_ref(
+    command: GitCommand,
+    branch_ref: str,
+    result_commit: str,
+    allow_existing: bool,
+) -> BranchExportOperation:
+    try:
+        command.run("update-ref", "--no-deref", branch_ref, result_commit, "")
+    except subprocess.TimeoutExpired as exc:
+        raise _BranchRefUpdateOutcomeAmbiguousError(str(exc)) from exc
+    except subprocess.CalledProcessError as exc:
+        raced_commit = branch_commit(command, branch_ref)
+        if allow_existing and raced_commit == result_commit:
+            return "verified_existing"
+        if raced_commit is not None:
+            raise RuntimeError(_existing_branch_message(branch_ref)) from exc
+        raise
+    return "created"
+
+
+def _existing_branch_message(branch_ref: str) -> str:
+    return (
+        "Workspace branch export refuses to overwrite existing branch "
+        f"'{branch_ref.removeprefix('refs/heads/')}'."
+    )
 
 
 def branch_ref_exists(source: WorkspaceSourceSnapshot, branch_ref: str) -> bool:
@@ -134,8 +162,7 @@ def planned_branch_operation(
         return "verified_existing", None
     return (
         "failed_verification",
-        "Workspace branch export refuses to overwrite existing branch "
-        f"'{branch_ref.removeprefix('refs/heads/')}'.",
+        _existing_branch_message(branch_ref),
     )
 
 

@@ -10,6 +10,7 @@ from crewplane.runtime.workspace.branch_export.fulfillment import (
 )
 from crewplane.runtime.workspace.branch_export.reconciliation import (
     BranchExportReconciliation,
+    BranchExportRecordExpectation,
     ConflictingPreparedBranchExport,
     classify_branch_export_record,
 )
@@ -293,27 +294,19 @@ def _context(tmp_path: Path) -> _Context:
 
 
 def _classify(context: _Context) -> BranchExportReconciliation:
-    origin = "current_run"
-    if context.record_path.is_file() and not context.record_path.is_symlink():
-        try:
-            payload = json.loads(context.record_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-        else:
-            if isinstance(payload, dict):
-                origin = payload.get("operation_origin", origin)
     return classify_branch_export_record(
         context.record_path,
-        context.plan,
-        context.run_id,
-        context.run_key_name,
-        context.repository_id,
-        context.logical_worktree_name,
-        "feature/exported",
-        context.branch_ref,
-        context.checkpoint,
-        context.policy,
-        origin,
+        BranchExportRecordExpectation(
+            plan=context.plan,
+            run_id=context.run_id,
+            run_key_name=context.run_key_name,
+            repository_id=context.repository_id,
+            logical_worktree_name=context.logical_worktree_name,
+            branch_name="feature/exported",
+            branch_ref=context.branch_ref,
+            checkpoint=context.checkpoint,
+            policy=context.policy,
+        ),
     )
 
 
