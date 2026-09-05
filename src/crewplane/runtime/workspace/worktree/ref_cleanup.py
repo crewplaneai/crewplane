@@ -5,8 +5,11 @@ import shutil
 import stat
 import subprocess
 from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum, auto
 from os import scandir
 from pathlib import Path
+from typing import Never
 
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
@@ -21,6 +24,43 @@ from .ref_publication import reconcile_result_ref_publication
 from .temporary_refs import reconcile_temporary_import_refs
 
 WorkspaceRunRefCleanup = Callable[[str], int]
+
+
+class _RefCleanupEvidenceKind(Enum):
+    WORKSPACE_STATE = auto()
+    TEMPORARY_REFS = auto()
+
+
+@dataclass(frozen=True, slots=True)
+class _RefCleanupContext:
+    repo_root: Path
+    common_git_dir: Path
+    repository_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class _RefCleanupEvidence:
+    path: Path
+    kind: _RefCleanupEvidenceKind
+
+
+@dataclass(frozen=True, slots=True)
+class _RunDirectoryScan:
+    stage_paths: frozenset[Path]
+    evidence_paths: tuple[Path, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _TemporaryRefEvidence:
+    run_id: str
+    run_key_name: str
+    node_id: str
+    task_id: str
+    role: str
+    round_num: int
+    audit_round_num: object
+    repository_id: str
+    claims: tuple[object, ...]
 
 
 def workspace_ref_cleanup_for_project(
@@ -57,57 +97,86 @@ def delete_run_workspace_refs(
 ) -> int:
     if run_dir is None or not run_dir.is_dir() or run_dir.is_symlink():
         return 0
-    repository_id = _current_repository_id(
-        repo_root,
-        common_git_dir,
-        project_root,
-    )
-    evidence_paths: list[Path] = []
-    dedicated_paths: set[Path] = set()
-    for evidence_path in _ref_cleanup_evidence_paths(run_dir, run_key_name):
-        if not evidence_path.is_file() or evidence_path.is_symlink():
-            raise RuntimeError(
-                f"Workspace ref cleanup found unsafe evidence: {evidence_path}."
-            )
-        try:
-            payload = read_workspace_state(evidence_path)
-        except RuntimeError as exc:
-            raise RuntimeError(
-                f"Workspace ref cleanup found malformed evidence: {evidence_path}."
-            ) from exc
-        if payload.get("run_key_name") != run_key_name:
-            raise RuntimeError(
-                "Workspace ref cleanup found contradictory run evidence: "
-                f"{evidence_path}."
-            )
-        _require_ref_cleanup_repository_identity(
-            payload,
-            evidence_path,
-            repository_id,
-        )
-        if payload.get("evidence_kind") == "temporary_ref_cleanup":
-            _require_temporary_ref_cleanup_evidence(payload, evidence_path)
-            dedicated_paths.add(evidence_path)
-        else:
-            require_workspace_state_contract(payload, "ref_cleanup")
-            _require_drained_ref_cleanup_state(payload, evidence_path)
-        evidence_paths.append(evidence_path)
-    removed = 0
-    for evidence_path in evidence_paths:
-        if evidence_path not in dedicated_paths:
-            removed += reconcile_result_ref_publication(
-                evidence_path,
-                repo_root,
-                common_git_dir,
-            )
-        removed += reconcile_temporary_import_refs(
-            evidence_path,
+    context = _RefCleanupContext(
+        repo_root=repo_root,
+        common_git_dir=common_git_dir,
+        repository_id=_current_repository_id(
             repo_root,
             common_git_dir,
-            repository_id,
+            project_root,
+        ),
+    )
+    evidence = tuple(
+        _load_ref_cleanup_evidence(path, run_key_name, context.repository_id)
+        for path in _ref_cleanup_evidence_paths(run_dir, run_key_name)
+    )
+    return _reconcile_ref_cleanup_evidence(evidence, context)
+
+
+def _load_ref_cleanup_evidence(
+    evidence_path: Path,
+    run_key_name: str,
+    repository_id: str,
+) -> _RefCleanupEvidence:
+    if not evidence_path.is_file() or evidence_path.is_symlink():
+        raise RuntimeError(
+            f"Workspace ref cleanup found unsafe evidence: {evidence_path}."
         )
-        if evidence_path in dedicated_paths:
-            evidence_path.unlink()
+    payload = _read_ref_cleanup_evidence(evidence_path)
+    if payload.get("run_key_name") != run_key_name:
+        raise RuntimeError(
+            f"Workspace ref cleanup found contradictory run evidence: {evidence_path}."
+        )
+    _require_ref_cleanup_repository_identity(payload, evidence_path, repository_id)
+    if payload.get("evidence_kind") == "temporary_ref_cleanup":
+        _require_temporary_ref_cleanup_evidence(payload, evidence_path)
+        return _RefCleanupEvidence(
+            evidence_path,
+            _RefCleanupEvidenceKind.TEMPORARY_REFS,
+        )
+    require_workspace_state_contract(payload, "ref_cleanup")
+    _require_drained_ref_cleanup_state(payload, evidence_path)
+    return _RefCleanupEvidence(evidence_path, _RefCleanupEvidenceKind.WORKSPACE_STATE)
+
+
+def _read_ref_cleanup_evidence(evidence_path: Path) -> dict[str, object]:
+    try:
+        return read_workspace_state(evidence_path)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Workspace ref cleanup found malformed evidence: {evidence_path}."
+        ) from exc
+
+
+def _reconcile_ref_cleanup_evidence(
+    evidence: tuple[_RefCleanupEvidence, ...],
+    context: _RefCleanupContext,
+) -> int:
+    removed = 0
+    for record in evidence:
+        removed += _reconcile_ref_cleanup_record(record, context)
+    return removed
+
+
+def _reconcile_ref_cleanup_record(
+    evidence: _RefCleanupEvidence,
+    context: _RefCleanupContext,
+) -> int:
+    removed = 0
+    if evidence.kind is _RefCleanupEvidenceKind.WORKSPACE_STATE:
+        removed += reconcile_result_ref_publication(
+            evidence.path,
+            context.repo_root,
+            context.common_git_dir,
+        )
+    removed += reconcile_temporary_import_refs(
+        evidence.path,
+        context.repo_root,
+        context.common_git_dir,
+        context.repository_id,
+    )
+    if evidence.kind is _RefCleanupEvidenceKind.TEMPORARY_REFS:
+        evidence.path.unlink()
     return removed
 
 
@@ -115,39 +184,50 @@ def _ref_cleanup_evidence_paths(
     run_dir: Path,
     run_key_name: str,
 ) -> tuple[Path, ...]:
-    paths: list[Path] = []
-    stage_paths: set[Path] = set()
     try:
-        with scandir(run_dir) as entries:
-            stage_entries = tuple(entries)
-        for stage_entry in stage_entries:
-            if stage_entry.name in RESERVED_RUN_ROOT_NAMES:
-                if stage_entry.name == "logs":
-                    paths.extend(
-                        _run_log_temporary_ref_evidence(Path(stage_entry.path))
-                    )
-                continue
-            stage_path = Path(stage_entry.path)
-            if stage_entry.is_symlink():
-                raise RuntimeError(
-                    f"Workspace ref cleanup found unsafe evidence: {stage_path}."
-                )
-            if not stage_entry.is_dir(follow_symlinks=False):
-                continue
-            stage_paths.add(stage_path)
+        scan = _scan_run_directory(run_dir)
+        stage_paths = set(scan.stage_paths)
         stage_paths.update(_planned_stage_paths(run_dir, run_key_name))
-        for stage_path in sorted(stage_paths):
-            with scandir(stage_path) as entries:
-                paths.extend(
-                    Path(entry.path)
-                    for entry in entries
-                    if _is_ref_cleanup_evidence_name(entry.name)
-                )
+        paths = scan.evidence_paths + _stage_ref_cleanup_evidence_paths(stage_paths)
     except OSError as exc:
         raise RuntimeError(
             f"Workspace ref cleanup could not scan evidence beneath {run_dir}."
         ) from exc
     return tuple(sorted(paths))
+
+
+def _scan_run_directory(run_dir: Path) -> _RunDirectoryScan:
+    stage_paths: set[Path] = set()
+    evidence_paths: list[Path] = []
+    with scandir(run_dir) as entries:
+        stage_entries = tuple(entries)
+    for stage_entry in stage_entries:
+        if stage_entry.name in RESERVED_RUN_ROOT_NAMES:
+            if stage_entry.name == "logs":
+                evidence_paths.extend(
+                    _run_log_temporary_ref_evidence(Path(stage_entry.path))
+                )
+            continue
+        stage_path = Path(stage_entry.path)
+        if stage_entry.is_symlink():
+            raise RuntimeError(
+                f"Workspace ref cleanup found unsafe evidence: {stage_path}."
+            )
+        if stage_entry.is_dir(follow_symlinks=False):
+            stage_paths.add(stage_path)
+    return _RunDirectoryScan(frozenset(stage_paths), tuple(evidence_paths))
+
+
+def _stage_ref_cleanup_evidence_paths(stage_paths: set[Path]) -> tuple[Path, ...]:
+    evidence_paths: list[Path] = []
+    for stage_path in sorted(stage_paths):
+        with scandir(stage_path) as entries:
+            evidence_paths.extend(
+                Path(entry.path)
+                for entry in entries
+                if _is_ref_cleanup_evidence_name(entry.name)
+            )
+    return tuple(evidence_paths)
 
 
 def _run_log_temporary_ref_evidence(
@@ -172,33 +252,69 @@ def _run_log_temporary_ref_evidence(
 
 
 def _planned_stage_paths(run_dir: Path, run_key_name: str) -> tuple[Path, ...]:
+    plan_path = _cleanup_plan_path(run_dir)
+    if plan_path is None:
+        return ()
+    payload = _read_cleanup_plan(plan_path)
+    stage_path_values = _stage_path_values_from_plan(
+        payload,
+        plan_path,
+        run_key_name,
+    )
+    return _existing_planned_stage_paths(run_dir, stage_path_values)
+
+
+def _cleanup_plan_path(run_dir: Path) -> Path | None:
     preflight_path = run_dir / "preflight"
     plan_path = preflight_path / "execution-plan.json"
     try:
         preflight_mode = preflight_path.lstat().st_mode
         plan_stat = plan_path.lstat()
     except FileNotFoundError:
-        return ()
+        return None
     except OSError as exc:
         raise RuntimeError(
             f"Workspace ref cleanup could not read the plan beneath {run_dir}."
         ) from exc
-    if (
-        stat.S_ISLNK(preflight_mode)
-        or not stat.S_ISDIR(preflight_mode)
-        or stat.S_ISLNK(plan_stat.st_mode)
-        or not stat.S_ISREG(plan_stat.st_mode)
-        or plan_stat.st_nlink != 1
+    if not _safe_plan_evidence(
+        preflight_mode,
+        plan_stat.st_mode,
+        plan_stat.st_nlink,
     ):
         raise RuntimeError(
             f"Workspace ref cleanup found unsafe plan evidence: {plan_path}."
         )
+    return plan_path
+
+
+def _safe_plan_evidence(
+    preflight_mode: int,
+    plan_mode: int,
+    plan_link_count: int,
+) -> bool:
+    return not (
+        stat.S_ISLNK(preflight_mode)
+        or not stat.S_ISDIR(preflight_mode)
+        or stat.S_ISLNK(plan_mode)
+        or not stat.S_ISREG(plan_mode)
+        or plan_link_count != 1
+    )
+
+
+def _read_cleanup_plan(plan_path: Path) -> object:
     try:
-        payload = json.loads(plan_path.read_text(encoding="utf-8"))
+        return json.loads(plan_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise RuntimeError(
             f"Workspace ref cleanup found malformed plan evidence: {plan_path}."
         ) from exc
+
+
+def _stage_path_values_from_plan(
+    payload: object,
+    plan_path: Path,
+    run_key_name: str,
+) -> tuple[str, ...]:
     nodes = payload.get("nodes") if isinstance(payload, dict) else None
     if (
         not isinstance(payload, dict)
@@ -208,14 +324,25 @@ def _planned_stage_paths(run_dir: Path, run_key_name: str) -> tuple[Path, ...]:
         raise RuntimeError(
             f"Workspace ref cleanup found contradictory plan evidence: {plan_path}."
         )
+    return tuple(_stage_path_value(node, plan_path) for node in nodes)
+
+
+def _stage_path_value(node: object, plan_path: Path) -> str:
+    contract = node.get("artifact_contract") if isinstance(node, dict) else None
+    stage_path = contract.get("stage_path") if isinstance(contract, dict) else None
+    if not isinstance(stage_path, str) or not _safe_stage_path(stage_path):
+        raise RuntimeError(
+            f"Workspace ref cleanup found unsafe stage evidence: {plan_path}."
+        )
+    return stage_path
+
+
+def _existing_planned_stage_paths(
+    run_dir: Path,
+    stage_path_values: tuple[str, ...],
+) -> tuple[Path, ...]:
     stage_paths: list[Path] = []
-    for node in nodes:
-        contract = node.get("artifact_contract") if isinstance(node, dict) else None
-        stage_path = contract.get("stage_path") if isinstance(contract, dict) else None
-        if not isinstance(stage_path, str) or not _safe_stage_path(stage_path):
-            raise RuntimeError(
-                f"Workspace ref cleanup found unsafe stage evidence: {plan_path}."
-            )
+    for stage_path in stage_path_values:
         existing_path = _existing_planned_stage_path(run_dir, stage_path)
         if existing_path is not None:
             stage_paths.append(existing_path)
@@ -267,31 +394,58 @@ def _is_temporary_ref_evidence_name(name: str) -> bool:
 def _require_temporary_ref_cleanup_evidence(
     payload: dict[str, object], evidence_path: Path
 ) -> None:
-    git_payload = payload.get("git")
-    claims = payload.get("temporary_refs")
-    identity_fields = (
-        "run_id",
-        "run_key_name",
-        "node_id",
-        "task_id",
-        "role",
-    )
-    if (
-        any(not isinstance(payload.get(field), str) for field in identity_fields)
-        or not isinstance(payload.get("round_num"), int)
-        or not isinstance(git_payload, dict)
-        or not isinstance(git_payload.get("repo_id"), str)
-        or not isinstance(claims, list)
+    evidence = _temporary_ref_evidence(payload, evidence_path)
+    if any(
+        not _temporary_ref_claim_matches_owner(evidence, claim)
+        for claim in evidence.claims
     ):
         raise RuntimeError(
-            f"Workspace temporary ref cleanup evidence is invalid: {evidence_path}."
+            "Workspace temporary ref cleanup evidence is contradictory: "
+            f"{evidence_path}."
         )
-    for claim in claims:
-        if not _temporary_ref_claim_matches_owner(payload, git_payload, claim):
-            raise RuntimeError(
-                "Workspace temporary ref cleanup evidence is contradictory: "
-                f"{evidence_path}."
-            )
+
+
+def _temporary_ref_evidence(
+    payload: dict[str, object],
+    evidence_path: Path,
+) -> _TemporaryRefEvidence:
+    git_payload = payload.get("git")
+    claims = payload.get("temporary_refs")
+    round_num = payload.get("round_num")
+    if (
+        not isinstance(round_num, int)
+        or not isinstance(git_payload, dict)
+        or not isinstance(claims, list)
+    ):
+        _raise_invalid_temporary_ref_evidence(evidence_path)
+    return _TemporaryRefEvidence(
+        run_id=_temporary_ref_string(payload, "run_id", evidence_path),
+        run_key_name=_temporary_ref_string(payload, "run_key_name", evidence_path),
+        node_id=_temporary_ref_string(payload, "node_id", evidence_path),
+        task_id=_temporary_ref_string(payload, "task_id", evidence_path),
+        role=_temporary_ref_string(payload, "role", evidence_path),
+        round_num=round_num,
+        audit_round_num=payload.get("audit_round_num"),
+        repository_id=_temporary_ref_string(git_payload, "repo_id", evidence_path),
+        claims=tuple(claims),
+    )
+
+
+def _temporary_ref_string(
+    payload: dict[str, object],
+    field_name: str,
+    evidence_path: Path,
+) -> str:
+    value = payload.get(field_name)
+    if not isinstance(value, str):
+        _raise_invalid_temporary_ref_evidence(evidence_path)
+    return value
+
+
+def _raise_invalid_temporary_ref_evidence(evidence_path: Path) -> Never:
+    raise RuntimeError(
+        f"Workspace temporary ref cleanup evidence is invalid: {evidence_path}."
+    )
 
 
 def _require_ref_cleanup_repository_identity(
@@ -321,21 +475,20 @@ def _require_ref_cleanup_repository_identity(
 
 
 def _temporary_ref_claim_matches_owner(
-    payload: dict[str, object],
-    git_payload: dict[str, object],
+    evidence: _TemporaryRefEvidence,
     claim: object,
 ) -> bool:
     if not isinstance(claim, dict):
         return False
     return (
         claim.get("phase") in {"prepared", "removed"}
-        and claim.get("owner_run_id") == payload.get("run_id")
-        and claim.get("owner_node_id") == payload.get("node_id")
-        and claim.get("owner_task_id") == payload.get("task_id")
-        and claim.get("owner_role") == payload.get("role")
-        and claim.get("owner_round_num") == payload.get("round_num")
-        and claim.get("owner_audit_round_num") == payload.get("audit_round_num")
-        and claim.get("repository_id") == git_payload.get("repo_id")
+        and claim.get("owner_run_id") == evidence.run_id
+        and claim.get("owner_node_id") == evidence.node_id
+        and claim.get("owner_task_id") == evidence.task_id
+        and claim.get("owner_role") == evidence.role
+        and claim.get("owner_round_num") == evidence.round_num
+        and claim.get("owner_audit_round_num") == evidence.audit_round_num
+        and claim.get("repository_id") == evidence.repository_id
         and isinstance(claim.get("name"), str)
         and _is_object_id(claim.get("target_oid"))
     )

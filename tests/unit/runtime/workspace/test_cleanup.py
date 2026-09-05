@@ -258,6 +258,41 @@ def test_remove_worktree_workspace_unlinks_top_level_symlink_without_git_remove(
     assert external_checkout.as_posix() in _git(repo, "worktree", "list", "--porcelain")
 
 
+def test_remove_worktree_workspace_retains_then_removes_same_unsafe_path_by_mode(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = _git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=False,
+        kind="worktree",
+    )
+    source = plan.workspace_source
+    assert source is not None
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("keep\n", encoding="utf-8")
+    workspace_link = tmp_path / "workspace"
+    try:
+        workspace_link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Persisted workspace path is missing or unsafe; cleanup was retained",
+    ):
+        remove_worktree_workspace(source, workspace_link, repo / ".git")
+
+    assert workspace_link.is_symlink()
+    remove_worktree_workspace(source, workspace_link)
+    assert not workspace_link.is_symlink()
+    assert (outside / "keep.txt").read_text(encoding="utf-8") == "keep\n"
+
+
 def test_remove_worktree_workspace_does_not_git_remove_checkout_symlink(
     tmp_path: Path,
 ) -> None:

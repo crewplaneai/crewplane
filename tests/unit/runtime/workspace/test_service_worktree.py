@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -771,6 +772,40 @@ def test_worktree_capture_rejects_replaced_workspace_root_symlink(
     finally:
         remove_workspace_path(workspace_path)
         _remove_git_worktree_best_effort(repo, external_checkout)
+
+
+def test_worktree_capture_reports_unsafe_root_before_checkout_mismatch(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=False,
+        kind="worktree",
+    )
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+    prepared = prepare_invocation_workspace(
+        workspace_invocation_request(plan, output),
+        workspace_invocation_context(),
+    )
+    assert prepared.workspace_path is not None
+    assert prepared.worktree_capture is not None
+    source = plan.workspace_source
+    assert source is not None
+    invalid_request = replace(
+        prepared.worktree_capture,
+        workspace_path=tmp_path / "missing-workspace",
+        checkout_root=tmp_path / "unrelated-checkout",
+    )
+
+    with pytest.raises(RuntimeError, match="Workspace capture root is missing"):
+        workspace_worktree.capture_worktree_result(invalid_request)
+
+    remove_worktree_workspace(source, prepared.workspace_path)
 
 
 def test_worktree_capture_rejects_replaced_checkout_symlink(
