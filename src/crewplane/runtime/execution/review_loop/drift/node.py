@@ -37,6 +37,7 @@ class _NodeSnapshotBoundary:
     in_progress_generated_roots: set[Path]
     generated_version: int | None
     runtime_publications: dict[Path, tuple[int, str]]
+    runtime_publication_owners: dict[Path, str]
     runtime_version: int | None
 
 
@@ -79,10 +80,44 @@ def detect_node_drift(
         expected_publications,
         file_drift,
     )
+    drift = _suppress_foreign_protected_publications(
+        request,
+        merge_drift_results(file_drift, directory_drift),
+        after_snapshot,
+        boundary,
+    )
     return _promote_fatal_node_mutations(
         request,
         monitoring_window,
-        merge_drift_results(file_drift, directory_drift),
+        drift,
+    )
+
+
+def _suppress_foreign_protected_publications(
+    request: DriftGuardCallRequest,
+    drift: DriftCheckResult,
+    after_snapshot: dict[Path, tuple[int, str]],
+    boundary: _NodeSnapshotBoundary,
+) -> DriftCheckResult:
+    foreign_publications = {
+        path
+        for path in request.protected_paths
+        if (
+            boundary.runtime_publication_owners.get(path) is not None
+            and boundary.runtime_publication_owners[path]
+            != request.publication_owner_id
+            and after_snapshot.get(path) == boundary.runtime_publications.get(path)
+        )
+    }
+    if not foreign_publications:
+        return drift
+    return DriftCheckResult(
+        warning_paths=tuple(
+            path for path in drift.warning_paths if path not in foreign_publications
+        ),
+        fatal_paths=tuple(
+            path for path in drift.fatal_paths if path not in foreign_publications
+        ),
     )
 
 
@@ -292,14 +327,20 @@ def _node_snapshot_boundary(
         ) = allowance.snapshot()
     if runtime_publications is None:
         publications: dict[Path, tuple[int, str]] = {}
+        publication_owners: dict[Path, str] = {}
         runtime_version = None
     else:
-        publications, runtime_version = runtime_publications.snapshot()
+        (
+            publications,
+            publication_owners,
+            runtime_version,
+        ) = runtime_publications.snapshot_with_owners()
     return _NodeSnapshotBoundary(
         generated_publications=generated_publications,
         in_progress_generated_roots=in_progress_generated_roots,
         generated_version=generated_version,
         runtime_publications=publications,
+        runtime_publication_owners=publication_owners,
         runtime_version=runtime_version,
     )
 

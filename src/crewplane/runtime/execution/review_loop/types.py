@@ -215,6 +215,11 @@ class DriftGuardCallRequest:
     protected_paths: set[Path] = field(default_factory=set)
     runtime_owned_paths: set[Path] = field(default_factory=set)
     runtime_owned_roots: set[Path] = field(default_factory=set)
+    publication_owner_id: str = field(
+        default_factory=lambda: uuid.uuid4().hex,
+        repr=False,
+        compare=False,
+    )
 
     def allow_runtime_log_path(self, path: Path) -> None:
         self.allowed_paths.add(path)
