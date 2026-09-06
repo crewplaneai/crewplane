@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 from ..git import GitCommand, sanitized_git_env
 from ..locks import git_metadata_lock
+from .head import detach_attached_head_for_disposal
 
 _GIT_WORKTREE_CLEANUP_TIMEOUT_SECONDS = 30.0
 
@@ -27,6 +29,7 @@ def worktree_disk_usage(path: Path) -> int:
 def remove_unknown_workspace_path(
     path: Path,
     expected_common_git_dir: Path | None = None,
+    expected_worktree_git_dir: Path | None = None,
 ) -> None:
     if path.is_symlink():
         raise RuntimeError(f"Workspace cleanup path must not be a symlink: {path}")
@@ -35,7 +38,12 @@ def remove_unknown_workspace_path(
     if not path.is_dir():
         raise RuntimeError(f"Workspace cleanup path is not a directory: {path}")
     checkout_root = path / "checkout"
-    if _checkout_has_git_admin_entry(checkout_root):
+    has_git_admin_entry = _checkout_has_git_admin_entry(checkout_root)
+    if expected_worktree_git_dir is not None and not has_git_admin_entry:
+        raise RuntimeError(
+            "Workspace checkout Git directory does not match persisted identity."
+        )
+    if has_git_admin_entry:
         common_git_dir = _verified_common_git_dir(
             checkout_root,
             expected_common_git_dir,
@@ -47,14 +55,71 @@ def remove_unknown_workspace_path(
                 f"{checkout_root.as_posix()}"
             )
         with git_metadata_lock(common_git_dir):
-            if not _registered_worktree_path(common_git_dir, checkout_root):
-                raise RuntimeError(
-                    "Refusing to raw-delete Git-looking workspace checkout because "
-                    "it is not registered in the verified common Git directory: "
-                    f"{checkout_root.as_posix()}"
-                )
+            _verify_registered_worktree_cleanup_path_locked(
+                path,
+                common_git_dir,
+                expected_worktree_git_dir,
+            )
+            detach_attached_head_for_disposal(checkout_root)
             _remove_registered_worktree(common_git_dir, checkout_root)
     shutil.rmtree(path)
+
+
+def verify_registered_worktree_cleanup_path(
+    path: Path,
+    expected_common_git_dir: Path,
+    expected_git_dir: Path,
+) -> None:
+    common_git_dir = expected_common_git_dir.resolve(strict=False)
+    checkout_root = path / "checkout"
+    verified_common_git_dir = _verified_common_git_dir(
+        checkout_root,
+        common_git_dir,
+    )
+    if verified_common_git_dir != common_git_dir:
+        raise RuntimeError(
+            "Workspace checkout Git metadata does not match the expected repository."
+        )
+    with git_metadata_lock(common_git_dir):
+        _verify_registered_worktree_cleanup_path_locked(
+            path,
+            common_git_dir,
+            expected_git_dir,
+        )
+
+
+def _verify_registered_worktree_cleanup_path_locked(
+    path: Path,
+    expected_common_git_dir: Path,
+    expected_git_dir: Path | None,
+) -> None:
+    if path.is_symlink() or not path.is_dir():
+        raise RuntimeError("Workspace cleanup path is not a real directory.")
+    checkout_root = path / "checkout"
+    if checkout_root.is_symlink() or not checkout_root.is_dir():
+        raise RuntimeError("Workspace checkout is not a real directory.")
+    common_git_dir = _verified_common_git_dir(
+        checkout_root,
+        expected_common_git_dir,
+    )
+    if common_git_dir != expected_common_git_dir.resolve(strict=False):
+        raise RuntimeError(
+            "Workspace checkout Git metadata does not match the expected repository."
+        )
+    if expected_git_dir is not None:
+        git_file = _valid_git_file(checkout_root)
+        actual_git_dir = (
+            _gitdir_marker_target(git_file) if git_file is not None else None
+        )
+        if actual_git_dir != expected_git_dir.resolve(strict=False):
+            raise RuntimeError(
+                "Workspace checkout Git directory does not match persisted identity."
+            )
+    if not _registered_worktree_path(common_git_dir, checkout_root):
+        raise RuntimeError(
+            "Workspace checkout is not registered in the expected repository."
+        )
+    _verify_disposal_safe_head(checkout_root)
 
 
 def _checkout_has_git_admin_entry(checkout_root: Path) -> bool:
@@ -63,6 +128,28 @@ def _checkout_has_git_admin_entry(checkout_root: Path) -> bool:
         and not checkout_root.is_symlink()
         and _git_admin_entry_exists(checkout_root / ".git")
     )
+
+
+def _verify_disposal_safe_head(checkout_root: Path) -> None:
+    command = GitCommand(
+        cwd=checkout_root,
+        env=sanitized_git_env(),
+        timeout_seconds=_GIT_WORKTREE_CLEANUP_TIMEOUT_SECONDS,
+    )
+    head_oid = command.text("rev-parse", "HEAD^{commit}")
+    try:
+        branch_ref = command.text("symbolic-ref", "-q", "HEAD")
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 1:
+            return
+        raise
+    if not branch_ref.startswith("refs/heads/"):
+        raise RuntimeError("Workspace checkout HEAD has an unsafe symbolic target.")
+    branch_oid = command.text("rev-parse", f"{branch_ref}^{{commit}}")
+    if branch_oid != head_oid:
+        raise RuntimeError(
+            "Workspace checkout branch and HEAD identities are contradictory."
+        )
 
 
 def _git_admin_entry_exists(git_entry: Path) -> bool:
@@ -186,20 +273,86 @@ def _path_has_symlink_or_missing_component(path: Path, root: Path) -> bool:
 
 
 def _registered_worktree_path(common_git_dir: Path, checkout_root: Path) -> bool:
-    result = _common_git_command(common_git_dir).run(
-        "--git-dir",
-        common_git_dir.as_posix(),
-        "worktree",
-        "list",
-        "--porcelain",
-    )
-    records = result.stdout.decode("utf-8", errors="replace").splitlines()
     expected = checkout_root.resolve(strict=False)
-    return any(
-        record.startswith("worktree ")
-        and Path(record.removeprefix("worktree ")).resolve(strict=False) == expected
+    return expected in registered_worktree_paths(common_git_dir)
+
+
+def registered_worktree_paths(common_git_dir: Path) -> tuple[Path, ...]:
+    command = _common_git_command(common_git_dir)
+    try:
+        output = command.run(
+            "--git-dir",
+            common_git_dir.as_posix(),
+            "worktree",
+            "list",
+            "--porcelain",
+            "-z",
+        ).stdout
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode != 129:
+            raise
+        output = command.run(
+            "--git-dir",
+            common_git_dir.as_posix(),
+            "worktree",
+            "list",
+            "--porcelain",
+        ).stdout
+        return _fallback_worktree_paths(output)
+    return _nul_worktree_paths(output)
+
+
+def _nul_worktree_paths(output: bytes) -> tuple[Path, ...]:
+    try:
+        records = output.decode("utf-8").split("\0")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError("Git worktree records are not valid UTF-8.") from exc
+    paths = [
+        _nul_worktree_path(record.removeprefix("worktree "))
         for record in records
-    )
+        if record.startswith("worktree ")
+    ]
+    if not paths:
+        raise RuntimeError("Git worktree records contain no worktree paths.")
+    return tuple(path.resolve(strict=False) for path in paths)
+
+
+def _nul_worktree_path(value: str) -> Path:
+    if not value or any(
+        ord(character) < 32 or ord(character) == 127 for character in value
+    ):
+        raise RuntimeError("Git worktree path is malformed.")
+    return Path(value)
+
+
+def _fallback_worktree_paths(output: bytes) -> tuple[Path, ...]:
+    try:
+        text = output.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError("Git worktree records are not valid UTF-8.") from exc
+    if "\r" in text or "\x00" in text:
+        raise RuntimeError("Git worktree fallback records contain control bytes.")
+    records = [record for record in text.split("\n\n") if record]
+    paths: list[Path] = []
+    for record in records:
+        lines = record.splitlines()
+        if not lines or not lines[0].startswith("worktree "):
+            raise RuntimeError("Git worktree fallback record is malformed.")
+        paths.append(_strict_worktree_path(lines[0].removeprefix("worktree ")))
+    if not paths:
+        raise RuntimeError("Git worktree records contain no worktree paths.")
+    return tuple(path.resolve(strict=False) for path in paths)
+
+
+def _strict_worktree_path(value: str) -> Path:
+    if (
+        not value
+        or value.startswith('"')
+        or "\\" in value
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
+        raise RuntimeError("Git worktree path is quoted, escaped, or malformed.")
+    return Path(value)
 
 
 def _remove_registered_worktree(common_git_dir: Path, checkout_root: Path) -> None:

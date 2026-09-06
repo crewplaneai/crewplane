@@ -18,7 +18,14 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupRecord,
 )
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.runtime.agent.process import drain as process_drain
+from crewplane.runtime.agent.process.drain import ProcessDrainError
 from crewplane.runtime.workspace import setup as workspace_setup
+from crewplane.runtime.workspace.mutator_fence import (
+    fence_workspace_mutator,
+    release_workspace_mutator,
+    workspace_mutator_is_fenced,
+)
 from crewplane.runtime.workspace.setup import (
     WorkspaceSetupCancellation,
     WorkspaceSetupError,
@@ -284,11 +291,15 @@ def test_setup_cancellation_uses_plain_process_termination_without_posix_groups(
 
 def test_setup_cancellation_uses_process_group_signals(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     if not hasattr(signal, "SIGKILL"):
         pytest.skip("SIGKILL is unavailable on this platform")
     process = StubbornSetupProcess()
     cancellation = WorkspaceSetupCancellation()
+    state_path = tmp_path / "workspace-state.json"
+    state_path.write_text("{}", encoding="utf-8")
+    fence_workspace_mutator(state_path)
     signals: list[tuple[int, signal.Signals]] = []
     monkeypatch.setattr(
         workspace_setup,
@@ -296,18 +307,122 @@ def test_setup_cancellation_uses_process_group_signals(
         lambda: True,
     )
 
+    def signal_group(pgid: int, termination_signal: signal.Signals | int) -> None:
+        if termination_signal == 0:
+            if process.stopped:
+                raise ProcessLookupError
+            return
+        signals.append((pgid, cast(signal.Signals, termination_signal)))
+        if termination_signal == signal.SIGKILL:
+            process.stopped = True
+
+    monkeypatch.setattr(workspace_setup.os, "killpg", signal_group)
+
+    try:
+        assert (
+            cancellation.register_process(
+                cast(subprocess.Popen[str], process),
+                state_path,
+            )
+            is True
+        )
+        cancellation.cancel()
+
+        assert signals == [(123, signal.SIGTERM), (123, signal.SIGKILL)]
+        assert process.terminate_calls == 0
+        assert process.kill_calls == 0
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+        assert payload["process_drain"]["status"] == "confirmed"
+        assert not workspace_mutator_is_fenced(state_path)
+    finally:
+        release_workspace_mutator(state_path)
+
+
+def test_setup_permission_denial_records_unresolved_process_drain(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    process = StubbornSetupProcess()
+    cancellation = WorkspaceSetupCancellation()
+    state_path = tmp_path / "workspace-state.json"
+    state_path.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(
-        workspace_setup.os,
-        "killpg",
-        lambda pgid, termination_signal: signals.append((pgid, termination_signal)),
+        workspace_setup,
+        "supports_posix_process_groups",
+        lambda: True,
+    )
+    monkeypatch.setattr(process_drain, "PROCESS_GROUP_TERM_GRACE_SECONDS", 0.0)
+    monkeypatch.setattr(process_drain, "PROCESS_GROUP_KILL_GRACE_SECONDS", 0.0)
+
+    def deny_signal(process_group_id: int, termination_signal: int) -> None:
+        del process_group_id, termination_signal
+        raise PermissionError
+
+    monkeypatch.setattr(os, "killpg", deny_signal)
+
+    assert (
+        cancellation.register_process(
+            cast(subprocess.Popen[str], process),
+            state_path,
+        )
+        is True
+    )
+    with pytest.raises(ProcessDrainError):
+        cancellation.cancel()
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["process_drain"]["status"] == "unresolved"
+    assert workspace_mutator_is_fenced(state_path)
+    release_workspace_mutator(state_path)
+
+
+def test_setup_process_drain_write_failure_preserves_error_and_fence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    process = StubbornSetupProcess()
+    cancellation = WorkspaceSetupCancellation()
+    state_path = tmp_path / "workspace-state.json"
+    state_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        workspace_setup,
+        "supports_posix_process_groups",
+        lambda: True,
+    )
+    monkeypatch.setattr(process_drain, "PROCESS_GROUP_TERM_GRACE_SECONDS", 0.0)
+    monkeypatch.setattr(process_drain, "PROCESS_GROUP_KILL_GRACE_SECONDS", 0.0)
+
+    def deny_signal(process_group_id: int, termination_signal: int) -> None:
+        del process_group_id, termination_signal
+        raise PermissionError
+
+    def fail_process_drain_record(*args: object) -> None:
+        del args
+        raise OSError("transient state write failure")
+
+    monkeypatch.setattr(os, "killpg", deny_signal)
+    monkeypatch.setattr(
+        workspace_setup,
+        "record_workspace_process_drain",
+        fail_process_drain_record,
     )
 
-    assert cancellation.register_process(cast(subprocess.Popen[str], process)) is True
-    cancellation.cancel()
+    assert (
+        cancellation.register_process(
+            cast(subprocess.Popen[str], process),
+            state_path,
+        )
+        is True
+    )
+    with pytest.raises(ProcessDrainError) as exc_info:
+        cancellation.cancel()
 
-    assert signals == [(123, signal.SIGTERM), (123, signal.SIGKILL)]
-    assert process.terminate_calls == 0
-    assert process.kill_calls == 0
+    assert any(
+        "Workspace process-drain evidence persistence failed: " in note
+        for note in getattr(exc_info.value, "__notes__", ())
+    )
+    assert workspace_mutator_is_fenced(state_path)
+    release_workspace_mutator(state_path)
 
 
 class StubbornSetupProcess:
@@ -316,18 +431,20 @@ class StubbornSetupProcess:
     def __init__(self) -> None:
         self.terminate_calls = 0
         self.kill_calls = 0
+        self.stopped = False
 
-    def poll(self) -> None:
-        return None
+    def poll(self) -> int | None:
+        return -9 if self.stopped else None
 
     def terminate(self) -> None:
         self.terminate_calls += 1
 
     def kill(self) -> None:
         self.kill_calls += 1
+        self.stopped = True
 
     def wait(self, timeout: float | None = None) -> int:
-        if timeout is not None:
+        if timeout is not None and not self.stopped:
             raise subprocess.TimeoutExpired("setup", timeout)
         return -9
 

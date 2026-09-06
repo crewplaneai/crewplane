@@ -5,6 +5,10 @@ import unittest
 from threading import Event
 from unittest.mock import patch
 
+from crewplane.runtime.agent.process.drain import (
+    ProcessDrainError,
+    ProcessDrainEvidence,
+)
 from crewplane.runtime.agent.process.runner import (
     collect_process_output,
     reap_failed_process,
@@ -56,6 +60,21 @@ class _FailingLogHandle:
         return None
 
 
+class _BlockedFailingLogHandle:
+    def __init__(self) -> None:
+        self.write_started = Event()
+        self.release_write = Event()
+
+    def write(self, payload: bytes) -> int:  # noqa: ARG002 - Test double signature.
+        self.write_started.set()
+        if not self.release_write.wait(timeout=2.0):
+            raise TimeoutError("Test log write was not released.")
+        raise OSError("disk full after queue filled")
+
+    def flush(self) -> None:
+        return None
+
+
 class _SignallingStreamReader(asyncio.StreamReader):
     def __init__(self) -> None:
         super().__init__()
@@ -67,6 +86,8 @@ class _SignallingStreamReader(asyncio.StreamReader):
 
 
 class _ProcessDouble:
+    pid = 123
+
     def __init__(self) -> None:
         self.stdout = _SignallingStreamReader()
         self.stderr = _SignallingStreamReader()
@@ -99,9 +120,13 @@ class _ProcessDouble:
 
 
 class _AlreadyExitedOnTerminateProcessDouble:
+    pid = 123
     returncode: int | None = None
 
     def terminate(self) -> None:
+        raise ProcessLookupError
+
+    def kill(self) -> None:
         raise ProcessLookupError
 
 
@@ -228,7 +253,7 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(ticks, 5)
         self.assertGreaterEqual(len(log_handle.writes), 2)
 
-    async def test_collect_process_output_returns_when_exited_process_leaves_pipes_open(
+    async def test_collect_process_output_fails_when_exited_process_leaves_pipes_open(
         self,
     ) -> None:
         process = _ProcessDouble()
@@ -237,13 +262,12 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         process.stderr.feed_data(b"final stderr\n")
         process.exit_without_stream_eof()
 
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            collect_process_output(process, None, diagnostics.append),
-            timeout=1.0,
-        )
+        with self.assertRaises(ProcessDrainError):
+            await asyncio.wait_for(
+                collect_process_output(process, None, diagnostics.append),
+                timeout=2.0,
+            )
 
-        self.assertEqual(stdout_bytes, b"final stdout\n")
-        self.assertEqual(stderr_bytes, b"final stderr\n")
         self.assertEqual(len(diagnostics), 1)
         self.assertEqual(diagnostics[0].operation, "process_pipe_drain_timeout")
         self.assertTrue(diagnostics[0].attributes["stdout_pending"])
@@ -258,14 +282,13 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         process.stderr.feed_data(b"partial stderr\r")
         process.exit_without_stream_eof()
 
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            collect_process_output(process, log_handle),
-            timeout=1.0,
-        )
+        with self.assertRaises(ProcessDrainError):
+            await asyncio.wait_for(
+                collect_process_output(process, log_handle),
+                timeout=2.0,
+            )
 
         log_payload = b"".join(log_handle.writes)
-        self.assertEqual(stdout_bytes, b"partial stdout")
-        self.assertEqual(stderr_bytes, b"partial stderr\r")
         self.assertIn(b"partial stdout", log_payload)
         self.assertIn(b"[stderr] partial stderr\r", log_payload)
 
@@ -350,8 +373,40 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
             )
 
         await asyncio.wait_for(process.wait(), timeout=1.0)
-        self.assertEqual(process.returncode, -9)
-        self.assertEqual(process.kill_calls, 1)
+        self.assertEqual(process.returncode, -15)
+        self.assertEqual(process.kill_calls, 0)
+
+    async def test_log_writer_failure_does_not_block_on_full_queue_shutdown(
+        self,
+    ) -> None:
+        process = _ProcessDouble()
+        process.stdout.feed_data(b"line\n" * 1_000)
+        log_handle = _BlockedFailingLogHandle()
+        with patch(
+            "crewplane.runtime.agent.process.streams.LOG_QUEUE_MAX_ITEMS",
+            1,
+        ):
+            collector_task = asyncio.create_task(
+                collect_process_output(process, log_handle)
+            )
+            try:
+                self.assertTrue(
+                    await asyncio.to_thread(log_handle.write_started.wait, 1.0)
+                )
+                await asyncio.sleep(0)
+                log_handle.release_write.set()
+                with self.assertRaisesRegex(
+                    OSError,
+                    "disk full after queue filled",
+                ):
+                    await asyncio.wait_for(collector_task, timeout=1.0)
+            finally:
+                log_handle.release_write.set()
+                if not collector_task.done():
+                    collector_task.cancel()
+                    await asyncio.gather(collector_task, return_exceptions=True)
+
+        self.assertEqual(process.returncode, -15)
 
     async def test_collect_process_output_removes_capture_files_when_collection_fails(
         self,
@@ -378,7 +433,7 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
                 timeout=1.0,
             )
 
-        self.assertEqual(process.returncode, -9)
+        self.assertEqual(process.returncode, -15)
         self.assertGreaterEqual(len(created_paths), 2)
         self.assertTrue(all(not path.exists() for path in created_paths))
 
@@ -396,6 +451,40 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(process.returncode, -15)
         self.assertEqual(process.terminate_calls, 1)
         self.assertEqual(process.kill_calls, 0)
+
+    async def test_collect_process_output_preserves_cancellation_when_drain_fails(
+        self,
+    ) -> None:
+        process = _ProcessDouble()
+        drain_error = ProcessDrainError(
+            ProcessDrainEvidence(
+                pid=123,
+                process_group_id=123,
+                leader_stopped=False,
+                process_group_stopped=False,
+            ),
+            "provider drain remained unresolved",
+        )
+
+        async def fail_drain(*args: object, **kwargs: object) -> None:
+            del args, kwargs
+            raise drain_error
+
+        with patch(
+            "crewplane.runtime.agent.process.streams.reap_failed_process",
+            new=fail_drain,
+        ):
+            collector_task = asyncio.create_task(collect_process_output(process, None))
+            await asyncio.wait_for(process.stdout.read_started.wait(), timeout=1.0)
+            collector_task.cancel()
+
+            with self.assertRaises(asyncio.CancelledError) as caught:
+                await asyncio.wait_for(collector_task, timeout=1.0)
+
+        self.assertIn(
+            "provider drain remained unresolved",
+            getattr(caught.exception, "__notes__", ()),
+        )
 
     async def test_reap_failed_process_reports_process_already_exited_warning(
         self,

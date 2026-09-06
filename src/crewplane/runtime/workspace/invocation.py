@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import re
 from pathlib import Path
 
 from crewplane.architecture.contracts import NodeArtifactRequest
@@ -10,9 +8,12 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.workspace import invocation_identity as _invocation_identity
 
-MAX_INVOCATION_SLUG_CHARS = 160
-INVOCATION_SLUG_HASH_CHARS = 12
+MAX_INVOCATION_SLUG_CHARS = _invocation_identity.MAX_INVOCATION_SLUG_CHARS
+INVOCATION_SLUG_HASH_CHARS = _invocation_identity.INVOCATION_SLUG_HASH_CHARS
+invocation_slug = _invocation_identity.invocation_slug
+bounded_invocation_slug = _invocation_identity.bounded_invocation_slug
 
 
 def node_by_id(
@@ -39,37 +40,6 @@ def workspace_state_path(
     if len(node.provider_records) == 1 and audit_round_num is None and round_num == 1:
         return stage_dir / "workspace-state.json"
     return stage_dir / f"workspace-state-{slug}.json"
-
-
-def invocation_slug(
-    node_id: str,
-    task_id: str,
-    audit_round_num: int | None,
-    round_num: int,
-) -> str:
-    audit = f"audit{audit_round_num}-" if audit_round_num is not None else ""
-    raw_slug = f"{node_id}-{task_id}-{audit}round{round_num}"
-    return bounded_invocation_slug(raw_slug)
-
-
-def bounded_invocation_slug(value: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip(".-")
-    if not slug:
-        return _short_slug_hash(value)
-    if len(slug) <= MAX_INVOCATION_SLUG_CHARS:
-        return slug
-    suffix = f"--{_short_slug_hash(value)}"
-    available = MAX_INVOCATION_SLUG_CHARS - len(suffix)
-    prefix = slug[:available].rstrip(".-")
-    if not prefix:
-        prefix = "workspace"[:available]
-    return f"{prefix}{suffix}"
-
-
-def _short_slug_hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[
-        :INVOCATION_SLUG_HASH_CHARS
-    ]
 
 
 def workspace_cleanup_on_success(plan: PreflightExecutionPlan) -> bool:

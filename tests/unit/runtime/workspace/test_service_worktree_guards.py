@@ -11,6 +11,7 @@ from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
+    read_json_object,
     run_git_text,
     workspace_invocation_context,
     workspace_invocation_request,
@@ -92,7 +93,7 @@ def test_worktree_retry_reset_rejects_own_protected_ref_drift(
     remove_worktree_workspace(source, prepared.workspace_path)
 
 
-def test_worktree_retry_reset_rejects_sibling_protected_ref_drift(
+def test_worktree_retry_reset_ignores_sibling_runtime_ref_drift(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -120,14 +121,16 @@ def test_worktree_retry_reset_rejects_sibling_protected_ref_drift(
     run_git_text(prepared.cwd, "update-ref", sibling_ref, source.run_base_commit)
 
     try:
-        with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
-            prepared.invocation_context.retry_reset()
+        prepared.invocation_context.retry_reset()
+        assert run_git_text(prepared.cwd, "rev-parse", sibling_ref) == (
+            source.run_base_commit
+        )
     finally:
         run_git_text(prepared.cwd, "update-ref", "-d", sibling_ref)
         remove_worktree_workspace(source, prepared.workspace_path)
 
 
-def test_worktree_capture_rejects_sibling_protected_ref_drift(
+def test_worktree_capture_ignores_sibling_runtime_ref_drift(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -155,8 +158,17 @@ def test_worktree_capture_rejects_sibling_protected_ref_drift(
     run_git_text(prepared.cwd, "update-ref", sibling_ref, source.run_base_commit)
 
     try:
-        with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
-            prepared.mark_succeeded()
+        prepared.mark_succeeded()
+        assert prepared.state_path is not None
+        state = read_json_object(prepared.state_path)
+        assert state["status"] == "succeeded"
+        assert run_git_text(prepared.cwd, "rev-parse", sibling_ref) == (
+            source.run_base_commit
+        )
+        refs = state["refs"]
+        assert isinstance(refs, dict)
+        run_git_text(prepared.cwd, "update-ref", "-d", str(refs["candidate"]))
+        run_git_text(prepared.cwd, "update-ref", "-d", str(refs["result"]))
     finally:
         run_git_text(prepared.cwd, "update-ref", "-d", sibling_ref)
         remove_worktree_workspace(source, prepared.workspace_path)
@@ -333,10 +345,14 @@ def test_worktree_capture_rejects_branch_attachment_without_head_movement(
     run_git_text(prepared.cwd, "checkout", "-b", "provider-branch")
     (prepared.cwd / "result.txt").write_text("captured\n", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="detached from branches"):
+    branch_oid = run_git_text(prepared.cwd, "rev-parse", "provider-branch")
+
+    with pytest.raises(RuntimeError, match="must be disposed"):
         prepared.mark_succeeded()
 
     assert prepared.workspace_path.exists()
+    assert run_git_text(prepared.cwd, "branch", "--show-current") == ""
+    assert run_git_text(prepared.cwd, "rev-parse", "provider-branch") == branch_oid
     remove_worktree_workspace(source, prepared.workspace_path)
 
 

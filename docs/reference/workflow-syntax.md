@@ -12,7 +12,7 @@ with [Workflow Authoring](../guides/workflow-authoring.md).
 - [Multi-Provider Review Workflow](#multi-provider-review-workflow)
 - [Frontmatter Fields](#frontmatter-fields)
 - [Imports](#imports)
-- [Experimental Worktrees](#experimental-worktrees)
+- [Worktrees](#worktrees)
 - [Nodes](#nodes)
 - [Node Modes](#node-modes)
 - [Provider Objects](#provider-objects)
@@ -75,7 +75,7 @@ Review the project and report correctness, security, and regression risks.
 | `description` | Optional workflow description. |
 | `inputs` | Mapping of declared workflow input names to local input node IDs. |
 | `imports` | Markdown workflow imports. |
-| `worktrees` | Experimental logical workspace declarations. |
+| `worktrees` | Logical workspace declarations. |
 | `nodes` | Workflow node list. |
 
 ## Imports
@@ -93,7 +93,7 @@ root. Duplicate aliases fail. Unused `with` parameters fail so misspelled
 parameter names do not silently disappear.
 `inputs` keys and bound node IDs must be non-empty strings after trimming.
 
-## Experimental Worktrees
+## Worktrees
 
 Workflow-level `worktrees` are valid only when
 `settings.workspace.enabled: true`. They declare workflow-local logical source
@@ -147,7 +147,7 @@ for `kind: worktree`; `branch_name` requires `create_branch: true`.
 | `review_starts_with` | `executor` or `reviewer` for sequential executor/reviewer review loops. Defaults to `executor`. |
 | `failure_threshold` | Parallel-node failure threshold. Must be less than provider count. |
 | `token_budget` | Node token budget override. |
-| `worktree` | Experimental node worktree selector. Not valid for input nodes. |
+| `worktree` | Node worktree selector. Not valid for input nodes. |
 
 Node IDs must match `[a-z0-9._-]+`, cannot be `.` or `..`, and cannot use the
 reserved run-root names `logs`, `manifests`, `preflight`, or `workspace-exports`.
@@ -355,7 +355,7 @@ For reviewer-first review/fix nodes, put the review context in the prompt with
 explicit references such as multiple upstream `{{node.output}}` or
 `{{node.findings}}` values, metadata references like `{{node.output_sha256}}`,
 or `{{file:path}}`. A standalone project-root reviewer-first node can review
-visible project files with `{{file:...}}`; with Experimental managed
+visible project files with `{{file:...}}`; with managed
 workspaces, reviewer-first file references read the compiled Git source state
 selected by workspace policy rather than uncommitted manual edits.
 

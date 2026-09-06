@@ -12,7 +12,7 @@ longer need them.
 Start with a dry run so you can see exactly what would be deleted.
 
 For the workspace boundary and why cleanup only targets managed cache entries,
-see [Experimental workspace isolation](workspace-isolation.md).
+see [Workspace isolation](workspace-isolation.md).
 
 By default, cleanup is scoped to the current Git repository. Use `--all-projects`
 to clean every repository bucket under the configured workspace cache root.
@@ -63,9 +63,22 @@ Status filters are:
 - `--failed`
 - `--cancelled`
 
-`--orphans` selects cache paths that do not have workspace state. Crewplane
-removes an orphan only when it can confirm that the related run has ended and no
-provider process is active. Otherwise it keeps the path and explains why.
+`--orphans` selects cache folders that have no saved workspace record. A broken
+or conflicting record does not count as a missing record. Crewplane removes an
+orphan only when it can confirm that the related run has ended and no provider
+process is still active. Otherwise, it keeps the folder and explains why.
+
+Some workspaces can be reused during a run and therefore have more than one
+saved record. Before deleting one, Crewplane confirms that all of its records
+agree, the folder belongs to the expected repository, Git still recognizes the
+worktree, and removing it will not change a branch. If any check cannot be
+confirmed, Crewplane leaves the workspace in place.
+
+Cleanup can also remove internal Git references that Crewplane created for the
+run. It removes them only when they still point to the exact commits originally
+recorded. If a reference changed or Crewplane cannot confirm that it owns it,
+the reference is left untouched. Related workspace-result references are
+removed together so cleanup does not leave a partial result behind.
 
 `--all-projects` cannot be combined with `--orphans` or status filters because
 those filters require current-project workspace-state artifacts.

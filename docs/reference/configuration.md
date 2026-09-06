@@ -155,7 +155,7 @@ Pricing values are per million tokens.
 | `settings.max_parallel_invocations` | Optional cap on provider invocations inside a parallel node. |
 | `settings.file_access` | Core file-template authorization policy. |
 | `settings.token_budget` | Global token budget warning/failure thresholds. |
-| `settings.workspace` | Experimental workspace isolation settings. |
+| `settings.workspace` | Workspace isolation settings. |
 | `settings.integrations` | Adapter implementation and option settings. |
 
 ## `settings.file_access`
@@ -177,14 +177,14 @@ artifact adapter and participates in workflow signatures. The built-in
 
 ## `settings.workspace`
 
-Experimental workspace isolation is disabled by default. Missing
+Workspace isolation is disabled by default. Missing
 `settings.workspace` is equivalent to `settings.workspace.enabled: false`.
 When it is disabled, workflows must not declare `worktrees`, and provider nodes
 run from the project root. `settings.default_workspace` is not supported.
 
 | Field | Description |
 | --- | --- |
-| `settings.workspace.enabled` | Enables Experimental workspace materialization when workflows select worktrees. Defaults to `false`. |
+| `settings.workspace.enabled` | Enables Workspace materialization when workflows select worktrees. Defaults to `false`. |
 | `settings.workspace.cache_root` | Optional absolute workspace cache path when workspace isolation is enabled. If omitted, Crewplane uses the platform cache location. |
 | `settings.workspace.cleanup_on_success` | Delete successful workspace cache entries. Defaults to `true`. |
 | `settings.workspace.worktree_contract` | `blob_exact`, the initial fail-closed Git blob-byte contract. |

@@ -8,6 +8,7 @@ import pytest
 
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.service import MaterializationLimiter
+from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
@@ -92,3 +93,52 @@ def test_reused_worktree_setup_runs_after_reset_and_clean(
         if second.workspace_path is not None:
             second.mark_succeeded(defer_cleanup=True)
         reuse_cache.cleanup_all_best_effort()
+
+
+def test_reused_worktree_setup_failure_clears_the_cache_lease(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    cache_root = tmp_path / "cache"
+    plan = with_node_setup(
+        two_node_lineage_plan(repo, cache_root),
+        "verify",
+        [[sys.executable, "-c", "raise SystemExit(17)"]],
+    )
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+    output.create_node_dir(node_artifact_request("verify"))
+    reuse_cache = WorktreeReuseCache()
+    limiter = MaterializationLimiter.from_plan(plan)
+
+    first = prepare_invocation_workspace(
+        workspace_request(plan, output, "implement", reuse_cache, limiter),
+        workspace_invocation_context(),
+    )
+    assert first.workspace_path is not None
+    workspace_path = first.workspace_path
+    (first.cwd / "result.txt").write_text("captured\n", encoding="utf-8")
+    first.mark_succeeded(defer_cleanup=True)
+    first.cleanup_after_success()
+
+    with pytest.raises(WorkspaceSetupError):
+        prepare_invocation_workspace(
+            workspace_request(plan, output, "verify", reuse_cache, limiter),
+            workspace_invocation_context(),
+        )
+
+    first_state = read_json_object(
+        output.create_node_dir(node_artifact_request("implement"))
+        / "workspace-state.json"
+    )
+    second_state = read_json_object(
+        output.create_node_dir(node_artifact_request("verify")) / "workspace-state.json"
+    )
+    assert second_state["status"] == "failed"
+    assert second_state["workspace"]["retention"] == "deleted"
+    assert first_state["workspace"]["retention"] == "deleted"
+    assert not workspace_path.exists()
+    assert not reuse_cache.owns(workspace_path)
+    assert reuse_cache.cleanup_all().errors == ()

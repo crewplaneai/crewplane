@@ -1,6 +1,6 @@
-# Experimental Workspace Isolation
+# Workspace Isolation
 
-> ⚠️ **Note:** Workspace isolation is an experimental, opt-in Git-backed source-tree isolation feature. It is not sandboxing and is not a security boundary.
+> ⚠️ **Note:** Workspace isolation is an opt-in Git-backed source-tree isolation feature. It is not sandboxing and is not a security boundary.
 
 ***This guide is optional in the tutorial track.*** Use the default project-root
 execution model unless provider edits should happen in managed Git-backed
@@ -157,7 +157,7 @@ The initial implementation uses the `blob_exact` contract. Provider-visible file
 bytes must match Git blob bytes exactly, so repositories with features that can
 rewrite bytes fail before provider invocation.
 
-| Repository feature | Experimental workspace support | Remediation |
+| Repository feature | workspace support | Remediation |
 | --- | --- | --- |
 | Clean ordinary Git repository | Yes | Use `settings.workspace.enabled: true` with workflow `worktrees` |
 | Non-Git project | No | Set `settings.workspace.enabled: false` |
@@ -240,9 +240,13 @@ stage directory:
 - `workspace-state*.json`
 - Git bundles under `workspace-bundles/`
 
-Snapshots are disposable. If a snapshot node writes source-looking files,
-Crewplane records drift diagnostics and discards those changes according to the
-cleanup policy.
+Snapshots are temporary. Crewplane records which source files a provider
+changed, then discards those changes instead of adding them to the source
+history. A node can still succeed if there are too many changes to summarize,
+the changes are too large, or the check takes too long. In that case, Crewplane
+reports that it could not determine the full set of changes. It still fails if
+it encounters an unsafe file, a file changes while being checked, or the run is
+cancelled.
 
 Workspace state snapshots accept only directories, regular files, and
 symlinks. FIFOs, sockets, devices, disappearing entries, and type changes fail
@@ -257,10 +261,14 @@ crewplane cleanup workspaces --dry-run
 crewplane cleanup workspaces --yes
 ```
 
-Cleanup removes eligible managed cache directories, worktree registrations,
-reviewer workspaces, temporary indexes, and run-owned cached refs. It does not
-remove canonical lineage artifacts, provider outputs, findings, manifests, or
-final result artifacts under `.crewplane/`.
+Cleanup removes managed cache folders only after it confirms that the run has
+ended, no related process is active, and the saved records agree. Otherwise, it
+leaves the workspace in place and explains why. Cleanup also removes temporary
+Git data only when it still matches the exact data Crewplane originally
+recorded; changed or unrelated Git data is left untouched. Saved run history
+and results under `.crewplane/` are never removed, including source history,
+bundles, provider output, findings, manifests, branch export records, and final
+results.
 
 ## Next
 

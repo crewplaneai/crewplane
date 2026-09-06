@@ -13,6 +13,31 @@ from crewplane.core.workspace.policy import (
     WorktreeKind,
 )
 
+_REDACTED_TOKEN_FIELDS = {"fingerprint", "redacted", "value_handle"}
+
+
+def _validate_setup_command_token(token: str | JsonObject) -> None:
+    if isinstance(token, str):
+        _validate_setup_command_text_token(token)
+        return
+    _validate_setup_command_redacted_token(token)
+
+
+def _validate_setup_command_text_token(token: str) -> None:
+    if not token.strip():
+        raise ValueError("workspace setup command argv cannot contain blank tokens")
+
+
+def _validate_setup_command_redacted_token(token: JsonObject) -> None:
+    if (
+        token.get("redacted") is not True
+        or not isinstance(token.get("value_handle"), str)
+        or set(token) - _REDACTED_TOKEN_FIELDS
+    ):
+        raise ValueError(
+            "workspace setup command argv contains an invalid redacted token"
+        )
+
 
 class WorkspaceSetupCommandRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -29,20 +54,7 @@ class WorkspaceSetupCommandRecord(BaseModel):
         if not value:
             raise ValueError("workspace setup command argv cannot be empty")
         for token in value:
-            if isinstance(token, str):
-                if not token.strip():
-                    raise ValueError(
-                        "workspace setup command argv cannot contain blank tokens"
-                    )
-                continue
-            if (
-                token.get("redacted") is not True
-                or not isinstance(token.get("value_handle"), str)
-                or set(token) - {"fingerprint", "redacted", "value_handle"}
-            ):
-                raise ValueError(
-                    "workspace setup command argv contains an invalid redacted token"
-                )
+            _validate_setup_command_token(token)
         return value
 
 
@@ -50,23 +62,20 @@ class WorkspaceSetupRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     profile_name: str
-    commands: list[WorkspaceSetupCommandRecord] = Field(default_factory=list)
+    commands: list[WorkspaceSetupCommandRecord] = Field(
+        default_factory=list,
+        validate_default=True,
+    )
 
     @field_validator("commands")
     @classmethod
-    def _validate_commands(
+    def _require_commands(
         cls,
         value: list[WorkspaceSetupCommandRecord],
     ) -> list[WorkspaceSetupCommandRecord]:
         if not value:
             raise ValueError("workspace setup record must contain commands")
         return value
-
-    @model_validator(mode="after")
-    def _validate_record_has_commands(self) -> Self:
-        if not self.commands:
-            raise ValueError("workspace setup record must contain commands")
-        return self
 
 
 class WorkspaceBranchExportRecord(BaseModel):
@@ -93,6 +102,55 @@ class WorkspaceSelectionRecord(BaseModel):
     )
     writable: bool = False
     lineage_producer: bool = False
+
+    @model_validator(mode="after")
+    def _validate_workspace_contract(self) -> Self:
+        if not self.enabled:
+            _validate_disabled_workspace_selection(self)
+            return self
+        _validate_enabled_workspace_declaration(self)
+        _validate_enabled_workspace_source(self)
+        _validate_workspace_declaration_kind(self)
+        if not self.writable:
+            raise ValueError("managed workspace selection must be writable")
+        _validate_workspace_lineage(self)
+        return self
+
+
+def _validate_disabled_workspace_selection(selection: WorkspaceSelectionRecord) -> None:
+    if selection.materialization != "project_root":
+        raise ValueError("disabled workspace selection must use project_root")
+
+
+def _validate_enabled_workspace_declaration(
+    selection: WorkspaceSelectionRecord,
+) -> None:
+    if selection.logical_worktree_name is None or selection.declaration_kind is None:
+        raise ValueError("enabled workspace selection requires a declaration")
+
+
+def _validate_enabled_workspace_source(selection: WorkspaceSelectionRecord) -> None:
+    if selection.source_kind == "node" and selection.source_node_id is None:
+        raise ValueError("node workspace source requires source_node_id")
+    if selection.source_kind != "node" and selection.source_node_id is not None:
+        raise ValueError("only node workspace sources may name source_node_id")
+
+
+def _validate_workspace_declaration_kind(
+    selection: WorkspaceSelectionRecord,
+) -> None:
+    expected_materialization = (
+        "snapshot_checkout"
+        if selection.declaration_kind == "snapshot"
+        else "worktree_checkout"
+    )
+    if selection.materialization != expected_materialization:
+        raise ValueError("workspace kind and materialization are inconsistent")
+
+
+def _validate_workspace_lineage(selection: WorkspaceSelectionRecord) -> None:
+    if selection.declaration_kind == "snapshot" and selection.lineage_producer:
+        raise ValueError("snapshot workspace cannot produce lineage")
 
 
 class WorkspaceSourceSnapshot(BaseModel):

@@ -385,10 +385,14 @@ def _workspace_state_resume_origin(
     execution = state.get("execution")
     if isinstance(execution, Mapping):
         origin["source_execution"] = _json_object(execution)
+    source_resume_origin = state.get("resume_origin")
+    if isinstance(source_resume_origin, Mapping):
+        origin["source_resume_origin"] = _json_object(source_resume_origin)
     return origin
 
 
 def _scrub_workspace_state_placement(state: dict[str, object]) -> None:
+    _reject_unresolved_source_workspace_claims(state)
     workspace = state.get("workspace")
     if isinstance(workspace, dict):
         workspace["path"] = None
@@ -404,6 +408,21 @@ def _scrub_workspace_state_placement(state: dict[str, object]) -> None:
         execution["workspace_path"] = None
         execution["checkout_root"] = None
         execution["effective_cwd"] = None
+        execution["worktree_git_dir"] = None
+    state.pop("temporary_refs", None)
+    state.pop("ref_publication", None)
+
+
+def _reject_unresolved_source_workspace_claims(state: dict[str, object]) -> None:
+    temporary_refs = state.get("temporary_refs")
+    if isinstance(temporary_refs, list) and any(
+        isinstance(claim, dict) and claim.get("phase") != "removed"
+        for claim in temporary_refs
+    ):
+        raise ValueError("Workspace state has unresolved source temporary refs.")
+    publication = state.get("ref_publication")
+    if isinstance(publication, dict) and publication.get("phase") == "prepared":
+        raise ValueError("Workspace state has unresolved source ref publication.")
 
 
 def _json_object(value: Mapping[str, object]) -> JsonObject:

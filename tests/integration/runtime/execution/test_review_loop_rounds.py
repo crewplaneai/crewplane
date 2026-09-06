@@ -578,6 +578,7 @@ def test_reviewer_normalization_rejects_substituted_publication_source(
 
 def test_peer_canonical_precreation_is_fatal_before_round_publication(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output = OutputManager("workflow", base_dir=tmp_path)
     node = _node()
@@ -642,6 +643,24 @@ def test_peer_canonical_precreation_is_fatal_before_round_publication(
         major="The candidate is unsafe.",
     )
     blocker_output_written = asyncio.Event()
+    peer_output_written = asyncio.Event()
+    blocker_guard_finished = asyncio.Event()
+    original_run_with_drift_guard = (
+        review_loop_reviewer_round.run_provider_call_with_drift_guard
+    )
+
+    async def record_blocker_guard_finished(request):  # type: ignore[no-untyped-def]
+        try:
+            return await original_run_with_drift_guard(request)
+        finally:
+            if request.task_id == "blocker_reviewer_0":
+                blocker_guard_finished.set()
+
+    monkeypatch.setattr(
+        review_loop_reviewer_round,
+        "run_provider_call_with_drift_guard",
+        record_blocker_guard_finished,
+    )
 
     class PeerPrecreatingInvoker:
         def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
@@ -667,10 +686,12 @@ def test_peer_canonical_precreation_is_fatal_before_round_publication(
                     file_size_and_sha256(peer_path),
                 )
                 output_file.write_text(review_output(), encoding="utf-8")
+                peer_output_written.set()
+                await asyncio.wait_for(blocker_guard_finished.wait(), timeout=1.0)
                 return
             output_file.write_text(blocking_output, encoding="utf-8")
             blocker_output_written.set()
-            await asyncio.sleep(0.02)
+            await asyncio.wait_for(peer_output_written.wait(), timeout=1.0)
 
     request = ReviewerRoundRequest(
         runtime_context=runtime_context,

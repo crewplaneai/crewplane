@@ -69,12 +69,12 @@ See [composition examples](composition.md).
 crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md
 ```
 
-## Experimental Workspace
+## Workspace
 
 - [workspace-alternatives-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md)
 - [workspace-inherited-worktree-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md)
 
-See [Experimental workspace examples](workspace.md).
+See [Workspace examples](workspace.md).
 
 ```bash
 crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-alternatives-example.task.md

@@ -10,6 +10,7 @@ from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,
+    read_json_object,
     run_git_text,
     workspace_invocation_context,
     workspace_invocation_request,
@@ -126,7 +127,7 @@ def test_worktree_capture_rejects_common_object_behavior_drift(
         remove_worktree_workspace(source, prepared.workspace_path)
 
 
-def test_worktree_capture_rejects_sibling_result_ref_updates(
+def test_worktree_capture_allows_sibling_result_ref_updates(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -156,8 +157,13 @@ def test_worktree_capture_rejects_sibling_result_ref_updates(
     run_git_text(prepared.cwd, "update-ref", sibling_ref, source.run_base_commit)
 
     try:
-        with pytest.raises(RuntimeError, match="protected crewplane Git refs"):
-            prepared.mark_succeeded()
+        prepared.mark_succeeded()
+        assert prepared.state_path is not None
+        state = read_json_object(prepared.state_path)
+        refs = state["refs"]
+        assert isinstance(refs, dict)
+        run_git_text(prepared.cwd, "update-ref", "-d", str(refs["candidate"]))
+        run_git_text(prepared.cwd, "update-ref", "-d", str(refs["result"]))
     finally:
         run_git_text(prepared.cwd, "update-ref", "-d", sibling_ref)
         remove_worktree_workspace(source, prepared.workspace_path)

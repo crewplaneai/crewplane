@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from typing import TypeIs
 
+from crewplane.artifacts.workspace.state.contracts import (
+    require_workspace_state_contract,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -16,6 +19,7 @@ def load_source_ref_from_state(path: Path) -> WorktreeSourceRef:
         raise RuntimeError(
             f"Workspace lineage source is not a succeeded state: {path.as_posix()}"
         )
+    require_workspace_state_contract(payload, "resume")
     workspace = payload.get("workspace")
     if (
         not isinstance(workspace, dict)
@@ -51,6 +55,7 @@ def load_source_ref_from_state(path: Path) -> WorktreeSourceRef:
         bundle_size_bytes=bundle_size_bytes,
         bundle_ref=bundle_ref,
         upstream_sources=_upstream_sources(path, payload),
+        state_path=path,
     )
 
 
@@ -66,6 +71,19 @@ def bundle_descriptor(
         "sha256": result.bundle_sha256,
         "size_bytes": result.bundle_size_bytes,
         "verified": True,
+    }
+
+
+def lineage_result_descriptor(result: WorktreeCaptureResult) -> dict[str, object]:
+    return {
+        "candidate_commit": result.candidate_commit,
+        "result_commit": result.result_commit,
+        "candidate_tree": result.candidate_tree,
+        "result_tree": result.result_tree,
+        "changed_path_count": result.changed_path_count,
+        "empty_result": result.changed_path_count == 0,
+        "final_head": result.final_head,
+        "unreachable_provider_objects_scanned": False,
     }
 
 
@@ -151,6 +169,7 @@ def _source_ref_from_payload(
         bundle_size_bytes=_int(payload.get("bundle_size_bytes")),
         bundle_ref=_string(payload.get("bundle_ref")),
         upstream_sources=_nested_upstream_sources(state_path, payload),
+        state_path=state_path,
     )
 
 

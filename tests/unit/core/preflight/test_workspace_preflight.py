@@ -3,7 +3,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from crewplane.core.preflight.models import WorkspaceSelectionRecord
+from crewplane.core.preflight.models import (
+    WorkspaceSelectionRecord,
+    WorkspaceSetupCommandRecord,
+    WorkspaceSetupRecord,
+)
 from tests.helpers.workspace_preflight import (
     compile_with_source_snapshot,
     compile_workflow_with_source_snapshot,
@@ -80,6 +84,59 @@ def test_workspace_selection_record_rejects_invalid_literal_values(
 
     with pytest.raises(ValidationError):
         WorkspaceSelectionRecord.model_validate(payload)
+
+
+def test_workspace_setup_command_reports_first_invalid_token() -> None:
+    with pytest.raises(ValidationError) as caught:
+        WorkspaceSetupCommandRecord.model_validate(
+            {
+                "argv": [
+                    " ",
+                    {"redacted": False, "value_handle": 1, "unexpected": True},
+                ],
+                "command_index": 0,
+            }
+        )
+
+    assert caught.value.errors()[0]["msg"] == (
+        "Value error, workspace setup command argv cannot contain blank tokens"
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"profile_name": "bootstrap"},
+        {"profile_name": "bootstrap", "commands": []},
+    ),
+)
+def test_workspace_setup_record_requires_commands(payload: dict[str, object]) -> None:
+    with pytest.raises(ValidationError) as caught:
+        WorkspaceSetupRecord.model_validate(payload)
+
+    error = caught.value.errors()[0]
+    assert error["loc"] == ("commands",)
+    assert error["msg"] == "Value error, workspace setup record must contain commands"
+
+
+def test_workspace_selection_reports_declaration_error_first() -> None:
+    with pytest.raises(ValidationError) as caught:
+        WorkspaceSelectionRecord.model_validate(
+            {
+                "enabled": True,
+                "logical_worktree_name": "primary",
+                "declaration_kind": None,
+                "source_kind": "node",
+                "source_node_id": None,
+                "materialization": "project_root",
+                "writable": False,
+                "lineage_producer": True,
+            }
+        )
+
+    assert caught.value.errors()[0]["msg"] == (
+        "Value error, enabled workspace selection requires a declaration"
+    )
 
 
 def test_workspace_source_identity_changes_workflow_signature(

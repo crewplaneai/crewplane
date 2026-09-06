@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Mapping
 
 from crewplane.architecture.safe_files import contained_regular_file
@@ -16,11 +17,12 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.version import SCHEMA_VERSION
 
 from ...run_history import RunHistoryRecord
-from ..bundle_validation import workspace_bundle_contains_result_tree
+from ..chain_validation import verify_persisted_workspace_result_chain
 from ..rendered_file_validation import (
     provider_rendered_workspace_files_match,
 )
 from ..source_validation import workspace_invocation_source_matches
+from .contracts import workspace_state_contract_is_valid
 from .expected_set import workspace_state_payloads_match_expected_set
 from .fields import (
     bool_field_matches as _bool_field_matches,
@@ -182,7 +184,10 @@ def _provider_workspace_state_is_valid(
     payload: dict[str, object],
 ) -> bool:
     policy = node.workspace_policy
-    if policy is None:
+    if policy is None or not workspace_state_contract_is_valid(
+        payload,
+        "duplicate_skip",
+    ):
         return False
     if not (
         _workspace_state_header_matches(source, plan, node, payload)
@@ -226,7 +231,7 @@ def _failed_provider_workspace_state_is_valid(
     payload: dict[str, object],
 ) -> bool:
     policy = node.workspace_policy
-    if policy is None:
+    if policy is None or not workspace_state_contract_is_valid(payload, "cleanup"):
         return False
     workspace = _mapping(payload.get("workspace"))
     return (
@@ -278,6 +283,23 @@ def _workspace_result_matches(payload: dict[str, object]) -> bool:
 
 def _snapshot_result_matches(payload: dict[str, object]) -> bool:
     result = _mapping(payload.get("result"))
+    if result.get("drift_scan_complete") is False:
+        return (
+            result.get("lineage_produced") is False
+            and isinstance(result.get("drift_scan_limit_reason"), str)
+            and not any(
+                field in result
+                for field in (
+                    "snapshot_drift_discarded",
+                    "changed_path_count",
+                    "changed_paths",
+                    "changed_paths_truncated",
+                )
+            )
+            and "bundle" not in payload
+        )
+    if result.get("drift_scan_complete") is not True:
+        return False
     changed_path_count = result.get("changed_path_count")
     changed_paths = result.get("changed_paths")
     if not is_strict_int(changed_path_count):
@@ -350,14 +372,15 @@ def _workspace_bundle_matches(
         return False
     if actual_sha256 != sha256:
         return False
-    return workspace_bundle_contains_result_tree(
-        workspace_source.git_top_level,
-        bundle_path,
-        result_ref,
-        result_commit,
-        result_tree,
-        workspace_source.object_format,
-    )
+    try:
+        verify_persisted_workspace_result_chain(
+            workspace_source,
+            source.run_dir,
+            payload,
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        return False
+    return True
 
 
 def _workspace_result_ref(payload: dict[str, object]) -> str | None:

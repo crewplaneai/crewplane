@@ -6,6 +6,7 @@ import stat
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
@@ -55,6 +56,19 @@ class RuntimePublicationRegistry:
         default_factory=list,
         repr=False,
     )
+    _publication_owners: dict[Path, str] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    _current_publication_owner: ContextVar[str | None] = field(
+        default_factory=lambda: ContextVar(
+            "crewplane_runtime_publication_owner",
+            default=None,
+        ),
+        repr=False,
+        compare=False,
+    )
     _lock: RLock = field(default_factory=RLock, repr=False, compare=False)
     _version: int = field(default=0, repr=False, compare=False)
     _event_publication_depth: int = field(default=0, repr=False, compare=False)
@@ -80,6 +94,11 @@ class RuntimePublicationRegistry:
                 self._recovery_signatures[path] = signature
                 self._recovery_slices[path] = recovery_slice
             self._published_signatures[path] = signature
+            owner_id = self._current_publication_owner.get()
+            if owner_id is None:
+                self._publication_owners.pop(path, None)
+            else:
+                self._publication_owners[path] = owner_id
             self._version += 1
 
     def capture_recovery_snapshot(
@@ -142,6 +161,7 @@ class RuntimePublicationRegistry:
             self._recovery_spool = None
             self._recovery_slices.clear()
             self._recovery_signatures.clear()
+            self._publication_owners.clear()
             self._closed = True
         if recovery_spool is not None:
             recovery_spool.close()
@@ -157,6 +177,18 @@ class RuntimePublicationRegistry:
         with self._lock:
             self._ensure_open()
             yield
+
+    @contextmanager
+    def attribute_to(self, owner_id: str) -> Iterator[None]:
+        """Attribute publications in the current execution context to one owner."""
+
+        with self._lock:
+            self._ensure_open()
+        token = self._current_publication_owner.set(owner_id)
+        try:
+            yield
+        finally:
+            self._current_publication_owner.reset(token)
 
     @contextmanager
     def event_publication(
@@ -207,6 +239,16 @@ class RuntimePublicationRegistry:
     def snapshot(self) -> tuple[dict[Path, tuple[int, str]], int]:
         with self._lock:
             return dict(self._published_signatures), self._version
+
+    def snapshot_with_owners(
+        self,
+    ) -> tuple[dict[Path, tuple[int, str]], dict[Path, str], int]:
+        with self._lock:
+            return (
+                dict(self._published_signatures),
+                dict(self._publication_owners),
+                self._version,
+            )
 
     def _ensure_open(self) -> None:
         if self._closed:

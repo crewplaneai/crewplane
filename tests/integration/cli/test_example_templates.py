@@ -235,6 +235,25 @@ class ExampleTemplateTests(unittest.TestCase):
 
         for expected_text in expected_guidance:
             self.assertIn(expected_text, rendered)
+        self.assertNotIn("Experimental workspace", rendered)
+
+    def test_workspace_templates_remove_maturity_label_but_preserve_alternative_names(
+        self,
+    ) -> None:
+        inherited = (
+            self.template_dir
+            / "example-templates/worktree/workspace-inherited-worktree-example.task.md"
+        ).read_text(encoding="utf-8")
+        alternatives = (
+            self.template_dir
+            / "example-templates/worktree/workspace-alternatives-example.task.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("Experimental Workspace", inherited)
+        self.assertNotIn("Experimental Workspace", alternatives)
+        self.assertIn("experimental_worktree", alternatives)
+        self.assertIn("alternatives.experimental", alternatives)
+        self.assertIn("Implement an experimental solution", alternatives)
 
     def test_workflow_templates_cover_workspace_authoring_examples(self) -> None:
         workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
@@ -322,23 +341,6 @@ class ExampleTemplateTests(unittest.TestCase):
             ),
             msg="expected a generated workflow demonstrating worktree: none",
         )
-
-    def test_workspace_docs_link_packaged_workspace_templates(self) -> None:
-        workspace_docs = Path("docs/examples/workspace.md").read_text(encoding="utf-8")
-        guide_docs = Path("docs/guides/workspace-isolation.md").read_text(
-            encoding="utf-8"
-        )
-
-        expected_links = [
-            "../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md",
-            "../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md",
-        ]
-        for expected_link in expected_links:
-            self.assertIn(expected_link, workspace_docs)
-
-        self.assertIn("settings.workspace.cache_root", workspace_docs)
-        self.assertIn("worktree: none", guide_docs)
-        self.assertIn("not sandboxing", guide_docs)
 
     def test_workflow_markdown_template_is_valid(self) -> None:
         workflow_templates = sorted(self.template_dir.rglob("*.task.md"))

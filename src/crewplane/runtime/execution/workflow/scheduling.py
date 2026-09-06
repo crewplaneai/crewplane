@@ -20,7 +20,6 @@ from ..common import (
     should_print_console,
 )
 from ..errors import WorkflowExecutionError, is_expected_execution_failure
-from .cleanup import cleanup_successful_workspace_run_refs
 from .execution_session import WorkflowExecutionSession
 from .node import (
     execute_node,
@@ -286,8 +285,4 @@ async def finalize_execution(session: WorkflowExecutionSession) -> None:
         blocked_nodes=blocked_nodes,
         dependencies_by_node=state.dependencies_by_node,
         statuses=state.statuses,
-    )
-    await cleanup_successful_workspace_run_refs(
-        session.runtime_context.plan,
-        session.telemetry,
     )

@@ -8,6 +8,7 @@ from asyncio import sleep as asyncio_sleep
 from crewplane.architecture.contracts import InvocationDiagnosticSink
 
 from .diagnostics import emit_process_already_exited_diagnostic
+from .drain import drain_async_process
 
 PROCESS_EXIT_POLL_INTERVAL_SECONDS = 0.01
 PROCESS_GROUP_TERMINATE_GRACE_SECONDS = 0.05
@@ -41,15 +42,6 @@ def terminate_process_or_group(
     process.terminate()
 
 
-def kill_process_or_group(
-    process: asyncio.subprocess.Process,
-    process_group_id: int | None,
-) -> None:
-    if send_process_group_signal(process_group_id, signal.SIGKILL):
-        return
-    process.kill()
-
-
 async def terminate_process_group(process_group_id: int | None) -> None:
     if not send_process_group_signal(process_group_id, signal.SIGTERM):
         return
@@ -62,23 +54,6 @@ async def reap_failed_process(
     process_group_id: int | None = None,
     diagnostic_sink: InvocationDiagnosticSink | None = None,
 ) -> None:
-    if process.returncode is not None:
-        await terminate_process_group(process_group_id)
-        return
-    try:
-        terminate_process_or_group(process, process_group_id)
-    except ProcessLookupError:
+    evidence = await drain_async_process(process, process_group_id)
+    if process.returncode is None and evidence.leader_stopped:
         emit_process_already_exited_diagnostic(diagnostic_sink, "terminate")
-        return
-
-    try:
-        await asyncio.wait_for(wait_for_process_exit(process), timeout=1.0)
-    except TimeoutError:
-        if process.returncode is None:
-            try:
-                kill_process_or_group(process, process_group_id)
-            except ProcessLookupError:
-                emit_process_already_exited_diagnostic(diagnostic_sink, "kill")
-                return
-        await wait_for_process_exit(process)
-    await terminate_process_group(process_group_id)

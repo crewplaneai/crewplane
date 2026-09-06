@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,6 +24,7 @@ from crewplane.runtime.workspace.invocation import (
     workspace_state_path,
 )
 from crewplane.runtime.workspace.materialization import (
+    MaterializationCapacityRequest,
     workspace_materialization_slot,
 )
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
@@ -43,11 +45,14 @@ from crewplane.runtime.workspace.worktree.cleanup import worktree_disk_usage
 
 from .common import (
     planned_workspace_path,
-    record_failed_preparation_state,
-    remove_workspace_after_failure,
     trusted_workspace_state_payload,
     workspace_cwd,
     workspace_state_request,
+)
+from .snapshot_failures import (
+    record_failed_materialized_snapshot_preparation,
+    record_failed_unmaterialized_snapshot_preparation,
+    terminalize_unhandled_snapshot_materialization_failure,
 )
 from .types import (
     MaterializedSnapshotWorkspace,
@@ -65,25 +70,48 @@ def prepare_snapshot_invocation_workspace(
 ) -> PreparedWorkspace:
     snapshot_plan = snapshot_preparation_plan(request, node, policy, source)
     write_running_snapshot_workspace_state(request, snapshot_plan)
-    materialized_snapshot = materialize_snapshot_workspace(request, snapshot_plan)
+    materialized_snapshot = _materialize_snapshot_with_failure_state(
+        request,
+        snapshot_plan,
+    )
+    return _prepare_materialized_snapshot_with_failure_state(
+        request,
+        invocation_context,
+        snapshot_plan,
+        materialized_snapshot,
+    )
+
+
+def _prepare_materialized_snapshot_with_failure_state(
+    request: WorkspaceInvocationRequest,
+    invocation_context: InvocationContext,
+    plan: SnapshotPreparationPlan,
+    materialized: MaterializedSnapshotWorkspace,
+) -> PreparedWorkspace:
     try:
         return prepared_snapshot_workspace(
             request,
             invocation_context,
-            snapshot_plan,
-            materialized_snapshot,
+            plan,
+            materialized,
         )
     except Exception as exc:
-        removed = remove_workspace_after_failure(
-            materialized_snapshot.workspace_path,
+        record_failed_materialized_snapshot_preparation(
+            plan,
+            materialized.workspace_path,
             exc,
         )
-        record_failed_preparation_state(
-            snapshot_plan.state_path,
-            exc,
-            workspace_retention="deleted" if removed else "retained",
-            retained_reason=None if removed else "preparation_failed_cleanup_failed",
-        )
+        raise
+
+
+def _materialize_snapshot_with_failure_state(
+    request: WorkspaceInvocationRequest,
+    plan: SnapshotPreparationPlan,
+) -> MaterializedSnapshotWorkspace:
+    try:
+        return materialize_snapshot_workspace(request, plan)
+    except Exception as exc:
+        terminalize_unhandled_snapshot_materialization_failure(plan, exc)
         raise
 
 
@@ -142,46 +170,20 @@ def materialize_snapshot_workspace(
     request: WorkspaceInvocationRequest,
     plan: SnapshotPreparationPlan,
 ) -> MaterializedSnapshotWorkspace:
-    with workspace_materialization_slot(request.plan, request.materialization_limiter):
+    with workspace_materialization_slot(
+        request.plan,
+        request.materialization_limiter,
+        MaterializationCapacityRequest(plan.planned_workspace_path, plan.source),
+    ):
         provisioning_started = monotonic()
-        try:
-            workspace_path = create_snapshot_workspace(
-                request.plan,
-                plan.slug,
-                plan.source,
+        workspace_path = _create_snapshot_workspace_with_failure_state(request, plan)
+        checkout_root, initial_snapshot_entries = (
+            _materialize_snapshot_checkout_with_failure_state(
+                request,
+                plan,
+                workspace_path,
             )
-        except Exception as exc:
-            record_failed_preparation_state(plan.state_path, exc)
-            raise
-        try:
-            checkout_root = workspace_path / "checkout"
-            with TemporaryDirectory(prefix="crewplane-index-") as index_dir:
-                materialize_snapshot(
-                    plan.source,
-                    checkout_root,
-                    Path(index_dir) / "snapshot.index",
-                )
-            initial_snapshot_entries = snapshot_entries(
-                checkout_root,
-                WorkspaceSnapshotPolicy(
-                    cancel_requested=(
-                        request.setup_cancellation.is_cancelled
-                        if request.setup_cancellation is not None
-                        else None
-                    ),
-                ),
-            )
-        except Exception as exc:
-            removed = remove_workspace_after_failure(workspace_path, exc)
-            record_failed_preparation_state(
-                plan.state_path,
-                exc,
-                workspace_retention="deleted" if removed else "retained",
-                retained_reason=None
-                if removed
-                else "preparation_failed_cleanup_failed",
-            )
-            raise
+        )
         provisioning_duration_seconds = round(monotonic() - provisioning_started, 6)
     cwd = workspace_cwd(checkout_root, plan.source)
     return MaterializedSnapshotWorkspace(
@@ -194,13 +196,73 @@ def materialize_snapshot_workspace(
     )
 
 
+def _create_snapshot_workspace_with_failure_state(
+    request: WorkspaceInvocationRequest,
+    plan: SnapshotPreparationPlan,
+) -> Path:
+    try:
+        return create_snapshot_workspace(request.plan, plan.slug, plan.source)
+    except Exception as exc:
+        record_failed_unmaterialized_snapshot_preparation(plan, exc)
+        raise
+
+
+def _materialize_snapshot_checkout_with_failure_state(
+    request: WorkspaceInvocationRequest,
+    plan: SnapshotPreparationPlan,
+    workspace_path: Path,
+) -> tuple[Path, dict[str, str]]:
+    try:
+        return _populate_snapshot_checkout(request, plan, workspace_path)
+    except Exception as exc:
+        record_failed_materialized_snapshot_preparation(plan, workspace_path, exc)
+        raise
+
+
+def _populate_snapshot_checkout(
+    request: WorkspaceInvocationRequest,
+    plan: SnapshotPreparationPlan,
+    workspace_path: Path,
+) -> tuple[Path, dict[str, str]]:
+    checkout_root = workspace_path / "checkout"
+    with TemporaryDirectory(prefix="crewplane-index-") as index_dir:
+        materialize_snapshot(
+            plan.source,
+            checkout_root,
+            Path(index_dir) / "snapshot.index",
+        )
+    entries = snapshot_entries(
+        checkout_root,
+        WorkspaceSnapshotPolicy(cancel_requested=_snapshot_cancel_requested(request)),
+    )
+    return checkout_root, entries
+
+
 def prepared_snapshot_workspace(
     request: WorkspaceInvocationRequest,
     invocation_context: InvocationContext,
     plan: SnapshotPreparationPlan,
     materialized: MaterializedSnapshotWorkspace,
 ) -> PreparedWorkspace:
-    workspace_context = InvocationWorkspaceContext(
+    effective_context = replace(
+        invocation_context,
+        workspace=_build_snapshot_workspace_context(plan, materialized),
+        retry_reset=snapshot_retry_reset(plan.source, materialized.checkout_root),
+    )
+    write_materialized_snapshot_workspace_state(request, plan, materialized)
+    return _build_prepared_snapshot_workspace(
+        request,
+        effective_context,
+        plan,
+        materialized,
+    )
+
+
+def _build_snapshot_workspace_context(
+    plan: SnapshotPreparationPlan,
+    materialized: MaterializedSnapshotWorkspace,
+) -> InvocationWorkspaceContext:
+    return InvocationWorkspaceContext(
         workspace_kind="snapshot",
         materialization="snapshot_checkout",
         logical_worktree_name=plan.policy.logical_worktree_name or "",
@@ -222,11 +284,13 @@ def prepared_snapshot_workspace(
         child_environment_required=plan.child_environment_required,
         child_environment_applied=False if plan.child_environment_required else None,
     )
-    effective_context = replace(
-        invocation_context,
-        workspace=workspace_context,
-        retry_reset=snapshot_retry_reset(plan.source, materialized.checkout_root),
-    )
+
+
+def write_materialized_snapshot_workspace_state(
+    request: WorkspaceInvocationRequest,
+    plan: SnapshotPreparationPlan,
+    materialized: MaterializedSnapshotWorkspace,
+) -> None:
     write_running_workspace_state(
         plan.state_path,
         workspace_state_request(request),
@@ -246,18 +310,29 @@ def prepared_snapshot_workspace(
             materialization=plan.policy.materialization,
         ),
     )
+
+
+def _build_prepared_snapshot_workspace(
+    request: WorkspaceInvocationRequest,
+    invocation_context: InvocationContext,
+    plan: SnapshotPreparationPlan,
+    materialized: MaterializedSnapshotWorkspace,
+) -> PreparedWorkspace:
     return PreparedWorkspace(
         cwd=materialized.cwd,
-        invocation_context=effective_context,
+        invocation_context=invocation_context,
         workspace_kind="snapshot",
         workspace_path=materialized.workspace_path,
         state_path=plan.state_path,
         initial_snapshot_entries=materialized.initial_snapshot_entries,
         cleanup_on_success=workspace_cleanup_on_success(request.plan),
         workspace_state_payload=trusted_workspace_state_payload(plan.state_path),
-        snapshot_cancel_requested=(
-            request.setup_cancellation.is_cancelled
-            if request.setup_cancellation is not None
-            else None
-        ),
+        snapshot_cancel_requested=_snapshot_cancel_requested(request),
     )
+
+
+def _snapshot_cancel_requested(
+    request: WorkspaceInvocationRequest,
+) -> Callable[[], bool] | None:
+    cancellation = request.setup_cancellation
+    return cancellation.is_cancelled if cancellation is not None else None

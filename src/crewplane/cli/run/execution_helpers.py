@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import datetime
 from typing import Never
 
@@ -106,7 +107,7 @@ def handle_duplicate_skip(
         return False
     successful_run = resume_plan.decision.successful_run
     if successful_run is not None:
-        fulfill_duplicate_skip_branch_exports(context, preview, successful_run)
+        fulfill_historical_branch_exports(context, preview, successful_run)
     print_duplicate_context_message(
         context,
         successful_run.manifest.run_id if successful_run is not None else None,
@@ -131,25 +132,28 @@ def workspace_real_execution_error(
     return None
 
 
-def fulfill_duplicate_skip_branch_exports(
+def fulfill_historical_branch_exports(
     context: WorkflowRunContext,
     preview: PreflightCompilationPreview,
-    successful_run: RunHistoryRecord,
+    source_run: RunHistoryRecord,
+    eligible_node_ids: Collection[str] | None = None,
 ) -> None:
     try:
         plan = PreflightExecutionPlan.from_preview(
             preview=preview,
-            run_id=successful_run.manifest.run_id,
-            run_key_name=successful_run.manifest.run_key_name,
+            run_id=source_run.manifest.run_id,
+            run_key_name=source_run.manifest.run_key_name,
             project_root=context.project_root.as_posix(),
             context_root=context.project_root.as_posix(),
-            manifest_root=(successful_run.run_dir / "manifests").as_posix(),
+            manifest_root=(source_run.run_dir / "manifests").as_posix(),
             created_at=datetime.now(),
         )
         branch_export_records = fulfill_branch_exports_from_history(
-            plan, successful_run
+            plan,
+            source_run,
+            eligible_node_ids,
         )
-        refresh_historical_run_summary(plan, successful_run)
+        refresh_historical_run_summary(plan, source_run)
     except Exception as exc:
         context.console.print(f"[red]Branch export failed:[/] {exc}")
         raise typer.Exit(code=1) from exc

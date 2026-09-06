@@ -93,24 +93,18 @@ settings:
 ```
 
 Workspace behavior:
+
 - `settings.workspace.enabled: false` preserves project-root execution and does not require Git.
-- `settings.workspace.enabled: true` is only an Experimental feature gate: managed workspaces are allocated only when a workflow declares `worktrees` and provider nodes select them.
+- `settings.workspace.enabled: true` is an opt-in feature gate: managed workspaces are allocated only when a workflow declares `worktrees` and provider nodes select them.
 - Workflow declarations use `kind: worktree` for lineage-producing mutable checkouts and `kind: snapshot` for writable disposable checkouts.
 - Nodes select with `worktree: <name>` or opt out with `worktree: none`; input nodes never allocate provider workspaces.
 - Managed workspace preflight validates the `blob_exact` source contract, workflow policy, invoker cwd capability metadata, clean-start policy, and repo-relative workspace-file locators.
-- Disk guardrails estimate checkout size and compare expected remaining cache filesystem capacity with configured thresholds.
-- Real execution records workspace state, checkout size/provisioning metadata, and Git bundles under `.crewplane/`.
-- Real execution supports runtime-dynamic upstream/reviewer file locators, verified artifact-backed duplicate-skip/resume, setup profiles, post-run local branch export with recorded fulfillment metadata, generated branch names shaped as `crewplane/<workflow>/<worktree>/<run-key>`, and `crewplane cleanup workspaces`.
+- Managed execution enforces bounded materialization and persists auditable
+  workspace lifecycle and lineage artifacts. See
+  [Workspace isolation architecture](workspace-isolation.md) for its control
+  flow, evidence contracts, Git operations, resume behavior, and cleanup model.
 - Workspace isolation is source-tree isolation, not a provider sandbox.
 - Allowlisted absolute external files remain static preflight resources.
-
-tmux UI option intent:
-- `quiet_after_seconds`: when a running invocation has not appended new log output for this long, render quiet-state liveness messaging in the right pane.
-- `log_tail_lines`: optional fixed cap for tailed log lines in compact dashboard mode; omit it or set it to `null` to fit the right pane height automatically.
-- `Enter` opens formatted inspect when valid presentation metadata exists, otherwise raw inspect.
-- `r` opens or switches to raw inspect, which shows the exact persisted provider `.log`.
-- `f` switches back to formatted inspect when valid metadata exists.
-- `Esc` returns from inspect mode to the compact dashboard.
 
 ## Implementation Resolution Strategy
 Resolution is alias-first with dotted-path override:

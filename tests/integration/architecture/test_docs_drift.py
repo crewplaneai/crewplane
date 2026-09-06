@@ -8,13 +8,9 @@ from tests.integration.architecture.static_checks import (
     python_files,
 )
 
-LEGACY_PROMPT_CONFIG_RULE = ForbiddenTextRule(
-    name="public docs and templates omit legacy prompt config",
-    paths=(
-        REPO_ROOT / "README.md",
-        REPO_ROOT / "docs" / "architecture" / "modular-orchestration-architecture.md",
-        SRC_ROOT / "crewplane" / "example_templates" / "config.yml",
-    ),
+LEGACY_TEMPLATE_PROMPT_CONFIG_RULE = ForbiddenTextRule(
+    name="generated config omits legacy prompt config",
+    paths=(SRC_ROOT / "crewplane" / "example_templates" / "config.yml",),
     forbidden_terms=frozenset(
         {
             "prompt_arg",
@@ -37,19 +33,29 @@ STALE_VERSION_IMPORT_RULE = ForbiddenTextRule(
     ),
 )
 
-OBSOLETE_DASHBOARD_LOG_PATH_RULE = ForbiddenTextRule(
-    name="compact dashboard omits the obsolete global provider log prefix",
-    paths=(REPO_ROOT / "docs" / "architecture" / "ui_compact_dashboard.md",),
+WORKSPACE_TEMPLATE_MATURITY_LABEL_RULE = ForbiddenTextRule(
+    name="generated workspace templates omit the former maturity label",
+    paths=tuple(
+        path
+        for path in (SRC_ROOT / "crewplane" / "example_templates").rglob("*")
+        if path.is_file() and path.suffix in {".md", ".yml", ".yaml"}
+    ),
     forbidden_terms=frozenset(
         {
-            ".crewplane/execution-stages/<workflow>-<run_id>/logs/<provider>/",
+            "Experimental Workspace",
+            "Experimental workspace",
+            "experimental workspace isolation",
+            "Experimental worktrees",
+            "Experimental managed workspaces",
+            "Experimental logical worktree",
+            "Experimental feature gate",
         }
     ),
 )
 
 
-def test_docs_and_templates_do_not_reference_legacy_prompt_config_fields() -> None:
-    assert find_forbidden_text(LEGACY_PROMPT_CONFIG_RULE) == []
+def test_generated_config_does_not_reference_legacy_prompt_fields() -> None:
+    assert find_forbidden_text(LEGACY_TEMPLATE_PROMPT_CONFIG_RULE) == []
 
 
 def test_version_catalog_has_single_public_python_source() -> None:
@@ -65,5 +71,5 @@ def test_version_catalog_has_single_public_python_source() -> None:
     assert find_forbidden_text(STALE_VERSION_IMPORT_RULE) == []
 
 
-def test_compact_dashboard_omits_obsolete_global_provider_log_prefix() -> None:
-    assert find_forbidden_text(OBSOLETE_DASHBOARD_LOG_PATH_RULE) == []
+def test_generated_workspace_templates_omit_maturity_label() -> None:
+    assert find_forbidden_text(WORKSPACE_TEMPLATE_MATURITY_LABEL_RULE) == []

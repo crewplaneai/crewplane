@@ -13,9 +13,9 @@ from .diagnostics import (
     emit_pipe_drain_timeout_diagnostic,
     emit_process_already_exited_diagnostic,
 )
+from .drain import ProcessDrainError, ProcessDrainEvidence, drain_async_process
 from .log_rendering import IncrementalLogRenderer
 from .signals import (
-    kill_process_or_group,
     reap_failed_process,
     terminate_process_group,
     terminate_process_or_group,
@@ -118,6 +118,7 @@ async def collect_process_output(
                         diagnostic_sink,
                         process_group_id,
                         idle_timeout_seconds,
+                        writer_status,
                     )
                 )
                 if log_handle is not None and log_queue is not None:
@@ -130,25 +131,23 @@ async def collect_process_output(
                         watch_log_writer_status(
                             process,
                             writer_status,
-                            diagnostic_sink,
                             process_group_id,
                         )
                     )
-        except asyncio.CancelledError:
-            await reap_failed_process(process, process_group_id, diagnostic_sink)
+        except asyncio.CancelledError as cancel:
+            try:
+                await reap_failed_process(process, process_group_id, diagnostic_sink)
+            except ProcessDrainError as exc:
+                cancel.add_note(str(exc))
             raise
         except Exception as exc:
-            if process.returncode is None:
-                try:
-                    kill_process_or_group(process, process_group_id)
-                except ProcessLookupError:
-                    emit_process_already_exited_diagnostic(diagnostic_sink, "kill")
-                await wait_for_process_exit(process)
+            await drain_async_process(process, process_group_id)
             error = unwrap_task_group_error(exc)
             if error is not exc:
                 raise error from exc
             raise
 
+        await drain_async_process(process, process_group_id)
         output_capture = ProcessOutputCapture(
             stdout=ProcessStreamCapture(
                 path=stdout_capture.path,
@@ -177,6 +176,7 @@ async def capture_process_streams(
     diagnostic_sink: InvocationDiagnosticSink | None = None,
     process_group_id: int | None = None,
     idle_timeout_seconds: float | None = None,
+    writer_status: asyncio.Future[Exception | None] | None = None,
 ) -> None:
     if process.stdout is None or process.stderr is None:
         raise RuntimeError("Failed to capture process streams.")
@@ -216,8 +216,29 @@ async def capture_process_streams(
             process_exit_task,
             idle_task,
         )
-        if log_queue is not None:
-            await log_queue.put(None)
+        if log_queue is not None and writer_status is not None:
+            await signal_log_queue_complete(log_queue, writer_status)
+
+
+async def signal_log_queue_complete(
+    log_queue: asyncio.Queue[bytes | None],
+    writer_status: asyncio.Future[Exception | None],
+) -> None:
+    current_task = asyncio.current_task()
+    if writer_status.done() or (current_task is not None and current_task.cancelling()):
+        return
+    sentinel_task = asyncio.create_task(log_queue.put(None))
+    try:
+        done, _pending = await asyncio.wait(
+            (sentinel_task, writer_status),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if sentinel_task in done:
+            await sentinel_task
+    finally:
+        if not sentinel_task.done():
+            sentinel_task.cancel()
+            await asyncio.gather(sentinel_task, return_exceptions=True)
 
 
 async def pipe_stream(
@@ -268,18 +289,13 @@ async def drain_log_queue(
 async def watch_log_writer_status(
     process: asyncio.subprocess.Process,
     writer_status: asyncio.Future[Exception | None],
-    diagnostic_sink: InvocationDiagnosticSink | None,
     process_group_id: int | None = None,
 ) -> None:
     writer_error = await writer_status
     if writer_error is None:
         return
-    if process.returncode is None:
-        try:
-            kill_process_or_group(process, process_group_id)
-        except ProcessLookupError:
-            emit_process_already_exited_diagnostic(diagnostic_sink, "kill")
-        await wait_for_process_exit(process)
+    if process.returncode is None or process_group_id is not None:
+        await drain_async_process(process, process_group_id)
     raise writer_error
 
 
@@ -325,16 +341,26 @@ async def finish_stream_tasks_after_process_exit(
     timed_out = bool(pending)
     if pending:
         await terminate_process_group(process_group_id)
-        pending = {task for task in tasks if not task.done()}
+        _done_after_termination, pending = await asyncio.wait(
+            tasks,
+            timeout=PROCESS_PIPE_DRAIN_GRACE_SECONDS,
+        )
+    unresolved_pipes = bool(pending)
     for task in pending:
         task.cancel()
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await _bounded_task_results(tasks)
     if timed_out:
         emit_pipe_drain_timeout_diagnostic(
             diagnostic_sink,
             stdout_pending=stdout_pending,
             stderr_pending=stderr_pending,
+        )
+
+    if unresolved_pipes:
+        raise ProcessDrainError(
+            evidence=_unknown_process_evidence(),
+            reason="Provider process pipes remained open after the finite drain deadline.",
         )
 
     for result in results:
@@ -350,7 +376,46 @@ async def cancel_pending_stream_tasks(*tasks: asyncio.Task[Any] | None) -> None:
     for task in pending_tasks:
         task.cancel()
     if pending_tasks:
-        await asyncio.gather(*pending_tasks, return_exceptions=True)
+        await _bounded_task_results(tuple(pending_tasks))
+
+
+async def _bounded_task_results(
+    tasks: tuple[asyncio.Task[Any], ...],
+) -> tuple[object, ...]:
+    done, pending = await asyncio.wait(
+        tasks,
+        timeout=PROCESS_PIPE_DRAIN_GRACE_SECONDS,
+    )
+    for task in pending:
+        task.cancel()
+    if pending:
+        done_after_cancel, still_pending = await asyncio.wait(
+            pending,
+            timeout=PROCESS_PIPE_DRAIN_GRACE_SECONDS,
+        )
+        done.update(done_after_cancel)
+        if still_pending:
+            raise ProcessDrainError(
+                evidence=_unknown_process_evidence(),
+                reason="Provider process pipes remained open after the finite drain deadline.",
+            )
+    return tuple(_task_result(task) for task in tasks)
+
+
+def _task_result(task: asyncio.Task[Any]) -> object:
+    if task.cancelled():
+        return asyncio.CancelledError()
+    error = task.exception()
+    return error if error is not None else task.result()
+
+
+def _unknown_process_evidence() -> ProcessDrainEvidence:
+    return ProcessDrainEvidence(
+        pid=-1,
+        process_group_id=None,
+        leader_stopped=False,
+        process_group_stopped=False,
+    )
 
 
 async def wait_for_process_or_idle_timeout(

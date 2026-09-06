@@ -1,4 +1,4 @@
-# Experimental Workspace Examples
+# Workspace Examples
 
 Workspace examples show how Crewplane can run provider work against managed Git
 worktrees and snapshots. Treat them as advanced examples: run the mock
@@ -26,7 +26,7 @@ Packaged templates:
 - [workspace-alternatives-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md)
 - [workspace-inherited-worktree-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md)
 
-Before running them, enable Experimental workspace support in
+Before running them, enable workspace support in
 `.crewplane/config.yml`. You may set an absolute `settings.workspace.cache_root`;
 when it is omitted, Crewplane uses the platform cache directory.
 
@@ -45,8 +45,8 @@ The templates demonstrate:
 - implicit single-worktree selection
 - optional branch export with `create_branch: true`
 
-Experimental workspace isolation is not sandboxing. Provider CLIs still run
+Workspace isolation is not sandboxing. Provider CLIs still run
 with their own configured permissions.
 
-See [Experimental workspace isolation](../guides/workspace-isolation.md) for
+See [Workspace isolation](../guides/workspace-isolation.md) for
 the setup flow, support matrix, safety boundaries, and cleanup behavior.

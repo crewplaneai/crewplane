@@ -123,7 +123,7 @@ evidence, support bundles, or downstream workflow references.
 ```
 
 `execution-stages` contains run-local state, logs, manifests, preflight bundles,
-node directories, and Experimental workspace state when enabled.
+node directories, and Workspace state when enabled.
 `execution-results` contains consolidated node outputs and findings.
 
 ## Stage Run Directory
@@ -159,7 +159,7 @@ node directories, and Experimental workspace state when enabled.
 ```
 
 Exact files depend on node mode, provider count, findings, review loops, and
-Experimental workspace use.
+Workspace use.
 
 ## Preflight Files
 
@@ -174,9 +174,9 @@ render plans, static resources, token catalog, or runtime config snapshot. The
 root `.crewplane/preflight/fingerprint.key` is a persisted fingerprint key, not
 the per-run execution bundle.
 
-## Experimental Workspace Evidence
+## Workspace Evidence
 
-Experimental workspace-enabled runs can write:
+Workspace-enabled runs can write:
 
 - workspace state files such as `workspace-state.json` or
   `workspace-state-<slug>.json`

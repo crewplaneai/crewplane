@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 
 from crewplane.artifacts.run_history import (
@@ -22,7 +23,9 @@ from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.git_policy import (
     deterministic_workspace_commit_environment,
 )
+from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.policy import WorktreeContract
+from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
@@ -63,12 +66,21 @@ def attach_git_workspace_source(
     (repo / "README.md").write_text("ready\n", encoding="utf-8")
     run_git_text(repo, "add", "README.md")
     run_git_text(repo, "commit", "-m", "initial")
+    storage_object_format = run_git_text(
+        repo,
+        "rev-parse",
+        "--show-object-format=storage",
+    )
     source = WorkspaceSourceSnapshot(
         worktree_contract=WorktreeContract(),
         run_base_commit=run_git_text(repo, "rev-parse", "HEAD^{commit}"),
         source_tree=run_git_text(repo, "rev-parse", "HEAD^{tree}"),
-        object_format=run_git_text(repo, "rev-parse", "--show-object-format=storage"),
-        repository_id=hashlib.sha256(repo.as_posix().encode("utf-8")).hexdigest(),
+        object_format=storage_object_format,
+        repository_id=workspace_repository_id(
+            repo / ".git",
+            repo,
+            storage_object_format,
+        ),
         git_version=run_git_text(repo, "--version"),
         git_top_level=repo.as_posix(),
         project_root_relative_path=".",
@@ -125,6 +137,29 @@ def write_lineage_bundle_for_payload(
         "size_bytes": len(bundle_bytes),
         "verified": True,
     }
+    payload["ref_publication"] = {
+        "phase": "published",
+        "repository_id": payload["git"]["repo_id"],
+        "run_id": payload["run_id"],
+        "run_key_name": payload["run_key_name"],
+        "node_id": payload["node_id"],
+        "task_id": payload["task_id"],
+        "role": payload["role"],
+        "round_num": payload["round_num"],
+        "audit_round_num": payload["audit_round_num"],
+        "destinations": {
+            "candidate": {
+                "name": refs["candidate"],
+                "target_oid": result_commit,
+                "expected_old_oid": None,
+            },
+            "result": {
+                "name": refs["result"],
+                "target_oid": result_commit,
+                "expected_old_oid": None,
+            },
+        },
+    }
     return payload
 
 
@@ -144,6 +179,9 @@ def attach_source_bundle_descriptor(
     source["bundle_sha256"] = bundle["sha256"]
     source["bundle_size_bytes"] = bundle["size_bytes"]
     source["bundle_ref"] = refs["result"]
+    upstream_source = upstream_payload["source"]
+    assert isinstance(upstream_source, dict)
+    source["upstream_sources"] = [deepcopy(upstream_source)]
     invocation_source["source_bundle_path"] = bundle["path"]
     invocation_source["source_bundle_sha256"] = bundle["sha256"]
     invocation_source["source_bundle_size_bytes"] = bundle["size_bytes"]
@@ -228,6 +266,7 @@ def provider_workspace_state_payload(
         "workflow_signature": plan.workflow_signature,
         "node_id": node_id,
         "task_id": "alpha",
+        "provider": "alpha",
         "role": "executor",
         "round_num": 1,
         "audit_round_num": None,
@@ -241,6 +280,9 @@ def provider_workspace_state_payload(
             "repo_id": workspace_source.repository_id,
             "run_base_commit": workspace_source.run_base_commit,
             "source_tree": workspace_source.source_tree,
+            "git_top_level": workspace_source.git_top_level,
+            "active_git_dir": workspace_source.active_git_dir,
+            "common_git_dir": workspace_source.common_git_dir,
         },
         "source": {
             "kind": source_kind,
@@ -265,7 +307,17 @@ def provider_workspace_state_payload(
             "retention": "retained",
             "retained_reason": None,
             "project_root_relative_path": workspace_source.project_root_relative_path,
+            "reuse_generation": 1,
         },
+        "execution": {
+            "workspace_path": f"/tmp/{node_id}-workspace",
+            "checkout_root": f"/tmp/{node_id}-workspace/checkout",
+            "effective_cwd": f"/tmp/{node_id}-workspace/checkout",
+            "worktree_git_dir": (
+                f"{workspace_source.common_git_dir}/worktrees/{node_id}"
+            ),
+        },
+        "process_drain": {"status": "confirmed"},
         "result": {
             "candidate_commit": "a" * 40,
             "result_commit": result_commit,
@@ -310,10 +362,14 @@ def provider_record(
 
 def _lineage_bundle_slug(payload: dict[str, object]) -> str:
     audit_round_num = payload.get("audit_round_num")
-    audit_part = f"audit{audit_round_num}" if audit_round_num is not None else "audit0"
-    return (
-        f"{payload.get('task_id')}-{payload.get('role')}-"
-        f"{audit_part}-round{payload.get('round_num')}"
+    round_num = payload.get("round_num")
+    if not isinstance(round_num, int):
+        raise AssertionError("test workspace payload lacks round identity")
+    return invocation_slug(
+        str(payload.get("node_id")),
+        str(payload.get("task_id")),
+        audit_round_num if isinstance(audit_round_num, int) else None,
+        round_num,
     )
 
 
@@ -355,6 +411,9 @@ def snapshot_workspace_state_payload(
             "repo_id": workspace_source.repository_id,
             "run_base_commit": workspace_source.run_base_commit,
             "source_tree": workspace_source.source_tree,
+            "git_top_level": workspace_source.git_top_level,
+            "active_git_dir": workspace_source.active_git_dir,
+            "common_git_dir": workspace_source.common_git_dir,
         },
         "source": {
             "kind": "project",
@@ -380,8 +439,15 @@ def snapshot_workspace_state_payload(
             "retained_reason": None,
             "project_root_relative_path": workspace_source.project_root_relative_path,
         },
+        "execution": {
+            "workspace_path": f"/tmp/{task_id}-snapshot",
+            "checkout_root": f"/tmp/{task_id}-snapshot/checkout",
+            "effective_cwd": f"/tmp/{task_id}-snapshot/checkout",
+        },
+        "process_drain": {"status": "confirmed"},
         "result": {
             "lineage_produced": False,
+            "drift_scan_complete": True,
             "snapshot_drift_discarded": False,
             "changed_path_count": 0,
             "changed_paths": [],

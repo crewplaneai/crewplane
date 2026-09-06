@@ -10,6 +10,7 @@ import pytest
 import crewplane.core.preflight.references as preflight_references
 import crewplane.core.workflow.models as workflow_models
 import crewplane.core.workflow.validation as workflow_validation
+import crewplane.runtime.execution.workspace_files.resolution as workspace_file_resolution
 from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
 from crewplane.core.preflight.dependency_edges import dependency_signature
 from crewplane.core.preflight.models import (
@@ -28,10 +29,12 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
+    resolve_project_initial_workspace_file,
     resolve_workspace_file,
 )
 from crewplane.version import SCHEMA_VERSION
@@ -64,6 +67,10 @@ class _ArtifactStore:
         path = self.stages_dir / stage_path
         return path if path.is_dir() else None
 
+    def get_run_log_dir(self) -> Path:
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        return self.logs_dir
+
     def read_verified_node_artifact(
         self,
         request: NodeArtifactRequest,
@@ -92,12 +99,25 @@ def _static_content_ref(payload: bytes) -> str:
 def _write_lineage_state_with_bundle(
     repo: Path,
     stage_dir: Path,
+    source_commit: str,
+    source_tree: str,
     result_commit: str,
     result_tree: str,
-    result_ref: str,
     bundle_name: str,
     extra_payload: dict[str, object] | None = None,
-) -> None:
+) -> str:
+    overrides = extra_payload or {}
+    node_id = str(overrides.get("node_id", "input"))
+    task_id = str(overrides.get("task_id", "mock_executor_0"))
+    round_num = int(overrides.get("round_num", 1))
+    audit_round_num = overrides.get("audit_round_num")
+    slug = invocation_slug(
+        node_id,
+        task_id,
+        audit_round_num if isinstance(audit_round_num, int) else None,
+        round_num,
+    )
+    result_ref = f"refs/crewplane/runs/demo-run/{node_id}/{slug}/result"
     bundle_dir = stage_dir / "workspace-bundles"
     bundle_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = bundle_dir / bundle_name
@@ -105,25 +125,105 @@ def _write_lineage_state_with_bundle(
     _git(repo, "bundle", "create", bundle_path.as_posix(), result_ref)
     bundle_sha256 = hashlib.sha256(bundle_path.read_bytes()).hexdigest()
     state_path = stage_dir / "workspace-state.json"
+    candidate_ref = f"{result_ref.removesuffix('/result')}/candidate"
     payload: dict[str, object] = {
+        "version": SCHEMA_VERSION,
+        "run_id": "run",
+        "run_key_name": "demo-run",
+        "workflow_name": "demo",
+        "workflow_signature": "0" * 64,
+        "node_id": node_id,
+        "task_id": task_id,
+        "provider": "mock",
         "status": "succeeded",
         "role": "executor",
-        "workspace": {"lineage_producer": True},
-        "result": {
-            "result_commit": result_commit,
-            "result_tree": result_tree,
+        "round_num": round_num,
+        "audit_round_num": audit_round_num,
+        "workspace_kind": "worktree",
+        "logical_worktree_name": "primary",
+        "clean_start": "strict",
+        "worktree_contract": WORKTREE_CONTRACT.model_dump(mode="json"),
+        "git": {
+            "object_format": _git(repo, "rev-parse", "--show-object-format=storage"),
+            "repo_id": "repo",
+            "run_base_commit": source_commit,
+            "source_tree": source_tree,
+            "git_top_level": repo.as_posix(),
+            "active_git_dir": (repo / ".git").as_posix(),
+            "common_git_dir": (repo / ".git").as_posix(),
         },
-        "refs": {"result": result_ref},
+        "source": {
+            "kind": "project",
+            "node_id": None,
+            "commit": source_commit,
+            "tree": source_tree,
+            "candidate_sequence": None,
+        },
+        "invocation_source": {
+            "source_kind": "project",
+            "source_node_id": None,
+            "source_commit": source_commit,
+            "source_tree": source_tree,
+            "candidate_sequence": None,
+        },
+        "workspace": {
+            "path": None,
+            "effective_cwd": None,
+            "materialization": "worktree_checkout",
+            "writable": True,
+            "lineage_producer": True,
+            "retention": "retained",
+            "retained_reason": None,
+            "project_root_relative_path": ".",
+            "reuse_generation": 1,
+        },
+        "execution": {
+            "workspace_path": None,
+            "checkout_root": None,
+            "effective_cwd": None,
+        },
+        "process_drain": {"status": "confirmed"},
+        "result": {
+            "candidate_commit": result_commit,
+            "result_commit": result_commit,
+            "candidate_tree": result_tree,
+            "result_tree": result_tree,
+            "changed_path_count": 1,
+        },
+        "refs": {"candidate": candidate_ref, "result": result_ref},
         "bundle": {
             "path": bundle_path.relative_to(state_path.parent.parent).as_posix(),
             "sha256": bundle_sha256,
             "size_bytes": bundle_path.stat().st_size,
             "verified": True,
         },
+        "ref_publication": {
+            "phase": "published",
+            "repository_id": "repo",
+            "run_id": "run",
+            "run_key_name": "demo-run",
+            "node_id": node_id,
+            "task_id": task_id,
+            "role": "executor",
+            "round_num": round_num,
+            "audit_round_num": audit_round_num,
+            "destinations": {
+                "candidate": {
+                    "name": candidate_ref,
+                    "target_oid": result_commit,
+                    "expected_old_oid": None,
+                },
+                "result": {
+                    "name": result_ref,
+                    "target_oid": result_commit,
+                    "expected_old_oid": None,
+                },
+            },
+        },
     }
-    if extra_payload is not None:
-        payload.update(extra_payload)
+    payload.update(overrides)
     state_path.write_text(json.dumps(payload), encoding="utf-8")
+    return result_ref
 
 
 def _plan(root: Path, content_ref: str | None = None) -> PreflightExecutionPlan:
@@ -429,6 +529,73 @@ def test_assemble_prompt_reads_project_initial_workspace_file_locator(
     assert prompt == "workspace file"
 
 
+def test_project_initial_workspace_file_preserves_validation_precedence(
+    tmp_path: Path,
+) -> None:
+    context_root = tmp_path / "execution-stages" / "demo-run"
+    content_ref = "workspace-files/invalid.txt"
+    payload = b"\xff"
+    workspace_file = context_root / "preflight" / content_ref
+    workspace_file.parent.mkdir(parents=True)
+    workspace_file.write_bytes(payload)
+    locator = WorkspaceFileLocator(
+        locator_id="workspace-file-test",
+        content_ref=content_ref,
+        occurrence_id="build:executor:0:file:README.md",
+        node_id="build",
+        target="executor_prompt",
+        source_class="project_initial",
+        raw_token="{{file:README.md}}",
+        raw_path="README.md",
+        source_root=tmp_path.as_posix(),
+        source_root_relative_to_project=".",
+        project_root_relative_to_git_top=".",
+        git_top_relative_path="README.md",
+        workspace_relative_path="README.md",
+        git_blob="a" * 40,
+        git_file_mode="100644",
+        byte_size=len(payload),
+        canonical_blob_sha256=hashlib.sha256(payload).hexdigest(),
+        literal_path_verified=True,
+        utf8_validated=True,
+    )
+
+    def resolve(candidate: WorkspaceFileLocator) -> None:
+        plan = _plan(context_root).model_copy(
+            update={"workspace_file_locators": [candidate]}
+        )
+        resolve_project_initial_workspace_file(plan, candidate.locator_id)
+
+    with pytest.raises(RuntimeError, match="Runtime-dynamic"):
+        resolve(
+            locator.model_copy(
+                update={"source_class": "runtime_dynamic", "content_ref": None}
+            )
+        )
+    with pytest.raises(RuntimeError, match="missing preflight content"):
+        resolve(locator.model_copy(update={"content_ref": None}))
+    with pytest.raises(ValueError, match="Invalid workspace content reference"):
+        resolve(
+            locator.model_copy(
+                update={
+                    "content_ref": "../outside.txt",
+                    "canonical_blob_sha256": "0" * 64,
+                    "byte_size": 2,
+                }
+            )
+        )
+    with pytest.raises(RuntimeError, match="content digest mismatch"):
+        resolve(
+            locator.model_copy(
+                update={"canonical_blob_sha256": "0" * 64, "byte_size": 2}
+            )
+        )
+    with pytest.raises(RuntimeError, match="content size mismatch"):
+        resolve(locator.model_copy(update={"byte_size": 2}))
+    with pytest.raises(RuntimeError, match="not valid UTF-8"):
+        resolve(locator)
+
+
 def test_reviewer_prompt_reads_project_initial_workspace_file_locator(
     tmp_path: Path,
 ) -> None:
@@ -535,6 +702,11 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
     _git(repo, "init")
     _git(repo, "config", "user.name", "Crewplane Test")
     _git(repo, "config", "user.email", "crewplane-test@example.invalid")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "base")
+    source_commit = _git(repo, "rev-parse", "HEAD^{commit}")
+    source_tree = _git(repo, "rev-parse", "HEAD^{tree}")
     (repo / "future.md").write_text("dynamic\n", encoding="utf-8")
     _git(repo, "add", "future.md")
     _git(repo, "commit", "-m", "candidate")
@@ -547,9 +719,10 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
     _write_lineage_state_with_bundle(
         repo=repo,
         stage_dir=upstream_stage,
+        source_commit=source_commit,
+        source_tree=source_tree,
         result_commit=result_commit,
         result_tree=result_tree,
-        result_ref="refs/crewplane/tests/input/result",
         bundle_name="input.bundle",
         extra_payload={"node_id": "input"},
     )
@@ -571,8 +744,8 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
         update={
             "workspace_source": WorkspaceSourceSnapshot(
                 worktree_contract=WORKTREE_CONTRACT,
-                run_base_commit=result_commit,
-                source_tree=result_tree,
+                run_base_commit=source_commit,
+                source_tree=source_tree,
                 object_format="sha1",
                 repository_id="repo",
                 git_version=_git(repo, "--version"),
@@ -632,16 +805,23 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
 
     assert prompt == "dynamic\n"
 
-    _git(repo, "rm", "future.md")
-    _git(repo, "commit", "-m", "remove candidate file")
-    missing_file_commit = _git(repo, "rev-parse", "HEAD^{commit}")
-    missing_file_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    missing_file_commit = _git(
+        repo,
+        "commit-tree",
+        source_tree,
+        "-p",
+        source_commit,
+        "-m",
+        "candidate without file",
+    )
+    missing_file_tree = source_tree
     _write_lineage_state_with_bundle(
         repo=repo,
         stage_dir=upstream_stage,
+        source_commit=source_commit,
+        source_tree=source_tree,
         result_commit=missing_file_commit,
         result_tree=missing_file_tree,
-        result_ref="refs/crewplane/tests/input/missing-file",
         bundle_name="input-missing-file.bundle",
         extra_payload={"node_id": "input"},
     )
@@ -657,6 +837,7 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
 
 def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -685,41 +866,24 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
     context_root = tmp_path / "execution-stages" / "demo-run"
     store = _ArtifactStore(tmp_path)
     upstream_stage = store.stages_dir / "input-stage"
-    bundle_dir = upstream_stage / "workspace-bundles"
-    bundle_dir.mkdir(parents=True)
-    result_ref = "refs/crewplane/tests/input/result"
-    bundle_path = bundle_dir / "input.bundle"
-    _git(repo, "update-ref", result_ref, result_commit)
-    _git(repo, "bundle", "create", bundle_path.as_posix(), result_ref)
-    bundle_sha256 = hashlib.sha256(bundle_path.read_bytes()).hexdigest()
+    result_ref = _write_lineage_state_with_bundle(
+        repo=repo,
+        stage_dir=upstream_stage,
+        source_commit=parent_commit,
+        source_tree=parent_tree,
+        result_commit=result_commit,
+        result_tree=result_tree,
+        bundle_name="input.bundle",
+        extra_payload={"node_id": "input"},
+    )
     _git(repo, "update-ref", "-d", result_ref)
     _git(repo, "reflog", "expire", "--expire=now", "--all")
     _git(repo, "gc", "--prune=now")
     if _git_commit_exists(repo, result_commit):
         pytest.skip("git retained the test commit after pruning")
+    producer_state_path = upstream_stage / "workspace-state.json"
+    producer_state_before = producer_state_path.read_bytes()
 
-    (upstream_stage / "workspace-state.json").write_text(
-        json.dumps(
-            {
-                "status": "succeeded",
-                "role": "executor",
-                "node_id": "input",
-                "workspace": {"lineage_producer": True},
-                "result": {
-                    "result_commit": result_commit,
-                    "result_tree": result_tree,
-                },
-                "refs": {"result": result_ref},
-                "bundle": {
-                    "path": bundle_path.relative_to(store.stages_dir).as_posix(),
-                    "sha256": bundle_sha256,
-                    "size_bytes": bundle_path.stat().st_size,
-                    "verified": True,
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
     locator = WorkspaceFileLocator(
         locator_id="workspace-file-dynamic",
         occurrence_id="build:executor:0:file:future.md",
@@ -792,6 +956,25 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
             ],
         }
     )
+    original_cat_blob = workspace_file_resolution.git_cat_blob
+
+    def collect_after_prune(repo_root: str, object_id: str) -> bytes:
+        imported_refs = _git(
+            repo,
+            "for-each-ref",
+            "--format=%(objectname)",
+            f"refs/crewplane/runs/{plan.run_key_name}/imports",
+        ).splitlines()
+        assert result_commit in imported_refs
+        _git(repo, "reflog", "expire", "--expire=now", "--all")
+        _git(repo, "gc", "--prune=now")
+        return original_cat_blob(repo_root, object_id)
+
+    monkeypatch.setattr(
+        workspace_file_resolution,
+        "git_cat_blob",
+        collect_after_prune,
+    )
 
     prompt = assemble_prompt(
         plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
@@ -799,6 +982,8 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
 
     assert prompt == "bundled dynamic\n"
     assert _git_commit_exists(repo, result_commit)
+    assert producer_state_path.read_bytes() == producer_state_before
+    assert not tuple(store.logs_dir.glob("workspace-temporary-refs-*.json"))
 
 
 def test_initial_pre_review_reads_project_initial_runtime_dynamic_workspace_file(
@@ -876,9 +1061,10 @@ def test_initial_pre_review_reads_upstream_runtime_dynamic_workspace_file(
     _write_lineage_state_with_bundle(
         repo=repo,
         stage_dir=store.stages_dir / "input-stage",
+        source_commit=run_base_commit,
+        source_tree=source_tree,
         result_commit=upstream_commit,
         result_tree=upstream_tree,
-        result_ref="refs/crewplane/tests/input/result",
         bundle_name="input.bundle",
         extra_payload={"node_id": "input"},
     )
@@ -958,6 +1144,11 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
     _git(repo, "init")
     _git(repo, "config", "user.name", "Crewplane Test")
     _git(repo, "config", "user.email", "crewplane-test@example.invalid")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "-m", "base")
+    source_commit = _git(repo, "rev-parse", "HEAD^{commit}")
+    source_tree = _git(repo, "rev-parse", "HEAD^{tree}")
     (repo / "future.md").write_text("candidate\n", encoding="utf-8")
     _git(repo, "add", "future.md")
     _git(repo, "commit", "-m", "candidate")
@@ -974,9 +1165,10 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
     _write_lineage_state_with_bundle(
         repo=repo,
         stage_dir=build_stage,
+        source_commit=source_commit,
+        source_tree=source_tree,
         result_commit=result_commit,
         result_tree=result_tree,
-        result_ref="refs/crewplane/tests/build/result",
         bundle_name="build.bundle",
         extra_payload={
             "node_id": "build",
@@ -1010,8 +1202,8 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
         update={
             "workspace_source": WorkspaceSourceSnapshot(
                 worktree_contract=WORKTREE_CONTRACT,
-                run_base_commit=result_commit,
-                source_tree=result_tree,
+                run_base_commit=source_commit,
+                source_tree=source_tree,
                 object_format="sha1",
                 repository_id="repo",
                 git_version=_git(repo, "--version"),

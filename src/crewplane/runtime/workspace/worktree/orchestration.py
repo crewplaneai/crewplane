@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import stat
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
@@ -15,15 +15,22 @@ from crewplane.core.preflight.models import (
 from ..cleanup_notes import note_cleanup_failure
 from ..git import git, git_error
 from ..locks import git_metadata_lock
-from ..snapshot import (
-    ensure_owner_private_dir,
-    remove_workspace_path,
-    workspace_run_root,
+from .checkout_identity import (
+    require_regular_worktree_git_file,
+    verify_capture_layout,
+    verify_worktree_git_metadata_identity,
+    worktree_is_registered,
 )
+from .checkout_placement import allocate_worktree_workspace, worktree_project_cwd
 from .commit import commit_message, commit_tree
+from .head import (
+    prove_detached_head,
+    reject_attached_head_after_safe_detachment,
+)
 from .inspection import (
     WorktreeDriftSummary,
     changed_paths,
+    changed_tree_paths,
     inspect_disposable_checkout,
     reject_byte_transforming_attributes,
     reject_gitattributes_drift,
@@ -45,11 +52,16 @@ from .protected_refs import (
     protected_ref_snapshot_for_source,
     reject_protected_ref_drift,
 )
-from .refs import safe_file_component
+from .removal import (
+    remove_claimed_worktree_workspace,
+    remove_unclaimed_worktree_workspace,
+)
 from .result_validation import validate_result_tree
+from .temporary_refs import TemporaryRefOwner
 from .types import (
     WorktreeCaptureRequest,
     WorktreeCaptureResult,
+    WorktreeProvisioningClaim,
     WorktreeSourceRef,
     WorktreeWorkspace,
 )
@@ -63,45 +75,67 @@ def create_worktree_workspace(
     protected_ref_scopes: tuple[str, ...] | None = None,
     workspace_family: Literal["workspaces", "review-workspaces"] = "workspaces",
     parent_slug: str | None = None,
+    state_path: Path | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
+    source_chain_verified: bool = False,
+    record_fresh_claim: Callable[[WorktreeProvisioningClaim, int], None] | None = None,
 ) -> WorktreeWorkspace:
-    run_root = workspace_run_root(plan, source, workspace_family)
-    if parent_slug is not None:
-        run_root = run_root / safe_file_component(parent_slug)
-        ensure_owner_private_dir(run_root)
-    workspace_path = run_root / slug
-    if workspace_path.exists() or workspace_path.is_symlink():
-        raise RuntimeError(
-            f"Workspace path already exists: {workspace_path.as_posix()}"
-        )
-    workspace_path.mkdir(mode=0o700)
-    workspace_path.chmod(0o700)
-    checkout_root = workspace_path / "checkout"
+    workspace_path, checkout_root = allocate_worktree_workspace(
+        plan,
+        slug,
+        source,
+        workspace_family,
+        parent_slug,
+    )
     try:
-        ensure_source_commit_available(source, source_ref)
-        with git_metadata_lock(Path(source.common_git_dir)):
-            lock_mode = _add_locked_detached_worktree(
-                source,
-                checkout_root,
-                source_ref.source_commit,
-                _worktree_lock_reason(plan),
-            )
-        cwd = checkout_root / source.project_root_relative_path
-        if source.project_root_relative_path == ".":
-            cwd = checkout_root
-        _verify_worktree_ready(source, checkout_root, source_ref)
+        lock_mode = _provision_worktree_checkout(
+            plan,
+            source,
+            source_ref,
+            checkout_root,
+            state_path,
+            cancel_requested,
+            source_chain_verified,
+        )
+        cwd = worktree_project_cwd(source, checkout_root)
         git_dir = active_git_dir(checkout_root)
+        claim = WorktreeProvisioningClaim(
+            workspace_path=workspace_path,
+            checkout_root=checkout_root,
+            cwd=cwd,
+            git_dir=git_dir,
+            lock_mode=lock_mode,
+        )
+        _record_worktree_claim(
+            record_fresh_claim,
+            claim,
+        )
+        _verify_worktree_ready(source, checkout_root, source_ref)
         protected_refs = _protected_ref_snapshot(
             source,
             protected_ref_scopes,
+            source_ref,
         )
     except subprocess.CalledProcessError as exc:
         failure = RuntimeError(
             f"Workspace worktree provisioning failed: {git_error(exc)}"
         )
-        _remove_worktree_after_provisioning_failure(source, workspace_path, failure)
+        if record_fresh_claim is None:
+            _remove_worktree_after_provisioning_failure(
+                source,
+                workspace_path,
+                failure,
+                cancel_requested,
+            )
         raise failure from exc
     except Exception as exc:
-        _remove_worktree_after_provisioning_failure(source, workspace_path, exc)
+        if record_fresh_claim is None:
+            _remove_worktree_after_provisioning_failure(
+                source,
+                workspace_path,
+                exc,
+                cancel_requested,
+            )
         raise
     return WorktreeWorkspace(
         workspace_path=workspace_path,
@@ -114,13 +148,58 @@ def create_worktree_workspace(
     )
 
 
+def _provision_worktree_checkout(
+    plan: PreflightExecutionPlan,
+    source: WorkspaceSourceSnapshot,
+    source_ref: WorktreeSourceRef,
+    checkout_root: Path,
+    state_path: Path | None,
+    cancel_requested: Callable[[], bool] | None,
+    source_chain_verified: bool,
+) -> str:
+    ref_owner = TemporaryRefOwner(state_path) if state_path is not None else None
+    with (
+        ensure_source_commit_available(
+            source,
+            source_ref,
+            ref_owner,
+            cancel_requested,
+            source_chain_verified,
+        ),
+        git_metadata_lock(Path(source.common_git_dir), cancel_requested),
+    ):
+        return _add_locked_detached_worktree(
+            source,
+            checkout_root,
+            source_ref.source_commit,
+            _worktree_lock_reason(plan),
+        )
+
+
+def _record_worktree_claim(
+    record_fresh_claim: Callable[[WorktreeProvisioningClaim, int], None] | None,
+    claim: WorktreeProvisioningClaim,
+) -> None:
+    if record_fresh_claim is None:
+        return
+    record_fresh_claim(claim, 1)
+
+
 def _remove_worktree_after_provisioning_failure(
     source: WorkspaceSourceSnapshot,
     workspace_path: Path,
     failure: BaseException,
+    cancel_requested: Callable[[], bool] | None,
 ) -> None:
     try:
-        remove_worktree_workspace(source, workspace_path)
+        if cancel_requested is None:
+            remove_worktree_workspace(source, workspace_path)
+        else:
+            remove_worktree_workspace(
+                source,
+                workspace_path,
+                cancel_requested=cancel_requested,
+            )
     except Exception as cleanup_error:
         note_cleanup_failure(
             failure,
@@ -131,15 +210,47 @@ def _remove_worktree_after_provisioning_failure(
 
 def capture_worktree_result(
     request: WorktreeCaptureRequest,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> WorktreeCaptureResult:
+    final_head = _validate_capture_source_state(
+        request,
+        cancel_requested,
+    )
+    result_tree = _stage_capture_tree(request)
+    accepted_changed_paths = _validate_capture_result_tree(request, result_tree)
+    result_commit = _create_capture_commit(request, result_tree)
+    refs, bundle_path = _publish_capture_result(
+        request,
+        result_commit,
+        cancel_requested,
+    )
+    bundle_sha256 = sha256_file(bundle_path)
+    return WorktreeCaptureResult(
+        candidate_commit=result_commit,
+        result_commit=result_commit,
+        candidate_tree=result_tree,
+        result_tree=result_tree,
+        changed_path_count=len(accepted_changed_paths),
+        bundle_path=bundle_path,
+        bundle_sha256=bundle_sha256,
+        bundle_size_bytes=bundle_path.stat().st_size,
+        candidate_ref=refs[0],
+        result_ref=refs[1],
+        final_head=final_head,
+    )
+
+
+def _validate_capture_source_state(
+    request: WorktreeCaptureRequest,
+    cancel_requested: Callable[[], bool] | None,
+) -> str:
     _verify_capture_workspace_boundary(request)
     _reject_capture_policy_drift(request)
-    command = git(request.checkout_root)
-    final_head = command.text("rev-parse", "HEAD^{commit}")
-    if final_head != request.source_ref.source_commit:
-        raise RuntimeError(
-            "Workspace provider moved HEAD; mutable workspace capture requires "
-            "the final HEAD to remain at the invocation source commit."
+    with git_metadata_lock(Path(request.source.common_git_dir), cancel_requested):
+        reject_attached_head_after_safe_detachment(request.checkout_root)
+        head_proof = prove_detached_head(
+            request.checkout_root,
+            request.source_ref.source_commit,
         )
     reject_protected_ref_drift(request.checkout_root, request.protected_refs)
     _reject_capture_policy_drift(request)
@@ -155,7 +266,10 @@ def capture_worktree_result(
         request.source_ref.source_commit,
         changed_path_records,
     )
-    reject_byte_transforming_attributes(request.checkout_root, changed_path_records)
+    return head_proof.commit
+
+
+def _stage_capture_tree(request: WorktreeCaptureRequest) -> str:
     with TemporaryDirectory(prefix="crewplane-capture-index-") as index_dir:
         capture_index = Path(index_dir) / "capture.index"
         indexed = git(request.checkout_root, capture_index)
@@ -163,38 +277,60 @@ def capture_worktree_result(
         _reject_capture_policy_drift(request)
         indexed.run("add", "-A", "--", ".")
         result_tree = indexed.text("write-tree")
+        indexed.run("diff-files", "--quiet", "--")
+    return result_tree
+
+
+def _validate_capture_result_tree(
+    request: WorktreeCaptureRequest,
+    result_tree: str,
+) -> tuple[str, ...]:
+    accepted_changed_paths = changed_tree_paths(
+        request.checkout_root,
+        request.source_ref.source_tree,
+        result_tree,
+    )
+    reject_byte_transforming_attributes(
+        request.checkout_root,
+        accepted_changed_paths,
+    )
     validate_result_tree(
         request.checkout_root,
         result_tree,
         request.source.project_root_relative_path,
     )
-    result_commit = commit_tree(
+    return accepted_changed_paths
+
+
+def _create_capture_commit(
+    request: WorktreeCaptureRequest,
+    result_tree: str,
+) -> str:
+    return commit_tree(
         request.checkout_root,
         result_tree,
         request.source_ref.source_commit,
         commit_message(request, result_tree),
     )
-    candidate_commit = result_commit
-    refs = update_result_refs(request, candidate_commit, result_commit)
-    try:
-        bundle_path = export_bundle(request, refs[1])
-    except Exception as exc:
-        cleanup_result_refs_after_failure(request, refs, exc)
-        raise
-    bundle_sha256 = sha256_file(bundle_path)
-    return WorktreeCaptureResult(
-        candidate_commit=candidate_commit,
-        result_commit=result_commit,
-        candidate_tree=result_tree,
-        result_tree=result_tree,
-        changed_path_count=len(changed_path_records),
-        bundle_path=bundle_path,
-        bundle_sha256=bundle_sha256,
-        bundle_size_bytes=bundle_path.stat().st_size,
-        candidate_ref=refs[0],
-        result_ref=refs[1],
-        final_head=final_head,
+
+
+def _publish_capture_result(
+    request: WorktreeCaptureRequest,
+    result_commit: str,
+    cancel_requested: Callable[[], bool] | None,
+) -> tuple[tuple[str, str], Path]:
+    refs = update_result_refs(
+        request,
+        result_commit,
+        result_commit,
+        cancel_requested,
     )
+    try:
+        bundle_path = export_bundle(request, refs[1], cancel_requested)
+    except Exception as exc:
+        cleanup_result_refs_after_failure(request, exc, cancel_requested)
+        raise
+    return refs, bundle_path
 
 
 def inspect_disposable_worktree(
@@ -213,131 +349,55 @@ def inspect_disposable_worktree(
 def remove_worktree_workspace(
     source: WorkspaceSourceSnapshot,
     workspace_path: Path,
+    expected_git_dir: Path | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> None:
-    checkout_root = workspace_path / "checkout"
-    with git_metadata_lock(Path(source.common_git_dir)):
-        if _worktree_is_registered(source, checkout_root):
-            git(Path(source.git_top_level)).run(
-                "worktree",
-                "remove",
-                "--force",
-                "--force",
-                checkout_root.as_posix(),
-            )
-    remove_workspace_path(workspace_path)
-
-
-def _worktree_is_registered(
-    source: WorkspaceSourceSnapshot,
-    checkout_root: Path,
-) -> bool:
-    expected = checkout_root.absolute()
-    records = (
-        git(Path(source.git_top_level))
-        .text(
-            "worktree",
-            "list",
-            "--porcelain",
+    if expected_git_dir is None:
+        remove_unclaimed_worktree_workspace(
+            source,
+            workspace_path,
+            cancel_requested,
         )
-        .splitlines()
+        return
+    remove_claimed_worktree_workspace(
+        source,
+        workspace_path,
+        expected_git_dir,
+        cancel_requested,
     )
-    return any(
-        _registered_worktree_path(record) == expected
-        for record in records
-        if record.startswith("worktree ")
-    )
-
-
-def _registered_worktree_path(record: str) -> Path:
-    return Path(record.removeprefix("worktree ")).absolute()
 
 
 def _verify_capture_workspace_boundary(request: WorktreeCaptureRequest) -> None:
-    _reject_unsafe_capture_directory(
-        request.workspace_path,
-        "Workspace capture root",
-    )
-    if request.checkout_root != request.workspace_path / "checkout":
-        raise RuntimeError("Workspace capture checkout path is not under its root.")
-    _reject_unsafe_capture_directory(
-        request.checkout_root,
-        "Workspace capture checkout",
-    )
-    git_file = _valid_worktree_git_file(request.checkout_root)
+    verify_capture_layout(request)
+    git_file = require_regular_worktree_git_file(request.checkout_root)
     git_dir = active_git_dir(request.checkout_root)
+    _verify_capture_git_dir_descriptor(request, git_dir)
+    verify_worktree_git_metadata_identity(git_file, git_dir)
+    if not worktree_is_registered(request.source, request.checkout_root):
+        raise RuntimeError("Workspace capture checkout is not registered.")
+
+
+def _verify_capture_git_dir_descriptor(
+    request: WorktreeCaptureRequest,
+    git_dir: Path,
+) -> None:
+    if git_dir != request.git_dir.resolve(strict=False):
+        raise RuntimeError("Workspace capture Git dir changed after materialization.")
     common_git_dir = Path(request.source.common_git_dir).resolve(strict=False)
     if not git_dir.is_relative_to(common_git_dir):
         raise RuntimeError("Workspace capture Git dir escapes the common Git dir.")
-    _reject_capture_gitdir_mismatch(git_file, git_dir)
-
-
-def _reject_unsafe_capture_directory(path: Path, label: str) -> None:
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError as exc:
-        raise RuntimeError(f"{label} is missing: {path.as_posix()}.") from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-        raise RuntimeError(
-            f"{label} must be a real directory and not a symlink: {path.as_posix()}."
-        )
-
-
-def _valid_worktree_git_file(checkout_root: Path) -> Path:
-    git_file = checkout_root / ".git"
-    try:
-        mode = git_file.lstat().st_mode
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Workspace capture requires a valid worktree .git file."
-        ) from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise RuntimeError("Workspace capture requires a valid worktree .git file.")
-    return git_file
-
-
-def _reject_capture_gitdir_mismatch(git_file: Path, git_dir: Path) -> None:
-    marker_target = _worktree_gitdir_marker_target(git_file)
-    if marker_target != git_dir:
-        raise RuntimeError("Workspace capture .git file does not match Git dir.")
-    backlink = _worktree_gitdir_backlink(git_dir)
-    if backlink != git_file.resolve(strict=False):
-        raise RuntimeError("Workspace capture Git dir does not belong to checkout.")
-
-
-def _worktree_gitdir_marker_target(git_file: Path) -> Path:
-    marker = "gitdir:"
-    content = git_file.read_text(encoding="utf-8", errors="replace").strip()
-    if not content.startswith(marker):
-        raise RuntimeError("Workspace capture found an invalid worktree .git file.")
-    raw_path = content[len(marker) :].strip()
-    if not raw_path:
-        raise RuntimeError("Workspace capture found an empty worktree Git dir.")
-    target = Path(raw_path)
-    if not target.is_absolute():
-        target = git_file.parent / target
-    return target.resolve(strict=False)
-
-
-def _worktree_gitdir_backlink(git_dir: Path) -> Path:
-    gitdir_file = git_dir / "gitdir"
-    try:
-        mode = gitdir_file.lstat().st_mode
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Workspace capture Git dir is missing its checkout pointer."
-        ) from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise RuntimeError("Workspace capture Git dir checkout pointer is invalid.")
-    raw_path = gitdir_file.read_text(encoding="utf-8", errors="replace").strip()
-    if not raw_path:
-        raise RuntimeError("Workspace capture Git dir checkout pointer is empty.")
-    target = Path(raw_path)
-    if not target.is_absolute():
-        target = git_dir / target
-    return target.resolve(strict=False)
 
 
 def _verify_worktree_ready(
+    source: WorkspaceSourceSnapshot,
+    checkout_root: Path,
+    source_ref: WorktreeSourceRef,
+) -> None:
+    _verify_worktree_source_identity(source, checkout_root, source_ref)
+    _verify_worktree_policy(source, checkout_root)
+
+
+def _verify_worktree_source_identity(
     source: WorkspaceSourceSnapshot,
     checkout_root: Path,
     source_ref: WorktreeSourceRef,
@@ -351,6 +411,12 @@ def _verify_worktree_ready(
     git_dir = active_git_dir(checkout_root)
     if not git_dir.is_relative_to(Path(source.common_git_dir)):
         raise RuntimeError("Workspace worktree Git dir escapes the Git common dir.")
+
+
+def _verify_worktree_policy(
+    source: WorkspaceSourceSnapshot,
+    checkout_root: Path,
+) -> None:
     reject_common_git_policy_drift(
         Path(source.git_top_level),
         Path(source.common_git_dir),
@@ -414,8 +480,10 @@ def _reject_capture_policy_drift(request: WorktreeCaptureRequest) -> None:
 def _protected_ref_snapshot(
     source: WorkspaceSourceSnapshot,
     protected_ref_scopes: tuple[str, ...] | None,
+    source_ref: WorktreeSourceRef,
 ) -> ProtectedRefSnapshot:
     return protected_ref_snapshot_for_source(
         source.git_top_level,
         protected_ref_scopes,
+        source_ref,
     )

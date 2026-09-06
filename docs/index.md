@@ -47,7 +47,7 @@ section that continues the tour.
 6. [Review loops](guides/review-loops.md)
 7. [Findings artifacts](guides/findings.md)
 8. [Workflow composition](guides/workflow-composition.md)
-9. Optional: [Experimental workspace isolation](guides/workspace-isolation.md)
+9. Optional: [Workspace isolation](guides/workspace-isolation.md)
    can be omitted unless you need isolated source-tree edits.
 10. [Mock validation](guides/mock-validation.md)
 11. [Troubleshooting](guides/troubleshooting.md)
@@ -62,7 +62,7 @@ Feel free to jump around based on what you need right now:
 - Inspect outputs: [Inspecting Run Records](guides/inspecting-artifacts.md)
 - Write workflows: [Workflow authoring](guides/workflow-authoring.md)
 - Configure provider roles and reviews: [Node modes and provider roles](guides/node-modes.md), [Review loops](guides/review-loops.md), [Findings artifacts](guides/findings.md)
-- Reuse workflows or isolate file edits: [Workflow composition](guides/workflow-composition.md), [Experimental workspace isolation](guides/workspace-isolation.md)
+- Reuse workflows or isolate file edits: [Workflow composition](guides/workflow-composition.md), [Workspace isolation](guides/workspace-isolation.md)
 - Debug or share a run: [Troubleshooting](guides/troubleshooting.md), [Reproducible support bundle](guides/reproducible-support-bundle.md)
 - Clean generated state: [Cleanup](guides/cleanup.md)
 
@@ -70,7 +70,7 @@ Feel free to jump around based on what you need right now:
 
 - [Example templates](examples/index.md)
 - [Composition examples](examples/composition.md)
-- [Experimental workspace examples](examples/workspace.md)
+- [Workspace examples](examples/workspace.md)
 
 ## Reference
 

@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.state import (
+    WorkspaceProvisioningMetadata,
     WorkspaceStateMaterializationRequest,
     WorkspaceStateRetention,
     WorkspaceStateUpdateRequest,
@@ -185,6 +188,231 @@ def test_running_workspace_state_records_source_chain(
     assert upstreams[0]["bundle_path"] == "implement/workspace-bundles/a.bundle"
 
 
+def test_running_workspace_state_repeated_write_preserves_unowned_fields(
+    tmp_path: Path,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    source = plan.workspace_source
+    assert source is not None
+    node = plan.nodes[0]
+    policy = node.workspace_policy
+    assert policy is not None
+    state_path = tmp_path / "run" / "alpha" / "workspace-state.json"
+    state_path.parent.mkdir(parents=True)
+    request = WorkspaceStateWriteRequest(
+        run_id=plan.run_id,
+        run_key_name=plan.run_key_name,
+        workflow_name=plan.workflow_name,
+        workflow_signature=plan.workflow_signature,
+        task_id="alpha",
+        provider="alpha",
+        role_label=ProviderRole.EXECUTOR,
+        round_num=1,
+        audit_round_num=None,
+        invoker={"launch_mode": "mock_no_child_process"},
+    )
+    workspace_path = tmp_path / "workspace"
+
+    write_running_workspace_state(
+        state_path,
+        request,
+        node,
+        source,
+        policy,
+        WorkspaceStateMaterializationRequest(
+            workspace_path=workspace_path,
+            child_environment_required=False,
+        ),
+    )
+    first_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    first_payload["runtime_marker"] = {"preserved": True}
+    state_path.write_text(json.dumps(first_payload), encoding="utf-8")
+
+    write_running_workspace_state(
+        state_path,
+        request,
+        node,
+        source,
+        policy,
+        WorkspaceStateMaterializationRequest(
+            workspace_path=workspace_path,
+            child_environment_required=False,
+            effective_cwd=workspace_path / "checkout",
+            provisioning=WorkspaceProvisioningMetadata(
+                checkout_size_bytes=123,
+                duration_seconds=0.25,
+            ),
+        ),
+    )
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["runtime_marker"] == {"preserved": True}
+    assert (
+        payload["execution"]["effective_cwd"]
+        == (workspace_path / "checkout").as_posix()
+    )
+    assert payload["execution"]["checkout_size_bytes"] == 123
+    assert payload["execution"]["provisioning_duration_seconds"] == 0.25
+
+
+@pytest.mark.parametrize(
+    ("existing_update", "message"),
+    [
+        (
+            {"status": "succeeded"},
+            "Workspace materialization cannot rewrite a terminal outcome.",
+        ),
+        (
+            {"run_id": "contradictory-run"},
+            "Workspace materialization state identity is contradictory.",
+        ),
+    ],
+)
+def test_running_workspace_state_rejection_does_not_rewrite_existing_state(
+    tmp_path: Path,
+    existing_update: dict[str, object],
+    message: str,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo,
+        tmp_path / "cache",
+        cleanup_on_success=True,
+        kind="worktree",
+    )
+    source = plan.workspace_source
+    assert source is not None
+    node = plan.nodes[0]
+    policy = node.workspace_policy
+    assert policy is not None
+    state_path = tmp_path / "run" / "alpha" / "workspace-state.json"
+    state_path.parent.mkdir(parents=True)
+    request = WorkspaceStateWriteRequest(
+        run_id=plan.run_id,
+        run_key_name=plan.run_key_name,
+        workflow_name=plan.workflow_name,
+        workflow_signature=plan.workflow_signature,
+        task_id="alpha",
+        provider="alpha",
+        role_label=ProviderRole.EXECUTOR,
+        round_num=1,
+        audit_round_num=None,
+        invoker={"launch_mode": "mock_no_child_process"},
+    )
+    materialization = WorkspaceStateMaterializationRequest(
+        workspace_path=tmp_path / "workspace",
+        child_environment_required=False,
+    )
+    write_running_workspace_state(
+        state_path,
+        request,
+        node,
+        source,
+        policy,
+        materialization,
+    )
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload.update(existing_update)
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    before = state_path.read_bytes()
+
+    with pytest.raises(RuntimeError, match=message):
+        write_running_workspace_state(
+            state_path,
+            request,
+            node,
+            source,
+            policy,
+            materialization,
+        )
+
+    assert state_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("update_request", "message"),
+    [
+        (
+            WorkspaceStateUpdateRequest(
+                status="failed",
+                diagnostics=[{"level": "error", "message": "replacement"}],
+                result={"commit": "changed"},
+                refs={"result": "changed"},
+                bundle={"path": "changed"},
+            ),
+            (
+                "Workspace terminal outcome cannot be rewritten from "
+                "'succeeded' to 'failed'."
+            ),
+        ),
+        (
+            WorkspaceStateUpdateRequest(
+                status="succeeded",
+                diagnostics=[{"level": "error", "message": "replacement"}],
+                result={"commit": "changed"},
+                refs={"result": "changed"},
+                bundle={"path": "changed"},
+            ),
+            "Workspace terminal result evidence is immutable.",
+        ),
+        (
+            WorkspaceStateUpdateRequest(
+                status="succeeded",
+                diagnostics=[{"level": "error", "message": "replacement"}],
+                result={"commit": "original"},
+                refs={"result": "changed"},
+                bundle={"path": "changed"},
+            ),
+            "Workspace terminal ref evidence is immutable.",
+        ),
+        (
+            WorkspaceStateUpdateRequest(
+                status="succeeded",
+                diagnostics=[{"level": "error", "message": "replacement"}],
+                result={"commit": "original"},
+                refs={"result": "original"},
+                bundle={"path": "changed"},
+            ),
+            "Workspace terminal bundle evidence is immutable.",
+        ),
+    ],
+)
+def test_terminal_evidence_rejection_preserves_state_and_error_precedence(
+    tmp_path: Path,
+    update_request: WorkspaceStateUpdateRequest,
+    message: str,
+) -> None:
+    state_path = tmp_path / "workspace-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "status": "succeeded",
+                "workspace": {
+                    "retention": "pending_cleanup",
+                    "retained_reason": "stage_finalization_pending",
+                },
+                "diagnostics": [{"level": "warning", "message": "original"}],
+                "result": {"commit": "original"},
+                "refs": {"result": "original"},
+                "bundle": {"path": "original"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = state_path.read_bytes()
+
+    with pytest.raises(RuntimeError, match=message):
+        update_workspace_state(state_path, update_request)
+
+    assert state_path.read_bytes() == before
+
+
 def test_cleanup_update_preserves_terminal_child_environment_false(
     tmp_path: Path,
 ) -> None:
@@ -201,15 +429,21 @@ def test_cleanup_update_preserves_terminal_child_environment_false(
                     "required": True,
                     "applied": False,
                 },
+                "diagnostics": [{"level": "warning", "message": "original"}],
             }
         ),
         encoding="utf-8",
     )
+    diagnostics = [
+        {"level": "error", "message": "first"},
+        {"level": "warning", "message": "second"},
+    ]
 
     update_workspace_state(
         state_path,
         WorkspaceStateUpdateRequest(
             status="succeeded",
+            diagnostics=diagnostics,
             retention=WorkspaceStateRetention(
                 retention="deleted",
                 retained_reason=None,
@@ -220,6 +454,7 @@ def test_cleanup_update_preserves_terminal_child_environment_false(
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     assert payload["child_process_environment"]["applied"] is False
     assert payload["workspace"]["retention"] == "deleted"
+    assert payload["diagnostics"] == diagnostics
 
 
 def test_discard_workspace_lineage_removes_lineage_result_fields(

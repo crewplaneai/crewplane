@@ -28,6 +28,7 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
+from crewplane.core.preflight.models import WorkspaceSelectionRecord
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
@@ -505,6 +506,29 @@ def test_preflight_execution_plan_rejects_provider_node_without_provider_records
     payload["nodes"][0]["provider_records"] = []
 
     with pytest.raises(ValidationError, match="at least one provider record"):
+        PreflightExecutionPlan(**payload)
+
+
+def test_preflight_execution_plan_rejects_present_disabled_workspace_policy(
+    tmp_path: Path,
+) -> None:
+    payload = _persisted_plan_payload(tmp_path)
+    policy = WorkspaceSelectionRecord().model_dump(mode="python")
+    policy.update(
+        {
+            "logical_worktree_name": "primary",
+            "declaration_kind": "worktree",
+            "writable": True,
+            "lineage_producer": True,
+        }
+    )
+    policy["branch_export"]["create_branch"] = True
+    payload["nodes"][0]["workspace_policy"] = policy
+
+    with pytest.raises(
+        ValidationError,
+        match="must omit a disabled workspace_policy",
+    ):
         PreflightExecutionPlan(**payload)
 
 

@@ -151,7 +151,7 @@ For exact artifact paths and inspection starting points, see
 Crewplane coordinates selected workflows locally; it is not the layer that
 enforces provider permissions or execution containment. Review
 [Provider setup](provider-setup.md) before running real provider CLIs, use
-[Experimental workspace isolation](../guides/workspace-isolation.md) only for
+[Workspace isolation](../guides/workspace-isolation.md) only for
 source-tree isolation, and follow the
 [Reproducible support bundle](../guides/reproducible-support-bundle.md) guide
 before sharing run artifacts.

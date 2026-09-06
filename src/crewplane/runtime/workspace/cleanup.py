@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple
 
+from .state import WorkspaceStateRetention, update_workspace_retention
 from .worktree.cleanup import remove_unknown_workspace_path, worktree_disk_usage
 from .worktree.ref_cleanup import WorkspaceRunRefCleanup
 
@@ -16,10 +18,27 @@ WorkspaceStatusLookup = Callable[[str, str], WorkspaceStatus]
 class WorkspaceCleanupEligibility:
     deletable: bool
     reason: str | None = None
+    state_paths: tuple[Path, ...] = ()
+    expected_worktree_git_dir: Path | None = None
 
 
 WorkspaceCleanupEligibilityLookup = Callable[
-    [str, str, WorkspaceStatus], WorkspaceCleanupEligibility
+    [str, Path, WorkspaceStatus], WorkspaceCleanupEligibility
+]
+
+
+class AbsentWorkspaceStateProjection(NamedTuple):
+    run_key_name: str
+    workspace_path: Path
+    status: WorkspaceStatus
+    state_paths: tuple[Path, ...]
+
+
+type _AbsentWorkspaceStateProjectionValues = tuple[
+    str,
+    Path,
+    WorkspaceStatus,
+    tuple[Path, ...],
 ]
 
 
@@ -63,6 +82,73 @@ class WorkspaceCleanupResult:
         return sum(entry.size_bytes for entry in self.entries)
 
 
+@dataclass(frozen=True)
+class _WorkspaceCleanupRequest:
+    cache_root: Path
+    cleanup_filter: WorkspaceCleanupFilter
+    dry_run: bool
+    status_lookup: WorkspaceStatusLookup | None
+    ref_cleanup: WorkspaceRunRefCleanup | None
+    eligibility_lookup: WorkspaceCleanupEligibilityLookup | None
+    ref_cleanup_run_keys: Iterable[str]
+    absent_state_projections: Iterable[_AbsentWorkspaceStateProjectionValues]
+
+
+@dataclass(frozen=True)
+class _WorkspaceCleanupCandidate:
+    run_key_name: str
+    workspace_path: Path
+    status: WorkspaceStatus
+    eligibility: WorkspaceCleanupEligibility
+
+
+@dataclass(frozen=True)
+class _IgnoredCleanupCandidate:
+    pass
+
+
+@dataclass(frozen=True)
+class _RetainedCleanupCandidate:
+    run_key_name: str
+    reported_candidate: _WorkspaceCleanupCandidate | None = None
+
+
+@dataclass(frozen=True)
+class _SelectedCleanupCandidate:
+    candidate: _WorkspaceCleanupCandidate
+
+
+type _WorkspaceCleanupDecision = (
+    _IgnoredCleanupCandidate | _RetainedCleanupCandidate | _SelectedCleanupCandidate
+)
+
+_IGNORED_CLEANUP_CANDIDATE = _IgnoredCleanupCandidate()
+
+
+@dataclass
+class _WorkspaceCleanupSelection:
+    entries: list[WorkspaceCleanupEntry] = field(default_factory=list)
+    selected_run_keys: set[str] = field(default_factory=set)
+    retained_run_keys: set[str] = field(default_factory=set)
+
+    def record_retained_run(
+        self,
+        run_key_name: str,
+        entry: WorkspaceCleanupEntry | None = None,
+    ) -> None:
+        self.retained_run_keys.add(run_key_name)
+        if entry is not None:
+            self.entries.append(entry)
+
+    def record_candidate_entry(self, entry: WorkspaceCleanupEntry) -> None:
+        self.entries.append(entry)
+        if entry.removed:
+            self.selected_run_keys.add(entry.run_key_name)
+
+    def record_selected_run(self, run_key_name: str) -> None:
+        self.selected_run_keys.add(run_key_name)
+
+
 def cleanup_workspace_cache(
     cache_root: Path,
     cleanup_filter: WorkspaceCleanupFilter,
@@ -70,73 +156,221 @@ def cleanup_workspace_cache(
     status_lookup: WorkspaceStatusLookup | None = None,
     ref_cleanup: WorkspaceRunRefCleanup | None = None,
     eligibility_lookup: WorkspaceCleanupEligibilityLookup | None = None,
+    ref_cleanup_run_keys: Iterable[str] = (),
+    absent_state_projections: Iterable[
+        tuple[str, Path, WorkspaceStatus, tuple[Path, ...]]
+    ] = (),
 ) -> WorkspaceCleanupResult:
-    entries: list[WorkspaceCleanupEntry] = []
-    selected_run_keys: set[str] = set()
-    retained_run_keys: set[str] = set()
-    for run_key_name, workspace_path in cleanup_candidates_for_filter(
-        cache_root,
-        cleanup_filter,
-    ):
-        if (
-            cleanup_filter.run_key_name is not None
-            and run_key_name != cleanup_filter.run_key_name
-        ):
-            continue
-        if not older_than_matches(workspace_path, cleanup_filter.older_than_seconds):
-            retained_run_keys.add(run_key_name)
-            continue
-        status = workspace_status(run_key_name, workspace_path, status_lookup)
-        eligibility = (
-            eligibility_lookup(run_key_name, workspace_path.name, status)
-            if eligibility_lookup is not None
-            else WorkspaceCleanupEligibility(deletable=True)
-        )
-        if not eligibility.deletable:
-            retained_run_keys.add(run_key_name)
-            entries.append(
-                WorkspaceCleanupEntry(
-                    path=workspace_path,
-                    run_key_name=run_key_name,
-                    size_bytes=worktree_disk_usage(workspace_path),
-                    removed=False,
-                    status=status,
-                    orphan=status is None,
-                    retained_reason=eligibility.reason or "cleanup eligibility unknown",
-                )
-            )
-            continue
-        if not status_matches(status, cleanup_filter):
-            retained_run_keys.add(run_key_name)
-            continue
-        size_bytes = worktree_disk_usage(workspace_path)
-        removed = False
-        if not dry_run:
-            remove_unknown_workspace_path(
-                workspace_path,
-                cleanup_filter.expected_common_git_dir,
-            )
-            removed = True
-            selected_run_keys.add(run_key_name)
-        entries.append(
-            WorkspaceCleanupEntry(
-                path=workspace_path,
-                run_key_name=run_key_name,
-                size_bytes=size_bytes,
-                removed=removed,
-                status=status,
-                orphan=status is None,
-            )
-        )
-    removed_ref_count = 0
-    if not dry_run and ref_cleanup is not None:
-        for run_key_name in sorted(selected_run_keys - retained_run_keys):
-            removed_ref_count += ref_cleanup(run_key_name)
-    return WorkspaceCleanupResult(
+    request = _WorkspaceCleanupRequest(
         cache_root=cache_root,
-        entries=tuple(entries),
+        cleanup_filter=cleanup_filter,
+        dry_run=dry_run,
+        status_lookup=status_lookup,
+        ref_cleanup=ref_cleanup,
+        eligibility_lookup=eligibility_lookup,
+        ref_cleanup_run_keys=ref_cleanup_run_keys,
+        absent_state_projections=absent_state_projections,
+    )
+    return _run_workspace_cleanup(request)
+
+
+def _run_workspace_cleanup(
+    request: _WorkspaceCleanupRequest,
+) -> WorkspaceCleanupResult:
+    selection = _cleanup_workspace_candidates(request)
+    if not request.dry_run:
+        _reconcile_absent_state_projections(request, selection)
+    removed_ref_count = _cleanup_selected_run_refs(request, selection)
+    return WorkspaceCleanupResult(
+        cache_root=request.cache_root,
+        entries=tuple(selection.entries),
         removed_ref_count=removed_ref_count,
     )
+
+
+def _cleanup_workspace_candidates(
+    request: _WorkspaceCleanupRequest,
+) -> _WorkspaceCleanupSelection:
+    selection = _WorkspaceCleanupSelection()
+    for run_key_name, workspace_path in cleanup_candidates_for_filter(
+        request.cache_root,
+        request.cleanup_filter,
+    ):
+        decision = _assess_workspace_cleanup_candidate(
+            run_key_name,
+            workspace_path,
+            request,
+        )
+        _apply_workspace_cleanup_decision(decision, request, selection)
+    return selection
+
+
+def _assess_workspace_cleanup_candidate(
+    run_key_name: str,
+    workspace_path: Path,
+    request: _WorkspaceCleanupRequest,
+) -> _WorkspaceCleanupDecision:
+    cleanup_filter = request.cleanup_filter
+    if cleanup_filter.run_key_name not in (None, run_key_name):
+        return _IGNORED_CLEANUP_CANDIDATE
+    if not older_than_matches(workspace_path, cleanup_filter.older_than_seconds):
+        return _RetainedCleanupCandidate(run_key_name)
+    candidate = _load_workspace_cleanup_candidate(
+        run_key_name,
+        workspace_path,
+        request,
+    )
+    if not candidate.eligibility.deletable:
+        return _RetainedCleanupCandidate(run_key_name, candidate)
+    if not status_matches(candidate.status, cleanup_filter):
+        return _RetainedCleanupCandidate(run_key_name)
+    return _SelectedCleanupCandidate(candidate)
+
+
+def _load_workspace_cleanup_candidate(
+    run_key_name: str,
+    workspace_path: Path,
+    request: _WorkspaceCleanupRequest,
+) -> _WorkspaceCleanupCandidate:
+    status = workspace_status(run_key_name, workspace_path, request.status_lookup)
+    eligibility_lookup = request.eligibility_lookup
+    eligibility = (
+        WorkspaceCleanupEligibility(deletable=True)
+        if eligibility_lookup is None
+        else eligibility_lookup(run_key_name, workspace_path, status)
+    )
+    return _WorkspaceCleanupCandidate(
+        run_key_name,
+        workspace_path,
+        status,
+        eligibility,
+    )
+
+
+def _apply_workspace_cleanup_decision(
+    decision: _WorkspaceCleanupDecision,
+    request: _WorkspaceCleanupRequest,
+    selection: _WorkspaceCleanupSelection,
+) -> None:
+    match decision:
+        case _IgnoredCleanupCandidate():
+            return
+        case _RetainedCleanupCandidate(run_key_name, reported_candidate):
+            entry = (
+                None
+                if reported_candidate is None
+                else _retained_workspace_entry(reported_candidate)
+            )
+            selection.record_retained_run(run_key_name, entry)
+        case _SelectedCleanupCandidate(candidate):
+            entry = _cleanup_workspace_candidate(candidate, request)
+            selection.record_candidate_entry(entry)
+
+
+def _retained_workspace_entry(
+    candidate: _WorkspaceCleanupCandidate,
+) -> WorkspaceCleanupEntry:
+    return WorkspaceCleanupEntry(
+        path=candidate.workspace_path,
+        run_key_name=candidate.run_key_name,
+        size_bytes=worktree_disk_usage(candidate.workspace_path),
+        removed=False,
+        status=candidate.status,
+        orphan=candidate.status is None,
+        retained_reason=(candidate.eligibility.reason or "cleanup eligibility unknown"),
+    )
+
+
+def _cleanup_workspace_candidate(
+    candidate: _WorkspaceCleanupCandidate,
+    request: _WorkspaceCleanupRequest,
+) -> WorkspaceCleanupEntry:
+    size_bytes = worktree_disk_usage(candidate.workspace_path)
+    if not request.dry_run:
+        remove_unknown_workspace_path(
+            candidate.workspace_path,
+            request.cleanup_filter.expected_common_git_dir,
+            candidate.eligibility.expected_worktree_git_dir,
+        )
+        _update_deleted_state_paths(candidate.eligibility.state_paths)
+    return WorkspaceCleanupEntry(
+        path=candidate.workspace_path,
+        run_key_name=candidate.run_key_name,
+        size_bytes=size_bytes,
+        removed=not request.dry_run,
+        status=candidate.status,
+        orphan=candidate.status is None,
+    )
+
+
+def _cleanup_selected_run_refs(
+    request: _WorkspaceCleanupRequest,
+    selection: _WorkspaceCleanupSelection,
+) -> int:
+    if request.dry_run or request.ref_cleanup is None:
+        return 0
+    cleanup_run_keys = (
+        selection.selected_run_keys - selection.retained_run_keys
+    ) | set(request.ref_cleanup_run_keys)
+    return sum(
+        request.ref_cleanup(run_key_name) for run_key_name in sorted(cleanup_run_keys)
+    )
+
+
+def _reconcile_absent_state_projections(
+    request: _WorkspaceCleanupRequest,
+    selection: _WorkspaceCleanupSelection,
+) -> None:
+    for projection_values in request.absent_state_projections:
+        projection = AbsentWorkspaceStateProjection(*projection_values)
+        if not _projection_targets_requested_run(
+            projection,
+            request.cleanup_filter,
+        ):
+            continue
+        if not _absent_projection_matches_filter(
+            projection,
+            request.cleanup_filter,
+        ) or not _workspace_path_is_confirmed_absent(projection.workspace_path):
+            selection.record_retained_run(projection.run_key_name)
+            continue
+        _update_deleted_state_paths(projection.state_paths)
+        selection.record_selected_run(projection.run_key_name)
+
+
+def _projection_targets_requested_run(
+    projection: AbsentWorkspaceStateProjection,
+    cleanup_filter: WorkspaceCleanupFilter,
+) -> bool:
+    return cleanup_filter.run_key_name in (None, projection.run_key_name)
+
+
+def _absent_projection_matches_filter(
+    projection: AbsentWorkspaceStateProjection,
+    cleanup_filter: WorkspaceCleanupFilter,
+) -> bool:
+    return cleanup_filter.older_than_seconds is None and status_matches(
+        projection.status,
+        cleanup_filter,
+    )
+
+
+def _workspace_path_is_confirmed_absent(workspace_path: Path) -> bool:
+    try:
+        workspace_path.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def _update_deleted_state_paths(state_paths: Iterable[Path]) -> None:
+    for state_path in state_paths:
+        update_workspace_retention(
+            state_path,
+            WorkspaceStateRetention("deleted"),
+        )
 
 
 def cleanup_candidates(cache_root: Path) -> tuple[tuple[str, Path], ...]:

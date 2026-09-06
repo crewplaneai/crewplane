@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import stat
 import subprocess
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile
 
+from crewplane.artifacts.workspace.chain_validation import (
+    verify_workspace_source_chain,
+)
 from crewplane.core.file_hashing import sha256_file
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
@@ -12,173 +17,220 @@ from crewplane.core.preflight.models import (
 )
 
 from ..cleanup_notes import note_cleanup_failure
-from ..git import GitCommand, git, git_error
+from ..git import GitCommand, git
 from ..locks import git_metadata_lock
-from .protected_refs import PROTECTED_REF_PREFIX
-from .refs import checked_ref, safe_file_component, safe_ref_component
+from .ref_publication import (
+    publish_result_refs,
+    reconcile_result_ref_publication,
+)
+from .refs import safe_file_component, safe_ref_component
+from .temporary_refs import (
+    TemporaryImportRef,
+    TemporaryRefOwner,
+    delete_temporary_import_refs,
+    import_source_bundle,
+)
 from .types import WorktreeCaptureRequest, WorktreeSourceRef
 
 
+@contextmanager
 def ensure_source_commit_available(
     source: WorkspaceSourceSnapshot,
     source_ref: WorktreeSourceRef,
-) -> None:
-    _ensure_source_commit_available(source, source_ref, set())
+    owner: TemporaryRefOwner | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
+    source_chain_verified: bool = False,
+) -> Iterator[None]:
+    """Temporarily root every bundled commit needed by a source consumer.
+
+    Bundled sources require an owner so cleanup claims are durable before Git is
+    mutated. Unless the caller already verified the recorded source chain, the
+    chain is verified before any imports. Temporary refs are removed after the
+    consumer exits; cleanup errors are noted on an active consumer failure and
+    otherwise propagate. Unresolved dedicated evidence is retained. The
+    cancellation callback is forwarded to Git metadata-lock acquisition during
+    import and cleanup.
+    """
+    if not source_chain_verified:
+        _verify_source_chain(source, source_ref)
+    imported_refs: list[TemporaryImportRef] = []
+    try:
+        _ensure_source_commit_available(
+            source,
+            source_ref,
+            set(),
+            owner,
+            cancel_requested,
+            imported_refs,
+        )
+        yield
+    except BaseException as failure:
+        try:
+            delete_temporary_import_refs(
+                imported_refs,
+                cancel_requested,
+            )
+        except Exception as cleanup_error:
+            note_cleanup_failure(
+                failure,
+                "Workspace temporary import ref cleanup",
+                cleanup_error,
+            )
+        raise
+    else:
+        delete_temporary_import_refs(
+            imported_refs,
+            cancel_requested,
+        )
+    finally:
+        if owner is not None:
+            owner.discard_resolved_evidence()
 
 
 def verify_source_commit_available(
     source: WorkspaceSourceSnapshot,
     source_ref: WorktreeSourceRef,
 ) -> None:
-    pending_sources = [source_ref]
-    visited_sources: set[int] = set()
-    while pending_sources:
-        pending_source = pending_sources.pop()
-        if id(pending_source) in visited_sources:
-            continue
-        visited_sources.add(id(pending_source))
-        if not _source_requires_bundle(pending_source) and not (
-            pending_source.source_kind == "project"
-            and pending_source.source_commit == source.run_base_commit
-        ):
-            raise RuntimeError(
-                "Workspace lineage source commit is unavailable from recorded "
-                "lineage and requires a recorded bundle."
-            )
-        pending_sources.extend(pending_source.upstream_sources)
+    _verify_source_chain(source, source_ref)
 
-    with TemporaryDirectory(prefix="crewplane-lineage-verify-") as temp_dir_name:
-        temp_dir = Path(temp_dir_name)
-        try:
-            git(temp_dir).run(
-                "init",
-                "--bare",
-                f"--object-format={source.object_format}",
-            )
-            command = git(temp_dir)
-            _fetch_commit_for_verification(command, source, source.run_base_commit)
-            _verify_source_commit_available(source, command, source_ref, set())
-        except subprocess.CalledProcessError as exc:
-            detail = (
-                git_error(exc)
-                if isinstance(exc.stderr, bytes) and exc.stderr.strip()
-                else "Git did not provide diagnostic output."
-            )
-            safe_detail = detail.replace(
-                temp_dir.as_posix(),
-                "<isolated verification repository>",
-            )
-            raise RuntimeError(
-                "Workspace lineage source verification failed while validating "
-                f"recorded Git artifacts: {safe_detail}"
-            ) from exc
+
+def _verify_source_chain(
+    source: WorkspaceSourceSnapshot,
+    source_ref: WorktreeSourceRef,
+) -> None:
+    try:
+        verify_workspace_source_chain(source, source_ref)
+    except RuntimeError as exc:
+        message = str(exc)
+        if message.startswith("Workspace lineage source verification failed"):
+            raise
+        raise RuntimeError(
+            "Workspace lineage source verification failed while validating "
+            f"recorded Git artifacts: {message}"
+        ) from exc
 
 
 def _ensure_source_commit_available(
     source: WorkspaceSourceSnapshot,
     source_ref: WorktreeSourceRef,
     active_commits: set[str],
+    owner: TemporaryRefOwner | None,
+    cancel_requested: Callable[[], bool] | None,
+    imported_refs: list[TemporaryImportRef],
 ) -> None:
     if source_ref.source_commit in active_commits:
         raise RuntimeError("Workspace lineage source chain contains a cycle.")
     active_commits.add(source_ref.source_commit)
     for upstream in source_ref.upstream_sources:
-        _ensure_source_commit_available(source, upstream, active_commits)
-    active_commits.remove(source_ref.source_commit)
-
-    verified_bundle_path: Path | None = None
-    if _source_requires_bundle(source_ref):
-        verified_bundle_path = _verify_source_bundle_descriptor(
-            git(Path(source.git_top_level)),
-            source_ref,
+        _ensure_source_commit_available(
+            source,
+            upstream,
+            active_commits,
+            owner,
+            cancel_requested,
+            imported_refs,
         )
-    if _source_commit_exists(source, source_ref.source_commit):
-        _reject_source_tree_mismatch(source, source_ref)
+    active_commits.remove(source_ref.source_commit)
+    _ensure_source_ref_available(
+        source,
+        source_ref,
+        owner,
+        cancel_requested,
+        imported_refs,
+    )
+    _reject_source_tree_mismatch(source, source_ref)
+
+
+def _ensure_source_ref_available(
+    source: WorkspaceSourceSnapshot,
+    source_ref: WorktreeSourceRef,
+    owner: TemporaryRefOwner | None,
+    cancel_requested: Callable[[], bool] | None,
+    imported_refs: list[TemporaryImportRef],
+) -> None:
+    if _source_requires_bundle(source_ref):
+        _ensure_bundled_source_available(
+            source,
+            source_ref,
+            owner,
+            cancel_requested,
+            imported_refs,
+        )
         return
-    if source_ref.bundle_path is None:
+    _ensure_project_source_available(source, source_ref)
+
+
+def _ensure_project_source_available(
+    source: WorkspaceSourceSnapshot,
+    source_ref: WorktreeSourceRef,
+) -> None:
+    if not _source_commit_exists(source, source_ref.source_commit):
         raise RuntimeError(
             "Workspace lineage source commit is unavailable and no bundle "
             "descriptor was recorded."
         )
-    _import_source_bundle(source, source_ref, verified_bundle_path)
+
+
+def _ensure_bundled_source_available(
+    source: WorkspaceSourceSnapshot,
+    source_ref: WorktreeSourceRef,
+    owner: TemporaryRefOwner | None,
+    cancel_requested: Callable[[], bool] | None,
+    imported_refs: list[TemporaryImportRef],
+) -> None:
+    bundle_path = _verify_source_bundle_descriptor(
+        git(Path(source.git_top_level)),
+        source_ref,
+    )
+    imported_refs.append(
+        import_source_bundle(
+            source,
+            source_ref,
+            bundle_path,
+            owner,
+            cancel_requested,
+        )
+    )
     if not _source_commit_exists(source, source_ref.source_commit):
         raise RuntimeError(
             "Workspace lineage source bundle import did not provide the expected "
             "commit."
         )
-    _reject_source_tree_mismatch(source, source_ref)
-
-
-def _verify_source_commit_available(
-    source: WorkspaceSourceSnapshot,
-    command: GitCommand,
-    source_ref: WorktreeSourceRef,
-    active_commits: set[str],
-) -> None:
-    if source_ref.source_commit in active_commits:
-        raise RuntimeError("Workspace lineage source chain contains a cycle.")
-    active_commits.add(source_ref.source_commit)
-    for upstream in source_ref.upstream_sources:
-        _verify_source_commit_available(source, command, upstream, active_commits)
-    active_commits.remove(source_ref.source_commit)
-
-    if _source_requires_bundle(source_ref):
-        bundle_path = _verify_source_bundle_descriptor(command, source_ref)
-        _fetch_bundle_for_verification(command, bundle_path, source_ref)
-    elif not _command_commit_exists(command, source_ref.source_commit):
-        _fetch_commit_for_verification(command, source, source_ref.source_commit)
-    if not _command_commit_exists(command, source_ref.source_commit):
-        raise RuntimeError(
-            "Workspace lineage source bundle import did not provide the expected "
-            "commit."
-        )
-    _reject_source_tree_mismatch_with_command(command, source_ref)
 
 
 def update_result_refs(
     request: WorktreeCaptureRequest,
     candidate_commit: str,
     result_commit: str,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> tuple[str, str]:
-    base = _result_ref_base(request.plan.run_key_name, request.node_id, request.slug)
-    candidate_ref = checked_ref(request.checkout_root, f"{base}/candidate")
-    result_ref = checked_ref(request.checkout_root, f"{base}/result")
-    with git_metadata_lock(Path(request.source.common_git_dir)):
-        command = git(request.checkout_root)
-        updated_refs: list[str] = []
-        try:
-            command.run("update-ref", candidate_ref, candidate_commit)
-            updated_refs.append(candidate_ref)
-            command.run("update-ref", result_ref, result_commit)
-            updated_refs.append(result_ref)
-        except Exception as exc:
-            try:
-                _delete_refs(command, tuple(updated_refs))
-            except Exception as cleanup_error:
-                note_cleanup_failure(
-                    exc,
-                    "Workspace result ref cleanup after partial ref update",
-                    cleanup_error,
-                )
-            raise
-    return candidate_ref, result_ref
+    return publish_result_refs(
+        request,
+        candidate_commit,
+        result_commit,
+        cancel_requested,
+    )
 
 
 def delete_result_refs(
     request: WorktreeCaptureRequest,
-    refs: tuple[str, str],
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> None:
-    with git_metadata_lock(Path(request.source.common_git_dir)):
-        _delete_refs(git(request.checkout_root), refs)
+    reconcile_result_ref_publication(
+        request.state_path,
+        Path(request.source.git_top_level),
+        Path(request.source.common_git_dir),
+        cancel_requested,
+    )
 
 
 def cleanup_result_refs_after_failure(
     request: WorktreeCaptureRequest,
-    refs: tuple[str, str],
     failure: BaseException,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> None:
     try:
-        delete_result_refs(request, refs)
+        delete_result_refs(request, cancel_requested)
     except Exception as cleanup_error:
         note_cleanup_failure(
             failure,
@@ -187,14 +239,21 @@ def cleanup_result_refs_after_failure(
         )
 
 
-def export_bundle(request: WorktreeCaptureRequest, result_ref: str) -> Path:
+def export_bundle(
+    request: WorktreeCaptureRequest,
+    result_ref: str,
+    cancel_requested: Callable[[], bool] | None = None,
+) -> Path:
     bundle_dir = request.state_path.parent / "workspace-bundles"
     _ensure_safe_bundle_dir(request.state_path.parent, bundle_dir)
     bundle_dir.chmod(0o700)
     bundle_path = bundle_dir / f"{safe_file_component(request.slug)}.bundle"
     temp_bundle_path = _temporary_bundle_path(bundle_dir, request.slug)
     try:
-        with git_metadata_lock(Path(request.source.common_git_dir)):
+        with git_metadata_lock(
+            Path(request.source.common_git_dir),
+            cancel_requested,
+        ):
             command = git(request.checkout_root)
             _reject_unsafe_existing_bundle_path(bundle_path)
             _reject_unsafe_bundle_file(temp_bundle_path, "temporary bundle")
@@ -209,11 +268,6 @@ def export_bundle(request: WorktreeCaptureRequest, result_ref: str) -> Path:
         _unlink_best_effort(temp_bundle_path)
         raise
     return bundle_path
-
-
-def _delete_refs(command: GitCommand, refs: tuple[str, ...]) -> None:
-    for ref in refs:
-        command.run("update-ref", "-d", ref)
 
 
 def _temporary_bundle_path(bundle_dir: Path, slug: str) -> Path:
@@ -291,25 +345,33 @@ def _reject_unsafe_artifact_dir(path: Path) -> None:
 
 
 def worktree_protected_ref_scopes(
-    plan: PreflightExecutionPlan,  # noqa: ARG001 - Reserved for source-specific scope policy.
-    source_ref: WorktreeSourceRef,  # noqa: ARG001 - Reserved for source-specific scope policy.
-    node_id: str,  # noqa: ARG001 - Reserved for node-specific scope policy.
-    slug: str,  # noqa: ARG001 - Reserved for invocation-specific scope policy.
+    plan: PreflightExecutionPlan,
+    source_ref: WorktreeSourceRef,
+    node_id: str,
+    slug: str,
 ) -> tuple[str, ...]:
-    return (PROTECTED_REF_PREFIX,)
+    destination_base = (
+        "refs/crewplane/runs/"
+        f"{safe_ref_component(plan.run_key_name)}/"
+        f"{safe_ref_component(node_id)}/"
+        f"{safe_ref_component(slug)}"
+    )
+    refs = {
+        f"{destination_base}/candidate",
+        f"{destination_base}/result",
+    }
+    pending = [source_ref]
+    while pending:
+        current = pending.pop()
+        if current.bundle_ref is not None:
+            refs.add(current.bundle_ref)
+        pending.extend(current.upstream_sources)
+    return tuple(sorted(refs))
 
 
 def _source_commit_exists(source: WorkspaceSourceSnapshot, commit: str) -> bool:
     try:
         git(Path(source.git_top_level)).run("cat-file", "-e", f"{commit}^{{commit}}")
-    except subprocess.CalledProcessError:
-        return False
-    return True
-
-
-def _command_commit_exists(command: GitCommand, commit: str) -> bool:
-    try:
-        command.run("cat-file", "-e", f"{commit}^{{commit}}")
     except subprocess.CalledProcessError:
         return False
     return True
@@ -336,134 +398,94 @@ def _reject_source_tree_mismatch(
     )
 
 
-def _reject_source_tree_mismatch_with_command(
-    command: GitCommand,
-    source_ref: WorktreeSourceRef,
-) -> None:
-    actual_tree = command.text(
-        "rev-parse",
-        f"{source_ref.source_commit}^{{tree}}",
-    )
-    if actual_tree == source_ref.source_tree:
-        return
-    raise RuntimeError(
-        "Workspace lineage source tree mismatch: recorded source tree "
-        f"{source_ref.source_tree} does not match commit "
-        f"{source_ref.source_commit} tree {actual_tree}."
-    )
-
-
 def _verify_source_bundle_descriptor(
     command: GitCommand,
     source_ref: WorktreeSourceRef,
 ) -> Path:
-    bundle_path = source_ref.bundle_path
-    if bundle_path is None:
+    bundle_path = _require_source_bundle_path(source_ref)
+    _require_source_bundle_file(bundle_path)
+    bundle_digest = _require_source_bundle_digest(source_ref)
+    _verify_source_bundle_digest(bundle_path, bundle_digest)
+    bundle_size = _require_source_bundle_size(source_ref)
+    _verify_source_bundle_size(bundle_path, bundle_size)
+    bundle_ref = _require_source_bundle_ref(source_ref)
+    _verify_source_bundle_git_identity(
+        command,
+        bundle_path,
+        bundle_ref,
+        source_ref.source_commit,
+    )
+    return bundle_path
+
+
+def _require_source_bundle_path(source_ref: WorktreeSourceRef) -> Path:
+    if source_ref.bundle_path is None:
         raise RuntimeError("Workspace lineage bundle path is missing.")
+    return source_ref.bundle_path
+
+
+def _require_source_bundle_file(bundle_path: Path) -> None:
     if not bundle_path.is_file():
         raise RuntimeError(
             f"Workspace lineage bundle is missing: {bundle_path.as_posix()}."
         )
+
+
+def _require_source_bundle_digest(source_ref: WorktreeSourceRef) -> str:
     if source_ref.bundle_sha256 is None:
         raise RuntimeError("Workspace lineage bundle digest is missing.")
+    return source_ref.bundle_sha256
+
+
+def _verify_source_bundle_digest(bundle_path: Path, expected_digest: str) -> None:
     digest = sha256_file(bundle_path)
-    if digest != source_ref.bundle_sha256:
+    if digest != expected_digest:
         raise RuntimeError("Workspace lineage bundle digest mismatch.")
+
+
+def _require_source_bundle_size(source_ref: WorktreeSourceRef) -> int:
     if source_ref.bundle_size_bytes is None:
         raise RuntimeError("Workspace lineage bundle size is missing.")
-    if bundle_path.stat().st_size != source_ref.bundle_size_bytes:
+    return source_ref.bundle_size_bytes
+
+
+def _verify_source_bundle_size(bundle_path: Path, expected_size: int) -> None:
+    if bundle_path.stat().st_size != expected_size:
         raise RuntimeError("Workspace lineage bundle size mismatch.")
+
+
+def _require_source_bundle_ref(source_ref: WorktreeSourceRef) -> str:
     if source_ref.bundle_ref is None:
         raise RuntimeError("Workspace lineage bundle ref is missing.")
+    return source_ref.bundle_ref
+
+
+def _verify_source_bundle_git_identity(
+    command: GitCommand,
+    bundle_path: Path,
+    bundle_ref: str,
+    source_commit: str,
+) -> None:
     command.run("bundle", "verify", bundle_path.as_posix())
-    _reject_bundle_ref_mismatch(command, bundle_path, source_ref)
-    return bundle_path
+    _reject_bundle_ref_mismatch(command, bundle_path, bundle_ref, source_commit)
 
 
 def _reject_bundle_ref_mismatch(
     command: GitCommand,
     bundle_path: Path,
-    source_ref: WorktreeSourceRef,
+    bundle_ref: str,
+    source_commit: str,
 ) -> None:
     listed = command.text(
         "bundle",
         "list-heads",
         bundle_path.as_posix(),
-        source_ref.bundle_ref or "",
+        bundle_ref,
     )
     lines = listed.splitlines()
     if len(lines) != 1:
         raise RuntimeError("Workspace lineage bundle ref mismatch.")
     object_id, separator, ref_name = lines[0].partition(" ")
-    if (
-        separator == " "
-        and object_id == source_ref.source_commit
-        and ref_name == source_ref.bundle_ref
-    ):
+    if separator == " " and object_id == source_commit and ref_name == bundle_ref:
         return
     raise RuntimeError("Workspace lineage bundle ref mismatch.")
-
-
-def _import_source_bundle(
-    source: WorkspaceSourceSnapshot,
-    source_ref: WorktreeSourceRef,
-    verified_bundle_path: Path | None,
-) -> None:
-    command = git(Path(source.git_top_level))
-    bundle_path = verified_bundle_path or _verify_source_bundle_descriptor(
-        command,
-        source_ref,
-    )
-    import_ref = checked_ref(
-        Path(source.git_top_level),
-        _import_ref_for_source_commit(source_ref.source_commit),
-    )
-    with git_metadata_lock(Path(source.common_git_dir)):
-        command.run(
-            "fetch",
-            "--no-auto-maintenance",
-            bundle_path.as_posix(),
-            f"{source_ref.bundle_ref}:{import_ref}",
-        )
-
-
-def _fetch_bundle_for_verification(
-    command: GitCommand,
-    bundle_path: Path,
-    source_ref: WorktreeSourceRef,
-) -> None:
-    import_ref = _import_ref_for_source_commit(source_ref.source_commit)
-    command.run(
-        "fetch",
-        "--no-auto-maintenance",
-        bundle_path.as_posix(),
-        f"{source_ref.bundle_ref}:{import_ref}",
-    )
-
-
-def _fetch_commit_for_verification(
-    command: GitCommand,
-    source: WorkspaceSourceSnapshot,
-    commit: str,
-) -> None:
-    command.run(
-        "fetch",
-        "--no-auto-maintenance",
-        "--depth=1",
-        "--no-tags",
-        Path(source.git_top_level).as_posix(),
-        f"{commit}:{_import_ref_for_source_commit(commit)}",
-    )
-
-
-def _result_ref_base(run_key_name: str, node_id: str, slug: str) -> str:
-    return (
-        "refs/crewplane/runs/"
-        f"{safe_ref_component(run_key_name)}/"
-        f"{safe_ref_component(node_id)}/"
-        f"{safe_ref_component(slug)}"
-    )
-
-
-def _import_ref_for_source_commit(source_commit: str) -> str:
-    return f"refs/crewplane/imported/{safe_ref_component(source_commit[:24])}"

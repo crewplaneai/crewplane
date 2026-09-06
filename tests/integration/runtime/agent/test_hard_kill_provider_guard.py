@@ -68,7 +68,7 @@ def test_hard_killed_parent_blocks_restart_while_provider_is_alive(
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Crewplane supports POSIX hosts")
-def test_hard_killed_parent_blocks_restart_while_provider_descendant_is_alive(
+def test_completed_provider_drains_descendant_before_publishing_exit(
     tmp_path: Path,
 ) -> None:
     descendant_pid_path = tmp_path / "provider-descendant.pid"
@@ -94,21 +94,20 @@ def test_hard_killed_parent_blocks_restart_while_provider_descendant_is_alive(
         state = json.loads(state_path.read_text(encoding="utf-8"))
         process_group_id = state["process_group_id"]
         descendant_pid = _wait_for_recorded_pid(descendant_pid_path, parent)
-        os.kill(descendant_pid, 0)
+        with pytest.raises(ProcessLookupError):
+            os.kill(descendant_pid, 0)
 
         os.kill(parent.pid, signal.SIGKILL)
         parent.wait(timeout=5)
 
-        with pytest.raises(ResumeLockError, match="provider process group"):
-            acquire_same_context_lock(
-                tmp_path,
-                WORKFLOW_NAME,
-                WORKFLOW_IDENTITY,
-                WORKFLOW_SIGNATURE,
-                grace_seconds=0,
-            )
-
-        os.kill(descendant_pid, 0)
+        lock = acquire_same_context_lock(
+            tmp_path,
+            WORKFLOW_NAME,
+            WORKFLOW_IDENTITY,
+            WORKFLOW_SIGNATURE,
+            grace_seconds=0,
+        )
+        lock.release()
     finally:
         if parent.poll() is None:
             os.kill(parent.pid, signal.SIGKILL)

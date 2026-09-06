@@ -26,6 +26,7 @@ class WorktreeSourceRef:
     bundle_size_bytes: int | None = None
     bundle_ref: str | None = None
     upstream_sources: tuple[WorktreeSourceRef, ...] = ()
+    state_path: Path | None = None
 
 
 def candidate_source_ref(source_ref: WorktreeSourceRef) -> WorktreeSourceRef:
@@ -42,6 +43,15 @@ class WorktreeWorkspace:
     git_dir: Path
     source_ref: WorktreeSourceRef
     protected_refs: ProtectedRefSnapshot
+    lock_mode: str
+
+
+@dataclass(frozen=True)
+class WorktreeProvisioningClaim:
+    workspace_path: Path
+    checkout_root: Path
+    cwd: Path
+    git_dir: Path
     lock_mode: str
 
 

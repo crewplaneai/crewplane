@@ -23,6 +23,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.secrets import FINGERPRINT_PAYLOAD_VERSION
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
@@ -172,6 +173,45 @@ def test_dynamic_locator_source_uses_review_loop_canonical_state(
     )
 
     assert state_path == canonical_state
+
+
+def test_dynamic_locator_source_state_path_requires_workspace_policy(
+    tmp_path: Path,
+) -> None:
+    locator = _runtime_dynamic_locator()
+    plan = _plan_with_locator(tmp_path, locator).model_copy(
+        update={"nodes": [_same_node().model_copy(update={"workspace_policy": None})]}
+    )
+
+    with pytest.raises(RuntimeError, match="has no workspace policy"):
+        dynamic_locator_source_state_path(plan, ArtifactStore(tmp_path), locator)
+
+
+def test_dynamic_locator_source_state_path_requires_stage_directory(
+    tmp_path: Path,
+) -> None:
+    locator = _runtime_dynamic_locator()
+
+    with pytest.raises(RuntimeError, match="has no stage directory"):
+        dynamic_locator_source_state_path(
+            _plan_with_locator(tmp_path, locator),
+            ArtifactStore(tmp_path),
+            locator,
+        )
+
+
+def test_dynamic_locator_source_state_path_requires_succeeded_state(
+    tmp_path: Path,
+) -> None:
+    locator = _runtime_dynamic_locator()
+    (tmp_path / "implement").mkdir()
+
+    with pytest.raises(RuntimeError, match="has no succeeded executor state"):
+        dynamic_locator_source_state_path(
+            _plan_with_locator(tmp_path, locator),
+            ArtifactStore(tmp_path),
+            locator,
+        )
 
 
 def test_dynamic_locator_source_context_uses_previous_executor_candidate(
@@ -519,16 +559,100 @@ def _write_state(
     audit_round_num: int | None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    node_id = path.parent.name
+    run_id = "run-001"
+    run_key_name = "workspace-run-001"
+    slug = invocation_slug(node_id, "alpha", audit_round_num, round_num)
+    candidate_ref = f"refs/crewplane/runs/{run_key_name}/{node_id}/{slug}/candidate"
+    result_ref = f"refs/crewplane/runs/{run_key_name}/{node_id}/{slug}/result"
     payload = {
+        "version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "run_key_name": run_key_name,
+        "workflow_name": "workspace",
+        "workflow_signature": "workflow-signature",
+        "node_id": node_id,
         "status": "succeeded",
         "role": "executor",
         "task_id": "alpha",
+        "provider": "codex",
         "round_num": round_num,
         "audit_round_num": audit_round_num,
-        "workspace": {"lineage_producer": True},
+        "workspace_kind": "worktree",
+        "logical_worktree_name": "primary",
+        "clean_start": "strict",
+        "worktree_contract": {"mode": "blob_exact", "schema_version": SCHEMA_VERSION},
+        "git": {
+            "object_format": "sha1",
+            "repo_id": "repo-id",
+            "run_base_commit": "c" * 40,
+            "source_tree": "d" * 40,
+            "git_top_level": path.parent.parent.as_posix(),
+            "active_git_dir": (path.parent.parent / ".git").as_posix(),
+            "common_git_dir": (path.parent.parent / ".git").as_posix(),
+        },
+        "source": {
+            "kind": "project",
+            "node_id": None,
+            "commit": "c" * 40,
+            "tree": "d" * 40,
+            "candidate_sequence": None,
+        },
+        "invocation_source": {
+            "source_kind": "project",
+            "source_node_id": None,
+            "source_commit": "c" * 40,
+            "source_tree": "d" * 40,
+            "candidate_sequence": None,
+        },
+        "workspace": {
+            "materialization": "worktree_checkout",
+            "writable": True,
+            "lineage_producer": True,
+            "retention": "retained",
+            "reuse_generation": 1,
+        },
+        "execution": {
+            "effective_cwd": (path.parent / "checkout").as_posix(),
+            "worktree_git_dir": (path.parent.parent / ".git/worktrees/test").as_posix(),
+        },
+        "process_drain": {"status": "confirmed"},
         "result": {
+            "candidate_commit": result_commit,
             "result_commit": result_commit,
+            "candidate_tree": "b" * 40,
             "result_tree": "b" * 40,
+            "changed_path_count": 1,
+        },
+        "refs": {"candidate": candidate_ref, "result": result_ref},
+        "bundle": {
+            "path": f"{node_id}/workspace-bundles/alpha.bundle",
+            "sha256": "e" * 64,
+            "size_bytes": 1,
+            "verified": True,
+        },
+        "ref_publication": {
+            "phase": "published",
+            "repository_id": "repo-id",
+            "run_id": run_id,
+            "run_key_name": run_key_name,
+            "node_id": node_id,
+            "task_id": "alpha",
+            "role": "executor",
+            "round_num": round_num,
+            "audit_round_num": audit_round_num,
+            "destinations": {
+                "candidate": {
+                    "name": candidate_ref,
+                    "target_oid": result_commit,
+                    "expected_old_oid": None,
+                },
+                "result": {
+                    "name": result_ref,
+                    "target_oid": result_commit,
+                    "expected_old_oid": None,
+                },
+            },
         },
     }
     path.write_text(json.dumps(payload), encoding="utf-8")

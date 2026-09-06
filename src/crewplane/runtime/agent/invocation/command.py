@@ -4,7 +4,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Awaitable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import BinaryIO, cast
 
@@ -18,7 +18,10 @@ from crewplane.architecture.contracts import (
     InvocationProcessEvent,
 )
 from crewplane.core.platform import supports_posix_process_groups
+from crewplane.runtime.workspace import mutator_fence as workspace_mutator_fence
+from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
 
+from ..process.drain import ProcessDrainError
 from ..process.runner import (
     build_retry_log_header,
     close_log_handle,
@@ -29,6 +32,33 @@ from ..process.stream_capture import ProcessOutputCapture
 from ..workspace_environment import record_workspace_child_environment_applied
 from .state import InvocationCommandRuntime
 from .telemetry import emit_invocation_diagnostic
+
+
+@dataclass
+class _CommandLifecycle:
+    invocation_context: InvocationContext | None
+    process: asyncio.subprocess.Process | None = None
+    process_group_id: int | None = None
+    output_capture: ProcessOutputCapture | None = None
+    log_handle: BinaryIO | None = None
+
+    @property
+    def diagnostic_sink(self) -> InvocationDiagnosticSink | None:
+        if self.invocation_context is None:
+            return None
+        return self.invocation_context.diagnostics
+
+
+@dataclass(frozen=True)
+class _CommandExecutionRequest:
+    cmd: list[str]
+    stdin_data: bytes | None
+    log_file: Path | None
+    append_log: bool
+    log_header: bytes | None
+    cwd: Path
+    idle_timeout_seconds: float | None
+    child_environment: ChildProcessEnvironment | None
 
 
 def open_log_handle(
@@ -58,88 +88,56 @@ async def run_command_once(
     idle_timeout_seconds: float | None,
     child_environment: ChildProcessEnvironment | None = None,
 ) -> CommandResult:
-    log_handle: BinaryIO | None = None
-    process: asyncio.subprocess.Process | None = None
-    process_group_id: int | None = None
-    output_capture: ProcessOutputCapture | None = None
-    diagnostic_sink = (
-        invocation_context.diagnostics if invocation_context is not None else None
+    lifecycle = _CommandLifecycle(invocation_context)
+    request = _CommandExecutionRequest(
+        cmd=cmd,
+        stdin_data=stdin_data,
+        log_file=log_file,
+        append_log=append_log,
+        log_header=log_header,
+        cwd=cwd,
+        idle_timeout_seconds=idle_timeout_seconds,
+        child_environment=child_environment,
     )
     try:
-        start_new_session = supports_posix_process_groups()
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE if stdin_data else asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd,
-            env=_child_process_env(child_environment),
-            start_new_session=start_new_session,
-        )
-        # start_new_session=True makes the child both session and process-group leader.
-        process_group_id = process.pid if start_new_session else None
-        record_workspace_child_environment_applied(
-            invocation_context,
-            child_environment,
-        )
-        _emit_process_started(
-            invocation_context,
-            process.pid,
-            process_group_id,
-        )
-        log_handle = open_log_handle(
-            log_file,
-            append=append_log,
-            header_bytes=log_header,
-        )
-        output_capture = await write_stdin_and_collect_output(
-            process,
-            stdin_data,
-            log_handle,
-            diagnostic_sink,
-            process_group_id,
-            idle_timeout_seconds,
-        )
+        await _execute_command(lifecycle, request)
     except FileNotFoundError as exc:
-        await _cleanup_failed_command(
-            process,
-            process_group_id,
-            output_capture,
-            diagnostic_sink,
-        )
-        if process is None:
+        drain_error = await _handle_failed_command(lifecycle, exc)
+        if drain_error is not None:
+            raise drain_error from exc
+        if lifecycle.process is None:
             raise RuntimeError(f"CLI executable not found: {cmd[0]}") from exc
         raise RuntimeError(f"Execution error: {exc}") from exc
-    except asyncio.CancelledError:
-        await _cleanup_failed_command(
-            process,
-            process_group_id,
-            output_capture,
-            diagnostic_sink,
-        )
+    except asyncio.CancelledError as exc:
+        drain_error = await _handle_failed_command(lifecycle, exc)
+        if drain_error is not None:
+            exc.add_note(str(drain_error))
         raise
     except Exception as exc:
-        await _cleanup_failed_command(
-            process,
-            process_group_id,
-            output_capture,
-            diagnostic_sink,
-        )
+        drain_error = await _handle_failed_command(lifecycle, exc)
+        if drain_error is not None:
+            raise drain_error from exc
         if isinstance(exc, RuntimeError):
             raise
         raise RuntimeError(f"Execution error: {exc}") from exc
     finally:
         active_exception = sys.exception()
-        close_log_handle(log_handle)
+        close_log_handle(lifecycle.log_handle)
         try:
-            _emit_process_exit(invocation_context, process, process_group_id)
+            _emit_process_exit(
+                invocation_context,
+                lifecycle.process,
+                lifecycle.process_group_id,
+            )
         except Exception as exc:
             if active_exception is None:
-                if output_capture is not None:
-                    output_capture.cleanup()
+                if lifecycle.output_capture is not None:
+                    lifecycle.output_capture.cleanup()
                 raise
             active_exception.add_note(f"Provider process exit reporting failed: {exc}")
 
+    process = cast(asyncio.subprocess.Process, lifecycle.process)
+    output_capture = cast(ProcessOutputCapture, lifecycle.output_capture)
     if process.returncode is None:
         raise RuntimeError("Provider process finished without a return code.")
     return CommandResult(
@@ -151,16 +149,153 @@ async def run_command_once(
     )
 
 
+async def _execute_command(
+    lifecycle: _CommandLifecycle,
+    request: _CommandExecutionRequest,
+) -> None:
+    start_new_session = supports_posix_process_groups()
+    process = await asyncio.create_subprocess_exec(
+        *request.cmd,
+        stdin=(
+            asyncio.subprocess.PIPE
+            if request.stdin_data
+            else asyncio.subprocess.DEVNULL
+        ),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=request.cwd,
+        env=_child_process_env(request.child_environment),
+        start_new_session=start_new_session,
+    )
+    lifecycle.process = process
+    lifecycle.process_group_id = process.pid if start_new_session else None
+    record_workspace_child_environment_applied(
+        lifecycle.invocation_context,
+        request.child_environment,
+    )
+    _emit_process_started(
+        lifecycle.invocation_context,
+        process.pid,
+        lifecycle.process_group_id,
+    )
+    lifecycle.log_handle = open_log_handle(
+        request.log_file,
+        append=request.append_log,
+        header_bytes=request.log_header,
+    )
+    lifecycle.output_capture = await write_stdin_and_collect_output(
+        process,
+        request.stdin_data,
+        lifecycle.log_handle,
+        lifecycle.diagnostic_sink,
+        lifecycle.process_group_id,
+        request.idle_timeout_seconds,
+    )
+    _record_process_drain_success(
+        lifecycle.invocation_context,
+        process,
+        lifecycle.process_group_id,
+    )
+
+
+async def _handle_failed_command(
+    lifecycle: _CommandLifecycle,
+    failure: BaseException,
+) -> ProcessDrainError | None:
+    drain_error = await _cleanup_failed_command(lifecycle)
+    if drain_error is None and isinstance(failure, ProcessDrainError):
+        drain_error = failure
+    _record_process_drain_outcome(
+        lifecycle.invocation_context,
+        lifecycle.process,
+        lifecycle.process_group_id,
+        drain_error,
+    )
+    return drain_error
+
+
 async def _cleanup_failed_command(
+    lifecycle: _CommandLifecycle,
+) -> ProcessDrainError | None:
+    if lifecycle.process is not None:
+        try:
+            await reap_failed_process(
+                lifecycle.process,
+                lifecycle.process_group_id,
+                lifecycle.diagnostic_sink,
+            )
+        except ProcessDrainError as exc:
+            if lifecycle.output_capture is not None:
+                lifecycle.output_capture.cleanup()
+            return exc
+    if lifecycle.output_capture is not None:
+        lifecycle.output_capture.cleanup()
+    return None
+
+
+def _record_process_drain_success(
+    invocation_context: InvocationContext | None,
+    process: asyncio.subprocess.Process,
+    process_group_id: int | None,
+) -> None:
+    state_path = _workspace_state_path(invocation_context)
+    if state_path is None:
+        return
+    record_workspace_process_drain(
+        state_path,
+        "confirmed",
+        process.pid,
+        process_group_id,
+    )
+    workspace_mutator_fence.release_workspace_mutator(state_path)
+
+
+def _record_process_drain_outcome(
+    invocation_context: InvocationContext | None,
     process: asyncio.subprocess.Process | None,
     process_group_id: int | None,
-    output_capture: ProcessOutputCapture | None,
-    diagnostic_sink: InvocationDiagnosticSink | None,
+    error: BaseException | None,
 ) -> None:
-    if process is not None:
-        await reap_failed_process(process, process_group_id, diagnostic_sink)
-    if output_capture is not None:
-        output_capture.cleanup()
+    if process is None:
+        return
+    if not isinstance(error, ProcessDrainError):
+        _record_process_drain_success(
+            invocation_context,
+            process,
+            process_group_id,
+        )
+        return
+    _record_unresolved_process_drain(invocation_context, error)
+
+
+def _record_unresolved_process_drain(
+    invocation_context: InvocationContext | None,
+    error: ProcessDrainError,
+) -> None:
+    state_path = _workspace_state_path(invocation_context)
+    if state_path is None:
+        return
+    workspace_mutator_fence.fence_workspace_mutator(state_path)
+    try:
+        record_workspace_process_drain(
+            state_path,
+            "unresolved",
+            error.evidence.pid,
+            error.evidence.process_group_id,
+            str(error),
+        )
+    except Exception as persistence_error:
+        error.add_note(
+            f"Workspace process-drain evidence persistence failed: {persistence_error}"
+        )
+
+
+def _workspace_state_path(
+    invocation_context: InvocationContext | None,
+) -> Path | None:
+    if invocation_context is None or invocation_context.workspace is None:
+        return None
+    return invocation_context.workspace.workspace_state_path
 
 
 def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:

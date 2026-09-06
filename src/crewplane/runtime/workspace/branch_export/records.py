@@ -30,6 +30,9 @@ def branch_export_record(
     operation: BranchExportOperation,
     branch_exists_before: bool,
     branch_exists_after: bool,
+    operation_origin: str = "current_run",
+    recovery_mode: str = "initial",
+    repository_id: str | None = None,
     dry_run: bool = False,
 ) -> JsonObject:
     payload: JsonObject = {
@@ -42,6 +45,9 @@ def branch_export_record(
         "branch_name": branch_name,
         "branch_ref": branch_ref,
         "status": "fulfilled",
+        "operation_origin": operation_origin,
+        "recovery_mode": recovery_mode,
+        "repository_id": repository_id,
         "operation": operation,
         "branch_exists_before": branch_exists_before,
         "branch_exists_after": branch_exists_after,
@@ -60,6 +66,8 @@ def skipped_branch_export_record(
     logical_worktree_name: str,
     node_id: str,
     dry_run: bool = False,
+    operation_origin: str = "current_run",
+    repository_id: str | None = None,
 ) -> JsonObject:
     return {
         "version": SCHEMA_VERSION,
@@ -71,6 +79,9 @@ def skipped_branch_export_record(
         "branch_name": None,
         "branch_ref": None,
         "status": "skipped",
+        "operation_origin": operation_origin,
+        "recovery_mode": "initial",
+        "repository_id": repository_id,
         "operation": "skipped",
         "skip_reason": "create_branch_false",
         "branch_exists_before": None,
@@ -93,6 +104,9 @@ def failed_branch_export_record(
     branch_exists_before: bool | None,
     failure_message: str,
     dry_run: bool = False,
+    operation_origin: str = "current_run",
+    recovery_mode: str = "initial",
+    repository_id: str | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
         "version": SCHEMA_VERSION,
@@ -104,6 +118,9 @@ def failed_branch_export_record(
         "branch_name": branch_name,
         "branch_ref": branch_ref,
         "status": "failed_verification",
+        "operation_origin": operation_origin,
+        "recovery_mode": recovery_mode,
+        "repository_id": repository_id,
         "operation": "failed_verification",
         "failure_message": failure_message,
         "branch_exists_before": branch_exists_before,
@@ -114,6 +131,43 @@ def failed_branch_export_record(
     }
     if checkpoint is not None:
         payload.update(checkpoint_record(checkpoint))
+    return payload
+
+
+def prepared_branch_export_record(
+    plan: PreflightExecutionPlan,
+    run_id: str,
+    run_key_name: str,
+    repository_id: str,
+    logical_worktree_name: str,
+    branch_name: str,
+    branch_ref: str,
+    checkpoint: BranchExportCheckpoint,
+    policy: WorkspaceSelectionRecord,
+    operation_origin: str,
+    recovery_mode: str,
+) -> JsonObject:
+    payload: JsonObject = {
+        "version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "run_key_name": run_key_name,
+        "workflow_name": plan.workflow_name,
+        "workflow_signature": plan.workflow_signature,
+        "repository_id": repository_id,
+        "logical_worktree_name": logical_worktree_name,
+        "branch_name": branch_name,
+        "branch_ref": branch_ref,
+        "status": "prepared",
+        "operation": "prepared",
+        "operation_origin": operation_origin,
+        "recovery_mode": recovery_mode,
+        "expected_old_oid": None,
+        "target_oid": checkpoint.result_commit,
+        "dry_run": False,
+        "created_at": datetime.now(UTC).isoformat(),
+        "worktree_contract": policy.worktree_contract.model_dump(mode="json"),
+    }
+    payload.update(checkpoint_record(checkpoint))
     return payload
 
 

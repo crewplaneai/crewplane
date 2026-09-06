@@ -66,10 +66,13 @@ async def run_provider_call_with_drift_guard(
     request: DriftGuardCallRequest,
 ) -> int:
     context = _prepare_drift_guard_context(request)
-    provider_error = await _invoke_provider_capturing_error(
-        request,
-        context.captured_telemetry,
-    )
+    with request.runtime_context.runtime_publications.attribute_to(
+        request.publication_owner_id
+    ):
+        provider_error = await _invoke_provider_capturing_error(
+            request,
+            context.captured_telemetry,
+        )
     drift = _detect_and_restore_drift(request, context, provider_error)
     _emit_drift_telemetry(request, drift, provider_error)
 

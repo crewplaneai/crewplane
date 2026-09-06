@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from crewplane.runtime.workspace.worktree.descriptors import (
     load_source_ref_from_state,
 )
@@ -44,8 +46,5 @@ def test_load_source_ref_from_state_rejects_bool_integer_fields(
         encoding="utf-8",
     )
 
-    source_ref = load_source_ref_from_state(state_path)
-
-    assert source_ref.bundle_size_bytes is None
-    assert source_ref.upstream_sources[0].candidate_sequence is None
-    assert source_ref.upstream_sources[0].bundle_size_bytes is None
+    with pytest.raises(RuntimeError, match="lacks required hardening evidence"):
+        load_source_ref_from_state(state_path)
