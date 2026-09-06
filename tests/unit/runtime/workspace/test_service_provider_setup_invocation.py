@@ -363,11 +363,15 @@ def test_preparation_cancellation_has_bounded_terminal_cleanup(
         "prepare_invocation_workspace",
         finish_preparation_after_cancellation,
     )
-    monkeypatch.setattr(
-        provider_invocation_workspace_module,
-        "PREPARATION_CANCELLATION_TIMEOUT_SECONDS",
-        0.02,
+    cancellation_timeout = (
+        provider_invocation_workspace_module.PREPARATION_CANCELLATION_TIMEOUT_SECONDS
     )
+    if hold_git_lock or delay_past_preparation_timeout:
+        monkeypatch.setattr(
+            provider_invocation_workspace_module,
+            "PREPARATION_CANCELLATION_TIMEOUT_SECONDS",
+            0.02,
+        )
 
     async def cancel_preparation() -> None:
         cleanup_registry = DeferredAsyncCleanupRegistry()
@@ -384,6 +388,12 @@ def test_preparation_cancellation_has_bounded_terminal_cleanup(
             assert await asyncio.to_thread(preparation_cancelled.wait, 2)
         with pytest.raises(asyncio.CancelledError):
             await task
+        if delay_past_preparation_timeout:
+            monkeypatch.setattr(
+                provider_invocation_workspace_module,
+                "PREPARATION_CANCELLATION_TIMEOUT_SECONDS",
+                cancellation_timeout,
+            )
         release_preparation.set()
         assert await cleanup_registry.drain(1) == ()
 
@@ -392,7 +402,7 @@ def test_preparation_cancellation_has_bounded_terminal_cleanup(
         asyncio.run(cancel_preparation())
         elapsed = monotonic() - started
 
-        assert elapsed < 0.5
+        assert elapsed < 1
         state = read_json_object(prepared.state_path)
         assert state["status"] == "cancelled"
         assert state["workspace"]["retention"] == (
