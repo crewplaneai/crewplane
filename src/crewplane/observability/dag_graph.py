@@ -244,7 +244,7 @@ def advance_columns(
             else None
         )
         if existing_column is None:
-            place_active_column(next_columns, insert_at, dependent_id)
+            insert_at = place_active_column(next_columns, insert_at, dependent_id)
             dependent_columns.append(insert_at)
             insert_at += 1
             continue
@@ -268,11 +268,15 @@ def place_active_column(
     columns: list[GraphColumn],
     column_index: int,
     target_id: str,
-) -> None:
-    if column_index < len(columns) and columns[column_index] is None:
+) -> int:
+    # Moving an occupied lane would disconnect its already-rendered incoming edge.
+    while column_index < len(columns) and columns[column_index] is not None:
+        column_index += 1
+    if column_index < len(columns):
         columns[column_index] = target_id
-        return
-    columns.insert(column_index, target_id)
+    else:
+        columns.append(target_id)
+    return column_index
 
 
 def trim_trailing_empty_columns(columns: list[GraphColumn]) -> list[GraphColumn]:

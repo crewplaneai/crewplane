@@ -1,0 +1,7 @@
+ ●     root                     ⏸  parallel
+ ├─┐
+▸● │   branch                   ⏸  parallel
+ ├─┼─┐
+ │ ● │ sibling                  ⏸  parallel
+ ●   │ left                     ⏸  parallel
+     ● right                    ⏸  parallel

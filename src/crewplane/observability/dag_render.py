@@ -52,6 +52,16 @@ def render_dag_summary(
     visible_columns = min(max(1, max_columns), column_budget(config.max_graph_width))
     hidden_columns = max(0, max_columns - visible_columns)
     graph_column_width = graph_width(visible_columns)
+    node_column_width = max(
+        24, *(display_width(node_id) for node_id in ordered_node_ids)
+    )
+    min_meta_width = max(
+        display_width(status_icon(state.nodes[node_id].status))
+        for node_id in ordered_node_ids
+    ) + display_width(" ...")
+    node_column_width = min(
+        node_column_width, max(1, width - graph_column_width - min_meta_width - 3)
+    )
 
     lines: list[str] = []
     for index, graph_state in enumerate(graph_states):
@@ -62,8 +72,9 @@ def render_dag_summary(
         )
         marker = "▸" if graph_state.node_id == selected_node_id else " "
         graph_column = pad_text(graph, graph_column_width)
-        node_column_width = max(24, display_width(graph_state.node_id))
-        node_column = pad_text(graph_state.node_id, node_column_width)
+        node_column = pad_text(
+            fit_text(graph_state.node_id, node_column_width), node_column_width
+        )
         line = f"{marker}{graph_column} {node_column} {_node_meta(node, now)}"
         lines.append(fit_text(line.rstrip(), width))
 

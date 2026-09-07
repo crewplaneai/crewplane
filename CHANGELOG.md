@@ -4,6 +4,11 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- The live DAG view keeps nested branches connected and status icons aligned
+  when workflows have long node names.
+
 ## [0.2.2] - 2026-08-29
 
 ### Changed

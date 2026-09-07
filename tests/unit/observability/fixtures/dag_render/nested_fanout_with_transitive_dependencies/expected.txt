@@ -1,0 +1,27 @@
+ ●       source.input                   ⏸  input
+ ├─┐
+ ● │     stage.prepare                  ⏸  provider-a
+ ├─┼─┬─┐
+▸● │ │ │ branch.alpha                   ⏸  provider-a
+ │ │ ● │ branch.beta.with.long.name     ⏸  provider-a
+ │ │ │ ● branch.gamma                   ⏸  provider-a
+ ├─┘ │ │
+ ●   │ │ branch.alpha.continuation      ⏸  provider-a
+ ├───┴─┘
+ ●       merge.first                    ⏸  provider-a
+ ├─┐
+ ● │     branch.delta                   ⏸  provider-a
+ │ ●     branch.epsilon                 ⏸  provider-a
+ ├─┘
+ ●       merge.second                   ⏸  provider-a
+ │
+ ●       stage.middle                   ⏸  provider-a
+ ├─┐
+ ● │     branch.zeta                    ⏸  provider-a
+ │ ●     branch.eta.with.extended.label ⏸  provider-a
+ ├─┘
+ ●       merge.third                    ⏸  provider-a
+ │
+ ●       stage.finish                   ⏸  provider-a
+ │
+ ●       output.final                   ⏸  provider-a
