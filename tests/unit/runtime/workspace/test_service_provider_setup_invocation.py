@@ -242,9 +242,15 @@ def test_worktree_retry_reset_deadline_bounds_asyncio_run_while_lock_is_held(
         remove_worktree_workspace(source, prepared.workspace_path)
 
 
+@pytest.mark.parametrize(
+    "defer_terminal_state",
+    [False, True],
+    ids=["ready-terminal-state", "deferred-terminal-state"],
+)
 def test_worktree_preparation_cancellation_bounds_asyncio_run_while_lock_is_held(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    defer_terminal_state: bool,
 ) -> None:
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
@@ -265,7 +271,46 @@ def test_worktree_preparation_cancellation_bounds_asyncio_run_while_lock_is_held
     )
     lock_path = Path(source.common_git_dir) / "crewplane" / "workspace.lock"
     lock_path.parent.mkdir(parents=True)
-    holder = _start_git_metadata_lock_holder(lock_path)
+    holder = _start_git_metadata_lock_holder(lock_path, hold_seconds=10)
+    lock_wait_started = Event()
+    release_terminal_state = Event()
+    if not defer_terminal_state:
+        release_terminal_state.set()
+    file_lock_api = workspace_locks_module.fcntl
+    assert file_lock_api is not None
+    original_flock = file_lock_api.flock
+    original_record_cancelled = workspace_service_worktree_failures.record_cancelled_unmaterialized_worktree_preparation
+
+    def observe_contended_lock(
+        file_descriptor: int,
+        operation: int,
+    ) -> None:
+        try:
+            original_flock(file_descriptor, operation)
+        except BlockingIOError:
+            if operation == file_lock_api.LOCK_EX | file_lock_api.LOCK_NB:
+                lock_wait_started.set()
+            raise
+
+    def record_cancelled_after_release(
+        preparation_plan: WorktreePreparationPlan,
+        failure: Exception,
+    ) -> None:
+        assert release_terminal_state.wait(5), (
+            "Terminal-state recording was not released"
+        )
+        original_record_cancelled(preparation_plan, failure)
+
+    monkeypatch.setattr(
+        file_lock_api,
+        "flock",
+        observe_contended_lock,
+    )
+    monkeypatch.setattr(
+        workspace_service_worktree_failures,
+        "record_cancelled_unmaterialized_worktree_preparation",
+        record_cancelled_after_release,
+    )
     monkeypatch.setattr(
         provider_invocation_workspace_module,
         "PREPARATION_CANCELLATION_TIMEOUT_SECONDS",
@@ -281,12 +326,22 @@ def test_worktree_preparation_cancellation_bounds_asyncio_run_while_lock_is_held
                 cleanup_registry,
             )
         )
-        await _wait_for_path(workspace_path)
-        await asyncio.sleep(0.02)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        cleanup_errors = await cleanup_registry.drain(0.05)
+        try:
+            # Directory creation precedes Git checks; observe actual lock contention.
+            assert await asyncio.to_thread(lock_wait_started.wait, 5)
+            task.cancel()
+            done, _ = await asyncio.wait({task}, timeout=2)
+            assert task in done, "Preparation cancellation did not return while locked"
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            if defer_terminal_state:
+                assert cleanup_registry.has_unfinished_protected_tasks
+                assert read_json_object(state_path)["status"] == "running"
+        finally:
+            release_terminal_state.set()
+
+        # Durable state writes may outlast the short preparation cancellation budget.
+        cleanup_errors = await cleanup_registry.drain(2)
         assert not any(isinstance(error, TimeoutError) for error in cleanup_errors)
         assert all(
             str(error) == "Workspace Git metadata lock acquisition was cancelled."
@@ -294,16 +349,16 @@ def test_worktree_preparation_cancellation_bounds_asyncio_run_while_lock_is_held
         )
 
     try:
-        started = monotonic()
         asyncio.run(cancel_preparation())
-        elapsed = monotonic() - started
 
-        assert elapsed < 0.5
+        # Include asyncio.run's executor shutdown: the lock must still be held.
+        assert holder.poll() is None
         state = read_json_object(state_path)
         assert state["status"] == "cancelled"
         assert state["workspace"]["retention"] == "retained"
         assert workspace_path.exists()
     finally:
+        release_terminal_state.set()
         _stop_git_metadata_lock_holder(holder)
 
 
@@ -1106,7 +1161,10 @@ async def _wait_for_path(path: Path, timeout_seconds: float = 2.0) -> None:
     raise AssertionError(f"Timed out waiting for {path.as_posix()}")
 
 
-def _start_git_metadata_lock_holder(lock_path: Path) -> subprocess.Popen[str]:
+def _start_git_metadata_lock_holder(
+    lock_path: Path,
+    hold_seconds: float = 1,
+) -> subprocess.Popen[str]:
     holder = subprocess.Popen(
         [
             sys.executable,
@@ -1116,9 +1174,10 @@ def _start_git_metadata_lock_holder(lock_path: Path) -> subprocess.Popen[str]:
                 "handle = pathlib.Path(sys.argv[1]).open('a+b'); "
                 "fcntl.flock(handle.fileno(), fcntl.LOCK_EX); "
                 "print('locked', flush=True); "
-                "time.sleep(1)"
+                "time.sleep(float(sys.argv[2]))"
             ),
             lock_path.as_posix(),
+            str(hold_seconds),
         ],
         stdout=subprocess.PIPE,
         text=True,
