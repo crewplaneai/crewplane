@@ -1,6 +1,6 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
-from time import monotonic
 from unittest.mock import patch
 
 from crewplane.architecture.contracts import EventType
@@ -43,24 +43,25 @@ class ObservabilityHubDeliveryTests(unittest.TestCase):
             observers=[observer],
             refresh_per_second=0,
         )
-        try:
-            with hub:
+        with ThreadPoolExecutor(max_workers=1) as emitter, hub:
+            try:
                 self.assertTrue(observer.entered.wait(timeout=1.0))
-                started_at = monotonic()
-                hub.emit(
+                emitted = emitter.submit(
+                    hub.emit,
                     make_execution_event(
                         event_type=EventType.WORKFLOW_STARTED,
                         workflow_name=workflow.name,
                         run_id="run-blocked-observer",
-                    )
+                    ),
                 )
-                self.assertLess(monotonic() - started_at, 0.1)
-        finally:
-            observer.release.set()
-            self.assertTrue(
-                observer.completed.wait(timeout=1.0),
-                "Blocked observer delivery did not finish after release.",
-            )
+                emitted.result(timeout=1.0)
+                self.assertFalse(observer.completed.is_set())
+            finally:
+                observer.release.set()
+                self.assertTrue(
+                    observer.completed.wait(timeout=1.0),
+                    "Blocked observer delivery did not finish after release.",
+                )
 
     def test_observability_hub_coalesces_ticks_while_observer_is_blocked(
         self,

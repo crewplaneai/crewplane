@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -57,7 +58,11 @@ def test_auto_close_true_kills_session_and_cleans_runtime_files() -> None:
     assert any(args[:2] == ["kill-session", "-t"] for args, _, _ in client.calls)
 
 
-def test_failed_session_creation_forces_runtime_file_cleanup() -> None:
+def test_failed_session_creation_forces_runtime_file_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     client = EmptyRightPaneTmuxClient()
     lifecycle = TmuxCompactSessionLifecycle(
         auto_close_session=False,
@@ -69,12 +74,7 @@ def test_failed_session_creation_forces_runtime_file_cleanup() -> None:
         lifecycle.create_session(run_context("failed-create"))
 
     assert client.socket_name is not None
-    leaked_roots = [
-        path
-        for path in Path("/tmp").glob("crewplane-tmux-compact-failed-create-*")
-        if path.name == client.socket_name
-    ]
-    assert leaked_roots == []
+    assert not (tmp_path / client.socket_name).exists()
     assert any(args[:2] == ["kill-session", "-t"] for args, _, _ in client.calls)
 
 

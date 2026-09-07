@@ -156,9 +156,9 @@ def test_ensure_single_link_regular_file_retries_contention_then_succeeds(
             raise FileExistsError
         return original_open(file_path, flags, mode)
 
-    monkeypatch.setattr(safe_files.os, "open", create_once_after_two_races)
-
-    safe_path = ensure_single_link_regular_file(path)
+    with monkeypatch.context() as file_creation:
+        file_creation.setattr(safe_files.os, "open", create_once_after_two_races)
+        safe_path = ensure_single_link_regular_file(path)
 
     assert safe_path == path
     assert path.read_text(encoding="utf-8") == ""
@@ -177,7 +177,7 @@ def test_ensure_single_link_regular_file_fails_after_retries(
     ) -> int:
         raise FileExistsError
 
-    monkeypatch.setattr(safe_files.os, "open", keep_file_contended)
-
-    with pytest.raises(ValueError, match="could not be created safely"):
-        ensure_single_link_regular_file(path)
+    with monkeypatch.context() as file_creation:
+        file_creation.setattr(safe_files.os, "open", keep_file_contended)
+        with pytest.raises(ValueError, match="could not be created safely"):
+            ensure_single_link_regular_file(path)

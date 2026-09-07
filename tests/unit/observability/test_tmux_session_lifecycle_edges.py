@@ -15,6 +15,12 @@ from crewplane.observability.tmux.session_lifecycle import (
 )
 
 
+@pytest.fixture(autouse=True)
+def plain_terminal_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TMUX", raising=False)
+    monkeypatch.delenv("TERM_PROGRAM", raising=False)
+
+
 class StubTmux:
     def __init__(self, returncode: int = 0, fail: Exception | None = None) -> None:
         self.returncode = returncode

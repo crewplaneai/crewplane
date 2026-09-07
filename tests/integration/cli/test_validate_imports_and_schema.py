@@ -188,7 +188,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
 
             output_text = stream.getvalue()
             self.assertIn("Invalid:", output_text)
-            self.assertIn("unused parameter", output_text)
+            self.assertIn("unused parameter", " ".join(output_text.split()))
 
     def test_validate_fails_fast_for_unknown_provider(self) -> None:
         with temporary_project_cwd() as tmp_path:

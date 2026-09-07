@@ -220,14 +220,19 @@ def test_reviewer_outputs_are_ordered_by_declared_reviewer_index(
     node_dir = output.create_node_dir(node_artifact_request(node.id))
     session_ids: list[int] = []
     allowed_paths_by_task: dict[str, set[Path]] = {}
+    fast_finished = asyncio.Event()
+    completion_order: list[str] = []
 
     async def fake_guard(request):
         session_ids.append(id(request.drift_session))
         allowed_paths_by_task[request.task_id] = set(request.allowed_paths)
         if request.provider.provider == "slow":
-            await asyncio.sleep(0.02)
+            await asyncio.wait_for(fast_finished.wait(), timeout=1.0)
         assert request.invocation_output_file is not None
         request.invocation_output_file.write_text(review_output(), encoding="utf-8")
+        completion_order.append(request.provider.provider)
+        if request.provider.provider == "fast":
+            fast_finished.set()
         return 0
 
     monkeypatch.setattr(
@@ -254,6 +259,7 @@ def test_reviewer_outputs_are_ordered_by_declared_reviewer_index(
 
     result = asyncio.run(review_loop_rounds.run_reviewer_round(request))
 
+    assert completion_order == ["fast", "slow"]
     assert [artifact.task_id for artifact in result.outputs] == [
         "slow_reviewer_0",
         "fast_reviewer_1",

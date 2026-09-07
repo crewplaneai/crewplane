@@ -1,6 +1,6 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from time import monotonic
 from unittest.mock import patch
 
 from crewplane.architecture.contracts import EventType, ObserverCapabilities
@@ -221,30 +221,33 @@ class ObservabilityHubLifecycleTests(unittest.TestCase):
         observer = BlockingStartObserver()
         warnings: list[str] = []
 
-        try:
-            with patch(
-                "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
-                0.01,
-            ):
-                started_at = monotonic()
-                with ObservabilityHub(
-                    workflow_topology=topology_from_workflow(workflow),
-                    run_id="run-start-blocked",
-                    observers=[observer],
-                    refresh_per_second=0,
-                    warning_sink=warnings.append,
-                ) as hub:
-                    self.assertEqual(hub.active_observer_count, 0)
-                elapsed = monotonic() - started_at
-        finally:
-            observer.release.set()
-            self.assertTrue(
-                observer.completed.wait(timeout=1.0),
-                "Timed-out observer start did not finish after release.",
-            )
+        def start_and_stop_hub() -> int:
+            with ObservabilityHub(
+                workflow_topology=topology_from_workflow(workflow),
+                run_id="run-start-blocked",
+                observers=[observer],
+                refresh_per_second=0,
+                warning_sink=warnings.append,
+            ) as hub:
+                return hub.active_observer_count
 
-        self.assertLess(elapsed, 0.1)
-        self.assertTrue(observer.entered.is_set())
+        with ThreadPoolExecutor(max_workers=1) as starter:
+            try:
+                with patch(
+                    "crewplane.observability.runtime.OBSERVER_START_TIMEOUT_SECONDS",
+                    0.01,
+                ):
+                    started = starter.submit(start_and_stop_hub)
+                    self.assertTrue(observer.entered.wait(timeout=1.0))
+                    self.assertEqual(started.result(timeout=1.0), 0)
+                    self.assertFalse(observer.completed.is_set())
+            finally:
+                observer.release.set()
+                self.assertTrue(
+                    observer.completed.wait(timeout=1.0),
+                    "Timed-out observer start did not finish after release.",
+                )
+
         self.assertTrue(any("start timed out" in warning for warning in warnings))
 
     def test_observability_hub_cleans_up_observer_that_starts_after_timeout(

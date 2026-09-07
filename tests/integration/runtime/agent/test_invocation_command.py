@@ -122,21 +122,25 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                     workspace_state_path=state_path,
                 ),
             )
-            try:
-                task = asyncio.create_task(
-                    run_command_once(
-                        cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
-                        stdin_data=None,
-                        log_file=None,
-                        append_log=False,
-                        log_header=None,
-                        cwd=Path.cwd(),
-                        invocation_context=context,
-                        idle_timeout_seconds=None,
-                    )
+            task = asyncio.create_task(
+                run_command_once(
+                    cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
+                    stdin_data=None,
+                    log_file=None,
+                    append_log=False,
+                    log_header=None,
+                    cwd=Path.cwd(),
+                    invocation_context=context,
+                    idle_timeout_seconds=None,
                 )
-                while not events:
-                    await asyncio.sleep(0.01)
+            )
+            try:
+                async with asyncio.timeout(5.0):
+                    while not events:
+                        if task.done():
+                            await task
+                            self.fail("Command completed without a process event.")
+                        await asyncio.sleep(0.01)
 
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):
@@ -146,6 +150,8 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(payload["process_drain"]["status"], "confirmed")
                 self.assertFalse(workspace_mutator_is_fenced(state_path))
             finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
                 release_workspace_mutator(state_path)
 
     async def test_cancelled_command_records_unresolved_process_drain(self) -> None:
@@ -633,6 +639,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 idle_timeout_seconds=None,
             )
 
+        self.addCleanup(result.cleanup_stream_files)
         self.assertEqual(result.returncode, 0)
 
     async def test_normal_exit_kills_term_ignoring_process_group_member(
@@ -853,6 +860,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
 
+        self.addCleanup(result.cleanup_stream_files)
         lines = result.stdout_text.strip().splitlines()
         self.assertEqual(result.returncode, 0)
         self.assertEqual(Path(lines[0]), Path.cwd())
@@ -887,6 +895,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 child_environment=workspace_child_environment(Path.cwd()),
             )
 
+        self.addCleanup(result.cleanup_stream_files)
         self.assertEqual(result.stdout_text.strip().splitlines(), ["0", "https"])
 
     async def test_run_command_once_records_child_environment_after_spawn(self) -> None:
@@ -911,6 +920,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             child_environment=ChildProcessEnvironment(set={}, unset=()),
         )
 
+        self.addCleanup(result.cleanup_stream_files)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(record_calls, 1)
 

@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast
 
@@ -153,6 +154,7 @@ def test_run_workspace_setup_raises_and_records_failed_command(
 
 def test_run_workspace_setup_timeout_terminates_child_process_group(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     if os.name != "posix":
         pytest.skip("process-group cleanup is POSIX-only")
@@ -160,11 +162,14 @@ def test_run_workspace_setup_timeout_terminates_child_process_group(
     cwd.mkdir()
     state_path = tmp_path / "stage" / "workspace-state.json"
     state_path.parent.mkdir()
-    leaked_child_marker = tmp_path / "child-survived.txt"
+    child_pid_path = tmp_path / "child.pid"
     child_script = (
-        "import pathlib, time; "
-        "time.sleep(0.5); "
-        f"pathlib.Path({str(leaked_child_marker)!r}).write_text('alive')"
+        "import os, pathlib, time; "
+        f"pid_path = pathlib.Path({str(child_pid_path)!r}); "
+        "temporary_path = pid_path.with_suffix('.tmp'); "
+        "temporary_path.write_text(str(os.getpid())); "
+        "temporary_path.replace(pid_path); "
+        "time.sleep(30)"
     )
     parent_script = (
         "import subprocess, sys, time; "
@@ -172,13 +177,38 @@ def test_run_workspace_setup_timeout_terminates_child_process_group(
         "time.sleep(10)"
     )
     policy = _policy([[sys.executable, "-c", parent_script]])
+    original_popen = subprocess.Popen
+    started_processes: list[subprocess.Popen[str]] = []
 
-    with pytest.raises(WorkspaceSetupError) as exc_info:
-        run_workspace_setup(_plan(setup_timeout_seconds=0.2), policy, cwd, state_path)
+    def start_ready_setup_process(*args: Any, **kwargs: Any) -> subprocess.Popen[str]:
+        process = original_popen(*args, **kwargs)
+        started_processes.append(process)
+        deadline = time.monotonic() + 5
+        while not child_pid_path.exists():
+            if process.poll() is not None:
+                pytest.fail("Setup exited before its child reported readiness.")
+            if time.monotonic() >= deadline:
+                pytest.fail("Setup child did not report readiness within 5 seconds.")
+            time.sleep(0.01)
+        return process
 
-    assert exc_info.value.summary["status"] == "timed_out"
-    time.sleep(0.8)
-    assert not leaked_child_marker.exists()
+    monkeypatch.setattr(workspace_setup.subprocess, "Popen", start_ready_setup_process)
+
+    try:
+        with pytest.raises(WorkspaceSetupError) as exc_info:
+            run_workspace_setup(
+                _plan(setup_timeout_seconds=0.2), policy, cwd, state_path
+            )
+
+        assert exc_info.value.summary["status"] == "timed_out"
+        child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+        with pytest.raises(ProcessLookupError):
+            os.kill(child_pid, 0)
+    finally:
+        for process in started_processes:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
 
 
 def test_run_workspace_setup_uses_controlled_git_environment(
@@ -236,6 +266,7 @@ def test_run_workspace_setup_uses_process_group_capability(
     state_path = tmp_path / "stage" / "workspace-state.json"
     state_path.parent.mkdir()
     captured_start_new_session: list[bool] = []
+    probed_process_groups: set[int] = set()
 
     class SuccessfulSetupProcess:
         pid = 123
@@ -252,7 +283,14 @@ def test_run_workspace_setup_uses_process_group_capability(
         captured_start_new_session.append(bool(kwargs["start_new_session"]))
         return SuccessfulSetupProcess()
 
+    def missing_process_group(process_group_id: int, signal_number: int) -> None:
+        assert signal_number == 0
+        probed_process_groups.add(process_group_id)
+        raise ProcessLookupError
+
     monkeypatch.setattr(workspace_setup.subprocess, "Popen", fake_popen)
+    # The fake PID must never probe or signal a real host process group.
+    monkeypatch.setattr(workspace_setup.os, "killpg", missing_process_group)
     monkeypatch.setattr(
         workspace_setup,
         "supports_posix_process_groups",
@@ -260,6 +298,7 @@ def test_run_workspace_setup_uses_process_group_capability(
     )
 
     run_workspace_setup(_plan(), _policy([["setup"]]), cwd, state_path)
+    assert not probed_process_groups
 
     monkeypatch.setattr(
         workspace_setup,
@@ -269,6 +308,7 @@ def test_run_workspace_setup_uses_process_group_capability(
     run_workspace_setup(_plan(), _policy([["setup"]]), cwd, state_path)
 
     assert captured_start_new_session == [False, True]
+    assert probed_process_groups == {SuccessfulSetupProcess.pid}
 
 
 def test_setup_cancellation_uses_plain_process_termination_without_posix_groups(

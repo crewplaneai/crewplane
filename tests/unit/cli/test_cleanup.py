@@ -1358,7 +1358,7 @@ def test_cleanup_workspaces_default_requires_git_project(tmp_path: Path) -> None
     )
 
     assert result.exit_code == 1
-    assert "Use --all-projects" in result.output
+    assert "Use --all-projects" in " ".join(result.output.split())
 
 
 def test_cleanup_workspaces_rejects_relative_cache_root(tmp_path: Path) -> None:

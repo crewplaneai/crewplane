@@ -124,12 +124,10 @@ def test_human_readable_absolute_waits(
     line: str,
     expected_seconds: float,
 ) -> None:
-    host_offset = NOW.astimezone().utcoffset()
-    assert host_offset is not None
+    # The reset strings use local time, so start from noon on that local day.
+    now_utc = datetime(2026, 4, 10, 12).astimezone(UTC)
 
-    assert extract_wait_candidates_from_line(line, NOW) == [
-        expected_seconds - host_offset.total_seconds()
-    ]
+    assert extract_wait_candidates_from_line(line, now_utc) == [expected_seconds]
 
 
 def test_past_human_readable_absolute_wait_is_ignored() -> None:

@@ -241,7 +241,9 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 timeout=5.0,
             )
-        collection_result = task_results[0]
+            collection_result = task_results[0]
+            if not isinstance(collection_result, BaseException):
+                self.addCleanup(collection_result.cleanup)
         if isinstance(collection_result, BaseException):
             raise collection_result
         stdout_bytes, stderr_bytes = collection_result

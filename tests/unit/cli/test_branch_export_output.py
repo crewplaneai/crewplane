@@ -34,6 +34,7 @@ def test_print_branch_export_fulfillment_records(tmp_path: Path) -> None:
         force_terminal=False,
         color_system=None,
         width=240,
+        soft_wrap=True,
     )
 
     print_branch_export_fulfillments((record_path,), console)
