@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
+from tests.helpers.workspace_worktree_reuse import with_node_setup
 
 
 @pytest.mark.parametrize(
@@ -271,6 +273,113 @@ def test_worktree_capture_rejects_gitignore_that_hides_result_files(
 
     assert prepared.workspace_path.exists()
     remove_worktree_workspace(source, prepared.workspace_path)
+
+
+@pytest.mark.parametrize("stage_ignored_policy", [False, True])
+def test_worktree_capture_allows_setup_virtual_environment(
+    tmp_path: Path,
+    stage_ignored_policy: bool,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    (repo / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+    run_git_text(repo, "add", ".gitignore")
+    run_git_text(repo, "commit", "-m", "ignore virtual environment")
+    plan = with_node_setup(
+        workspace_plan(repo, tmp_path / "cache", False, kind="worktree"),
+        "implement",
+        [[sys.executable, "-m", "venv", "--without-pip", ".venv"]],
+    )
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+    prepared = prepare_invocation_workspace(
+        workspace_invocation_request(plan, output), workspace_invocation_context()
+    )
+    assert prepared.workspace_path is not None
+    assert prepared.state_path is not None
+    assert plan.workspace_source is not None
+    try:
+        assert (prepared.cwd / ".venv/.gitignore").is_file()
+        assert read_json_object(prepared.state_path)["setup"]["status"] == "succeeded"
+        if stage_ignored_policy:
+            run_git_text(prepared.cwd, "add", "-f", ".venv/.gitignore")
+        (prepared.cwd / "result.txt").write_text("captured\n", encoding="utf-8")
+
+        prepared.mark_succeeded(defer_cleanup=True)
+
+        state = read_json_object(prepared.state_path)
+        assert state["status"] == "succeeded"
+        result_ref = str(state["refs"]["result"])
+        assert (
+            run_git_text(prepared.cwd, "show", f"{result_ref}:result.txt") == "captured"
+        )
+        assert (
+            run_git_text(prepared.cwd, "ls-tree", "-r", result_ref, "--", ".venv") == ""
+        )
+    finally:
+        remove_worktree_workspace(plan.workspace_source, prepared.workspace_path)
+
+
+def test_worktree_capture_rejects_self_hidden_nested_gitignore(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(repo, tmp_path / "cache", False, kind="worktree")
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+    prepared = prepare_invocation_workspace(
+        workspace_invocation_request(plan, output), workspace_invocation_context()
+    )
+    assert prepared.workspace_path is not None
+    assert plan.workspace_source is not None
+    try:
+        directory = prepared.cwd / "src"
+        directory.mkdir()
+        (directory / ".gitignore").write_text("*\n", encoding="utf-8")
+        (directory / "result.txt").write_text("hidden result\n", encoding="utf-8")
+        assert run_git_text(prepared.cwd, "status", "--porcelain") == ""
+
+        with pytest.raises(RuntimeError, match=".gitignore"):
+            prepared.mark_succeeded(defer_cleanup=True)
+    finally:
+        remove_worktree_workspace(plan.workspace_source, prepared.workspace_path)
+
+
+@pytest.mark.parametrize("delete_policy", [False, True])
+def test_worktree_capture_rejects_tracked_gitignore_drift_in_ignored_directory(
+    tmp_path: Path,
+    delete_policy: bool,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    (repo / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+    (repo / "ignored").mkdir()
+    (repo / "ignored/.gitignore").write_text("old\n", encoding="utf-8")
+    run_git_text(repo, "add", "-f", ".gitignore", "ignored/.gitignore")
+    run_git_text(repo, "commit", "-m", "tracked policy under ignored directory")
+    plan = workspace_plan(repo, tmp_path / "cache", False, kind="worktree")
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+    prepared = prepare_invocation_workspace(
+        workspace_invocation_request(plan, output), workspace_invocation_context()
+    )
+    assert prepared.workspace_path is not None
+    assert plan.workspace_source is not None
+    try:
+        policy = prepared.cwd / "ignored/.gitignore"
+        if delete_policy:
+            policy.unlink()
+        else:
+            policy.write_text("changed\n", encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match=".gitignore"):
+            prepared.mark_succeeded(defer_cleanup=True)
+    finally:
+        remove_worktree_workspace(plan.workspace_source, prepared.workspace_path)
 
 
 def test_worktree_capture_rejects_attributes_for_new_files(

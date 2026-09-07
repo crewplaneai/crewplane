@@ -24,6 +24,7 @@ from crewplane.runtime.agent.workspace_environment import (
 )
 from crewplane.runtime.workspace import prepare_invocation_workspace
 from crewplane.runtime.workspace.git import git
+from crewplane.runtime.workspace.invocation import invocation_slug
 from crewplane.runtime.workspace.snapshot import (
     WorkspaceSnapshotPolicy,
     remove_workspace_path,
@@ -423,7 +424,7 @@ def test_snapshot_workspace_preparation_failure_removes_workspace_path(
         / "snapshots"
         / source.repository_id
         / "workspace-run-001"
-        / "implement-alpha-round1"
+        / invocation_slug("implement", "alpha", None, 1)
     )
     assert not workspace_path.exists()
 
@@ -447,7 +448,7 @@ def test_snapshot_workspace_collision_is_retained_without_removal(
         / "snapshots"
         / source.repository_id
         / plan.run_key_name
-        / "implement-alpha-round1"
+        / invocation_slug("implement", "alpha", None, 1)
     )
     workspace_path.parent.mkdir(parents=True)
     sentinel = workspace_path / "must-survive.txt"

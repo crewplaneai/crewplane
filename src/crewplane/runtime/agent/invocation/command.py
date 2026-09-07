@@ -29,6 +29,7 @@ from ..process.runner import (
     write_stdin_and_collect_output,
 )
 from ..process.stream_capture import ProcessOutputCapture
+from ..process.streams import drain_process_pipes
 from ..workspace_environment import record_workspace_child_environment_applied
 from .state import InvocationCommandRuntime
 from .telemetry import emit_invocation_diagnostic
@@ -223,6 +224,11 @@ async def _cleanup_failed_command(
                 lifecycle.process,
                 lifecycle.process_group_id,
                 lifecycle.diagnostic_sink,
+            )
+            await drain_process_pipes(
+                lifecycle.process,
+                lifecycle.diagnostic_sink,
+                lifecycle.process_group_id,
             )
         except ProcessDrainError as exc:
             if lifecycle.output_capture is not None:

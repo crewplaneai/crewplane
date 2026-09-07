@@ -83,10 +83,10 @@ async def run_workspace_enabled_mock_e2e(
     tmp_path: Path,
     workspace_git: IsolatedGit,
 ) -> None:
-    project_root = _workspace_project(tmp_path, workspace_git)
+    project_root = workspace_project(tmp_path, workspace_git)
     fixtures_dir = tmp_path / "fixtures"
     cache_root = tmp_path / "workspace-cache"
-    config = _workspace_config(cache_root, fixtures_dir)
+    config = workspace_config(cache_root, fixtures_dir)
     workflow = _workspace_workflow()
     resumed_run: Path | None = None
     with pytest.MonkeyPatch.context() as process_state:
@@ -94,22 +94,24 @@ async def run_workspace_enabled_mock_e2e(
         write_initial_failure_fixtures(fixtures_dir)
         first_stream = io.StringIO()
         with pytest.raises(RuntimeError, match="valid canonical candidate"):
-            await _run_workflow(workflow, config, Console(file=first_stream))
+            await run_workspace_workflow(workflow, config, Console(file=first_stream))
 
         write_success_fixtures(fixtures_dir)
         second_stream = io.StringIO()
-        await _run_workflow(workflow, config, Console(file=second_stream))
+        await run_workspace_workflow(workflow, config, Console(file=second_stream))
         assert "Resuming workflow" in second_stream.getvalue()
         resumed_run = resumed_succeeded_run(project_root)
 
         run_count_after_resume = len(run_dirs(project_root))
         duplicate_stream = io.StringIO()
-        await _run_workflow(workflow, config, Console(file=duplicate_stream))
+        await run_workspace_workflow(workflow, config, Console(file=duplicate_stream))
         assert len(run_dirs(project_root)) == run_count_after_resume
         assert "Identical context detected" in duplicate_stream.getvalue()
 
         force_stream = io.StringIO()
-        await _run_workflow(workflow, config, Console(file=force_stream), force=True)
+        await run_workspace_workflow(
+            workflow, config, Console(file=force_stream), force=True
+        )
         assert len(run_dirs(project_root)) == run_count_after_resume + 1
 
     assert resumed_run is not None
@@ -121,10 +123,10 @@ async def run_workspace_real_run_rejects_non_filesystem_artifacts(
     tmp_path: Path,
     workspace_git: IsolatedGit,
 ) -> None:
-    project_root = _workspace_project(tmp_path, workspace_git)
+    project_root = workspace_project(tmp_path, workspace_git)
     fixtures_dir = tmp_path / "fixtures"
     cache_root = tmp_path / "workspace-cache"
-    config = _workspace_config(
+    config = workspace_config(
         cache_root,
         fixtures_dir,
         artifact_implementation=(
@@ -141,11 +143,11 @@ async def run_workspace_real_run_rejects_non_filesystem_artifacts(
             0,
         )
         with pytest.raises(RuntimeError, match="filesystem artifacts backend"):
-            await _run_workflow(workflow, config, Console(file=io.StringIO()))
+            await run_workspace_workflow(workflow, config, Console(file=io.StringIO()))
         assert WorkspaceUnavailableArtifactsAdapter.create_store_calls == 0
 
 
-def _workspace_project(tmp_path: Path, workspace_git: IsolatedGit) -> Path:
+def workspace_project(tmp_path: Path, workspace_git: IsolatedGit) -> Path:
     project_root = tmp_path / "project"
     (project_root / "docs").mkdir(parents=True)
     (project_root / "src").mkdir()
@@ -177,7 +179,7 @@ def _workspace_project(tmp_path: Path, workspace_git: IsolatedGit) -> Path:
     return project_root
 
 
-def _workspace_config(
+def workspace_config(
     cache_root: Path,
     fixtures_dir: Path,
     artifact_implementation: str = "filesystem",
@@ -284,7 +286,7 @@ def _workspace_workflow() -> WorkflowPlan:
     )
 
 
-async def _run_workflow(
+async def run_workspace_workflow(
     workflow: WorkflowPlan,
     config: Config,
     console: Console,

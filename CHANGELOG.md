@@ -4,10 +4,33 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+- Hardened opt-in workspace isolation for safer recovery, retries,
+  cancellation, reuse, and cleanup.
+- Added recovery for interrupted branch exports.
+- Updated dependencies and CI tooling.
+
 ### Fixed
 
 - The live DAG view keeps nested branches connected and status icons aligned
   when workflows have long node names.
+- Fixed false artifact-drift errors between parallel reviewers.
+- Prevented disposable snapshot runs from failing solely because
+  drift reporting exceeds its limits.
+- Workspace setup now accepts dependency environments that create `.gitignore`
+  files inside already ignored directories.
+- Workspace invocations with distinct node names such as `a` and `.a` no longer
+  collide after name normalization.
+- Cancelled runs retain managed workspaces when provider output pipes remain open.
+- Worktree creation and retries preserve recorded source despite checkout hooks
+  and provider-created hidden index flags.
+- Worktree review results remain reusable after discarded remediation rounds.
+- Large ignored setup dependencies no longer prevent mutable worktree invocations.
+
+### Upgrade Notes
+- Older managed-workspace artifacts missing required validation data
+  must be regenerated before resume, duplicate skips, or branch export.
+  Rerun affected workflows to regenerate them.
 
 ## [0.2.2] - 2026-08-29
 

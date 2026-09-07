@@ -87,12 +87,8 @@ def reject_gitattributes_drift(
 def reject_gitignore_drift(
     checkout_root: Path,
     source_commit: str,
-    paths: tuple[str, ...],
 ) -> None:
-    if gitignore_drift_detected(paths) or filesystem_gitignore_drift_detected(
-        checkout_root,
-        source_commit,
-    ):
+    if filesystem_gitignore_drift_detected(checkout_root, source_commit):
         raise RuntimeError(
             "Workspace providers may not create, modify, or delete .gitignore."
         )
@@ -212,10 +208,6 @@ def gitattributes_drift_detected(paths: tuple[str, ...]) -> bool:
     return any(Path(path).name == ".gitattributes" for path in paths)
 
 
-def gitignore_drift_detected(paths: tuple[str, ...]) -> bool:
-    return any(Path(path).name == ".gitignore" for path in paths)
-
-
 def filesystem_gitattributes_drift_detected(
     checkout_root: Path,
     source_commit: str,
@@ -245,6 +237,15 @@ def _filesystem_policy_file_drift_detected(
 ) -> bool:
     baseline = _policy_file_blob_ids(checkout_root, source_commit, file_name)
     current_paths = _filesystem_policy_file_paths(checkout_root, file_name)
+    if file_name == ".gitignore":
+        ignored_parents = _ignored_gitignore_parents(
+            checkout_root, set(current_paths) - baseline.keys()
+        )
+        current_paths = tuple(
+            path
+            for path in current_paths
+            if path in baseline or Path(path).parent.as_posix() not in ignored_parents
+        )
     if set(current_paths) != set(baseline):
         return True
     command = git(checkout_root)
@@ -256,6 +257,27 @@ def _filesystem_policy_file_drift_detected(
         if object_id != baseline[path]:
             return True
     return False
+
+
+def _ignored_gitignore_parents(checkout_root: Path, paths: set[str]) -> set[str]:
+    parents = sorted({Path(path).parent.as_posix() for path in paths} - {"."})
+    if not parents:
+        return set()
+    # A trailing slash lets a directory's own .gitignore match the query.
+    parent_records = "\0".join(parents) + "\0"
+    try:
+        result = git(checkout_root).run_with_input(
+            parent_records.encode("utf-8"),
+            "check-ignore",
+            "--no-index",
+            "-z",
+            "--stdin",
+        )
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 1:
+            return set()
+        raise
+    return set(result.stdout.decode("utf-8").split("\0")) - {""}
 
 
 def _final_head_or_diagnostic(

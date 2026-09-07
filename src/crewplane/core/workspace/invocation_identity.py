@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 
 MAX_INVOCATION_SLUG_CHARS = 160
@@ -14,7 +15,11 @@ def invocation_slug(
     round_num: int,
 ) -> str:
     audit = f"audit{audit_round_num}-" if audit_round_num is not None else ""
-    return bounded_invocation_slug(f"{node_id}-{task_id}-{audit}round{round_num}")
+    identity = json.dumps((node_id, task_id, audit_round_num, round_num))
+    identity_hash = _short_slug_hash(identity)
+    return bounded_invocation_slug(
+        f"{node_id}-{task_id}-{audit}round{round_num}--{identity_hash}"
+    )
 
 
 def bounded_invocation_slug(value: str) -> str:

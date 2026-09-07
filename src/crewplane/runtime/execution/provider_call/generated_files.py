@@ -18,7 +18,6 @@ from ..workspace_files import rendered_workspace_file_descriptor
 from .cancellation import WorkspaceFinalizationDeferredCancellation
 from .generated_file_changes import (
     GeneratedFileChangeBaseline,
-    changed_generated_file_paths,
     resolved_real_directory,
 )
 from .generated_file_snapshot_source import (
@@ -35,7 +34,6 @@ __all__ = (
     "GeneratedFileChangeBaseline",
     "capture_generated_file_change_baseline",
     "capture_generated_file_change_baseline_async",
-    "changed_generated_file_paths",
     "finalize_successful_workspace",
     "record_generated_file_workspace",
     "rendered_workspace_file_descriptors",

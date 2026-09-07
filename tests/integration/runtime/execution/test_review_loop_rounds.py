@@ -56,6 +56,7 @@ from crewplane.runtime.execution.runtime_context import (
     agent_config_signature_from_plan,
     invoker_config_signature_from_plan,
 )
+from crewplane.runtime.workspace.invocation import invocation_slug
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
@@ -766,14 +767,9 @@ def test_executor_drift_guard_allows_runtime_workspace_state_path(
     result = asyncio.run(review_loop_executor_round.run_executor_round(request))
 
     assert [artifact.task_id for artifact in result.outputs] == ["exec_executor_0"]
-    assert (
-        node_dir / "workspace-state-review.node-exec_executor_0-round1.json"
-        in captured_allowed_paths
-    )
-    assert (
-        node_dir / "workspace-bundles" / "review.node-exec_executor_0-round1.bundle"
-        in captured_allowed_paths
-    )
+    slug = invocation_slug(node.id, "exec_executor_0", None, 1)
+    assert node_dir / f"workspace-state-{slug}.json" in captured_allowed_paths
+    assert node_dir / "workspace-bundles" / f"{slug}.bundle" in captured_allowed_paths
 
 
 def test_executor_drift_guard_does_not_allow_workspace_paths_without_managed_workspace(
@@ -816,13 +812,10 @@ def test_executor_drift_guard_does_not_allow_workspace_paths_without_managed_wor
     asyncio.run(review_loop_executor_round.run_executor_round(request))
 
     assert node_dir / "exec_executor_0_round1.md" in captured_allowed_paths
+    slug = invocation_slug(node.id, "exec_executor_0", None, 1)
+    assert node_dir / f"workspace-state-{slug}.json" not in captured_allowed_paths
     assert (
-        node_dir / "workspace-state-review.node-exec_executor_0-round1.json"
-        not in captured_allowed_paths
-    )
-    assert (
-        node_dir / "workspace-bundles" / "review.node-exec_executor_0-round1.bundle"
-        not in captured_allowed_paths
+        node_dir / "workspace-bundles" / f"{slug}.bundle" not in captured_allowed_paths
     )
 
 
@@ -1269,8 +1262,8 @@ def test_remediation_context_exhaustion_discards_recovered_executor_lineage(
     node_dir = output.create_node_dir(node_artifact_request(node.id))
     candidate = "Candidate body"
     state_paths = [
-        node_dir / "workspace-state-review.node-fast_executor_0-round2.json",
-        node_dir / "workspace-state-review.node-failed_executor_1-round2.json",
+        node_dir / f"workspace-state-{invocation_slug(node.id, task_id, None, 2)}.json"
+        for task_id in ("fast_executor_0", "failed_executor_1")
     ]
 
     async def fake_review(request):  # noqa: ARG001 - Test double callback signature.
@@ -1376,7 +1369,8 @@ def test_no_progress_candidate_discards_executor_workspace_lineage(
     node = _worktree_node()
     node_dir = output.create_node_dir(node_artifact_request(node.id))
     candidate = "Candidate body"
-    state_path = node_dir / "workspace-state-review.node-exec_executor_0-round2.json"
+    slug = invocation_slug(node.id, "exec_executor_0", None, 2)
+    state_path = node_dir / f"workspace-state-{slug}.json"
 
     async def fake_review(request):  # noqa: ARG001 - Test double callback signature.
         return ReviewerRoundRunResult(

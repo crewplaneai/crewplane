@@ -371,6 +371,31 @@ async def finish_stream_tasks_after_process_exit(
             raise result
 
 
+async def drain_process_pipes(
+    process: asyncio.subprocess.Process,
+    diagnostic_sink: InvocationDiagnosticSink | None,
+    process_group_id: int | None,
+) -> None:
+    stdout_task = asyncio.create_task(_discard_stream(process.stdout))
+    stderr_task = asyncio.create_task(_discard_stream(process.stderr))
+    try:
+        await finish_stream_tasks_after_process_exit(
+            stdout_task,
+            stderr_task,
+            diagnostic_sink,
+            process_group_id,
+        )
+    finally:
+        await cancel_pending_stream_tasks(stdout_task, stderr_task)
+
+
+async def _discard_stream(reader: asyncio.StreamReader | None) -> None:
+    if reader is None:
+        return
+    while await reader.read(65536):
+        pass
+
+
 async def cancel_pending_stream_tasks(*tasks: asyncio.Task[Any] | None) -> None:
     pending_tasks = [task for task in tasks if task is not None and not task.done()]
     for task in pending_tasks:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.core.preflight.models import (
     ArtifactContract,
@@ -23,6 +25,7 @@ from crewplane.runtime.workspace.invocation import (
     invocation_slug,
     workspace_state_path,
 )
+from crewplane.runtime.workspace.worktree.refs import safe_ref_component
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
@@ -69,7 +72,7 @@ def test_single_provider_workspace_state_path_is_round_specific_after_round_one(
         tmp_path / "implement" / "workspace-state.json"
     )
     assert workspace_state_path(output, node, round_two_slug, None, 2) == (
-        tmp_path / "implement" / "workspace-state-implement-alpha-round2.json"
+        tmp_path / "implement" / f"workspace-state-{round_two_slug}.json"
     )
 
 
@@ -81,6 +84,25 @@ def test_invocation_slug_preserves_long_node_identity() -> None:
     assert len(first) <= 160
     assert len(second) <= 160
     assert first != second
+
+
+@pytest.mark.parametrize(
+    ("first_identity", "second_identity"),
+    [
+        (("a", "alpha"), (".a", "alpha")),
+        (("a.b", "alpha"), ("a..b", "alpha")),
+        (("a-alpha", "beta"), ("a", "alpha-beta")),
+    ],
+)
+def test_invocation_slug_preserves_identity_after_path_and_ref_normalization(
+    first_identity: tuple[str, str],
+    second_identity: tuple[str, str],
+) -> None:
+    first = invocation_slug(*first_identity, None, 1)
+    second = invocation_slug(*second_identity, None, 1)
+
+    assert first != second
+    assert safe_ref_component(first) != safe_ref_component(second)
 
 
 def test_workspace_artifact_allowed_paths_include_setup_outputs(
@@ -99,12 +121,13 @@ def test_workspace_artifact_allowed_paths_include_setup_outputs(
     )
 
     stage_dir = tmp_path / "implement"
-    assert stage_dir / "workspace-state-implement-alpha-round2.json" in allowed_paths
+    slug = invocation_slug("implement", "alpha", None, 2)
+    assert stage_dir / f"workspace-state-{slug}.json" in allowed_paths
     assert (
-        stage_dir / "workspace-setup" / "workspace-state-implement-alpha-round2.json"
+        stage_dir / "workspace-setup" / f"workspace-state-{slug}.json"
     ) in allowed_paths
     assert (
-        stage_dir / "workspace-setup" / "workspace-state-implement-alpha-round2.log"
+        stage_dir / "workspace-setup" / f"workspace-state-{slug}.log"
     ) in allowed_paths
 
 

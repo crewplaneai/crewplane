@@ -297,6 +297,11 @@ def test_worktree_workspace_falls_back_to_explicit_lock(
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
+    hook = repo / ".git" / "hooks" / "post-checkout"
+    hook.write_text(
+        '#!/bin/sh\nprintf "hook changed\\n" > README.md\n', encoding="utf-8"
+    )
+    hook.chmod(0o755)
     cache_root = tmp_path / "cache"
     plan = workspace_plan(
         repo,
@@ -314,8 +319,15 @@ def test_worktree_workspace_falls_back_to_explicit_lock(
             self.command = command
 
         def run(self, *args: str):
-            calls.append(args)
-            if args[:5] == ("worktree", "add", "--detach", "--lock", "--reason"):
+            command_args = args[2:] if args[:1] == ("-c",) else args
+            calls.append(command_args)
+            if command_args[:5] == (
+                "worktree",
+                "add",
+                "--detach",
+                "--lock",
+                "--reason",
+            ):
                 raise subprocess.CalledProcessError(
                     129,
                     ("git", *args),
@@ -349,6 +361,7 @@ def test_worktree_workspace_falls_back_to_explicit_lock(
 
     try:
         assert worktree.lock_mode == "lock_after_add"
+        assert (worktree.cwd / "README.md").read_text(encoding="utf-8") == "ready\n"
         assert any(
             call[:3] == ("worktree", "add", "--detach") and call[3] != "--lock"
             for call in calls

@@ -248,6 +248,10 @@ A mutable workspace is created as a detached, locked Git worktree. The
 workspace service records repository identity, physical placement, source
 identity, and reuse generation before invoking a provider.
 
+The runtime disables Git checkout hooks (scripts Git can run after a checkout)
+when creating a worktree. This prevents those scripts from changing the
+recorded source before setup or provider execution.
+
 Live materializations are stored outside both the project checkout and its
 `.crewplane/` directory. The default cache root is
 `~/Library/Caches/crewplane` on macOS and
@@ -276,11 +280,17 @@ the selected source and workspace. Process-based providers must launch through
 the command runner so the child process receives the controlled Git
 environment.
 
-Workspace provisioning copies tracked repository source, not ambient local
-state. Ignored dependency directories, virtual environments, build products,
-and untracked files are not copied from the user's checkout. Setup or the
-provider may recreate them inside the managed workspace, but ignored untracked
-files are not lineage.
+Workspaces start with files tracked by Git in the selected source commit.
+Ignored dependencies, virtual environments, build outputs, and untracked files
+from the user's checkout are not copied. Setup or the provider may create them
+inside the workspace, but ignored untracked files are excluded from saved code
+results.
+
+Setup tools may create `.gitignore` files inside directories the source commit
+already ignores, such as `.venv/`. The runtime allows these files. It rejects
+changes or deletions to tracked `.gitignore` files and new `.gitignore` files
+outside those ignored directories. This prevents providers from changing which
+source files are included in a result.
 
 ### 6. Resolve File Tokens for the Actual Invocation
 

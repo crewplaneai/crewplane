@@ -50,6 +50,7 @@ from crewplane.runtime.workspace import (
     WorkspaceInvocationRequest,
     prepare_invocation_workspace,
 )
+from crewplane.runtime.workspace.invocation import invocation_slug
 from crewplane.runtime.workspace.service.types import WorktreePreparationPlan
 from crewplane.runtime.workspace.setup import (
     WorkspaceSetupCancelled,
@@ -260,7 +261,7 @@ def test_worktree_preparation_cancellation_bounds_asyncio_run_while_lock_is_held
         / "workspaces"
         / source.repository_id
         / plan.run_key_name
-        / "implement-alpha-round1"
+        / invocation_slug("implement", "alpha", None, 1)
     )
     lock_path = Path(source.common_git_dir) / "crewplane" / "workspace.lock"
     lock_path.parent.mkdir(parents=True)
@@ -557,11 +558,10 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
     output.create_node_dir(node_artifact_request("implement"))
 
-    def fail_snapshot_entries(
-        path: Path, policy: object | None = None
-    ) -> dict[str, str]:
-        del path, policy
-        raise RuntimeError("snapshot entries failed")
+    def fail_state_refresh(payload: dict[str, object], state_path: Path) -> None:
+        del payload
+        assert state_path.is_file()
+        raise RuntimeError("workspace state refresh failed")
 
     def fail_cleanup(source: object, workspace_path: Path, git_dir: Path) -> None:
         del source, git_dir
@@ -570,8 +570,8 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
 
     monkeypatch.setattr(
         workspace_service_worktree,
-        "snapshot_entries",
-        fail_snapshot_entries,
+        "refresh_trusted_workspace_state_payload",
+        fail_state_refresh,
     )
     monkeypatch.setattr(
         workspace_service_worktree_failures,
@@ -579,7 +579,7 @@ def test_worktree_preparation_failure_records_retained_when_cleanup_fails(
         fail_cleanup,
     )
 
-    with pytest.raises(RuntimeError, match="snapshot entries failed"):
+    with pytest.raises(RuntimeError, match="workspace state refresh failed"):
         prepare_invocation_workspace(
             workspace_invocation_request(plan, output),
             workspace_invocation_context(),
@@ -1030,7 +1030,7 @@ async def _run_provider_invocation_setup_cancellation_terminates_setup_process_g
         / "workspaces"
         / "test-repo"
         / plan.run_key_name
-        / "implement-alpha-round1"
+        / invocation_slug("implement", "alpha", None, 1)
     ).exists()
     assert not leaked_child_marker.exists()
 

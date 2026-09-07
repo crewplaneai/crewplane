@@ -16,6 +16,7 @@ from crewplane.artifacts.workspace.chain_validation import (
 )
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 from crewplane.runtime.workspace.git import GitCommand
+from crewplane.runtime.workspace.invocation import invocation_slug
 from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,
     create_worktree_workspace,
@@ -368,9 +369,9 @@ def test_temporary_ref_cleanup_rejects_symbolic_ref_without_touching_target(
     ).workspace_source
     assert source is not None
     state_path = _import_owner_state(tmp_path, source)
+    slug = invocation_slug("implement", "alpha", None, 1)
     import_ref = (
-        "refs/crewplane/runs/workspace-run-001/imports/implement/"
-        "implement-alpha-round1/temporary"
+        f"refs/crewplane/runs/workspace-run-001/imports/implement/{slug}/temporary"
     )
     target_ref = "refs/heads/user-work"
     target_oid = source.run_base_commit
@@ -424,13 +425,10 @@ def test_temporary_ref_reconciliation_keeps_earlier_success_when_later_claim_fai
     ).workspace_source
     assert source is not None
     state_path = _import_owner_state(tmp_path, source)
-    first_ref = (
-        "refs/crewplane/runs/workspace-run-001/imports/implement/"
-        "implement-alpha-round1/first"
-    )
+    slug = invocation_slug("implement", "alpha", None, 1)
+    first_ref = f"refs/crewplane/runs/workspace-run-001/imports/implement/{slug}/first"
     second_ref = (
-        "refs/crewplane/runs/workspace-run-001/imports/implement/"
-        "implement-alpha-round1/second"
+        f"refs/crewplane/runs/workspace-run-001/imports/implement/{slug}/second"
     )
     expected_oid = source.run_base_commit
     (repo / "later.txt").write_text("later\n", encoding="utf-8")

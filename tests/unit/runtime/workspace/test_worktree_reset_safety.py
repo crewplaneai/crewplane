@@ -93,6 +93,7 @@ def test_reset_removes_policy_files_and_runs_full_git_sequence(
     assert list(info_dir.iterdir()) == []
     assert not (git_dir / "config.worktree").exists()
     assert command.runs == [
+        ("read-tree", "--empty"),
         ("reset", "--hard", "expected"),
         ("clean", "-dffx"),
     ]

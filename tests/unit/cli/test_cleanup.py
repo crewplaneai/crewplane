@@ -22,6 +22,7 @@ from crewplane.cli.app import app
 from crewplane.cli.workspace_cleanup.context import cleanup_repository_id
 from crewplane.cli.workspace_cleanup_evidence import WorkspaceCleanupEvidence
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.runtime.workspace.state import WorkspaceStateRetention
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import (
@@ -284,7 +285,7 @@ def test_cleanup_workspaces_preserves_resume_frontier(
         / "snapshots"
         / repository_id_value
         / source.manifest.run_key_name
-        / "a-alpha-round1"
+        / invocation_slug("a", "alpha", None, 1)
     )
     checkout_root = workspace_path / "checkout"
     checkout_root.mkdir(parents=True)
@@ -301,9 +302,8 @@ def test_cleanup_workspaces_preserves_resume_frontier(
     }
     if moved_temporary_ref:
         assert plan.workspace_source is not None
-        temporary_ref = (
-            "refs/crewplane/runs/workflow--source/imports/a/a-alpha-round1/moved"
-        )
+        slug = invocation_slug("a", "alpha", None, 1)
+        temporary_ref = f"refs/crewplane/runs/workflow--source/imports/a/{slug}/moved"
         state_payload["temporary_refs"] = [
             {
                 "phase": "prepared",
@@ -757,10 +757,8 @@ def test_cleanup_workspaces_reconciles_hydrated_run_temporary_ref_evidence(
     workspace_path.rmdir()
 
     target_oid = _git(project_root, "rev-parse", "HEAD^{commit}").strip()
-    temporary_ref = (
-        "refs/crewplane/runs/run-1/imports/node/"
-        "node-branch-export-primary-round0/temporary"
-    )
+    slug = invocation_slug("node", "branch-export-primary", None, 0)
+    temporary_ref = f"refs/crewplane/runs/run-1/imports/node/{slug}/temporary"
     _git(project_root, "update-ref", temporary_ref, target_oid)
     evidence_path = state_path.with_name("workspace-temporary-refs-interrupted.json")
     evidence_path.write_text(
@@ -1539,7 +1537,13 @@ def _cleanup_project(
         if initialize_git
         else "repo-1"
     )
-    workspace_path = cache_root / "workspaces" / repo_id / "run-1" / "node-round1"
+    workspace_path = (
+        cache_root
+        / "workspaces"
+        / repo_id
+        / "run-1"
+        / invocation_slug("node", "alpha", None, 1)
+    )
     if create_workspace:
         if initialize_git:
             workspace_path.parent.mkdir(parents=True)
@@ -1686,8 +1690,8 @@ def _cleanup_workspace_state(
     common_git_dir = (
         project_root / _git(project_root, "rev-parse", "--git-common-dir").strip()
     ).resolve()
-    invocation_slug = "node-alpha-round1"
-    ref_root = f"refs/crewplane/runs/run-1/node/{invocation_slug}"
+    slug = invocation_slug("node", "alpha", None, 1)
+    ref_root = f"refs/crewplane/runs/run-1/node/{slug}"
     candidate_ref = f"{ref_root}/candidate"
     result_ref = f"{ref_root}/result"
     return {
@@ -1761,7 +1765,7 @@ def _cleanup_workspace_state(
             "final_head": head,
         },
         "bundle": {
-            "path": "node/workspace-bundles/node-alpha-round1.bundle",
+            "path": f"node/workspace-bundles/{slug}.bundle",
             "sha256": "f" * 64,
             "size_bytes": 0,
             "verified": True,

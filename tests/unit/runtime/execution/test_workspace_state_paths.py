@@ -16,6 +16,7 @@ from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
 )
+from crewplane.runtime.workspace.invocation import invocation_slug
 from tests.helpers.artifacts import node_artifact_request
 
 
@@ -74,11 +75,12 @@ def test_workspace_artifact_allowlist_contains_runtime_owned_workspace_paths(
 
     stage_dir = output.get_node_dir(node_artifact_request("implement"))
     assert stage_dir is not None
+    slug = invocation_slug("implement", "alpha", None, 1)
     assert allowed_paths == {
         stage_dir / "workspace-state.json",
         stage_dir / "workspace-setup" / "setup.json",
         stage_dir / "workspace-setup" / "setup.log",
-        stage_dir / "workspace-bundles" / "implement-alpha-round1.bundle",
+        stage_dir / "workspace-bundles" / f"{slug}.bundle",
     }
 
 

@@ -193,11 +193,15 @@ worktrees:
     setup_profile: bootstrap
 ```
 
-Setup commands are argv lists, not shell strings. They run after workspace
-materialization and before provider invocation. Setup stdout, stderr, argv, exit
-code, duration, and working directory are recorded under the node stage
-artifacts. Setup side effects are not lineage unless the final tracked source
-tree of a successful `kind: worktree` node captures them.
+Each setup command is a list containing the program and its arguments, as in
+the example above. Commands run inside the new workspace before the provider
+starts, and Crewplane saves their output and status with the run.
+
+Put required initialization in a setup profile. Crewplane does not run Git
+checkout hooks when creating managed worktrees.
+
+Use setup to install dependencies inside the workspace. Ignored dependency
+files, such as virtual environments, are not included in saved code results.
 
 ## File Templates
 

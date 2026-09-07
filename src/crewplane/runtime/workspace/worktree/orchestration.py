@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -259,7 +260,6 @@ def _validate_capture_source_state(
     reject_gitignore_drift(
         request.checkout_root,
         request.source_ref.source_commit,
-        changed_path_records,
     )
     reject_gitattributes_drift(
         request.checkout_root,
@@ -433,6 +433,8 @@ def _add_locked_detached_worktree(
     command = git(Path(source.git_top_level))
     try:
         command.run(
+            "-c",
+            f"core.hooksPath={os.devnull}",
             "worktree",
             "add",
             "--detach",
@@ -447,6 +449,8 @@ def _add_locked_detached_worktree(
         if not _worktree_add_lock_reason_unsupported(exc):
             raise
     command.run(
+        "-c",
+        f"core.hooksPath={os.devnull}",
         "worktree",
         "add",
         "--detach",

@@ -66,6 +66,8 @@ def reset_worktree_attempt(
             prove_detached_head(checkout_root, source_commit, command)
             _clear_worktree_policy_files(git_dir)
             _raise_if_cancelled(cancel_requested)
+            # A hard reset preserves skip-worktree flags in the existing index.
+            command.run("read-tree", "--empty")
             command.run("reset", "--hard", source_commit)
             _raise_if_cancelled(cancel_requested)
             command.run("clean", "-dffx")
@@ -99,6 +101,7 @@ def reset_reusable_worktree_checkout(
         reject_attached_head_after_safe_detachment(checkout_root, command)
         prove_detached_head(checkout_root, source_commit, command)
         _clear_worktree_policy_files(git_dir)
+        command.run("read-tree", "--empty")
         command.run("reset", "--hard", source_commit)
         command.run("clean", "-dffx")
         _clear_worktree_policy_files(git_dir)

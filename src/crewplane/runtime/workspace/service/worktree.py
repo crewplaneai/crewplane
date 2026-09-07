@@ -28,11 +28,7 @@ from crewplane.runtime.workspace.setup import (
     WorkspaceSetupCancelled,
     run_workspace_setup,
 )
-from crewplane.runtime.workspace.snapshot import (
-    WorkspaceSnapshotPolicy,
-    runtime_workspace_cache_root,
-    snapshot_entries,
-)
+from crewplane.runtime.workspace.snapshot import runtime_workspace_cache_root
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
     WorkspaceStateMaterializationRequest,
@@ -368,18 +364,6 @@ def _effective_worktree_invocation_context(
     )
 
 
-def _initial_worktree_snapshot(
-    request: WorkspaceInvocationRequest,
-    worktree: WorktreeWorkspace,
-) -> dict[str, str]:
-    return snapshot_entries(
-        worktree.checkout_root,
-        WorkspaceSnapshotPolicy(
-            cancel_requested=_workspace_cancel_requested(request),
-        ),
-    )
-
-
 def _build_prepared_worktree_workspace(
     request: WorkspaceInvocationRequest,
     plan: WorktreePreparationPlan,
@@ -394,14 +378,12 @@ def _build_prepared_worktree_workspace(
         workspace_kind="worktree",
         workspace_path=worktree.workspace_path,
         state_path=plan.state_path,
-        initial_snapshot_entries=_initial_worktree_snapshot(request, worktree),
         cleanup_on_success=workspace_cleanup_on_success(request.plan),
         lineage_producer=plan.lineage_producer,
         worktree_capture=materialized_workspace.capture_request,
         reuse_cache=request.worktree_reuse_cache,
         reuse_key=plan.policy.logical_worktree_name,
         workspace_state_payload=trusted_state_payload,
-        snapshot_cancel_requested=_workspace_cancel_requested(request),
     )
 
 

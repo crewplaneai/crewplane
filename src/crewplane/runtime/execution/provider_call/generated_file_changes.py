@@ -12,7 +12,6 @@ from crewplane.core.workspace.git_policy import (
     sanitized_workspace_git_environment,
     workspace_git_config_args,
 )
-from crewplane.runtime.workspace import PreparedWorkspace
 from crewplane.runtime.workspace.snapshot import (
     WorkspaceSnapshotPolicy,
     snapshot_entries,
@@ -121,22 +120,6 @@ class _GitGeneratedFileBaseline:
         return tuple(sorted(candidates))
 
 
-def changed_generated_file_paths(
-    prepared_workspace: PreparedWorkspace,
-    workspace_root: Path,
-) -> set[str]:
-    workspace = prepared_workspace.invocation_context.workspace
-    if workspace is None or workspace.checkout_root is None:
-        return set()
-    checkout_root = workspace.checkout_root
-    changed_paths = _changed_checkout_paths(prepared_workspace, checkout_root)
-    return _paths_relative_to_workspace_root(
-        changed_paths,
-        checkout_root,
-        workspace_root,
-    )
-
-
 def resolved_real_directory(path: Path, label: str) -> Path:
     try:
         mode = path.lstat().st_mode
@@ -145,49 +128,6 @@ def resolved_real_directory(path: Path, label: str) -> Path:
     if not stat.S_ISDIR(mode):
         raise RuntimeError(f"{label} is not a real directory: {path.as_posix()}")
     return path.resolve(strict=True)
-
-
-def _changed_checkout_paths(
-    prepared_workspace: PreparedWorkspace,
-    checkout_root: Path,
-) -> tuple[str, ...]:
-    if prepared_workspace.workspace_kind not in {"snapshot", "worktree"}:
-        return ()
-    current_entries = snapshot_entries(
-        checkout_root,
-        WorkspaceSnapshotPolicy(
-            cancel_requested=prepared_workspace.snapshot_cancel_requested,
-        ),
-    )
-    initial_entries = prepared_workspace.initial_snapshot_entries or {}
-    return tuple(
-        sorted(
-            path
-            for path in set(initial_entries) | set(current_entries)
-            if initial_entries.get(path) != current_entries.get(path)
-        )
-    )
-
-
-def _paths_relative_to_workspace_root(
-    changed_paths: tuple[str, ...],
-    checkout_root: Path,
-    workspace_root: Path,
-) -> set[str]:
-    relative_paths: set[str] = set()
-    resolved_workspace_root = workspace_root.resolve(strict=True)
-    for changed_path in changed_paths:
-        candidate = checkout_root.joinpath(*Path(changed_path).parts)
-        try:
-            relative_path = candidate.resolve(strict=False).relative_to(
-                resolved_workspace_root
-            )
-        except (OSError, ValueError):
-            continue
-        if not relative_path.parts:
-            continue
-        relative_paths.add(relative_path.as_posix())
-    return relative_paths
 
 
 def _git_top_level(invocation_root: Path) -> Path:

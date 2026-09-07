@@ -11,6 +11,7 @@ from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
     workspace_state_contract_is_valid,
 )
+from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.version import SCHEMA_VERSION
 
 OID_A: Final = "a" * 40
@@ -561,12 +562,11 @@ def test_workspace_state_contract_validates_recursive_source_and_temporary_ref()
         "source_bundle_size_bytes": 42,
         "source_bundle_ref": "refs/crewplane/runs/run-key/upstream/result",
     }
+    slug = invocation_slug("build", "alpha", None, 1)
     payload["temporary_refs"] = [
         {
             "phase": "prepared",
-            "name": (
-                "refs/crewplane/runs/run-key/imports/build/build-alpha-round1/source"
-            ),
+            "name": (f"refs/crewplane/runs/run-key/imports/build/{slug}/source"),
             "target_oid": OID_C,
             "owner_run_id": "run",
             "owner_node_id": "build",
@@ -671,8 +671,9 @@ def test_hydrated_lineage_allows_scrubbed_publication_evidence(
 
 
 def _valid_worktree_payload() -> dict[str, object]:
-    candidate_ref = "refs/crewplane/runs/run-key/build/build-alpha-round1/candidate"
-    result_ref = "refs/crewplane/runs/run-key/build/build-alpha-round1/result"
+    slug = invocation_slug("build", "alpha", None, 1)
+    candidate_ref = f"refs/crewplane/runs/run-key/build/{slug}/candidate"
+    result_ref = f"refs/crewplane/runs/run-key/build/{slug}/result"
     return {
         "version": SCHEMA_VERSION,
         "run_id": "run",

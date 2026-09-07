@@ -140,7 +140,13 @@ def _candidate_source_matches(
     if payload.get("role") == ProviderRole.REVIEWER:
         source_round = round_num
     elif payload.get("role") == ProviderRole.EXECUTOR and round_num > 1:
-        source_round = round_num - 1
+        candidate = _latest_lineage_payload(
+            workspace_state_payloads(run, node),
+            before=(audit_round_num.value or 0, round_num),
+        )
+        return candidate is not None and _descriptor_matches_result(
+            descriptor, candidate
+        )
     else:
         return False
     return _descriptor_matches_lineage_result(
@@ -170,15 +176,13 @@ def _descriptor_matches_lineage_result(
         if canonical_payload is not None:
             return _descriptor_matches_result(descriptor, canonical_payload)
         return False
-    found_exact_source = False
-    for payload in payloads:
-        if not _lineage_payload_matches(payload, round_num, audit_round_num):
-            continue
-        found_exact_source = True
-        if _descriptor_matches_result(descriptor, payload):
-            return True
-    if found_exact_source:
-        return False
+    matches = [
+        payload
+        for payload in payloads
+        if _lineage_payload_matches(payload, round_num, audit_round_num)
+    ]
+    if matches:
+        return len(matches) == 1 and _descriptor_matches_result(descriptor, matches[0])
     seeded_source = _seeded_audit_source_payload(
         payloads,
         round_num,
@@ -276,16 +280,7 @@ def _seeded_audit_source_payload(
 ) -> dict[str, object] | None:
     if round_num != 1 or audit_round_num is None or audit_round_num <= 1:
         return None
-    prior_payloads = [
-        payload
-        for payload in payloads
-        if _lineage_payload_is_ordered_source(payload)
-        and _lineage_payload_order(payload) < (audit_round_num, round_num)
-    ]
-    if not prior_payloads:
-        return None
-    prior_payloads.sort(key=_lineage_payload_order)
-    return prior_payloads[-1]
+    return _latest_lineage_payload(payloads, before=(audit_round_num, round_num))
 
 
 def _canonical_lineage_payload(
@@ -378,8 +373,13 @@ def _latest_lineage_payload(
     ]
     if not lineage_payloads:
         return None
-    lineage_payloads.sort(key=_lineage_payload_order)
-    return lineage_payloads[-1]
+    latest_order = max(map(_lineage_payload_order, lineage_payloads))
+    latest = [
+        payload
+        for payload in lineage_payloads
+        if _lineage_payload_order(payload) == latest_order
+    ]
+    return latest[0] if len(latest) == 1 else None
 
 
 def _lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:

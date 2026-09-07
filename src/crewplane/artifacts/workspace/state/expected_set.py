@@ -91,39 +91,32 @@ def _candidate_source_payload(
     source_order = _candidate_source_order(payload)
     if source_order is None:
         return None
+    allow_prior = payload.get("role") == ProviderRole.EXECUTOR or (
+        source_order[0] > 1 and source_order[1] == 1
+    )
     candidates = [
         candidate
         for candidate in payloads
         if lineage_payload_order(candidate) == source_order
-        and _payload_result_matches_candidate_source(candidate, source)
+        or (allow_prior and (0, 0) <= lineage_payload_order(candidate) < source_order)
     ]
-    if len(candidates) != 1:
-        return _seeded_candidate_source_payload(payloads, source, source_order)
-    return candidates[0]
+    if not candidates:
+        return None
+    latest_order = max(map(lineage_payload_order, candidates))
+    latest = [
+        candidate
+        for candidate in candidates
+        if lineage_payload_order(candidate) == latest_order
+    ]
+    if len(latest) != 1 or not _payload_result_matches_candidate_source(
+        latest[0], source
+    ):
+        return None
+    return latest[0]
 
 
 def _payload_produces_lineage(payload: dict[str, object]) -> bool:
     return lineage_payload_order(payload) >= (0, 0)
-
-
-def _seeded_candidate_source_payload(
-    payloads: tuple[dict[str, object], ...],
-    source: dict[str, object],
-    source_order: tuple[int, int],
-) -> dict[str, object] | None:
-    audit_round_num, round_num = source_order
-    if audit_round_num <= 1 or round_num != 1:
-        return None
-    candidates = [
-        payload
-        for payload in payloads
-        if (0, 0) <= lineage_payload_order(payload) < source_order
-        and _payload_result_matches_candidate_source(payload, source)
-    ]
-    if not candidates:
-        return None
-    candidates.sort(key=lineage_payload_order)
-    return candidates[-1]
 
 
 def _candidate_source_order(payload: dict[str, object]) -> tuple[int, int] | None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -17,7 +18,7 @@ from crewplane.artifacts.generated_files.catalog import (
 )
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 from crewplane.runtime.execution.provider_call.generated_files import (
-    changed_generated_file_paths,
+    capture_generated_file_change_baseline,
 )
 from crewplane.runtime.execution.workspace_files.generated import (
     GeneratedFileWorkspaceRegistry,
@@ -40,17 +41,7 @@ from tests.helpers.workspace_service import (
     workspace_output_manager,
     workspace_plan,
 )
-
-
-def test_changed_generated_file_paths_without_workspace_context_returns_empty(
-    tmp_path: Path,
-) -> None:
-    prepared = PreparedWorkspace(
-        cwd=tmp_path,
-        invocation_context=workspace_invocation_context(),
-    )
-
-    assert changed_generated_file_paths(prepared, tmp_path) == set()
+from tests.helpers.workspace_worktree_reuse import with_node_setup
 
 
 def test_project_root_success_without_workspace_state_is_noop(tmp_path: Path) -> None:
@@ -203,6 +194,56 @@ def test_worktree_workspace_captures_result_commit_and_bundle(
     assert bundle_path.is_file()
     assert int(bundle["size_bytes"]) == bundle_path.stat().st_size
     assert not workspace_path.exists()
+
+
+def test_worktree_setup_allows_large_ignored_files(
+    tmp_path: Path,
+) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    (repo / ".gitignore").write_text("weights/\n", encoding="utf-8")
+    run_git_text(repo, "add", ".gitignore")
+    run_git_text(repo, "commit", "-m", "ignore setup weights")
+    plan = with_node_setup(
+        workspace_plan(repo, tmp_path / "cache", True, kind="worktree"),
+        "implement",
+        [
+            [
+                sys.executable,
+                "-c",
+                "from pathlib import Path\n"
+                "Path('weights').mkdir()\n"
+                "with Path('weights/model.bin').open('wb') as handle:\n"
+                "    handle.truncate(4 * 1024**3 + 1)\n",
+            ]
+        ],
+    )
+    output = workspace_output_manager(tmp_path, repo)
+    output.create_node_dir(node_artifact_request("implement"))
+
+    prepared = prepare_invocation_workspace(
+        workspace_invocation_request(plan, output),
+        workspace_invocation_context(),
+    )
+    assert prepared.workspace_path is not None
+    assert prepared.state_path is not None
+    assert (prepared.cwd / "weights/model.bin").stat().st_size == 4 * 1024**3 + 1
+    baseline = capture_generated_file_change_baseline(prepared)
+    assert baseline is not None
+    result_file = prepared.cwd / "result.txt"
+    result_file.write_text("captured\n", encoding="utf-8")
+    assert baseline.candidate_files() == (result_file,)
+
+    prepared.mark_succeeded()
+
+    state = read_json_object(prepared.state_path)
+    assert state["status"] == "succeeded"
+    assert state["setup"]["status"] == "succeeded"
+    result_commit = state["result"]["result_commit"]
+    assert run_git_text(repo, "show", f"{result_commit}:result.txt") == "captured"
+    assert run_git_text(repo, "ls-tree", "-r", result_commit, "--", "weights") == ""
+    assert not prepared.workspace_path.exists()
 
 
 def test_worktree_success_cleanup_retries_state_after_physical_removal(
@@ -680,7 +721,7 @@ def test_worktree_capture_cleans_result_refs_when_state_recording_fails(
     remove_worktree_workspace(source, prepared.workspace_path)
 
 
-def test_worktree_generated_file_snapshot_includes_created_ignored_file(
+def test_worktree_generated_file_snapshot_uses_git_change_baseline(
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -705,24 +746,29 @@ def test_worktree_generated_file_snapshot_includes_created_ignored_file(
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
+    baseline = capture_generated_file_change_baseline(prepared)
+    assert baseline is not None
     ignored_file = prepared.cwd / "ignored-output" / "report.txt"
     ignored_file.parent.mkdir()
     ignored_file.write_text("ignored generated content\n", encoding="utf-8")
+    generated_file = prepared.cwd / "report.txt"
+    generated_file.write_text("generated content\n", encoding="utf-8")
     provider_output = stage_dir / "alpha_round1.md"
     provider_output.write_text(
-        "Created `ignored-output/report.txt`.\n",
+        "Created `report.txt` and `ignored-output/report.txt`.\n",
         encoding="utf-8",
     )
 
     snapshot = snapshot_generated_file_workspace(
         provider_output,
         prepared.cwd,
-        changed_generated_file_paths(prepared, prepared.cwd),
+        candidate_files=baseline.candidate_files(),
     )
 
-    assert (snapshot / "ignored-output" / "report.txt").read_text(
+    assert (snapshot / "report.txt").read_text(
         encoding="utf-8"
-    ) == "ignored generated content\n"
+    ) == "generated content\n"
+    assert not (snapshot / "ignored-output" / "report.txt").exists()
     remove_worktree_workspace(source, prepared.workspace_path)
 
 
