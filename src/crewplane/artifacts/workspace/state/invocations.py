@@ -269,6 +269,22 @@ def payload_matches_expected_invocation(
     )
 
 
+def resolve_expected_workspace_payload(
+    payloads: tuple[dict[str, object], ...],
+    expected: ExpectedWorkspaceInvocation,
+) -> dict[str, object] | None:
+    matches = [
+        payload
+        for payload in payloads
+        if payload_matches_expected_invocation(payload, expected)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if matches or not expected_seeded_lineage_invocation(expected):
+        return None
+    return latest_lineage_payload_before(payloads, expected)
+
+
 def expected_seeded_lineage_invocation(
     expected: ExpectedWorkspaceInvocation,
 ) -> bool:

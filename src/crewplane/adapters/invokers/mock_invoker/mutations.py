@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, TypedDict, cast
 
-from crewplane.architecture.contracts import InvocationContext, JsonObject
+from crewplane.architecture.contracts import InvocationContext
 
 from .outputs import OutputResolution
+
+
+class _NormalizedSidecar(TypedDict, total=False):
+    mutations: object
+    workspace_mutations: object
+    required_prompt_contains: object
+    forbidden_prompt_contains: object
 
 
 @dataclass(frozen=True)
@@ -62,9 +69,9 @@ def apply_fixture_mutations(plan: FixtureMutationPlan) -> None:
         target.write_text(mutation.content, encoding="utf-8")
 
 
-def _normalize_sidecar(raw_sidecar: object) -> JsonObject:
+def _normalize_sidecar(raw_sidecar: object) -> _NormalizedSidecar:
     if isinstance(raw_sidecar, list):
-        return cast(JsonObject, {"mutations": raw_sidecar})
+        return {"mutations": raw_sidecar}
     if not isinstance(raw_sidecar, dict):
         raise RuntimeError(
             "mock invoker mutation fixture must be a list or object; "
@@ -83,11 +90,11 @@ def _normalize_sidecar(raw_sidecar: object) -> JsonObject:
         raise RuntimeError(
             f"mock invoker mutation fixture has unsupported keys: {', '.join(unknown)}"
         )
-    return cast(JsonObject, dict(raw_sidecar))
+    return cast(_NormalizedSidecar, dict(raw_sidecar))
 
 
 def _fixture_mutations(
-    sidecar: JsonObject,
+    sidecar: _NormalizedSidecar,
     output_file: Path,
     cwd: Path,
     context: InvocationContext | None,
@@ -182,7 +189,7 @@ def _workspace_mutation_root(cwd: Path, context: InvocationContext | None) -> Pa
 
 
 def _validate_prompt_requirements(
-    sidecar: JsonObject,
+    sidecar: _NormalizedSidecar,
     prompt: str,
 ) -> None:
     for required in _string_list(

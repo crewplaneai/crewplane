@@ -78,9 +78,7 @@ async def _run_parallel_invocations(
     if max_parallel_invocations is not None:
         invocation_semaphore = asyncio.Semaphore(max_parallel_invocations)
 
-    async def _run_single(
-        index: int, invocation: ParallelInvocation
-    ) -> tuple[int, ParallelInvocationResult]:
+    async def _run_single(invocation: ParallelInvocation) -> ParallelInvocationResult:
         request = ProviderCallRequest(
             runtime_context=runtime_context,
             output=output,
@@ -107,16 +105,11 @@ async def _run_parallel_invocations(
             ),
         )
         if result.error is not None:
-            return index, result.error
-        return index, result.output_file
+            return result.error
+        return result.output_file
 
-    tasks = [
-        asyncio.create_task(_run_single(index, invocation))
-        for index, invocation in enumerate(invocations)
-    ]
-    completed = await asyncio.gather(*tasks)
-    results_by_index = dict(completed)
-    return [results_by_index[index] for index in range(len(invocations))]
+    tasks = [asyncio.create_task(_run_single(invocation)) for invocation in invocations]
+    return await asyncio.gather(*tasks)
 
 
 def _write_parallel_failure_artifact(

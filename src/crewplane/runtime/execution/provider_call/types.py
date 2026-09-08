@@ -10,6 +10,7 @@ from crewplane.architecture.ports import (
     ArtifactStorePort,
     ProviderProcessPublication,
 )
+from crewplane.core.file_hashing import ContentSignature
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -43,12 +44,12 @@ class ProviderCallRequest:
     on_provider_process_state_published: (
         Callable[[ProviderProcessPublication], None] | None
     ) = None
-    on_invocation_output_published: Callable[[Path, tuple[int, str]], None] | None = (
+    on_invocation_output_published: Callable[[Path, ContentSignature], None] | None = (
         None
     )
     on_generated_file_snapshot_started: Callable[[Path], None] | None = None
     on_generated_file_snapshot_finished: (
-        Callable[[Path, dict[Path, tuple[int, str]] | None], None] | None
+        Callable[[Path, dict[Path, ContentSignature] | None], None] | None
     ) = None
     rendered_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
     invocation_output_file: Path | None = None

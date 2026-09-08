@@ -36,11 +36,10 @@ from .fields import (
 from .invocations import (
     ExpectedWorkspaceInvocation,
     expected_failed_workspace_invocations,
-    expected_seeded_lineage_invocation,
     expected_workspace_invocations,
     failed_workspace_state_payloads,
-    latest_lineage_payload_before,
     payload_matches_expected_invocation,
+    resolve_expected_workspace_payload,
     workspace_state_payloads,
 )
 from .ref_contracts import is_discarded_lineage
@@ -137,23 +136,12 @@ def _expected_workspace_invocation_is_valid(
     payloads: tuple[dict[str, object], ...],
     expected: ExpectedWorkspaceInvocation,
 ) -> bool:
-    matches = [
-        payload
-        for payload in payloads
-        if payload_matches_expected_invocation(payload, expected)
-    ]
-    if len(matches) == 1:
-        return _provider_workspace_state_is_valid(source, plan, node, matches[0])
-    if matches:
-        return False
-    if not expected_seeded_lineage_invocation(expected):
-        return False
-    seeded_source = latest_lineage_payload_before(payloads, expected)
-    return seeded_source is not None and _provider_workspace_state_is_valid(
+    payload = resolve_expected_workspace_payload(payloads, expected)
+    return payload is not None and _provider_workspace_state_is_valid(
         source,
         plan,
         node,
-        seeded_source,
+        payload,
     )
 
 

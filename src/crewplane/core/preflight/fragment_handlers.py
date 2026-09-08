@@ -32,6 +32,9 @@ from .static_resources import (
     append_static_resource,
     resolve_static_file,
     resolve_terminal_result_file,
+    static_file_metadata,
+    static_file_resolved_payload,
+    static_file_token_signature,
 )
 from .token_catalog import append_token_catalog
 from .workspace.files.locators import (
@@ -189,18 +192,8 @@ def file_reference_fragment(
         options=options,
         source_span=token_source_span(node, options, segment_index, reference),
         canonical_locator=resource.content_ref,
-        resolved={
-            "kind": "static_file_content",
-            "content_ref": resource.content_ref,
-            "content_sha256": resource.sha256,
-            "content_size": str(resource.size_bytes),
-            "resolved_path": resource.resolved_path,
-            "source_root": resource.source_root,
-        },
-        metadata={
-            "content_ref": resource.content_ref,
-            "sha256": resource.sha256,
-        },
+        resolved=static_file_resolved_payload(resource),
+        metadata=static_file_metadata(resource),
     )
     return Fragment(
         fragment_index=fragment_index,
@@ -254,15 +247,11 @@ def record_static_file_reference(
     extend_diagnostics(state, result.diagnostics)
     if result.resource is None or result.payload is None:
         return
-    signature = signature_for_payload(
-        {
-            "content_ref": result.resource.content_ref,
-            "node_id": node.id,
-            "occurrence_id": occurrence_id,
-            "raw_token": reference.raw_token,
-            "sha256": result.resource.sha256,
-            "size_bytes": result.resource.size_bytes,
-        }
+    signature = static_file_token_signature(
+        result.resource,
+        node.id,
+        occurrence_id,
+        reference.raw_token,
     )
     resource = result.resource.model_copy(update={"token_signatures": [signature]})
     append_static_resource(state, resource, result.payload, signature)

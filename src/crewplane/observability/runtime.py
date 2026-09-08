@@ -234,15 +234,7 @@ class ObservabilityHub:
                 self._warn(f"observability observer disabled after error: {exc}")
                 failed.append(observer)
 
-        if not failed:
-            return
-
-        with self._lock:
-            self._active_observers = [
-                observer
-                for observer in self._active_observers
-                if observer not in failed
-            ]
+        self._disable_observers(failed)
 
     def _publish_synchronous_snapshot(
         self,

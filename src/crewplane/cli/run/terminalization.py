@@ -277,11 +277,7 @@ def commit_terminalization_with_retry(
 ) -> None:
     """Retry an incomplete terminal publication once after a transient failure."""
 
-    try:
+    def commit() -> None:
         coordinator.commit(hub, status, reason)
-    except Exception as first_error:
-        try:
-            coordinator.commit(hub, status, reason)
-        except Exception as retry_error:
-            retry_error.add_note(f"terminalization retry failed after: {first_error}")
-            raise
+
+    _retry_once(commit, "terminalization")

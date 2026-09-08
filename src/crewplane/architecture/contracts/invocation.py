@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast, get_args
 
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -61,9 +61,7 @@ InvokerWorkspaceLaunchMode = Literal[
     "mock_no_child_process",
 ]
 
-_LOG_PRESENTATION_FORMATS: frozenset[str] = frozenset(
-    {"plain", "json_lines", "json_object"}
-)
+_LOG_PRESENTATION_FORMATS: frozenset[str] = frozenset(get_args(LogPresentationFormat))
 _LOG_PRESENTATION_PROFILE_PATTERN = re.compile(r"^[a-z0-9_.-]+$")
 _MAX_LOG_PRESENTATION_PROFILE_LENGTH = 64
 
@@ -440,12 +438,12 @@ class CommandResult:
     def iter_stdout_lines(self) -> Iterator[str]:
         if self.stdout_path is not None and self.stdout_path.is_file():
             return _iter_lines_from_file(self.stdout_path)
-        return iter(_iter_lines_from_text(self.stdout_text))
+        return iter(_split_nonempty_lines(self.stdout_text))
 
     def iter_stderr_lines(self) -> Iterator[str]:
         if self.stderr_path is not None and self.stderr_path.is_file():
             return _iter_lines_from_file(self.stderr_path)
-        return iter(_iter_lines_from_text(self.stderr_text))
+        return iter(_split_nonempty_lines(self.stderr_text))
 
     def iter_combined_lines(self) -> Iterator[str]:
         yield from self.iter_stderr_lines()
@@ -492,7 +490,7 @@ def _iter_lines_from_file(path: Path) -> Iterator[str]:
             yield line.rstrip("\n")
 
 
-def _iter_lines_from_text(value: str) -> list[str]:
+def _split_nonempty_lines(value: str) -> list[str]:
     return [line for line in value.splitlines() if line]
 
 

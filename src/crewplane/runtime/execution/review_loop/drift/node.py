@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.core.file_hashing import ContentSignature
 from crewplane.runtime.execution.publication_registry import (
     RuntimePublicationRegistry,
 )
@@ -33,16 +34,16 @@ from .snapshots import (
 
 @dataclass(frozen=True)
 class _NodeSnapshotBoundary:
-    generated_publications: dict[Path, tuple[int, str]]
+    generated_publications: dict[Path, ContentSignature]
     in_progress_generated_roots: set[Path]
     generated_version: int | None
-    runtime_publications: dict[Path, tuple[int, str]]
+    runtime_publications: dict[Path, ContentSignature]
     runtime_publication_owners: dict[Path, str]
     runtime_version: int | None
 
 
 type _StableNodeSnapshot = tuple[
-    dict[Path, tuple[int, str]],
+    dict[Path, ContentSignature],
     dict[Path, DirectorySnapshot],
     _NodeSnapshotBoundary,
 ]
@@ -96,7 +97,7 @@ def detect_node_drift(
 def _suppress_foreign_protected_publications(
     request: DriftGuardCallRequest,
     drift: DriftCheckResult,
-    after_snapshot: dict[Path, tuple[int, str]],
+    after_snapshot: dict[Path, ContentSignature],
     boundary: _NodeSnapshotBoundary,
 ) -> DriftCheckResult:
     foreign_publications = {
@@ -141,7 +142,7 @@ def _node_snapshot_sources(
 def _expected_node_publications(
     request: DriftGuardCallRequest,
     boundary: _NodeSnapshotBoundary,
-) -> dict[Path, tuple[int, str]]:
+) -> dict[Path, ContentSignature]:
     in_progress_roots = boundary.in_progress_generated_roots
     expected_publications = {
         path: signature
@@ -163,9 +164,9 @@ def _expected_node_publications(
 def _detect_node_file_drift(
     request: DriftGuardCallRequest,
     monitoring_window: DriftMonitoringWindow,
-    after_snapshot: dict[Path, tuple[int, str]],
+    after_snapshot: dict[Path, ContentSignature],
     in_progress_runtime_roots: set[Path],
-    expected_publications: dict[Path, tuple[int, str]],
+    expected_publications: dict[Path, ContentSignature],
 ) -> DriftCheckResult:
     return detect_artifact_drift(
         before_snapshot=monitoring_window.node_snapshot,
@@ -182,7 +183,7 @@ def _detect_node_directory_drift(
     monitoring_window: DriftMonitoringWindow,
     after_snapshot: dict[Path, DirectorySnapshot],
     in_progress_runtime_roots: set[Path],
-    expected_publications: dict[Path, tuple[int, str]],
+    expected_publications: dict[Path, ContentSignature],
     file_drift: DriftCheckResult,
 ) -> DriftCheckResult:
     directory_drift = detect_artifact_drift(
@@ -293,7 +294,7 @@ def _capture_node_artifact_snapshots(
     boundary: _NodeSnapshotBoundary,
     runtime_owned_paths: set[Path],
     runtime_owned_roots: set[Path],
-) -> tuple[dict[Path, tuple[int, str]], dict[Path, DirectorySnapshot]]:
+) -> tuple[dict[Path, ContentSignature], dict[Path, DirectorySnapshot]]:
     excluded_roots = {
         *boundary.in_progress_generated_roots,
         *runtime_owned_roots,
@@ -316,7 +317,7 @@ def _node_snapshot_boundary(
     runtime_publications: RuntimePublicationRegistry | None,
 ) -> _NodeSnapshotBoundary:
     if allowance is None:
-        generated_publications: dict[Path, tuple[int, str]] = {}
+        generated_publications: dict[Path, ContentSignature] = {}
         in_progress_generated_roots: set[Path] = set()
         generated_version = None
     else:
@@ -326,7 +327,7 @@ def _node_snapshot_boundary(
             generated_version,
         ) = allowance.snapshot()
     if runtime_publications is None:
-        publications: dict[Path, tuple[int, str]] = {}
+        publications: dict[Path, ContentSignature] = {}
         publication_owners: dict[Path, str] = {}
         runtime_version = None
     else:

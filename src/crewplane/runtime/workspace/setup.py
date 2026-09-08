@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
-from typing import TextIO
+from typing import NotRequired, TextIO, TypedDict, cast
 
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
@@ -33,6 +33,19 @@ from crewplane.runtime.workspace.mutator_fence import (
     release_workspace_mutator,
 )
 from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
+
+
+class _SetupCommandRecord(TypedDict):
+    argv: list[str | JsonObject]
+    command_index: int
+    working_directory: str
+    started_at: str
+    completed_at: str
+    duration_seconds: float
+    exit_code: int | None
+    timed_out: bool
+    cancelled: NotRequired[bool]
+    error: NotRequired[str]
 
 
 class WorkspaceSetupError(RuntimeError):
@@ -147,7 +160,7 @@ def run_workspace_setup(
                 cancellation,
                 process_state_path,
             )
-            records.append(record)
+            records.append(cast(JsonObject, record))
             if record.get("cancelled") is True:
                 status = "cancelled"
                 failure_message = (
@@ -235,7 +248,7 @@ def _run_setup_command(
     log_handle: TextIO,
     cancellation: WorkspaceSetupCancellation | None,
     state_path: Path | None,
-) -> JsonObject:
+) -> _SetupCommandRecord:
     started_at = datetime.now(UTC).isoformat()
     started = time.monotonic()
     log_handle.write(f"$ {_display_command(recorded_argv)}\n")
@@ -403,7 +416,7 @@ def _setup_command_record(
     started: float,
     exit_code: int | None,
     timed_out: bool,
-) -> JsonObject:
+) -> _SetupCommandRecord:
     return {
         "argv": list(argv),
         "command_index": command_index,

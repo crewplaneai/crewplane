@@ -272,21 +272,15 @@ def _multi_sequential_provider_role_diagnostics(
             )
         )
 
-    reviewer_segment_started = False
-    for provider in node.providers:
-        if provider.role == ProviderRole.REVIEWER:
-            reviewer_segment_started = True
-            continue
-        if reviewer_segment_started:
-            diagnostics.append(
-                _structure_diagnostic(
-                    f"Sequential node '{node.id}' must declare providers as a "
-                    "contiguous executor segment followed by a contiguous reviewer "
-                    "segment.",
-                    node.id,
-                )
+    if not _provider_role_segments_are_contiguous(node):
+        diagnostics.append(
+            _structure_diagnostic(
+                f"Sequential node '{node.id}' must declare providers as a "
+                "contiguous executor segment followed by a contiguous reviewer "
+                "segment.",
+                node.id,
             )
-            break
+        )
     if node.providers[-1].role != ProviderRole.REVIEWER:
         diagnostics.append(
             _structure_diagnostic(
@@ -319,6 +313,10 @@ def _has_sequential_review_loop_provider_shape(node: WorkflowNode) -> bool:
         return False
     if node.providers[-1].role != ProviderRole.REVIEWER:
         return False
+    return _provider_role_segments_are_contiguous(node)
+
+
+def _provider_role_segments_are_contiguous(node: WorkflowNode) -> bool:
     reviewer_segment_started = False
     for provider in node.providers:
         if provider.role == ProviderRole.REVIEWER:

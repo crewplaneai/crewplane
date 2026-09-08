@@ -57,21 +57,26 @@ def validate_artifact_contract_uniqueness(
             path = getattr(contract, field_name)
             if path is None:
                 continue
-            existing = next(
-                (
-                    (existing_key, existing_node)
-                    for existing_key, existing_node in occupied.items()
-                    if existing_key[0] == root and _paths_overlap(existing_key[1], path)
-                ),
-                None,
-            )
+            existing = _find_overlapping_artifact(occupied, root, path)
             if existing is not None:
+                existing_node, existing_path = existing
                 raise ValueError(
-                    f"Persisted nodes '{existing[1]}' and "
+                    f"Persisted nodes '{existing_node}' and "
                     f"'{plan_contract_records.node_id(node)}' have overlapping "
-                    f"{root} artifact locators: '{existing[0][1]}' and '{path}'."
+                    f"{root} artifact locators: '{existing_path}' and '{path}'."
                 )
             occupied[(root, path)] = plan_contract_records.node_id(node)
+
+
+def _find_overlapping_artifact(
+    occupied: dict[tuple[str, str], str],
+    root: str,
+    path: str,
+) -> tuple[str, str] | None:
+    for (existing_root, existing_path), existing_node in occupied.items():
+        if existing_root == root and _paths_overlap(existing_path, path):
+            return existing_node, existing_path
+    return None
 
 
 def _paths_overlap(left: str, right: str) -> bool:

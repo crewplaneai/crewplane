@@ -73,7 +73,7 @@ class _SensitiveOptionWalker:
         inherited_sensitive: bool = False,
     ) -> JsonValue:
         pointer = json_pointer(path) if path else ""
-        if path and self._should_redact(
+        if path and self._matches_sensitive_option(
             value,
             path,
             pointer,
@@ -97,7 +97,7 @@ class _SensitiveOptionWalker:
             ]
         return value
 
-    def _should_redact(
+    def _matches_sensitive_option(
         self,
         value: JsonValue,
         path: tuple[JsonPathSegment, ...],

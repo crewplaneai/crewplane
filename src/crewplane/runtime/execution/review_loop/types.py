@@ -9,6 +9,7 @@ from typing import TypedDict
 
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.core.file_hashing import ContentSignature
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
@@ -85,8 +86,8 @@ class ActivityWindow:
 
 @dataclass(frozen=True)
 class DriftRecoveryBaseline:
-    node_snapshot: dict[Path, tuple[int, str]]
-    shared_reserved_snapshot: dict[Path, tuple[int, str]]
+    node_snapshot: dict[Path, ContentSignature]
+    shared_reserved_snapshot: dict[Path, ContentSignature]
     node_original_bytes: dict[Path, bytes]
     shared_reserved_original_bytes: dict[Path, bytes]
     node_directory_snapshot: dict[Path, DirectorySnapshot]
@@ -95,8 +96,8 @@ class DriftRecoveryBaseline:
 
 @dataclass
 class DriftMonitoringWindow:
-    node_snapshot: dict[Path, tuple[int, str]]
-    shared_reserved_snapshot: dict[Path, tuple[int, str]] | None
+    node_snapshot: dict[Path, ContentSignature]
+    shared_reserved_snapshot: dict[Path, ContentSignature] | None
     summary_before: bytes | None
     event_log_before: bytes | None
     activity_window: ActivityWindow
@@ -142,7 +143,7 @@ class EventLogAppendCapture:
 @dataclass
 class GeneratedFileDriftAllowance:
     _in_progress_roots: set[Path] = field(default_factory=set, repr=False)
-    _published_signatures: dict[Path, tuple[int, str]] = field(
+    _published_signatures: dict[Path, ContentSignature] = field(
         default_factory=dict,
         repr=False,
     )
@@ -157,7 +158,7 @@ class GeneratedFileDriftAllowance:
     def finish_snapshot(
         self,
         root: Path,
-        published_signatures: dict[Path, tuple[int, str]] | None,
+        published_signatures: dict[Path, ContentSignature] | None,
     ) -> None:
         with self._lock:
             if published_signatures is not None:
@@ -165,7 +166,7 @@ class GeneratedFileDriftAllowance:
             self._in_progress_roots.discard(root)
             self._version += 1
 
-    def snapshot(self) -> tuple[dict[Path, tuple[int, str]], set[Path], int]:
+    def snapshot(self) -> tuple[dict[Path, ContentSignature], set[Path], int]:
         with self._lock:
             return (
                 dict(self._published_signatures),
@@ -233,7 +234,7 @@ class ExecutorRoundArtifact:
     output_file: Path
     audit_round_num: int | None
     round_num: int
-    output_signature: tuple[int, str] | None = None
+    output_signature: ContentSignature | None = None
 
 
 @dataclass(frozen=True)
@@ -244,7 +245,7 @@ class ReviewerRoundArtifact:
     output_file: Path
     audit_round_num: int | None
     round_num: int
-    output_signature: tuple[int, str] | None = None
+    output_signature: ContentSignature | None = None
 
 
 @dataclass
@@ -267,7 +268,7 @@ class ReviewerInvocationResult:
     task_id: str
     output_file: Path
     invocation_output_file: Path
-    output_signature: tuple[int, str]
+    output_signature: ContentSignature
     drift_warning_count: int
 
 

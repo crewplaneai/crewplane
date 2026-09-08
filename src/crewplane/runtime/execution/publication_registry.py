@@ -12,6 +12,8 @@ from pathlib import Path
 from threading import RLock
 from typing import BinaryIO
 
+from crewplane.core.file_hashing import ContentSignature
+
 _RECOVERY_COPY_CHUNK_BYTES = 1024 * 1024
 
 
@@ -33,7 +35,7 @@ class _RecoverySlice:
 class RuntimePublicationRegistry:
     """Track runtime publications and disk-backed recovery snapshots."""
 
-    _published_signatures: dict[Path, tuple[int, str]] = field(
+    _published_signatures: dict[Path, ContentSignature] = field(
         default_factory=dict,
         repr=False,
     )
@@ -42,7 +44,7 @@ class RuntimePublicationRegistry:
         repr=False,
         compare=False,
     )
-    _recovery_signatures: dict[Path, tuple[int, str]] = field(
+    _recovery_signatures: dict[Path, ContentSignature] = field(
         default_factory=dict,
         repr=False,
         compare=False,
@@ -77,7 +79,7 @@ class RuntimePublicationRegistry:
     def publish(
         self,
         path: Path,
-        signature: tuple[int, str],
+        signature: ContentSignature,
         recovery_source: Path | None = None,
     ) -> None:
         with self._lock:
@@ -104,7 +106,7 @@ class RuntimePublicationRegistry:
     def capture_recovery_snapshot(
         self,
         path: Path,
-        signature: tuple[int, str],
+        signature: ContentSignature,
     ) -> None:
         """Retain stable recovery bytes without registering a new publication."""
 
@@ -236,13 +238,13 @@ class RuntimePublicationRegistry:
                 raise ValueError("Runtime event publication cursor is invalid.")
             return tuple(self._event_publications[cursor:])
 
-    def snapshot(self) -> tuple[dict[Path, tuple[int, str]], int]:
+    def snapshot(self) -> tuple[dict[Path, ContentSignature], int]:
         with self._lock:
             return dict(self._published_signatures), self._version
 
     def snapshot_with_owners(
         self,
-    ) -> tuple[dict[Path, tuple[int, str]], dict[Path, str], int]:
+    ) -> tuple[dict[Path, ContentSignature], dict[Path, str], int]:
         with self._lock:
             return (
                 dict(self._published_signatures),
@@ -257,7 +259,7 @@ class RuntimePublicationRegistry:
     def _capture_recovery_snapshot(
         self,
         path: Path,
-        signature: tuple[int, str],
+        signature: ContentSignature,
         source: Path,
     ) -> None:
         if (
@@ -289,7 +291,7 @@ class RuntimePublicationRegistry:
 def _append_recovery_source(
     recovery_spool: BinaryIO,
     source: Path,
-    expected_signature: tuple[int, str],
+    expected_signature: ContentSignature,
 ) -> _RecoverySlice:
     start_offset = recovery_spool.seek(0, os.SEEK_END)
     try:

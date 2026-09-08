@@ -52,16 +52,9 @@ def workspace_bundle_contains_result(
     if not repo_root.is_dir():
         return False
     try:
-        _run_git(repo_root, "bundle", "verify", bundle_path.as_posix())
-        listed = _run_git(
+        return _verified_bundle_head_matches(
             repo_root,
-            "bundle",
-            "list-heads",
-            bundle_path.as_posix(),
-            result_ref,
-        )
-        return _listed_head_matches(
-            listed.stdout,
+            bundle_path,
             result_ref,
             result_commit,
         ) and _bundle_result_is_commit(bundle_path, result_commit, object_format)
@@ -87,16 +80,9 @@ def workspace_bundle_contains_result_tree(
     if not repo_root.is_dir():
         return False
     try:
-        _run_git(repo_root, "bundle", "verify", bundle_path.as_posix())
-        listed = _run_git(
+        return _verified_bundle_head_matches(
             repo_root,
-            "bundle",
-            "list-heads",
-            bundle_path.as_posix(),
-            result_ref,
-        )
-        return _listed_head_matches(
-            listed.stdout,
+            bundle_path,
             result_ref,
             result_commit,
         ) and _bundle_result_tree_matches(
@@ -184,6 +170,23 @@ def _run_git_with_env(
         env=env,
         timeout=GIT_BUNDLE_VALIDATION_TIMEOUT_SECONDS,
     )
+
+
+def _verified_bundle_head_matches(
+    repo_root: Path,
+    bundle_path: Path,
+    result_ref: str,
+    result_commit: str,
+) -> bool:
+    _run_git(repo_root, "bundle", "verify", bundle_path.as_posix())
+    listed = _run_git(
+        repo_root,
+        "bundle",
+        "list-heads",
+        bundle_path.as_posix(),
+        result_ref,
+    )
+    return _listed_head_matches(listed.stdout, result_ref, result_commit)
 
 
 def _listed_head_matches(
