@@ -51,6 +51,12 @@ DELETE: Final = object()
             "cleanup workspace lacks its physical path",
             "cleanup",
         ),
+        (
+            ("execution", "workspace_path"),
+            None,
+            "failed_invocation workspace lacks its physical path",
+            "failed_invocation",
+        ),
         (("status",), "failed", "resume requires a succeeded workspace", "resume"),
         (("status",), "planned", "cleanup requires a terminal outcome", "cleanup"),
         (
@@ -415,14 +421,27 @@ def test_workspace_contract_preserves_invalid_publication_early_return() -> None
     )
 
 
-def test_cleanup_contract_rejects_unresolved_failed_process_liveness() -> None:
+@pytest.mark.parametrize("operation", ("cleanup", "failed_invocation"))
+def test_cleanup_contract_rejects_unresolved_failed_process_liveness(
+    operation: PersistedWorkspaceOperation,
+) -> None:
     payload = _valid_worktree_payload()
     payload["status"] = "failed"
     payload["process_drain"] = {"status": "unresolved", "pid": 42}
 
-    errors = workspace_state_contract_errors(payload, "cleanup")
+    errors = workspace_state_contract_errors(payload, operation)
 
-    assert "cleanup workspace has unresolved process liveness" in errors
+    assert f"{operation} workspace has unresolved process liveness" in errors
+
+
+@pytest.mark.parametrize("status", ("succeeded", "cancelled", "planned"))
+def test_failed_invocation_contract_requires_failed_status(status: str) -> None:
+    payload = _valid_worktree_payload()
+    payload["status"] = status
+
+    errors = workspace_state_contract_errors(payload, "failed_invocation")
+
+    assert "failed_invocation requires a failed workspace" in errors
 
 
 @pytest.mark.parametrize(
@@ -451,7 +470,7 @@ def test_succeeded_workspace_contract_rejects_unresolved_workspace_mutator(
     assert "successful workspace has unresolved workspace mutator" in errors
 
 
-@pytest.mark.parametrize("operation", ("cleanup", "ref_cleanup"))
+@pytest.mark.parametrize("operation", ("cleanup", "ref_cleanup", "failed_invocation"))
 def test_cleanup_contract_rejects_unresolved_failed_workspace_mutator(
     operation: PersistedWorkspaceOperation,
 ) -> None:
@@ -636,11 +655,13 @@ def test_workspace_state_contract_error_requests_regeneration() -> None:
         require_workspace_state_contract(payload, "resume")
 
 
-@pytest.mark.parametrize("operation", ("resume", "rendering"))
+@pytest.mark.parametrize("operation", ("resume", "rendering", "failed_invocation"))
 def test_hydrated_lineage_allows_scrubbed_publication_evidence(
-    operation: str,
+    operation: PersistedWorkspaceOperation,
 ) -> None:
     payload = _valid_worktree_payload()
+    if operation == "failed_invocation":
+        payload["status"] = "failed"
     workspace = payload["workspace"]
     execution = payload["execution"]
     assert isinstance(workspace, dict)
@@ -667,7 +688,14 @@ def test_hydrated_lineage_allows_scrubbed_publication_evidence(
         execution[field] = None
     payload.pop("ref_publication")
 
-    require_workspace_state_contract(payload, operation)  # type: ignore[arg-type]
+    require_workspace_state_contract(payload, operation)
+    assert (
+        "cleanup workspace lacks its physical path"
+        in workspace_state_contract_errors(payload, "cleanup")
+    )
+
+    payload.pop("resume_origin")
+    assert not workspace_state_contract_is_valid(payload, operation)
 
 
 def _valid_worktree_payload() -> dict[str, object]:

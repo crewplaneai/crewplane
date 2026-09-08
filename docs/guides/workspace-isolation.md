@@ -86,6 +86,10 @@ no Git source policy, worktree, snapshot, workspace state, or bundle is created.
 
 `settings.default_workspace` is not a supported config key.
 
+Crewplane creates working directories for projects in repository subdirectories
+even when they have no tracked files. Untracked files remain excluded under
+`clean_start: tracked_only`.
+
 ## Declare Worktrees
 
 Workflow-level `worktrees` declare logical source lines and disposable
@@ -165,6 +169,7 @@ rewrite bytes fail before provider invocation.
 | `* text=auto`, `eol`, `crlf`, or encoding conversion | No | Disable workspace isolation or wait for a text-normalized contract |
 | Submodules | No | Disable workspace isolation or restructure the workflow |
 | Sparse or partial clone | No | Use a full clone |
+| Symlinked `.gitignore` or `.gitattributes` | No | Replace with regular files and commit them |
 | Native Windows | No | Use WSL or another POSIX environment |
 | Ordinary ignored caches | Yes, excluded from lineage | Use setup profiles or writable snapshots |
 

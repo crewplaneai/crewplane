@@ -123,6 +123,8 @@ def materialize_snapshot(
     index_path: Path,
 ) -> None:
     env = runtime_git_env(index_path)
+    # Resolve checkout attributes from the snapshot and its private index.
+    env["GIT_WORK_TREE"] = checkout_root.as_posix()
     git_top_level = Path(source.git_top_level)
     run_git(git_top_level, env, "read-tree", source.run_base_commit)
     if source.project_root_relative_path == ".":

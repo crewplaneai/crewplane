@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ..git import GitCommand, git, git_error
 from ..locks import git_metadata_lock
+from .checkout_placement import worktree_project_cwd
 from .head import prove_detached_head, reject_attached_head_after_safe_detachment
 from .inspection import changed_paths
 from .policy import (
@@ -34,6 +35,7 @@ def worktree_retry_reset(
             capture_request.protected_refs,
             cancel_requested,
         )
+        worktree_project_cwd(capture_request.source, capture_request.checkout_root)
 
     return reset
 

@@ -17,6 +17,7 @@ PersistedWorkspaceOperation = Literal[
     "export",
     "cleanup",
     "ref_cleanup",
+    "failed_invocation",
 ]
 
 _TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
@@ -160,10 +161,16 @@ def _validate_workspace_operation_eligibility(
     errors: list[str],
 ) -> None:
     status = payload.get("status")
-    if operation == "cleanup" and not is_nonempty_string(
+    physical_path_required = operation == "cleanup" or (
+        operation == "failed_invocation"
+        and not _hydrated_resume_placement(
+            payload, mapping_value(payload.get("workspace"))
+        )
+    )
+    if physical_path_required and not is_nonempty_string(
         mapping_value(payload.get("execution")).get("workspace_path")
     ):
-        errors.append("cleanup workspace lacks its physical path")
+        errors.append(f"{operation} workspace lacks its physical path")
     if (
         operation in {"resume", "duplicate_skip", "rendering", "export"}
         and status != "succeeded"
@@ -171,6 +178,8 @@ def _validate_workspace_operation_eligibility(
         errors.append(f"{operation} requires a succeeded workspace")
     if operation == "cleanup" and status not in _TERMINAL_STATUSES:
         errors.append("cleanup requires a terminal outcome")
+    if operation == "failed_invocation" and status != "failed":
+        errors.append("failed_invocation requires a failed workspace")
 
 
 def _validate_workspace_retention(
@@ -291,8 +300,8 @@ def _validate_process_drain(
         errors.append("missing process drain evidence")
     if payload.get("status") == "succeeded" and drain_status == "unresolved":
         errors.append("successful workspace has unresolved process liveness")
-    if operation == "cleanup" and drain_status == "unresolved":
-        errors.append("cleanup workspace has unresolved process liveness")
+    if operation in {"cleanup", "failed_invocation"} and drain_status == "unresolved":
+        errors.append(f"{operation} workspace has unresolved process liveness")
 
 
 def _validate_workspace_mutator(
@@ -315,7 +324,10 @@ def _validate_workspace_mutator(
         errors.append("confirmed workspace mutator outcome is invalid")
     if payload.get("status") == "succeeded" and status == "unresolved":
         errors.append("successful workspace has unresolved workspace mutator")
-    if operation in {"cleanup", "ref_cleanup"} and status == "unresolved":
+    if (
+        operation in {"cleanup", "ref_cleanup", "failed_invocation"}
+        and status == "unresolved"
+    ):
         errors.append(f"{operation} workspace has unresolved workspace mutator")
 
 

@@ -8,6 +8,7 @@ from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 
 from ..git import git, git_error
 from ..locks import git_metadata_lock
+from .checkout_placement import worktree_project_cwd
 from .lineage import ensure_source_commit_available
 from .policy import (
     active_git_dir,
@@ -50,9 +51,7 @@ def reuse_worktree_workspace(
                 Path(source.common_git_dir),
                 expected_git_dir,
             )
-        cwd = checkout_root / source.project_root_relative_path
-        if source.project_root_relative_path == ".":
-            cwd = checkout_root
+        cwd = worktree_project_cwd(source, checkout_root)
         _verify_reused_worktree_ready(source, checkout_root, source_ref)
         protected_refs = _protected_ref_snapshot(
             source,

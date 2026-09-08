@@ -13,6 +13,7 @@ from typing import NoReturn
 import pytest
 
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
+from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.execution.deferred_cleanup import DeferredAsyncCleanupRegistry
 from crewplane.runtime.execution.provider_call.workspace import (
     prepare_workspace_with_cancellation,
@@ -23,6 +24,7 @@ from crewplane.runtime.workspace import prepared_workspace as prepared_workspace
 from crewplane.runtime.workspace.git import GitCommand
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.runtime.workspace.state import WorkspaceStateRetention
+from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
 from crewplane.runtime.workspace.worktree import (
     cache as worktree_cache,
 )
@@ -119,6 +121,72 @@ def test_same_worktree_reuses_checkout_with_incremental_reset(
     finally:
         if second.workspace_path is not None:
             second.mark_succeeded(defer_cleanup=True)
+        reuse_cache.cleanup_all_best_effort()
+
+
+def test_empty_nested_project_cwd_survives_retry_and_reuse(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = create_git_repo(tmp_path)
+    project_root = repo / "packages" / "new-app"
+    project_root.mkdir(parents=True)
+    plan = two_node_lineage_plan(repo, tmp_path / "cache")
+    source = plan.workspace_source
+    assert source is not None
+    plan = plan.model_copy(
+        update={
+            "project_root": project_root.as_posix(),
+            "context_root": project_root.as_posix(),
+            "workspace_source": source.model_copy(
+                update={
+                    "project_root_relative_path": "packages/new-app",
+                    "repository_id": workspace_repository_id(
+                        Path(source.common_git_dir), project_root, source.object_format
+                    ),
+                }
+            ),
+        }
+    )
+    output = workspace_output_manager(tmp_path, project_root)
+    for node_id in ("implement", "verify"):
+        output.create_node_dir(node_artifact_request(node_id))
+    reuse_cache = WorktreeReuseCache()
+    limiter = MaterializationLimiter.from_plan(plan)
+    prepared = prepare_invocation_workspace(
+        workspace_request(plan, output, "implement", reuse_cache, limiter),
+        workspace_invocation_context(),
+    )
+    workspace_path = prepared.workspace_path
+    assert workspace_path is not None
+    try:
+        assert prepared.cwd == workspace_path / "checkout" / "packages" / "new-app"
+        assert prepared.cwd.is_dir()
+        (prepared.cwd / "attempt.txt").write_text(
+            "discard on retry\n", encoding="utf-8"
+        )
+        retry_reset = prepared.invocation_context.retry_reset
+        assert retry_reset is not None
+        retry_reset()
+        assert prepared.cwd.is_dir()
+        assert tuple(prepared.cwd.iterdir()) == ()
+        prepared.mark_succeeded(defer_cleanup=True)
+
+        prepared = prepare_invocation_workspace(
+            workspace_request(plan, output, "verify", reuse_cache, limiter),
+            workspace_invocation_context(),
+        )
+        assert prepared.workspace_path == workspace_path
+        assert prepared.cwd.is_dir()
+        assert tuple(prepared.cwd.iterdir()) == ()
+        assert prepared.state_path is not None
+        state = read_json_object(prepared.state_path)
+        assert state["reuse"]["reused"] is True
+        assert state["reuse"]["fallback"] is False
+        prepared.mark_succeeded(defer_cleanup=True)
+        assert reuse_cache.cleanup_all_best_effort() == ()
+    finally:
+        if workspace_path.exists():
+            prepared.mark_failed("Test workspace cleanup")
         reuse_cache.cleanup_all_best_effort()
 
 
@@ -469,6 +537,7 @@ def test_reuse_cache_cleanup_all_retains_lease_after_terminal_publish_failure(
     )
     second.mark_failed("test cleanup")
 
+    assert reuse_cache.cleanup_all().errors == ()
     assert not workspace_path.exists()
     assert not reuse_cache.owns(workspace_path)
 
@@ -1239,9 +1308,11 @@ def test_fresh_worktree_terminal_failure_removes_checkout_when_cache_exists(
 
 
 @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
-def test_reused_worktree_terminal_failure_removes_active_checkout(
+@pytest.mark.parametrize("unresolved_drain", [False, True])
+def test_reused_worktree_terminal_failure_defers_shared_checkout_cleanup(
     tmp_path: Path,
     terminal_status: str,
+    unresolved_drain: bool,
 ) -> None:
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
@@ -1275,25 +1346,48 @@ def test_reused_worktree_terminal_failure_removes_active_checkout(
         output.create_node_dir(node_artifact_request("implement"))
         / "workspace-state.json"
     )
-    if terminal_status == "failed":
-        second.mark_failed("provider failed")
-    else:
-        second.mark_cancelled("provider cancelled")
+    first_state_before = first_state_path.read_bytes()
+    assert second.state_path is not None
+    mark_terminal = (
+        second.mark_failed if terminal_status == "failed" else second.mark_cancelled
+    )
+    if unresolved_drain:
+        record_workspace_process_drain(second.state_path, "unresolved", 123, 123)
+        mark_terminal("provider drain unresolved")
+        fenced_cleanup = reuse_cache.cleanup_all()
+        assert len(fenced_cleanup.errors) == 1
+        assert "remains leased" in str(fenced_cleanup.errors[0])
+        assert first_workspace_path.exists()
+        assert first_state_path.read_bytes() == first_state_before
+        assert read_json_object(second.state_path)["workspace"]["retention"] == (
+            "retained"
+        )
+        record_workspace_process_drain(second.state_path, "confirmed", 123, 123)
+    mark_terminal(f"provider {terminal_status}")
 
     state = read_json_object(
         output.create_node_dir(node_artifact_request("verify")) / "workspace-state.json"
     )
     first_state = read_json_object(first_state_path)
     assert state["status"] == terminal_status
-    assert state["workspace"]["retention"] == "deleted"
-    assert state["workspace"]["retained_reason"] is None
-    assert first_state["workspace"]["retention"] == "deleted"
-    assert not first_workspace_path.exists()
-    assert not reuse_cache.owns(first_workspace_path)
+    assert state["workspace"]["retention"] == "pending_cleanup"
+    assert first_state["workspace"]["retention"] == "pending_cleanup"
+    assert first_state_path.read_bytes() == first_state_before
+    assert first_workspace_path.exists()
+    assert reuse_cache.owns(first_workspace_path)
+    first.cleanup_after_success()
+    assert first_workspace_path.exists()
     cleanup = reuse_cache.cleanup_all()
     assert cleanup.errors == ()
     assert first_state_path in cleanup.updated_state_paths
+    assert second.state_path in cleanup.updated_state_paths
+    assert all(
+        read_json_object(path)["workspace"]["retention"] == "deleted"
+        for path in cleanup.updated_state_paths
+    )
     assert not first_workspace_path.exists()
+    assert not reuse_cache.owns(first_workspace_path)
+    assert reuse_cache.cleanup_all().errors == ()
 
 
 def test_reused_worktree_cleanup_retry_updates_current_generation_state(
@@ -1349,12 +1443,16 @@ def test_reused_worktree_cleanup_retry_updates_current_generation_state(
 
     second.mark_failed("provider failed")
 
+    assert workspace_path.exists()
+    first_cleanup = reuse_cache.cleanup_all()
+    assert len(first_cleanup.errors) == 1
+    assert isinstance(first_cleanup.errors[0], OSError)
     assert not workspace_path.exists()
     current_state = read_json_object(current_state_path)
     current_workspace = current_state["workspace"]
     assert isinstance(current_workspace, dict)
-    assert current_workspace["retention"] == "retained"
-    assert current_workspace["retained_reason"] == "failure_cleanup_failed"
+    assert current_workspace["retention"] == "pending_cleanup"
+    assert current_workspace["retained_reason"] == "failure"
 
     cleanup = reuse_cache.cleanup_all()
 

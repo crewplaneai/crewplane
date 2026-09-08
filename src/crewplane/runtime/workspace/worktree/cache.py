@@ -144,6 +144,16 @@ class WorktreeReuseCache:
         self._remember_pending_updated_state_paths(updated)
         return updated
 
+    def defer_workspace_cleanup(self, workspace_path: Path, state_path: Path) -> bool:
+        """Release an owned checkout for cleanup after invocation drift checks."""
+        entry = self._entry_for_workspace(workspace_path)
+        if entry is None:
+            return False
+        with self._lock:
+            self._remember_state_path(_workspace_key(entry.workspace_path), state_path)
+        self._retain_failed_cleanup_entry(entry)
+        return True
+
     def cleanup_workspace_best_effort(
         self,
         workspace_path: Path,

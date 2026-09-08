@@ -24,8 +24,16 @@ All notable user-facing changes are recorded here.
 - Cancelled runs retain managed workspaces when provider output pipes remain open.
 - Worktree creation and retries preserve recorded source despite checkout hooks
   and provider-created hidden index flags.
-- Worktree review results remain reusable after discarded remediation rounds.
+- Managed node results remain reusable after discarded remediation rounds,
+  recovered session exhaustion, and tolerated reviewer failures.
 - Large ignored setup dependencies no longer prevent mutable worktree invocations.
+- Snapshots preserve recorded source bytes when the project checkout's
+  `.gitattributes` changes during a run.
+- Fixed cleanup of discarded remediation workspaces and reviewer workspaces.
+- Worktrees support project subdirectories without tracked files.
+- Recoverable remediation failures no longer trigger false artifact-drift errors
+  when reusing a checkout.
+- Symlinked Git policy files are rejected before provider execution.
 
 ### Upgrade Notes
 - Older managed-workspace artifacts missing required validation data

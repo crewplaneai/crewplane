@@ -7,6 +7,7 @@ from pathlib import Path
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
+from crewplane.artifacts.workspace.state.ref_contracts import is_discarded_lineage
 from crewplane.core.execution_state import RunManifest
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
@@ -226,7 +227,12 @@ def _is_hydrated_resume_without_workspace_path(payload: dict[str, object]) -> bo
         isinstance(workspace, dict)
         and workspace.get("retention") == "not_applicable"
         and workspace.get("retained_reason") == "hydrated_resume"
-        and not workspace_state_contract_errors(payload, "duplicate_skip")
+        and not workspace_state_contract_errors(
+            payload,
+            "failed_invocation"
+            if payload.get("status") == "failed"
+            else "duplicate_skip",
+        )
     )
 
 
@@ -248,7 +254,9 @@ def _claim_matches_workspace_policy(
     if policy is None or not policy.enabled or not isinstance(workspace, dict):
         return False
     expected_lineage_producer = (
-        policy.declaration_kind == "worktree" and payload.get("role") == "executor"
+        policy.declaration_kind == "worktree"
+        and payload.get("role") == "executor"
+        and not is_discarded_lineage(payload)
     )
     return (
         payload.get("workspace_kind") == policy.declaration_kind

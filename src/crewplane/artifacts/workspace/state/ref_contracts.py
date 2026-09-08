@@ -45,7 +45,7 @@ def _validate_ref_publication(
         if _requires_ref_publication(payload, lineage_producer, hydrated_placement):
             errors.append("lineage result lacks ref publication phase")
         return
-    if not lineage_producer and not _is_discarded_lineage(payload):
+    if not lineage_producer and not is_discarded_lineage(payload):
         errors.append("non-lineage workspace has ref publication evidence")
         return
     publication = mapping_value(payload.get("ref_publication"))
@@ -95,7 +95,7 @@ def _validate_publication_identity(
             errors.append(f"ref publication {field} mismatch")
 
 
-def _is_discarded_lineage(payload: Mapping[str, object]) -> bool:
+def is_discarded_lineage(payload: Mapping[str, object]) -> bool:
     result = mapping_value(payload.get("result"))
     return (
         payload.get("workspace_kind") == "worktree"

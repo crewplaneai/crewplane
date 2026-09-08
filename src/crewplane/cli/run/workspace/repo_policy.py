@@ -305,6 +305,12 @@ def validate_source_tree(
         tracked_paths.append(path)
         if mode == "160000":
             gitlinks.append(path)
+        if mode == "120000" and Path(path).name in {".gitignore", ".gitattributes"}:
+            builder.errors.append(
+                "Workspace source policy failed: symlinked Git policy files are "
+                f"unsupported: {path}. Replace the symlink with a regular file "
+                "and commit it, or set settings.workspace.enabled: false."
+            )
         project_path = project_root_relative_source_path(path, git_context)
         if project_path is not None and is_reserved_source_path(project_path):
             builder.errors.append(

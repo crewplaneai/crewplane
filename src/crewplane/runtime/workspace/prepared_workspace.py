@@ -497,6 +497,14 @@ class PreparedWorkspace:
     ) -> None:
         if not workspace_mutators_are_drained(state_path):
             return
+        if (
+            self.workspace_path is not None
+            and self.reuse_cache is not None
+            and self.reuse_cache.defer_workspace_cleanup(
+                self.workspace_path, state_path
+            )
+        ):
+            return
         try:
             self._remove_failed_workspace(cancel_requested)
         except Exception as exc:
@@ -539,14 +547,6 @@ class PreparedWorkspace:
     ) -> None:
         if self.workspace_path is None or self.worktree_capture is None:
             return
-        if self.reuse_cache is not None:
-            updated_paths = self.reuse_cache.cleanup_workspace(
-                self.workspace_path,
-                cancel_requested,
-                state_path=self.state_path,
-            )
-            if updated_paths:
-                return
         remove_worktree_workspace(
             self.worktree_capture.source,
             self.workspace_path,

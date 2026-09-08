@@ -43,6 +43,7 @@ from .invocations import (
     payload_matches_expected_invocation,
     workspace_state_payloads,
 )
+from .ref_contracts import is_discarded_lineage
 
 
 def workspace_node_state_is_valid(
@@ -63,7 +64,11 @@ def workspace_node_state_is_valid(
         expected_failed_invocations,
     ):
         return False
-    if expected_failed_invocations and _lineage_worktree_node(node):
+    if _lineage_worktree_node(node) and any(
+        payload.get("role") == ProviderRole.EXECUTOR
+        and not is_discarded_lineage(payload)
+        for payload in failed_workspace_state_payloads(source, node)
+    ):
         return False
     state_payloads = workspace_state_payloads(source, node)
     if expected_invocations and not state_payloads:
@@ -231,7 +236,9 @@ def _failed_provider_workspace_state_is_valid(
     payload: dict[str, object],
 ) -> bool:
     policy = node.workspace_policy
-    if policy is None or not workspace_state_contract_is_valid(payload, "cleanup"):
+    if policy is None or not workspace_state_contract_is_valid(
+        payload, "failed_invocation"
+    ):
         return False
     workspace = _mapping(payload.get("workspace"))
     return (
@@ -248,7 +255,9 @@ def _failed_provider_workspace_state_is_valid(
         and _bool_field_matches(
             workspace,
             "lineage_producer",
-            policy.lineage_producer,
+            policy.lineage_producer
+            and payload.get("role") == ProviderRole.EXECUTOR
+            and not is_discarded_lineage(payload),
         )
     )
 

@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
+from typer.testing import CliRunner
 
+from crewplane.cli.app import app
 from crewplane.cli.workflow_runner import execute_workflow_run
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.preflight.source import load_workflow_source_for_preflight
@@ -106,3 +108,87 @@ Inspect the workflow source.
 
     assert tuple(stages_root.iterdir()) == run_dirs
     assert "Identical context detected" in stream.getvalue()
+
+
+@pytest.mark.parametrize("node_id", ["implement-", "a" * 121])
+def test_cleanup_removes_reviewer_workspaces_with_normalized_node_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_git: IsolatedGit,
+    node_id: str,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    workflow_path = project_root / "workflow.task.md"
+    workflow_path.write_text(
+        f"""---
+schema_version: '{SCHEMA_VERSION}'
+name: WorkspaceReviewerIdentity
+worktrees:
+  implementation:
+    kind: worktree
+nodes:
+  - id: {node_id}
+    mode: sequential
+    providers:
+      - provider: alpha
+        role: executor
+      - provider: alpha
+        role: reviewer
+---
+## {node_id}
+Inspect the workflow source.
+""",
+        encoding="utf-8",
+    )
+    isolated_git.run_text(project_root, "init")
+    isolated_git.run_text(project_root, "add", "workflow.task.md")
+    isolated_git.run_text(project_root, "commit", "-m", "initial")
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={"alpha": AgentConfig(cli_cmd=["mock"], default_model="mock")},
+        settings=Settings(
+            workspace={
+                "enabled": True,
+                "cache_root": (tmp_path / "cache").as_posix(),
+                "cleanup_on_success": False,
+            },
+            integrations={
+                "invoker": {
+                    "implementation": "mock",
+                    "options": {"observation_delay_seconds": 0},
+                },
+                "ui": {"implementation": "none"},
+            },
+        ),
+    )
+    monkeypatch.chdir(project_root)
+    source = load_workflow_source_for_preflight(workflow_path, project_root)
+    asyncio.run(
+        execute_workflow_run(
+            config,
+            source,
+            force=False,
+            no_live=True,
+            console=Console(file=io.StringIO()),
+        )
+    )
+    stages_root = project_root / ".crewplane" / "execution-stages"
+    states = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in stages_root.glob(f"*/{node_id}/workspace-state*.json")
+    ]
+    assert {state["role"] for state in states} == {"executor", "reviewer"}
+    workspace_paths = [Path(state["execution"]["workspace_path"]) for state in states]
+    assert all(path.is_dir() for path in workspace_paths)
+    config_path = project_root / ".crewplane" / "cleanup-config.yml"
+    config_path.write_text(config.model_dump_json(), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert all(not path.exists() for path in workspace_paths), result.output

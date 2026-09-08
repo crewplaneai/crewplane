@@ -10,6 +10,7 @@ from crewplane.runtime.workspace.worktree.cleanup import (
     registered_worktree_paths,
     verify_registered_worktree_cleanup_path,
 )
+from crewplane.runtime.workspace.worktree.refs import safe_file_component
 
 from .evidence_claims import WorkspaceClaim
 
@@ -253,17 +254,14 @@ def _worktree_cache_family_matches(
     owner: tuple[str, str],
     claim: WorkspaceClaim,
 ) -> bool:
-    workspace = claim.payload.get("workspace")
-    lineage_producer = (
-        workspace.get("lineage_producer") if isinstance(workspace, dict) else None
-    )
-    if lineage_producer is True:
+    role = claim.payload.get("role")
+    if role == "executor":
         return len(parts) == 4 and parts[:3] == ("workspaces", *owner)
-    if lineage_producer is False:
+    if role == "reviewer":
         return (
             len(parts) == 5
             and parts[:3] == ("review-workspaces", *owner)
-            and parts[3] == claim.payload.get("node_id")
+            and parts[3] == safe_file_component(str(claim.payload["node_id"]))
         )
     return False
 

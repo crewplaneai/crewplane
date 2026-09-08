@@ -39,4 +39,6 @@ def worktree_project_cwd(
 ) -> Path:
     if source.project_root_relative_path == ".":
         return checkout_root
-    return checkout_root / source.project_root_relative_path
+    cwd = checkout_root / source.project_root_relative_path
+    cwd.mkdir(parents=True, exist_ok=True)
+    return cwd

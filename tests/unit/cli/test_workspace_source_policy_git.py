@@ -29,6 +29,28 @@ isolated_git = _isolated_git_support.isolated_git
 pytestmark = pytest.mark.usefixtures("isolated_git")
 
 
+def test_workspace_source_policy_allows_regular_policy_files_and_source_symlinks(
+    tmp_path: Path,
+) -> None:
+    _create_clean_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("*.log\n", encoding="utf-8")
+    (tmp_path / ".gitattributes").write_text("*.md diff=markdown\n", encoding="utf-8")
+    (tmp_path / "readme-link").symlink_to("README.md")
+    run_git_text(tmp_path, "add", ".")
+    run_git_text(tmp_path, "commit", "-m", "record policies and source symlink")
+
+    result = policy.collect_workspace_source_policy(
+        config=workspace_source_config(),
+        workflow=workspace_source_workflow(),
+        project_root=tmp_path,
+        state_dir=tmp_path / ".crewplane",
+        real_execution=False,
+    )
+
+    assert result.errors == ()
+    assert result.source_snapshot is not None
+
+
 def test_workspace_source_policy_ignores_untracked_attributes_with_tracked_only(
     tmp_path: Path,
 ) -> None:

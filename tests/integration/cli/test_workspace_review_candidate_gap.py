@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
+from typer.testing import CliRunner
 
+from crewplane.cli.app import app
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
     PromptSegment,
@@ -78,6 +80,44 @@ def test_discarded_review_round_preserves_skip_and_resume(
 
     assert run_dirs(project) == successful_runs
     assert "Identical context detected" in duplicate_stream.getvalue()
+
+
+def test_cleanup_removes_workspaces_after_discarded_remediation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_git: IsolatedGit,
+) -> None:
+    project = workspace_project(tmp_path, isolated_git)
+    fixtures = tmp_path / "fixtures"
+    config = workspace_config(tmp_path / "cache", fixtures)
+    _write_review_fixtures(fixtures)
+    write_fixture(fixtures, "consume", "executor-round-1.md", "Consumed candidate.\n")
+    monkeypatch.chdir(project)
+    asyncio.run(
+        run_workspace_workflow(_review_workflow(), config, Console(file=io.StringIO()))
+    )
+    run_dir = run_dirs(project)[0]
+    _assert_review_gap(run_dir)
+    state_paths = sorted(run_dir.glob("*/workspace-state*.json"))
+    states = [json.loads(path.read_text(encoding="utf-8")) for path in state_paths]
+    workspace_paths = [Path(state["execution"]["workspace_path"]) for state in states]
+    assert len(workspace_paths) == 6
+    assert all(path.is_dir() for path in workspace_paths)
+    config_path = project / ".crewplane" / "cleanup-config.yml"
+    config_path.write_text(config.model_dump_json(), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["cleanup", "workspaces", "--config", config_path.as_posix(), "--yes"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert all(not path.exists() for path in workspace_paths), result.output
+    for state_path, original in zip(state_paths, states, strict=True):
+        cleaned = json.loads(state_path.read_text(encoding="utf-8"))
+        assert cleaned["status"] == original["status"] == "succeeded"
+        assert cleaned["workspace"]["retention"] == "deleted"
 
 
 def _assert_review_gap(run_dir: Path) -> None:

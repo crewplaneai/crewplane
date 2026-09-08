@@ -286,6 +286,46 @@ def test_cleanup_evidence_rejects_claim_that_conflicts_with_workspace_policy(
     assert decision.deletable is False
 
 
+@pytest.mark.parametrize(
+    ("section", "field", "value"),
+    [
+        ("result", "lineage_produced", True),
+        ("result", "lineage_discarded", False),
+        ("result", "lineage_discard_reason", None),
+        ("result", "lineage_discard_reason", ""),
+        (None, "refs", {}),
+        (None, "bundle", {}),
+    ],
+)
+def test_cleanup_evidence_rejects_invalid_discarded_executor_claims(
+    tmp_path: Path,
+    section: str | None,
+    field: str,
+    value: object,
+) -> None:
+    cache_root = tmp_path / "cache"
+    stage_root = tmp_path / "stages"
+    workspace_path = cache_root / "workspaces" / REPOSITORY_ID / RUN_KEY / "executor"
+    payload = _worktree_payload(workspace_path)
+    payload["role"] = "executor"
+    payload["result"] = {
+        "lineage_produced": False,
+        "lineage_discarded": True,
+        "lineage_discard_reason": "unchanged_remediation",
+    }
+    target = payload if section is None else payload[section]
+    assert isinstance(target, dict)
+    target[field] = value
+    _write_claim(stage_root, RUN_KEY, payload)
+
+    evidence = _evidence(stage_root, cache_root)
+    decision = evidence.decision(RUN_KEY, workspace_path)
+
+    assert decision.deletable is False
+    assert decision.reason == "workspace evidence for the run is malformed"
+    assert evidence.ref_cleanup_run_keys() == ()
+
+
 def test_cleanup_evidence_rejects_claim_without_planned_workspace_policy(
     tmp_path: Path,
 ) -> None:
@@ -305,13 +345,18 @@ def test_cleanup_evidence_rejects_claim_without_planned_workspace_policy(
     assert decision.deletable is False
 
 
+@pytest.mark.parametrize("status", ("succeeded", "failed"))
+@pytest.mark.parametrize("valid_identity", (False, True))
 def test_cleanup_evidence_checks_hydrated_claim_identity_before_ignoring_path(
     tmp_path: Path,
+    status: str,
+    valid_identity: bool,
 ) -> None:
     cache_root = tmp_path / "cache"
     stage_root = tmp_path / "stages"
     workspace_path = _snapshot_path(cache_root)
     payload = _snapshot_payload(workspace_path)
+    payload["status"] = status
     workspace = payload["workspace"]
     execution = payload["execution"]
     assert isinstance(workspace, dict)
@@ -336,13 +381,14 @@ def test_cleanup_evidence_checks_hydrated_claim_identity_before_ignoring_path(
         "worktree_git_dir",
     ):
         execution[field] = None
-    payload["workflow_signature"] = "f" * 64
+    if not valid_identity:
+        payload["workflow_signature"] = "f" * 64
     _write_claim(stage_root, RUN_KEY, payload)
 
     decision = _evidence(stage_root, cache_root).decision(RUN_KEY, workspace_path)
 
-    assert decision.status == "invalid"
-    assert decision.deletable is False
+    assert decision.status == (None if valid_identity else "invalid")
+    assert decision.deletable is valid_identity
 
 
 def test_cleanup_evidence_rejects_reappeared_deleted_workspace(tmp_path: Path) -> None:

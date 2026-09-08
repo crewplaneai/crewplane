@@ -18,6 +18,7 @@ from ...run_history import RunHistoryRecord
 from .fields import int_field, nullable_int_field
 from .fields import mapping_value as _mapping
 from .lineage import invocation_round_order, review_output_coordinates
+from .ref_contracts import is_discarded_lineage
 
 
 class WorkspaceStateStatus(StrEnum):
@@ -153,6 +154,8 @@ def expected_failed_workspace_invocations(
     source: RunHistoryRecord,
     node: PreflightExecutionNode,
 ) -> tuple[ExpectedWorkspaceInvocation, ...]:
+    if node.mode == "sequential":
+        return _failed_sequential_workspace_invocations(source, node)
     if node.mode != "parallel":
         return ()
     return _parallel_workspace_invocations_with_status(
@@ -161,6 +164,43 @@ def expected_failed_workspace_invocations(
         WorkspaceStateStatus.FAILED,
         lineage_source_required=False,
     )
+
+
+def _failed_sequential_workspace_invocations(
+    source: RunHistoryRecord,
+    node: PreflightExecutionNode,
+) -> tuple[ExpectedWorkspaceInvocation, ...]:
+    providers = {provider.task_id: provider for provider in node.provider_records}
+    expected: list[ExpectedWorkspaceInvocation] = []
+    for payload in failed_workspace_state_payloads(source, node):
+        task_id = payload.get("task_id")
+        round_num = int_field(payload, "round_num")
+        audit_round_num = nullable_int_field(payload, "audit_round_num")
+        provider = providers.get(task_id) if isinstance(task_id, str) else None
+        if (
+            provider is None
+            or payload.get("provider") != provider.provider
+            or payload.get("role") != provider.role
+            or round_num is None
+            or not audit_round_num.valid
+        ):
+            return ()
+        if (
+            provider.role == ProviderRole.REVIEWER
+            and not node.execution_policy.continue_on_failure
+        ):
+            return ()
+        if provider.role == ProviderRole.EXECUTOR and not is_discarded_lineage(payload):
+            return ()
+        expected.append(
+            ExpectedWorkspaceInvocation(
+                task_id=provider.task_id,
+                role=provider.role,
+                round_num=round_num,
+                audit_round_num=audit_round_num.value,
+            )
+        )
+    return tuple(expected)
 
 
 def _parallel_workspace_invocations_with_status(
