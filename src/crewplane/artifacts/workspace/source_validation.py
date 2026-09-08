@@ -23,7 +23,11 @@ from .state.fields import (
     mapping_value as _mapping,
 )
 from .state.invocations import workspace_state_payloads
-from .state.lineage import invocation_round_order, review_output_coordinates
+from .state.lineage import (
+    INVALID_LINEAGE_ORDER,
+    invocation_round_order,
+    review_output_coordinates,
+)
 
 
 def workspace_invocation_source_matches(
@@ -383,7 +387,7 @@ def _latest_lineage_payload(
 
 
 def _lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
-    return invocation_round_order(payload)
+    return invocation_round_order(payload) or INVALID_LINEAGE_ORDER
 
 
 def _lineage_payload_is_ordered_source(payload: dict[str, object]) -> bool:

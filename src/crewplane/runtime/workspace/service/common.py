@@ -12,6 +12,7 @@ from crewplane.core.preflight.workspace.observability import (
     invoker_workspace_descriptor,
 )
 from crewplane.core.workspace.cache import workspace_cache_root
+from crewplane.core.workspace.naming import safe_file_component
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.runtime.workspace.snapshot import (
@@ -24,7 +25,6 @@ from crewplane.runtime.workspace.state import (
     WorkspaceStateWriteRequest,
     update_workspace_state,
 )
-from crewplane.runtime.workspace.worktree.refs import safe_file_component
 
 from .types import WorkspaceInvocationRequest
 

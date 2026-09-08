@@ -201,6 +201,37 @@ def test_external_ref_cleanup_reconciles_nested_planned_stage_state(
     )
 
 
+@pytest.mark.parametrize("stage_path", [".", "./"])
+def test_ref_cleanup_rejects_dot_stage_before_mutating_refs(
+    tmp_path: Path, stage_path: str
+) -> None:
+    repo, prepared, state = _published_lineage_workspace(tmp_path)
+    assert prepared.state_path is not None
+    run_dir = prepared.state_path.parent.parent
+    plan_path = run_dir / "preflight/execution-plan.json"
+    plan_path.parent.mkdir()
+    plan_path.write_text(
+        json.dumps(
+            {
+                "run_key_name": "workspace-run-001",
+                "nodes": [{"artifact_contract": {"stage_path": stage_path}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="unsafe stage evidence"):
+        delete_run_workspace_refs(
+            repo, repo / ".git", repo, "workspace-run-001", run_dir
+        )
+
+    refs = state["refs"]
+    assert isinstance(refs, dict)
+    assert _ref_oid(repo, str(refs["candidate"])) is not None
+    assert _ref_oid(repo, str(refs["result"])) is not None
+    _remove_published_workspace(repo, prepared, state)
+
+
 def test_result_refs_are_published_in_one_transaction_after_prepared_evidence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

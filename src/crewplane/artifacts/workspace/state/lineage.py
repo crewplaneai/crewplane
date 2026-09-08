@@ -33,13 +33,13 @@ def review_output_coordinates(
     return ReviewOutputCoordinates(task_id, round_num, audit_round_num)
 
 
-def invocation_round_order(payload: dict[str, object]) -> tuple[int, int]:
-    """Return the normalized audit/round order or the invalid sentinel."""
+def invocation_round_order(payload: dict[str, object]) -> tuple[int, int] | None:
+    """Return normalized audit/round coordinates, or None for invalid fields."""
 
     round_num = int_field(payload, "round_num")
     if round_num is None:
-        return INVALID_LINEAGE_ORDER
+        return None
     audit_round_num = nullable_int_field(payload, "audit_round_num")
     if not audit_round_num.valid:
-        return INVALID_LINEAGE_ORDER
+        return None
     return (audit_round_num.value or 0, round_num)

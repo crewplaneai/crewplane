@@ -17,7 +17,12 @@ from ...results.review_loop_status import (
 from ...run_history import RunHistoryRecord
 from .fields import int_field, nullable_int_field
 from .fields import mapping_value as _mapping
-from .lineage import invocation_round_order, review_output_coordinates
+from .lineage import (
+    INVALID_LINEAGE_ORDER,
+    invocation_round_order,
+    review_output_coordinates,
+)
+from .paths import workspace_state_candidates
 from .ref_contracts import is_discarded_lineage
 
 
@@ -76,10 +81,8 @@ def workspace_state_payloads_for_status(
     if stage_path is None:
         return ()
     stage_dir = source.run_dir / stage_path
-    candidates = [stage_dir / "workspace-state.json"]
-    candidates.extend(sorted(stage_dir.glob("workspace-state-*.json")))
     payloads: list[dict[str, object]] = []
-    for candidate in candidates:
+    for candidate in workspace_state_candidates(stage_dir):
         safe_path = contained_regular_file(
             source.run_dir,
             candidate.relative_to(source.run_dir).as_posix(),
@@ -324,4 +327,4 @@ def lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
         and workspace.get("lineage_producer") is True
     ):
         return (-1, -1)
-    return invocation_round_order(payload)
+    return invocation_round_order(payload) or INVALID_LINEAGE_ORDER

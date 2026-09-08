@@ -15,6 +15,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.workspace.naming import result_ref_names, safe_file_component
 
 from ..cleanup_notes import note_cleanup_failure
 from ..git import GitCommand, git
@@ -23,7 +24,6 @@ from .ref_publication import (
     publish_result_refs,
     reconcile_result_ref_publication,
 )
-from .refs import safe_file_component, safe_ref_component
 from .temporary_refs import (
     TemporaryImportRef,
     TemporaryRefOwner,
@@ -350,16 +350,7 @@ def worktree_protected_ref_scopes(
     node_id: str,
     slug: str,
 ) -> tuple[str, ...]:
-    destination_base = (
-        "refs/crewplane/runs/"
-        f"{safe_ref_component(plan.run_key_name)}/"
-        f"{safe_ref_component(node_id)}/"
-        f"{safe_ref_component(slug)}"
-    )
-    refs = {
-        f"{destination_base}/candidate",
-        f"{destination_base}/result",
-    }
+    refs = set(result_ref_names(plan.run_key_name, node_id, slug))
     pending = [source_ref]
     while pending:
         current = pending.pop()

@@ -28,6 +28,7 @@ from ..results.review_loop_status import (
     task_specs_for_producers,
 )
 from .state.fields import encode_workspace_state_for_resume
+from .state.paths import workspace_state_candidates
 
 
 class NodeArtifactStateStore(Protocol):
@@ -117,12 +118,10 @@ def refresh_node_workspace_descriptor(
 def _workspace_state_paths(stage_dir: Path) -> tuple[Path, ...]:
     if not stage_dir.is_dir() or stage_dir.is_symlink():
         return ()
-    names = ["workspace-state.json"]
-    names.extend(path.name for path in sorted(stage_dir.glob("workspace-state-*.json")))
     paths = [
         path
-        for name in names
-        if (path := contained_regular_file(stage_dir, name)) is not None
+        for candidate in workspace_state_candidates(stage_dir)
+        if (path := contained_regular_file(stage_dir, candidate.name)) is not None
     ]
     return tuple(paths)
 

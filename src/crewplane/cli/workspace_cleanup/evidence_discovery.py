@@ -5,8 +5,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.artifacts.workspace.state.paths import (
+    is_safe_workspace_stage_path,
+    is_temporary_ref_evidence_name,
+    is_workspace_claim_name,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
-from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
 
 
 @dataclass(frozen=True)
@@ -40,7 +44,7 @@ def planned_stage_directories(
     directories: list[tuple[Path, str]] = []
     for node in plan.nodes:
         stage_path = node.artifact_contract.stage_path
-        if stage_path is None or not _safe_stage_path(stage_path):
+        if stage_path is None or not is_safe_workspace_stage_path(stage_path):
             return PlannedStageDirectories((), True)
         directories.append((run_dir / stage_path, node.id))
     return PlannedStageDirectories(tuple(directories), False)
@@ -54,7 +58,7 @@ def scan_dedicated_ref_evidence(
     found: list[Path] = []
     invalid = False
     for evidence_dir in evidence_dirs:
-        scan = _scan_directory(evidence_dir, run_dir, _dedicated_ref_file_name)
+        scan = _scan_directory(evidence_dir, run_dir, is_temporary_ref_evidence_name)
         found.extend(scan.paths)
         invalid = invalid or scan.invalid
     return EvidenceDirectoryScan(tuple(found), invalid)
@@ -131,30 +135,6 @@ def _scan_claim_directory(stage_dir: Path, run_dir: Path) -> EvidenceDirectorySc
         entries = tuple(stage_dir.iterdir())
     except OSError:
         return EvidenceDirectoryScan((), True)
-    candidates = tuple(path for path in entries if _claim_file_name(path.name))
+    candidates = tuple(path for path in entries if is_workspace_claim_name(path.name))
     safe = tuple(path for path in candidates if single_link_regular_file(path))
     return EvidenceDirectoryScan(safe, len(safe) != len(candidates))
-
-
-def _dedicated_ref_file_name(name: str) -> bool:
-    return name.startswith("workspace-temporary-refs-") and name.endswith(".json")
-
-
-def _claim_file_name(name: str) -> bool:
-    return name == "workspace-state.json" or (
-        name.endswith(".json")
-        and (
-            name.startswith("workspace-state-")
-            or name.startswith("workspace-reuse-claim-")
-        )
-    )
-
-
-def _safe_stage_path(value: str) -> bool:
-    path = Path(value)
-    return (
-        bool(value.strip())
-        and not path.is_absolute()
-        and all(part not in {"", ".", ".."} for part in path.parts)
-        and path.parts[0] not in RESERVED_RUN_ROOT_NAMES
-    )

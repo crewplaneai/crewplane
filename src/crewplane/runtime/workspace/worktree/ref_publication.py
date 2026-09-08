@@ -10,6 +10,7 @@ from crewplane.artifacts.workspace.state.contracts import (
 )
 from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.invocation_identity import invocation_slug
+from crewplane.core.workspace.naming import result_ref_names
 
 from ..cleanup_notes import note_cleanup_failure
 from ..git import GitCommand, git
@@ -20,7 +21,7 @@ from ..state_evidence import (
     update_workspace_ref_publication_phase,
 )
 from .protected_refs import ProtectedRefSnapshot
-from .refs import checked_ref, safe_ref_component
+from .refs import checked_ref
 from .types import WorktreeCaptureRequest
 
 
@@ -241,13 +242,11 @@ def _require_owned_publication_destinations(
     publication = payload.get("ref_publication")
     if not isinstance(publication, dict):
         raise RuntimeError("Workspace ref publication evidence is invalid.")
-    base = (
-        "refs/crewplane/runs/"
-        f"{safe_ref_component(_required_identity(payload, 'run_key_name'))}/"
-        f"{safe_ref_component(_required_identity(payload, 'node_id'))}/"
-        f"{safe_ref_component(_required_invocation_slug(payload))}"
+    expected = result_ref_names(
+        _required_identity(payload, "run_key_name"),
+        _required_identity(payload, "node_id"),
+        _required_invocation_slug(payload),
     )
-    expected = (f"{base}/candidate", f"{base}/result")
     if tuple(destination.name for destination in destinations) != expected:
         raise RuntimeError("Workspace result refs escape their invocation scope.")
     for ref_name in expected:
@@ -424,13 +423,10 @@ def _reject_symbolic_ref(command: GitCommand, ref_name: str) -> None:
 
 
 def _result_ref_names(request: WorktreeCaptureRequest) -> tuple[str, str]:
-    base = (
-        "refs/crewplane/runs/"
-        f"{safe_ref_component(request.plan.run_key_name)}/"
-        f"{safe_ref_component(request.node_id)}/"
-        f"{safe_ref_component(request.slug)}"
+    candidate, result = result_ref_names(
+        request.plan.run_key_name, request.node_id, request.slug
     )
     return (
-        checked_ref(request.checkout_root, f"{base}/candidate"),
-        checked_ref(request.checkout_root, f"{base}/result"),
+        checked_ref(request.checkout_root, candidate),
+        checked_ref(request.checkout_root, result),
     )

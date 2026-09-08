@@ -6,11 +6,11 @@ from pathlib import Path
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
+from crewplane.core.workspace.naming import safe_file_component
 from crewplane.runtime.workspace.worktree.cleanup import (
     registered_worktree_paths,
     verify_registered_worktree_cleanup_path,
 )
-from crewplane.runtime.workspace.worktree.refs import safe_file_component
 
 from .evidence_claims import WorkspaceClaim
 

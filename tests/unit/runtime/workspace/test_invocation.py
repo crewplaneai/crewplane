@@ -15,6 +15,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupRecord,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.naming import safe_ref_component
 from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
 )
@@ -25,7 +26,6 @@ from crewplane.runtime.workspace.invocation import (
     invocation_slug,
     workspace_state_path,
 )
-from crewplane.runtime.workspace.worktree.refs import safe_ref_component
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.helpers.workspace_service import create_git_repo, workspace_plan

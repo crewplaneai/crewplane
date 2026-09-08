@@ -5,7 +5,10 @@ from dataclasses import dataclass
 
 from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.invocation_identity import invocation_slug
-from crewplane.core.workspace.policy import safe_ref_component
+from crewplane.core.workspace.naming import (
+    result_ref_names,
+    temporary_import_ref_prefix,
+)
 
 from .fields import is_nonempty_string, mapping_value
 
@@ -211,13 +214,12 @@ def _expected_publication_names(
     invocation_slug_value = _state_invocation_slug(payload)
     if invocation_slug_value is None:
         return {}
-    base = (
-        "refs/crewplane/runs/"
-        f"{safe_ref_component(str(publication.get('run_key_name')))}/"
-        f"{safe_ref_component(str(payload.get('node_id')))}/"
-        f"{safe_ref_component(invocation_slug_value)}"
+    candidate, result = result_ref_names(
+        str(publication.get("run_key_name")),
+        str(payload.get("node_id")),
+        invocation_slug_value,
     )
-    return {"candidate": f"{base}/candidate", "result": f"{base}/result"}
+    return {"candidate": candidate, "result": result}
 
 
 def _validate_temporary_refs(payload: Mapping[str, object], errors: list[str]) -> None:
@@ -228,10 +230,10 @@ def _validate_temporary_refs(payload: Mapping[str, object], errors: list[str]) -
         errors.append("temporary ref evidence is invalid")
         return
     invocation_slug_value = _state_invocation_slug(payload)
-    prefix = (
-        f"refs/crewplane/runs/{safe_ref_component(str(payload.get('run_key_name')))}/"
-        f"imports/{safe_ref_component(str(payload.get('node_id')))}/"
-        f"{safe_ref_component(str(invocation_slug_value))}/"
+    prefix = temporary_import_ref_prefix(
+        str(payload.get("run_key_name")),
+        str(payload.get("node_id")),
+        str(invocation_slug_value),
     )
     context = _TemporaryRefContext(
         payload=payload,

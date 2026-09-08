@@ -6,6 +6,19 @@ from typing import NotRequired, TypedDict
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+def validate_token_budget_thresholds(
+    warn_threshold_chars: int | None, fail_threshold_chars: int | None
+) -> None:
+    if (
+        warn_threshold_chars is not None
+        and fail_threshold_chars is not None
+        and fail_threshold_chars < warn_threshold_chars
+    ):
+        raise ValueError(
+            "fail_threshold_chars must be greater than or equal to warn_threshold_chars"
+        )
+
+
 class _BaseTokenBudget(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -14,15 +27,9 @@ class _BaseTokenBudget(BaseModel):
 
     @model_validator(mode="after")
     def _validate_threshold_order(self) -> _BaseTokenBudget:
-        if (
-            self.warn_threshold_chars is not None
-            and self.fail_threshold_chars is not None
-            and self.fail_threshold_chars < self.warn_threshold_chars
-        ):
-            raise ValueError(
-                "fail_threshold_chars must be greater than or equal to "
-                "warn_threshold_chars"
-            )
+        validate_token_budget_thresholds(
+            self.warn_threshold_chars, self.fail_threshold_chars
+        )
         return self
 
 
@@ -70,7 +77,7 @@ def resolve_token_budget(
         warn_threshold_chars=warn_threshold_chars,
         fail_threshold_chars=fail_threshold_chars,
     )
-    _validate_resolved_budget(resolved_budget)
+    validate_token_budget_thresholds(warn_threshold_chars, fail_threshold_chars)
     return resolved_budget
 
 
@@ -81,14 +88,3 @@ def token_budget_payload_dict(token_budget: TokenBudgetOverride) -> TokenBudgetP
     if "fail_threshold_chars" in token_budget.model_fields_set:
         payload["fail_threshold_chars"] = token_budget.fail_threshold_chars
     return payload
-
-
-def _validate_resolved_budget(budget: ResolvedTokenBudget) -> None:
-    if (
-        budget.warn_threshold_chars is not None
-        and budget.fail_threshold_chars is not None
-        and budget.fail_threshold_chars < budget.warn_threshold_chars
-    ):
-        raise ValueError(
-            "fail_threshold_chars must be greater than or equal to warn_threshold_chars"
-        )

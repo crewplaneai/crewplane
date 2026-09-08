@@ -5,13 +5,13 @@ from pathlib import Path
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.naming import safe_file_component
 from crewplane.runtime.workspace.invocation import (
     invocation_slug,
     workspace_state_path,
 )
 from crewplane.runtime.workspace.setup import workspace_setup_artifacts
 from crewplane.runtime.workspace.state import discard_workspace_lineage
-from crewplane.runtime.workspace.worktree.refs import safe_file_component
 
 
 def workspace_artifact_allowed_paths(
