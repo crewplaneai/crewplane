@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-07
+
 ### Changed
 - Refreshed provider model and pricing examples; automatic routing no longer
   suggests fixed token rates.
