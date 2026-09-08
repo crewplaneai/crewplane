@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import Literal
 
@@ -10,6 +9,7 @@ from crewplane.architecture.contracts import JsonObject
 from crewplane.core.preflight.plan_contract import (
     validate_supported_plan_schema_version,
 )
+from crewplane.core.value_checks import is_sha256
 
 RUN_STATE_SCHEMA_VERSION = 1
 
@@ -21,8 +21,6 @@ RUN_STATUS_CANCELLED = "cancelled"
 RunStatus = Literal["running", "succeeded", "failed", "cancelled"]
 TerminalRunStatus = Literal["succeeded", "failed", "cancelled"]
 ArtifactKind = Literal["output", "findings", "generated_file"]
-
-_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _validate_iso_datetime(value: str) -> str:
@@ -56,7 +54,7 @@ class ArtifactDescriptor(BaseModel):
     @field_validator("sha256")
     @classmethod
     def _validate_sha256(cls, value: str) -> str:
-        if not _SHA256_PATTERN.fullmatch(value):
+        if not is_sha256(value):
             raise ValueError(
                 "Artifact descriptor sha256 must be 64 lowercase hex characters."
             )
@@ -130,7 +128,7 @@ class NodeState(BaseModel):
     @field_validator("workflow_signature")
     @classmethod
     def _validate_workflow_signature(cls, value: str) -> str:
-        if not _SHA256_PATTERN.fullmatch(value):
+        if not is_sha256(value):
             raise ValueError("workflow_signature must be 64 lowercase hex characters.")
         return value
 
@@ -243,7 +241,7 @@ class RunManifest(BaseModel):
     @field_validator("workflow_signature", "effective_runtime_config_signature")
     @classmethod
     def _validate_signature(cls, value: str) -> str:
-        if not _SHA256_PATTERN.fullmatch(value):
+        if not is_sha256(value):
             raise ValueError(
                 "Persisted signatures must be 64 lowercase hex characters."
             )

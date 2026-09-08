@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.policy import safe_ref_component
 
-from .fields import is_hex_object, is_nonempty_string, mapping_value
+from .fields import is_nonempty_string, mapping_value
 
 
 @dataclass(frozen=True)
@@ -159,7 +160,7 @@ def _validate_destination(
 def _destination_has_valid_name_and_target(
     destination: Mapping[str, object],
 ) -> bool:
-    return is_nonempty_string(destination.get("name")) and is_hex_object(
+    return is_nonempty_string(destination.get("name")) and is_git_object_id(
         destination.get("target_oid")
     )
 
@@ -171,7 +172,7 @@ def _validate_destination_expected_oid(
 ) -> None:
     expected_old_oid = destination.get("expected_old_oid")
     if "expected_old_oid" not in destination or (
-        expected_old_oid is not None and not is_hex_object(expected_old_oid)
+        expected_old_oid is not None and not is_git_object_id(expected_old_oid)
     ):
         errors.append(f"ref publication {label} expected OID is invalid")
 
@@ -300,7 +301,7 @@ def _temporary_ref_is_invocation_scoped(
 
 
 def _temporary_ref_target_is_valid(record: Mapping[str, object]) -> bool:
-    return is_hex_object(record.get("target_oid"))
+    return is_git_object_id(record.get("target_oid"))
 
 
 def _temporary_ref_target_is_coherent(

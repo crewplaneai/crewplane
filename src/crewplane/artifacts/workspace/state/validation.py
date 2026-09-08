@@ -14,6 +14,7 @@ from crewplane.core.preflight.workspace.observability import (
 )
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.version import SCHEMA_VERSION
 
 from ...run_history import RunHistoryRecord
@@ -26,9 +27,6 @@ from .contracts import workspace_state_contract_is_valid
 from .expected_set import workspace_state_payloads_match_expected_set
 from .fields import (
     bool_field_matches as _bool_field_matches,
-)
-from .fields import (
-    is_hex_object as _is_hex_object,
 )
 from .fields import (
     mapping_value as _mapping,
@@ -269,10 +267,10 @@ def _workspace_state_git_matches(
 def _workspace_result_matches(payload: dict[str, object]) -> bool:
     result = _mapping(payload.get("result"))
     return (
-        _is_hex_object(result.get("candidate_commit"))
-        and _is_hex_object(result.get("result_commit"))
-        and _is_hex_object(result.get("candidate_tree"))
-        and _is_hex_object(result.get("result_tree"))
+        is_git_object_id(result.get("candidate_commit"))
+        and is_git_object_id(result.get("result_commit"))
+        and is_git_object_id(result.get("candidate_tree"))
+        and is_git_object_id(result.get("result_tree"))
         and is_strict_int(result.get("changed_path_count"))
         and result.get("unreachable_provider_objects_scanned") is False
     )
@@ -322,7 +320,7 @@ def _disposable_worktree_result_matches(payload: dict[str, object]) -> bool:
     return (
         is_strict_int(changed_path_count)
         and result.get("lineage_produced") is False
-        and _is_hex_object(result.get("final_head"))
+        and is_git_object_id(result.get("final_head"))
         and "candidate_commit" not in result
         and "result_commit" not in result
         and "candidate_tree" not in result
@@ -391,13 +389,13 @@ def _workspace_result_ref(payload: dict[str, object]) -> str | None:
 def _workspace_result_commit(payload: dict[str, object]) -> str | None:
     result = _mapping(payload.get("result"))
     result_commit = result.get("result_commit")
-    return result_commit if _is_hex_object(result_commit) else None
+    return result_commit if is_git_object_id(result_commit) else None
 
 
 def _workspace_result_tree(payload: dict[str, object]) -> str | None:
     result = _mapping(payload.get("result"))
     result_tree = result.get("result_tree")
-    return result_tree if _is_hex_object(result_tree) else None
+    return result_tree if is_git_object_id(result_tree) else None
 
 
 def _safe_workspace_result_ref(ref: str) -> bool:

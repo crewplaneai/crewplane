@@ -3,13 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-RESERVED_WORKSPACE_FILE_ROOTS = (
-    ".crewplane/execution-stages",
-    ".crewplane/execution-results",
-    ".crewplane/preflight",
-    ".crewplane/locks",
-)
-
 
 @dataclass(frozen=True)
 class WorkspaceFilePathRecord:
@@ -62,10 +55,3 @@ def normalize_project_relative_parts(parts: tuple[str, ...]) -> str | None:
     if not normalized:
         return None
     return PurePosixPath(*normalized).as_posix()
-
-
-def is_reserved_workspace_path(path: str) -> bool:
-    return any(
-        path == root or path.startswith(f"{root}/")
-        for root in RESERVED_WORKSPACE_FILE_ROOTS
-    )

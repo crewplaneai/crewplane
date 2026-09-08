@@ -6,11 +6,31 @@ from pathlib import Path
 import pytest
 
 from crewplane.runtime.workspace.git import git
+from crewplane.runtime.workspace.worktree.inspection import reserved_runtime_path
 from crewplane.runtime.workspace.worktree.result_validation import (
     validate_portable_path_collisions,
     validate_result_tree,
 )
 from tests.helpers.workspace_service import create_git_repo, run_git_text
+
+
+@pytest.mark.parametrize(
+    ("path", "reserved"),
+    [
+        (".crewplane/execution-results/output.md", True),
+        ("packages/app/.crewplane/execution-results/output.md", True),
+        ("packages/app/.crewplane/locks", True),
+        ("packages/other/.crewplane/locks", False),
+        ("packages/application/.crewplane/locks", False),
+        ("packages/app/.crewplane/execution-results-old/output.md", False),
+        ("packages/app/.crewplane/preflight/input.md", False),
+        ("packages/app/.crewplane/inputs/input.md", False),
+    ],
+)
+def test_result_reserved_paths_preserve_nested_project_scope(
+    path: str, reserved: bool
+) -> None:
+    assert reserved_runtime_path(path, "packages/app") is reserved
 
 
 @pytest.mark.parametrize("mode", ["100644", "100755", "120000"])

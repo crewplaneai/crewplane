@@ -4,11 +4,11 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeIs
 
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
+from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.invocation_identity import invocation_slug
 
 from ..cleanup_notes import note_cleanup_failure
@@ -283,9 +283,9 @@ def _publication_destination(value: object) -> RefPublicationDestination:
     name = value.get("name")
     target_oid = value.get("target_oid")
     expected_old_oid = value.get("expected_old_oid")
-    if not isinstance(name, str) or not _is_object_id(target_oid):
+    if not isinstance(name, str) or not is_git_object_id(target_oid):
         raise RuntimeError("Workspace ref publication destination is invalid.")
-    if expected_old_oid is not None and not _is_object_id(expected_old_oid):
+    if expected_old_oid is not None and not is_git_object_id(expected_old_oid):
         raise RuntimeError("Workspace ref publication expected OID is invalid.")
     return RefPublicationDestination(name, target_oid, expected_old_oid)
 
@@ -433,12 +433,4 @@ def _result_ref_names(request: WorktreeCaptureRequest) -> tuple[str, str]:
     return (
         checked_ref(request.checkout_root, f"{base}/candidate"),
         checked_ref(request.checkout_root, f"{base}/result"),
-    )
-
-
-def _is_object_id(value: object) -> TypeIs[str]:
-    return (
-        isinstance(value, str)
-        and len(value) in {40, 64}
-        and all(char in "0123456789abcdef" for char in value)
     )

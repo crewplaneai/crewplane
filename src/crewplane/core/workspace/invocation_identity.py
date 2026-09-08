@@ -8,6 +8,17 @@ MAX_INVOCATION_SLUG_CHARS = 160
 INVOCATION_SLUG_HASH_CHARS = 12
 
 
+def rendered_workspace_file_invocation_id(
+    node_id: str,
+    task_id: str,
+    role: str,
+    round_num: int,
+    audit_round_num: int | None,
+) -> str:
+    audit = f".audit-{audit_round_num}" if audit_round_num is not None else ""
+    return f"{node_id}.{role}.{task_id}{audit}.round-{round_num}"
+
+
 def invocation_slug(
     node_id: str,
     task_id: str,

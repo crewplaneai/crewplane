@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import unicodedata
 from enum import StrEnum
 from pathlib import Path
+from typing import TypeGuard
 
 
 class GitTreeMode(StrEnum):
@@ -108,6 +110,19 @@ REJECTED_CONFIG_KEYS = {
     "core.splitindex",
     "extensions.worktreeconfig",
 }
+
+
+def is_git_object_id(value: object) -> TypeGuard[str]:
+    return (
+        isinstance(value, str)
+        and len(value) in {40, 64}
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+def portable_path_key(path: str) -> str:
+    """Normalize paths for portable case and Unicode collision checks."""
+    return unicodedata.normalize("NFC", path).casefold()
 
 
 def normalize_config_key(value: str) -> str:

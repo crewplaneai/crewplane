@@ -18,6 +18,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace.branch_export.fulfillment import (
     BranchExportCheckpoint,
@@ -64,10 +65,14 @@ def validated_checkpoint(
     )
     result = _mapping(payload.get("result"))
     refs = _mapping(payload.get("refs"))
-    result_commit = _hex_object(result.get("result_commit"))
-    result_tree = _hex_object(result.get("result_tree"))
+    result_commit = result.get("result_commit")
+    result_tree = result.get("result_tree")
     result_ref = _string(refs.get("result"))
-    if result_commit is None or result_tree is None or result_ref is None:
+    if (
+        not is_git_object_id(result_commit)
+        or not is_git_object_id(result_tree)
+        or result_ref is None
+    ):
         raise RuntimeError(
             f"Workspace branch export checkpoint is incomplete for node '{node.id}'."
         )
@@ -279,13 +284,3 @@ def _mapping(value: object) -> dict[str, object]:
 
 def _string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
-
-
-def _hex_object(value: object) -> str | None:
-    if (
-        isinstance(value, str)
-        and len(value) in {40, 64}
-        and all(char in "0123456789abcdef" for char in value)
-    ):
-        return value
-    return None

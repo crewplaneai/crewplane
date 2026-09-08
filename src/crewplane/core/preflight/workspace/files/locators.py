@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
 
@@ -33,7 +34,6 @@ from .git_reads import (
 )
 from .paths import (
     WorkspaceFilePathRecord,
-    is_reserved_workspace_path,
     lexical_absolute_path,
     project_relative_workspace_path,
     source_root_relative_to_project,
@@ -151,7 +151,7 @@ def workspace_file_path_record(
             "Workspace file token escapes the project root.",
         )
         return None
-    if is_reserved_workspace_path(project_relative):
+    if is_reserved_state_path(project_relative, FILE_TOKEN_EXCLUDED_ROOTS):
         append_workspace_file_error(
             state,
             node.id,

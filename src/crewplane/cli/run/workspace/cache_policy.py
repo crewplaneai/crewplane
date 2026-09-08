@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
-import unicodedata
 from pathlib import Path
 
 from crewplane.core.config import Settings
 from crewplane.core.workspace.cache import workspace_cache_root
+from crewplane.core.workspace.git_policy import portable_path_key
 
 from .git_source import GitSourceContext
 from .source_types import WorkspacePolicyBuilder
@@ -51,8 +50,8 @@ def validate_cache_root(
 def paths_overlap(left: Path, right: Path) -> bool:
     resolved_left = left.expanduser().resolve(strict=False)
     resolved_right = right.expanduser().resolve(strict=False)
-    case_left = Path(normalized_casefold_path(resolved_left))
-    case_right = Path(normalized_casefold_path(resolved_right))
+    case_left = Path(portable_path_key(str(resolved_left)))
+    case_right = Path(portable_path_key(str(resolved_right)))
     return (
         resolved_left == resolved_right
         or resolved_left.is_relative_to(resolved_right)
@@ -61,7 +60,3 @@ def paths_overlap(left: Path, right: Path) -> bool:
         or case_left.is_relative_to(case_right)
         or case_right.is_relative_to(case_left)
     )
-
-
-def normalized_casefold_path(path: Path) -> str:
-    return unicodedata.normalize("NFC", os.fspath(path)).casefold()

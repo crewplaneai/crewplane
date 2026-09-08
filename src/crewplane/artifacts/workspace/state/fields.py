@@ -48,14 +48,6 @@ def bool_field_matches(
     return isinstance(value, bool) and value == expected
 
 
-def is_hex_object(value: object) -> TypeGuard[str]:
-    return (
-        isinstance(value, str)
-        and len(value) in {40, 64}
-        and all(char in "0123456789abcdef" for char in value)
-    )
-
-
 def encode_workspace_state_for_resume(value: object) -> bytes:
     return json.dumps(
         without_branch_export(value),

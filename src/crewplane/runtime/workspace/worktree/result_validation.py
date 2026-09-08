@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.core.workspace.git_policy import SUPPORTED_RESULT_TREE_MODES
+from crewplane.core.workspace.git_policy import (
+    SUPPORTED_RESULT_TREE_MODES,
+    portable_path_key,
+)
 
 from ..git import GitCommand, git
 from .inspection import reserved_runtime_path
@@ -123,10 +125,6 @@ def _validate_result_path(path: str) -> None:
         raise RuntimeError(f"Workspace result tree contains unsafe path: {path!r}.")
 
 
-def _collision_key(path: str) -> str:
-    return unicodedata.normalize("NFC", path).casefold()
-
-
 def validate_portable_path_collisions(paths: Iterable[str]) -> None:
     """Reject paths that collide on common portable filesystems.
 
@@ -136,7 +134,7 @@ def validate_portable_path_collisions(paths: Iterable[str]) -> None:
 
     collision_paths: dict[str, str] = {}
     for path in paths:
-        folded_path = _collision_key(path)
+        folded_path = portable_path_key(path)
         existing_path = collision_paths.setdefault(folded_path, path)
         if existing_path != path:
             raise RuntimeError(

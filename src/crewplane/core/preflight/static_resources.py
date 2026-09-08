@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
 
 if TYPE_CHECKING:
     from crewplane.architecture.ports import TerminalHistoryReaderPort
@@ -18,13 +19,6 @@ from .diagnostics import (
 )
 from .models import StaticResource
 from .signatures import signature_for_payload
-
-RESERVED_STATE_RESOURCE_ROOTS = (
-    ".crewplane/execution-stages",
-    ".crewplane/execution-results",
-    ".crewplane/preflight",
-    ".crewplane/locks",
-)
 
 
 @dataclass(frozen=True)
@@ -204,10 +198,7 @@ def _is_reserved_state_resource(path: Path, project_root: Path) -> bool:
         relative_path = path.relative_to(resolved_project_root).as_posix()
     except ValueError:
         return False
-    return any(
-        relative_path == root or relative_path.startswith(f"{root}/")
-        for root in RESERVED_STATE_RESOURCE_ROOTS
-    )
+    return is_reserved_state_path(relative_path, FILE_TOKEN_EXCLUDED_ROOTS)
 
 
 def _file_diagnostic(

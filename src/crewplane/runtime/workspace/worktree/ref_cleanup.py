@@ -16,6 +16,7 @@ from crewplane.artifacts.workspace.state.contracts import (
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
+from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 
 from ..git import git
@@ -490,15 +491,7 @@ def _temporary_ref_claim_matches_owner(
         and claim.get("owner_audit_round_num") == evidence.audit_round_num
         and claim.get("repository_id") == evidence.repository_id
         and isinstance(claim.get("name"), str)
-        and _is_object_id(claim.get("target_oid"))
-    )
-
-
-def _is_object_id(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) in {40, 64}
-        and all(character in "0123456789abcdef" for character in value)
+        and is_git_object_id(claim.get("target_oid"))
     )
 
 

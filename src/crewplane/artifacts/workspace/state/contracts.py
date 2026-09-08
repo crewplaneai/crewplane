@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal
 
-from crewplane.core.value_checks import is_nonnegative_int
+from crewplane.core.value_checks import is_nonnegative_int, is_sha256
+from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.version import SCHEMA_VERSION
 
-from .fields import is_hex_object, is_nonempty_string, mapping_value
+from .fields import is_nonempty_string, mapping_value
 from .ref_contracts import validate_ref_contracts
 
 PersistedWorkspaceOperation = Literal[
@@ -206,7 +207,9 @@ def _validate_source(source: Mapping[str, object], errors: list[str]) -> None:
             _validate_bundled_source(source, kind, errors)
         case _:
             errors.append("invalid source kind")
-    if not is_hex_object(source.get("commit")) or not is_hex_object(source.get("tree")):
+    if not is_git_object_id(source.get("commit")) or not is_git_object_id(
+        source.get("tree")
+    ):
         errors.append("source commit or tree is invalid")
 
 
@@ -240,7 +243,7 @@ def _validate_bundled_source(
         errors.append(f"{kind} source requires a source node")
     if not is_nonempty_string(source.get("bundle_path")):
         errors.append(f"{kind} source lacks bundle_path")
-    if not _sha256(source.get("bundle_sha256")):
+    if not is_sha256(source.get("bundle_sha256")):
         errors.append(f"{kind} source lacks bundle_sha256")
     if not is_nonnegative_int(source.get("bundle_size_bytes")):
         errors.append(f"{kind} source lacks bundle_size_bytes")
@@ -373,7 +376,7 @@ def _validate_lineage_result(
     errors: list[str],
 ) -> None:
     for field in ("candidate_commit", "result_commit", "candidate_tree", "result_tree"):
-        if not is_hex_object(result.get(field)):
+        if not is_git_object_id(result.get(field)):
             errors.append(f"lineage result lacks {field}")
     if not is_nonnegative_int(result.get("changed_path_count")):
         errors.append("lineage result lacks changed_path_count")
@@ -432,11 +435,3 @@ def _hydrated_resume_placement(
 
 def _positive_int(value: object) -> bool:
     return is_nonnegative_int(value) and value > 0
-
-
-def _sha256(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(char in "0123456789abcdef" for char in value)
-    )

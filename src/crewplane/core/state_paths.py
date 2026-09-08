@@ -1,6 +1,17 @@
 from pathlib import Path
 
 STATE_DIR_NAME = ".crewplane"
+RUNTIME_ARTIFACT_ROOTS = (
+    f"{STATE_DIR_NAME}/execution-stages",
+    f"{STATE_DIR_NAME}/execution-results",
+    f"{STATE_DIR_NAME}/locks",
+)
+FILE_TOKEN_EXCLUDED_ROOTS = (*RUNTIME_ARTIFACT_ROOTS, f"{STATE_DIR_NAME}/preflight")
+
+
+def is_reserved_state_path(path: str, reserved_roots: tuple[str, ...]) -> bool:
+    """Match a project-relative POSIX path against reserved directory roots."""
+    return any(path == root or path.startswith(f"{root}/") for root in reserved_roots)
 
 
 def get_state_dir(project_root: Path | None = None) -> Path:
