@@ -18,7 +18,7 @@ from .rendering import (
 
 INIT_RECOVERY_PROMPT = "Run non-overwriting crewplane init now? [y/N]: "
 MISSING_MOCK_EVIDENCE_PROMPT = "Choose [0]: "
-PROVIDER_CHOICE_PROMPT = "Choose one provider to prepare [0]: "
+PROVIDER_CHOICE_PROMPT = "Choose one or more providers (comma-separated numbers): "
 APPLY_CHANGES_PROMPT = "Apply changes? [Y/n]: "
 ProviderStatus = tuple[str, bool]
 
@@ -31,8 +31,8 @@ def print_title(console: Console) -> None:
 def print_onboarding_intro(console: Console) -> None:
     console.print("")
     console.print(
-        "Onboarding connects one real provider CLI to your Crewplane setup. "
-        "It detects which providers are on your PATH, lets you pick one, and "
+        "Onboarding connects real provider CLIs to your Crewplane setup. "
+        "It detects which providers are on your PATH, lets you pick one or more, and "
         "updates the generated config and workflow — no manual YAML editing."
     )
     console.print("")
@@ -117,14 +117,6 @@ def print_no_providers_stop(console: Console) -> None:
     print_provider_setup_link(console, "Provider setup guide:")
 
 
-def print_provider_skip(console: Console) -> None:
-    console.print("")
-    console.print("Onboarding skipped provider setup.")
-    console.print("")
-    console.print("When ready, rerun:")
-    console.print("  [cyan]crewplane onboarding[/]")
-
-
 def print_declined_changes(console: Console) -> None:
     print_no_files_changed(console)
     print_provider_setup_link(console, "Manual setup guide:")
@@ -186,7 +178,7 @@ def print_provider_choices(console: Console, providers: tuple[str, ...]) -> None
     console.print("")
     for index, provider in enumerate(providers, start=1):
         console.print(f"  [{index}] {provider}")
-    console.print("  [0] skip")
+    console.print("Select at least one provider; you can select all listed providers.")
 
 
 def print_file_preparation_confirmation(console: Console, provider: str) -> None:
@@ -201,12 +193,10 @@ def print_file_preparation_confirmation(console: Console, provider: str) -> None
     )
     console.print("")
     console.print(
-        f"It will not start {provider}, authenticate it, or verify "
-        "account/model access."
+        f"It will not start or authenticate {provider}, or verify account/model access."
     )
     console.print(
-        f"The generated {provider} profile includes configured provider "
-        "permissions; review"
+        "The generated profiles include configured provider permissions; review"
     )
     console.print(
         ".crewplane/config.yml before running if you want different settings."
@@ -245,18 +235,24 @@ def print_invalid_choice(console: Console, choices: tuple[str, ...]) -> None:
     console.print(f"Choose one of: {', '.join(choices)}")
 
 
+def print_invalid_provider_selection(console: Console) -> None:
+    console.print("Select at least one provider using the listed numbers.")
+
+
 def print_prompt(console: Console, prompt: str) -> None:
     console.print(prompt, end="", markup=False)
 
 
-def print_manual_fallback(console: Console, provider: str, reason: str) -> None:
+def print_manual_fallback(
+    console: Console, providers: tuple[str, ...], reason: str
+) -> None:
     console.print("")
     console.print("Crewplane cannot safely update generated files.")
     console.print(reason)
     console.print("")
-    console.print(f"Manual {provider} config snippet:")
+    console.print(f"Manual {', '.join(providers)} config snippet:")
     console.print("```yaml")
-    console.print(manual_config_snippet(rendered_default_config(), provider))
+    console.print(manual_config_snippet(rendered_default_config(), providers))
     console.print("```")
     console.print("")
     console.print(
@@ -267,7 +263,7 @@ def print_manual_fallback(console: Console, provider: str, reason: str) -> None:
     console.print("")
     console.print("Workflow provider switch:")
     console.print("```yaml")
-    console.print(manual_workflow_snippet(rendered_default_workflow(), provider))
+    console.print(manual_workflow_snippet(rendered_default_workflow(), providers))
     console.print("```")
     print_provider_setup_link(console, "Provider setup guide:")
 
@@ -309,10 +305,10 @@ def print_final_success(console: Console, provider: str) -> None:
     console.print("[green]Onboarding complete.[/]")
     console.print("")
     console.print(
-        f"Crewplane config is ready to start {provider} when you choose to run it."
+        f"Crewplane config is ready to start {provider} when you run the workflow."
     )
     console.print("")
-    console.print("Onboarding configured one provider CLI.")
+    console.print(f"Onboarding configured: {provider}.")
     print_provider_setup_link(console, "To add more providers, use:")
     console.print("")
     console.print("Recommended first real run:")
@@ -371,7 +367,7 @@ __all__ = [
     "print_provider_choices",
     "print_provider_detection",
     "print_provider_selected",
-    "print_provider_skip",
+    "print_invalid_provider_selection",
     "print_quickstart_state",
     "print_title",
     "print_user_owned_stop",

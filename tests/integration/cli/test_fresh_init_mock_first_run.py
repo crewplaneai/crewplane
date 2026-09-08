@@ -57,7 +57,7 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
             self.assertIn("After the provider-free first run:", output_text)
             self.assertIn("crewplane onboarding", output_text)
             self.assertIn(
-                "The onboarding command prepares one real provider handoff "
+                "The onboarding command prepares your selected providers "
                 "when generated defaults are unchanged.",
                 output_text,
             )
@@ -66,7 +66,7 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                 output_text,
             )
             self.assertIn(
-                "Manual setup for customized or multi-provider projects:",
+                "Manual setup for customized projects:",
                 output_text,
             )
             self.assertIn(

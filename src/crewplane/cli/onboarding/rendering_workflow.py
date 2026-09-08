@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from .rendering_errors import OnboardingRenderingError
-from .rendering_providers import validate_known_provider
+from .rendering_providers import validate_known_providers
 from .rendering_yaml_blocks import (
     frontmatter_mapping_key_line_index,
     join_lines_like,
@@ -14,21 +14,22 @@ from .rendering_yaml_blocks import (
 from .rendering_yaml_loading import load_yaml_mapping
 
 
-def render_provider_ready_workflow(default_workflow: str, provider: str) -> str:
-    validate_known_provider(provider)
+def render_provider_ready_workflow(
+    default_workflow: str, providers: tuple[str, ...]
+) -> str:
+    validate_known_providers(providers)
     lines, provider_line_index = workflow_provider_line(default_workflow, "mock")
     indent = line_indent(lines[provider_line_index])
-    lines[provider_line_index] = f"{indent}providers: [{provider}]"
+    lines[provider_line_index] = f"{indent}providers: [{', '.join(providers)}]"
     text = join_lines_like(default_workflow, lines)
-    validate_provider_ready_workflow(text, provider)
+    validate_provider_ready_workflow(text, providers)
     return text
 
 
-def manual_workflow_snippet(default_workflow: str, provider: str) -> str:
-    validate_known_provider(provider)
+def manual_workflow_snippet(default_workflow: str, providers: tuple[str, ...]) -> str:
     provider_ready_workflow = render_provider_ready_workflow(
         default_workflow,
-        provider,
+        providers,
     )
     lines, frontmatter_start, frontmatter_end = workflow_frontmatter_bounds(
         provider_ready_workflow
@@ -47,11 +48,12 @@ def manual_workflow_snippet(default_workflow: str, provider: str) -> str:
     return "\n".join(lines[nodes_index:nodes_end])
 
 
-def validate_provider_ready_workflow(workflow_text: str, provider: str) -> None:
-    providers = workflow_frontmatter_providers(workflow_text)
-    if providers != [provider]:
+def validate_provider_ready_workflow(
+    workflow_text: str, providers: tuple[str, ...]
+) -> None:
+    if workflow_frontmatter_providers(workflow_text) != list(providers):
         raise OnboardingRenderingError(
-            "Provider-ready workflow must reference only the selected provider."
+            "Provider-ready workflow must reference only the selected providers."
         )
 
 

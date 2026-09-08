@@ -5,6 +5,7 @@ All notable user-facing changes are recorded here.
 ## [Unreleased]
 
 ### Changed
+- Onboarding accepts multiple provider selections and requires at least one.
 - Hardened opt-in workspace isolation for safer recovery, retries,
   cancellation, reuse, and cleanup.
 - Added recovery for interrupted branch exports.

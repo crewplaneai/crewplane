@@ -143,7 +143,7 @@ structure is the same one used for provider-backed workflows, so you can see how
 Crewplane validates stages, passes work forward, and records the run before
 connecting a real agent.
 
-Ready to put one of the CLIs already installed on your machine behind the
+Ready to put the CLIs already installed on your machine behind the
 workflow?
 
 ```bash
@@ -152,7 +152,7 @@ crewplane run
 ```
 
 `crewplane onboarding` finds the supported provider CLIs already installed on
-your machine, lets you choose one, and configures Crewplane to use it.
+your machine, lets you choose one or more, and configures Crewplane to use them.
 ***Crewplane does not install provider software or manage provider credentials.***
 
 <details>

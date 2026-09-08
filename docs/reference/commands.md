@@ -6,7 +6,7 @@ Use this page for exact CLI syntax. For task-oriented guidance, start with
 | Command | Use when |
 | --- | --- |
 | `crewplane init` | Create project-local config and example workflows. |
-| `crewplane onboarding` | Prepare one real provider after the provider-free first run. |
+| `crewplane onboarding` | Prepare real providers after the provider-free first run. |
 | `crewplane validate` | Check workflow/config validity without invoking providers. |
 | `crewplane run` | Execute, dry-run, or force a workflow run. |
 | `crewplane cleanup workspaces` | Remove generated workspace cache entries. |
@@ -117,16 +117,16 @@ supported, recommends WSL, and then continues.
 
 ## `crewplane onboarding`
 
-Prepare one real provider after the provider-free first run.
+Prepare real providers after the provider-free first run.
 
 ```bash
 crewplane onboarding
 ```
 
 Use this after `crewplane init`, `crewplane validate`, and a mock
-`crewplane run` when you want to connect one real provider without editing
+`crewplane run` when you want to connect real providers without editing
 config by hand. The command checks generated config and workflow files, detects
-supported provider CLIs on `PATH`, prompts for one provider, updates unchanged
+supported provider CLIs on `PATH`, prompts for one or more providers, updates unchanged
 generated defaults, and validates the result.
 
 It does not authenticate provider tools, verify account or model access, or run

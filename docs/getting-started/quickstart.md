@@ -171,17 +171,18 @@ Use this tree as a compact map of the folders you just inspected:
 ## 5. Onboard A Provider
 
 After the generated mock run succeeds and you have inspected the run record,
-run onboarding when you are **ready to prepare one real provider**:
+run onboarding when you are **ready to prepare real providers**:
 
 ```bash
 crewplane onboarding
 ```
 
-Onboarding prepares the generated project for one real provider:
+Onboarding prepares the generated project for one or more real providers:
 
 - Checks for supported provider CLI commands on `PATH`.
-- Lets you choose the provider you want to enable.
-- Updates the generated config and workflow for that provider.
+- Lets you choose providers using comma-separated numbers (for example, `1,2`).
+  Select at least one; you can select all listed providers.
+- Updates the generated config and workflow to use all selected providers.
 - Comments out the mock setup and enables the CLI invoker.
 - Validates that the project is ready for a real CLI-backed run.
 

@@ -272,11 +272,11 @@ def init() -> None:
     )
     console.print("\n[bold]After the provider-free first run:[/]")
     console.print(
-        "  The onboarding command prepares one real provider handoff "
+        "  The onboarding command prepares your selected providers "
         "when generated defaults are unchanged."
     )
     console.print("  It will not start provider CLIs or authenticate providers.")
-    console.print("\n[bold]Manual setup for customized or multi-provider projects:[/]")
+    console.print("\n[bold]Manual setup for customized projects:[/]")
     console.print(
         "  Enable matching agents in [cyan].crewplane/config.yml[/], set "
         '[cyan]settings.integrations.invoker.implementation: "cli"[/], and set '
@@ -303,7 +303,7 @@ def init() -> None:
 
 @app.command("onboarding", help=ONBOARDING_COMMAND_HELP)
 def onboarding() -> None:
-    """Prepare one real provider after the provider-free first run."""
+    """Prepare real providers after the provider-free first run."""
     run_onboarding_command()
 
 

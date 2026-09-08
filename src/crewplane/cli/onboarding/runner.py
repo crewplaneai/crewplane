@@ -96,7 +96,7 @@ def default_onboarding_options(console: Console) -> OnboardingOptions:
 
 
 def read_stdin_line() -> str:
-    return sys.stdin.readline().rstrip("\n")
+    return input()
 
 
 def write_text_file(path: Path, content: str) -> None:
@@ -118,15 +118,15 @@ class OnboardingRunner:
         if project_state is None:
             return
 
-        provider = self.choose_onboarding_provider(project_state)
-        if provider is None:
+        providers = self.choose_onboarding_providers(project_state)
+        if providers is None:
             return
 
-        if not self.apply_provider_handoff(provider, project_state):
+        if not self.apply_provider_handoff(providers, project_state):
             return
 
-        self.validate_provider_ready_setup(provider)
-        messages.print_final_success(self.console, provider)
+        self.validate_provider_ready_setup(", ".join(providers))
+        messages.print_final_success(self.console, ", ".join(providers))
 
     def load_project_state(self) -> OnboardingProjectState | None:
         if not self.is_interactive():
@@ -185,9 +185,9 @@ class OnboardingRunner:
             return
         messages.print_already_onboarded(self.console)
 
-    def choose_onboarding_provider(
+    def choose_onboarding_providers(
         self, project_state: OnboardingProjectState
-    ) -> str | None:
+    ) -> tuple[str, ...] | None:
         messages.print_onboarding_intro(self.console)
         source = load_workflow_source_for_preflight(
             project_state.workflow_path,
@@ -200,12 +200,9 @@ class OnboardingRunner:
         if not found:
             return None
 
-        provider = self.choose_provider(found)
-        if provider is None:
-            messages.print_provider_skip(self.console)
-            return None
-        messages.print_provider_selected(self.console, provider)
-        return provider
+        providers = self.choose_providers(found)
+        messages.print_provider_selected(self.console, ", ".join(providers))
+        return providers
 
     def found_provider_detections(self) -> tuple[ProviderDetection, ...]:
         detections = self.detect_providers()
@@ -215,13 +212,13 @@ class OnboardingRunner:
         return found
 
     def apply_provider_handoff(
-        self, provider: str, project_state: OnboardingProjectState
+        self, providers: tuple[str, ...], project_state: OnboardingProjectState
     ) -> bool:
-        if not self.confirm_file_preparation(provider):
+        if not self.confirm_file_preparation(", ".join(providers)):
             messages.print_declined_changes(self.console)
             return False
         write_result = self.prepare_files(
-            provider,
+            providers,
             project_state.default_config,
             project_state.default_workflow,
         )
@@ -343,46 +340,58 @@ class OnboardingRunner:
         )
         return detections
 
-    def choose_provider(self, detections: tuple[ProviderDetection, ...]) -> str | None:
+    def choose_providers(
+        self, detections: tuple[ProviderDetection, ...]
+    ) -> tuple[str, ...]:
         providers = tuple(detection.provider for detection in detections)
         messages.print_provider_choices(self.console, providers)
-        choices = tuple(str(index) for index in range(0, len(detections) + 1))
-        selection = self.prompt_choice(messages.PROVIDER_CHOICE_PROMPT, choices, "0")
-        if selection == "0":
-            return None
-        return providers[int(selection) - 1]
+        choices = tuple(str(index) for index in range(1, len(providers) + 1))
+        while True:
+            answer = self.prompt_raw(messages.PROVIDER_CHOICE_PROMPT)
+            selections = tuple(dict.fromkeys(answer.replace(",", " ").split()))
+            if selections and all(selection in choices for selection in selections):
+                return tuple(providers[int(selection) - 1] for selection in selections)
+            messages.print_invalid_provider_selection(self.console)
 
     def confirm_file_preparation(self, provider: str) -> bool:
         messages.print_file_preparation_confirmation(self.console, provider)
         return self.confirm(messages.APPLY_CHANGES_PROMPT, True)
 
     def prepare_files(
-        self, provider: str, default_config: str, default_workflow: str
+        self, providers: tuple[str, ...], default_config: str, default_workflow: str
     ) -> WriteResult | None:
+        if not self.recheck_generated_files(
+            providers, default_config, default_workflow
+        ):
+            return None
         try:
-            files_still_match = self.files_match_defaults(
-                default_config, default_workflow
-            )
+            config_text = render_provider_ready_config(default_config, providers)
+            workflow_text = render_provider_ready_workflow(default_workflow, providers)
+        except OnboardingRenderingError as exc:
+            messages.print_manual_fallback(self.console, providers, str(exc))
+            return None
+
+        return self.write_prepared_files(
+            config_text, workflow_text, ", ".join(providers)
+        )
+
+    def recheck_generated_files(
+        self, providers: tuple[str, ...], default_config: str, default_workflow: str
+    ) -> bool:
+        try:
+            if self.files_match_defaults(default_config, default_workflow):
+                return True
         except (OSError, UnicodeError) as exc:
             messages.print_manual_fallback(
                 self.console,
-                provider,
+                providers,
                 f"Generated files could not be re-read before writing: {exc}",
             )
-            return None
-        if not files_still_match:
-            messages.print_manual_fallback(
-                self.console, provider, "Generated files changed before writing."
-            )
-            return None
-        try:
-            config_text = render_provider_ready_config(default_config, provider)
-            workflow_text = render_provider_ready_workflow(default_workflow, provider)
-        except OnboardingRenderingError as exc:
-            messages.print_manual_fallback(self.console, provider, str(exc))
-            return None
-
-        return self.write_prepared_files(config_text, workflow_text, provider)
+            return False
+        messages.print_manual_fallback(
+            self.console, providers, "Generated files changed before writing."
+        )
+        return False
 
     def write_prepared_files(
         self, config_text: str, workflow_text: str, provider: str

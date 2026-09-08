@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from collections import deque
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,7 @@ from crewplane.cli.onboarding.rendering import (
     rendered_default_config,
     rendered_default_workflow,
 )
-from crewplane.cli.onboarding.runner import OnboardingRunner
+from crewplane.cli.onboarding.runner import OnboardingRunner, read_stdin_line
 from crewplane.cli.project_init import initialize_project_templates
 from crewplane.cli.run.preflight import (
     compile_workflow_preview,
@@ -130,15 +131,17 @@ def test_already_cli_config_is_reported_unchanged(tmp_path: Path) -> None:
     initialize_default_project(tmp_path)
     config_path = tmp_path / CONFIG_RELATIVE_PATH
     workflow_path = tmp_path / WORKFLOW_RELATIVE_PATH
-    config_text = render_provider_ready_config(rendered_default_config(), "codex")
-    workflow_text = render_provider_ready_workflow(rendered_default_workflow(), "codex")
+    config_text = render_provider_ready_config(rendered_default_config(), ("codex",))
+    workflow_text = render_provider_ready_workflow(
+        rendered_default_workflow(), ("codex",)
+    )
     config_path.write_text(config_text, encoding="utf-8")
     workflow_path.write_text(workflow_text, encoding="utf-8")
 
     output, which = run_onboarding_in_project(tmp_path)
 
     assert "Crewplane onboarding" in output
-    assert "Onboarding connects one real provider CLI" not in output
+    assert "Onboarding connects real provider CLIs" not in output
     assert "Run these first if you haven't already:" not in output
     assert "Existing real-provider Crewplane config detected." in output
     assert config_path.read_text(encoding="utf-8") == config_text
@@ -152,7 +155,7 @@ def test_config_only_cli_state_is_reported_as_partial_on_rerun(
     initialize_default_project(tmp_path)
     config_path = tmp_path / CONFIG_RELATIVE_PATH
     workflow_path = tmp_path / WORKFLOW_RELATIVE_PATH
-    config_text = render_provider_ready_config(rendered_default_config(), "codex")
+    config_text = render_provider_ready_config(rendered_default_config(), ("codex",))
     workflow_text = workflow_path.read_text(encoding="utf-8")
     config_path.write_text(config_text, encoding="utf-8")
 
@@ -177,7 +180,7 @@ def test_edited_generated_files_are_left_untouched(tmp_path: Path) -> None:
     output, which = run_onboarding_in_project(tmp_path)
 
     assert "Crewplane onboarding" in output
-    assert "Onboarding connects one real provider CLI" not in output
+    assert "Onboarding connects real provider CLIs" not in output
     assert "Run these first if you haven't already:" not in output
     assert "local edits" in output
     assert workflow_path.read_text(encoding="utf-8") == workflow_text
@@ -255,18 +258,18 @@ def test_missing_mock_evidence_defaults_to_quit(tmp_path: Path) -> None:
     assert which.calls == []
 
 
-def test_missing_mock_evidence_can_continue_and_skip_provider(tmp_path: Path) -> None:
+def test_missing_mock_evidence_can_continue_and_select_provider(tmp_path: Path) -> None:
     initialize_default_project(tmp_path)
 
     output, which = run_onboarding_in_project(
         tmp_path,
-        answers=["1", "0"],
+        answers=["1", "1", ""],
         which=WhichRecorder({"codex": "/usr/bin/codex"}),
     )
 
     assert "Provider detection" in output
-    assert "Onboarding skipped provider setup." in output
-    assert which.calls == list(known_provider_names())
+    assert "Onboarding complete." in output
+    assert which.calls == [*known_provider_names(), "codex"]
 
 
 def test_no_provider_found_stops_with_setup_guidance(tmp_path: Path) -> None:
@@ -300,7 +303,7 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
     assert "  # mock:" in config_text
     assert '      # implementation: "mock"' in config_text
     assert "    providers: [gemini]" in workflow_text
-    assert "Onboarding connects one real provider CLI" in output
+    assert "Onboarding connects real provider CLIs" in output
     assert "Selected gemini." in output
     assert "Onboarding will update unchanged generated defaults:" in output
     assert (
@@ -308,12 +311,9 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
         "unchanged generated defaults."
     ) in output
     assert (
-        "It will not start gemini, authenticate it, or verify account/model access."
+        "It will not start or authenticate gemini, or verify account/model access."
     ) in output
-    assert (
-        "The generated gemini profile includes configured provider permissions"
-        in output
-    )
+    assert "The generated profiles include configured provider permissions" in output
     assert ".crewplane/config.yml before running" in output
     assert "Provider setup details:" in output
     assert "provider-setup.md" in output
@@ -334,21 +334,74 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
     assert which.calls == [*known_provider_names(), "gemini"]
 
 
-def test_provider_selection_skip_leaves_files_unchanged(tmp_path: Path) -> None:
+def test_provider_selection_eof_leaves_files_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     initialize_default_project(tmp_path)
     write_successful_mock_history(tmp_path)
     default_config = (tmp_path / CONFIG_RELATIVE_PATH).read_text(encoding="utf-8")
 
-    output, _ = run_onboarding_in_project(
-        tmp_path,
-        answers=["0"],
-        which=WhichRecorder({"codex": "/usr/bin/codex"}),
+    stream = io.StringIO()
+    options = make_options(
+        tmp_path, stream, [], WhichRecorder({"codex": "/usr/bin/codex"})
     )
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
 
-    assert "Onboarding skipped provider setup." in output
+    with pytest.raises(EOFError):
+        run_onboarding(replace(options, read_input=read_stdin_line))
+
+    assert "Choose one or more providers" in stream.getvalue()
+    assert "Onboarding complete." not in stream.getvalue()
     assert (tmp_path / CONFIG_RELATIVE_PATH).read_text(
         encoding="utf-8"
     ) == default_config
+
+
+@pytest.mark.parametrize("select_all", [False, True])
+def test_onboarding_enables_multiple_selected_providers(
+    tmp_path: Path, select_all: bool
+) -> None:
+    initialize_default_project(tmp_path)
+    write_successful_mock_history(tmp_path)
+    available = known_provider_names()
+    selected = tuple(reversed(available if select_all else available[:2]))
+    choices = [str(available.index(provider) + 1) for provider in selected]
+    which = WhichRecorder({provider: f"/usr/bin/{provider}" for provider in available})
+
+    output, _ = run_onboarding_in_project(
+        tmp_path, answers=[", ".join([*choices, choices[0]]), ""], which=which
+    )
+
+    config = load_config(tmp_path / CONFIG_RELATIVE_PATH)
+    assert set(config.agents) == set(selected)
+    assert config.settings.integrations.invoker.implementation == "cli"
+    assert config.settings.integrations.invoker.options == {}
+    workflow_text = (tmp_path / WORKFLOW_RELATIVE_PATH).read_text(encoding="utf-8")
+    assert f"    providers: [{', '.join(selected)}]" in workflow_text
+    assert f"Selected {', '.join(selected)}." in output
+    assert "Onboarding complete." in output
+    assert which.calls == [*available, *selected]
+
+
+@pytest.mark.parametrize("invalid", ["", " ", ",", "0", "1,0", "1,3", "1,codex"])
+def test_provider_selection_requires_at_least_one_valid_provider(
+    tmp_path: Path, invalid: str
+) -> None:
+    initialize_default_project(tmp_path)
+    write_successful_mock_history(tmp_path)
+
+    output, _ = run_onboarding_in_project(
+        tmp_path,
+        answers=[invalid, "1,2", ""],
+        which=WhichRecorder({"codex": "/usr/bin/codex", "gemini": "/usr/bin/gemini"}),
+    )
+
+    assert "Select at least one provider using the listed numbers." in output
+    assert "Onboarding complete." in output
+    assert set(load_config(tmp_path / CONFIG_RELATIVE_PATH).agents) == {
+        "codex",
+        "gemini",
+    }
 
 
 def test_declined_file_preparation_leaves_files_unchanged(tmp_path: Path) -> None:
@@ -574,7 +627,7 @@ def make_options(
         ),
         input_is_terminal=interactive,
         output_is_terminal=interactive,
-        read_input=lambda: queue.popleft() if queue else "",
+        read_input=queue.popleft,
         which_fn=which,
         write_text=write_text,
     )

@@ -49,9 +49,10 @@ def extract_commented_provider_block(default_config: str, provider: str) -> str:
 
 def provider_block_end(default_config: str, provider: str, start: int) -> int:
     candidates = [
-        default_config.find(f"\n  # {name}:", start + 1)
+        default_config.find(f"\n  {prefix}{name}:", start + 1)
         for name in KNOWN_PROVIDER_NAMES
         if name != provider
+        for prefix in ("# ", "")
     ]
     settings_start = default_config.find("\nsettings:", start)
     candidates.append(settings_start)

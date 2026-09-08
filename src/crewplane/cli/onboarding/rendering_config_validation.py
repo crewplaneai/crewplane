@@ -4,18 +4,21 @@ from .rendering_errors import OnboardingRenderingError
 from .rendering_yaml_loading import load_config_mapping
 
 
-def validate_provider_ready_config(config_text: str, provider: str) -> None:
+def validate_provider_ready_config(
+    config_text: str, providers: tuple[str, ...]
+) -> None:
     config = load_config_mapping(config_text, "provider-ready config")
-    if list(config.agents) != [provider]:
+    if set(config.agents) != set(providers):
         raise OnboardingRenderingError(
-            "Provider-ready config must contain only the selected provider."
+            "Provider-ready config must contain only the selected providers."
         )
-    provider_kind = config.agents[provider].provider_kind
-    if provider_kind.value != provider:
-        raise OnboardingRenderingError(
-            f"Provider-ready config for {provider} has provider_kind "
-            f"{provider_kind.value!r}."
-        )
+    for provider in providers:
+        provider_kind = config.agents[provider].provider_kind
+        if provider_kind.value != provider:
+            raise OnboardingRenderingError(
+                f"Provider-ready config for {provider} has provider_kind "
+                f"{provider_kind.value!r}."
+            )
     invoker = config.settings.integrations.invoker
     if invoker.implementation != "cli":
         raise OnboardingRenderingError(

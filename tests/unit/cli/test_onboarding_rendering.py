@@ -25,7 +25,7 @@ def test_onboarding_known_provider_names_follow_core_provider_names() -> None:
 def test_provider_ready_config_renders_each_known_provider(tmp_path) -> None:
     default_config = rendered_default_config()
     for provider in KNOWN_PROVIDER_NAMES:
-        rendered = render_provider_ready_config(default_config, provider)
+        rendered = render_provider_ready_config(default_config, (provider,))
         config_path = tmp_path / f"{provider}.yml"
         config_path.write_text(rendered, encoding="utf-8")
 
@@ -52,7 +52,7 @@ def test_provider_ready_config_comments_current_mock_invoker_values() -> None:
         1,
     )
 
-    rendered = render_provider_ready_config(default_config, "codex")
+    rendered = render_provider_ready_config(default_config, ("codex",))
 
     assert "      #   observation_delay_seconds: 9" in rendered
     assert "      #   observation_delay_seconds: 5" not in rendered
@@ -60,7 +60,7 @@ def test_provider_ready_config_comments_current_mock_invoker_values() -> None:
 
 def test_provider_ready_workflow_changes_only_default_provider(tmp_path) -> None:
     default_workflow = rendered_default_workflow()
-    rendered = render_provider_ready_workflow(default_workflow, "codex")
+    rendered = render_provider_ready_workflow(default_workflow, ("codex",))
     workflow_path = tmp_path / "single-agent-review.task.md"
     workflow_path.write_text(rendered, encoding="utf-8")
 
@@ -88,19 +88,19 @@ def test_rendering_fails_when_expected_anchors_are_missing() -> None:
     with pytest.raises(OnboardingRenderingError):
         render_provider_ready_config(
             default_config.replace("      # options: {}\n", "", 1),
-            "codex",
+            ("codex",),
         )
 
     with pytest.raises(OnboardingRenderingError):
         render_provider_ready_config(
             default_config.replace('      implementation: "mock"', "", 1),
-            "codex",
+            ("codex",),
         )
 
     with pytest.raises(OnboardingRenderingError):
         render_provider_ready_workflow(
             default_workflow.replace("    providers: [mock]", "    providers: [demo]"),
-            "codex",
+            ("codex",),
         )
 
 
@@ -108,8 +108,8 @@ def test_manual_fallback_snippets_are_selected_provider_only() -> None:
     default_config = rendered_default_config()
     default_workflow = rendered_default_workflow()
 
-    config_snippet = manual_config_snippet(default_config, "gemini")
-    workflow_snippet = manual_workflow_snippet(default_workflow, "gemini")
+    config_snippet = manual_config_snippet(default_config, ("gemini",))
+    workflow_snippet = manual_workflow_snippet(default_workflow, ("gemini",))
 
     assert "gemini:" in config_snippet
     assert "mock:" not in config_snippet
@@ -127,7 +127,7 @@ def test_manual_config_snippet_uses_commented_cli_invoker_from_template() -> Non
         1,
     )
 
-    config_snippet = manual_config_snippet(default_config, "codex")
+    config_snippet = manual_config_snippet(default_config, ("codex",))
 
     assert "      implementation: cli" in config_snippet
     assert '      implementation: "cli"' not in config_snippet
@@ -140,7 +140,31 @@ def test_manual_workflow_snippet_uses_default_workflow_node_block() -> None:
         1,
     )
 
-    workflow_snippet = manual_workflow_snippet(default_workflow, "codex")
+    workflow_snippet = manual_workflow_snippet(default_workflow, ("codex",))
 
     assert "    findings: false" in workflow_snippet
     assert "    providers: [codex]" in workflow_snippet
+
+
+def test_manual_fallback_snippets_include_all_selected_providers() -> None:
+    config_snippet = manual_config_snippet(
+        rendered_default_config(), ("gemini", "codex")
+    )
+    workflow_snippet = manual_workflow_snippet(
+        rendered_default_workflow(), ("gemini", "codex")
+    )
+
+    assert "gemini:" in config_snippet
+    assert "codex:" in config_snippet
+    assert "claude:" not in config_snippet
+    assert "mock:" not in config_snippet
+    assert config_snippet.count('implementation: "cli"') == 1
+    assert "providers: [gemini, codex]" in workflow_snippet
+
+
+@pytest.mark.parametrize("providers", [(), ("codex", "unknown")])
+def test_rendering_rejects_empty_or_unknown_provider_selections(providers) -> None:
+    with pytest.raises(OnboardingRenderingError):
+        render_provider_ready_config(rendered_default_config(), providers)
+    with pytest.raises(OnboardingRenderingError):
+        render_provider_ready_workflow(rendered_default_workflow(), providers)

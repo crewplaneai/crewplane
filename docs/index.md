@@ -24,7 +24,7 @@ For a first project, keep this order:
 3. Run `crewplane validate`.
 4. Run `crewplane run` with the generated mock invoker.
 5. Inspect the run record.
-6. Run `crewplane onboarding` when you are ready to prepare one real provider.
+6. Run `crewplane onboarding` when you are ready to prepare real providers.
 
 For details, follow the Getting Started pages in order before moving into the guide track:
 
