@@ -11,15 +11,23 @@ from rich.console import Console
 
 import crewplane.cli.templates as templates
 import crewplane.cli.workflow_runner as workflow_runner
+from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
+from crewplane.architecture.contracts import CommandResult
+from crewplane.cli.onboarding.rendering import (
+    manual_config_snippet,
+    rendered_default_config,
+)
 from crewplane.core.config import (
     DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
     DEFAULT_INVOCATION_TIMEOUT_SECONDS,
+    AgentConfig,
     load_config,
 )
 from crewplane.core.preflight import load_workflow_source_for_preflight
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
+from crewplane.runtime.agent.usage_costs import derive_configured_cost
 from tests.helpers.working_directory import temporary_project_cwd
 
 
@@ -197,6 +205,37 @@ class ExampleTemplateTests(unittest.TestCase):
             "Real provider runs start the external commands configured in .crewplane/config.yml",
             rendered,
         )
+
+    def test_codex_example_pricing_uses_reported_input_tokens(self) -> None:
+        snippet = manual_config_snippet(rendered_default_config(), ("codex",))
+        snippet = snippet.replace("    # pricing:", "    pricing:").replace(
+            "    #   ", "      "
+        )
+        payload = load_yaml_unique(snippet)
+        assert isinstance(payload, dict)
+        config = AgentConfig.model_validate(payload["codex"])
+        usage = decode_codex_usage(
+            CommandResult(
+                returncode=0,
+                stdout_text=(
+                    '{"type":"turn.completed","usage":{"input_tokens":100000,'
+                    '"cached_input_tokens":20000,"output_tokens":1000}}'
+                ),
+                stderr_text="",
+            )
+        )
+        assert usage.tokens is not None
+
+        cost, confidence = derive_configured_cost(
+            config,
+            usage.tokens,
+            visible_input_tokens=100,
+            visible_output_tokens=1000,
+            visible_estimate_tokens=1100,
+        )
+
+        self.assertAlmostEqual(cost, 0.87)
+        self.assertEqual(confidence, "full")
 
     def test_built_in_provider_template_omits_generic_model_arg(self) -> None:
         rendered = templates.render_template_content(

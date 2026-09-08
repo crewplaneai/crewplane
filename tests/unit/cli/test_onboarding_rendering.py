@@ -24,6 +24,14 @@ def test_onboarding_known_provider_names_follow_core_provider_names() -> None:
 
 def test_provider_ready_config_renders_each_known_provider(tmp_path) -> None:
     default_config = rendered_default_config()
+    expected_models = {
+        "claude": "sonnet",
+        "codex": "gpt-6-astra",
+        "gemini": "auto",
+        "copilot": "claude-sonnet-5",
+        "kilo": "kilo/kilo-auto/frontier",
+    }
+    assert set(expected_models) == set(KNOWN_PROVIDER_NAMES)
     for provider in KNOWN_PROVIDER_NAMES:
         rendered = render_provider_ready_config(default_config, (provider,))
         config_path = tmp_path / f"{provider}.yml"
@@ -32,6 +40,7 @@ def test_provider_ready_config_renders_each_known_provider(tmp_path) -> None:
         config = load_config(config_path)
 
         assert list(config.agents) == [provider]
+        assert config.agents[provider].default_model == expected_models[provider]
         assert config.settings is not None
         assert config.settings.integrations.invoker.implementation == "cli"
         assert config.settings.integrations.invoker.options == {}

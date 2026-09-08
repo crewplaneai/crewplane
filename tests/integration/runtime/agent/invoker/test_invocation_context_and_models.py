@@ -310,7 +310,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             config = AgentConfig(
                 cli_cmd=["./copilot"],
                 provider_kind="copilot",
-                default_model="claude-sonnet-4.6",
+                default_model="claude-sonnet-5",
                 extra_args=[
                     "--silent",
                     "--no-ask-user",
@@ -319,7 +319,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             )
             await invoke_agent_with_runner(
                 config=config,
-                model="claude-sonnet-4.6",
+                model="claude-sonnet-5",
                 prompt="review the repository",
                 output_file=output_file,
                 cwd=output_file.parent,
@@ -334,7 +334,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 [
                     "./copilot",
                     "--model",
-                    "claude-sonnet-4.6",
+                    "claude-sonnet-5",
                     "--silent",
                     "--no-ask-user",
                     "--allow-tool=write,shell(git:*)",

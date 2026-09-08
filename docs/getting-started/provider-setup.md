@@ -96,7 +96,7 @@ agents:
   codex:
     cli_cmd: ["codex", "exec"]
     provider_kind: "codex"
-    default_model: "gpt-5.5"
+    default_model: "gpt-6-astra"
     prompt_transport: "stdin"
     prompt_transport_arg: "-"
     extra_args:

@@ -5,6 +5,8 @@ All notable user-facing changes are recorded here.
 ## [Unreleased]
 
 ### Changed
+- Refreshed provider model and pricing examples; automatic routing no longer
+  suggests fixed token rates.
 - Onboarding accepts multiple provider selections and requires at least one.
 - Hardened opt-in workspace isolation for safer recovery, retries,
   cancellation, reuse, and cleanup.

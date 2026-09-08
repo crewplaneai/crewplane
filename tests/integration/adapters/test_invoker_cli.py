@@ -170,7 +170,7 @@ class CliInvokerAdapterTests(unittest.TestCase):
             )
             kilo_plan = build_cli_invocation_plan(
                 AgentConfig(cli_cmd=["kilo", "run"], provider_kind="kilo"),
-                model="auto",
+                model="kilo/kilo-auto/frontier",
                 prompt="prompt",
                 output_file=Path("output.md"),
             )
@@ -178,7 +178,7 @@ class CliInvokerAdapterTests(unittest.TestCase):
         self.assertEqual(gemini_plan.cmd, ["gemini", "--output-format", "json"])
         self.assertEqual(
             kilo_plan.cmd,
-            ["kilo", "run", "--model", "auto", "--format", "json"],
+            ["kilo", "run", "--model", "kilo/kilo-auto/frontier", "--format", "json"],
         )
         self.assertEqual(gemini_plan.structured_output_mode, "gemini_json")
         self.assertEqual(kilo_plan.structured_output_mode, "kilo_json")
@@ -279,7 +279,7 @@ class CliInvokerAdapterTests(unittest.TestCase):
                 provider_kind="codex",
                 extra_args=["--ephemeral"],
             ),
-            model="gpt-5.5",
+            model="gpt-6-astra",
             prompt="prompt",
             output_file=Path("output.md"),
             invocation_context=context,
@@ -290,7 +290,7 @@ class CliInvokerAdapterTests(unittest.TestCase):
             [
                 "exec",
                 "--model",
-                "gpt-5.5",
+                "gpt-6-astra",
                 "--config",
                 'model_reasoning_effort="xhigh"',
                 "--ephemeral",
