@@ -17,38 +17,25 @@ When changing behavior, preserve these properties:
 - Explicit boundaries. Config loading, workflow parsing/composition, adapter resolution, provider invocation, runtime execution, artifacts, and observability are separated on purpose.
 - Deterministic validation. New behavior should be covered by filesystem-local pytest tests, and mock-driven end-to-end checks should stay available.
 
-## Read First
+## Task References
 
-- `README.md`: short package and repository orientation
-- `docs/index.md`: full public user documentation
-- `DEVELOPMENT.md`: human-facing setup, quality gates, repo layout, and local validation workflows
-- `docs/architecture/index.md`: architecture entry point and ADR links
+Consult documentation relevant to the task:
 
-## Repo Map
+- [README.md](README.md): product orientation
+- [DEVELOPMENT.md](DEVELOPMENT.md): setup, validation, release, and maintenance procedures
+- [Module and test map](DEVELOPMENT.md#module-and-test-map): implementation entry points and affected tests
+- [Public documentation](docs/index.md): documented user behavior
+- [Architecture](docs/architecture/index.md): boundaries, lifecycle contracts, and ADRs
 
-- `src/crewplane/cli/`: Typer command surface, task/config path resolution, run orchestration, cleanup commands, scaffold templates
-- `src/crewplane/core/`: config models, workflow schemas, Markdown parsing, workflow composition/imports, DAG validation, preflight compilation, schema version validation
-- `src/crewplane/architecture/`: port contracts, integration loader, alias registry, adapter errors
-- `src/crewplane/bootstrap/`: composition root that wires configured adapters into runtime components
-- `src/crewplane/runtime/`: provider invocation, retry/quota handling, parallel/sequential workflow execution
-- `src/crewplane/artifacts/`: stage/result directories, manifests, generated files, locks, result writing, resume, workspace state, output access
-- `src/crewplane/observability/`: event model, runtime snapshots, rendering, tmux support
-- `src/crewplane/adapters/`: built-in invoker, UI, and artifact implementations
-- `src/crewplane/example_templates/`: files used by `crewplane init`
-- `tests/`: CLI, config, workflow, runtime, observability, adapter, and architecture coverage
+## Coding Standards
 
-## Project Heuristics
-
-- Keep modules cohesive and strongly typed. Validate data at boundaries and raise explicit errors.
+- Keep modules cohesive and boundaries explicit.
 - Keep provider-specific invocation transport inside invoker adapters or adapter-owned invoker capability modules. Runtime execution should consume provider-agnostic invoker contracts and should not infer provider behavior from executable names, CLI flags, output formats, quota text, or usage text.
 - Do not introduce hidden cross-node state. Downstream behavior should continue to derive from workflow definitions, config, and artifact files.
 - Do not weaken template path restrictions casually. `{{file:path}}` is intentionally bounded to the project root unless explicitly allowlisted through `allowed_template_paths`.
 - Prefer deleting dead code over leaving compatibility shims, stale branches, or commented-out removals.
 - Keep comments rare and high-signal. Explain why a choice exists, not what the code already states.
 - Prefer simple, local designs over premature abstraction. Add indirection only when the boundary is already real in the architecture.
-
-## Coding Standards
-
 - Use explicit type hints for public APIs and non-trivial logic.
 - Validate inputs at system boundaries: CLI, config, workflow files, template resolution, and adapter interfaces.
 - Fail explicitly on invalid state. Do not swallow exceptions or silently continue when correctness is at risk.
@@ -65,18 +52,9 @@ When changing behavior, preserve these properties:
 
 ### CLI surface
 
-- Main entrypoint: `src/crewplane/cli/app.py`
-- Supporting run flow: `src/crewplane/cli/run/` plus the `src/crewplane/cli/workflow_runner.py` facade
-- Cleanup command surface: `src/crewplane/cli/cleanup.py`
-- Path resolution and scaffold helpers: `src/crewplane/cli/paths.py`, `src/crewplane/cli/templates.py`
-- Expected tests: `tests/integration/cli/`, plus any affected unit tests under `tests/unit/`
-
-If command output, validation rules, scaffold files, or default behavior changes, update docs and example templates in the same change.
+When CLI changes affect documented behavior or examples, update the affected documentation or templates in the same change.
 
 ### Workflow schema, parsing, and composition
-
-- Core files: `src/crewplane/core/workflow/models.py`, `src/crewplane/core/workflow/markdown/`, `src/crewplane/core/workflow/loading.py`, `src/crewplane/core/workflow/composition/`, `src/crewplane/core/workflow/validation/`, `src/crewplane/core/preflight/`
-- Expected tests: `tests/unit/core/workflow_loading/`, `tests/unit/core/workflow_composition/`, `tests/unit/core/workflow_validation/`, `tests/unit/core/preflight/`, and relevant `tests/integration/cli/` coverage
 
 Important invariants:
 
@@ -88,28 +66,13 @@ Important invariants:
 
 ### Config and provider invocation
 
-- Core config: `src/crewplane/core/config.py`, `src/crewplane/core/workspace/settings.py`, `src/crewplane/core/token_budget.py`
-- Runtime invoker path: `src/crewplane/runtime/agent/`
-- Built-in invokers: `src/crewplane/adapters/invokers/`
-- Expected tests: `tests/unit/core/test_config.py`, `tests/integration/runtime/agent/`, `tests/integration/adapters/test_invoker_cli.py`, and `tests/integration/adapters/mock_invoker/`
-
 Keep retry, quota, command-building, prompt transport, output parsing, and usage parsing behavior explicit. Provider-specific rules belong behind the invoker adapter boundary or in shared invoker capability modules owned by that boundary. If you add a provider-specific parsing rule or retry condition, add regression coverage for both positive and failure paths.
 
 ### Runtime execution
 
-- Workflow scheduler: `src/crewplane/runtime/execution/workflow/__init__.py`
-- Stage execution: `src/crewplane/runtime/execution/parallel.py`, `src/crewplane/runtime/execution/sequential.py`, `src/crewplane/runtime/execution/consensus.py`
-- Expected tests: `tests/integration/runtime/execution/`, `tests/integration/cli/test_workflow_runner.py`, and affected `tests/unit/runtime/` coverage
-
 Preserve DAG semantics, manifest dedupe behavior, `--force` override behavior, and the distinction between node concurrency and per-invocation concurrency.
 
 ### Adapters and architecture boundaries
-
-- Port contracts: `src/crewplane/architecture/ports/`
-- Alias registry: `src/crewplane/architecture/registry.py`
-- Loader: `src/crewplane/architecture/loader.py`
-- Composition root: `src/crewplane/bootstrap/container.py`
-- Expected tests: `tests/integration/architecture/`, relevant `tests/integration/adapters/`
 
 For a new integration or adapter change:
 
@@ -122,10 +85,6 @@ Port contracts should remain stable extension boundaries. Avoid importing concre
 
 ### Artifacts, manifests, and templates
 
-- Core files: `src/crewplane/artifacts/manager.py`, `src/crewplane/artifacts/directory_manager.py`, `src/crewplane/artifacts/generated_files/`, `src/crewplane/artifacts/locks/`, `src/crewplane/artifacts/results/`, `src/crewplane/artifacts/resume/`, `src/crewplane/artifacts/workspace/`, and `src/crewplane/core/preflight/`
-- Built-in implementation: `src/crewplane/adapters/artifacts/filesystem.py`
-- Expected tests: `tests/unit/artifacts/`, `tests/integration/adapters/test_artifacts_filesystem.py`, and affected `tests/integration/cli/` coverage
-
 The implementation uses hyphenated output directories:
 
 - `.crewplane/execution-stages/`
@@ -135,9 +94,6 @@ Keep new docs and code aligned to those paths.
 
 ### Observability and tmux UI
 
-- Core files: `src/crewplane/observability/`, `src/crewplane/adapters/ui/`
-- Expected tests: `tests/integration/observability/`, `tests/unit/observability/`, `tests/integration/adapters/test_ui_tmux.py`, `tests/integration/adapters/test_ui_null.py`
-
 The live UI must degrade cleanly:
 
 - `--no-live` should leave execution fully functional
@@ -146,44 +102,37 @@ The live UI must degrade cleanly:
 
 ## Validation Expectations
 
-Use `make` targets first; they already handle `uv` when available and fall back to `python -m ...` otherwise.
+When setup is needed, run `make setup` from the repository root.
 
-```bash
-make setup
-make test
-make lint
-make format
-make format-check
-make check
-```
+For code changes, run focused tests during development and `make check` before
+handoff. Run additional [repository-automation checks](DEVELOPMENT.md#repository-automation)
+or [package checks](DEVELOPMENT.md#release-workflow) when the change affects
+those areas. For documentation-only changes, verify affected links, paths,
+commands, and examples. The [command reference](DEVELOPMENT.md#local-workflows)
+identifies checks and commands that modify files.
 
-Useful targeted test runs:
+Review the final diff for correctness and unintended changes. Report the checks
+performed, their results, and anything left unverified.
 
-```bash
-uv run --extra dev python -m pytest -q tests/integration/cli/test_workflow_discovery_and_init.py
-uv run --extra dev python -m pytest -q tests/unit/core/workflow_composition tests/unit/core/workflow_validation
-uv run --extra dev python -m pytest -q tests/integration/adapters/mock_invoker tests/integration/architecture/test_container.py
-```
-
-If `uv` is unavailable, run the same targeted paths with `python -m pytest -q`
-after `make setup`.
-
-For end-to-end validation without provider CLI calls, prefer the `mock` invoker in `.crewplane/config.yml`.
-
-Useful commands:
-
-```bash
-crewplane init
-crewplane validate
-crewplane run --dry-run
-crewplane run --no-live
-```
-
-When validating behavior manually, inspect artifacts under `.crewplane/execution-stages/` and `.crewplane/execution-results/` and confirm manifest dedupe behavior still matches the intended `workflow_signature` rules.
+Use the [mock invoker validation flow](DEVELOPMENT.md#mock-invoker-local-validation)
+for local orchestration checks. Confirm artifact contents and, when affected,
+manifest dedupe behavior against the intended `workflow_signature` rules.
 
 ## Documentation Expectations
 
-Keep docs synchronized with implementation, especially when changing:
+For documentation accompanying code changes, update only material made inaccurate
+or materially incomplete by the change. Bug fixes that restore documented behavior
+normally need regression coverage and a concise changelog entry, without additions
+to guides or architecture documents.
+
+Update architecture documentation when the described boundaries, responsibilities,
+durable contracts, or lifecycle guarantees change. Fixing an implementation to
+uphold an existing guarantee does not itself require an architecture update.
+
+Keep each explanation in its canonical location. Avoid repeating implementation
+details and regression cases across documentation.
+
+Check for affected documentation when changing:
 
 - CLI flags or defaults
 - config keys or schema versions
@@ -192,7 +141,14 @@ Keep docs synchronized with implementation, especially when changing:
 - built-in integration names or options
 - generated example templates
 
+Keep changelog entries concise and outcome-focused. Describe user- or
+maintainer-visible effects instead of implementation mechanics, test details,
+or commit inventories.
+
+## Guidance Maintenance
+
 - Keep instructions specific, consistent, and compact. Remove or rewrite outdated guidance instead of layering conflicting rules.
-- Keep changelog entries concise and outcome-focused. Describe user- or maintainer-visible effects instead of implementation mechanics, test details, or commit inventories.
 - Keep shared repository rules here. If guidance only applies to a narrower area, place it closer to that scope instead of expanding this file indefinitely.
 - If instructions grow large, split them by scope so the most relevant guidance stays nearest to the work it controls.
+
+See [Maintaining Agent Guidance](DEVELOPMENT.md#maintaining-agent-guidance) for how to verify instruction changes.

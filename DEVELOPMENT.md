@@ -9,8 +9,9 @@ Use this document for local setup, repository layout, repeatable development wor
 ## Prerequisites
 
 - Python 3.13+
+- `uv` (recommended)
 - `pip` (required)
-- `uv` (recommended; required for the repository-automation checks below)
+- Node.js 18+ and `npm` when working on the npm wrapper
 
 ## Supported Platforms
 
@@ -39,7 +40,7 @@ make setup
 make test         # pytest suite with branch coverage
 make typecheck    # strict type checking for package and fixtures
 make lint         # project-env ruff check src tests scripts
-make format       # project-env ruff import fixes + format src tests scripts
+make format       # modifies files: ruff import fixes + format src tests scripts
 make format-check # project-env ruff format --check src tests scripts
 make check        # lint + format-check + typing + uv pin check + tests
 make uv-bootstrap-check  # verify all pinned uv versions and checksums agree
@@ -49,10 +50,16 @@ make clean        # remove caches and build artifacts
 make uninstall    # uninstall package from current environment
 ```
 
+For code changes, run focused tests during development and `make check` before
+handoff. Documentation-only changes require checks of affected links, paths,
+commands, and examples. Run the additional automation or packaging checks below
+when the changed files affect those areas. Use `make format` when formatting
+needs correction; it modifies files and is separate from the validation gate.
+
 ### Test suite contract
 
 `make test` runs the full suite with pytest entry-point plugin autoload
-disabled. It loads pytest-cov explicitly and enforces 90% branch coverage.
+disabled and it loads pytest-cov explicitly.
 
 Workspace-enabled Git tests require Git 2.34.1 or newer. CI runs the relevant
 source-policy tests against exactly Git 2.34.1 and fails if any selected test
@@ -75,9 +82,7 @@ make actionlint
 uvx pre-commit==4.6.0 run --all-files --show-diff-on-failure
 ```
 
-The Makefile falls back to `python -m ...` for project checks when `uv` is not
-installed. The full repository-automation check uses `uvx` for pinned
-pre-commit execution.
+The full repository-automation check uses `uvx` for pinned pre-commit execution.
 
 Current CI policy:
 
@@ -109,21 +114,32 @@ Operational notes:
 
 ## Cleanup and Deletion
 
-Use these commands when you need to remove generated files or reset local state:
+For runs that created managed workspaces, clean up their caches before deleting
+run records or `.crewplane`. Preview the intended scope from the originating
+Git checkout, with its configuration and a valid HEAD commit:
 
 ```bash
-# Remove caches and build artifacts
-make clean
-
-# Remove generated run outputs only
-rm -rf .crewplane/execution-stages .crewplane/execution-results
-
-# Full local reset (config + workflows + outputs)
-rm -rf .crewplane
-
-# Uninstall package from current environment
-make uninstall
+uv run --extra dev crewplane cleanup workspaces --dry-run
 ```
+
+Follow the [cleanup guide](docs/guides/cleanup.md) to remove the selected caches
+and inspect the result. Keep configuration and run records for any entries
+cleanup skips; resolve those entries before a complete reset. Workspace cleanup
+uses these records to verify ownership and eligibility, and caches can live
+outside the project directory.
+
+After workspace cleanup, archive or delete the corresponding run records under
+`.crewplane/execution-stages/` and `.crewplane/execution-results/`. A full reset
+also deletes the authored config and workflows under `.crewplane`; preserve any
+that you intend to reuse before removing that directory.
+
+Development caches and build artifacts have a separate cleanup command:
+
+```bash
+make clean
+```
+
+Use `make uninstall` to uninstall the package from the development environment.
 
 ## Project Structure
 
@@ -246,26 +262,55 @@ Use `.github/workflows/testpypi.yml` for TestPyPI Trusted Publishing. It may be
 dispatched from any selected ref and stops if that package version already
 exists on TestPyPI.
 
-## Key Modules
+## Module and Test Map
 
-- `src/crewplane/cli/app.py`: Typer app and commands (`init`, `run`, `validate`)
-- `src/crewplane/core/config.py`: Pydantic config models and loader
-- `src/crewplane/architecture/ports/`: Runtime integration port contracts
-- `src/crewplane/architecture/loader.py`: Alias and dotted implementation loader
-- `src/crewplane/bootstrap/container.py`: Runtime composition root
-- `src/crewplane/core/workflow/models.py`: Workflow model schema
-- `src/crewplane/core/workflow/loading.py`: Workflow file loading
-- `src/crewplane/core/workflow/markdown/`: Frontmatter and Markdown parser
-- `src/crewplane/core/workflow/composition/`: Markdown imports, aliases, params, and input binding
-- `src/crewplane/core/workflow/validation/`: Workflow and provider validation
-- `src/crewplane/core/preflight/`: Compiled runtime execution-plan previews and bundles
-- `src/crewplane/runtime/agent/invoker.py`: Provider command invocation and retry logic
-- `src/crewplane/runtime/execution/workflow/__init__.py`: DAG scheduling and node execution
-- `src/crewplane/artifacts/manager.py`: Artifact and output manifest management
-- `src/crewplane/artifacts/results/`: Consolidated result writing
-- `src/crewplane/artifacts/resume/`: Node-boundary resume validation and hydration
-- `src/crewplane/artifacts/workspace/`: Workspace artifact validation and descriptors
-- `src/crewplane/observability/runtime.py`: Observer lifecycle and snapshot publishing
+Use this map to locate implementation entry points and affected tests. Change-specific
+constraints live in [AGENTS.md](AGENTS.md#change-guidance).
+
+### CLI surface
+
+- Main entrypoint: `src/crewplane/cli/app.py`
+- Supporting run flow: `src/crewplane/cli/run/` plus the `src/crewplane/cli/workflow_runner.py` facade
+- Cleanup command surface: `src/crewplane/cli/cleanup.py`
+- Path resolution and scaffold helpers: `src/crewplane/cli/paths.py`, `src/crewplane/cli/templates.py`
+- Expected tests: `tests/integration/cli/`, plus any affected unit tests under `tests/unit/`
+
+### Workflow schema, parsing, and composition
+
+- Core files: `src/crewplane/core/workflow/models.py`, `src/crewplane/core/workflow/markdown/`, `src/crewplane/core/workflow/loading.py`, `src/crewplane/core/workflow/composition/`, `src/crewplane/core/workflow/validation/`, `src/crewplane/core/preflight/`
+- Expected tests: `tests/unit/core/workflow_loading/`, `tests/unit/core/workflow_composition/`, `tests/unit/core/workflow_validation/`, `tests/unit/core/preflight/`, and relevant `tests/integration/cli/` coverage
+
+### Config and provider invocation
+
+- Core config: `src/crewplane/core/config.py`, `src/crewplane/core/workspace/settings.py`, `src/crewplane/core/token_budget.py`
+- Runtime invoker path: `src/crewplane/runtime/agent/`
+- Built-in invokers: `src/crewplane/adapters/invokers/`
+- Expected tests: `tests/unit/core/test_config.py`, `tests/integration/runtime/agent/`, `tests/integration/adapters/test_invoker_cli.py`, and `tests/integration/adapters/mock_invoker/`
+
+### Runtime execution
+
+- Workflow scheduler: `src/crewplane/runtime/execution/workflow/__init__.py`
+- Stage execution: `src/crewplane/runtime/execution/parallel.py`, `src/crewplane/runtime/execution/sequential.py`, `src/crewplane/runtime/execution/consensus.py`
+- Expected tests: `tests/integration/runtime/execution/`, `tests/integration/cli/test_workflow_runner.py`, and affected `tests/unit/runtime/` coverage
+
+### Adapters and architecture boundaries
+
+- Port contracts: `src/crewplane/architecture/ports/`
+- Alias registry: `src/crewplane/architecture/registry.py`
+- Loader: `src/crewplane/architecture/loader.py`
+- Composition root: `src/crewplane/bootstrap/container.py`
+- Expected tests: `tests/integration/architecture/`, relevant `tests/integration/adapters/`
+
+### Artifacts, manifests, and templates
+
+- Core files: `src/crewplane/artifacts/manager.py`, `src/crewplane/artifacts/directory_manager.py`, `src/crewplane/artifacts/generated_files/`, `src/crewplane/artifacts/locks/`, `src/crewplane/artifacts/results/`, `src/crewplane/artifacts/resume/`, `src/crewplane/artifacts/workspace/`, and `src/crewplane/core/preflight/`
+- Built-in implementation: `src/crewplane/adapters/artifacts/filesystem.py`
+- Expected tests: `tests/unit/artifacts/`, `tests/integration/adapters/test_artifacts_filesystem.py`, and affected `tests/integration/cli/` coverage
+
+### Observability and tmux UI
+
+- Core files: `src/crewplane/observability/`, `src/crewplane/adapters/ui/`
+- Expected tests: `tests/integration/observability/`, `tests/unit/observability/`, `tests/integration/adapters/test_ui_tmux.py`, `tests/integration/adapters/test_ui_null.py`
 
 ## Testing Expectations
 
@@ -275,7 +320,15 @@ exists on TestPyPI.
 - Integration implementations must include contract tests under `tests/integration/architecture/` and adapter tests under `tests/integration/adapters/`.
 - Production code and typing fixtures must pass strict mypy via `make typecheck`;
   CI also validates the built wheel's public typing.
-- Tests enforce branch coverage.
+- Coverage requirements are defined in the [test suite contract](#test-suite-contract).
+
+Examples of focused test runs:
+
+```bash
+uv run --extra dev python -m pytest -q tests/integration/cli/test_workflow_discovery_and_init.py
+uv run --extra dev python -m pytest -q tests/unit/core/workflow_composition tests/unit/core/workflow_validation
+uv run --extra dev python -m pytest -q tests/integration/adapters/mock_invoker tests/integration/architecture/test_container.py
+```
 
 ## Mock Invoker Local Validation
 
@@ -299,25 +352,31 @@ settings:
 
 Manual validation flow:
 
-1. Run `crewplane run` with the mock invoker.
-2. Confirm node transitions (`pending -> running -> succeeded/failed`) in the CLI or tmux UI.
-3. Validate generated artifacts under `.crewplane/execution-stages/` and `.crewplane/execution-results/`, including findings artifacts for findings-enabled nodes, run-root logs in `.crewplane/execution-stages/<workflow>-<run_id>/logs/`, and review-loop status artifacts in `<node>/review-state/review-loop-status.json` when a node uses sequential executor/reviewer review rounds.
-4. If using `output_mode: "file"`, verify fixture fallback order, `strict_file_mode` behavior, and optional `<fixture>.mutations.json` sidecars when testing artifact-drift handling, workspace checkout mutations, or prompt sentinel requirements.
+1. For a new validation project, run `<checkout>/.venv/bin/crewplane init` in that project's directory, replacing `<checkout>` with the absolute path to this source checkout. Use that same absolute CLI path for the following steps in another project. `init` preserves existing files, so verify that the selected config uses the mock invoker before running a workflow.
+2. Run `uv run --extra dev crewplane validate`, then `uv run --extra dev crewplane run --dry-run`.
+3. Run `uv run --extra dev crewplane run --no-live` with the mock invoker. Omit `--no-live` when checking the live UI.
+4. Confirm node transitions (`pending -> running -> succeeded/failed`) in the CLI or tmux UI.
+5. Validate generated artifacts under `.crewplane/execution-stages/` and `.crewplane/execution-results/`, including findings artifacts for findings-enabled nodes, run-root logs in `.crewplane/execution-stages/<workflow>-<run_id>/logs/`, and review-loop status artifacts in `<node>/review-state/review-loop-status.json` when a node uses sequential executor/reviewer review rounds. When affected, confirm manifest dedupe behavior against the intended `workflow_signature` rules.
+6. If using `output_mode: "file"`, verify fixture fallback order, `strict_file_mode` behavior, and optional `<fixture>.mutations.json` sidecars when testing artifact-drift handling, workspace checkout mutations, or prompt sentinel requirements.
 
 ## Coding Standards
 
-Follow these project standards:
+Follow the canonical [coding standards](AGENTS.md#coding-standards) and
+[change guidance](AGENTS.md#change-guidance) in `AGENTS.md`.
 
-- Keep modules cohesive and boundaries explicit.
-- Use explicit type hints for public APIs and non-trivial logic.
-- Keep functions focused and readable.
-- Validate at boundaries and fail explicitly.
-- Avoid silent failure paths.
-- Add deterministic tests for new behavior and regression coverage for bug fixes.
+## Maintaining Agent Guidance
+
+When changing agent behavior rules, verify the change with a representative
+task in a fresh session. Confirm that the intended instructions load and the
+expected checks run. Revise rules in response to observed failures, and remove
+obsolete or duplicated guidance. Record any behavior that could not be verified
+in the handoff.
 
 ## Architecture References
 
-Crewplane follows a blackboard architecture: agents operate independently and communicate exclusively through structured Markdown artifacts in a shared workspace. That design drives the main engineering constraints in the runtime and artifact system.
+Crewplane follows a blackboard architecture: providers coordinate through durable
+artifacts on disk rather than shared in-memory state. Artifacts include Markdown
+outputs, JSON state, and Git bundles for workspace handoffs.
 
 - [docs/architecture/modular-orchestration-architecture.md](docs/architecture/modular-orchestration-architecture.md)
 - [docs/architecture/adr/0001-ports-adapters-runtime-integrations.md](docs/architecture/adr/0001-ports-adapters-runtime-integrations.md)
@@ -329,8 +388,4 @@ Crewplane follows a blackboard architecture: agents operate independently and co
 2. Register an alias in `src/crewplane/architecture/registry.py` or use a dotted path override in config.
 3. Add adapter behavior tests under `tests/integration/adapters/`.
 4. Add architecture wiring tests under `tests/integration/architecture/`.
-5. Run quality gates before merge:
-   - targeted adapter and architecture tests for changed integrations
-   - `make lint`
-   - `make format-check`
-   - `make test`
+5. Run focused adapter and architecture tests, then `make check`.
