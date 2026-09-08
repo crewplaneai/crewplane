@@ -5,22 +5,22 @@ import signal
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
-from typing import NotRequired, TextIO, TypedDict, cast
+from typing import Literal, NotRequired, TextIO, TypedDict, cast
 
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     JsonObject,
-    JsonValue,
 )
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.core.platform import supports_posix_process_groups
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSelectionRecord,
+    WorkspaceSetupRecord,
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.serialization import to_json_safe
@@ -110,6 +110,33 @@ class WorkspaceSetupArtifacts:
     log_path: Path
 
 
+type _SetupFailure = tuple[Literal["cancelled", "timed_out", "failed"], str]
+
+
+@dataclass(frozen=True)
+class _SetupProfileResult:
+    records: list[_SetupCommandRecord]
+    status: Literal["succeeded", "cancelled", "timed_out", "failed"] = "succeeded"
+    failure_message: str | None = None
+
+
+@dataclass(frozen=True)
+class _SetupProfileContext:
+    setup: WorkspaceSetupRecord
+    cwd: Path
+    process_state_path: Path | None
+    child_environment: ChildProcessEnvironment
+    timeout_seconds: float
+    started_at: str
+    started: float
+    cancellation: WorkspaceSetupCancellation | None
+    secret_context: SecretContext | None
+
+    @property
+    def deadline(self) -> float:
+        return self.started + self.timeout_seconds
+
+
 def run_workspace_setup(
     plan: PreflightExecutionPlan,
     policy: WorkspaceSelectionRecord,
@@ -119,109 +146,129 @@ def run_workspace_setup(
     cancellation: WorkspaceSetupCancellation | None = None,
     secret_context: SecretContext | None = None,
 ) -> JsonObject | None:
+    """Run the selected setup profile and publish its summary before reporting failure."""
+
     setup = policy.setup
     if setup is None or not setup.commands:
         return None
 
     artifacts = workspace_setup_artifacts(state_path)
-    process_state_path = state_path if state_path.is_file() else None
-    child_environment = workspace_child_environment(cwd, checkout_root)
-    timeout_seconds = _setup_timeout_seconds(plan)
-    started_at = datetime.now(UTC).isoformat()
-    started = time.monotonic()
-    deadline = started + timeout_seconds
-    records: list[JsonValue] = []
-    status = "succeeded"
-    timed_out = False
-    failure_message: str | None = None
+    context = _SetupProfileContext(
+        setup=setup,
+        cwd=cwd,
+        process_state_path=state_path if state_path.is_file() else None,
+        child_environment=workspace_child_environment(cwd, checkout_root),
+        timeout_seconds=_setup_timeout_seconds(plan),
+        started_at=datetime.now(UTC).isoformat(),
+        started=time.monotonic(),
+        cancellation=cancellation,
+        secret_context=secret_context,
+    )
 
     artifacts.log_path.parent.mkdir(parents=True, exist_ok=True)
     with artifacts.log_path.open("w", encoding="utf-8") as log_handle:
-        for command in setup.commands:
-            if cancellation is not None and cancellation.is_cancelled():
-                status = "cancelled"
-                failure_message = "Workspace setup profile was cancelled."
-                break
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                status = "timed_out"
-                timed_out = True
-                failure_message = "Workspace setup profile timed out."
-                break
-            resolved_argv = _resolve_setup_argv(command.argv, secret_context)
-            record = _run_setup_command(
-                resolved_argv,
-                command.argv,
-                command.command_index,
-                cwd,
-                remaining,
-                child_environment,
-                log_handle,
-                cancellation,
-                process_state_path,
-            )
-            records.append(cast(JsonObject, record))
-            if record.get("cancelled") is True:
-                status = "cancelled"
-                failure_message = (
-                    "Workspace setup command was cancelled: "
-                    f"{_display_command(command.argv)}"
-                )
-                break
-            if record.get("timed_out") is True:
-                status = "timed_out"
-                timed_out = True
-                failure_message = (
-                    "Workspace setup command timed out: "
-                    f"{_display_command(command.argv)}"
-                )
-                break
-            exit_code = record.get("exit_code")
-            if exit_code != 0:
-                status = "failed"
-                failure_message = (
-                    "Workspace setup command failed with exit code "
-                    f"{exit_code}: {_display_command(command.argv)}"
-                )
-                break
+        result = _run_setup_commands(context, log_handle)
 
     if (
-        status == "succeeded"
+        result.status == "succeeded"
         and cancellation is not None
         and cancellation.is_cancelled()
     ):
-        status = "cancelled"
-        failure_message = "Workspace setup profile was cancelled."
+        result = replace(
+            result,
+            status="cancelled",
+            failure_message="Workspace setup profile was cancelled.",
+        )
 
+    summary = _build_setup_summary(context, result, artifacts, state_path.parent)
+    atomic_write_json(artifacts.metadata_path, to_json_safe(summary))
+    if result.status == "cancelled":
+        raise WorkspaceSetupCancelled(
+            result.failure_message or "Workspace setup was cancelled.", summary
+        )
+    if result.status != "succeeded":
+        raise WorkspaceSetupError(
+            result.failure_message or "Workspace setup failed.", summary
+        )
+    return summary
+
+
+def _run_setup_commands(
+    context: _SetupProfileContext,
+    log_handle: TextIO,
+) -> _SetupProfileResult:
+    records: list[_SetupCommandRecord] = []
+    for command in context.setup.commands:
+        if context.cancellation is not None and context.cancellation.is_cancelled():
+            return _SetupProfileResult(
+                records, "cancelled", "Workspace setup profile was cancelled."
+            )
+        remaining = context.deadline - time.monotonic()
+        if remaining <= 0:
+            return _SetupProfileResult(
+                records, "timed_out", "Workspace setup profile timed out."
+            )
+        resolved_argv = _resolve_setup_argv(command.argv, context.secret_context)
+        record = _run_setup_command(
+            resolved_argv,
+            command.argv,
+            command.command_index,
+            context.cwd,
+            remaining,
+            context.child_environment,
+            log_handle,
+            context.cancellation,
+            context.process_state_path,
+        )
+        records.append(record)
+        failure = _setup_command_failure(record)
+        if failure is not None:
+            status, message = failure
+            return _SetupProfileResult(records, status, message)
+    return _SetupProfileResult(records)
+
+
+def _setup_command_failure(record: _SetupCommandRecord) -> _SetupFailure | None:
+    if record.get("cancelled") is True:
+        return (
+            "cancelled",
+            f"Workspace setup command was cancelled: {_display_command(record['argv'])}",
+        )
+    if record["timed_out"]:
+        return (
+            "timed_out",
+            f"Workspace setup command timed out: {_display_command(record['argv'])}",
+        )
+    if record["exit_code"] != 0:
+        return (
+            "failed",
+            "Workspace setup command failed with exit code "
+            f"{record['exit_code']}: {_display_command(record['argv'])}",
+        )
+    return None
+
+
+def _build_setup_summary(
+    context: _SetupProfileContext,
+    result: _SetupProfileResult,
+    artifacts: WorkspaceSetupArtifacts,
+    state_dir: Path,
+) -> JsonObject:
     completed_at = datetime.now(UTC).isoformat()
     summary: JsonObject = {
-        "profile_name": setup.profile_name,
-        "status": status,
-        "timed_out": timed_out,
-        "timeout_seconds": timeout_seconds,
-        "started_at": started_at,
+        "profile_name": context.setup.profile_name,
+        "status": result.status,
+        "timed_out": result.status == "timed_out",
+        "timeout_seconds": context.timeout_seconds,
+        "started_at": context.started_at,
         "completed_at": completed_at,
-        "duration_seconds": round(time.monotonic() - started, 6),
-        "commands": records,
-        "log_path": artifacts.log_path.relative_to(state_path.parent).as_posix(),
-        "metadata_path": artifacts.metadata_path.relative_to(
-            state_path.parent
-        ).as_posix(),
+        "duration_seconds": round(time.monotonic() - context.started, 6),
+        "commands": [cast(JsonObject, record) for record in result.records],
+        "log_path": artifacts.log_path.relative_to(state_dir).as_posix(),
+        "metadata_path": artifacts.metadata_path.relative_to(state_dir).as_posix(),
     }
-    if failure_message is not None:
-        summary["failure_message"] = failure_message
-
-    atomic_write_json(artifacts.metadata_path, to_json_safe(summary))
-    if status == "cancelled":
-        raise WorkspaceSetupCancelled(
-            failure_message or "Workspace setup was cancelled.",
-            summary,
-        )
-    if status != "succeeded":
-        raise WorkspaceSetupError(
-            failure_message or "Workspace setup failed.",
-            summary,
-        )
+    if result.failure_message is not None:
+        summary["failure_message"] = result.failure_message
     return summary
 
 
@@ -236,6 +283,13 @@ def workspace_setup_artifacts(state_path: Path) -> WorkspaceSetupArtifacts:
         metadata_path=setup_dir / f"{state_path.stem}.json",
         log_path=setup_dir / f"{state_path.stem}.log",
     )
+
+
+@dataclass(frozen=True)
+class _SetupProcessResult:
+    exit_code: int | None
+    timed_out: bool = False
+    cancelled: bool = False
 
 
 def _run_setup_command(
@@ -263,7 +317,7 @@ def _run_setup_command(
                 encoding="utf-8",
             ) as stderr_file,
         ):
-            returncode, timed_out, cancelled = _run_setup_process(
+            result = _run_setup_process(
                 argv,
                 cwd,
                 timeout_seconds,
@@ -273,31 +327,17 @@ def _run_setup_command(
                 cancellation,
                 state_path,
             )
-            if cancelled:
-                exit_code = None
-                record_timed_out = False
-                status_line = "[cancelled] true\n\n"
-            elif timed_out:
-                exit_code = None
-                record_timed_out = True
-                status_line = "[timed_out] true\n\n"
-            else:
-                exit_code = returncode
-                record_timed_out = False
-                status_line = f"[exit_code] {returncode}\n\n"
-            _write_stream(log_handle, "stdout", stdout_file)
-            _write_stream(log_handle, "stderr", stderr_file)
-            log_handle.write(status_line)
+            _write_setup_command_output(log_handle, stdout_file, stderr_file, result)
             record = _setup_command_record(
                 recorded_argv,
                 command_index,
                 cwd,
                 started_at,
                 started,
-                exit_code=exit_code,
-                timed_out=record_timed_out,
+                exit_code=result.exit_code,
+                timed_out=result.timed_out,
             )
-            if cancelled:
+            if result.cancelled:
                 record["cancelled"] = True
             return record
     except OSError as exc:
@@ -315,6 +355,22 @@ def _run_setup_command(
         return record
 
 
+def _write_setup_command_output(
+    log_handle: TextIO,
+    stdout_file: TextIO,
+    stderr_file: TextIO,
+    result: _SetupProcessResult,
+) -> None:
+    _write_stream(log_handle, "stdout", stdout_file)
+    _write_stream(log_handle, "stderr", stderr_file)
+    if result.cancelled:
+        log_handle.write("[cancelled] true\n\n")
+    elif result.timed_out:
+        log_handle.write("[timed_out] true\n\n")
+    else:
+        log_handle.write(f"[exit_code] {result.exit_code}\n\n")
+
+
 def _run_setup_process(
     argv: list[str],
     cwd: Path,
@@ -324,7 +380,7 @@ def _run_setup_process(
     stderr_file: TextIO,
     cancellation: WorkspaceSetupCancellation | None,
     state_path: Path | None,
-) -> tuple[int | None, bool, bool]:
+) -> _SetupProcessResult:
     process = subprocess.Popen(
         argv,
         cwd=cwd,
@@ -338,16 +394,16 @@ def _run_setup_process(
     if cancellation is not None:
         registered = cancellation.register_process(process, state_path)
         if not registered:
-            return None, False, True
+            return _SetupProcessResult(None, cancelled=True)
     try:
         returncode = process.wait(timeout=timeout_seconds)
         _terminate_setup_process(process, state_path)
         if cancellation is not None and cancellation.is_cancelled():
-            return None, False, True
-        return returncode, False, False
+            return _SetupProcessResult(None, cancelled=True)
+        return _SetupProcessResult(returncode)
     except subprocess.TimeoutExpired:
         _terminate_setup_process(process, state_path)
-        return None, True, False
+        return _SetupProcessResult(None, timed_out=True)
     finally:
         if cancellation is not None and registered:
             cancellation.clear_process(process)
