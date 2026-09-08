@@ -1,7 +1,22 @@
 from __future__ import annotations
 
 import os
+from enum import StrEnum
 from pathlib import Path
+
+
+class GitTreeMode(StrEnum):
+    """Canonical entry modes emitted by Git tree listings."""
+
+    DIRECTORY = "040000"
+    REGULAR_FILE = "100644"
+    EXECUTABLE_FILE = "100755"
+    SYMLINK = "120000"
+    GITLINK = "160000"
+
+
+REGULAR_FILE_MODES = frozenset({GitTreeMode.REGULAR_FILE, GitTreeMode.EXECUTABLE_FILE})
+SUPPORTED_RESULT_TREE_MODES = REGULAR_FILE_MODES | {GitTreeMode.SYMLINK}
 
 WORKSPACE_GIT_CONFIG_OVERLAY = (
     ("core.filemode", "true"),

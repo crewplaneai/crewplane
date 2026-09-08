@@ -199,6 +199,17 @@ def test_rendered_workspace_file_rejects_invalid_invocation_fields(
     assert not provider_rendered_workspace_files_match(plan, plan.nodes[0], payload)
 
 
+@pytest.mark.parametrize("mode", ["100644", "100755"])
+def test_rendered_workspace_file_accepts_regular_blob_modes(mode: str) -> None:
+    locator = make_workspace_file_locator().model_copy(
+        update={"target": "executor_prompt", "git_file_mode": mode}
+    )
+    plan, payload, descriptor = _rendered_case(locators=[locator])
+    descriptor["git_file_mode"] = mode
+
+    assert provider_rendered_workspace_files_match(plan, plan.nodes[0], payload)
+
+
 def test_rendered_workspace_file_accepts_audit_round_invocation_id() -> None:
     plan, payload, descriptor = _rendered_case()
     payload["audit_round_num"] = 2
@@ -214,7 +225,12 @@ def test_rendered_workspace_file_accepts_audit_round_invocation_id() -> None:
         pytest.param("byte_size", True, id="boolean-size"),
         pytest.param("byte_size", -1, id="negative-size"),
         pytest.param("git_blob", "not-hex", id="blob"),
-        pytest.param("git_file_mode", "120000", id="mode"),
+        pytest.param("git_file_mode", "120000", id="symlink-mode"),
+        pytest.param("git_file_mode", "160000", id="gitlink-mode"),
+        pytest.param("git_file_mode", "100664", id="unknown-mode"),
+        pytest.param("git_file_mode", None, id="missing-mode"),
+        pytest.param("git_file_mode", ["100644"], id="list-mode"),
+        pytest.param("git_file_mode", {}, id="mapping-mode"),
         pytest.param("injected_sha256", "short", id="injected-digest"),
         pytest.param("canonical_blob_sha256", "short", id="canonical-digest"),
         pytest.param("canonical_blob_sha256", "f" * 64, id="canonical-mismatch"),

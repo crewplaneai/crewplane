@@ -11,6 +11,7 @@ from crewplane.core.preflight.models import (
     WorkspaceFileTarget,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
 
 from ..run_history import RunHistoryRecord
 from .bundle_validation import (
@@ -26,11 +27,6 @@ from .state.fields import (
 )
 from .state.fields import (
     mapping_value as _mapping,
-)
-
-_SUPPORTED_RENDERED_FILE_MODES = (
-    "100644",  # Git mode for a regular, non-executable blob.
-    "100755",  # Git mode for a regular executable blob.
 )
 
 
@@ -186,7 +182,8 @@ def _rendered_descriptor_blob_matches(
         return False
     if not _is_hex_object(descriptor.get("git_blob")):
         return False
-    if descriptor.get("git_file_mode") not in _SUPPORTED_RENDERED_FILE_MODES:
+    mode = descriptor.get("git_file_mode")
+    if not isinstance(mode, str) or mode not in REGULAR_FILE_MODES:
         return False
     injected = descriptor.get("injected_sha256")
     canonical = descriptor.get("canonical_blob_sha256")

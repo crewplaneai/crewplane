@@ -13,6 +13,37 @@ from crewplane.runtime.workspace.worktree.result_validation import (
 from tests.helpers.workspace_service import create_git_repo, run_git_text
 
 
+@pytest.mark.parametrize("mode", ["100644", "100755", "120000"])
+def test_validate_result_tree_accepts_supported_blob_modes(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    blob = run_git_text(repo, "rev-parse", "HEAD:README.md")
+    tree = (
+        git(repo)
+        .run_with_input(f"{mode} blob {blob}\tentry\n".encode(), "mktree")
+        .stdout.decode()
+        .strip()
+    )
+
+    validate_result_tree(repo, tree)
+
+
+def test_validate_result_tree_rejects_gitlinks(tmp_path: Path) -> None:
+    repo = create_git_repo(tmp_path)
+    commit = run_git_text(repo, "rev-parse", "HEAD")
+    tree = (
+        git(repo)
+        .run_with_input(f"160000 commit {commit}\tmodule\n".encode(), "mktree")
+        .stdout.decode()
+        .strip()
+    )
+
+    with pytest.raises(RuntimeError, match="unsupported mode 160000"):
+        validate_result_tree(repo, tree)
+
+
 def test_validate_result_tree_rejects_reserved_paths_under_project_root(
     tmp_path: Path,
 ) -> None:

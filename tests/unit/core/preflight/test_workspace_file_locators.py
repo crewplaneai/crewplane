@@ -34,12 +34,18 @@ from tests.helpers.workspace_preflight import (
 )
 
 
+@pytest.mark.parametrize(
+    ("file_mode", "git_file_mode"), [(0o644, "100644"), (0o755, "100755")]
+)
 def test_workspace_enabled_file_tokens_compile_to_workspace_locators(
     tmp_path: Path,
+    file_mode: int,
+    git_file_mode: str,
 ) -> None:
     requirements = tmp_path / "docs" / "requirements.md"
     requirements.parent.mkdir()
     requirements.write_text("requirements\n", encoding="utf-8")
+    requirements.chmod(file_mode)
     source_snapshot = init_git_repo(tmp_path)
 
     preview = compile_workflow_with_source_snapshot(
@@ -60,7 +66,7 @@ def test_workspace_enabled_file_tokens_compile_to_workspace_locators(
     assert project_locator.content_ref is not None
     assert project_locator.content_ref.startswith("workspace-files/")
     assert project_locator.git_blob is not None
-    assert project_locator.git_file_mode == "100644"
+    assert project_locator.git_file_mode == git_file_mode
     assert project_locator.byte_size == len(b"requirements\n")
     assert (
         project_locator.canonical_blob_sha256

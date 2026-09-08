@@ -5,6 +5,7 @@ from pathlib import Path
 
 from crewplane.core.config import Settings
 from crewplane.core.workspace.git_policy import (
+    GitTreeMode,
     config_keys_from_scoped_records,
     effective_policy_lines,
     local_config_policy_summary,
@@ -303,9 +304,12 @@ def validate_source_tree(
         header, _, path = record.partition("\t")
         mode = header.split(" ", 1)[0]
         tracked_paths.append(path)
-        if mode == "160000":
+        if mode == GitTreeMode.GITLINK:
             gitlinks.append(path)
-        if mode == "120000" and Path(path).name in {".gitignore", ".gitattributes"}:
+        if mode == GitTreeMode.SYMLINK and Path(path).name in {
+            ".gitignore",
+            ".gitattributes",
+        }:
             builder.errors.append(
                 "Workspace source policy failed: symlinked Git policy files are "
                 f"unsupported: {path}. Replace the symlink with a regular file "

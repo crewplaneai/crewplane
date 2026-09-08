@@ -5,16 +5,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.core.workspace.git_policy import SUPPORTED_RESULT_TREE_MODES
+
 from ..git import GitCommand, git
 from .inspection import reserved_runtime_path
-
-_SUPPORTED_RESULT_TREE_MODES = frozenset(
-    {
-        "100644",  # Regular file without Git's executable bit.
-        "100755",  # Regular file with Git's executable bit.
-        "120000",  # Symbolic link whose blob stores the link target.
-    }
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +76,7 @@ def _validate_result_tree_entry(
     entry: _ResultTreeEntry,
     project_root_relative_path: str,
 ) -> None:
-    if entry.mode not in _SUPPORTED_RESULT_TREE_MODES:
+    if entry.mode not in SUPPORTED_RESULT_TREE_MODES:
         raise RuntimeError(
             f"Workspace result tree contains unsupported mode {entry.mode}."
         )

@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
+from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
 
 from ...compile_state import (
     CompileState,
@@ -24,7 +25,6 @@ from ...models import (
 from ...references import TemplateReference
 from ...signatures import signature_for_payload
 from .git_reads import (
-    SUPPORTED_FILE_MODES,
     ProjectBlobRecord,
     git_cat_blob,
     git_error,
@@ -357,7 +357,7 @@ def resolve_project_blob(
             "Workspace file token resolved to an unexpected Git path.",
         )
         return None
-    if record.object_type != "blob" or record.mode not in SUPPORTED_FILE_MODES:
+    if record.object_type != "blob" or record.mode not in REGULAR_FILE_MODES:
         append_workspace_file_error(
             state,
             node_id,
