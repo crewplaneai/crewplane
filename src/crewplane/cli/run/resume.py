@@ -8,8 +8,7 @@ from pathlib import Path
 from rich.console import Console
 
 from crewplane.architecture.contracts import JsonObject
-from crewplane.architecture.errors import IntegrationResolutionError
-from crewplane.architecture.loader import resolve_implementation_path
+from crewplane.architecture.loader import is_builtin_implementation
 from crewplane.artifacts.resume.decision import ResumeDecision
 from crewplane.artifacts.resume.validation import (
     ValidatedResumeFrontier,
@@ -31,10 +30,6 @@ from crewplane.runtime.workspace.branch_export import (
 )
 
 from .branch_export_output import print_branch_export_verifications
-
-FILESYSTEM_ARTIFACT_ADAPTER = (
-    "crewplane.adapters.artifacts.filesystem:FilesystemArtifactsAdapter"
-)
 
 
 @dataclass(frozen=True)
@@ -61,14 +56,8 @@ def require_filesystem_artifacts_backend(config: Config) -> None:
 
 
 def filesystem_artifacts_backend_enabled(config: Config) -> bool:
-    settings = config.settings
-    implementation = settings.integrations.artifacts.implementation
-    try:
-        resolved = resolve_implementation_path("artifacts", implementation)
-    except IntegrationResolutionError:
-        return False
-    return _normalize_object_path(resolved) == _normalize_object_path(
-        FILESYSTEM_ARTIFACT_ADAPTER
+    return is_builtin_implementation(
+        "artifacts", config.settings.integrations.artifacts.implementation, "filesystem"
     )
 
 
@@ -267,15 +256,3 @@ def _uses_ephemeral_sensitive_fingerprints(
     return bool(metadata.get("sensitive_values_required")) and not bool(
         metadata.get("fingerprint_key_persisted")
     )
-
-
-def _normalize_object_path(implementation: str) -> str:
-    if ":" in implementation:
-        module_name, object_name = implementation.split(":", 1)
-        if module_name and object_name:
-            return f"{module_name}:{object_name}"
-    if "." in implementation:
-        module_name, object_name = implementation.rsplit(".", 1)
-        if module_name and object_name:
-            return f"{module_name}:{object_name}"
-    return implementation

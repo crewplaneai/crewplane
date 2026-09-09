@@ -12,9 +12,13 @@ from crewplane.artifacts.results.review_loop_status import (
     resolve_review_loop_status,
     task_specs_for_producers,
 )
-from crewplane.artifacts.results.selection import (
-    parse_audit_round,
-    parse_task_round,
+from crewplane.artifacts.workspace.state.lineage import (
+    invocation_round_order,
+    review_output_coordinates,
+)
+from crewplane.artifacts.workspace.state.paths import (
+    WORKSPACE_STATE_FILENAME,
+    workspace_state_candidates,
 )
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
@@ -48,7 +52,7 @@ def required_lineage_state_path(
     latest = latest_executor_lineage_state_path(stage_dir)
     if latest is not None:
         return latest
-    canonical = safe_workspace_state_path(stage_dir, "workspace-state.json")
+    canonical = safe_workspace_state_path(stage_dir, WORKSPACE_STATE_FILENAME)
     if canonical is not None and workspace_state_is_lineage_source(canonical):
         return canonical
     raise RuntimeError(
@@ -163,21 +167,16 @@ def review_loop_canonical_lineage_state_path(
 def invocation_from_review_status(
     entry: ReviewLoopStatusEntry,
 ) -> WorkspaceStateInvocation:
-    relative_path = Path(entry.relative_path)
-    task_id, round_num = parse_task_round(relative_path.stem)
-    if task_id != entry.task_id or round_num <= 0:
+    coordinates = review_output_coordinates(entry.relative_path, entry.task_id)
+    if coordinates is None:
         raise RuntimeError(
             "Workspace review-loop status points to an executor output that does "
             f"not match its task id: {entry.relative_path}."
         )
-    audit_round_num = None
-    if len(relative_path.parts) > 1:
-        audit_round = parse_audit_round(relative_path.parts[0])
-        audit_round_num = audit_round if audit_round > 0 else None
     return WorkspaceStateInvocation(
-        task_id=entry.task_id,
-        round_num=round_num,
-        audit_round_num=audit_round_num,
+        task_id=coordinates.task_id,
+        round_num=coordinates.round_num,
+        audit_round_num=coordinates.audit_round_num,
     )
 
 
@@ -193,7 +192,7 @@ def iter_lineage_states(
             continue
         if task_ids is not None and payload.get("task_id") not in task_ids:
             continue
-        order = payload_order(payload)
+        order = invocation_round_order(payload)
         if order is None:
             continue
         if before is not None and order >= before:
@@ -203,12 +202,10 @@ def iter_lineage_states(
 
 
 def workspace_state_paths(stage_dir: Path) -> tuple[Path, ...]:
-    names = ["workspace-state.json"]
-    names.extend(path.name for path in sorted(stage_dir.glob("workspace-state-*.json")))
     paths = [
         path
-        for name in dict.fromkeys(names)
-        if (path := safe_workspace_state_path(stage_dir, name)) is not None
+        for candidate in workspace_state_candidates(stage_dir)
+        if (path := safe_workspace_state_path(stage_dir, candidate.name)) is not None
     ]
     return tuple(paths)
 
@@ -258,18 +255,6 @@ def payload_matches_invocation(
         and payload.get("round_num") == invocation.round_num
         and payload.get("audit_round_num") == invocation.audit_round_num
     )
-
-
-def payload_order(payload: dict[str, object]) -> tuple[int, int] | None:
-    round_num = payload.get("round_num")
-    audit_round_num = payload.get("audit_round_num")
-    if isinstance(round_num, bool) or not isinstance(round_num, int):
-        return None
-    if audit_round_num is None:
-        return (0, round_num)
-    if isinstance(audit_round_num, bool) or not isinstance(audit_round_num, int):
-        return None
-    return (audit_round_num, round_num)
 
 
 def state_invocation_order(invocation: WorkspaceStateInvocation) -> tuple[int, int]:

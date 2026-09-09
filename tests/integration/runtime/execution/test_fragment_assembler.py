@@ -12,6 +12,7 @@ import crewplane.core.workflow.models as workflow_models
 import crewplane.core.workflow.validation as workflow_validation
 import crewplane.runtime.execution.workspace_files.resolution as workspace_file_resolution
 from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeArtifact
+from crewplane.artifacts.verification import read_verified_node_artifact
 from crewplane.core.preflight.dependency_edges import dependency_signature
 from crewplane.core.preflight.models import (
     ArtifactContract,
@@ -38,6 +39,12 @@ from crewplane.runtime.execution.workspace_files import (
     resolve_workspace_file,
 )
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.resume import (
+    make_node_state,
+    make_run_manifest,
+    write_node_state,
+    write_result,
+)
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
     workspace_selection_record,
@@ -1375,3 +1382,112 @@ def _git_commit_exists(repo: Path, object_id: str) -> bool:
         capture_output=True,
     )
     return result.returncode == 0
+
+
+class _VerifiedArtifactStore(_ArtifactStore):
+    def read_verified_node_artifact(
+        self, request: NodeArtifactRequest, kind: str
+    ) -> VerifiedNodeArtifact:
+        return read_verified_node_artifact(
+            self.stages_dir, self.results_dir, request, kind
+        )
+
+
+@pytest.mark.parametrize(
+    "artifact_name",
+    [
+        "output",
+        "output_path",
+        "output_size",
+        "output_sha256",
+        "findings",
+        "findings_path",
+        "findings_size",
+        "findings_sha256",
+    ],
+)
+def test_runtime_token_verifies_backing_artifact(
+    tmp_path: Path, artifact_name: str
+) -> None:
+    store = _VerifiedArtifactStore(tmp_path)
+    plan = _plan(tmp_path)
+    plan.nodes[0].artifact_contract.findings_path = "input-findings.md"
+    plan.render_plans[0].streams[0].fragments = [
+        Fragment(
+            fragment_index=0,
+            kind="runtime_locator_lookup",
+            source_role=PromptSegmentRole.SHARED,
+            locator={"node_id": "input", "artifact_name": artifact_name},
+        )
+    ]
+    descriptors = [
+        write_result(store.results_dir, "compiled-input.md", "output bytes"),
+        write_result(store.results_dir, "input-findings.md", "findings bytes"),
+    ]
+    manifest = make_run_manifest("run", "demo-run")
+    state_path = write_node_state(
+        store.stages_dir, make_node_state(manifest, "input", descriptors)
+    )
+    descriptor = descriptors[artifact_name.startswith("findings")]
+    path = store.results_dir / descriptor.relative_path
+    original = path.read_bytes()
+    expected = {
+        "path": path.as_posix(),
+        "size": str(len(original)),
+        "sha256": hashlib.sha256(original).hexdigest(),
+    }.get(artifact_name.partition("_")[2], original.decode())
+
+    assert (
+        assemble_prompt(
+            plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+        )
+        == expected
+    )
+    path.write_bytes(b"x" * len(original))
+    with pytest.raises(ValueError, match="artifact bytes do not match state"):
+        assemble_prompt(
+            plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+        )
+    path.unlink()
+    with pytest.raises(ValueError, match="artifact is unavailable"):
+        assemble_prompt(
+            plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+        )
+    path.write_bytes(original)
+    state_path.unlink()
+    with pytest.raises(ValueError, match="no valid successful state descriptor"):
+        assemble_prompt(
+            plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+        )
+
+    if artifact_name.startswith("findings"):
+        plan.nodes[0].artifact_contract.findings_path = None
+        with pytest.raises(ValueError, match="has no findings artifact locator"):
+            assemble_prompt(
+                plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
+            )
+
+
+@pytest.mark.parametrize(
+    "artifact_name", ["unknown", "output_unknown", "findings_unknown"]
+)
+def test_runtime_rejects_unsupported_artifact_tokens(
+    tmp_path: Path, artifact_name: str
+) -> None:
+    plan = _plan(tmp_path)
+    plan.render_plans[0].streams[0].fragments = [
+        Fragment(
+            fragment_index=0,
+            kind="runtime_locator_lookup",
+            source_role=PromptSegmentRole.SHARED,
+            locator={"node_id": "input", "artifact_name": artifact_name},
+        )
+    ]
+    with pytest.raises(ValueError, match="Unsupported artifact locator"):
+        assemble_prompt(
+            plan,
+            plan.nodes[1],
+            ProviderRole.EXECUTOR,
+            _ArtifactStore(tmp_path),
+            SecretContext(),
+        )

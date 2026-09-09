@@ -16,6 +16,10 @@ from crewplane.architecture.contracts import (
     EventType,
     WorkflowEventType,
 )
+from crewplane.architecture.contracts.run_summary import (
+    run_summary_header_lines,
+    run_summary_status_lines,
+)
 from crewplane.architecture.safe_files import (
     contained_regular_file,
     path_has_symlink_component,
@@ -280,34 +284,12 @@ def _terminal_summary_matches(
     status: TerminalRunStatus,
 ) -> bool:
     lines = summary.splitlines()
-    expected_status = _terminal_summary_status_line(status)
-    expected_header = _terminal_summary_expected_header(manifest, expected_status)
+    expected_header = run_summary_header_lines(
+        manifest.workflow_name, manifest.run_id, status
+    )
     return lines[
         : len(expected_header)
-    ] == expected_header and _terminal_summary_status_lines(summary) == [
-        expected_status
-    ]
-
-
-def _terminal_summary_expected_header(
-    manifest: RunManifest,
-    expected_status: str,
-) -> list[str]:
-    return [
-        "# Run Summary",
-        "",
-        f"- Workflow: {manifest.workflow_name}",
-        f"- Run ID: {manifest.run_id}",
-        expected_status,
-    ]
-
-
-def _terminal_summary_status_line(status: TerminalRunStatus) -> str:
-    return f"- Status: {status}"
-
-
-def _terminal_summary_status_lines(summary: str) -> list[str]:
-    return [line for line in summary.splitlines() if line.startswith("- Status: ")]
+    ] == expected_header and run_summary_status_lines(summary) == [expected_header[-1]]
 
 
 def read_owner_manifest(manifest_path: Path) -> RunManifest:

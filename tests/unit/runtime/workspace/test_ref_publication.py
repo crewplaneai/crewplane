@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -17,7 +18,10 @@ from crewplane.runtime.workspace.state import (
     discard_workspace_lineage,
     read_workspace_state,
 )
-from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.workspace.worktree import (
+    remove_worktree_workspace,
+    temporary_refs,
+)
 from crewplane.runtime.workspace.worktree.protected_refs import (
     protected_ref_snapshot_for_scopes,
 )
@@ -35,8 +39,19 @@ from tests.helpers.workspace_service import (
 )
 
 
+@pytest.mark.parametrize(
+    "invalid_identity",
+    [
+        None,
+        ("node_id", ""),
+        ("task_id", None),
+        ("round_num", True),
+        ("audit_round_num", False),
+    ],
+)
 def test_external_ref_cleanup_consumes_dedicated_temporary_ref_evidence(
     tmp_path: Path,
+    invalid_identity: tuple[str, object] | None,
 ) -> None:
     repo = create_git_repo(tmp_path)
     run_key_name = "run-1"
@@ -63,6 +78,19 @@ def test_external_ref_cleanup_consumes_dedicated_temporary_ref_evidence(
         target_oid,
     )
 
+    if invalid_identity is not None:
+        payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+        field, value = invalid_identity
+        payload[field] = value
+        evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(RuntimeError, match="lacks invocation identity"):
+            temporary_refs.reconcile_temporary_import_refs(
+                evidence_path, repo, repo / ".git", repository_id
+            )
+        assert _ref_oid(repo, ref_name) == target_oid
+        assert evidence_path.exists()
+        return
+
     removed = delete_run_workspace_refs(
         repo,
         repo / ".git",
@@ -77,6 +105,7 @@ def test_external_ref_cleanup_consumes_dedicated_temporary_ref_evidence(
 
 
 def test_external_ref_cleanup_consumes_empty_prepared_temporary_ref_evidence(
+    monkeypatch,
     tmp_path: Path,
 ) -> None:
     repo = create_git_repo(tmp_path)
@@ -91,12 +120,17 @@ def test_external_ref_cleanup_consumes_empty_prepared_temporary_ref_evidence(
     run_dir = tmp_path / "run"
     evidence_dir = run_dir / "logs"
     evidence_dir.mkdir(parents=True)
+    monkeypatch.setattr(temporary_refs, "uuid4", lambda: UUID(int=1))
     owner = TemporaryRefOwner.dedicated(
         plan,
         source,
         evidence_dir,
         "consumer",
         "workspace-file-readme",
+    )
+    assert (
+        owner.state_path.name
+        == "workspace-temporary-refs-00000000000000000000000000000001.json"
     )
     owner.prepare()
 
@@ -199,6 +233,37 @@ def test_external_ref_cleanup_reconciles_nested_planned_stage_state(
         prepared.workspace_path,
         prepared.worktree_capture.git_dir,
     )
+
+
+@pytest.mark.parametrize("stage_path", [".", "./"])
+def test_ref_cleanup_rejects_dot_stage_before_mutating_refs(
+    tmp_path: Path, stage_path: str
+) -> None:
+    repo, prepared, state = _published_lineage_workspace(tmp_path)
+    assert prepared.state_path is not None
+    run_dir = prepared.state_path.parent.parent
+    plan_path = run_dir / "preflight/execution-plan.json"
+    plan_path.parent.mkdir()
+    plan_path.write_text(
+        json.dumps(
+            {
+                "run_key_name": "workspace-run-001",
+                "nodes": [{"artifact_contract": {"stage_path": stage_path}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="unsafe stage evidence"):
+        delete_run_workspace_refs(
+            repo, repo / ".git", repo, "workspace-run-001", run_dir
+        )
+
+    refs = state["refs"]
+    assert isinstance(refs, dict)
+    assert _ref_oid(repo, str(refs["candidate"])) is not None
+    assert _ref_oid(repo, str(refs["result"])) is not None
+    _remove_published_workspace(repo, prepared, state)
 
 
 def test_result_refs_are_published_in_one_transaction_after_prepared_evidence(

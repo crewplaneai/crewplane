@@ -186,6 +186,12 @@ def _compile_with_availability(
         ("crewplane.adapters.invokers.mock:MockInvokerAdapter", False, True),
         ("crewplane.adapters.invokers.mock.MockInvokerAdapter", False, True),
         ("unknown", False, False),
+        (":CliInvokerAdapter", False, False),
+        ("crewplane.adapters.invokers.cli:", False, False),
+        ("crewplane.adapters.invokers.cli.", False, False),
+        (".CliInvokerAdapter", False, False),
+        ("crewplane.adapters.invokers.cli:CliInvokerAdapter:", False, False),
+        ("crewplane.adapters.invokers.cli:CliInvokerAdapter.extra", False, False),
         ("package.invokers:CustomInvokerAdapter", False, False),
     ],
 )
@@ -496,3 +502,19 @@ def test_builtin_reasoning_hook_exception_fails_adapter_contract(
             lambda command: f"/bin/{command}",
             reasoning="high",
         )
+
+
+def test_identity_probes_do_not_load_adapters(monkeypatch) -> None:
+    import crewplane.architecture.loader as loader
+
+    def unexpected_import(name: str):
+        raise AssertionError(f"identity probe imported {name}")
+
+    monkeypatch.setattr(loader.importlib, "import_module", unexpected_import)
+    assert uses_cli_invoker(
+        _config_for("crewplane.adapters.invokers.cli.CliInvokerAdapter")
+    )
+    assert uses_mock_invoker(
+        _config_for("crewplane.adapters.invokers.mock:MockInvokerAdapter")
+    )
+    assert not uses_cli_invoker(_config_for("custom.module:Adapter"))

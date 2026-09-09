@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.core.file_hashing import ContentSignature
 from crewplane.runtime.execution.publication_registry import (
     RuntimePublicationRegistry,
 )
@@ -78,9 +79,9 @@ def _request_publications(
 def _reconcile_reserved_publications(
     request: DriftGuardCallRequest,
     publications: RuntimePublicationRegistry | None,
-    after_snapshot: dict[Path, tuple[int, str]],
-    expected_publications: dict[Path, tuple[int, str]],
-) -> tuple[dict[Path, tuple[int, str]], dict[Path, tuple[int, str]]]:
+    after_snapshot: dict[Path, ContentSignature],
+    expected_publications: dict[Path, ContentSignature],
+) -> tuple[dict[Path, ContentSignature], dict[Path, ContentSignature]]:
     if publications is None:
         return after_snapshot, expected_publications
     expected_publications = {
@@ -101,8 +102,8 @@ def _reconcile_reserved_publications(
 def _detect_reserved_file_drift(
     request: DriftGuardCallRequest,
     monitoring_window: DriftMonitoringWindow,
-    after_snapshot: dict[Path, tuple[int, str]],
-    expected_publications: dict[Path, tuple[int, str]],
+    after_snapshot: dict[Path, ContentSignature],
+    expected_publications: dict[Path, ContentSignature],
 ) -> DriftCheckResult:
     return detect_artifact_drift(
         before_snapshot=monitoring_window.shared_reserved_snapshot or {},
@@ -117,7 +118,7 @@ def _detect_reserved_directory_drift(
     request: DriftGuardCallRequest,
     before_snapshot: dict[Path, DirectorySnapshot],
     after_snapshot: dict[Path, DirectorySnapshot],
-    expected_publications: dict[Path, tuple[int, str]],
+    expected_publications: dict[Path, ContentSignature],
     file_drift: DriftCheckResult,
 ) -> DriftCheckResult:
     directory_drift = detect_artifact_drift(
@@ -144,9 +145,9 @@ def _stable_shared_reserved_snapshot(
     request: DriftGuardCallRequest,
     publications: RuntimePublicationRegistry | None,
 ) -> tuple[
-    dict[Path, tuple[int, str]],
+    dict[Path, ContentSignature],
     dict[Path, DirectorySnapshot],
-    dict[Path, tuple[int, str]],
+    dict[Path, ContentSignature],
 ]:
     if publications is None:
         return (
@@ -156,7 +157,7 @@ def _stable_shared_reserved_snapshot(
         )
 
     def capture() -> tuple[
-        dict[Path, tuple[int, str]],
+        dict[Path, ContentSignature],
         dict[Path, DirectorySnapshot],
     ]:
         return (

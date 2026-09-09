@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from crewplane.architecture.contracts import JsonValue, NodeArtifactRequest
+from crewplane.architecture.contracts import JsonValue
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import (
     RUN_STATUS_SUCCEEDED,
@@ -20,19 +20,16 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.workflow.keywords import FINDINGS_ARTIFACT_KEYS
 
 from ..naming import build_node_state_filename
 from ..run_history import RunHistoryRecord
-from ..workspace.node_state import build_node_workspace_descriptor
+from ..workspace.node_state import (
+    WorkspaceDescriptorLookup,
+    build_node_workspace_descriptor,
+)
 from ..workspace.state.validation import workspace_node_state_is_valid
 from .generated_files import generated_file_path_belongs_to_node
-
-_FINDINGS_KEYS = {
-    "findings",
-    "findings_path",
-    "findings_size",
-    "findings_sha256",
-}
 
 
 @dataclass(frozen=True)
@@ -43,30 +40,6 @@ class ValidatedResumeFrontier:
     @property
     def resumed_node_ids(self) -> tuple[str, ...]:
         return tuple(self.node_states)
-
-
-@dataclass(frozen=True)
-class _WorkspaceDescriptorStore:
-    run_id: str
-    run_key_name: str
-    task_name: str
-    stages_dir: Path
-    results_dir: Path
-    logs_dir: Path
-    project_root: Path
-    log_cli_output: bool
-    stage_name: str
-    stage_dir: Path
-
-    def get_stage_dir(self, stage_name: str) -> Path | None:
-        if stage_name != self.stage_name or not self.stage_dir.is_dir():
-            return None
-        return self.stage_dir
-
-    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
-        if request.node_id != self.stage_name or not self.stage_dir.is_dir():
-            return None
-        return self.stage_dir
 
 
 def validate_resume_frontier(
@@ -179,16 +152,9 @@ def _workspace_manifest_descriptor_matches(
     stage_path = node.artifact_contract.stage_path
     if stage_path is None:
         return False
-    store = _WorkspaceDescriptorStore(
-        run_id=source.manifest.run_id,
-        run_key_name=source.manifest.run_key_name,
-        task_name=source.manifest.workflow_name,
+    store = WorkspaceDescriptorLookup(
         stages_dir=source.run_dir,
-        results_dir=source.results_dir,
-        logs_dir=source.run_dir / "logs",
-        project_root=source.run_dir,
-        log_cli_output=False,
-        stage_name=node.id,
+        node_id=node.id,
         stage_dir=source.run_dir / stage_path,
     )
     try:
@@ -266,7 +232,7 @@ def required_resume_artifact_paths(
 ) -> dict[ArtifactKind, str]:
     required: dict[ArtifactKind, str] = {"output": node.artifact_contract.output_path}
     findings_required = node.findings or any(
-        edge.source_node == node.id and edge.artifact_name in _FINDINGS_KEYS
+        edge.source_node == node.id and edge.artifact_name in FINDINGS_ARTIFACT_KEYS
         for edge in plan.dependency_graph
     )
     if findings_required:

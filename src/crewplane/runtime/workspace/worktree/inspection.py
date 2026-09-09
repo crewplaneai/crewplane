@@ -2,25 +2,23 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from itertools import batched
 from pathlib import Path
 
-from ..git import git, git_error
-from .attributes import (
+from crewplane.core.state_paths import RUNTIME_ARTIFACT_ROOTS, is_reserved_state_path
+from crewplane.core.workspace.git_attributes import (
+    ATTRIBUTE_CHECK_BATCH_SIZE,
+    attribute_records,
     byte_transforming_attribute,
-    summarize_rejected_attributes,
 )
+
+from ..git import git, git_error
+from .attributes import summarize_rejected_attributes
 from .policy import (
     reject_common_git_policy_drift,
     reject_worktree_git_policy_drift,
 )
 from .protected_refs import ProtectedRefSnapshot, reject_protected_ref_drift
-
-RESERVED_RESULT_ROOTS = (
-    ".crewplane/execution-stages",
-    ".crewplane/execution-results",
-    ".crewplane/locks",
-)
-ATTRIBUTE_CHECK_BATCH_SIZE = 100
 
 
 @dataclass(frozen=True)
@@ -100,7 +98,7 @@ def reject_byte_transforming_attributes(
 ) -> None:
     rejected: dict[str, list[str]] = {}
     command = git(checkout_root)
-    for batch in _path_batches(paths):
+    for batch in batched(paths, ATTRIBUTE_CHECK_BATCH_SIZE, strict=False):
         records = command.zero_records(
             "--literal-pathspecs",
             "check-attr",
@@ -111,7 +109,7 @@ def reject_byte_transforming_attributes(
         )
         if len(records) % 3 != 0:
             raise RuntimeError("Git returned an invalid attribute record stream.")
-        for path, attribute, value in _attribute_records(records):
+        for path, attribute, value in attribute_records(records):
             if byte_transforming_attribute(attribute, value):
                 rejected.setdefault(attribute, []).append(path)
     if rejected:
@@ -187,7 +185,7 @@ def inspect_disposable_checkout(
 
 
 def reserved_runtime_path(path: str, project_root_relative_path: str = ".") -> bool:
-    if _reserved_runtime_path_from_project_root(path):
+    if is_reserved_state_path(path, RUNTIME_ARTIFACT_ROOTS):
         return True
     project_root = project_root_relative_path.strip("/")
     if project_root in {"", "."}:
@@ -195,13 +193,7 @@ def reserved_runtime_path(path: str, project_root_relative_path: str = ".") -> b
     prefix = f"{project_root}/"
     if not path.startswith(prefix):
         return False
-    return _reserved_runtime_path_from_project_root(path.removeprefix(prefix))
-
-
-def _reserved_runtime_path_from_project_root(path: str) -> bool:
-    return any(
-        path == root or path.startswith(f"{root}/") for root in RESERVED_RESULT_ROOTS
-    )
+    return is_reserved_state_path(path.removeprefix(prefix), RUNTIME_ARTIFACT_ROOTS)
 
 
 def gitattributes_drift_detected(paths: tuple[str, ...]) -> bool:
@@ -409,17 +401,3 @@ def _filesystem_policy_file_paths(
                 (current_root / file_name).relative_to(checkout_root).as_posix()
             )
     return tuple(sorted(paths))
-
-
-def _path_batches(paths: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
-    return tuple(
-        tuple(paths[index : index + ATTRIBUTE_CHECK_BATCH_SIZE])
-        for index in range(0, len(paths), ATTRIBUTE_CHECK_BATCH_SIZE)
-    )
-
-
-def _attribute_records(records: tuple[str, ...]) -> tuple[tuple[str, str, str], ...]:
-    return tuple(
-        (records[index], records[index + 1].casefold(), records[index + 2])
-        for index in range(0, len(records), 3)
-    )

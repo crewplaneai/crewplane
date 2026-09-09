@@ -7,12 +7,13 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import EventType
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.core.file_hashing import ContentSignature
 
 from ...common import ExecutionTelemetry
 from ..types import ActivityWindow, DirectorySnapshot, DriftCheckResult
 from .snapshots import file_snapshot_signature, manifests_dir_for
 
-type SnapshotValue = tuple[int, str] | DirectorySnapshot
+type SnapshotValue = ContentSignature | DirectorySnapshot
 
 
 def should_check_shared_reserved_drift(
@@ -50,7 +51,7 @@ def detect_artifact_drift(
     allowed_paths: set[Path],
     output: ArtifactStorePort,
     in_progress_runtime_roots: set[Path] | None = None,
-    expected_runtime_publications: dict[Path, tuple[int, str]] | None = None,
+    expected_runtime_publications: dict[Path, ContentSignature] | None = None,
 ) -> DriftCheckResult:
     runtime_roots = in_progress_runtime_roots or set()
     expected_publications = expected_runtime_publications or {}
@@ -279,9 +280,9 @@ def merge_drift_results(*results: DriftCheckResult) -> DriftCheckResult:
 
 
 def include_current_runtime_publications(
-    after_snapshot: dict[Path, tuple[int, str]],
-    expected_runtime_publications: dict[Path, tuple[int, str]],
-) -> dict[Path, tuple[int, str]]:
+    after_snapshot: dict[Path, ContentSignature],
+    expected_runtime_publications: dict[Path, ContentSignature],
+) -> dict[Path, ContentSignature]:
     snapshot = dict(after_snapshot)
     for path, expected_signature in expected_runtime_publications.items():
         if snapshot.get(path) == expected_signature:
@@ -318,7 +319,7 @@ def suppress_new_ancestor_directory_drift(
 
 
 def allowed_directory_paths(
-    allowed_paths: set[Path] | dict[Path, tuple[int, str]],
+    allowed_paths: set[Path] | dict[Path, ContentSignature],
     roots: Path | tuple[Path, ...],
 ) -> set[Path]:
     root_paths = (roots,) if isinstance(roots, Path) else roots

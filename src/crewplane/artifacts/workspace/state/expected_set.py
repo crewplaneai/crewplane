@@ -6,10 +6,8 @@ from .fields import int_field, nullable_int_field
 from .fields import mapping_value as _mapping
 from .invocations import (
     ExpectedWorkspaceInvocation,
-    expected_seeded_lineage_invocation,
-    latest_lineage_payload_before,
     lineage_payload_order,
-    payload_matches_expected_invocation,
+    resolve_expected_workspace_payload,
 )
 
 
@@ -34,27 +32,11 @@ def _matched_expected_payloads(
 ) -> tuple[dict[str, object], ...] | None:
     matched: list[dict[str, object]] = []
     for expected in expected_invocations:
-        payload = _matched_expected_payload(payloads, expected)
+        payload = resolve_expected_workspace_payload(payloads, expected)
         if payload is None:
             return None
         matched.append(payload)
     return tuple(matched)
-
-
-def _matched_expected_payload(
-    payloads: tuple[dict[str, object], ...],
-    expected: ExpectedWorkspaceInvocation,
-) -> dict[str, object] | None:
-    matches = [
-        payload
-        for payload in payloads
-        if payload_matches_expected_invocation(payload, expected)
-    ]
-    if len(matches) == 1:
-        return matches[0]
-    if matches or not expected_seeded_lineage_invocation(expected):
-        return None
-    return latest_lineage_payload_before(payloads, expected)
 
 
 def _add_candidate_source_payloads(

@@ -90,6 +90,21 @@ def resolve_implementation_path(
     )
 
 
+def is_builtin_implementation(
+    integration_kind: IntegrationKind,
+    implementation: str,
+    builtin_alias: str,
+) -> bool:
+    """Compare a configured target with a registered built-in without importing it."""
+    builtin_path = INTEGRATION_ALIAS_REGISTRY[integration_kind][builtin_alias]
+    try:
+        target_path = resolve_implementation_path(integration_kind, implementation)
+        object_path = _parse_object_path(target_path)
+    except (IntegrationResolutionError, AdapterLoadError):
+        return False
+    return object_path == _parse_object_path(builtin_path)
+
+
 @overload
 def load_adapter_class(
     integration_kind: Literal["artifacts"],

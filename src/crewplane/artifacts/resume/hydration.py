@@ -24,7 +24,10 @@ from crewplane.core.value_checks import is_strict_int
 
 from ..atomic import atomic_write_bytes
 from ..workspace.node_state import build_node_workspace_descriptor
-from ..workspace.state.fields import without_branch_export
+from ..workspace.state.fields import (
+    encode_workspace_state_for_resume,
+    without_branch_export,
+)
 from .generated_files import copy_generated_file_descriptors
 from .validation import (
     ValidatedResumeFrontier,
@@ -316,12 +319,7 @@ def _validate_workspace_state_resume_payload(
         state = json.loads(payload.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         return False
-    resume_bytes = json.dumps(
-        without_branch_export(state),
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    resume_bytes = encode_workspace_state_for_resume(state)
     if hashlib.sha256(resume_bytes).hexdigest() != resume_sha256:
         raise ValueError(
             f"Workspace resume artifact hash changed for node '{node_id}'."

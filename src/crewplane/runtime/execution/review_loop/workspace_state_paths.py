@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.workspace.state.paths import workspace_bundle_path
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.invocation import (
@@ -11,7 +12,6 @@ from crewplane.runtime.workspace.invocation import (
 )
 from crewplane.runtime.workspace.setup import workspace_setup_artifacts
 from crewplane.runtime.workspace.state import discard_workspace_lineage
-from crewplane.runtime.workspace.worktree.refs import safe_file_component
 
 
 def workspace_artifact_allowed_paths(
@@ -38,11 +38,7 @@ def workspace_artifact_allowed_paths(
             }
         )
     if _can_write_lineage_bundle(node, role_label):
-        allowed_paths.add(
-            state_path.parent
-            / "workspace-bundles"
-            / f"{safe_file_component(slug)}.bundle"
-        )
+        allowed_paths.add(workspace_bundle_path(state_path, slug))
     return allowed_paths
 
 

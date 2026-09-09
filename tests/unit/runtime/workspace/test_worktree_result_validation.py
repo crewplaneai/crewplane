@@ -6,11 +6,62 @@ from pathlib import Path
 import pytest
 
 from crewplane.runtime.workspace.git import git
+from crewplane.runtime.workspace.worktree.inspection import reserved_runtime_path
 from crewplane.runtime.workspace.worktree.result_validation import (
     validate_portable_path_collisions,
     validate_result_tree,
 )
 from tests.helpers.workspace_service import create_git_repo, run_git_text
+
+
+@pytest.mark.parametrize(
+    ("path", "reserved"),
+    [
+        (".crewplane/execution-results/output.md", True),
+        ("packages/app/.crewplane/execution-results/output.md", True),
+        ("packages/app/.crewplane/locks", True),
+        ("packages/other/.crewplane/locks", False),
+        ("packages/application/.crewplane/locks", False),
+        ("packages/app/.crewplane/execution-results-old/output.md", False),
+        ("packages/app/.crewplane/preflight/input.md", False),
+        ("packages/app/.crewplane/inputs/input.md", False),
+    ],
+)
+def test_result_reserved_paths_preserve_nested_project_scope(
+    path: str, reserved: bool
+) -> None:
+    assert reserved_runtime_path(path, "packages/app") is reserved
+
+
+@pytest.mark.parametrize("mode", ["100644", "100755", "120000"])
+def test_validate_result_tree_accepts_supported_blob_modes(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    blob = run_git_text(repo, "rev-parse", "HEAD:README.md")
+    tree = (
+        git(repo)
+        .run_with_input(f"{mode} blob {blob}\tentry\n".encode(), "mktree")
+        .stdout.decode()
+        .strip()
+    )
+
+    validate_result_tree(repo, tree)
+
+
+def test_validate_result_tree_rejects_gitlinks(tmp_path: Path) -> None:
+    repo = create_git_repo(tmp_path)
+    commit = run_git_text(repo, "rev-parse", "HEAD")
+    tree = (
+        git(repo)
+        .run_with_input(f"160000 commit {commit}\tmodule\n".encode(), "mktree")
+        .stdout.decode()
+        .strip()
+    )
+
+    with pytest.raises(RuntimeError, match="unsupported mode 160000"):
+        validate_result_tree(repo, tree)
 
 
 def test_validate_result_tree_rejects_reserved_paths_under_project_root(

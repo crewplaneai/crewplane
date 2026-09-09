@@ -15,6 +15,7 @@ from pydantic import (
 
 from crewplane.architecture.contracts import ArtifactContract, JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.token_budget import validate_token_budget_thresholds
 from crewplane.core.workflow.keywords import (
     NodeMode,
     ProviderRole,
@@ -254,15 +255,9 @@ class TokenBudgetPolicy(BaseModel):
 
     @model_validator(mode="after")
     def _validate_threshold_order(self) -> TokenBudgetPolicy:
-        if (
-            self.warn_threshold_chars is not None
-            and self.fail_threshold_chars is not None
-            and self.fail_threshold_chars < self.warn_threshold_chars
-        ):
-            raise ValueError(
-                "fail_threshold_chars must be greater than or equal to "
-                "warn_threshold_chars"
-            )
+        validate_token_budget_thresholds(
+            self.warn_threshold_chars, self.fail_threshold_chars
+        )
         return self
 
 

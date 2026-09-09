@@ -18,6 +18,8 @@ from crewplane.core.config import Config
 from crewplane.observability.tmux.compact import TmuxCompactRuntime
 from crewplane.observability.types import WorkflowTopology
 
+from .validation import validate_runtime_request
+
 
 def _resolve_tmux_options(options: JsonObject) -> TmuxUiOptions:
     resolved = dict(options)
@@ -111,7 +113,7 @@ class TmuxUIAdapter:
     ) -> UIRuntimePlan:
         """Return a tmux observer plan or degrade cleanly when tmux is unavailable."""
 
-        _validate_runtime_request(config, workflow_topology, run_id, console)
+        validate_runtime_request(config, workflow_topology, run_id, console)
         runtime_options = _resolve_tmux_options(dict(options or {}))
         which_lookup = shutil.which if which_fn is None else which_fn
 
@@ -141,19 +143,3 @@ class TmuxUIAdapter:
             observers=(runtime,),
             suppress_progress_output=True,
         )
-
-
-def _validate_runtime_request(
-    config: Config,
-    workflow_topology: WorkflowTopology,
-    run_id: str,
-    console: Console,
-) -> None:
-    if not isinstance(config, Config):
-        raise TypeError("config must be a Config instance")
-    if not isinstance(workflow_topology, WorkflowTopology):
-        raise TypeError("workflow_topology must be a WorkflowTopology instance")
-    if not isinstance(run_id, str) or not run_id:
-        raise ValueError("run_id must be a non-empty string")
-    if not isinstance(console, Console):
-        raise TypeError("console must be a Console instance")

@@ -6,7 +6,7 @@ import pytest
 
 import crewplane.runtime.execution.workspace_files.resolution as workspace_file_resolution
 from crewplane.core.preflight.models import PreflightExecutionPlan, WorkspaceFileLocator
-from crewplane.core.preflight.workspace.files.git_reads import GitTreeRecord
+from crewplane.core.workspace.git_reads import GitTreeRecord
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.workspace_files import read_dynamic_locator_blob
 from crewplane.runtime.workspace.worktree import WorktreeSourceRef
@@ -14,13 +14,15 @@ from crewplane.runtime.workspace.worktree.temporary_refs import TemporaryRefOwne
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
 
 
+@pytest.mark.parametrize("mode", ["120000", "160000", "040000", "100664"])
 def test_read_dynamic_locator_blob_rejects_unsupported_file_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    mode: str,
 ) -> None:
     plan, locator, source, owner = _dynamic_blob_inputs(tmp_path)
 
-    def symlink_record(
+    def unsupported_record(
         git_top_level: str,
         source_commit: str,
         git_top_relative_path: str,
@@ -28,7 +30,7 @@ def test_read_dynamic_locator_blob_rejects_unsupported_file_mode(
         assert git_top_level
         assert source_commit
         return GitTreeRecord(
-            mode="120000",
+            mode=mode,
             object_type="blob",
             object_id="a" * 40,
             path=git_top_relative_path,
@@ -37,7 +39,7 @@ def test_read_dynamic_locator_blob_rejects_unsupported_file_mode(
     def unexpected_blob_read(git_top_level: str, object_id: str) -> bytes:
         raise AssertionError(f"unexpected blob read from {git_top_level}: {object_id}")
 
-    monkeypatch.setattr(workspace_file_resolution, "git_ls_tree", symlink_record)
+    monkeypatch.setattr(workspace_file_resolution, "git_ls_tree", unsupported_record)
     monkeypatch.setattr(
         workspace_file_resolution,
         "git_cat_blob",

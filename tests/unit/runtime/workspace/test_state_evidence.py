@@ -2,10 +2,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
 import crewplane.runtime.workspace.state_evidence as evidence
+from crewplane.runtime.agent.process.drain import (
+    ProcessDrainError,
+    ProcessDrainEvidence,
+)
+from crewplane.runtime.workspace.mutator_fence import (
+    fence_workspace_mutator,
+    release_workspace_mutator,
+    workspace_mutator_is_fenced,
+)
+from crewplane.runtime.workspace.terminalization import workspace_mutators_are_drained
 
 
 def _write_payload(state_path: Path, payload: dict[str, object]) -> None:
@@ -16,6 +27,77 @@ def _read_payload(state_path: Path) -> dict[str, object]:
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+@pytest.mark.parametrize("write_fails", [False, True])
+def test_process_drain_transition_orders_evidence_and_cleanup_fence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, confirmed: bool, write_fails: bool
+) -> None:
+    state_path = tmp_path / "workspace-state.json"
+    _write_payload(state_path, {"process_drain": {"status": "not_started"}})
+    error = ProcessDrainError(
+        ProcessDrainEvidence(12, 13, True, False), "process group remains live"
+    )
+    persistence_error = OSError("state write failed")
+    original_record = evidence.record_workspace_process_drain
+    writes: list[str] = []
+    if confirmed:
+        fence_workspace_mutator(state_path)
+
+    def record_while_fenced(
+        path: Path,
+        status: Literal["confirmed", "unresolved"],
+        pid: int,
+        process_group_id: int | None,
+        reason: str | None = None,
+    ) -> None:
+        assert path == state_path
+        assert workspace_mutator_is_fenced(state_path)
+        assert not workspace_mutators_are_drained(state_path)
+        writes.append(status)
+        if write_fails:
+            raise persistence_error
+        original_record(path, status, pid, process_group_id, reason)
+
+    monkeypatch.setattr(evidence, "record_workspace_process_drain", record_while_fenced)
+    try:
+        if confirmed and write_fails:
+            with pytest.raises(OSError) as caught:
+                evidence.confirm_workspace_process_drain(state_path, 12, 13)
+            assert caught.value is persistence_error
+        elif confirmed:
+            evidence.confirm_workspace_process_drain(state_path, 12, 13)
+        else:
+            evidence.record_unresolved_workspace_process_drain(state_path, error)
+            assert getattr(error, "__notes__", []) == (
+                [
+                    "Workspace process-drain evidence persistence failed: state write failed"
+                ]
+                if write_fails
+                else []
+            )
+
+        assert writes == ["confirmed" if confirmed else "unresolved"]
+        assert workspace_mutators_are_drained(state_path) is (
+            confirmed and not write_fails
+        )
+        assert workspace_mutator_is_fenced(state_path) is (not confirmed or write_fails)
+        payload = _read_payload(state_path)
+        assert payload["process_drain"]["status"] == (
+            "not_started" if write_fails else "confirmed" if confirmed else "unresolved"
+        )
+    finally:
+        release_workspace_mutator(state_path)
+
+
+def test_process_drain_transitions_allow_absent_workspace_state() -> None:
+    error = ProcessDrainError(ProcessDrainEvidence(12, None, True, False), "live")
+
+    evidence.confirm_workspace_process_drain(None, 12, None)
+    evidence.record_unresolved_workspace_process_drain(None, error)
+
+    assert not getattr(error, "__notes__", [])
 
 
 def test_workspace_setup_update_validates_identity_and_preserves_runtime_evidence(

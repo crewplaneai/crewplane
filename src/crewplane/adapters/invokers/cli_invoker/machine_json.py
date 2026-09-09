@@ -7,13 +7,15 @@ from crewplane.architecture.contracts import (
     CommandResult,
     OutputExtractionResult,
 )
+from crewplane.core.file_text import (
+    path_decoded_character_count,
+    path_has_non_whitespace_text,
+)
 
 from . import claude_json as _claude_json
 from .streaming import (
     iter_stdout_json_objects,
     load_stdout_json,
-    path_decoded_character_count,
-    path_has_non_whitespace_text,
 )
 
 # Usage metadata is normally small; bound buffering of malformed provider output.
@@ -80,18 +82,14 @@ def extract_kilo_output(
     structured_output_file: Path | None,  # noqa: ARG001 - Required by OutputExtractor callback.
 ) -> OutputExtractionResult:
     text_parts: list[str] = []
-    malformed_error: str | None = None
     for event in iter_stdout_json_objects(result):
         if event is None:
-            malformed_error = "Malformed Kilo JSON output."
-            break
+            return _malformed_output()
         text = _kilo_text_event(event)
         if text is not None:
             text = text.strip()
             if text:
                 text_parts.append(text)
-    if malformed_error is not None:
-        return _malformed_output()
     if not text_parts:
         return _missing_output()
     output_text = "\n".join(text_parts) + "\n"

@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,11 @@ from crewplane.runtime.execution.common import (
     ExecutionTelemetry,
 )
 from crewplane.runtime.execution.errors import NodeExecutionError
+from crewplane.runtime.execution.provider_call import (
+    ProviderCallDisplay,
+    ProviderCallRequest,
+    ProviderCallResult,
+)
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
@@ -37,6 +43,68 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 
 
 class ExecutorParallelFailSafetyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_parallel_failure_stays_with_its_provider_when_completion_reverses(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = Config(
+                version=SCHEMA_VERSION,
+                agents={
+                    name: AgentConfig(cli_cmd=["mock"], default_model="test")
+                    for name in ("alpha", "beta")
+                },
+            )
+            node = WorkflowNode(
+                id="parallel.order",
+                mode="parallel",
+                prompt_segments=[PromptSegment(role="shared", content="run")],
+                providers=[ProviderSpec(provider=name) for name in ("alpha", "beta")],
+                failure_threshold=1,
+            )
+            output = OutputManager("workflow", base_dir=Path(tmp_dir))
+            beta_finished = asyncio.Event()
+            completed: list[str] = []
+
+            async def complete_out_of_order(
+                request: ProviderCallRequest,
+                invocation_semaphore: asyncio.Semaphore | None,
+                capture_exception: bool,
+                display: ProviderCallDisplay,
+            ) -> ProviderCallResult:
+                assert invocation_semaphore is None
+                assert capture_exception is True
+                assert display.show_console_summary is False
+                if request.provider.provider == "alpha":
+                    await asyncio.wait_for(beta_finished.wait(), timeout=1)
+                    completed.append("alpha")
+                    return ProviderCallResult(
+                        request.output_file, NodeExecutionError("alpha failed")
+                    )
+                request.output_file.write_text("beta succeeded", encoding="utf-8")
+                completed.append("beta")
+                beta_finished.set()
+                return ProviderCallResult(request.output_file)
+
+            with patch(
+                "crewplane.runtime.execution.parallel.run_provider_invocation",
+                new=complete_out_of_order,
+            ):
+                await execute_parallel_stage(
+                    config, node, output, invoker=MockAgentInvoker(outputs=[])
+                )
+
+            self.assertEqual(completed, ["beta", "alpha"])
+            node_dir = output.get_node_dir(node_artifact_request(node.id))
+            assert node_dir is not None
+            self.assertIn(
+                "alpha failed",
+                (node_dir / "alpha_executor_0_round1.md").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                (node_dir / "beta_executor_1_round1.md").read_text(encoding="utf-8"),
+                "beta succeeded",
+            )
+
     async def test_parallel_node_fails_when_resolved_executor_prompt_is_empty(
         self,
     ) -> None:

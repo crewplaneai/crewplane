@@ -8,8 +8,64 @@ from crewplane.architecture import safe_files
 from crewplane.architecture.safe_files import (
     ensure_contained_directory,
     ensure_single_link_regular_file,
+    is_single_link_regular_file,
+    path_is_absent,
     replace_contained_file,
 )
+
+
+@pytest.mark.parametrize(
+    "entry_kind", ["missing", "file", "directory", "dangling_symlink"]
+)
+def test_path_absence_requires_a_missing_entry(tmp_path: Path, entry_kind: str) -> None:
+    path = tmp_path / "entry"
+    if entry_kind == "file":
+        path.write_bytes(b"content")
+    elif entry_kind == "directory":
+        path.mkdir()
+    elif entry_kind == "dangling_symlink":
+        path.symlink_to(tmp_path / "missing")
+
+    assert path_is_absent(path) is (entry_kind == "missing")
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), OSError("io failure")])
+def test_path_absence_propagates_inspection_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError
+) -> None:
+    def fail_inspection(path: Path) -> os.stat_result:
+        del path
+        raise error
+
+    monkeypatch.setattr(Path, "lstat", fail_inspection)
+
+    with pytest.raises(OSError) as caught:
+        path_is_absent(tmp_path / "entry")
+
+    assert caught.value is error
+
+
+@pytest.mark.parametrize(
+    "entry_kind", ["file", "hardlink", "symlink", "directory", "fifo"]
+)
+def test_single_link_regular_file_classifies_unfollowed_metadata(
+    tmp_path: Path, entry_kind: str
+) -> None:
+    path = tmp_path / "entry"
+    if entry_kind in {"file", "hardlink"}:
+        path.write_bytes(b"content")
+        if entry_kind == "hardlink":
+            (tmp_path / "alias").hardlink_to(path)
+    elif entry_kind == "symlink":
+        target = tmp_path / "target"
+        target.write_bytes(b"content")
+        path.symlink_to(target)
+    elif entry_kind == "directory":
+        path.mkdir()
+    else:
+        os.mkfifo(path)
+
+    assert is_single_link_regular_file(path.lstat()) is (entry_kind == "file")
 
 
 def test_ensure_contained_directory_allows_concurrent_creation(tmp_path: Path) -> None:

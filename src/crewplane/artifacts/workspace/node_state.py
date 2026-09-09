@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -27,7 +28,8 @@ from ..results.review_loop_status import (
     resolve_review_loop_status,
     task_specs_for_producers,
 )
-from .state.fields import without_branch_export
+from .state.fields import encode_workspace_state_for_resume
+from .state.paths import workspace_state_candidates
 
 
 class NodeArtifactStateStore(Protocol):
@@ -35,6 +37,18 @@ class NodeArtifactStateStore(Protocol):
     def stages_dir(self) -> Path: ...
 
     def get_node_dir(self, request: NodeArtifactRequest) -> Path | None: ...
+
+
+@dataclass(frozen=True)
+class WorkspaceDescriptorLookup:
+    stages_dir: Path
+    node_id: str
+    stage_dir: Path
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        if request.node_id != self.node_id or not self.stage_dir.is_dir():
+            return None
+        return self.stage_dir
 
 
 def build_node_workspace_descriptor(
@@ -117,12 +131,10 @@ def refresh_node_workspace_descriptor(
 def _workspace_state_paths(stage_dir: Path) -> tuple[Path, ...]:
     if not stage_dir.is_dir() or stage_dir.is_symlink():
         return ()
-    names = ["workspace-state.json"]
-    names.extend(path.name for path in sorted(stage_dir.glob("workspace-state-*.json")))
     paths = [
         path
-        for name in names
-        if (path := contained_regular_file(stage_dir, name)) is not None
+        for candidate in workspace_state_candidates(stage_dir)
+        if (path := contained_regular_file(stage_dir, candidate.name)) is not None
     ]
     return tuple(paths)
 
@@ -232,13 +244,7 @@ def _workspace_state_artifact_descriptor(
     payload: Mapping[str, object],
 ) -> JsonObject:
     descriptor = _artifact_descriptor(stages_dir, path)
-    resume_payload = without_branch_export(payload)
-    resume_bytes = json.dumps(
-        resume_payload,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+    resume_bytes = encode_workspace_state_for_resume(payload)
     descriptor["resume_sha256"] = hashlib.sha256(resume_bytes).hexdigest()
     descriptor["resume_size_bytes"] = len(resume_bytes)
     return descriptor

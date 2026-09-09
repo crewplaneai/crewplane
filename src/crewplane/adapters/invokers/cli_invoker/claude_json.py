@@ -14,6 +14,7 @@ from crewplane.architecture.contracts import (
     CommandResult,
     OutputExtractionResult,
 )
+from crewplane.core.file_text import path_has_non_whitespace_text
 
 from .claude_json_parser import (
     ClaudeJsonParseError,
@@ -22,7 +23,6 @@ from .claude_json_parser import (
 )
 from .streaming import (
     new_owned_output_file,
-    path_has_non_whitespace_text,
     remove_owned_path,
     stdout_source,
     stream_source,

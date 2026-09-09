@@ -9,6 +9,11 @@ from crewplane.architecture.contracts import (
     OutputExtractionResult,
     OutputExtractor,
 )
+from crewplane.core.file_text import (
+    STREAM_READ_BYTES,
+    path_decoded_character_count,
+    path_has_non_whitespace_text,
+)
 
 from ..usage import output_text_for_usage
 from .state import (
@@ -17,8 +22,6 @@ from .state import (
     InvocationCommandRuntime,
     InvocationDiagnosticNotice,
 )
-
-STREAM_READ_BYTES = 65_536
 
 
 def build_invocation_attempt_result(
@@ -190,27 +193,9 @@ def _visible_stream_output(
 ) -> tuple[str, Path | None, int | None]:
     if path is None or not path.is_file():
         return fallback_text, None, len(fallback_text)
-    if not _path_has_non_whitespace_text(path):
+    if not path_has_non_whitespace_text(path):
         return "", None, 0
-    return "", path, _path_decoded_character_count(path)
-
-
-def _path_has_non_whitespace_text(path: Path) -> bool:
-    decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    with path.open("rb") as handle:
-        while chunk := handle.read(STREAM_READ_BYTES):
-            if any(not char.isspace() for char in decoder.decode(chunk)):
-                return True
-    return any(not char.isspace() for char in decoder.decode(b"", final=True))
-
-
-def _path_decoded_character_count(path: Path) -> int:
-    decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    char_count = 0
-    with path.open("rb") as handle:
-        while chunk := handle.read(STREAM_READ_BYTES):
-            char_count += len(decoder.decode(chunk))
-    return char_count + len(decoder.decode(b"", final=True))
+    return "", path, path_decoded_character_count(path)
 
 
 def _stream_size_bytes(fallback_text: str, path: Path | None) -> int:

@@ -312,17 +312,9 @@ def _codex_item_detail(
     if text:
         components.append(text)
 
-    command = _display_field_value(item.get("command"), limits)
-    if command:
-        components.append(f"command: {command}")
-
-    for key in ("status", "exit_code"):
-        raw_value = item.get(key)
-        if raw_value is None:
-            raw_value = record.get(key)
-        value = _display_field_value(raw_value, limits)
-        if value:
-            components.append(f"{key}: {value}")
+    metadata = _codex_command_execution_metadata(record, item, limits)
+    if metadata:
+        components.append(metadata)
 
     for key in _CODEX_ITEM_OUTPUT_FIELDS:
         value = _display_field_value(item.get(key), limits)

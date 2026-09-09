@@ -19,6 +19,7 @@ from crewplane.architecture.contracts import (
     StructuredOutputMode,
     UsageDecoder,
 )
+from crewplane.architecture.contracts.provider_log import build_provider_log_header
 from crewplane.core.config import AgentConfig
 
 from .machine_json import (
@@ -173,7 +174,8 @@ def build_cli_invocation_plan(
         quota_parser=capability.quota_parser,
         failure_profile=capability.provider_kind,
         log_provider_kind=capability.provider_kind,
-        log_header=_build_log_header(
+        log_header=build_provider_log_header(
+            started_at=datetime.now(UTC).isoformat(),
             cli_executable=cmd[0],
             model=model,
             output_file=output_file,
@@ -290,27 +292,3 @@ def _structured_output_file(capability: CliProviderCapability) -> Path | None:
     os.close(file_descriptor)
     Path(temp_path).unlink(missing_ok=True)
     return Path(temp_path)
-
-
-def _build_log_header(
-    cli_executable: str,
-    model: str | None,
-    output_file: Path,
-    requested_reasoning: str | None = None,
-) -> bytes:
-    started_at = datetime.now(UTC).isoformat()
-    model_label = model if model is not None else "provider default"
-    reasoning_line = (
-        f"requested_reasoning: {requested_reasoning}\n"
-        if requested_reasoning is not None
-        else ""
-    )
-    header = (
-        f"started_at: {started_at}\n"
-        f"cli_executable: {cli_executable}\n"
-        f"model: {model_label}\n"
-        f"{reasoning_line}"
-        f"output_file: {output_file}\n"
-        "---\n"
-    )
-    return header.encode("utf-8")

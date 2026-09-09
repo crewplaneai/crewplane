@@ -9,6 +9,7 @@ import pytest
 
 from crewplane.artifacts.manager import OutputManager
 from crewplane.artifacts.workspace.node_state import (
+    WorkspaceDescriptorLookup,
     build_node_workspace_descriptor,
     refresh_node_workspace_descriptor,
 )
@@ -43,6 +44,8 @@ def test_build_node_workspace_descriptor_records_state_and_bundle_artifacts(
 
     descriptor = build_node_workspace_descriptor(plan.nodes[0], plan, output)
 
+    lookup = WorkspaceDescriptorLookup(output.stages_dir, "a", stage_dir)
+    assert build_node_workspace_descriptor(plan.nodes[0], plan, lookup) == descriptor
     assert descriptor is not None
     assert descriptor["enabled"] is True
     assert descriptor["worktree_contract"] == WORKTREE_CONTRACT_PAYLOAD
@@ -306,3 +309,17 @@ def _workspace_state_payload(plan, bundle_payload: bytes) -> dict[str, object]:
         "diagnostics": [],
         "updated_at": "2026-06-09T12:00:00+00:00",
     }
+
+
+def test_workspace_descriptor_lookup_matches_node_and_existing_directory(
+    tmp_path: Path,
+) -> None:
+    stage_dir = tmp_path / "compiled-stage"
+    lookup = WorkspaceDescriptorLookup(tmp_path, "a", stage_dir)
+    assert lookup.get_node_dir(node_artifact_request("a")) is None
+    with pytest.raises(RuntimeError, match="has no stage directory"):
+        plan = _workspace_plan()
+        build_node_workspace_descriptor(plan.nodes[0], plan, lookup)
+    stage_dir.mkdir()
+    assert lookup.get_node_dir(node_artifact_request("a")) == stage_dir
+    assert lookup.get_node_dir(node_artifact_request("b")) is None

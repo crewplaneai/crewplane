@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TypeGuard
@@ -47,12 +48,13 @@ def bool_field_matches(
     return isinstance(value, bool) and value == expected
 
 
-def is_hex_object(value: object) -> TypeGuard[str]:
-    return (
-        isinstance(value, str)
-        and len(value) in {40, 64}
-        and all(char in "0123456789abcdef" for char in value)
-    )
+def encode_workspace_state_for_resume(value: object) -> bytes:
+    return json.dumps(
+        without_branch_export(value),
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
 
 def without_branch_export(value: object) -> object:

@@ -48,7 +48,6 @@ class _HistoryStageLookup:
 @dataclass(frozen=True)
 class _BranchExportBatch:
     run: BranchExportRun
-    results_dir: Path
     write_record: BranchExportRecordWriter
     operation_origin: BranchExportOrigin
     resumed_node_ids: Collection[str]
@@ -72,7 +71,6 @@ def fulfill_branch_exports(
     return _fulfill_branch_export_batch(
         _BranchExportBatch(
             run=run,
-            results_dir=output.results_dir,
             write_record=output.write_workspace_export,
             operation_origin="current_run",
             resumed_node_ids=frozenset(resumed_node_ids),
@@ -103,7 +101,6 @@ def fulfill_branch_exports_from_history(
     return _fulfill_branch_export_batch(
         _BranchExportBatch(
             run=run,
-            results_dir=source.results_dir,
             write_record=write_record,
             operation_origin="verified_history",
             resumed_node_ids=(),
@@ -201,7 +198,6 @@ def _fulfill_branch_export_batch(batch: _BranchExportBatch) -> tuple[Path, ...]:
             batch.run.plan,
             node,
             batch.run.stages_dir,
-            batch.results_dir,
             payload,
             record_path,
         )
@@ -248,7 +244,6 @@ def _record_state_fulfillment(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     stages_dir: Path,
-    results_dir: Path,
     record_payload: JsonObject,
     record_path: Path,
 ) -> None:
@@ -259,7 +254,6 @@ def _record_state_fulfillment(
                 plan,
                 node,
                 stages_dir,
-                results_dir,
                 record_path,
                 record_payload,
             )
@@ -268,7 +262,6 @@ def _record_state_fulfillment(
         plan,
         node,
         stages_dir,
-        results_dir,
         checkpoint,
         record_path,
         record_payload,

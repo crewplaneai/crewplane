@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import os
-import unicodedata
 from pathlib import Path
 
 from crewplane.core.config import Settings
-from crewplane.core.workspace.cache import workspace_cache_root
+from crewplane.core.workspace.cache import (
+    paths_overlap,
+    workspace_cache_forbidden_roots,
+    workspace_cache_root,
+)
 
 from .git_source import GitSourceContext
 from .source_types import WorkspacePolicyBuilder
@@ -30,12 +32,9 @@ def validate_cache_root(
             f"Workspace cache root must not be a symlink: {cache_root.as_posix()}"
         )
         return
-    blocked_roots = (
+    blocked_roots = workspace_cache_forbidden_roots(
         project_root,
         state_dir,
-        state_dir / "execution-stages",
-        state_dir / "execution-results",
-        state_dir / "locks",
         git_context.active_git_dir,
         git_context.common_git_dir,
     )
@@ -46,22 +45,3 @@ def validate_cache_root(
                 f"or Git metadata paths: {cache_root.as_posix()}"
             )
             return
-
-
-def paths_overlap(left: Path, right: Path) -> bool:
-    resolved_left = left.expanduser().resolve(strict=False)
-    resolved_right = right.expanduser().resolve(strict=False)
-    case_left = Path(normalized_casefold_path(resolved_left))
-    case_right = Path(normalized_casefold_path(resolved_right))
-    return (
-        resolved_left == resolved_right
-        or resolved_left.is_relative_to(resolved_right)
-        or resolved_right.is_relative_to(resolved_left)
-        or case_left == case_right
-        or case_left.is_relative_to(case_right)
-        or case_right.is_relative_to(case_left)
-    )
-
-
-def normalized_casefold_path(path: Path) -> str:
-    return unicodedata.normalize("NFC", os.fspath(path)).casefold()

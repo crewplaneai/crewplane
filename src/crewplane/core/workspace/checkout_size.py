@@ -3,11 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-RESERVED_CHECKOUT_ROOTS = (
-    ".crewplane/execution-stages",
-    ".crewplane/execution-results",
-    ".crewplane/locks",
-)
+from crewplane.core.state_paths import RUNTIME_ARTIFACT_ROOTS, is_reserved_state_path
 
 
 def estimated_tree_checkout_size_bytes(
@@ -67,9 +63,6 @@ def reserved_checkout_path(path: Path, reserved_roots: tuple[Path, ...]) -> bool
             relative = path.relative_to(scan_root).as_posix()
         except ValueError:
             continue
-        if any(
-            relative == root or relative.startswith(f"{root}/")
-            for root in RESERVED_CHECKOUT_ROOTS
-        ):
+        if is_reserved_state_path(relative, RUNTIME_ARTIFACT_ROOTS):
             return True
     return False

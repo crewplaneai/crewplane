@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from crewplane.artifacts.naming import build_stage_directory_name
+from crewplane.artifacts.workspace.state.paths import workspace_state_candidates
 
 
 def workspace_state_candidate_paths(stages_dir: Path) -> tuple[Path, ...]:
@@ -15,7 +16,7 @@ def workspace_state_candidate_paths(stages_dir: Path) -> tuple[Path, ...]:
             continue
         candidates.extend(
             path
-            for path in sorted(stage_dir.glob("workspace-state*.json"))
+            for path in sorted(workspace_state_candidates(stage_dir))
             if path.is_file() and not path.is_symlink()
         )
     return tuple(candidates)

@@ -6,6 +6,10 @@ from pathlib import Path
 import pytest
 
 from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.artifacts.workspace.state.paths import (
+    is_workspace_claim_name,
+    workspace_state_candidates,
+)
 from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
@@ -15,6 +19,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSetupRecord,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.naming import safe_ref_component
 from crewplane.runtime.execution.review_loop.workspace_state_paths import (
     workspace_artifact_allowed_paths,
 )
@@ -25,7 +30,6 @@ from crewplane.runtime.workspace.invocation import (
     invocation_slug,
     workspace_state_path,
 )
-from crewplane.runtime.workspace.worktree.refs import safe_ref_component
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
@@ -250,3 +254,29 @@ def _write_lineage_state(path: Path, result_commit: str) -> None:
         },
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("provider_count", "audit_round", "round_num", "canonical"),
+    [
+        (1, None, 1, True),
+        (1, None, 2, False),
+        (1, 1, 1, False),
+        (2, None, 1, False),
+    ],
+)
+def test_invocation_state_writers_use_discoverable_filenames(
+    tmp_path: Path, provider_count, audit_round, round_num, canonical
+) -> None:
+    output = ArtifactStore(tmp_path)
+    node = _node()
+    node.provider_records *= provider_count
+    slug = invocation_slug("implement", "alpha", audit_round, round_num)
+    path = workspace_state_path(output, node, slug, audit_round, round_num)
+    expected_name = (
+        "workspace-state.json" if canonical else f"workspace-state-{slug}.json"
+    )
+    assert path.name == expected_name
+    path.write_text("{}")
+    assert is_workspace_claim_name(path.name)
+    assert path in workspace_state_candidates(path.parent)

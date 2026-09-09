@@ -18,11 +18,8 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.config import (
-    AgentConfig,
     Config,
-    IntegrationsConfig,
     IntegrationSpec,
-    Settings,
 )
 from crewplane.core.preflight import (
     FingerprintKeyCache,
@@ -30,7 +27,6 @@ from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightCompileOptions,
     PreflightExecutionPlan,
-    PreflightWorkflowSource,
     compile_preflight_preview,
     signature_for_payload,
 )
@@ -45,71 +41,8 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from crewplane.version import SCHEMA_VERSION
 
-
-def _mock_config() -> Config:
-    return Config(
-        version=SCHEMA_VERSION,
-        agents={"mock": AgentConfig(cli_cmd=["mock"])},
-        settings=Settings(
-            integrations=IntegrationsConfig(
-                invoker=IntegrationSpec(
-                    implementation="mock",
-                    options={
-                        "observation_delay_seconds": 0,
-                        "output_mode": "echo",
-                    },
-                ),
-                ui=IntegrationSpec(implementation="tmux", options={}),
-                artifacts=IntegrationSpec(
-                    implementation="filesystem",
-                    options={"log_cli_output": True},
-                ),
-            )
-        ),
-    )
-
-
-def _literal_workflow() -> WorkflowPlan:
-    return WorkflowPlan(
-        name="demo",
-        nodes=[
-            WorkflowNode(
-                id="build",
-                mode="sequential",
-                providers=[ProviderSpec(provider="mock")],
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="hello")
-                ],
-            )
-        ],
-    )
-
-
-def _source(
-    workflow: WorkflowPlan,
-    workflow_content: str = "workflow source",
-    composed_workflow: dict[str, Any] | None = None,
-    node_source_paths: dict[str, Path] | None = None,
-    node_source_spans: dict[str, dict[str, int]] | None = None,
-    prompt_segment_spans: dict[str, list[dict[str, int]]] | None = None,
-) -> PreflightWorkflowSource:
-    return PreflightWorkflowSource.from_workflow(
-        workflow,
-        workflow_content=workflow_content,
-        composed_workflow=composed_workflow
-        or {
-            "schema_version": workflow.schema_version,
-            "name": workflow.name,
-            "description": workflow.description,
-            "inputs": dict(workflow.inputs),
-            "nodes": [],
-        },
-        node_source_paths=node_source_paths,
-        node_source_spans=node_source_spans,
-        prompt_segment_spans=prompt_segment_spans,
-    )
+from .helpers import literal_workflow, make_source, mock_config
 
 
 class SensitiveOptionInvokerAdapter:
@@ -139,36 +72,13 @@ class SensitiveOptionInvokerAdapter:
         raise AssertionError("preflight preview must not construct the invoker")
 
 
-def _compile_signature(root: Path, no_live: bool) -> str:
-    config = _mock_config()
-    workflow = _literal_workflow()
-    snapshot = build_runtime_config_snapshot(
-        config=config,
-        console=Console(file=None),
-        no_live=no_live,
-    )
-    preview = compile_preflight_preview(
-        source=_source(workflow),
-        config=config,
-        runtime_snapshot=snapshot.snapshot,
-        options=PreflightCompileOptions(
-            project_root=root,
-            state_dir=root / ".crewplane",
-            fingerprint_key_policy="read_only",
-        ),
-    )
-    assert not preview.diagnostics
-    assert preview.workflow_signature is not None
-    return preview.workflow_signature
-
-
 def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
     tmp_path: Path,
 ) -> None:
-    workflow = _literal_workflow()
+    workflow = literal_workflow()
 
     def compile_with_secret(secret_value: str, split_arg: bool = False) -> str:
-        config = _mock_config()
+        config = mock_config()
         expected_sensitive_path = "agents.mock.extra_args.0"
         if split_arg:
             config.agents["mock"].extra_args = ["--api-key", secret_value]
@@ -186,7 +96,7 @@ def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
         assert secret_value not in snapshot.snapshot.model_dump_json()
         assert "--api-key=" not in snapshot.snapshot.model_dump_json()
         preview = compile_preflight_preview(
-            source=_source(workflow),
+            source=make_source(workflow),
             config=config,
             runtime_snapshot=snapshot.snapshot,
             options=PreflightCompileOptions(
@@ -250,10 +160,10 @@ def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
 def test_sensitive_adapter_options_are_hmac_fingerprinted_and_redacted(
     tmp_path: Path,
 ) -> None:
-    workflow = _literal_workflow()
+    workflow = literal_workflow()
 
     def compile_with_token(token_value: object) -> str:
-        config = _mock_config()
+        config = mock_config()
         assert config.settings is not None
         config.settings.integrations.invoker = IntegrationSpec(
             implementation=f"{__name__}:SensitiveOptionInvokerAdapter",
@@ -269,7 +179,7 @@ def test_sensitive_adapter_options_are_hmac_fingerprinted_and_redacted(
         assert "second-token" not in serialized_snapshot
         assert "nested-token" not in serialized_snapshot
         preview = compile_preflight_preview(
-            source=_source(workflow),
+            source=make_source(workflow),
             config=config,
             runtime_snapshot=snapshot.snapshot,
             options=PreflightCompileOptions(
@@ -323,7 +233,7 @@ def test_sensitive_adapter_options_are_hmac_fingerprinted_and_redacted(
 def test_sensitive_adapter_options_discard_raw_redaction_metadata() -> None:
     raw_fingerprint = "a" * 64
     raw_handle = "config:/attacker-controlled-path"
-    config = _mock_config()
+    config = mock_config()
     assert config.settings is not None
     config.settings.integrations.invoker = IntegrationSpec(
         implementation=f"{__name__}:SensitiveOptionInvokerAdapter",
@@ -431,13 +341,13 @@ def _compile_with_nested_adapter_secrets(
     key_path.parent.mkdir(parents=True, exist_ok=True)
     key_path.write_bytes(_FIXED_FINGERPRINT_KEY)
     key_path.chmod(0o600)
-    config = _mock_config()
+    config = mock_config()
     snapshot = _runtime_snapshot_with_nested_adapter_secrets(
         config,
         secret_version,
     )
     preview = compile_preflight_preview(
-        source=_source(_literal_workflow()),
+        source=make_source(literal_workflow()),
         config=config,
         runtime_snapshot=snapshot,
         options=PreflightCompileOptions(
@@ -540,7 +450,7 @@ def test_nested_adapter_secrets_stay_out_of_serialized_preflight_surfaces(
 def test_nested_adapter_secrets_are_redacted_on_preflight_failure(
     tmp_path: Path,
 ) -> None:
-    config = _mock_config()
+    config = mock_config()
     snapshot = _runtime_snapshot_with_nested_adapter_secrets(config, "failure")
     workflow = WorkflowPlan(
         name="invalid-provider",
@@ -557,7 +467,7 @@ def test_nested_adapter_secrets_are_redacted_on_preflight_failure(
     )
 
     preview = compile_preflight_preview(
-        source=_source(workflow),
+        source=make_source(workflow),
         config=config,
         runtime_snapshot=snapshot,
         options=PreflightCompileOptions(
@@ -605,7 +515,7 @@ def test_nested_adapter_secret_fingerprints_change_only_effective_signatures(
         scope,
         "second",
     )
-    config = _mock_config()
+    config = mock_config()
     second_snapshot = RuntimeConfigSnapshot.build(
         config=config,
         invoker=second_integrations["invoker"],
@@ -614,7 +524,7 @@ def test_nested_adapter_secret_fingerprints_change_only_effective_signatures(
         options=RuntimeConfigSnapshotOptions(no_live=True),
     )
     second = compile_preflight_preview(
-        source=_source(_literal_workflow()),
+        source=make_source(literal_workflow()),
         config=config,
         runtime_snapshot=second_snapshot,
         options=PreflightCompileOptions(
@@ -650,7 +560,7 @@ def test_nested_adapter_secret_fingerprints_change_only_effective_signatures(
 
 
 def test_param_tokens_cannot_survive_to_preflight_plan(tmp_path: Path) -> None:
-    config = _mock_config()
+    config = mock_config()
     workflow = WorkflowPlan(
         name="demo",
         nodes=[
@@ -672,7 +582,7 @@ def test_param_tokens_cannot_survive_to_preflight_plan(tmp_path: Path) -> None:
         no_live=True,
     )
     preview = compile_preflight_preview(
-        source=_source(workflow),
+        source=make_source(workflow),
         config=config,
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
@@ -694,7 +604,7 @@ def test_param_tokens_cannot_survive_to_preflight_plan(tmp_path: Path) -> None:
 def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
     tmp_path: Path,
 ) -> None:
-    config = _mock_config()
+    config = mock_config()
     workflow = WorkflowPlan(
         name="demo",
         nodes=[
@@ -719,7 +629,7 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
 
     def compile_once() -> str:
         preview = compile_preflight_preview(
-            source=_source(workflow),
+            source=make_source(workflow),
             config=config,
             runtime_snapshot=snapshot.snapshot,
             options=PreflightCompileOptions(
@@ -812,7 +722,7 @@ def test_sensitive_env_and_var_fingerprints_are_persisted_and_redacted(
 def test_absent_read_only_fingerprint_key_is_run_scoped_and_artifact_free(
     tmp_path: Path,
 ) -> None:
-    config = _mock_config()
+    config = mock_config()
     workflow = WorkflowPlan(
         name="demo",
         nodes=[
@@ -836,7 +746,7 @@ def test_absent_read_only_fingerprint_key_is_run_scoped_and_artifact_free(
 
     def compile_once(options: PreflightCompileOptions) -> str:
         preview = compile_preflight_preview(
-            source=_source(workflow),
+            source=make_source(workflow),
             config=config,
             runtime_snapshot=snapshot.snapshot,
             options=options,

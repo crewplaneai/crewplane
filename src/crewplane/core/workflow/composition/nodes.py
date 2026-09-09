@@ -30,43 +30,25 @@ def compose_local_node(
     composed_worktree = _compose_worktree_selector(context, node_payload)
     implicit_worktree_selector = _implicit_worktree_selector(context, node_payload)
 
-    if node_payload.mode == "input":
-        return (
-            ComposedNode(
-                payload=node_payload.model_copy(
-                    update={
-                        "id": composed_id,
-                        "needs": list(composed_needs),
-                        "worktree": composed_worktree,
-                    }
-                ),
-                source_path=node.source_path,
-                source_span=node.source_span,
-                prompt_segment_spans=node.prompt_segment_spans,
-                local_worktree_count=len(context.workflow.worktrees),
-                implicit_worktree_selector=implicit_worktree_selector,
-            ),
-            set(),
+    updates: dict[str, object] = {
+        "id": composed_id,
+        "needs": list(composed_needs),
+        "worktree": composed_worktree,
+    }
+    consumed_params: set[str] = set()
+    if node_payload.mode != "input":
+        resolved_segments, consumed_params = rewrite_prompt_segments(
+            node_payload.prompt_segments,
+            namespace_prefix=context.namespace_prefix,
+            bound_input_nodes=context.bound_input_nodes,
+            params=context.inherited_params,
+            source_path=node.source_path,
+            node_id=node_payload.id,
         )
-
-    resolved_segments, consumed_params = rewrite_prompt_segments(
-        node_payload.prompt_segments,
-        namespace_prefix=context.namespace_prefix,
-        bound_input_nodes=context.bound_input_nodes,
-        params=context.inherited_params,
-        source_path=node.source_path,
-        node_id=node_payload.id,
-    )
+        updates["prompt_segments"] = resolved_segments
     return (
         ComposedNode(
-            payload=node_payload.model_copy(
-                update={
-                    "id": composed_id,
-                    "needs": list(composed_needs),
-                    "prompt_segments": resolved_segments,
-                    "worktree": composed_worktree,
-                }
-            ),
+            payload=node_payload.model_copy(update=updates),
             source_path=node.source_path,
             source_span=node.source_span,
             prompt_segment_spans=node.prompt_segment_spans,

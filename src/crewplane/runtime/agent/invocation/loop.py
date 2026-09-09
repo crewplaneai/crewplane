@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from enum import Enum, auto
+from dataclasses import dataclass
 from pathlib import Path
 from typing import assert_never
 
@@ -71,6 +71,32 @@ from .transitions import (
 )
 
 
+@dataclass(frozen=True)
+class _InvocationLoopContext:
+    config: AgentConfig
+    runtime: InvocationCommandRuntime
+    output_file: Path
+    log_file: Path | None
+    cwd: Path
+    invocation_context: InvocationContext | None
+    command_runner: CommandRunner
+    idle_timeout_seconds: float | None
+    child_environment: ChildProcessEnvironment | None
+
+
+@dataclass
+class _InvocationLoopState:
+    usage_state: InvocationUsageState
+    cursor: InvocationRetryCursor
+    attempt: int = 0
+    quota_retry_wait_seconds: float = 0.0
+    last_non_quota_failure: InvocationFailureSummary | None = None
+
+    @property
+    def built_in_retry_used(self) -> bool:
+        return self.attempt > self.cursor.retry_count + self.cursor.quota_retry_count
+
+
 async def run_invocation_loop(
     config: AgentConfig,
     prompt: str,
@@ -82,94 +108,125 @@ async def run_invocation_loop(
     plan: InvocationPlan,
     child_environment: ChildProcessEnvironment | None = None,
 ) -> None:
+    """Run provider attempts through a terminal outcome and release their resources."""
+
     runtime = build_invocation_runtime(plan)
-    attempt = 0
-    cursor = InvocationRetryCursor(
-        retry_count=0,
-        quota_retry_count=0,
-        quota_retry_started_at=None,
+    state = _InvocationLoopState(
+        usage_state=InvocationUsageState(
+            accumulator=InvocationUsageAccumulator(plan.log_provider_kind, prompt)
+        ),
+        cursor=InvocationRetryCursor(
+            retry_count=0,
+            quota_retry_count=0,
+            quota_retry_started_at=None,
+        ),
     )
-    quota_retry_wait_seconds = 0.0
-    usage_state = InvocationUsageState(
-        accumulator=InvocationUsageAccumulator(plan.log_provider_kind, prompt)
-    )
-    last_non_quota_failure: InvocationFailureSummary | None = None
-    idle_timeout_seconds = _resolve_output_idle_timeout(
-        config,
-        plan,
-        invocation_context,
+    context = _InvocationLoopContext(
+        config=config,
+        runtime=runtime,
+        output_file=output_file,
+        log_file=log_file,
+        cwd=cwd,
+        invocation_context=invocation_context,
+        command_runner=command_runner,
+        idle_timeout_seconds=_resolve_output_idle_timeout(
+            config, plan, invocation_context
+        ),
+        child_environment=child_environment,
     )
 
     try:
         while True:
-            prepare_runtime_for_attempt(runtime)
-            usage_state.accumulator.record_attempt_start()
-            result = await run_invocation_attempt(
-                runtime=runtime,
-                command_runner=command_runner,
-                log_file=log_file,
-                attempt=attempt,
-                cwd=cwd,
-                invocation_context=invocation_context,
-                timeout_seconds=config.invocation_timeout_seconds,
-                idle_timeout_seconds=idle_timeout_seconds,
-                child_environment=child_environment,
-            )
-            usage_state.accumulator.record_provider_usage(
-                _decode_provider_usage(runtime, result)
-            )
-            attempt_result = build_invocation_attempt_result(
-                runtime=runtime,
-                result=result,
-            )
-            try:
-                transition = _select_attempt_transition(
-                    config=config,
-                    runtime=runtime,
-                    attempt_result=attempt_result,
-                    cursor=cursor,
-                    quota_retry_wait_seconds=quota_retry_wait_seconds,
-                    built_in_retry_used=(
-                        attempt > cursor.retry_count + cursor.quota_retry_count
-                    ),
-                )
-                if _is_non_quota_retry(transition):
-                    failure_summary = classify_invocation_failure(
-                        runtime.failure_profile,
-                        attempt_result.result,
-                    )
-                    if failure_summary.kind != "quota_or_rate_limit":
-                        last_non_quota_failure = failure_summary
-                continuation = await _execute_transition_action(
-                    transition=transition,
-                    runtime=runtime,
-                    attempt_result=attempt_result,
-                    output_file=output_file,
-                    log_file=log_file,
-                    invocation_context=invocation_context,
-                    config=config,
-                    usage_state=usage_state,
-                    attempt=attempt,
-                    last_non_quota_failure=last_non_quota_failure,
-                )
-            finally:
-                result.cleanup_stream_files()
-            if continuation is None:
+            retry = await _run_attempt_cycle(context, state)
+            if retry is None:
                 return
-            next_attempt, next_cursor = continuation
-            if (
-                isinstance(transition, SleepAndRetryAttemptTransition)
-                and next_cursor.quota_retry_count > cursor.quota_retry_count
-            ):
-                quota_retry_wait_seconds += transition.retry_delay_seconds
-            attempt, cursor = next_attempt, next_cursor
+            _advance_retry_state(state, retry)
     except asyncio.CancelledError:
         raise
     except Exception:
-        record_usage_from_state_once(invocation_context, config, usage_state)
+        record_usage_from_state_once(invocation_context, config, state.usage_state)
         raise
     finally:
         cleanup_structured_output_file(runtime.structured_output_file)
+
+
+async def _run_attempt_cycle(
+    context: _InvocationLoopContext,
+    state: _InvocationLoopState,
+) -> SleepAndRetryAttemptTransition | None:
+    result = await _run_attempt_command(context, state)
+    try:
+        state.usage_state.accumulator.record_provider_usage(
+            _decode_provider_usage(context.runtime, result)
+        )
+        attempt_result = build_invocation_attempt_result(context.runtime, result)
+        transition = _select_attempt_transition(
+            config=context.config,
+            runtime=context.runtime,
+            attempt_result=attempt_result,
+            cursor=state.cursor,
+            quota_retry_wait_seconds=state.quota_retry_wait_seconds,
+            built_in_retry_used=state.built_in_retry_used,
+        )
+        _remember_non_quota_failure(context.runtime, state, attempt_result, transition)
+        return await _execute_transition_action(
+            transition, context, attempt_result, state
+        )
+    finally:
+        result.cleanup_stream_files()
+
+
+async def _run_attempt_command(
+    context: _InvocationLoopContext,
+    state: _InvocationLoopState,
+) -> CommandResult:
+    prepare_runtime_for_attempt(context.runtime)
+    state.usage_state.accumulator.record_attempt_start()
+    return await run_invocation_attempt(
+        runtime=context.runtime,
+        command_runner=context.command_runner,
+        log_file=context.log_file,
+        attempt=state.attempt,
+        cwd=context.cwd,
+        invocation_context=context.invocation_context,
+        timeout_seconds=context.config.invocation_timeout_seconds,
+        idle_timeout_seconds=context.idle_timeout_seconds,
+        child_environment=context.child_environment,
+    )
+
+
+def _remember_non_quota_failure(
+    runtime: InvocationCommandRuntime,
+    state: _InvocationLoopState,
+    attempt_result: InvocationAttemptResult,
+    transition: InvocationAttemptTransition,
+) -> None:
+    if not _is_non_quota_retry(transition):
+        return
+    failure_summary = classify_invocation_failure(
+        runtime.failure_profile, attempt_result.result
+    )
+    if failure_summary.kind != "quota_or_rate_limit":
+        state.last_non_quota_failure = failure_summary
+
+
+def _is_non_quota_retry(transition: InvocationAttemptTransition) -> bool:
+    return (
+        isinstance(transition, SleepAndRetryAttemptTransition)
+        and transition.notice is not None
+        and transition.notice.operation != "quota_retry_scheduled"
+    )
+
+
+def _advance_retry_state(
+    state: _InvocationLoopState,
+    retry: SleepAndRetryAttemptTransition,
+) -> None:
+    next_cursor = retry.cursor()
+    if next_cursor.quota_retry_count > state.cursor.quota_retry_count:
+        state.quota_retry_wait_seconds += retry.retry_delay_seconds
+    state.attempt += 1
+    state.cursor = next_cursor
 
 
 def _resolve_output_idle_timeout(
@@ -196,21 +253,6 @@ def _resolve_output_idle_timeout(
     return None
 
 
-def _is_non_quota_retry(transition: InvocationAttemptTransition) -> bool:
-    return (
-        isinstance(transition, SleepAndRetryAttemptTransition)
-        and transition.notice is not None
-        and transition.notice.operation != "quota_retry_scheduled"
-    )
-
-
-class _AttemptTransitionPhase(Enum):
-    STRUCTURED_OUTPUT = auto()
-    QUOTA_RETRY = auto()
-    RETRYABLE_FAILURE = auto()
-    TERMINAL_FAILURE = auto()
-
-
 def _select_attempt_transition(
     config: AgentConfig,
     runtime: InvocationCommandRuntime,
@@ -219,68 +261,38 @@ def _select_attempt_transition(
     quota_retry_wait_seconds: float,
     built_in_retry_used: bool,
 ) -> InvocationAttemptTransition:
-    retry_decision: FailureRetryDecision | None = None
-    transition: InvocationAttemptTransition
-    for phase in _AttemptTransitionPhase:
-        match phase:
-            case _AttemptTransitionPhase.STRUCTURED_OUTPUT:
-                structured_retry_decision = _evaluate_structured_retry(
-                    config,
-                    runtime,
-                    attempt_result,
-                    cursor,
-                    built_in_retry_used,
-                )
-                transition = transition_from_structured_output(
-                    attempt_result=attempt_result,
-                    cursor=cursor,
-                    failure_retry_decision=structured_retry_decision,
-                )
-            case _AttemptTransitionPhase.QUOTA_RETRY:
-                quota_retry_decision = evaluate_quota_retry(
-                    config=config,
-                    cmd=runtime.cmd,
-                    quota_parser=runtime.quota_parser,
-                    result=attempt_result.result,
-                    quota_retry_started_at=cursor.quota_retry_started_at,
-                    quota_retry_count=cursor.quota_retry_count,
-                    quota_retry_wait_seconds=quota_retry_wait_seconds,
-                    one_shot_failure_retry=runtime.one_shot_failure_retry,
-                )
-                transition = transition_from_quota_retry(
-                    attempt_result=attempt_result,
-                    cursor=cursor,
-                    quota_retry_decision=quota_retry_decision,
-                )
-            case _AttemptTransitionPhase.RETRYABLE_FAILURE:
-                retry_decision = evaluate_failure_retry(
-                    config=config,
-                    cmd=runtime.cmd,
-                    result=attempt_result.result,
-                    retry_count=cursor.retry_count,
-                    built_in_retry_used=built_in_retry_used,
-                    one_shot_failure_retry=runtime.one_shot_failure_retry,
-                )
-                transition = transition_from_retryable_failure(
-                    attempt_result=attempt_result,
-                    cursor=cursor,
-                    failure_retry_decision=retry_decision,
-                )
-            case _AttemptTransitionPhase.TERMINAL_FAILURE:
-                if retry_decision is None:
-                    raise RuntimeError(
-                        "Terminal failure transition requires a retry decision."
-                    )
-                transition = transition_from_terminal_failure(
-                    attempt_result=attempt_result,
-                    cursor=cursor,
-                    failure_retry_decision=retry_decision,
-                )
-            case _:
-                assert_never(phase)
-        if not isinstance(transition, ContinueAttemptTransition):
-            return transition
-        cursor = transition.cursor()
+    transition = _select_structured_output_transition(
+        config,
+        runtime,
+        attempt_result,
+        cursor,
+        built_in_retry_used,
+    )
+    if not isinstance(transition, ContinueAttemptTransition):
+        return transition
+    cursor = transition.cursor()
+
+    transition = _select_quota_transition(
+        config,
+        runtime,
+        attempt_result,
+        cursor,
+        quota_retry_wait_seconds,
+    )
+    if not isinstance(transition, ContinueAttemptTransition):
+        return transition
+    cursor = transition.cursor()
+
+    transition = _select_failure_transition(
+        config,
+        runtime,
+        attempt_result,
+        cursor,
+        built_in_retry_used,
+    )
+    if not isinstance(transition, ContinueAttemptTransition):
+        return transition
+    cursor = transition.cursor()
 
     extracted_output = extract_invocation_output(
         output_extractor=runtime.output_extractor,
@@ -295,22 +307,80 @@ def _select_attempt_transition(
     )
 
 
-def _evaluate_structured_retry(
+def _select_structured_output_transition(
     config: AgentConfig,
     runtime: InvocationCommandRuntime,
     attempt_result: InvocationAttemptResult,
     cursor: InvocationRetryCursor,
     built_in_retry_used: bool,
-) -> FailureRetryDecision | None:
-    if attempt_result.extracted_output is None:
-        return None
-    return evaluate_failure_retry(
+) -> InvocationAttemptTransition:
+    retry_decision: FailureRetryDecision | None = None
+    if attempt_result.extracted_output is not None:
+        retry_decision = evaluate_failure_retry(
+            config=config,
+            cmd=runtime.cmd,
+            result=attempt_result.result,
+            retry_count=cursor.retry_count,
+            built_in_retry_used=built_in_retry_used,
+            one_shot_failure_retry=runtime.one_shot_failure_retry,
+        )
+    return transition_from_structured_output(
+        attempt_result=attempt_result,
+        cursor=cursor,
+        failure_retry_decision=retry_decision,
+    )
+
+
+def _select_quota_transition(
+    config: AgentConfig,
+    runtime: InvocationCommandRuntime,
+    attempt_result: InvocationAttemptResult,
+    cursor: InvocationRetryCursor,
+    quota_retry_wait_seconds: float,
+) -> InvocationAttemptTransition:
+    retry_decision = evaluate_quota_retry(
+        config=config,
+        cmd=runtime.cmd,
+        quota_parser=runtime.quota_parser,
+        result=attempt_result.result,
+        quota_retry_started_at=cursor.quota_retry_started_at,
+        quota_retry_count=cursor.quota_retry_count,
+        quota_retry_wait_seconds=quota_retry_wait_seconds,
+        one_shot_failure_retry=runtime.one_shot_failure_retry,
+    )
+    return transition_from_quota_retry(
+        attempt_result=attempt_result,
+        cursor=cursor,
+        quota_retry_decision=retry_decision,
+    )
+
+
+def _select_failure_transition(
+    config: AgentConfig,
+    runtime: InvocationCommandRuntime,
+    attempt_result: InvocationAttemptResult,
+    cursor: InvocationRetryCursor,
+    built_in_retry_used: bool,
+) -> InvocationAttemptTransition:
+    retry_decision = evaluate_failure_retry(
         config=config,
         cmd=runtime.cmd,
         result=attempt_result.result,
         retry_count=cursor.retry_count,
         built_in_retry_used=built_in_retry_used,
         one_shot_failure_retry=runtime.one_shot_failure_retry,
+    )
+    transition = transition_from_retryable_failure(
+        attempt_result=attempt_result,
+        cursor=cursor,
+        failure_retry_decision=retry_decision,
+    )
+    if not isinstance(transition, ContinueAttemptTransition):
+        return transition
+    return transition_from_terminal_failure(
+        attempt_result=attempt_result,
+        cursor=transition.cursor(),
+        failure_retry_decision=retry_decision,
     )
 
 
@@ -329,38 +399,31 @@ def _decode_provider_usage(
 
 async def _execute_transition_action(
     transition: InvocationAttemptTransition,
-    runtime: InvocationCommandRuntime,
+    context: _InvocationLoopContext,
     attempt_result: InvocationAttemptResult,
-    output_file: Path,
-    log_file: Path | None,
-    invocation_context: InvocationContext | None,
-    config: AgentConfig,
-    usage_state: InvocationUsageState,
-    attempt: int,
-    last_non_quota_failure: InvocationFailureSummary | None = None,
-) -> tuple[int, InvocationRetryCursor] | None:
+    state: _InvocationLoopState,
+) -> SleepAndRetryAttemptTransition | None:
+    runtime = context.runtime
+    invocation_context = context.invocation_context
     try:
         if isinstance(transition, ContinueAttemptTransition):
             raise RuntimeError("Invocation loop cannot execute a continue transition.")
-        record_transition_outputs(transition, usage_state, invocation_context)
+        record_transition_outputs(transition, state.usage_state, invocation_context)
         match transition:
             case SleepAndRetryAttemptTransition(
                 retry_delay_seconds=retry_delay_seconds
             ):
                 emit_notice(invocation_context, transition.notice)
                 await reset_before_retry(invocation_context)
-                next_attempt = await _sleep_before_next_attempt(
-                    retry_delay_seconds,
-                    attempt,
-                )
-                return next_attempt, transition.cursor()
+                await asyncio.sleep(retry_delay_seconds)
+                return transition
             case FinalizeSuccessAttemptTransition(extracted_output=extracted_output):
                 _finalize_successful_invocation(
-                    output_file=output_file,
+                    output_file=context.output_file,
                     extracted_output=extracted_output,
                     invocation_context=invocation_context,
-                    config=config,
-                    usage_state=usage_state,
+                    config=context.config,
+                    usage_state=state.usage_state,
                 )
                 return None
             case RaiseRetryExhaustedAttemptTransition():
@@ -368,20 +431,20 @@ async def _execute_transition_action(
                     runtime=runtime,
                     result=attempt_result.result,
                     retry_count=transition.retry_count,
-                    log_file=log_file,
+                    log_file=context.log_file,
                 )
             case RaiseFailedExitAttemptTransition():
                 _raise_failed_exit(
                     runtime=runtime,
                     result=attempt_result.result,
-                    log_file=log_file,
+                    log_file=context.log_file,
                 )
             case RaiseQuotaFailureAttemptTransition(message=message):
                 _raise_quota_failure(
                     runtime=runtime,
                     result=attempt_result.result,
                     message=message,
-                    last_non_quota_failure=last_non_quota_failure,
+                    last_non_quota_failure=state.last_non_quota_failure,
                 )
             case RaiseOutputExtractionFailureAttemptTransition(
                 extracted_output=extracted_output
@@ -395,11 +458,6 @@ async def _execute_transition_action(
         return None
     finally:
         _cleanup_transition_extracted_output(transition)
-
-
-async def _sleep_before_next_attempt(wait_seconds: float, attempt: int) -> int:
-    await asyncio.sleep(wait_seconds)
-    return attempt + 1
 
 
 def _cleanup_transition_extracted_output(

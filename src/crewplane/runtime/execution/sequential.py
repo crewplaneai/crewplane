@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
@@ -58,7 +59,7 @@ async def _execute_single_provider_sequential_node(
                 else None
             ),
         )
-        output_file = node_dir / f"{provider.task_id}_round{round_num}.md"
+        output_file = node_dir / build_task_round_filename(provider.task_id, round_num)
         await run_provider_call(
             ProviderCallRequest(
                 runtime_context=runtime_context,

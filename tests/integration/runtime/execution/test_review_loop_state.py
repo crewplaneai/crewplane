@@ -1,9 +1,15 @@
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.ports.artifacts import StageTaskSpec
+from crewplane.artifacts.results.review_loop_status import (
+    ReviewLoopStatusError,
+    resolve_review_loop_status,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import ProviderSpec
 from crewplane.runtime.execution.consensus import (
@@ -50,6 +56,67 @@ def _reviewer_artifact(node_dir: Path) -> ReviewerRoundArtifact:
 def _file_signature(path: Path) -> tuple[int, str]:
     payload = path.read_bytes()
     return len(payload), hashlib.sha256(payload).hexdigest()
+
+
+@pytest.mark.parametrize("with_outputs", [False, True])
+def test_runtime_status_round_trip_preserves_selected_outputs(
+    tmp_path: Path, with_outputs: bool
+) -> None:
+    node_dir = tmp_path / "node"
+    node_dir.mkdir()
+    assert resolve_review_loop_status("review.node", node_dir) is None
+    progress = ReviewLoopProgress()
+    expected_outputs: dict[str, Path] = {}
+    if with_outputs:
+        executor_output = node_dir / "exec_executor_0_round1.md"
+        executor_output.write_text("Candidate", encoding="utf-8")
+        executor = ExecutorRoundArtifact(
+            provider=ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+            task_id="exec_executor_0",
+            content="Candidate",
+            output_file=executor_output,
+            audit_round_num=None,
+            round_num=1,
+            output_signature=_file_signature(executor_output),
+        )
+        reviewer = replace(
+            _reviewer_artifact(node_dir), audit_round_num=None, round_num=1
+        )
+        expected_outputs = {
+            executor.task_id: executor_output,
+            reviewer.task_id: reviewer.output_file,
+        }
+        progress = ReviewLoopProgress(
+            latest_executor_outputs=[executor],
+            latest_reviewer_outputs=[reviewer],
+            last_round_num=1,
+            consensus_reached=True,
+        )
+
+    payload = build_review_loop_status_payload("review.node", node_dir, progress)
+    status_path = persist_review_loop_status(node_dir, payload)
+    task_specs = (
+        StageTaskSpec(
+            task_id="exec_executor_0", provider="exec", role=ProviderRole.EXECUTOR
+        ),
+        StageTaskSpec(
+            task_id="review_reviewer_0", provider="review", role=ProviderRole.REVIEWER
+        ),
+    )
+    resolved = resolve_review_loop_status("review.node", node_dir, task_specs)
+
+    assert status_path == node_dir / "review-state" / "review-loop-status.json"
+    assert status_path.read_text(encoding="utf-8") == (
+        json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    )
+    assert resolved is not None
+    assert resolved.selected_output_files == expected_outputs
+    if with_outputs:
+        resolved.selected_output_files["exec_executor_0"].write_text(
+            "Tampered!", encoding="utf-8"
+        )
+        with pytest.raises(ReviewLoopStatusError, match="bytes do not match"):
+            resolve_review_loop_status("review.node", node_dir, task_specs)
 
 
 def test_status_payload_shape_and_paths_are_relative_to_node_dir(

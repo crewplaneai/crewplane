@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
@@ -117,62 +118,19 @@ def record_failed_worktree_preparation(
     reuse_cache: WorktreeReuseCache | None = None,
 ) -> None:
     diagnostics, retained_reason, setup = worktree_preparation_failure_state(failure)
-    if state_path is not None and state_path.exists():
-        drained = workspace_mutators_are_drained(state_path)
-        retention = "pending_cleanup" if drained else "retained"
-        terminal_reason = retained_reason if drained else "process_drain_unresolved"
-        try:
-            update_workspace_state(
-                state_path,
-                WorkspaceStateUpdateRequest(
-                    status="failed",
-                    diagnostics=diagnostics,
-                    retention=WorkspaceStateRetention(
-                        retention=retention,
-                        retained_reason=terminal_reason,
-                    ),
-                    setup=setup,
-                ),
-            )
-        except Exception as exc:
-            note_cleanup_failure(
-                failure,
-                "Workspace failure-state recording after preparation failure",
-                exc,
-            )
-            return
-    else:
-        return
-    if not drained:
-        return
-    try:
-        _cleanup_worktree_preparation_path(
-            source,
-            workspace_path,
-            state_path,
-            reuse_cache,
-        )
-    except Exception as exc:
-        note_cleanup_failure(
-            failure,
-            "Workspace cleanup after preparation failure",
-            exc,
-        )
-        update_workspace_retention(
-            state_path,
-            WorkspaceStateRetention(
-                "retained",
-                f"{retained_reason}_cleanup_failed",
-            ),
-            {
-                "level": "warning",
-                "message": (
-                    f"Workspace cleanup after preparation failure failed: {exc}"
-                ),
-            },
-        )
-        return
-    update_workspace_retention(state_path, WorkspaceStateRetention("deleted"))
+    _finish_worktree_preparation(
+        source,
+        workspace_path,
+        state_path,
+        failure,
+        reuse_cache,
+        WorkspaceStateUpdateRequest(
+            status="failed",
+            diagnostics=diagnostics,
+            retention=WorkspaceStateRetention("pending_cleanup", retained_reason),
+            setup=setup,
+        ),
+    )
 
 
 def record_cancelled_worktree_preparation(
@@ -184,34 +142,52 @@ def record_cancelled_worktree_preparation(
 ) -> None:
     diagnostics = [{"level": "warning", "message": str(failure)}]
     setup = failure.summary if isinstance(failure, WorkspaceSetupCancelled) else None
-    if state_path is not None and state_path.exists():
-        drained = workspace_mutators_are_drained(state_path)
-        retention = "pending_cleanup" if drained else "retained"
-        retained_reason = "cancelled" if drained else "process_drain_unresolved"
-        try:
-            update_workspace_state(
-                state_path,
-                WorkspaceStateUpdateRequest(
-                    status="cancelled",
-                    diagnostics=diagnostics,
-                    retention=WorkspaceStateRetention(
-                        retention=retention,
-                        retained_reason=retained_reason,
-                    ),
-                    setup=setup,
-                ),
-            )
-        except Exception as exc:
-            note_cleanup_failure(
-                failure,
-                "Workspace cancelled-state recording after preparation cancellation",
-                exc,
-            )
-            return
-    else:
+    _finish_worktree_preparation(
+        source,
+        workspace_path,
+        state_path,
+        failure,
+        reuse_cache,
+        WorkspaceStateUpdateRequest(
+            status="cancelled",
+            diagnostics=diagnostics,
+            retention=WorkspaceStateRetention("pending_cleanup", "cancelled"),
+            setup=setup,
+        ),
+    )
+
+
+def _finish_worktree_preparation(
+    source: WorkspaceSourceSnapshot,
+    workspace_path: Path,
+    state_path: Path | None,
+    failure: Exception,
+    reuse_cache: WorktreeReuseCache | None,
+    update: WorkspaceStateUpdateRequest,
+) -> None:
+    if state_path is None or not state_path.exists():
+        return
+    drained = workspace_mutators_are_drained(state_path)
+    retained_reason = update.retention.retained_reason
+    if not drained:
+        update = replace(
+            update,
+            retention=WorkspaceStateRetention("retained", "process_drain_unresolved"),
+        )
+    preparation_outcome = "failure" if update.status == "failed" else "cancellation"
+    state_label = "failure-state" if update.status == "failed" else "cancelled-state"
+    try:
+        update_workspace_state(state_path, update)
+    except Exception as exc:
+        note_cleanup_failure(
+            failure,
+            f"Workspace {state_label} recording after preparation {preparation_outcome}",
+            exc,
+        )
         return
     if not drained:
         return
+    cleanup_operation = f"Workspace cleanup after preparation {preparation_outcome}"
     try:
         _cleanup_worktree_preparation_path(
             source,
@@ -220,20 +196,11 @@ def record_cancelled_worktree_preparation(
             reuse_cache,
         )
     except Exception as exc:
-        note_cleanup_failure(
-            failure,
-            "Workspace cleanup after preparation cancellation",
-            exc,
-        )
+        note_cleanup_failure(failure, cleanup_operation, exc)
         update_workspace_retention(
             state_path,
-            WorkspaceStateRetention("retained", "cancelled_cleanup_failed"),
-            {
-                "level": "warning",
-                "message": (
-                    f"Workspace cleanup after preparation cancellation failed: {exc}"
-                ),
-            },
+            WorkspaceStateRetention("retained", f"{retained_reason}_cleanup_failed"),
+            {"level": "warning", "message": f"{cleanup_operation} failed: {exc}"},
         )
         return
     update_workspace_retention(state_path, WorkspaceStateRetention("deleted"))

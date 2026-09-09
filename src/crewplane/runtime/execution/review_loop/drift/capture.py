@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import is_single_link_regular_file
+from crewplane.core.file_hashing import ContentSignature
 from crewplane.runtime.execution.publication_registry import (
     RuntimePublicationRegistry,
 )
@@ -18,7 +20,6 @@ from ..types import (
     DriftRecoveryBaseline,
 )
 from .snapshots import (
-    is_single_link_regular_file,
     lstat_or_none,
     manifests_dir_for,
     read_file_bytes,
@@ -33,8 +34,8 @@ def capture_consistent_publication_snapshot[Snapshot](
     publications: RuntimePublicationRegistry,
     capture: Callable[[], Snapshot],
     retryable_errors: tuple[type[Exception], ...],
-) -> tuple[Snapshot, dict[Path, tuple[int, str]]]:
-    attempt: tuple[Snapshot, dict[Path, tuple[int, str]]] | None = None
+) -> tuple[Snapshot, dict[Path, ContentSignature]]:
+    attempt: tuple[Snapshot, dict[Path, ContentSignature]] | None = None
     while attempt is None:
         attempt = _capture_publication_snapshot_once(
             publications,
@@ -48,7 +49,7 @@ def _capture_publication_snapshot_once[Snapshot](
     publications: RuntimePublicationRegistry,
     capture: Callable[[], Snapshot],
     retryable_errors: tuple[type[Exception], ...],
-) -> tuple[Snapshot, dict[Path, tuple[int, str]]] | None:
+) -> tuple[Snapshot, dict[Path, ContentSignature]] | None:
     _, before_version = publications.snapshot()
     try:
         captured = capture()
@@ -78,14 +79,14 @@ def capture_activity_window(
 
 def shared_reserved_snapshot(
     output: ArtifactStorePort,
-) -> dict[Path, tuple[int, str]]:
+) -> dict[Path, ContentSignature]:
     manifests_dir = manifests_dir_for(output)
     run_log_dir = output.get_run_log_dir()
     excluded_run_log_paths = {
         output.get_run_event_log_path(),
         output.get_run_summary_path(),
     }
-    snapshot: dict[Path, tuple[int, str]] = {}
+    snapshot: dict[Path, ContentSignature] = {}
     for root in (output.results_dir, manifests_dir):
         snapshot.update(snapshot_files(root))
     snapshot.update(snapshot_files(run_log_dir, excluded_paths=excluded_run_log_paths))
@@ -275,7 +276,7 @@ def _capture_drift_recovery_baseline_once(
 
 def _capture_recovery_snapshots(
     publications: RuntimePublicationRegistry,
-    signatures: dict[Path, tuple[int, str]],
+    signatures: dict[Path, ContentSignature],
 ) -> None:
     for path, signature in signatures.items():
         path_stat = lstat_or_none(path)

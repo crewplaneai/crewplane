@@ -116,14 +116,12 @@ def next_index_entry_offset(
         offset += 2
     if index_format_version == 4:
         offset = skip_v4_path_prefix_length(payload, offset, extension_end)
-        path_end = payload.find(b"\0", offset, extension_end)
-        if path_end < 0:
-            raise ValueError("index entry path is unterminated")
-        return path_end + 1
     path_end = payload.find(b"\0", offset, extension_end)
     if path_end < 0:
         raise ValueError("index entry path is unterminated")
     entry_end = path_end + 1
+    if index_format_version == 4:
+        return entry_end
     padding = (8 - ((entry_end - entry_start) % 8)) % 8
     if entry_end + padding > extension_end:
         raise ValueError("index entry padding is truncated")

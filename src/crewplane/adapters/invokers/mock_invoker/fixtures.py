@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 
 
 def fixture_candidates(
@@ -27,7 +28,8 @@ def fixture_candidates(
         for search_dir in search_dirs:
             if context.round_num is not None:
                 candidates.append(
-                    search_dir / f"{context.task_id}_round{context.round_num}.md"
+                    search_dir
+                    / build_task_round_filename(context.task_id, context.round_num)
                 )
                 candidates.append(
                     search_dir / f"{role_name}-round-{context.round_num}.md"

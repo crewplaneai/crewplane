@@ -9,7 +9,6 @@ from crewplane.core.workspace.git_policy import (
     workspace_git_config_args,
 )
 
-SUPPORTED_FILE_MODES = {"100644", "100755"}
 WORKSPACE_GIT_FILE_READ_TIMEOUT_SECONDS = 30.0
 
 

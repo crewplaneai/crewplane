@@ -10,8 +10,8 @@ from crewplane.core.preflight.models import (
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
 )
-from crewplane.core.preflight.workspace.files.git_reads import (
-    SUPPORTED_FILE_MODES,
+from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
+from crewplane.core.workspace.git_reads import (
     GitTreeRecord,
     git_cat_blob,
     git_ls_tree,
@@ -242,7 +242,7 @@ def _require_exact_regular_blob(
             "Runtime-dynamic workspace file locator does not resolve exactly: "
             f"{locator.locator_id}."
         )
-    if record.object_type != "blob" or record.mode not in SUPPORTED_FILE_MODES:
+    if record.object_type != "blob" or record.mode not in REGULAR_FILE_MODES:
         raise NodeExecutionError(
             "Runtime-dynamic workspace file locator must resolve to a regular "
             f"Git blob: {locator.locator_id}."

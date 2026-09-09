@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from itertools import batched
 from pathlib import Path
+
+from crewplane.core.workspace.git_attributes import (
+    ATTRIBUTE_CHECK_BATCH_SIZE,
+    attribute_records,
+    byte_transforming_attribute,
+)
 
 from .diagnostic_text import summarize_paths
 from .git_source import (
@@ -12,18 +19,6 @@ from .git_source import (
     run_git_with_env,
 )
 from .source_types import WorkspacePolicyBuilder
-
-BYTE_TRANSFORMING_ATTRIBUTES = frozenset(
-    {
-        "crlf",
-        "eol",
-        "filter",
-        "ident",
-        "text",
-        "working-tree-encoding",
-    }
-)
-ATTRIBUTE_CHECK_BATCH_SIZE = 100
 
 
 def validate_byte_transforming_attributes(
@@ -73,7 +68,7 @@ def collect_rejected_attributes(
     rejected: dict[str, list[str]],
     builder: WorkspacePolicyBuilder,
 ) -> None:
-    for batch in path_batches(tracked_paths):
+    for batch in batched(tracked_paths, ATTRIBUTE_CHECK_BATCH_SIZE, strict=False):
         records = git_zero_records_with_env(
             project_root,
             (
@@ -98,26 +93,6 @@ def collect_rejected_attributes(
                 rejected.setdefault(attribute_description(attribute, value), []).append(
                     path
                 )
-
-
-def path_batches(paths: list[str]) -> tuple[tuple[str, ...], ...]:
-    return tuple(
-        tuple(paths[index : index + ATTRIBUTE_CHECK_BATCH_SIZE])
-        for index in range(0, len(paths), ATTRIBUTE_CHECK_BATCH_SIZE)
-    )
-
-
-def attribute_records(records: tuple[str, ...]) -> tuple[tuple[str, str, str], ...]:
-    return tuple(
-        (records[index], records[index + 1].casefold(), records[index + 2])
-        for index in range(0, len(records), 3)
-    )
-
-
-def byte_transforming_attribute(attribute: str, value: str) -> bool:
-    if attribute not in BYTE_TRANSFORMING_ATTRIBUTES:
-        return False
-    return value not in {"unset", "unspecified"}
 
 
 def attribute_description(attribute: str, value: str) -> str:

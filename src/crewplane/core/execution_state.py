@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import Literal
 
@@ -10,6 +9,7 @@ from crewplane.architecture.contracts import JsonObject
 from crewplane.core.preflight.plan_contract import (
     validate_supported_plan_schema_version,
 )
+from crewplane.core.value_checks import is_sha256
 
 RUN_STATE_SCHEMA_VERSION = 1
 
@@ -22,10 +22,8 @@ RunStatus = Literal["running", "succeeded", "failed", "cancelled"]
 TerminalRunStatus = Literal["succeeded", "failed", "cancelled"]
 ArtifactKind = Literal["output", "findings", "generated_file"]
 
-_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
-
-def _validate_iso_datetime(value: str) -> str:
+def validate_iso_datetime(value: str) -> str:
     try:
         datetime.fromisoformat(value)
     except ValueError as exc:
@@ -56,7 +54,7 @@ class ArtifactDescriptor(BaseModel):
     @field_validator("sha256")
     @classmethod
     def _validate_sha256(cls, value: str) -> str:
-        if not _SHA256_PATTERN.fullmatch(value):
+        if not is_sha256(value):
             raise ValueError(
                 "Artifact descriptor sha256 must be 64 lowercase hex characters."
             )
@@ -81,7 +79,7 @@ class ResumeOrigin(BaseModel):
     @field_validator("hydrated_at")
     @classmethod
     def _validate_hydrated_at(cls, value: str) -> str:
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
 
 class NodeState(BaseModel):
@@ -130,14 +128,14 @@ class NodeState(BaseModel):
     @field_validator("workflow_signature")
     @classmethod
     def _validate_workflow_signature(cls, value: str) -> str:
-        if not _SHA256_PATTERN.fullmatch(value):
+        if not is_sha256(value):
             raise ValueError("workflow_signature must be 64 lowercase hex characters.")
         return value
 
     @field_validator("completed_at")
     @classmethod
     def _validate_completed_at(cls, value: str) -> str:
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @model_validator(mode="after")
     def _validate_artifact_descriptor_sets(self) -> NodeState:
@@ -243,7 +241,7 @@ class RunManifest(BaseModel):
     @field_validator("workflow_signature", "effective_runtime_config_signature")
     @classmethod
     def _validate_signature(cls, value: str) -> str:
-        if not _SHA256_PATTERN.fullmatch(value):
+        if not is_sha256(value):
             raise ValueError(
                 "Persisted signatures must be 64 lowercase hex characters."
             )
@@ -252,21 +250,29 @@ class RunManifest(BaseModel):
     @field_validator("started_at")
     @classmethod
     def _validate_started_at(cls, value: str) -> str:
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @field_validator("completed_at")
     @classmethod
     def _validate_completed_at(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @model_validator(mode="after")
-    def _validate_terminal_completion(self) -> RunManifest:
+    def _validate_consistency(self) -> RunManifest:
+        self._validate_completion_status()
+        self._validate_terminal_reasons()
+        self._validate_resume_provenance()
+        return self
+
+    def _validate_completion_status(self) -> None:
         if self.status == RUN_STATUS_RUNNING and self.completed_at is not None:
             raise ValueError("Running manifests cannot have completed_at.")
         if self.status != RUN_STATUS_RUNNING and self.completed_at is None:
             raise ValueError("Terminal manifests require completed_at.")
+
+    def _validate_terminal_reasons(self) -> None:
         if self.status != RUN_STATUS_FAILED and self.failure_message is not None:
             raise ValueError("failure_message is only valid for failed runs.")
         if self.status != RUN_STATUS_CANCELLED and self.cancel_reason is not None:
@@ -275,20 +281,15 @@ class RunManifest(BaseModel):
             raise ValueError("Failed manifests require failure_message.")
         if self.status == RUN_STATUS_CANCELLED and self.cancel_reason is None:
             raise ValueError("Cancelled manifests require cancel_reason.")
-        source_values = (
-            self.resume_source_run_id,
-            self.resume_source_run_key_name,
-        )
-        if any(value is not None for value in source_values) != all(
-            value is not None for value in source_values
-        ):
+
+    def _validate_resume_provenance(self) -> None:
+        has_source_run_id = self.resume_source_run_id is not None
+        has_source_run_key = self.resume_source_run_key_name is not None
+        if has_source_run_id != has_source_run_key:
             raise ValueError("Resume source provenance must be all-or-none.")
-        if bool(self.resumed_nodes) != all(
-            value is not None for value in source_values
-        ):
+        if bool(self.resumed_nodes) != has_source_run_id:
             raise ValueError(
                 "Resume source provenance is required exactly when nodes were hydrated."
             )
         if len(self.resumed_nodes) != len(set(self.resumed_nodes)):
             raise ValueError("resumed_nodes cannot contain duplicates.")
-        return self

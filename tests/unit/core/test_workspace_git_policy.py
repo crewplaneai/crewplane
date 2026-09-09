@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.artifacts.workspace import bundle_validation
-from crewplane.core.preflight.workspace.files import (
+from crewplane.core.workspace import (
     git_reads as workspace_git_file_reads,
 )
 from crewplane.core.workspace.git_policy import (

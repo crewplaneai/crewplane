@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Mapping
+from pathlib import Path
 
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.file_hashing import file_size_and_sha256
@@ -9,11 +10,14 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.preflight.workspace.observability import (
     invoker_workspace_descriptor,
 )
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.git_policy import is_git_object_id
+from crewplane.core.workspace.policy import WorkspaceMaterialization
 from crewplane.version import SCHEMA_VERSION
 
 from ...run_history import RunHistoryRecord
@@ -28,18 +32,13 @@ from .fields import (
     bool_field_matches as _bool_field_matches,
 )
 from .fields import (
-    is_hex_object as _is_hex_object,
-)
-from .fields import (
     mapping_value as _mapping,
 )
 from .invocations import (
     ExpectedWorkspaceInvocation,
     expected_failed_workspace_invocations,
-    expected_seeded_lineage_invocation,
     expected_workspace_invocations,
     failed_workspace_state_payloads,
-    latest_lineage_payload_before,
     payload_matches_expected_invocation,
     workspace_state_payloads,
 )
@@ -51,6 +50,7 @@ def workspace_node_state_is_valid(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
 ) -> bool:
+    """Validate persisted invocation evidence for a node's workspace."""
     policy = node.workspace_policy
     if policy is None or not policy.enabled:
         return True
@@ -64,43 +64,44 @@ def workspace_node_state_is_valid(
         expected_failed_invocations,
     ):
         return False
-    if _lineage_worktree_node(node) and any(
+    if _has_undiscarded_failed_lineage(source, node):
+        return False
+    if not _successful_workspace_invocations_are_valid(
+        source, plan, node, expected_invocations
+    ):
+        return False
+    return _failed_workspace_invocations_are_valid(
+        source, plan, node, expected_failed_invocations
+    )
+
+
+def _has_undiscarded_failed_lineage(
+    source: RunHistoryRecord,
+    node: PreflightExecutionNode,
+) -> bool:
+    return is_lineage_worktree(node.workspace_policy) and any(
         payload.get("role") == ProviderRole.EXECUTOR
         and not is_discarded_lineage(payload)
         for payload in failed_workspace_state_payloads(source, node)
-    ):
-        return False
+    )
+
+
+def _successful_workspace_invocations_are_valid(
+    source: RunHistoryRecord,
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    expected_invocations: tuple[ExpectedWorkspaceInvocation, ...],
+) -> bool:
     state_payloads = workspace_state_payloads(source, node)
-    if expected_invocations and not state_payloads:
+    if bool(expected_invocations) != bool(state_payloads):
         return False
-    if not expected_invocations and state_payloads:
-        return False
-    if state_payloads and not all(
+    if not all(
         _provider_workspace_state_is_valid(source, plan, node, payload)
         for payload in state_payloads
     ):
         return False
-    if state_payloads and not workspace_state_payloads_match_expected_set(
-        state_payloads,
-        expected_invocations,
-    ):
-        return False
-    if not all(
-        _expected_workspace_invocation_is_valid(
-            source,
-            plan,
-            node,
-            state_payloads,
-            expected,
-        )
-        for expected in expected_invocations
-    ):
-        return False
-    return _failed_workspace_invocations_are_valid(
-        source,
-        plan,
-        node,
-        expected_failed_invocations,
+    return workspace_state_payloads_match_expected_set(
+        state_payloads, expected_invocations
     )
 
 
@@ -118,43 +119,6 @@ def _parallel_workspace_outputs_are_complete(
     )
     actual_count = len(expected_invocations) + len(expected_failed_invocations)
     return actual_count == expected_count
-
-
-def _lineage_worktree_node(node: PreflightExecutionNode) -> bool:
-    policy = node.workspace_policy
-    return (
-        policy is not None
-        and policy.enabled
-        and policy.materialization == "worktree_checkout"
-        and policy.lineage_producer
-    )
-
-
-def _expected_workspace_invocation_is_valid(
-    source: RunHistoryRecord,
-    plan: PreflightExecutionPlan,
-    node: PreflightExecutionNode,
-    payloads: tuple[dict[str, object], ...],
-    expected: ExpectedWorkspaceInvocation,
-) -> bool:
-    matches = [
-        payload
-        for payload in payloads
-        if payload_matches_expected_invocation(payload, expected)
-    ]
-    if len(matches) == 1:
-        return _provider_workspace_state_is_valid(source, plan, node, matches[0])
-    if matches:
-        return False
-    if not expected_seeded_lineage_invocation(expected):
-        return False
-    seeded_source = latest_lineage_payload_before(payloads, expected)
-    return seeded_source is not None and _provider_workspace_state_is_valid(
-        source,
-        plan,
-        node,
-        seeded_source,
-    )
 
 
 def _failed_workspace_invocations_are_valid(
@@ -197,10 +161,7 @@ def _provider_workspace_state_is_valid(
     if not (
         _workspace_state_header_matches(source, plan, node, payload)
         and _workspace_state_policy_matches(policy.model_dump(mode="json"), payload)
-        and _workspace_state_invoker_matches(plan, payload)
-        and _workspace_state_git_matches(plan, payload)
-        and workspace_invocation_source_matches(source, plan, node, payload)
-        and provider_rendered_workspace_files_match(plan, node, payload, source)
+        and _workspace_invocation_context_matches(source, plan, node, payload)
     ):
         return False
     workspace = _mapping(payload.get("workspace"))
@@ -210,23 +171,47 @@ def _provider_workspace_state_is_valid(
         and workspace.get("effective_cwd") is None
     ):
         return False
-    if policy.materialization == "snapshot_checkout":
-        return workspace.get("writable") is True and _snapshot_result_matches(payload)
-    if policy.materialization != "worktree_checkout":
-        return False
+    return _workspace_materialization_result_matches(
+        policy.materialization, source, plan, payload
+    )
+
+
+def _workspace_invocation_context_matches(
+    source: RunHistoryRecord,
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    payload: dict[str, object],
+) -> bool:
+    return (
+        _workspace_state_invoker_matches(plan, payload)
+        and _workspace_state_git_matches(plan, payload)
+        and workspace_invocation_source_matches(source, plan, node, payload)
+        and provider_rendered_workspace_files_match(plan, node, payload, source)
+    )
+
+
+def _workspace_materialization_result_matches(
+    materialization: WorkspaceMaterialization,
+    source: RunHistoryRecord,
+    plan: PreflightExecutionPlan,
+    payload: dict[str, object],
+) -> bool:
+    workspace = _mapping(payload.get("workspace"))
     if workspace.get("writable") is not True:
         return False
-    if workspace.get("lineage_producer") is not True:
-        return _disposable_worktree_result_matches(payload)
-    return (
-        payload.get("role") == ProviderRole.EXECUTOR
-        and _workspace_result_matches(payload)
-        and _workspace_bundle_matches(
-            source,
-            plan,
-            payload,
-        )
-    )
+    match materialization:
+        case "snapshot_checkout":
+            return _snapshot_result_matches(payload)
+        case "worktree_checkout":
+            if workspace.get("lineage_producer") is not True:
+                return _disposable_worktree_result_matches(payload)
+            return (
+                payload.get("role") == ProviderRole.EXECUTOR
+                and _workspace_result_matches(payload)
+                and _workspace_bundle_matches(source, plan, payload)
+            )
+        case _:
+            return False
 
 
 def _failed_provider_workspace_state_is_valid(
@@ -281,10 +266,10 @@ def _workspace_state_git_matches(
 def _workspace_result_matches(payload: dict[str, object]) -> bool:
     result = _mapping(payload.get("result"))
     return (
-        _is_hex_object(result.get("candidate_commit"))
-        and _is_hex_object(result.get("result_commit"))
-        and _is_hex_object(result.get("candidate_tree"))
-        and _is_hex_object(result.get("result_tree"))
+        is_git_object_id(result.get("candidate_commit"))
+        and is_git_object_id(result.get("result_commit"))
+        and is_git_object_id(result.get("candidate_tree"))
+        and is_git_object_id(result.get("result_tree"))
         and is_strict_int(result.get("changed_path_count"))
         and result.get("unreachable_provider_objects_scanned") is False
     )
@@ -334,7 +319,7 @@ def _disposable_worktree_result_matches(payload: dict[str, object]) -> bool:
     return (
         is_strict_int(changed_path_count)
         and result.get("lineage_produced") is False
-        and _is_hex_object(result.get("final_head"))
+        and is_git_object_id(result.get("final_head"))
         and "candidate_commit" not in result
         and "result_commit" not in result
         and "candidate_tree" not in result
@@ -359,27 +344,7 @@ def _workspace_bundle_matches(
         or workspace_source is None
     ):
         return False
-    bundle = _mapping(payload.get("bundle"))
-    path = bundle.get("path")
-    sha256 = bundle.get("sha256")
-    size_bytes = bundle.get("size_bytes")
-    if (
-        not isinstance(path, str)
-        or not isinstance(sha256, str)
-        or not is_strict_int(size_bytes)
-        or bundle.get("verified") is not True
-    ):
-        return False
-    bundle_path = contained_regular_file(source.run_dir, path)
-    if bundle_path is None:
-        return False
-    try:
-        actual_size, actual_sha256 = file_size_and_sha256(bundle_path)
-    except OSError:
-        return False
-    if actual_size != size_bytes:
-        return False
-    if actual_sha256 != sha256:
+    if not _bundle_file_matches(source.run_dir, _mapping(payload.get("bundle"))):
         return False
     try:
         verify_persisted_workspace_result_chain(
@@ -390,6 +355,27 @@ def _workspace_bundle_matches(
     except (OSError, RuntimeError, subprocess.SubprocessError):
         return False
     return True
+
+
+def _bundle_file_matches(run_dir: Path, bundle: Mapping[str, object]) -> bool:
+    path = bundle.get("path")
+    sha256 = bundle.get("sha256")
+    size_bytes = bundle.get("size_bytes")
+    if (
+        not isinstance(path, str)
+        or not isinstance(sha256, str)
+        or not is_strict_int(size_bytes)
+        or bundle.get("verified") is not True
+    ):
+        return False
+    bundle_path = contained_regular_file(run_dir, path)
+    if bundle_path is None:
+        return False
+    try:
+        actual_size, actual_sha256 = file_size_and_sha256(bundle_path)
+    except OSError:
+        return False
+    return actual_size == size_bytes and actual_sha256 == sha256
 
 
 def _workspace_result_ref(payload: dict[str, object]) -> str | None:
@@ -403,13 +389,13 @@ def _workspace_result_ref(payload: dict[str, object]) -> str | None:
 def _workspace_result_commit(payload: dict[str, object]) -> str | None:
     result = _mapping(payload.get("result"))
     result_commit = result.get("result_commit")
-    return result_commit if _is_hex_object(result_commit) else None
+    return result_commit if is_git_object_id(result_commit) else None
 
 
 def _workspace_result_tree(payload: dict[str, object]) -> str | None:
     result = _mapping(payload.get("result"))
     result_tree = result.get("result_tree")
-    return result_tree if _is_hex_object(result_tree) else None
+    return result_tree if is_git_object_id(result_tree) else None
 
 
 def _safe_workspace_result_ref(ref: str) -> bool:

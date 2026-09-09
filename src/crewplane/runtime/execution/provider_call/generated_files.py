@@ -9,6 +9,7 @@ from crewplane.artifacts.generated_files.catalog import (
     generated_file_source_root,
     snapshot_generated_file_workspace,
 )
+from crewplane.core.file_hashing import ContentSignature
 from crewplane.runtime.workspace import PreparedWorkspace
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
@@ -444,7 +445,7 @@ def snapshot_invocation_generated_files(
     if request.on_generated_file_snapshot_started is not None:
         request.on_generated_file_snapshot_started(snapshot_root)
     succeeded = False
-    published_signatures: dict[Path, tuple[int, str]] = {}
+    published_signatures: dict[Path, ContentSignature] = {}
     try:
         result = snapshot_generated_file_workspace(
             source.provider_output_file,

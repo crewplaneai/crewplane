@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -14,6 +15,9 @@ from crewplane.artifacts.failure_artifacts import (
 from crewplane.artifacts.naming import build_node_state_filename
 from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.artifacts.workspace.chain_validation import (
+    verify_persisted_workspace_result_chain,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.resume import (
@@ -253,7 +257,9 @@ def test_validate_frontier_accepts_all_failed_snapshot_workspace_invocations(
     assert frontier.resumed_node_ids == ("a",)
 
 
-def test_validate_frontier_rejects_parallel_lineage_worktree_with_failed_output(
+@pytest.mark.parametrize("discarded", [False, True])
+def test_validate_frontier_checks_discarded_lineage_for_failed_output(
+    discarded,
     tmp_path,
 ) -> None:
     source = source_record(tmp_path)
@@ -319,6 +325,13 @@ def test_validate_frontier_rejects_parallel_lineage_worktree_with_failed_output(
     failed_payload.pop("result")
     failed_payload.pop("refs")
     failed_payload.pop("bundle")
+    if discarded:
+        failed_payload["workspace"]["lineage_producer"] = False
+        failed_payload["result"] = {
+            "lineage_produced": False,
+            "lineage_discarded": True,
+            "lineage_discard_reason": "remediation_context_exhausted",
+        }
     (stage_dir / "workspace-state-beta.json").write_text(
         json.dumps(failed_payload),
         encoding="utf-8",
@@ -327,7 +340,7 @@ def test_validate_frontier_rejects_parallel_lineage_worktree_with_failed_output(
 
     frontier = validate_resume_frontier(source, plan)
 
-    assert frontier.resumed_node_ids == ()
+    assert frontier.resumed_node_ids == (("a",) if discarded else ())
 
 
 def test_validate_frontier_rejects_missing_reviewer_workspace_state(
@@ -475,6 +488,21 @@ def test_validate_frontier_rejects_unexpected_later_lineage_state(
     frontier = validate_resume_frontier(source, plan)
 
     assert frontier.resumed_node_ids == ()
+
+
+def test_validate_frontier_verifies_each_lineage_payload_once(tmp_path) -> None:
+    source = source_record(tmp_path)
+    plan, payload = _write_valid_lineage_workspace_state(tmp_path, source)
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+
+    with patch(
+        "crewplane.artifacts.workspace.state.validation.verify_persisted_workspace_result_chain",
+        wraps=verify_persisted_workspace_result_chain,
+    ) as verify_chain:
+        frontier = validate_resume_frontier(source, plan)
+
+    assert frontier.resumed_node_ids == ("a",)
+    verify_chain.assert_called_once_with(plan.workspace_source, source.run_dir, payload)
 
 
 def test_validate_frontier_rejects_bundle_missing_recorded_result_ref(

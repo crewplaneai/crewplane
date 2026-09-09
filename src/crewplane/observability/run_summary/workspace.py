@@ -21,6 +21,9 @@ workspace_state_summaries = _workspace_readers.workspace_state_summaries
 workspace_state_summary = _workspace_readers.workspace_state_summary
 
 
+type WorkspaceInvocationKey = tuple[str | None, str | None, int | None, int | None]
+
+
 def workspace_invocation_summary_from_event(
     event: ExecutionEvent,
 ) -> WorkspaceInvocationSummary | None:
@@ -78,7 +81,7 @@ def merge_workspace_invocations(
     event_invocations: tuple[WorkspaceInvocationSummary, ...],
     state_invocations: tuple[WorkspaceInvocationSummary, ...],
 ) -> tuple[WorkspaceInvocationSummary, ...]:
-    merged: dict[tuple[object, ...], WorkspaceInvocationSummary] = {}
+    merged: dict[WorkspaceInvocationKey, WorkspaceInvocationSummary] = {}
     for invocation in event_invocations:
         key = workspace_invocation_key(invocation)
         merged[key] = replace(
@@ -178,7 +181,7 @@ def is_worktree_checkpoint(invocation: WorkspaceInvocationSummary) -> bool:
 
 def workspace_invocation_key(
     summary: WorkspaceInvocationSummary,
-) -> tuple[object, ...]:
+) -> WorkspaceInvocationKey:
     return (
         summary.node_id,
         summary.task_id,

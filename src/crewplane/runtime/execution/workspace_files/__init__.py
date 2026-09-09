@@ -1,9 +1,10 @@
 """Runtime workspace-file resolution API."""
 
-from .descriptors import (
-    rendered_workspace_file_descriptor,
+from crewplane.core.workspace.invocation_identity import (
     rendered_workspace_file_invocation_id,
 )
+
+from .descriptors import rendered_workspace_file_descriptor
 from .models import ResolvedWorkspaceFile
 from .resolution import (
     read_dynamic_locator_blob,

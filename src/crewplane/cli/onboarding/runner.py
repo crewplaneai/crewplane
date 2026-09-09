@@ -444,27 +444,22 @@ class OnboardingRunner:
         messages.print_validation_success(self.console, len(preview.nodes))
 
     def confirm(self, prompt: str, default: bool) -> bool:
-        default_answer = "y" if default else "n"
-        answer = self.prompt_raw(prompt).strip().lower()
-        if answer == "":
-            answer = default_answer
-        while answer not in {"y", "yes", "n", "no"}:
-            messages.print_invalid_choice(self.console, ("y", "n"))
+        while True:
             answer = self.prompt_raw(prompt).strip().lower()
             if answer == "":
-                answer = default_answer
-        return answer in {"y", "yes"}
+                return default
+            if answer in {"y", "yes", "n", "no"}:
+                return answer in {"y", "yes"}
+            messages.print_invalid_choice(self.console, ("y", "n"))
 
     def prompt_choice(self, prompt: str, choices: tuple[str, ...], default: str) -> str:
-        answer = self.prompt_raw(prompt).strip()
-        if answer == "":
-            return default
-        while answer not in choices:
-            messages.print_invalid_choice(self.console, choices)
+        while True:
             answer = self.prompt_raw(prompt).strip()
             if answer == "":
                 return default
-        return answer
+            if answer in choices:
+                return answer
+            messages.print_invalid_choice(self.console, choices)
 
     def prompt_raw(self, prompt: str) -> str:
         messages.print_prompt(self.console, prompt)

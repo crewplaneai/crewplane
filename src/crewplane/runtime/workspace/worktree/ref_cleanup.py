@@ -14,8 +14,14 @@ from typing import Never
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
+from crewplane.artifacts.workspace.state.paths import (
+    is_safe_workspace_stage_path,
+    is_temporary_ref_evidence_name,
+    is_workspace_claim_name,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
+from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 
 from ..git import git
@@ -225,7 +231,8 @@ def _stage_ref_cleanup_evidence_paths(stage_paths: set[Path]) -> tuple[Path, ...
             evidence_paths.extend(
                 Path(entry.path)
                 for entry in entries
-                if _is_ref_cleanup_evidence_name(entry.name)
+                if is_workspace_claim_name(entry.name)
+                or is_temporary_ref_evidence_name(entry.name)
             )
     return tuple(evidence_paths)
 
@@ -247,7 +254,7 @@ def _run_log_temporary_ref_evidence(
         return tuple(
             Path(entry.path)
             for entry in entries
-            if _is_temporary_ref_evidence_name(entry.name)
+            if is_temporary_ref_evidence_name(entry.name)
         )
 
 
@@ -330,7 +337,7 @@ def _stage_path_values_from_plan(
 def _stage_path_value(node: object, plan_path: Path) -> str:
     contract = node.get("artifact_contract") if isinstance(node, dict) else None
     stage_path = contract.get("stage_path") if isinstance(contract, dict) else None
-    if not isinstance(stage_path, str) or not _safe_stage_path(stage_path):
+    if not isinstance(stage_path, str) or not is_safe_workspace_stage_path(stage_path):
         raise RuntimeError(
             f"Workspace ref cleanup found unsafe stage evidence: {plan_path}."
         )
@@ -366,29 +373,6 @@ def _existing_planned_stage_path(run_dir: Path, stage_path: str) -> Path | None:
                 f"Workspace ref cleanup found unsafe stage evidence: {current}."
             )
     return current
-
-
-def _safe_stage_path(value: str) -> bool:
-    path = Path(value)
-    return (
-        bool(value.strip())
-        and not path.is_absolute()
-        and all(part not in {"", ".", ".."} for part in path.parts)
-        and path.parts[0] not in RESERVED_RUN_ROOT_NAMES
-    )
-
-
-def _is_ref_cleanup_evidence_name(name: str) -> bool:
-    return name.endswith(".json") and (
-        name == "workspace-state.json"
-        or name.startswith("workspace-state-")
-        or name.startswith("workspace-reuse-claim-")
-        or _is_temporary_ref_evidence_name(name)
-    )
-
-
-def _is_temporary_ref_evidence_name(name: str) -> bool:
-    return name.startswith("workspace-temporary-refs-") and name.endswith(".json")
 
 
 def _require_temporary_ref_cleanup_evidence(
@@ -490,15 +474,7 @@ def _temporary_ref_claim_matches_owner(
         and claim.get("owner_audit_round_num") == evidence.audit_round_num
         and claim.get("repository_id") == evidence.repository_id
         and isinstance(claim.get("name"), str)
-        and _is_object_id(claim.get("target_oid"))
-    )
-
-
-def _is_object_id(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) in {40, 64}
-        and all(character in "0123456789abcdef" for character in value)
+        and is_git_object_id(claim.get("target_oid"))
     )
 
 

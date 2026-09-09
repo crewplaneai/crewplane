@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import unicodedata
 from pathlib import Path
 
 from crewplane.core.config import Settings
+from crewplane.core.state_paths import RUNTIME_ARTIFACT_ROOTS, is_reserved_state_path
 from crewplane.core.workspace.git_policy import (
+    GitTreeMode,
     config_keys_from_scoped_records,
     effective_policy_lines,
     local_config_policy_summary,
+    portable_path_key,
 )
 
 from .diagnostic_text import summarize_paths
@@ -22,11 +24,6 @@ from .git_source import (
 )
 from .source_types import WorkspacePolicyBuilder
 
-RESERVED_SOURCE_ROOTS = (
-    ".crewplane/execution-stages",
-    ".crewplane/execution-results",
-    ".crewplane/locks",
-)
 FULL_CHECKOUT_REMEDIATION = (
     "Use a full clone and full checkout before enabling workspace isolation, "
     "or set settings.workspace.enabled: false for this run."
@@ -259,7 +256,9 @@ def validate_clean_start(
         elif record.startswith("? "):
             path = record[2:]
             project_path = project_root_relative_source_path(path, git_context)
-            if project_path is not None and not is_reserved_source_path(project_path):
+            if project_path is not None and not is_reserved_state_path(
+                project_path, RUNTIME_ARTIFACT_ROOTS
+            ):
                 untracked.append(path)
     if tracked:
         builder.errors.append(
@@ -303,23 +302,28 @@ def validate_source_tree(
         header, _, path = record.partition("\t")
         mode = header.split(" ", 1)[0]
         tracked_paths.append(path)
-        if mode == "160000":
+        if mode == GitTreeMode.GITLINK:
             gitlinks.append(path)
-        if mode == "120000" and Path(path).name in {".gitignore", ".gitattributes"}:
+        if mode == GitTreeMode.SYMLINK and Path(path).name in {
+            ".gitignore",
+            ".gitattributes",
+        }:
             builder.errors.append(
                 "Workspace source policy failed: symlinked Git policy files are "
                 f"unsupported: {path}. Replace the symlink with a regular file "
                 "and commit it, or set settings.workspace.enabled: false."
             )
         project_path = project_root_relative_source_path(path, git_context)
-        if project_path is not None and is_reserved_source_path(project_path):
+        if project_path is not None and is_reserved_state_path(
+            project_path, RUNTIME_ARTIFACT_ROOTS
+        ):
             builder.errors.append(
                 "Workspace source policy failed: tracked files under reserved "
                 f"runtime artifact roots are unsupported: {path}. Move tracked "
                 "source files out of .crewplane runtime artifact directories "
                 "or set settings.workspace.enabled: false for this run."
             )
-        folded_path = path_collision_key(path)
+        folded_path = portable_path_key(path)
         existing_path = collision_paths.setdefault(folded_path, path)
         if existing_path != path:
             builder.errors.append(
@@ -345,10 +349,6 @@ def validate_source_tree(
         tracked_paths,
         builder,
     )
-
-
-def path_collision_key(path: str) -> str:
-    return unicodedata.normalize("NFC", path).casefold()
 
 
 def unsupported_repo_error(summary: str, remediation: str) -> str:
@@ -384,12 +384,6 @@ def replacement_refs_exist(common_git_dir: Path) -> bool:
 def status_path(record: str) -> str:
     parts = record.split(" ")
     return parts[-1] if parts else record
-
-
-def is_reserved_source_path(path: str) -> bool:
-    return any(
-        path == root or path.startswith(f"{root}/") for root in RESERVED_SOURCE_ROOTS
-    )
 
 
 def project_root_relative_source_path(

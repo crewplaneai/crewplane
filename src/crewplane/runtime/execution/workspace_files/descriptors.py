@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.invocation_identity import (
+    rendered_workspace_file_invocation_id,
+)
 from crewplane.runtime.workspace.state import RenderedWorkspaceFileDescriptor
 
 from .models import ResolvedWorkspaceFile
@@ -46,14 +49,3 @@ def rendered_workspace_file_descriptor(
         "utf8_validated": resolved_file.utf8_validated,
         "target": locator.target,
     }
-
-
-def rendered_workspace_file_invocation_id(
-    node_id: str,
-    task_id: str,
-    role: ProviderRole,
-    round_num: int,
-    audit_round_num: int | None,
-) -> str:
-    audit = f".audit-{audit_round_num}" if audit_round_num is not None else ""
-    return f"{node_id}.{role}.{task_id}{audit}.round-{round_num}"

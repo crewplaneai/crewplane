@@ -9,11 +9,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import is_single_link_regular_file
+from crewplane.core.file_hashing import ContentSignature
 
 from ..types import DirectorySnapshot
 
 
-def file_snapshot_signature(file_path: Path) -> tuple[int, str]:
+def file_snapshot_signature(file_path: Path) -> ContentSignature:
     file_stat = _single_link_regular_file_stat(file_path)
     payload = _read_single_link_regular_file(file_path, file_stat)
     return len(payload), hashlib.sha256(payload).hexdigest()
@@ -23,7 +25,7 @@ def snapshot_files(
     root: Path,
     excluded_paths: set[Path] | None = None,
     excluded_roots: set[Path] | None = None,
-) -> dict[Path, tuple[int, str]]:
+) -> dict[Path, ContentSignature]:
     excluded = excluded_paths or set()
     roots = excluded_roots or set()
     root_stat = _snapshot_root_stat(root)
@@ -86,7 +88,7 @@ def _snapshot_regular_file_root(
     root_stat: os.stat_result,
     excluded_paths: set[Path],
     excluded_roots: set[Path],
-) -> dict[Path, tuple[int, str]]:
+) -> dict[Path, ContentSignature]:
     if _snapshot_path_is_excluded(root, excluded_paths, excluded_roots):
         return {}
     try:
@@ -99,8 +101,8 @@ def _snapshot_non_directory_entries(
     root: Path,
     excluded_paths: set[Path],
     excluded_roots: set[Path],
-) -> dict[Path, tuple[int, str]]:
-    snapshot: dict[Path, tuple[int, str]] = {}
+) -> dict[Path, ContentSignature]:
+    snapshot: dict[Path, ContentSignature] = {}
     for entry_path, entry_stat in _iter_included_descendants(
         root,
         excluded_paths,
@@ -173,7 +175,7 @@ def snapshot_path_is_within_roots(path: Path, roots: set[Path]) -> bool:
 
 def signatures_for_bytes(
     content_by_path: dict[Path, bytes],
-) -> dict[Path, tuple[int, str]]:
+) -> dict[Path, ContentSignature]:
     return {
         path: (len(content), hashlib.sha256(content).hexdigest())
         for path, content in content_by_path.items()
@@ -192,10 +194,6 @@ def lstat_or_none(path: Path) -> os.stat_result | None:
         return path.lstat()
     except FileNotFoundError:
         return None
-
-
-def is_single_link_regular_file(file_stat: os.stat_result) -> bool:
-    return stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1
 
 
 def _single_link_regular_file_stat(path: Path) -> os.stat_result:
@@ -227,7 +225,7 @@ def _read_single_link_regular_file(
 def _snapshot_signature(
     path: Path,
     path_stat: os.stat_result,
-) -> tuple[int, str]:
+) -> ContentSignature:
     if is_single_link_regular_file(path_stat):
         return file_snapshot_signature(path)
     target = os.readlink(path) if stat.S_ISLNK(path_stat.st_mode) else ""

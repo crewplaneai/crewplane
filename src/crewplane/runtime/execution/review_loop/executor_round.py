@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.safe_files import (
     contained_directory,
     contained_regular_file,
 )
+from crewplane.core.file_hashing import ContentSignature
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details
@@ -61,7 +63,9 @@ async def run_executor_round(
     )
     for provider in request.executors:
         task_id = provider.task_id
-        output_file = request.artifact_dir / f"{task_id}_round{request.round_num}.md"
+        output_file = request.artifact_dir / build_task_round_filename(
+            task_id, request.round_num
+        )
         allowed_paths = {output_file}
         allowed_paths.update(
             workspace_artifact_allowed_paths(
@@ -135,8 +139,8 @@ def executor_output_policy(
 def _read_executor_output(
     output_file: Path,
     node_dir: Path,
-    expected_signature: tuple[int, str] | None,
-) -> tuple[str, tuple[int, str] | None]:
+    expected_signature: ContentSignature | None,
+) -> tuple[str, ContentSignature | None]:
     try:
         relative_path = output_file.relative_to(node_dir).as_posix()
     except ValueError as exc:

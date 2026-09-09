@@ -22,6 +22,7 @@ from crewplane.core.preflight.secrets import SecretContext
 from crewplane.runtime.agent.process import drain as process_drain
 from crewplane.runtime.agent.process.drain import ProcessDrainError
 from crewplane.runtime.workspace import setup as workspace_setup
+from crewplane.runtime.workspace import state_evidence as workspace_state_evidence
 from crewplane.runtime.workspace.mutator_fence import (
     fence_workspace_mutator,
     release_workspace_mutator,
@@ -442,7 +443,7 @@ def test_setup_process_drain_write_failure_preserves_error_and_fence(
 
     monkeypatch.setattr(os, "killpg", deny_signal)
     monkeypatch.setattr(
-        workspace_setup,
+        workspace_state_evidence,
         "record_workspace_process_drain",
         fail_process_drain_record,
     )

@@ -1,3 +1,7 @@
+import hashlib
+
+import pytest
+
 from crewplane.artifacts.naming import (
     MAX_GENERATED_PATH_COMPONENT_CHARS,
     build_findings_filename,
@@ -7,6 +11,7 @@ from crewplane.artifacts.naming import (
     build_result_filename,
     build_run_key_name,
     build_stage_directory_name,
+    safe_stage_name,
     validate_run_key_name,
 )
 
@@ -72,3 +77,41 @@ def test_validate_run_key_name_rejects_unsafe_components() -> None:
         except ValueError:
             continue
         raise AssertionError(f"accepted unsafe run key {run_key_name!r}")
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("", "task"),
+        (".", "task"),
+        ("..", "task"),
+        ("  ", "task"),
+        (" A B ", "a-b"),
+        ("Ünicode", "-nicode"),
+        ("!!!", "-"),
+        ("..-", "..-"),
+        ("-a", "-a"),
+        ("a", "a"),
+    ],
+)
+def test_stage_normalization_preserves_persisted_names(name, expected) -> None:
+    assert safe_stage_name(name) == expected
+    assert build_stage_directory_name(name) == expected
+    assert build_result_filename(name) == f"{expected}-result.md"
+    digest = hashlib.sha256(name.encode()).hexdigest()[:12]
+    prefix = expected.rstrip("-._") or "artifact"
+    assert build_node_state_filename(name) == f"{prefix}--{digest}.json"
+
+
+@pytest.mark.parametrize("length", [169, 170, 179, 180, 181])
+def test_stage_names_preserve_exact_length_boundaries(length) -> None:
+    name = "a" * length
+    digest = hashlib.sha256(name.encode()).hexdigest()[:12]
+    expected_stage = name if length <= 180 else f"{'a' * 166}--{digest}"
+    expected_result = (
+        f"{name}-result.md"
+        if length + 10 <= 180
+        else f"{'a' * 156}--{digest}-result.md"
+    )
+    assert build_stage_directory_name(name) == expected_stage
+    assert build_result_filename(name) == expected_result

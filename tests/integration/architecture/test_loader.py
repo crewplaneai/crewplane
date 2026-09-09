@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 from crewplane.architecture.errors import (
     AdapterContractError,
     AdapterLoadError,
@@ -7,6 +9,7 @@ from crewplane.architecture.errors import (
 )
 from crewplane.architecture.loader import (
     instantiate_adapter,
+    is_builtin_implementation,
     load_adapter_class,
     resolve_implementation_path,
 )
@@ -188,3 +191,32 @@ class LoaderTests(unittest.TestCase):
     def test_instantiate_mock_invoker_adapter_returns_instance(self) -> None:
         adapter = instantiate_adapter("invoker", "mock")
         self.assertEqual(adapter.__class__.__name__, "MockInvokerAdapter")
+
+
+@pytest.mark.parametrize(
+    "implementation",
+    ["", ":", ".", "unknown", "module:", ":Class", "module.", ".Class"],
+)
+def test_builtin_identity_probe_rejects_invalid_targets_without_loading(
+    implementation, monkeypatch
+) -> None:
+    import crewplane.architecture.loader as loader
+
+    def unexpected_import(name: str):
+        raise AssertionError(f"identity probe imported {name}")
+
+    monkeypatch.setattr(loader.importlib, "import_module", unexpected_import)
+    assert not is_builtin_implementation("invoker", implementation, "cli")
+
+
+def test_builtin_identity_probe_uses_registry_targets(monkeypatch) -> None:
+    import crewplane.architecture.loader as loader
+
+    registry = dict(loader.INTEGRATION_ALIAS_REGISTRY)
+    registry["invoker"] = {**registry["invoker"], "mock": "example.custom:Adapter"}
+    monkeypatch.setattr(loader, "INTEGRATION_ALIAS_REGISTRY", registry)
+    assert is_builtin_implementation("invoker", "mock", "mock")
+    assert is_builtin_implementation("invoker", "example.custom.Adapter", "mock")
+    assert not is_builtin_implementation(
+        "invoker", "crewplane.adapters.invokers.mock:MockInvokerAdapter", "mock"
+    )

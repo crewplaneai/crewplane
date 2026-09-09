@@ -6,6 +6,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.artifacts.workspace.state.paths import workspace_reuse_claim_filename
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
@@ -447,7 +448,7 @@ def _archive_failed_reuse_claim(
     failure: BaseException,
 ) -> Path:
     archive_path = state_path.with_name(
-        f"workspace-reuse-claim-{state_path.stem}-generation-{generation}.json"
+        workspace_reuse_claim_filename(state_path.stem, generation)
     )
     if archive_path.exists() or archive_path.is_symlink():
         raise RuntimeError(

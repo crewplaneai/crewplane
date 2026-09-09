@@ -7,10 +7,7 @@ from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 
-from crewplane.architecture.safe_files import (
-    contained_directory,
-    contained_regular_file,
-)
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
@@ -432,51 +429,6 @@ def read_reviewer_output(invocation_result: ReviewerInvocationResult) -> str:
     return raw_output
 
 
-def _safe_review_output_path(
-    output_file: Path,
-    node_dir: Path,
-    missing_ok: bool = False,
-) -> Path | None:
-    try:
-        relative_path = output_file.relative_to(node_dir).as_posix()
-    except ValueError as exc:
-        raise RuntimeError(
-            f"Reviewer output is outside its node stage: {output_file.as_posix()}"
-        ) from exc
-    _safe_output_parent(node_dir, relative_path, output_file)
-    safe_output = contained_regular_file(node_dir, relative_path)
-    if safe_output is not None:
-        return safe_output
-    if missing_ok:
-        try:
-            output_file.lstat()
-        except FileNotFoundError:
-            return None
-    raise RuntimeError(
-        f"Reviewer output is missing or unsafe: {output_file.as_posix()}"
-    )
-
-
-def _safe_output_parent(
-    node_dir: Path,
-    relative_path: str,
-    output_file: Path,
-) -> None:
-    parent_relative_path = Path(relative_path).parent.as_posix()
-    if parent_relative_path == ".":
-        parent_relative_path = ""
-    try:
-        safe_parent = contained_directory(node_dir, parent_relative_path)
-    except ValueError as exc:
-        raise RuntimeError(
-            f"Reviewer output parent is unsafe: {output_file.as_posix()}"
-        ) from exc
-    if safe_parent is None:
-        raise RuntimeError(
-            f"Reviewer output parent is missing or unsafe: {output_file.as_posix()}"
-        )
-
-
 def persist_reviewer_failures(
     request: ReviewerRoundRequest,
     failures: list[ReviewerInvocationFailure],
@@ -530,5 +482,7 @@ def reviewer_output_path(
     provider: ProviderRecord,
 ) -> tuple[str, Path]:
     task_id = provider.task_id
-    output_file = request.artifact_dir / f"{task_id}_round{request.round_num}.md"
+    output_file = request.artifact_dir / build_task_round_filename(
+        task_id, request.round_num
+    )
     return task_id, output_file

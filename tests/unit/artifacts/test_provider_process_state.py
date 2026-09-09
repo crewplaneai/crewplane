@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 
 import pytest
+from pydantic import ValidationError
 
 from crewplane.architecture.contracts import InvocationProcessEvent
 from crewplane.architecture.ports import ProviderProcessInvocation
@@ -235,3 +236,45 @@ def test_provider_process_state_contains_no_command_or_environment(tmp_path) -> 
     assert "command" not in payload
     assert "environment" not in payload
     assert "prompt" not in payload
+
+
+@pytest.mark.parametrize("field", ["started_at", "exited_at"])
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "2026-09-08",
+        "2026-09-08T12:34:56",
+        "2026-09-08T12:34:56-07:00",
+        "",
+        "invalid",
+    ],
+)
+def test_provider_process_model_timestamp_contract(field, timestamp) -> None:
+    payload = {
+        "run_state_schema_version": 1,
+        "run_id": "run",
+        "run_key_name": "workflow--run",
+        "node_id": "a",
+        "task_id": "alpha",
+        "provider": "alpha",
+        "role": "executor",
+        "round_num": 1,
+        "attempt": 1,
+        "pid": 123,
+        "hostname": "host",
+        "status": "exited",
+        "started_at": "2026-09-08T12:00:00",
+        "exited_at": "2026-09-08T12:00:01",
+        "returncode": 0,
+    }
+    payload[field] = timestamp
+    if timestamp in {"", "invalid"}:
+        with pytest.raises(
+            ValidationError, match="timestamp fields must be ISO 8601 datetimes"
+        ) as caught:
+            ProviderProcessState.model_validate(payload)
+        error = caught.value.errors()[0]["ctx"]["error"]
+        assert isinstance(error.__cause__, ValueError)
+    else:
+        validated = ProviderProcessState.model_validate(payload)
+        assert validated.model_dump()[field] == timestamp

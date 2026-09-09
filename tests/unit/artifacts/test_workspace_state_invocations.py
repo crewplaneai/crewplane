@@ -10,11 +10,74 @@ from crewplane.artifacts.workspace.state.invocations import (
     WorkspaceStateStatus,
     expected_failed_workspace_invocations,
     payload_matches_expected_invocation,
+    resolve_expected_workspace_payload,
     workspace_state_payloads_for_status,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.resume import make_plan
 from tests.helpers.resume_validation import source_record
+
+
+@pytest.mark.parametrize("exact_match_count", [0, 1, 2])
+def test_expected_payload_selection_preserves_precedence_and_identity(
+    exact_match_count: int,
+) -> None:
+    expected = ExpectedWorkspaceInvocation(
+        "alpha", ProviderRole.EXECUTOR, 1, 3, lineage_source_required=True
+    )
+    older: dict[str, object] = {
+        "task_id": "alpha",
+        "role": "executor",
+        "round_num": 1,
+        "audit_round_num": 1,
+        "workspace": {"lineage_producer": True},
+    }
+    latest = {**older, "audit_round_num": 2}
+    exact = {**older, "audit_round_num": 3}
+    future = {**older, "audit_round_num": 4}
+    sibling = {**latest, "task_id": "beta"}
+    payloads = (latest, older, future, sibling) + tuple(
+        dict(exact) for _ in range(exact_match_count)
+    )
+
+    selected = resolve_expected_workspace_payload(payloads, expected)
+
+    if exact_match_count == 0:
+        assert selected is latest
+    elif exact_match_count == 1:
+        assert selected is payloads[-1]
+    else:
+        assert selected is None
+
+
+@pytest.mark.parametrize(
+    ("role", "round_num", "audit_round_num", "lineage_required"),
+    [
+        (ProviderRole.REVIEWER, 1, 2, True),
+        (ProviderRole.EXECUTOR, 2, 2, True),
+        (ProviderRole.EXECUTOR, 1, 1, True),
+        (ProviderRole.EXECUTOR, 1, None, True),
+        (ProviderRole.EXECUTOR, 1, 2, False),
+    ],
+)
+def test_expected_payload_selection_limits_seeded_lineage_fallback(
+    role: ProviderRole,
+    round_num: int,
+    audit_round_num: int | None,
+    lineage_required: bool,
+) -> None:
+    prior: dict[str, object] = {
+        "task_id": "alpha",
+        "role": "executor",
+        "round_num": 1,
+        "audit_round_num": 0,
+        "workspace": {"lineage_producer": True},
+    }
+    expected = ExpectedWorkspaceInvocation(
+        "alpha", role, round_num, audit_round_num, lineage_required
+    )
+
+    assert resolve_expected_workspace_payload((prior,), expected) is None
 
 
 @pytest.mark.parametrize("continue_on_failure", [False, True])

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 
 import pytest
@@ -460,6 +460,24 @@ def test_kilo_output_extractor_reports_malformed_json_lines(stdout_text: str) ->
     extracted = extract_kilo_output(CommandResult(0, stdout_text, ""), None)
 
     assert extracted.output_extraction_status == "malformed"
+
+
+def test_kilo_output_extractor_discards_partial_text_and_stops_on_malformed_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def events(result: CommandResult) -> Iterator[Mapping[str, object] | None]:
+        assert result.returncode == 0
+        yield {"type": "text", "text": "partial response"}
+        yield None
+        raise AssertionError("Read past the malformed event")
+
+    monkeypatch.setattr(machine_json, "iter_stdout_json_objects", events)
+
+    extracted = extract_kilo_output(CommandResult(0, "", ""), None)
+
+    assert extracted.output_extraction_status == "malformed"
+    assert extracted.output_text == ""
+    assert extracted.output_path is None
 
 
 def test_kilo_output_extractor_accepts_top_level_text_and_ignores_invalid_text_types() -> (

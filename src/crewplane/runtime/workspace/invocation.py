@@ -4,6 +4,10 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.workspace.state.paths import (
+    WORKSPACE_STATE_FILENAME,
+    workspace_state_filename,
+)
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -38,8 +42,8 @@ def workspace_state_path(
     if stage_dir is None:
         stage_dir = output.create_node_dir(request)
     if len(node.provider_records) == 1 and audit_round_num is None and round_num == 1:
-        return stage_dir / "workspace-state.json"
-    return stage_dir / f"workspace-state-{slug}.json"
+        return stage_dir / WORKSPACE_STATE_FILENAME
+    return stage_dir / workspace_state_filename(slug)
 
 
 def workspace_cleanup_on_success(plan: PreflightExecutionPlan) -> bool:

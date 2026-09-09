@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from crewplane.runtime.workspace.worktree.refs import (
+from crewplane.core.workspace.naming import (
     safe_file_component,
     safe_ref_component,
 )

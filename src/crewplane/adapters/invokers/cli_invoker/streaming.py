@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import codecs
 import json
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from crewplane.architecture.contracts import CommandResult
-
-# A 64K read size amortizes filesystem calls while bounding each read. Parsing
-# and incremental decoding must remain correct across arbitrary boundaries.
-STREAM_READ_BYTES = 64 * 1024
+from crewplane.core.file_text import STREAM_READ_BYTES, path_has_non_whitespace_text
 
 
 def load_stdout_json(
@@ -82,24 +78,6 @@ def new_owned_output_file() -> Path:
 def remove_owned_path(path: Path | None) -> None:
     if path is not None:
         path.unlink(missing_ok=True)
-
-
-def path_has_non_whitespace_text(path: Path) -> bool:
-    decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    with path.open("rb") as handle:
-        while chunk := handle.read(STREAM_READ_BYTES):
-            if any(not char.isspace() for char in decoder.decode(chunk)):
-                return True
-    return any(not char.isspace() for char in decoder.decode(b"", final=True))
-
-
-def path_decoded_character_count(path: Path) -> int:
-    decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    char_count = 0
-    with path.open("rb") as handle:
-        while chunk := handle.read(STREAM_READ_BYTES):
-            char_count += len(decoder.decode(chunk))
-    return char_count + len(decoder.decode(b"", final=True))
 
 
 def _chunks_from_file(path: Path) -> Iterator[str]:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,20 +10,11 @@ import pytest
 from pydantic import ValidationError
 from rich.console import Console
 
-from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.bootstrap import build_runtime_config_snapshot
-from crewplane.core.config import (
-    AgentConfig,
-    Config,
-    IntegrationsConfig,
-    IntegrationSpec,
-    Settings,
-)
 from crewplane.core.preflight import (
     PreflightCompilationPreview,
     PreflightCompileOptions,
     PreflightExecutionPlan,
-    PreflightWorkflowSource,
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
@@ -38,125 +28,13 @@ from crewplane.core.workflow.models import (
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_plan, make_snapshot_workspace_plan
 
-
-def _mock_config() -> Config:
-    return Config(
-        version=SCHEMA_VERSION,
-        agents={"mock": AgentConfig(cli_cmd=["mock"])},
-        settings=Settings(
-            integrations=IntegrationsConfig(
-                invoker=IntegrationSpec(
-                    implementation="mock",
-                    options={
-                        "observation_delay_seconds": 0,
-                        "output_mode": "echo",
-                    },
-                ),
-                ui=IntegrationSpec(implementation="tmux", options={}),
-                artifacts=IntegrationSpec(
-                    implementation="filesystem",
-                    options={"log_cli_output": True},
-                ),
-            )
-        ),
-    )
-
-
-def _literal_workflow() -> WorkflowPlan:
-    return WorkflowPlan(
-        name="demo",
-        nodes=[
-            WorkflowNode(
-                id="build",
-                mode="sequential",
-                providers=[ProviderSpec(provider="mock")],
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="hello")
-                ],
-            )
-        ],
-    )
-
-
-def _source(
-    workflow: WorkflowPlan,
-    workflow_content: str = "workflow source",
-    composed_workflow: dict[str, Any] | None = None,
-    node_source_paths: dict[str, Path] | None = None,
-    node_source_spans: dict[str, dict[str, int]] | None = None,
-    prompt_segment_spans: dict[str, list[dict[str, int]]] | None = None,
-) -> PreflightWorkflowSource:
-    return PreflightWorkflowSource.from_workflow(
-        workflow,
-        workflow_content=workflow_content,
-        composed_workflow=composed_workflow
-        or {
-            "schema_version": workflow.schema_version,
-            "name": workflow.name,
-            "description": workflow.description,
-            "inputs": dict(workflow.inputs),
-            "nodes": [],
-        },
-        node_source_paths=node_source_paths,
-        node_source_spans=node_source_spans,
-        prompt_segment_spans=prompt_segment_spans,
-    )
-
-
-class SensitiveOptionInvokerAdapter:
-    def canonicalize_options(
-        self,
-        implementation: str,
-        resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
-    ) -> CanonicalIntegrationConfig:
-        raw_options = dict(options or {})
-        api_token = raw_options.pop("api_token")
-        if raw_options:
-            raise ValueError(f"Unsupported options: {sorted(raw_options)}")
-        return CanonicalIntegrationConfig(
-            implementation=implementation,
-            resolved_identity=resolved_identity,
-            options={"api_token": api_token},
-            sensitive_options=["/api_token"],
-            option_scopes={"api_token": "execution"},
-        )
-
-    def create_invoker(
-        self,
-        config: Config,  # noqa: ARG002 - Required by adapter protocol.
-        options: Mapping[str, Any] | None = None,  # noqa: ARG002 - Required by adapter protocol.
-    ) -> object:
-        raise AssertionError("preflight preview must not construct the invoker")
-
-
-def _compile_signature(root: Path, no_live: bool) -> str:
-    config = _mock_config()
-    workflow = _literal_workflow()
-    snapshot = build_runtime_config_snapshot(
-        config=config,
-        console=Console(file=None),
-        no_live=no_live,
-    )
-    preview = compile_preflight_preview(
-        source=_source(workflow),
-        config=config,
-        runtime_snapshot=snapshot.snapshot,
-        options=PreflightCompileOptions(
-            project_root=root,
-            state_dir=root / ".crewplane",
-            fingerprint_key_policy="read_only",
-        ),
-    )
-    assert not preview.diagnostics
-    assert preview.workflow_signature is not None
-    return preview.workflow_signature
+from .helpers import literal_workflow, make_source, mock_config
 
 
 def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> None:
     binary_file = tmp_path / "payload.bin"
     binary_file.write_bytes(b"\xff\xfe\x00")
-    config = _mock_config()
+    config = mock_config()
     workflow = WorkflowPlan(
         name="demo",
         nodes=[
@@ -178,7 +56,7 @@ def test_binary_static_file_token_fails_deterministically(tmp_path: Path) -> Non
         no_live=True,
     )
     preview = compile_preflight_preview(
-        source=_source(workflow),
+        source=make_source(workflow),
         config=config,
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
@@ -243,7 +121,7 @@ def test_imported_file_token_resolves_from_project_root(tmp_path: Path) -> None:
         source = load_workflow_source_for_preflight(root_workflow, project_root=root)
     finally:
         os.chdir(original_cwd)
-    config = _mock_config()
+    config = mock_config()
     snapshot = build_runtime_config_snapshot(
         config=config,
         console=Console(file=None),
@@ -268,15 +146,15 @@ def test_imported_file_token_resolves_from_project_root(tmp_path: Path) -> None:
 
 
 def test_persisted_plan_keeps_preview_workflow_signature(tmp_path: Path) -> None:
-    config = _mock_config()
-    workflow = _literal_workflow()
+    config = mock_config()
+    workflow = literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
         console=Console(file=None),
         no_live=True,
     )
     preview = compile_preflight_preview(
-        source=_source(workflow),
+        source=make_source(workflow),
         config=config,
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
@@ -307,15 +185,15 @@ def test_persisted_plan_keeps_preview_workflow_signature(tmp_path: Path) -> None
 
 
 def _persisted_plan_payload(root: Path) -> dict[str, Any]:
-    config = _mock_config()
-    workflow = _literal_workflow()
+    config = mock_config()
+    workflow = literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
         console=Console(file=None),
         no_live=True,
     )
     preview = compile_preflight_preview(
-        source=_source(workflow),
+        source=make_source(workflow),
         config=config,
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(

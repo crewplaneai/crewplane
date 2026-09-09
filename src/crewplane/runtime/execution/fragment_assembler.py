@@ -18,21 +18,17 @@ from crewplane.core.preflight.models import (
     WorkspaceFileSourceClass,
 )
 from crewplane.core.preflight.secrets import SecretContext
-from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workflow.keywords import (
+    FINDINGS_ARTIFACT_KEYS,
+    OUTPUT_ARTIFACT_KEYS,
+    ProviderRole,
+)
 
 from .workspace_files import (
     ResolvedWorkspaceFile,
     resolve_workspace_file,
 )
 from .workspace_files.source_resolution import WorkspaceCandidateSourceContext
-
-OUTPUT_ARTIFACT_KEYS = {"output", "output_path", "output_size", "output_sha256"}
-FINDINGS_ARTIFACT_KEYS = {
-    "findings",
-    "findings_path",
-    "findings_size",
-    "findings_sha256",
-}
 
 
 @dataclass(frozen=True)

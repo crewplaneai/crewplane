@@ -12,6 +12,7 @@ from crewplane.observability.events import (
 from .models import InvocationUsageSummary, RunSummaryFacts, WorkspaceInvocationSummary
 from .spend import UsageRollupAccumulator, invocation_usage_summary_from_event
 from .workspace import (
+    WorkspaceInvocationKey,
     workspace_invocation_key,
     workspace_invocation_summary_from_event,
 )
@@ -29,7 +30,7 @@ class RunSummaryAccumulator:
         self._omitted_invocation_usage_count = 0
         self._usage_rollups = UsageRollupAccumulator()
         self._workspace_invocations: dict[
-            tuple[object, ...],
+            WorkspaceInvocationKey,
             WorkspaceInvocationSummary,
         ] = {}
         self._review_consensus_unresolved = False

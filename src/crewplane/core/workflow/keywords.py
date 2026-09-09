@@ -24,6 +24,13 @@ NodeArtifactName = Literal[
     "findings_sha256",
 ]
 
+OUTPUT_ARTIFACT_KEYS = frozenset(
+    {"output", "output_path", "output_size", "output_sha256"}
+)
+FINDINGS_ARTIFACT_KEYS = frozenset(
+    {"findings", "findings_path", "findings_size", "findings_sha256"}
+)
+
 ALLOWED_NODE_MODES = get_args(NodeMode)
 ALLOWED_REVIEW_STARTS_WITH = get_args(ReviewStartsWith)
 ALLOWED_PROVIDER_ROLES = tuple(role.value for role in ProviderRole)

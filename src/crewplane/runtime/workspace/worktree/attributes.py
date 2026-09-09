@@ -1,22 +1,5 @@
 from __future__ import annotations
 
-BYTE_TRANSFORMING_ATTRIBUTES = frozenset(
-    {
-        "crlf",
-        "eol",
-        "filter",
-        "ident",
-        "text",
-        "working-tree-encoding",
-    }
-)
-
-
-def byte_transforming_attribute(attribute: str, value: str) -> bool:
-    if attribute not in BYTE_TRANSFORMING_ATTRIBUTES:
-        return False
-    return value not in {"unset", "unspecified"}
-
 
 def summarize_rejected_attributes(rejected: dict[str, list[str]]) -> str:
     return "; ".join(

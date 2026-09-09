@@ -17,7 +17,12 @@ from ...results.review_loop_status import (
 from ...run_history import RunHistoryRecord
 from .fields import int_field, nullable_int_field
 from .fields import mapping_value as _mapping
-from .lineage import invocation_round_order, review_output_coordinates
+from .lineage import (
+    INVALID_LINEAGE_ORDER,
+    invocation_round_order,
+    review_output_coordinates,
+)
+from .paths import WORKSPACE_STATE_FILENAME, workspace_state_candidates
 from .ref_contracts import is_discarded_lineage
 
 
@@ -42,7 +47,9 @@ def workspace_state_file(
     stage_path = node.artifact_contract.stage_path
     if stage_path is None:
         return None
-    return contained_regular_file(source.run_dir, f"{stage_path}/workspace-state.json")
+    return contained_regular_file(
+        source.run_dir, f"{stage_path}/{WORKSPACE_STATE_FILENAME}"
+    )
 
 
 def workspace_state_payloads(
@@ -76,10 +83,8 @@ def workspace_state_payloads_for_status(
     if stage_path is None:
         return ()
     stage_dir = source.run_dir / stage_path
-    candidates = [stage_dir / "workspace-state.json"]
-    candidates.extend(sorted(stage_dir.glob("workspace-state-*.json")))
     payloads: list[dict[str, object]] = []
-    for candidate in candidates:
+    for candidate in workspace_state_candidates(stage_dir):
         safe_path = contained_regular_file(
             source.run_dir,
             candidate.relative_to(source.run_dir).as_posix(),
@@ -269,6 +274,22 @@ def payload_matches_expected_invocation(
     )
 
 
+def resolve_expected_workspace_payload(
+    payloads: tuple[dict[str, object], ...],
+    expected: ExpectedWorkspaceInvocation,
+) -> dict[str, object] | None:
+    matches = [
+        payload
+        for payload in payloads
+        if payload_matches_expected_invocation(payload, expected)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if matches or not expected_seeded_lineage_invocation(expected):
+        return None
+    return latest_lineage_payload_before(payloads, expected)
+
+
 def expected_seeded_lineage_invocation(
     expected: ExpectedWorkspaceInvocation,
 ) -> bool:
@@ -308,4 +329,4 @@ def lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
         and workspace.get("lineage_producer") is True
     ):
         return (-1, -1)
-    return invocation_round_order(payload)
+    return invocation_round_order(payload) or INVALID_LINEAGE_ORDER

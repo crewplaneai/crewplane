@@ -7,7 +7,11 @@ import tempfile
 from pathlib import Path
 from typing import Protocol
 
-from crewplane.architecture.safe_files import replace_contained_file
+from crewplane.architecture.safe_files import (
+    is_single_link_regular_file,
+    replace_contained_file,
+)
+from crewplane.core.file_hashing import ContentSignature
 
 from ..publication_registry import RuntimePublicationRegistry
 from .types import ProviderCallRequest, ProviderOutputPolicy
@@ -49,7 +53,7 @@ def _is_publishable_regular_file(path: Path) -> bool:
         raise RuntimeError(
             f"Provider output could not be inspected safely: {path.as_posix()}"
         ) from exc
-    if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
+    if not is_single_link_regular_file(file_stat):
         raise RuntimeError(
             f"Provider output must be a single-link regular file: {path.as_posix()}"
         )
@@ -76,8 +80,8 @@ def publish_invocation_output(
     invocation_output_file: Path,
     output_file: Path,
     publications: RuntimePublicationRegistry,
-    expected_signature: tuple[int, str] | None = None,
-) -> tuple[int, str]:
+    expected_signature: ContentSignature | None = None,
+) -> ContentSignature:
     """Atomically publish trusted invocation bytes to an unoccupied output path."""
 
     bound_signature = expected_signature or bind_invocation_output(
@@ -117,7 +121,7 @@ def publish_invocation_output(
     return bound_signature
 
 
-def bind_invocation_output(path: Path) -> tuple[int, str]:
+def bind_invocation_output(path: Path) -> ContentSignature:
     """Bind one stable single-link output file to its exact byte signature."""
 
     descriptor, initial_stat = _open_invocation_output(path)
@@ -131,7 +135,7 @@ def bind_invocation_output(path: Path) -> tuple[int, str]:
 
 def read_bound_invocation_output(
     path: Path,
-    expected_signature: tuple[int, str],
+    expected_signature: ContentSignature,
 ) -> str:
     """Read exact UTF-8 output bytes only when they match a prior binding."""
 
@@ -146,7 +150,7 @@ def read_bound_invocation_output(
 
 def _read_bound_invocation_payload(
     path: Path,
-    expected_signature: tuple[int, str],
+    expected_signature: ContentSignature,
 ) -> bytes:
     descriptor, initial_stat = _open_invocation_output(path)
     try:
@@ -169,7 +173,7 @@ def _read_bound_invocation_payload(
 def _stage_verified_invocation_output(
     source: Path,
     destination_dir: Path,
-    expected_signature: tuple[int, str],
+    expected_signature: ContentSignature,
 ) -> Path:
     initial_destination_stat = _real_directory_stat(destination_dir)
     temporary_path, actual_signature = _copy_stable_invocation_output(
@@ -193,7 +197,7 @@ def _stage_verified_invocation_output(
 def _copy_stable_invocation_output(
     source: Path,
     destination_dir: Path,
-) -> tuple[Path, tuple[int, str]]:
+) -> tuple[Path, ContentSignature]:
     temporary_path: Path | None = None
     try:
         descriptor, initial_stat = _open_invocation_output(source)
@@ -226,8 +230,8 @@ def _validate_staged_invocation_output(
     source: Path,
     destination_dir: Path,
     initial_destination_stat: os.stat_result,
-    expected_signature: tuple[int, str],
-    actual_signature: tuple[int, str],
+    expected_signature: ContentSignature,
+    actual_signature: ContentSignature,
 ) -> None:
     if actual_signature != expected_signature:
         raise RuntimeError(
@@ -253,7 +257,7 @@ def _open_invocation_output(path: Path) -> tuple[int, os.stat_result]:
             f"Invocation output is unavailable or unsafe: {path.as_posix()}"
         ) from exc
     file_stat = os.fstat(descriptor)
-    if not _is_single_link_regular_file(file_stat):
+    if not is_single_link_regular_file(file_stat):
         os.close(descriptor)
         raise RuntimeError(
             f"Invocation output must be a single-link regular file: {path.as_posix()}"
@@ -284,7 +288,7 @@ def _ensure_open_output_unchanged(
         )
 
 
-def _hash_descriptor(descriptor: int) -> tuple[int, str]:
+def _hash_descriptor(descriptor: int) -> ContentSignature:
     digest = hashlib.sha256()
     size_bytes = 0
     while chunk := os.read(descriptor, 1024 * 1024):
@@ -293,7 +297,7 @@ def _hash_descriptor(descriptor: int) -> tuple[int, str]:
     return size_bytes, digest.hexdigest()
 
 
-def _read_descriptor(descriptor: int) -> tuple[bytes, tuple[int, str]]:
+def _read_descriptor(descriptor: int) -> tuple[bytes, ContentSignature]:
     digest = hashlib.sha256()
     payload = bytearray()
     while chunk := os.read(descriptor, 1024 * 1024):
@@ -302,7 +306,7 @@ def _read_descriptor(descriptor: int) -> tuple[bytes, tuple[int, str]]:
     return bytes(payload), (len(payload), digest.hexdigest())
 
 
-def _copy_descriptor(descriptor: int, destination: _BinaryWriter) -> tuple[int, str]:
+def _copy_descriptor(descriptor: int, destination: _BinaryWriter) -> ContentSignature:
     digest = hashlib.sha256()
     size_bytes = 0
     while chunk := os.read(descriptor, 1024 * 1024):
@@ -314,17 +318,13 @@ def _copy_descriptor(descriptor: int, destination: _BinaryWriter) -> tuple[int, 
 
 def _same_file_identity(first: os.stat_result, second: os.stat_result) -> bool:
     return (
-        _is_single_link_regular_file(second)
+        is_single_link_regular_file(second)
         and first.st_dev == second.st_dev
         and first.st_ino == second.st_ino
         and first.st_size == second.st_size
         and first.st_mtime_ns == second.st_mtime_ns
         and first.st_ctime_ns == second.st_ctime_ns
     )
-
-
-def _is_single_link_regular_file(file_stat: os.stat_result) -> bool:
-    return stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1
 
 
 def _same_directory_identity(first: os.stat_result, second: os.stat_result) -> bool:

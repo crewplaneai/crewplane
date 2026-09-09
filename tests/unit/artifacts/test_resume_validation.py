@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from crewplane.artifacts.naming import build_generated_file_result_dir_name
 from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.core.execution_state import ArtifactDescriptor
@@ -432,3 +434,47 @@ def _single_node_plan(node_id: str):
             "dependency_graph": [],
         }
     )
+
+
+@pytest.mark.parametrize(
+    "artifact_name",
+    [
+        "output",
+        "output_path",
+        "output_size",
+        "output_sha256",
+        "findings",
+        "findings_path",
+        "findings_size",
+        "findings_sha256",
+    ],
+)
+def test_resume_token_requires_verified_backing_evidence(
+    tmp_path, artifact_name
+) -> None:
+    source = source_record(tmp_path)
+    plan = make_plan(findings_edge=True)
+    plan.nodes[0].findings = False
+    plan.dependency_graph[0].artifact_name = artifact_name
+    descriptors = [
+        write_result(source.results_dir, "a-result.md", "a output"),
+        write_result(source.results_dir, "a-findings.md", "findings"),
+    ]
+    write_node_state(source.run_dir, make_node_state(source.manifest, "a", descriptors))
+    assert validate_resume_frontier(source, plan).resumed_node_ids == ("a",)
+
+    selected = descriptors[artifact_name.startswith("findings")]
+    selected_path = source.results_dir / selected.relative_path
+    original = selected_path.read_bytes()
+    selected_path.write_bytes(b"x" * len(original))
+    assert validate_resume_frontier(source, plan).resumed_node_ids == ()
+    selected_path.unlink()
+    assert validate_resume_frontier(source, plan).resumed_node_ids == ()
+    selected_path.write_bytes(original)
+    write_node_state(
+        source.run_dir,
+        make_node_state(
+            source.manifest, "a", [item for item in descriptors if item != selected]
+        ),
+    )
+    assert validate_resume_frontier(source, plan).resumed_node_ids == ()

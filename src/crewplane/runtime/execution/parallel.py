@@ -6,12 +6,14 @@ from pathlib import Path
 from rich.text import Text
 
 from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError
 
@@ -48,7 +50,7 @@ def _build_parallel_invocations(
                 f"Parallel node '{node.id}' does not allow reviewer roles."
             )
         runtime_context.agent_config_for_provider(provider)
-        output_file = node_dir / f"{provider.task_id}_round1.md"
+        output_file = node_dir / build_task_round_filename(provider.task_id, 1)
         if should_print_console(telemetry):
             execution_console(telemetry).print(
                 f"[dim]→ starting {provider.provider}[/]"
@@ -78,9 +80,7 @@ async def _run_parallel_invocations(
     if max_parallel_invocations is not None:
         invocation_semaphore = asyncio.Semaphore(max_parallel_invocations)
 
-    async def _run_single(
-        index: int, invocation: ParallelInvocation
-    ) -> tuple[int, ParallelInvocationResult]:
+    async def _run_single(invocation: ParallelInvocation) -> ParallelInvocationResult:
         request = ProviderCallRequest(
             runtime_context=runtime_context,
             output=output,
@@ -107,16 +107,11 @@ async def _run_parallel_invocations(
             ),
         )
         if result.error is not None:
-            return index, result.error
-        return index, result.output_file
+            return result.error
+        return result.output_file
 
-    tasks = [
-        asyncio.create_task(_run_single(index, invocation))
-        for index, invocation in enumerate(invocations)
-    ]
-    completed = await asyncio.gather(*tasks)
-    results_by_index = dict(completed)
-    return [results_by_index[index] for index in range(len(invocations))]
+    tasks = [asyncio.create_task(_run_single(invocation)) for invocation in invocations]
+    return await asyncio.gather(*tasks)
 
 
 def _write_parallel_failure_artifact(
@@ -169,7 +164,7 @@ def enforce_parallel_failure_policy(
     summary: ParallelResultSummary,
     telemetry: ExecutionTelemetry | None,
 ) -> bool:
-    if summary.failed and _lineage_worktree_node(node):
+    if summary.failed and is_lineage_worktree(node.workspace_policy):
         raise NodeExecutionError(
             f"Parallel node '{node.id}' uses a lineage-producing worktree and "
             "cannot continue after executor failure."
@@ -190,16 +185,6 @@ def enforce_parallel_failure_policy(
             f"[yellow]WARN[/] {message} Continuing due to continue_on_failure=true."
         )
     return False
-
-
-def _lineage_worktree_node(node: PreflightExecutionNode) -> bool:
-    policy = node.workspace_policy
-    return (
-        policy is not None
-        and policy.enabled
-        and policy.materialization == "worktree_checkout"
-        and policy.lineage_producer
-    )
 
 
 def _warn_on_partial_parallel_failures(

@@ -7,11 +7,16 @@ from pathlib import Path
 from uuid import uuid4
 
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.artifacts.workspace.state.invocation import state_invocation_slug
+from crewplane.artifacts.workspace.state.paths import workspace_temporary_refs_filename
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.workspace.invocation_identity import invocation_slug
+from crewplane.core.workspace.naming import (
+    safe_ref_component,
+    temporary_import_ref_prefix,
+)
 
 from ..cleanup_notes import note_cleanup_failure
 from ..git import GitCommand, git
@@ -21,7 +26,7 @@ from ..state_evidence import (
     mark_workspace_temporary_ref_removed,
     record_workspace_temporary_ref,
 )
-from .refs import checked_ref, safe_ref_component
+from .refs import checked_ref
 from .types import WorktreeSourceRef
 
 
@@ -39,7 +44,7 @@ class TemporaryRefOwner:
         node_id: str,
         consumer_id: str,
     ) -> TemporaryRefOwner:
-        evidence_path = evidence_dir / f"workspace-temporary-refs-{uuid4().hex}.json"
+        evidence_path = evidence_dir / workspace_temporary_refs_filename(uuid4().hex)
         return cls(
             evidence_path,
             {
@@ -95,7 +100,7 @@ def import_source_bundle(
             verified_bundle_path,
             cancel_requested,
         )
-        if not _source_commit_exists(source, source_ref.source_commit):
+        if not git(Path(source.git_top_level)).commit_exists(source_ref.source_commit):
             raise RuntimeError("Workspace source import did not provide its target.")
     except BaseException as failure:
         try:
@@ -168,13 +173,8 @@ def _import_ref_for_source_commit(
     source_commit: str,
 ) -> str:
     import_id = uuid4().hex[:16]
-    return (
-        "refs/crewplane/runs/"
-        f"{safe_ref_component(run_key_name)}/imports/"
-        f"{safe_ref_component(node_id)}/"
-        f"{safe_ref_component(invocation_slug)}/"
-        f"{safe_ref_component(source_commit[:24])}-{import_id}"
-    )
+    prefix = temporary_import_ref_prefix(run_key_name, node_id, invocation_slug)
+    return f"{prefix}{safe_ref_component(source_commit[:24])}-{import_id}"
 
 
 def delete_temporary_import_refs(
@@ -361,37 +361,14 @@ def _temporary_ref_owner_prefix(payload: dict[str, object]) -> str:
     for field, value in identities:
         if not isinstance(value, str) or not value:
             raise RuntimeError(f"Workspace temporary ref evidence lacks {field}.")
-        values.append(safe_ref_component(value))
-    return f"refs/crewplane/runs/{values[0]}/imports/{values[1]}/{values[2]}/"
+        values.append(value)
+    return temporary_import_ref_prefix(values[0], values[1], values[2])
 
 
 def _state_invocation_slug(payload: dict[str, object]) -> str:
-    node_id = payload.get("node_id")
-    task_id = payload.get("task_id")
-    round_num = payload.get("round_num")
-    audit_round_num = payload.get("audit_round_num")
-    if not (
-        isinstance(node_id, str)
-        and node_id
-        and isinstance(task_id, str)
-        and task_id
-        and isinstance(round_num, int)
-        and not isinstance(round_num, bool)
-        and (
-            audit_round_num is None
-            or isinstance(audit_round_num, int)
-            and not isinstance(audit_round_num, bool)
-        )
-    ):
+    slug = state_invocation_slug(payload)
+    if slug is None:
         raise RuntimeError(
             "Workspace temporary ref evidence lacks invocation identity."
         )
-    return invocation_slug(node_id, task_id, audit_round_num, round_num)
-
-
-def _source_commit_exists(source: WorkspaceSourceSnapshot, commit: str) -> bool:
-    try:
-        git(Path(source.git_top_level)).run("cat-file", "-e", f"{commit}^{{commit}}")
-    except subprocess.CalledProcessError:
-        return False
-    return True
+    return slug

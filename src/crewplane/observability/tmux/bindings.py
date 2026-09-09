@@ -99,10 +99,7 @@ class TmuxCompactKeyBindings:
             tmux,
             runtime_files,
             session,
-            move_up,
-            move_down,
-            enter_inspect,
-            raw_inspect,
+            self._commands,
         )
         self._apply_dashboard_copy_mode_bindings(tmux, runtime_files, session)
         self._copy_mode_bindings_mode = MODE_DASHBOARD
@@ -110,9 +107,7 @@ class TmuxCompactKeyBindings:
             tmux,
             runtime_files,
             session,
-            exit_inspect,
-            raw_inspect,
-            formatted_inspect,
+            self._commands,
         )
 
     def sync_copy_mode_bindings(
@@ -135,22 +130,19 @@ class TmuxCompactKeyBindings:
         tmux: TmuxSessionClient,
         runtime_files: RuntimeFiles,
         session: TmuxSessionTargets,
-        move_up: str,
-        move_down: str,
-        enter_inspect: str,
-        raw_inspect: str,
+        commands: _BindingCommands,
     ) -> None:
         dashboard_bindings = dashboard_key_bindings(
             session_name=session.session_name,
             left_pane_id=session.left_pane_id,
-            move_up=move_up,
-            move_down=move_down,
-            enter_inspect=enter_inspect,
-            raw_inspect=raw_inspect,
+            move_up=commands.move_up,
+            move_down=commands.move_down,
+            enter_inspect=commands.enter_inspect,
+            raw_inspect=commands.raw_inspect,
             quit_requested_path=runtime_files.quit_requested,
         )
-        for key, commands in dashboard_bindings.items():
-            self._bind_dashboard_key(tmux, DASHBOARD_KEY_TABLE, key, commands)
+        for key, binding_commands in dashboard_bindings.items():
+            self._bind_dashboard_key(tmux, DASHBOARD_KEY_TABLE, key, binding_commands)
         self._bind_dashboard_key(
             tmux,
             ROOT_KEY_TABLE,
@@ -173,22 +165,20 @@ class TmuxCompactKeyBindings:
         tmux: TmuxSessionClient,
         runtime_files: RuntimeFiles,
         session: TmuxSessionTargets,
-        exit_inspect: str,
-        raw_inspect: str,
-        formatted_inspect: str,
+        commands: _BindingCommands,
     ) -> None:
         inspect_bindings = inspect_key_bindings(
             right_pane_id=session.right_pane_id,
-            exit_inspect=exit_inspect,
-            raw_inspect=raw_inspect,
-            formatted_inspect=formatted_inspect,
+            exit_inspect=commands.exit_inspect,
+            raw_inspect=commands.raw_inspect,
+            formatted_inspect=commands.formatted_inspect,
             quit_commands=quit_dashboard_commands(
                 session.session_name,
                 runtime_files.quit_requested,
             ),
         )
-        for key, commands in inspect_bindings.items():
-            self._bind_dashboard_key(tmux, INSPECT_KEY_TABLE, key, commands)
+        for key, binding_commands in inspect_bindings.items():
+            self._bind_dashboard_key(tmux, INSPECT_KEY_TABLE, key, binding_commands)
 
     def _apply_dashboard_copy_mode_bindings(
         self,

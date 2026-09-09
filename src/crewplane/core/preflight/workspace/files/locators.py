@@ -5,7 +5,17 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
+from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
+from crewplane.core.workspace.git_reads import (
+    ProjectBlobRecord,
+    git_cat_blob,
+    git_error,
+    git_ls_tree,
+    valid_utf8_without_nul,
+)
+from crewplane.core.workspace.selection import selected_worktree_name
 
 from ...compile_state import (
     CompileState,
@@ -23,17 +33,8 @@ from ...models import (
 )
 from ...references import TemplateReference
 from ...signatures import signature_for_payload
-from .git_reads import (
-    SUPPORTED_FILE_MODES,
-    ProjectBlobRecord,
-    git_cat_blob,
-    git_error,
-    git_ls_tree,
-    valid_utf8_without_nul,
-)
 from .paths import (
     WorkspaceFilePathRecord,
-    is_reserved_workspace_path,
     lexical_absolute_path,
     project_relative_workspace_path,
     source_root_relative_to_project,
@@ -41,7 +42,6 @@ from .paths import (
 from .selection import (
     has_same_worktree_source_ancestor,
     selected_worktree_kind,
-    selected_worktree_name,
 )
 
 
@@ -151,7 +151,7 @@ def workspace_file_path_record(
             "Workspace file token escapes the project root.",
         )
         return None
-    if is_reserved_workspace_path(project_relative):
+    if is_reserved_state_path(project_relative, FILE_TOKEN_EXCLUDED_ROOTS):
         append_workspace_file_error(
             state,
             node.id,
@@ -357,7 +357,7 @@ def resolve_project_blob(
             "Workspace file token resolved to an unexpected Git path.",
         )
         return None
-    if record.object_type != "blob" or record.mode not in SUPPORTED_FILE_MODES:
+    if record.object_type != "blob" or record.mode not in REGULAR_FILE_MODES:
         append_workspace_file_error(
             state,
             node_id,

@@ -7,12 +7,10 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from crewplane.architecture.errors import (
-    AdapterContractError,
-    IntegrationResolutionError,
-)
+from crewplane.architecture.errors import AdapterContractError
 from crewplane.architecture.loader import (
     instantiate_adapter,
+    is_builtin_implementation,
     resolve_implementation_path,
 )
 from crewplane.architecture.ports import (
@@ -54,47 +52,15 @@ from .workspace.source_policy import collect_workspace_source_policy
 BUILTIN_CLI_INVOKER_IDENTITY = resolve_implementation_path("invoker", "cli")
 
 
-def normalize_object_path(implementation: str) -> str:
-    if ":" in implementation:
-        module_name, object_name = implementation.split(":", 1)
-        if module_name and object_name:
-            return f"{module_name}:{object_name}"
-    elif "." in implementation:
-        module_name, object_name = implementation.rsplit(".", 1)
-        if module_name and object_name:
-            return f"{module_name}:{object_name}"
-    return implementation
-
-
-def _uses_invoker_implementation(
-    config: Config,
-    shorthand: str,
-    implementation_path: str,
-) -> bool:
-    settings = config.settings
-    implementation = settings.integrations.invoker.implementation
-    if implementation == shorthand:
-        return True
-    try:
-        resolved = resolve_implementation_path("invoker", implementation)
-    except IntegrationResolutionError:
-        return False
-    return normalize_object_path(resolved) == normalize_object_path(implementation_path)
-
-
 def uses_cli_invoker(config: Config) -> bool:
-    return _uses_invoker_implementation(
-        config,
-        "cli",
-        BUILTIN_CLI_INVOKER_IDENTITY,
+    return is_builtin_implementation(
+        "invoker", config.settings.integrations.invoker.implementation, "cli"
     )
 
 
 def uses_mock_invoker(config: Config) -> bool:
-    return _uses_invoker_implementation(
-        config,
-        "mock",
-        "crewplane.adapters.invokers.mock:MockInvokerAdapter",
+    return is_builtin_implementation(
+        "invoker", config.settings.integrations.invoker.implementation, "mock"
     )
 
 
@@ -303,7 +269,7 @@ def run_invoker_preflight_diagnostics(
         "invoker",
         settings.integrations.invoker.implementation,
     )
-    if not _is_builtin_cli_invoker_identity(configured_invoker_identity):
+    if not is_builtin_implementation("invoker", configured_invoker_identity, "cli"):
         return _reasoning_ineligibility_errors(reasoning_locations), ()
     adapter = instantiate_adapter(
         "invoker",
@@ -367,7 +333,7 @@ def run_reasoning_control_errors(
     requested_locations = _reasoning_requested_locations(workflow)
     if not requested_locations:
         return ()
-    if not _is_builtin_cli_invoker_identity(resolved_identity):
+    if not is_builtin_implementation("invoker", resolved_identity, "cli"):
         return _reasoning_ineligibility_errors(requested_locations)
     collector = getattr(adapter, "collect_reasoning_errors", None)
     if not callable(collector):
@@ -435,12 +401,6 @@ def _reasoning_ineligibility_errors(
     return tuple(
         f"{location}: first-class reasoning requires the built-in CLI invoker."
         for location in requested_locations
-    )
-
-
-def _is_builtin_cli_invoker_identity(resolved_identity: str) -> bool:
-    return normalize_object_path(resolved_identity) == normalize_object_path(
-        BUILTIN_CLI_INVOKER_IDENTITY
     )
 
 

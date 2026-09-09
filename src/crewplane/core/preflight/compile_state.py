@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 from crewplane.core.workflow.models import WorkflowNode
 from crewplane.core.workflow.source_locations import SourceSpan
@@ -91,6 +91,15 @@ class PreflightCompileOptions:
         )
 
 
+class ValueFingerprintRecord(TypedDict):
+    kind: str
+    key: str
+    sensitive: str
+    value: NotRequired[str]
+    fingerprint_payload_version: NotRequired[str]
+    fingerprint: NotRequired[str]
+
+
 @dataclass
 class CompileState:
     diagnostics: list[PreflightDiagnostic] = field(default_factory=list)
@@ -114,7 +123,7 @@ class CompileState:
     sensitive_values_required: bool = False
     fingerprint_key: bytes | None = None
     fingerprint_key_persisted: bool = False
-    value_fingerprints: list[dict[str, str]] = field(default_factory=list)
+    value_fingerprints: list[ValueFingerprintRecord] = field(default_factory=list)
     input_content_refs: dict[str, str] = field(default_factory=dict)
     input_workspace_file_locator_ids: dict[str, str] = field(default_factory=dict)
     input_source_tokens: dict[str, TemplateReference] = field(default_factory=dict)

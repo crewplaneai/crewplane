@@ -12,6 +12,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from ..results.review_loop_status import (
     resolve_review_loop_status,
+    review_loop_status_path,
     task_specs_for_producers,
 )
 from ..run_history import RunHistoryRecord
@@ -23,7 +24,11 @@ from .state.fields import (
     mapping_value as _mapping,
 )
 from .state.invocations import workspace_state_payloads
-from .state.lineage import invocation_round_order, review_output_coordinates
+from .state.lineage import (
+    INVALID_LINEAGE_ORDER,
+    invocation_round_order,
+    review_output_coordinates,
+)
 
 
 def workspace_invocation_source_matches(
@@ -292,7 +297,7 @@ def _canonical_lineage_payload(
     if stage_path is None:
         return None
     stage_dir = run.run_dir / stage_path
-    relative_status_path = f"{stage_path}/review-state/review-loop-status.json"
+    relative_status_path = review_loop_status_path(Path(stage_path)).as_posix()
     safe_status_path = contained_regular_file(run.run_dir, relative_status_path)
     if safe_status_path is not None:
         return _review_loop_canonical_payload(
@@ -301,7 +306,7 @@ def _canonical_lineage_payload(
             payloads,
             task_specs_for_producers(node.provider_records),
         )
-    if (stage_dir / "review-state" / "review-loop-status.json").exists():
+    if review_loop_status_path(stage_dir).exists():
         return None
     if any(
         provider.role == ProviderRole.REVIEWER for provider in node.provider_records
@@ -383,7 +388,7 @@ def _latest_lineage_payload(
 
 
 def _lineage_payload_order(payload: dict[str, object]) -> tuple[int, int]:
-    return invocation_round_order(payload)
+    return invocation_round_order(payload) or INVALID_LINEAGE_ORDER
 
 
 def _lineage_payload_is_ordered_source(payload: dict[str, object]) -> bool:

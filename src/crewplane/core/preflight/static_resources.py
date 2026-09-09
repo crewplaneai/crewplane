@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from crewplane.architecture.contracts import JsonObject
+from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
+
 if TYPE_CHECKING:
     from crewplane.architecture.ports import TerminalHistoryReaderPort
 
@@ -15,13 +18,7 @@ from .diagnostics import (
     PreflightDiagnosticPhase,
 )
 from .models import StaticResource
-
-RESERVED_STATE_RESOURCE_ROOTS = (
-    ".crewplane/execution-stages",
-    ".crewplane/execution-results",
-    ".crewplane/preflight",
-    ".crewplane/locks",
-)
+from .signatures import signature_for_payload
 
 
 @dataclass(frozen=True)
@@ -29,6 +26,39 @@ class StaticFileResult:
     resource: StaticResource | None
     payload: bytes | None
     diagnostics: tuple[PreflightDiagnostic, ...] = ()
+
+
+def static_file_token_signature(
+    resource: StaticResource,
+    node_id: str,
+    occurrence_id: str,
+    raw_token: str,
+) -> str:
+    return signature_for_payload(
+        {
+            "content_ref": resource.content_ref,
+            "node_id": node_id,
+            "occurrence_id": occurrence_id,
+            "raw_token": raw_token,
+            "sha256": resource.sha256,
+            "size_bytes": resource.size_bytes,
+        }
+    )
+
+
+def static_file_resolved_payload(resource: StaticResource) -> JsonObject:
+    return {
+        "kind": "static_file_content",
+        "content_ref": resource.content_ref,
+        "content_sha256": resource.sha256,
+        "content_size": str(resource.size_bytes),
+        "resolved_path": resource.resolved_path,
+        "source_root": resource.source_root,
+    }
+
+
+def static_file_metadata(resource: StaticResource) -> dict[str, str]:
+    return {"content_ref": resource.content_ref, "sha256": resource.sha256}
 
 
 def append_static_resource(
@@ -168,10 +198,7 @@ def _is_reserved_state_resource(path: Path, project_root: Path) -> bool:
         relative_path = path.relative_to(resolved_project_root).as_posix()
     except ValueError:
         return False
-    return any(
-        relative_path == root or relative_path.startswith(f"{root}/")
-        for root in RESERVED_STATE_RESOURCE_ROOTS
-    )
+    return is_reserved_state_path(relative_path, FILE_TOKEN_EXCLUDED_ROOTS)
 
 
 def _file_diagnostic(

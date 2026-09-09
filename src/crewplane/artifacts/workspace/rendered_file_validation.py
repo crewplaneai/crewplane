@@ -10,7 +10,12 @@ from crewplane.core.preflight.models import (
     WorkspaceFileLocator,
     WorkspaceFileTarget,
 )
+from crewplane.core.value_checks import is_sha256
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES, is_git_object_id
+from crewplane.core.workspace.invocation_identity import (
+    rendered_workspace_file_invocation_id,
+)
 
 from ..run_history import RunHistoryRecord
 from .bundle_validation import (
@@ -22,15 +27,7 @@ from .state.fields import (
     nullable_int_field,
 )
 from .state.fields import (
-    is_hex_object as _is_hex_object,
-)
-from .state.fields import (
     mapping_value as _mapping,
-)
-
-_SUPPORTED_RENDERED_FILE_MODES = (
-    "100644",  # Git mode for a regular, non-executable blob.
-    "100755",  # Git mode for a regular executable blob.
 )
 
 
@@ -147,13 +144,13 @@ def _expected_invocation_id(payload: dict[str, object]) -> str | None:
         or not isinstance(round_num, int)
     ):
         return None
-    if audit_round_num is None:
-        audit = ""
-    elif isinstance(audit_round_num, bool) or not isinstance(audit_round_num, int):
+    if audit_round_num is not None and (
+        isinstance(audit_round_num, bool) or not isinstance(audit_round_num, int)
+    ):
         return None
-    else:
-        audit = f".audit-{audit_round_num}"
-    return f"{node_id}.{role}.{task_id}{audit}.round-{round_num}"
+    return rendered_workspace_file_invocation_id(
+        node_id, task_id, role, round_num, audit_round_num
+    )
 
 
 def _round_fields_match(
@@ -184,13 +181,14 @@ def _rendered_descriptor_blob_matches(
     byte_size = descriptor.get("byte_size")
     if isinstance(byte_size, bool) or not isinstance(byte_size, int) or byte_size < 0:
         return False
-    if not _is_hex_object(descriptor.get("git_blob")):
+    if not is_git_object_id(descriptor.get("git_blob")):
         return False
-    if descriptor.get("git_file_mode") not in _SUPPORTED_RENDERED_FILE_MODES:
+    mode = descriptor.get("git_file_mode")
+    if not isinstance(mode, str) or mode not in REGULAR_FILE_MODES:
         return False
     injected = descriptor.get("injected_sha256")
     canonical = descriptor.get("canonical_blob_sha256")
-    if not _is_sha256(injected) or not _is_sha256(canonical):
+    if not is_sha256(injected) or not is_sha256(canonical):
         return False
     if descriptor.get("source_kind") == "project":
         return _project_rendered_descriptor_matches(locator, descriptor)
@@ -294,11 +292,3 @@ def _project_rendered_descriptor_matches(
             and descriptor.get("injected_sha256") == locator.canonical_blob_sha256
         )
     return descriptor.get("canonical_blob_sha256") == descriptor.get("injected_sha256")
-
-
-def _is_sha256(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(char in "0123456789abcdef" for char in value)
-    )

@@ -5,7 +5,7 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any, Final, Never
+from typing import Final, Never
 
 from .types import (
     UpdateCommand,
@@ -376,7 +376,7 @@ def _probe_stdout(
     return result.stdout.strip()
 
 
-def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+def _read_json_object(path: Path, label: str) -> dict[str, object]:
     try:
         raw = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
