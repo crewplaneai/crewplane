@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -14,6 +15,9 @@ from crewplane.artifacts.failure_artifacts import (
 from crewplane.artifacts.naming import build_node_state_filename
 from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.artifacts.run_history import RunHistoryRecord
+from crewplane.artifacts.workspace.chain_validation import (
+    verify_persisted_workspace_result_chain,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.resume import (
@@ -484,6 +488,21 @@ def test_validate_frontier_rejects_unexpected_later_lineage_state(
     frontier = validate_resume_frontier(source, plan)
 
     assert frontier.resumed_node_ids == ()
+
+
+def test_validate_frontier_verifies_each_lineage_payload_once(tmp_path) -> None:
+    source = source_record(tmp_path)
+    plan, payload = _write_valid_lineage_workspace_state(tmp_path, source)
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+
+    with patch(
+        "crewplane.artifacts.workspace.state.validation.verify_persisted_workspace_result_chain",
+        wraps=verify_persisted_workspace_result_chain,
+    ) as verify_chain:
+        frontier = validate_resume_frontier(source, plan)
+
+    assert frontier.resumed_node_ids == ("a",)
+    verify_chain.assert_called_once_with(plan.workspace_source, source.run_dir, payload)
 
 
 def test_validate_frontier_rejects_bundle_missing_recorded_result_ref(

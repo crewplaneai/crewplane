@@ -260,11 +260,19 @@ class RunManifest(BaseModel):
         return validate_iso_datetime(value)
 
     @model_validator(mode="after")
-    def _validate_terminal_completion(self) -> RunManifest:
+    def _validate_consistency(self) -> RunManifest:
+        self._validate_completion_status()
+        self._validate_terminal_reasons()
+        self._validate_resume_provenance()
+        return self
+
+    def _validate_completion_status(self) -> None:
         if self.status == RUN_STATUS_RUNNING and self.completed_at is not None:
             raise ValueError("Running manifests cannot have completed_at.")
         if self.status != RUN_STATUS_RUNNING and self.completed_at is None:
             raise ValueError("Terminal manifests require completed_at.")
+
+    def _validate_terminal_reasons(self) -> None:
         if self.status != RUN_STATUS_FAILED and self.failure_message is not None:
             raise ValueError("failure_message is only valid for failed runs.")
         if self.status != RUN_STATUS_CANCELLED and self.cancel_reason is not None:
@@ -273,20 +281,15 @@ class RunManifest(BaseModel):
             raise ValueError("Failed manifests require failure_message.")
         if self.status == RUN_STATUS_CANCELLED and self.cancel_reason is None:
             raise ValueError("Cancelled manifests require cancel_reason.")
-        source_values = (
-            self.resume_source_run_id,
-            self.resume_source_run_key_name,
-        )
-        if any(value is not None for value in source_values) != all(
-            value is not None for value in source_values
-        ):
+
+    def _validate_resume_provenance(self) -> None:
+        has_source_run_id = self.resume_source_run_id is not None
+        has_source_run_key = self.resume_source_run_key_name is not None
+        if has_source_run_id != has_source_run_key:
             raise ValueError("Resume source provenance must be all-or-none.")
-        if bool(self.resumed_nodes) != all(
-            value is not None for value in source_values
-        ):
+        if bool(self.resumed_nodes) != has_source_run_id:
             raise ValueError(
                 "Resume source provenance is required exactly when nodes were hydrated."
             )
         if len(self.resumed_nodes) != len(set(self.resumed_nodes)):
             raise ValueError("resumed_nodes cannot contain duplicates.")
-        return self

@@ -111,6 +111,61 @@ def test_manifest_rejects_partial_or_contradictory_resume_provenance(
         RunManifest.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    ("update", "message"),
+    [
+        (
+            {
+                "completed_at": "2026-06-09T12:00:00",
+                "failure_message": "failure",
+                "resume_source_run_id": "source",
+            },
+            "Running manifests cannot have completed_at.",
+        ),
+        (
+            {"status": "failed", "cancel_reason": "cancelled"},
+            "Terminal manifests require completed_at.",
+        ),
+        (
+            {
+                "status": "failed",
+                "completed_at": "2026-06-09T12:00:00",
+                "cancel_reason": "cancelled",
+            },
+            "cancel_reason is only valid for cancelled runs.",
+        ),
+        (
+            {
+                "failure_message": "failure",
+                "resume_source_run_id": "source",
+            },
+            "failure_message is only valid for failed runs.",
+        ),
+        (
+            {
+                "resume_source_run_id": "source",
+                "resumed_nodes": ["build", "build"],
+            },
+            "Resume source provenance must be all-or-none.",
+        ),
+        (
+            {"resumed_nodes": ["build", "build"]},
+            "Resume source provenance is required exactly when nodes were hydrated.",
+        ),
+    ],
+)
+def test_manifest_reports_first_inconsistent_invariant(
+    update: dict[str, object], message: str
+) -> None:
+    payload = make_run_manifest("run", "workflow--run").model_dump(mode="json")
+    payload.update(update)
+
+    with pytest.raises(ValidationError) as caught:
+        RunManifest.model_validate(payload)
+
+    assert caught.value.errors()[0]["msg"] == f"Value error, {message}"
+
+
 def test_node_state_is_successful_boundary_only() -> None:
     state = NodeState(
         run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
