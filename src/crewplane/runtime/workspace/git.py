@@ -45,6 +45,13 @@ class GitCommand:
     def text(self, *args: str) -> str:
         return self.run(*args).stdout.decode("utf-8", errors="replace").strip()
 
+    def commit_exists(self, commit: str) -> bool:
+        try:
+            self.run("cat-file", "-e", f"{commit}^{{commit}}")
+        except subprocess.CalledProcessError:
+            return False
+        return True
+
     def zero_records(self, *args: str) -> tuple[str, ...]:
         output = self.run(*args).stdout.decode("utf-8", errors="replace")
         return tuple(record for record in output.split("\0") if record)

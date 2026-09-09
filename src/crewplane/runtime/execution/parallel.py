@@ -6,6 +6,7 @@ from pathlib import Path
 from rich.text import Text
 
 from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.artifacts.failure_artifacts import (
@@ -49,7 +50,7 @@ def _build_parallel_invocations(
                 f"Parallel node '{node.id}' does not allow reviewer roles."
             )
         runtime_context.agent_config_for_provider(provider)
-        output_file = node_dir / f"{provider.task_id}_round1.md"
+        output_file = node_dir / build_task_round_filename(provider.task_id, 1)
         if should_print_console(telemetry):
             execution_console(telemetry).print(
                 f"[dim]→ starting {provider.provider}[/]"

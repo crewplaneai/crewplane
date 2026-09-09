@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from crewplane.architecture.safe_files import path_is_absent
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
@@ -177,14 +178,6 @@ class WorkspaceClaimValidator:
                 return _worktree_evidence_blocker(claims)
             case _:
                 return "workspace claim has an unknown materialization kind"
-
-
-def path_is_absent(path: Path) -> bool:
-    try:
-        path.lstat()
-    except FileNotFoundError:
-        return True
-    return False
 
 
 def _claim_has_unresolved_mutator(claim: WorkspaceClaim) -> bool:

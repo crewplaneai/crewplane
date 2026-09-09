@@ -18,8 +18,10 @@ from crewplane.architecture.contracts import (
     InvocationProcessEvent,
 )
 from crewplane.core.platform import supports_posix_process_groups
-from crewplane.runtime.workspace import mutator_fence as workspace_mutator_fence
-from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
+from crewplane.runtime.workspace.state_evidence import (
+    confirm_workspace_process_drain,
+    record_unresolved_workspace_process_drain,
+)
 
 from ..process.drain import ProcessDrainError
 from ..process.runner import (
@@ -244,16 +246,11 @@ def _record_process_drain_success(
     process: asyncio.subprocess.Process,
     process_group_id: int | None,
 ) -> None:
-    state_path = _workspace_state_path(invocation_context)
-    if state_path is None:
-        return
-    record_workspace_process_drain(
-        state_path,
-        "confirmed",
+    confirm_workspace_process_drain(
+        _workspace_state_path(invocation_context),
         process.pid,
         process_group_id,
     )
-    workspace_mutator_fence.release_workspace_mutator(state_path)
 
 
 def _record_process_drain_outcome(
@@ -271,29 +268,9 @@ def _record_process_drain_outcome(
             process_group_id,
         )
         return
-    _record_unresolved_process_drain(invocation_context, error)
-
-
-def _record_unresolved_process_drain(
-    invocation_context: InvocationContext | None,
-    error: ProcessDrainError,
-) -> None:
-    state_path = _workspace_state_path(invocation_context)
-    if state_path is None:
-        return
-    workspace_mutator_fence.fence_workspace_mutator(state_path)
-    try:
-        record_workspace_process_drain(
-            state_path,
-            "unresolved",
-            error.evidence.pid,
-            error.evidence.process_group_id,
-            str(error),
-        )
-    except Exception as persistence_error:
-        error.add_note(
-            f"Workspace process-drain evidence persistence failed: {persistence_error}"
-        )
+    record_unresolved_workspace_process_drain(
+        _workspace_state_path(invocation_context), error
+    )
 
 
 def _workspace_state_path(

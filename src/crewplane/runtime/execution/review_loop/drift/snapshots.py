@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import is_single_link_regular_file
 from crewplane.core.file_hashing import ContentSignature
 
 from ..types import DirectorySnapshot
@@ -193,10 +194,6 @@ def lstat_or_none(path: Path) -> os.stat_result | None:
         return path.lstat()
     except FileNotFoundError:
         return None
-
-
-def is_single_link_regular_file(file_stat: os.stat_result) -> bool:
-    return stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1
 
 
 def _single_link_regular_file_stat(path: Path) -> os.stat_result:

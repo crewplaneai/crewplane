@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 
+from crewplane.architecture.safe_files import path_is_absent
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 
 from ..state import (
@@ -299,12 +300,12 @@ class WorktreeReuseCache:
         with self._lock:
             removal_completed = entry_key in self._physically_removed_workspaces
         if removal_completed:
-            if not _path_is_absent(entry.workspace_path):
+            if not path_is_absent(entry.workspace_path):
                 raise RuntimeError(
                     "Reusable workspace reappeared after physical cleanup."
                 )
             return
-        if _path_is_absent(entry.workspace_path):
+        if path_is_absent(entry.workspace_path):
             raise RuntimeError(
                 "Reusable workspace is absent without completed cleanup evidence."
             )
@@ -321,7 +322,7 @@ class WorktreeReuseCache:
                 entry.git_dir,
                 cancel_requested,
             )
-        if not _path_is_absent(entry.workspace_path):
+        if not path_is_absent(entry.workspace_path):
             raise RuntimeError("Reusable workspace cleanup left its path present.")
         with self._lock:
             self._physically_removed_workspaces.add(entry_key)
@@ -348,14 +349,6 @@ def _matches_source(
 
 def _workspace_key(workspace_path: Path) -> Path:
     return workspace_path.resolve(strict=False)
-
-
-def _path_is_absent(path: Path) -> bool:
-    try:
-        path.lstat()
-    except FileNotFoundError:
-        return True
-    return False
 
 
 def _entry_cache_key(

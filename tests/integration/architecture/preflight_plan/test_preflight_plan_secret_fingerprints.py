@@ -72,29 +72,6 @@ class SensitiveOptionInvokerAdapter:
         raise AssertionError("preflight preview must not construct the invoker")
 
 
-def _compile_signature(root: Path, no_live: bool) -> str:
-    config = mock_config()
-    workflow = literal_workflow()
-    snapshot = build_runtime_config_snapshot(
-        config=config,
-        console=Console(file=None),
-        no_live=no_live,
-    )
-    preview = compile_preflight_preview(
-        source=make_source(workflow),
-        config=config,
-        runtime_snapshot=snapshot.snapshot,
-        options=PreflightCompileOptions(
-            project_root=root,
-            state_dir=root / ".crewplane",
-            fingerprint_key_policy="read_only",
-        ),
-    )
-    assert not preview.diagnostics
-    assert preview.workflow_signature is not None
-    return preview.workflow_signature
-
-
 def test_sensitive_config_values_are_hmac_fingerprinted_and_redacted(
     tmp_path: Path,
 ) -> None:

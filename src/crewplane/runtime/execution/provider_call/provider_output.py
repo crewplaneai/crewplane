@@ -7,7 +7,10 @@ import tempfile
 from pathlib import Path
 from typing import Protocol
 
-from crewplane.architecture.safe_files import replace_contained_file
+from crewplane.architecture.safe_files import (
+    is_single_link_regular_file,
+    replace_contained_file,
+)
 from crewplane.core.file_hashing import ContentSignature
 
 from ..publication_registry import RuntimePublicationRegistry
@@ -50,7 +53,7 @@ def _is_publishable_regular_file(path: Path) -> bool:
         raise RuntimeError(
             f"Provider output could not be inspected safely: {path.as_posix()}"
         ) from exc
-    if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
+    if not is_single_link_regular_file(file_stat):
         raise RuntimeError(
             f"Provider output must be a single-link regular file: {path.as_posix()}"
         )
@@ -254,7 +257,7 @@ def _open_invocation_output(path: Path) -> tuple[int, os.stat_result]:
             f"Invocation output is unavailable or unsafe: {path.as_posix()}"
         ) from exc
     file_stat = os.fstat(descriptor)
-    if not _is_single_link_regular_file(file_stat):
+    if not is_single_link_regular_file(file_stat):
         os.close(descriptor)
         raise RuntimeError(
             f"Invocation output must be a single-link regular file: {path.as_posix()}"
@@ -315,17 +318,13 @@ def _copy_descriptor(descriptor: int, destination: _BinaryWriter) -> ContentSign
 
 def _same_file_identity(first: os.stat_result, second: os.stat_result) -> bool:
     return (
-        _is_single_link_regular_file(second)
+        is_single_link_regular_file(second)
         and first.st_dev == second.st_dev
         and first.st_ino == second.st_ino
         and first.st_size == second.st_size
         and first.st_mtime_ns == second.st_mtime_ns
         and first.st_ctime_ns == second.st_ctime_ns
     )
-
-
-def _is_single_link_regular_file(file_stat: os.stat_result) -> bool:
-    return stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1
 
 
 def _same_directory_identity(first: os.stat_result, second: os.stat_result) -> bool:

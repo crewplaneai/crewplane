@@ -4,13 +4,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from crewplane.core.workspace.git_policy import is_git_object_id
-from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.naming import (
     result_ref_names,
     temporary_import_ref_prefix,
 )
 
 from .fields import is_nonempty_string, mapping_value
+from .invocation import state_invocation_slug
 
 
 @dataclass(frozen=True)
@@ -211,7 +211,7 @@ def _validate_destination_target(
 def _expected_publication_names(
     payload: Mapping[str, object], publication: Mapping[str, object]
 ) -> dict[str, str]:
-    invocation_slug_value = _state_invocation_slug(payload)
+    invocation_slug_value = state_invocation_slug(payload)
     if invocation_slug_value is None:
         return {}
     candidate, result = result_ref_names(
@@ -229,7 +229,7 @@ def _validate_temporary_refs(payload: Mapping[str, object], errors: list[str]) -
     if not isinstance(temporary_refs, list):
         errors.append("temporary ref evidence is invalid")
         return
-    invocation_slug_value = _state_invocation_slug(payload)
+    invocation_slug_value = state_invocation_slug(payload)
     prefix = temporary_import_ref_prefix(
         str(payload.get("run_key_name")),
         str(payload.get("node_id")),
@@ -322,28 +322,6 @@ def _coherent_ref_oids(payload: Mapping[str, object]) -> set[str]:
         if isinstance(value, str)
     )
     return oids
-
-
-def _state_invocation_slug(payload: Mapping[str, object]) -> str | None:
-    node_id = payload.get("node_id")
-    task_id = payload.get("task_id")
-    round_num = payload.get("round_num")
-    audit_round_num = payload.get("audit_round_num")
-    if not (
-        isinstance(node_id, str)
-        and node_id
-        and isinstance(task_id, str)
-        and task_id
-        and isinstance(round_num, int)
-        and not isinstance(round_num, bool)
-        and (
-            audit_round_num is None
-            or isinstance(audit_round_num, int)
-            and not isinstance(audit_round_num, bool)
-        )
-    ):
-        return None
-    return invocation_slug(node_id, task_id, audit_round_num, round_num)
 
 
 def _source_commit_oids(source: Mapping[str, object]) -> set[str]:

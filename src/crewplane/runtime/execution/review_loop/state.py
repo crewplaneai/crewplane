@@ -9,19 +9,22 @@ from crewplane.architecture.safe_files import (
 )
 from crewplane.artifacts import safe_artifact_name
 from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
+from crewplane.artifacts.results.review_loop_status import (
+    REVIEW_LOOP_STATUS_RELATIVE_PATH,
+    ReviewLoopStatusOutputEntry,
+    ReviewLoopStatusPayload,
+    review_loop_status_path,
+)
 from crewplane.core.review_contract import REQUIRED_EMPTY_SENTINEL
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..consensus import EvaluatedReviewResult
 from ..provider_call import read_bound_invocation_output
 from .types import (
-    REVIEW_LOOP_STATUS_FILE,
     ExecutorRoundArtifact,
     ReviewerInvocationFailure,
     ReviewerRoundArtifact,
     ReviewLoopProgress,
-    ReviewLoopStatusOutputEntry,
-    ReviewLoopStatusPayload,
 )
 
 
@@ -33,10 +36,6 @@ def _review_raw_output_path(output_file: Path) -> Path:
     return output_file.with_suffix(".raw.txt")
 
 
-def _review_state_dir(artifact_dir: Path) -> Path:
-    return artifact_dir / "review-state"
-
-
 def _write_review_state_file(
     artifact_dir: Path,
     file_name: str,
@@ -45,10 +44,6 @@ def _write_review_state_file(
     review_state_dir = ensure_contained_directory(artifact_dir, "review-state")
     file_path = review_state_dir / file_name
     return atomic_write_text(file_path, content)
-
-
-def review_loop_status_path(node_dir: Path) -> Path:
-    return _review_state_dir(node_dir) / REVIEW_LOOP_STATUS_FILE
 
 
 def persist_review_evaluation_artifacts(
@@ -345,6 +340,8 @@ def persist_review_loop_status(
     node_dir: Path,
     payload: ReviewLoopStatusPayload,
 ) -> Path:
-    ensure_contained_directory(node_dir, "review-state")
+    ensure_contained_directory(
+        node_dir, REVIEW_LOOP_STATUS_RELATIVE_PATH.parent.as_posix()
+    )
     status_path = review_loop_status_path(node_dir)
     return atomic_write_json(status_path, payload)

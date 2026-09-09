@@ -10,13 +10,13 @@ from crewplane.core.preflight.models import (
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
 )
-from crewplane.core.preflight.workspace.files.git_reads import (
+from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
+from crewplane.core.workspace.git_reads import (
     GitTreeRecord,
     git_cat_blob,
     git_ls_tree,
     valid_utf8_without_nul,
 )
-from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
 from crewplane.runtime.workspace.plan_nodes import workspace_plan_node
 from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,

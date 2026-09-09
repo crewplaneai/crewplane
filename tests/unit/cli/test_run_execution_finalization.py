@@ -526,8 +526,43 @@ def test_permanent_terminal_event_failure_leaves_manifest_running(
         replacement.release()
 
 
+@pytest.mark.parametrize(
+    ("status", "reason", "event_type"),
+    [
+        ("succeeded", None, EventType.WORKFLOW_FINISHED),
+        ("failed", "execution failed", EventType.WORKFLOW_FAILED),
+        ("cancelled", "external_cancellation", EventType.WORKFLOW_CANCELLED),
+    ],
+)
+@pytest.mark.parametrize(
+    "summary_edit",
+    [
+        None,
+        ("- Workflow: ", "- Workflow: wrong-"),
+        ("- Run ID: ", "- Run ID: wrong-"),
+        ("- Status: ", "- Status: {status}\n- Status: "),
+        ("- Status: ", "- Status: running\n- Status: "),
+        ("# Run Summary\n\n", "# Run Summary\n"),
+        ("# Run Summary", "# Summary"),
+        ("- Status: ", "- Status:"),
+    ],
+    ids=[
+        "valid",
+        "workflow",
+        "run-id",
+        "duplicate",
+        "conflict",
+        "blank",
+        "heading",
+        "status",
+    ],
+)
 def test_stale_recovery_replays_views_when_phase_publication_fails(
     tmp_path: Path,
+    status: TerminalRunStatus,
+    reason: str | None,
+    event_type: EventType,
+    summary_edit: tuple[str, str] | None,
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path, template_base_dir=tmp_path)
     output.write_run_manifest(
@@ -551,9 +586,18 @@ def test_stale_recovery_replays_views_when_phase_publication_fails(
             refresh_per_second=0,
         ) as hub,
     ):
-        commit_terminalization_with_retry(coordinator, hub, "succeeded")
+        commit_terminalization_with_retry(coordinator, hub, status, reason)
 
     assert coordinator.recovery_phase == "outcome_selected"
+    summary_path = output.get_run_summary_path()
+    summary_text = summary_path.read_text(encoding="utf-8")
+    assert f"- Status: {status}\n" in summary_text
+    if summary_edit is not None:
+        old, new = summary_edit
+        assert old in summary_text
+        summary_path.write_text(
+            summary_text.replace(old, new.format(status=status)), encoding="utf-8"
+        )
     replacement = acquire_same_context_lock(
         tmp_path,
         WORKFLOW_NAME,
@@ -565,16 +609,23 @@ def test_stale_recovery_replays_views_when_phase_publication_fails(
         recovered = RunManifest.model_validate_json(
             (output.stages_dir / "manifests" / "run.json").read_text(encoding="utf-8")
         )
-        assert recovered.status == "succeeded"
+        assert recovered.status == (status if summary_edit is None else "cancelled")
+        assert recovered.failure_message == (
+            reason if summary_edit is None and status == "failed" else None
+        )
+        assert recovered.cancel_reason == (
+            "stale_lock_recovered"
+            if summary_edit is not None
+            else reason
+            if status == "cancelled"
+            else None
+        )
         terminal_events = [
             event.event_type
             for event in read_event_log(output.get_run_event_log_path())
             if event.event_type in TERMINAL_WORKFLOW_EVENT_TYPES
         ]
-        assert terminal_events == [EventType.WORKFLOW_FINISHED]
-        assert "- Status: succeeded" in output.get_run_summary_path().read_text(
-            encoding="utf-8"
-        )
+        assert terminal_events == [event_type]
     finally:
         replacement.release()
 

@@ -14,14 +14,14 @@ from crewplane.core.preflight import (
     compile_preflight_preview,
     load_workflow_source_for_preflight,
 )
-from crewplane.core.preflight.workspace.files import (
-    git_reads as workspace_git_file_reads,
-)
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
 from crewplane.core.workflow.models import (
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
+)
+from crewplane.core.workspace import (
+    git_reads as workspace_git_file_reads,
 )
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.terminal_results import RESULT_SOURCE_TOKEN, write_result_source

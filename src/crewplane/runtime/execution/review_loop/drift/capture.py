@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.architecture.safe_files import is_single_link_regular_file
 from crewplane.core.file_hashing import ContentSignature
 from crewplane.runtime.execution.publication_registry import (
     RuntimePublicationRegistry,
@@ -19,7 +20,6 @@ from ..types import (
     DriftRecoveryBaseline,
 )
 from .snapshots import (
-    is_single_link_regular_file,
     lstat_or_none,
     manifests_dir_for,
     read_file_bytes,

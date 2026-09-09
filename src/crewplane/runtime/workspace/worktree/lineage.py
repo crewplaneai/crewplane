@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import stat
-import subprocess
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -10,6 +9,7 @@ from tempfile import NamedTemporaryFile
 from crewplane.artifacts.workspace.chain_validation import (
     verify_workspace_source_chain,
 )
+from crewplane.artifacts.workspace.state.paths import workspace_bundle_path
 from crewplane.core.file_hashing import sha256_file
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
@@ -164,7 +164,7 @@ def _ensure_project_source_available(
     source: WorkspaceSourceSnapshot,
     source_ref: WorktreeSourceRef,
 ) -> None:
-    if not _source_commit_exists(source, source_ref.source_commit):
+    if not git(Path(source.git_top_level)).commit_exists(source_ref.source_commit):
         raise RuntimeError(
             "Workspace lineage source commit is unavailable and no bundle "
             "descriptor was recorded."
@@ -191,7 +191,7 @@ def _ensure_bundled_source_available(
             cancel_requested,
         )
     )
-    if not _source_commit_exists(source, source_ref.source_commit):
+    if not git(Path(source.git_top_level)).commit_exists(source_ref.source_commit):
         raise RuntimeError(
             "Workspace lineage source bundle import did not provide the expected "
             "commit."
@@ -244,10 +244,10 @@ def export_bundle(
     result_ref: str,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> Path:
-    bundle_dir = request.state_path.parent / "workspace-bundles"
+    bundle_path = workspace_bundle_path(request.state_path, request.slug)
+    bundle_dir = bundle_path.parent
     _ensure_safe_bundle_dir(request.state_path.parent, bundle_dir)
     bundle_dir.chmod(0o700)
-    bundle_path = bundle_dir / f"{safe_file_component(request.slug)}.bundle"
     temp_bundle_path = _temporary_bundle_path(bundle_dir, request.slug)
     try:
         with git_metadata_lock(
@@ -358,14 +358,6 @@ def worktree_protected_ref_scopes(
             refs.add(current.bundle_ref)
         pending.extend(current.upstream_sources)
     return tuple(sorted(refs))
-
-
-def _source_commit_exists(source: WorkspaceSourceSnapshot, commit: str) -> bool:
-    try:
-        git(Path(source.git_top_level)).run("cat-file", "-e", f"{commit}^{{commit}}")
-    except subprocess.CalledProcessError:
-        return False
-    return True
 
 
 def _source_requires_bundle(source_ref: WorktreeSourceRef) -> bool:

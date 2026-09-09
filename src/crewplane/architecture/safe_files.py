@@ -8,6 +8,16 @@ from pathlib import Path
 _CREATE_RETRIES = 2
 
 
+def path_is_absent(path: Path) -> bool:
+    """Return true only for a missing entry; dangling links remain present."""
+
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    return False
+
+
 def ensure_contained_directory(root: Path, relative_path: str) -> Path:
     """Create and return a non-symlink directory below ``root``."""
 
@@ -105,7 +115,7 @@ def replace_contained_file(root: Path, relative_path: str, source: Path) -> Path
     if not parts:
         raise ValueError("Contained replacement requires a file path.")
     source_stat = source.lstat()
-    if not _is_single_link_regular_file(source_stat):
+    if not is_single_link_regular_file(source_stat):
         raise ValueError(f"Publication source must be a single-link file: {source}")
 
     directory_fd = _open_contained_directory(root, parts[:-1])
@@ -179,7 +189,7 @@ def _ensure_single_link_file(resolved: Path) -> Path | None:
         raise
     except OSError:
         return None
-    if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
+    if not is_single_link_regular_file(file_stat):
         return None
     return resolved
 
@@ -267,11 +277,13 @@ def _unlink_matching_entry(
 
 def _ensure_regular_entry(directory_fd: int, name: str) -> None:
     entry_stat = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-    if not _is_single_link_regular_file(entry_stat):
+    if not is_single_link_regular_file(entry_stat):
         raise ValueError(f"Published entry is not a single-link regular file: {name}")
 
 
-def _is_single_link_regular_file(file_stat: os.stat_result) -> bool:
+def is_single_link_regular_file(file_stat: os.stat_result) -> bool:
+    """Classify supplied metadata without following paths or acquiring resources."""
+
     return stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1
 
 

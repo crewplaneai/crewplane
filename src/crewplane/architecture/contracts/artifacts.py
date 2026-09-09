@@ -106,6 +106,10 @@ def build_findings_filename(node_id: str) -> str:
     return _bounded_artifact_filename(node_id, "-findings.md")
 
 
+def build_task_round_filename(task_id: str, round_num: int) -> str:
+    return f"{task_id}_round{round_num}.md"
+
+
 def safe_artifact_name(name: str) -> str:
     stripped = name.strip().lower()
     if not stripped or stripped in {".", ".."}:

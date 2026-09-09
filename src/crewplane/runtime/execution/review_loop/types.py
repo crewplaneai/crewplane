@@ -5,7 +5,6 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
-from typing import TypedDict
 
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
@@ -30,34 +29,8 @@ from ..publication_registry import RuntimePublicationRegistry
 
 DEFAULT_REMEDIATION_DEPTH = 1
 DEFAULT_AUDIT_ROUNDS = 1
-REVIEW_LOOP_STATUS_FILE = "review-loop-status.json"
 INVALID_CANDIDATE_EMPTY = "invalid_candidate.empty"
 INVALID_CANDIDATE_REDIRECTED = "invalid_candidate.redirected"
-
-
-class ReviewLoopStatusOutputEntry(TypedDict):
-    task_id: str
-    provider: str
-    role: ProviderRole
-    path: str
-    sha256: str
-    size_bytes: int
-    audit_round_num: int | None
-    round_num: int
-
-
-class ReviewLoopStatusPayload(TypedDict):
-    node_id: str
-    executed_audit_rounds: int
-    attempted_local_round_num: int
-    final_local_round_num: int
-    consensus_reached: bool
-    continued_after_consensus_exhaustion: bool
-    invalid_candidate_round_count: int
-    no_progress_round_count: int
-    artifact_drift_warning_count: int
-    canonical_executor_outputs: list[ReviewLoopStatusOutputEntry]
-    reviewer_outputs: list[ReviewLoopStatusOutputEntry]
 
 
 @dataclass(frozen=True)

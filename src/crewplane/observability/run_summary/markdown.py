@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts.run_summary import run_summary_header_lines
+
 from .formatting import (
     format_cost,
     format_count,
@@ -16,10 +18,10 @@ def render_run_summary_markdown(summary: RunSummary) -> str:
     """Render a complete persisted run summary as Markdown."""
 
     lines = [
-        "# Run Summary\n\n",
-        f"- Workflow: {summary.workflow_name}\n",
-        f"- Run ID: {summary.run_id}\n",
-        f"- Status: {summary.workflow_status}\n",
+        f"{line}\n"
+        for line in run_summary_header_lines(
+            summary.workflow_name, summary.run_id, summary.workflow_status
+        )
     ]
     if summary.review_consensus_unresolved:
         lines.append("- Review consensus: unresolved; continued after exhaustion\n")

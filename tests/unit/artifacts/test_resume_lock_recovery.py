@@ -16,6 +16,11 @@ from crewplane.artifacts.locks import (
     ResumeLockError,
     acquire_same_context_lock,
 )
+from crewplane.artifacts.locks.manifest import (
+    LockRunMetadata,
+    TerminalRecoveryIntent,
+    finalize_stale_running_run,
+)
 from crewplane.artifacts.locks.process_identity import ProcessIdentity, ProcessInspector
 from crewplane.artifacts.naming import build_provider_process_state_filename
 from crewplane.core.execution_state import RUN_STATE_SCHEMA_VERSION
@@ -36,6 +41,49 @@ from tests.helpers.resume_locks import (
     FakeProcessInspector,
     write_manifest_at_run_key,
 )
+
+
+@pytest.mark.parametrize("field", ["workflow_name", "run_id"])
+@pytest.mark.parametrize("separator", ["", "\n", "\r", "\u2028"])
+def test_terminal_summary_rejects_identity_spanning_header_lines(
+    tmp_path: Path, field: str, separator: str
+) -> None:
+    manifest = make_run_manifest("source", "workflow--source", status="running")
+    manifest = manifest.model_copy(update={field: f"first{separator}second"})
+    summary = (
+        "# Run Summary\n\n"
+        f"- Workflow: {manifest.workflow_name}\n"
+        f"- Run ID: {manifest.run_id}\n"
+        "- Status: succeeded\n"
+    )
+
+    manifest_path = write_run_manifest(tmp_path, manifest)
+    _write_terminal_views(tmp_path, "succeeded", None)
+    logs_dir = manifest_path.parent.parent / "logs"
+    (logs_dir / "summary.md").write_text(summary, encoding="utf-8")
+    event_path = logs_dir / "events.ndjson"
+    event = json.loads(event_path.read_text(encoding="utf-8"))
+    event.update(workflow_name=manifest.workflow_name, run_id=manifest.run_id)
+    event_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+
+    finalize_stale_running_run(
+        tmp_path,
+        LockRunMetadata(
+            run_id=manifest.run_id,
+            run_key_name=manifest.run_key_name,
+            workflow_identity=manifest.workflow_identity,
+            workflow_signature=manifest.workflow_signature,
+            terminal_recovery=TerminalRecoveryIntent(
+                phase="outcome_selected", status="succeeded"
+            ),
+        ),
+    )
+
+    recovered = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert recovered["status"] == ("cancelled" if separator else "succeeded")
+    assert recovered.get("cancel_reason") == (
+        "stale_lock_recovered" if separator else None
+    )
 
 
 def _write_provider_process_state(

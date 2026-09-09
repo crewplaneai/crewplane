@@ -29,11 +29,10 @@ from crewplane.runtime.agent.process.drain import ProcessDrainError, drain_popen
 from crewplane.runtime.agent.workspace_environment import (
     workspace_child_environment,
 )
-from crewplane.runtime.workspace.mutator_fence import (
-    fence_workspace_mutator,
-    release_workspace_mutator,
+from crewplane.runtime.workspace.state_evidence import (
+    confirm_workspace_process_drain,
+    record_unresolved_workspace_process_drain,
 )
-from crewplane.runtime.workspace.state_evidence import record_workspace_process_drain
 
 
 class _SetupCommandRecord(TypedDict):
@@ -422,36 +421,9 @@ def _terminate_setup_process(
             _send_setup_process_group_signal,
         )
     except ProcessDrainError as exc:
-        if state_path is not None:
-            _record_unresolved_process_drain(state_path, exc)
+        record_unresolved_workspace_process_drain(state_path, exc)
         raise
-    if state_path is not None:
-        record_workspace_process_drain(
-            state_path,
-            "confirmed",
-            evidence.pid,
-            evidence.process_group_id,
-        )
-        release_workspace_mutator(state_path)
-
-
-def _record_unresolved_process_drain(
-    state_path: Path,
-    error: ProcessDrainError,
-) -> None:
-    fence_workspace_mutator(state_path)
-    try:
-        record_workspace_process_drain(
-            state_path,
-            "unresolved",
-            error.evidence.pid,
-            error.evidence.process_group_id,
-            str(error),
-        )
-    except Exception as persistence_error:
-        error.add_note(
-            f"Workspace process-drain evidence persistence failed: {persistence_error}"
-        )
+    confirm_workspace_process_drain(state_path, evidence.pid, evidence.process_group_id)
 
 
 def _send_setup_process_group_signal(

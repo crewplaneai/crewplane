@@ -13,7 +13,6 @@ from crewplane.cli.run.workspace import (
 )
 from crewplane.cli.run.workspace import git_source as git_source_probe
 from crewplane.cli.run.workspace import source_policy as policy
-from crewplane.cli.run.workspace.cache_policy import paths_overlap
 from crewplane.cli.run.workspace.git_source import GitSourceContext
 from crewplane.cli.run.workspace.preflight_diagnostics import (
     workspace_preflight_diagnostics,
@@ -23,6 +22,7 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from crewplane.core.workspace.cache import paths_overlap
 from crewplane.core.workspace.git_policy import workspace_git_base_environment
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_source_policy import (

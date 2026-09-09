@@ -10,10 +10,12 @@ from crewplane.core.workflow.validation.workspace_diagnostics import (
     workspace_policy_diagnostics,
 )
 from crewplane.core.workspace.policy import (
-    PROJECT_ROOT_WORKTREE_SELECTOR,
     default_worktree_contract,
 )
-from crewplane.core.workspace.selection import LogicalWorkspaceSelection
+from crewplane.core.workspace.selection import (
+    LogicalWorkspaceSelection,
+    selected_worktree_name,
+)
 
 
 def collect_workspace_policy_diagnostics(
@@ -73,7 +75,7 @@ def _selection_for_node(
             "mode": settings.workspace.worktree_contract,
         }
     )
-    selector = _selected_worktree_name(workflow, node)
+    selector = selected_worktree_name(workflow, node)
     if selector is None:
         return LogicalWorkspaceSelection(
             node_id=node.id,
@@ -132,19 +134,6 @@ def _base_logical_workspace_selections(
             continue
         selections[node.id] = _selection_for_node(workflow, settings, node)
     return selections
-
-
-def _selected_worktree_name(
-    workflow: WorkflowPlan,
-    node: WorkflowNode,
-) -> str | None:
-    if node.worktree == PROJECT_ROOT_WORKTREE_SELECTOR:
-        return None
-    if node.worktree is not None:
-        return node.worktree
-    if len(workflow.worktrees) == 1:
-        return next(iter(workflow.worktrees))
-    return None
 
 
 def _setup_commands(

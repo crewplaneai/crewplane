@@ -8,7 +8,11 @@ from rich.console import Console
 
 from crewplane.core.config import Settings, load_config
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
-from crewplane.core.workspace.cache import workspace_cache_root
+from crewplane.core.workspace.cache import (
+    paths_overlap,
+    workspace_cache_forbidden_roots,
+    workspace_cache_root,
+)
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace.cleanup import (
     WorkspaceCleanupFilter,
@@ -16,7 +20,6 @@ from crewplane.runtime.workspace.cleanup import (
 )
 
 from ..paths import resolve_state_file
-from ..run.workspace.cache_policy import paths_overlap
 from ..run.workspace.git_source import (
     GitSourceContext,
     discover_git_context,
@@ -180,15 +183,12 @@ def validate_cleanup_cache_root(
             f"Workspace cache root must not be a symlink: {cache_root.as_posix()}"
         )
     state_dir = project_root / STATE_DIR_NAME
-    blocked_roots = [
+    blocked_roots = workspace_cache_forbidden_roots(
         project_root,
         state_dir,
-        state_dir / "execution-stages",
-        state_dir / "execution-results",
-        state_dir / "locks",
-    ]
-    if git_context is not None:
-        blocked_roots.extend([git_context.active_git_dir, git_context.common_git_dir])
+        git_context.active_git_dir if git_context is not None else None,
+        git_context.common_git_dir if git_context is not None else None,
+    )
     for blocked in blocked_roots:
         if paths_overlap(cache_root, blocked):
             raise RuntimeError(

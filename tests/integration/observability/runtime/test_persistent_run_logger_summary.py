@@ -641,6 +641,58 @@ class PersistentRunLoggerSummaryTests(unittest.TestCase):
 
             self.assertEqual(summaries, ())
 
+    def test_workspace_summary_uses_canonical_filenames_in_lexical_order(self) -> None:
+        for canonical_exists in (False, True):
+            with (
+                self.subTest(canonical_exists=canonical_exists),
+                tempfile.TemporaryDirectory() as tmp_dir,
+            ):
+                stages_dir = Path(tmp_dir)
+                stage_dir = stages_dir / "node.a"
+                stage_dir.mkdir()
+                names = ["workspace-state-z.json", "workspace-state-a.json"]
+                if canonical_exists:
+                    names.append("workspace-state.json")
+                payload = json.dumps(_workspace_state_summary_payload("node.a"))
+                for name in names:
+                    (stage_dir / name).write_text(payload, encoding="utf-8")
+                for name in (
+                    "workspace-stateful.json",
+                    "workspace-reuse-claim-a.json",
+                ):
+                    (stage_dir / name).write_text(payload, encoding="utf-8")
+
+                summaries = workspace_state_summaries(stages_dir)
+
+                self.assertEqual(
+                    [summary.state_path for summary in summaries],
+                    [f"node.a/{name}" for name in sorted(names)],
+                )
+
+    def test_workspace_summary_rejects_unsafe_or_invalid_state_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            stages_dir = Path(tmp_dir) / "stages"
+            self.assertEqual(workspace_state_summaries(stages_dir), ())
+            stage_dir = stages_dir / "node.a"
+            stage_dir.mkdir(parents=True)
+            target = Path(tmp_dir) / "target.json"
+            target.write_text(
+                json.dumps(_workspace_state_summary_payload("node.a")),
+                encoding="utf-8",
+            )
+            (stage_dir / "workspace-state-link.json").symlink_to(target)
+            (stage_dir / "workspace-state-directory.json").mkdir()
+            (stage_dir / "workspace-state-malformed.json").write_text("{")
+            outside_stage = Path(tmp_dir) / "outside-stage"
+            outside_stage.mkdir()
+            (outside_stage / "workspace-state.json").write_text(
+                json.dumps(_workspace_state_summary_payload("node.b")),
+                encoding="utf-8",
+            )
+            (stages_dir / "node.b").symlink_to(outside_stage, target_is_directory=True)
+
+            self.assertEqual(workspace_state_summaries(stages_dir), ())
+
     def test_workspace_summary_ignores_non_node_stage_workspace_states(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             stages_dir = Path(tmp_dir)

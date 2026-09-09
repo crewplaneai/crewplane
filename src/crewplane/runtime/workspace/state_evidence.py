@@ -3,9 +3,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Final, Literal, TypeIs
+from typing import TYPE_CHECKING, Final, Literal, TypeIs
 
+from .mutator_fence import fence_workspace_mutator, release_workspace_mutator
 from .state import edit_workspace_state, require_workspace_state_payload_identity
+
+if TYPE_CHECKING:
+    from crewplane.runtime.agent.process.drain import ProcessDrainError
+
 
 type _RefPublicationPhase = Literal["prepared", "published", "removed"]
 type _RefPublicationTargetPhase = Literal["published", "removed"]
@@ -70,6 +75,38 @@ def record_workspace_process_drain(
         if reason is not None:
             evidence["reason"] = reason
         payload["process_drain"] = evidence
+
+
+def confirm_workspace_process_drain(
+    state_path: Path | None,
+    pid: int,
+    process_group_id: int | None,
+) -> None:
+    if state_path is None:
+        return
+    record_workspace_process_drain(state_path, "confirmed", pid, process_group_id)
+    release_workspace_mutator(state_path)
+
+
+def record_unresolved_workspace_process_drain(
+    state_path: Path | None,
+    error: ProcessDrainError,
+) -> None:
+    if state_path is None:
+        return
+    fence_workspace_mutator(state_path)
+    try:
+        record_workspace_process_drain(
+            state_path,
+            "unresolved",
+            error.evidence.pid,
+            error.evidence.process_group_id,
+            str(error),
+        )
+    except Exception as persistence_error:
+        error.add_note(
+            f"Workspace process-drain evidence persistence failed: {persistence_error}"
+        )
 
 
 def record_workspace_temporary_ref(

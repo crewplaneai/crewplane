@@ -1,19 +1,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
 import pytest
 from rich.console import Console
 
-from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.bootstrap import build_runtime_config_snapshot
-from crewplane.core.config import (
-    Config,
-)
 from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightExecutionPlan,
@@ -28,33 +22,6 @@ from crewplane.core.workflow.models import (
 from tests.helpers.resume import make_plan
 
 from .helpers import literal_workflow, make_source, mock_config
-
-
-class SensitiveOptionInvokerAdapter:
-    def canonicalize_options(
-        self,
-        implementation: str,
-        resolved_identity: str,
-        options: Mapping[str, Any] | None = None,
-    ) -> CanonicalIntegrationConfig:
-        raw_options = dict(options or {})
-        api_token = raw_options.pop("api_token")
-        if raw_options:
-            raise ValueError(f"Unsupported options: {sorted(raw_options)}")
-        return CanonicalIntegrationConfig(
-            implementation=implementation,
-            resolved_identity=resolved_identity,
-            options={"api_token": api_token},
-            sensitive_options=["/api_token"],
-            option_scopes={"api_token": "execution"},
-        )
-
-    def create_invoker(
-        self,
-        config: Config,  # noqa: ARG002 - Required by adapter protocol.
-        options: Mapping[str, Any] | None = None,  # noqa: ARG002 - Required by adapter protocol.
-    ) -> object:
-        raise AssertionError("preflight preview must not construct the invoker")
 
 
 def _compile_signature(

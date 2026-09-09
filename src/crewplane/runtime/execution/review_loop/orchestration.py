@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import PreflightExecutionNode
@@ -457,7 +458,9 @@ def seed_executor_outputs(
 ) -> list[ExecutorRoundArtifact]:
     seeded_outputs: list[ExecutorRoundArtifact] = []
     for artifact in executor_outputs:
-        output_file = artifact_dir / f"{artifact.task_id}_round{round_num}.md"
+        output_file = artifact_dir / build_task_round_filename(
+            artifact.task_id, round_num
+        )
         if artifact.output_signature is None:
             raise RuntimeError(
                 "Cannot seed an executor output without a bound runtime publication: "

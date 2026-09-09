@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
+from crewplane.core.workspace.naming import safe_file_component
 
 WORKSPACE_STATE_FILENAME = "workspace-state.json"
 WORKSPACE_STATE_PREFIX = "workspace-state-"
@@ -10,6 +11,12 @@ WORKSPACE_TEMPORARY_REFS_PREFIX = "workspace-temporary-refs-"
 
 def workspace_state_filename(slug: str) -> str:
     return f"{WORKSPACE_STATE_PREFIX}{slug}.json"
+
+
+def workspace_bundle_path(state_path: Path, slug: str) -> Path:
+    return (
+        state_path.parent / "workspace-bundles" / f"{safe_file_component(slug)}.bundle"
+    )
 
 
 def workspace_reuse_claim_filename(state_stem: str, generation: int) -> str:

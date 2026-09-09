@@ -5,19 +5,7 @@ from pathlib import Path
 
 from crewplane.core.workflow.graph import ancestor_map
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
-from crewplane.core.workspace.policy import PROJECT_ROOT_WORKTREE_SELECTOR
-
-
-def selected_worktree_name(workflow: WorkflowPlan, node: WorkflowNode) -> str | None:
-    if node.mode == "input":
-        return None
-    if node.worktree == PROJECT_ROOT_WORKTREE_SELECTOR:
-        return None
-    if node.worktree is not None:
-        return node.worktree
-    if len(workflow.worktrees) == 1:
-        return next(iter(workflow.worktrees))
-    return None
+from crewplane.core.workspace.selection import selected_worktree_name
 
 
 def selected_worktree_kind(workflow: WorkflowPlan, node: WorkflowNode) -> str | None:

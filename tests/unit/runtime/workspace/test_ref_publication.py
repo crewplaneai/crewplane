@@ -39,8 +39,19 @@ from tests.helpers.workspace_service import (
 )
 
 
+@pytest.mark.parametrize(
+    "invalid_identity",
+    [
+        None,
+        ("node_id", ""),
+        ("task_id", None),
+        ("round_num", True),
+        ("audit_round_num", False),
+    ],
+)
 def test_external_ref_cleanup_consumes_dedicated_temporary_ref_evidence(
     tmp_path: Path,
+    invalid_identity: tuple[str, object] | None,
 ) -> None:
     repo = create_git_repo(tmp_path)
     run_key_name = "run-1"
@@ -66,6 +77,19 @@ def test_external_ref_cleanup_consumes_dedicated_temporary_ref_evidence(
         ref_name,
         target_oid,
     )
+
+    if invalid_identity is not None:
+        payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+        field, value = invalid_identity
+        payload[field] = value
+        evidence_path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(RuntimeError, match="lacks invocation identity"):
+            temporary_refs.reconcile_temporary_import_refs(
+                evidence_path, repo, repo / ".git", repository_id
+            )
+        assert _ref_oid(repo, ref_name) == target_oid
+        assert evidence_path.exists()
+        return
 
     removed = delete_run_workspace_refs(
         repo,

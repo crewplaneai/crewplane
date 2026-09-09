@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.architecture.safe_files import path_is_absent
 from crewplane.cli.workspace_cleanup.evidence_claims import (
     WorkspaceClaim,
     claim_has_pending_ref_cleanup,
@@ -17,7 +18,6 @@ from crewplane.cli.workspace_cleanup.evidence_discovery import (
 )
 from crewplane.cli.workspace_cleanup.evidence_validation import (
     WorkspaceClaimValidator,
-    path_is_absent,
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.runtime.workspace.cleanup import AbsentWorkspaceStateProjection

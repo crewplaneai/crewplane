@@ -4,7 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.observability.log_headers import provider_log_body_start
+from crewplane.architecture.contracts.provider_log import provider_log_body_start
 
 
 @dataclass(frozen=True)

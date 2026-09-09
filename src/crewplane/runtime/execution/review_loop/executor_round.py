@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.safe_files import (
     contained_directory,
     contained_regular_file,
@@ -62,7 +63,9 @@ async def run_executor_round(
     )
     for provider in request.executors:
         task_id = provider.task_id
-        output_file = request.artifact_dir / f"{task_id}_round{request.round_num}.md"
+        output_file = request.artifact_dir / build_task_round_filename(
+            task_id, request.round_num
+        )
         allowed_paths = {output_file}
         allowed_paths.update(
             workspace_artifact_allowed_paths(

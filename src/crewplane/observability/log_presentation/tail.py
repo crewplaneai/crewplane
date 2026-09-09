@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from crewplane.observability.log_headers import provider_log_body_start
+from crewplane.architecture.contracts.provider_log import provider_log_body_start
 
 from .limits import DEFAULT_LIMITS, LogPresentationLimits
 from .models import LogReadResult

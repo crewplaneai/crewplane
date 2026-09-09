@@ -8,6 +8,14 @@ from crewplane.architecture.contracts import JsonObject
 from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_state_path
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES
+from crewplane.core.workspace.git_reads import (
+    ProjectBlobRecord,
+    git_cat_blob,
+    git_error,
+    git_ls_tree,
+    valid_utf8_without_nul,
+)
+from crewplane.core.workspace.selection import selected_worktree_name
 
 from ...compile_state import (
     CompileState,
@@ -25,13 +33,6 @@ from ...models import (
 )
 from ...references import TemplateReference
 from ...signatures import signature_for_payload
-from .git_reads import (
-    ProjectBlobRecord,
-    git_cat_blob,
-    git_error,
-    git_ls_tree,
-    valid_utf8_without_nul,
-)
 from .paths import (
     WorkspaceFilePathRecord,
     lexical_absolute_path,
@@ -41,7 +42,6 @@ from .paths import (
 from .selection import (
     has_same_worktree_source_ancestor,
     selected_worktree_kind,
-    selected_worktree_name,
 )
 
 

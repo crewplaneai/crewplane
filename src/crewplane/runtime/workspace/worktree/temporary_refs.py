@@ -7,12 +7,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.artifacts.workspace.state.invocation import state_invocation_slug
 from crewplane.artifacts.workspace.state.paths import workspace_temporary_refs_filename
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.naming import (
     safe_ref_component,
     temporary_import_ref_prefix,
@@ -100,7 +100,7 @@ def import_source_bundle(
             verified_bundle_path,
             cancel_requested,
         )
-        if not _source_commit_exists(source, source_ref.source_commit):
+        if not git(Path(source.git_top_level)).commit_exists(source_ref.source_commit):
             raise RuntimeError("Workspace source import did not provide its target.")
     except BaseException as failure:
         try:
@@ -366,32 +366,9 @@ def _temporary_ref_owner_prefix(payload: dict[str, object]) -> str:
 
 
 def _state_invocation_slug(payload: dict[str, object]) -> str:
-    node_id = payload.get("node_id")
-    task_id = payload.get("task_id")
-    round_num = payload.get("round_num")
-    audit_round_num = payload.get("audit_round_num")
-    if not (
-        isinstance(node_id, str)
-        and node_id
-        and isinstance(task_id, str)
-        and task_id
-        and isinstance(round_num, int)
-        and not isinstance(round_num, bool)
-        and (
-            audit_round_num is None
-            or isinstance(audit_round_num, int)
-            and not isinstance(audit_round_num, bool)
-        )
-    ):
+    slug = state_invocation_slug(payload)
+    if slug is None:
         raise RuntimeError(
             "Workspace temporary ref evidence lacks invocation identity."
         )
-    return invocation_slug(node_id, task_id, audit_round_num, round_num)
-
-
-def _source_commit_exists(source: WorkspaceSourceSnapshot, commit: str) -> bool:
-    try:
-        git(Path(source.git_top_level)).run("cat-file", "-e", f"{commit}^{{commit}}")
-    except subprocess.CalledProcessError:
-        return False
-    return True
+    return slug

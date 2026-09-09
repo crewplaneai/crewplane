@@ -5,7 +5,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TypedDict
 
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.architecture.safe_files import contained_regular_file
@@ -24,6 +24,31 @@ REQUIRED_BOOLEAN_FIELDS = (
     "consensus_reached",
     "continued_after_consensus_exhaustion",
 )
+
+
+class ReviewLoopStatusOutputEntry(TypedDict):
+    task_id: str
+    provider: str
+    role: ProviderRole
+    path: str
+    sha256: str
+    size_bytes: int
+    audit_round_num: int | None
+    round_num: int
+
+
+class ReviewLoopStatusPayload(TypedDict):
+    node_id: str
+    executed_audit_rounds: int
+    attempted_local_round_num: int
+    final_local_round_num: int
+    consensus_reached: bool
+    continued_after_consensus_exhaustion: bool
+    invalid_candidate_round_count: int
+    no_progress_round_count: int
+    artifact_drift_warning_count: int
+    canonical_executor_outputs: list[ReviewLoopStatusOutputEntry]
+    reviewer_outputs: list[ReviewLoopStatusOutputEntry]
 
 
 class ReviewLoopStatusError(RuntimeError):
@@ -101,8 +126,12 @@ def resolve_review_loop_status(
     )
 
 
+def review_loop_status_path(stage_dir: Path) -> Path:
+    return stage_dir / REVIEW_LOOP_STATUS_RELATIVE_PATH
+
+
 def locate_review_loop_status(stage_dir: Path) -> Path | None:
-    status_candidate = stage_dir / REVIEW_LOOP_STATUS_RELATIVE_PATH
+    status_candidate = review_loop_status_path(stage_dir)
     status_path = contained_regular_file(
         stage_dir,
         REVIEW_LOOP_STATUS_RELATIVE_PATH.as_posix(),
