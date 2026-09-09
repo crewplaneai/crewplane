@@ -600,3 +600,18 @@ class WorkflowValidationDependencyTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "lower-case"):
             validate_workflow_plan(invalid_workflow)
+
+
+def test_artifact_token_families_match_the_literal_contract() -> None:
+    from typing import get_args
+
+    from crewplane.core.workflow.keywords import (
+        FINDINGS_ARTIFACT_KEYS,
+        OUTPUT_ARTIFACT_KEYS,
+        NodeArtifactName,
+    )
+
+    assert OUTPUT_ARTIFACT_KEYS.isdisjoint(FINDINGS_ARTIFACT_KEYS)
+    assert (
+        set(get_args(NodeArtifactName)) == OUTPUT_ARTIFACT_KEYS | FINDINGS_ARTIFACT_KEYS
+    )

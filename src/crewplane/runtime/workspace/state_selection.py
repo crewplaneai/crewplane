@@ -16,7 +16,10 @@ from crewplane.artifacts.workspace.state.lineage import (
     invocation_round_order,
     review_output_coordinates,
 )
-from crewplane.artifacts.workspace.state.paths import workspace_state_candidates
+from crewplane.artifacts.workspace.state.paths import (
+    WORKSPACE_STATE_FILENAME,
+    workspace_state_candidates,
+)
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -49,7 +52,7 @@ def required_lineage_state_path(
     latest = latest_executor_lineage_state_path(stage_dir)
     if latest is not None:
         return latest
-    canonical = safe_workspace_state_path(stage_dir, "workspace-state.json")
+    canonical = safe_workspace_state_path(stage_dir, WORKSPACE_STATE_FILENAME)
     if canonical is not None and workspace_state_is_lineage_source(canonical):
         return canonical
     raise RuntimeError(

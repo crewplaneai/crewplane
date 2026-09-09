@@ -117,6 +117,15 @@ class WorkspaceSelectionRecord(BaseModel):
         return self
 
 
+def is_lineage_worktree(policy: WorkspaceSelectionRecord | None) -> bool:
+    return (
+        policy is not None
+        and policy.enabled
+        and policy.materialization == "worktree_checkout"
+        and policy.lineage_producer
+    )
+
+
 def _validate_disabled_workspace_selection(selection: WorkspaceSelectionRecord) -> None:
     if selection.materialization != "project_root":
         raise ValueError("disabled workspace selection must use project_root")

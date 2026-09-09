@@ -16,6 +16,7 @@ from crewplane.architecture.contracts import (
     JsonObject,
 )
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.artifacts.workspace.state.paths import WORKSPACE_STATE_FILENAME
 from crewplane.core.platform import supports_posix_process_groups
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
@@ -274,7 +275,7 @@ def _build_setup_summary(
 
 def workspace_setup_artifacts(state_path: Path) -> WorkspaceSetupArtifacts:
     setup_dir = state_path.parent / "workspace-setup"
-    if state_path.name == "workspace-state.json":
+    if state_path.name == WORKSPACE_STATE_FILENAME:
         return WorkspaceSetupArtifacts(
             metadata_path=setup_dir / "setup.json",
             log_path=setup_dir / "setup.log",

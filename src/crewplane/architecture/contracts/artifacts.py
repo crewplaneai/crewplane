@@ -92,7 +92,7 @@ def artifact_contract_for_node(
 
 
 def build_stage_directory_name(node_id: str) -> str:
-    safe_name = _safe_stage_name(node_id)
+    safe_name = safe_stage_name(node_id)
     if len(safe_name) <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
         return safe_name
     return _bounded_with_suffix(safe_name, f"--{_short_hash(node_id)}")
@@ -115,7 +115,7 @@ def safe_artifact_name(name: str) -> str:
 
 
 def _bounded_artifact_filename(node_id: str, suffix: str) -> str:
-    safe_name = _safe_stage_name(node_id)
+    safe_name = safe_stage_name(node_id)
     if len(f"{safe_name}{suffix}") <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
         return f"{safe_name}{suffix}"
     return _bounded_with_suffix(safe_name, f"--{_short_hash(node_id)}{suffix}")
@@ -129,7 +129,7 @@ def _bounded_with_suffix(safe_prefix: str, suffix: str) -> str:
     return f"{prefix or 'artifact'}{suffix}"
 
 
-def _safe_stage_name(name: str) -> str:
+def safe_stage_name(name: str) -> str:
     stripped = name.strip().lower()
     if not stripped or stripped in {".", ".."}:
         return "task"

@@ -39,7 +39,7 @@ def test_lineage_worktree_parallel_node_rejects_allowed_executor_failure() -> No
 
 
 def _parallel_node(
-    workspace_policy: WorkspaceSelectionRecord,
+    workspace_policy: WorkspaceSelectionRecord | None,
     execution_policy: ExecutionPolicy,
 ) -> PreflightExecutionNode:
     return PreflightExecutionNode(
@@ -67,4 +67,34 @@ def _provider_record(task_id: str) -> ProviderRecord:
         invoker_alias="mock",
         agent_config_signature=f"{task_id}-agent",
         invoker_config_signature="mock-invoker",
+    )
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        None,
+        WorkspaceSelectionRecord(),
+        WorkspaceSelectionRecord(
+            enabled=True,
+            logical_worktree_name="audit",
+            declaration_kind="snapshot",
+            materialization="snapshot_checkout",
+            writable=True,
+        ),
+        WorkspaceSelectionRecord(
+            enabled=True,
+            logical_worktree_name="disposable",
+            declaration_kind="worktree",
+            materialization="worktree_checkout",
+            writable=True,
+            lineage_producer=False,
+        ),
+    ],
+)
+def test_non_lineage_policy_allows_configured_executor_failure(policy) -> None:
+    node = _parallel_node(policy, ExecutionPolicy(failure_threshold=1))
+
+    assert enforce_parallel_failure_policy(
+        node, ParallelResultSummary(total=2, successful=1, failed=1), telemetry=None
     )

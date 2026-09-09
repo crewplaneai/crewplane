@@ -22,7 +22,7 @@ from .lineage import (
     invocation_round_order,
     review_output_coordinates,
 )
-from .paths import workspace_state_candidates
+from .paths import WORKSPACE_STATE_FILENAME, workspace_state_candidates
 from .ref_contracts import is_discarded_lineage
 
 
@@ -47,7 +47,9 @@ def workspace_state_file(
     stage_path = node.artifact_contract.stage_path
     if stage_path is None:
         return None
-    return contained_regular_file(source.run_dir, f"{stage_path}/workspace-state.json")
+    return contained_regular_file(
+        source.run_dir, f"{stage_path}/{WORKSPACE_STATE_FILENAME}"
+    )
 
 
 def workspace_state_payloads(

@@ -7,10 +7,11 @@ from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
     NodeState,
+    ResumeOrigin,
     RunManifest,
 )
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.resume import make_run_manifest, sha256_hex
+from tests.helpers.resume import make_node_state, make_run_manifest, sha256_hex
 
 
 def test_running_manifest_forbids_completed_at() -> None:
@@ -195,3 +196,48 @@ def test_node_state_rejects_ambiguous_artifact_descriptors() -> None:
             completed_at="2026-06-09T12:00:00",
             artifacts=[descriptor, descriptor],
         )
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "2026-09-08",
+        "2026-09-08T12:34:56",
+        "2026-09-08T12:34:56-07:00",
+        "",
+        "invalid",
+    ],
+)
+@pytest.mark.parametrize(
+    "record_field", ["run_start", "run_end", "node_end", "provenance"]
+)
+def test_durable_state_timestamp_contract(timestamp, record_field) -> None:
+    manifest = make_run_manifest("run", "workflow--run", status="succeeded")
+    match record_field:
+        case "run_start" | "run_end":
+            model = RunManifest
+            payload = manifest.model_dump(mode="json")
+            field = "started_at" if record_field == "run_start" else "completed_at"
+        case "node_end":
+            model = NodeState
+            payload = make_node_state(manifest, "a", []).model_dump(mode="json")
+            field = "completed_at"
+        case _:
+            model = ResumeOrigin
+            payload = {
+                "source_run_id": "run",
+                "source_run_key_name": "workflow--run",
+                "source_node_id": "a",
+            }
+            field = "hydrated_at"
+    payload[field] = timestamp
+    if timestamp in {"", "invalid"}:
+        with pytest.raises(
+            ValidationError, match="timestamp fields must be ISO 8601 datetimes"
+        ) as caught:
+            model.model_validate(payload)
+        error = caught.value.errors()[0]["ctx"]["error"]
+        assert isinstance(error.__cause__, ValueError)
+    else:
+        validated = model.model_validate(payload)
+        assert validated.model_dump()[field] == timestamp

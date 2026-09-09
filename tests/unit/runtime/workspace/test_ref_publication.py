@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -17,7 +18,10 @@ from crewplane.runtime.workspace.state import (
     discard_workspace_lineage,
     read_workspace_state,
 )
-from crewplane.runtime.workspace.worktree import remove_worktree_workspace
+from crewplane.runtime.workspace.worktree import (
+    remove_worktree_workspace,
+    temporary_refs,
+)
 from crewplane.runtime.workspace.worktree.protected_refs import (
     protected_ref_snapshot_for_scopes,
 )
@@ -77,6 +81,7 @@ def test_external_ref_cleanup_consumes_dedicated_temporary_ref_evidence(
 
 
 def test_external_ref_cleanup_consumes_empty_prepared_temporary_ref_evidence(
+    monkeypatch,
     tmp_path: Path,
 ) -> None:
     repo = create_git_repo(tmp_path)
@@ -91,12 +96,17 @@ def test_external_ref_cleanup_consumes_empty_prepared_temporary_ref_evidence(
     run_dir = tmp_path / "run"
     evidence_dir = run_dir / "logs"
     evidence_dir.mkdir(parents=True)
+    monkeypatch.setattr(temporary_refs, "uuid4", lambda: UUID(int=1))
     owner = TemporaryRefOwner.dedicated(
         plan,
         source,
         evidence_dir,
         "consumer",
         "workspace-file-readme",
+    )
+    assert (
+        owner.state_path.name
+        == "workspace-temporary-refs-00000000000000000000000000000001.json"
     )
     owner.prepare()
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.artifacts.workspace.state.paths import workspace_temporary_refs_filename
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
@@ -43,7 +44,7 @@ class TemporaryRefOwner:
         node_id: str,
         consumer_id: str,
     ) -> TemporaryRefOwner:
-        evidence_path = evidence_dir / f"workspace-temporary-refs-{uuid4().hex}.json"
+        evidence_path = evidence_dir / workspace_temporary_refs_filename(uuid4().hex)
         return cls(
             evidence_path,
             {

@@ -40,7 +40,9 @@ from tests.helpers.workspace_service import (
 )
 
 
+@pytest.mark.parametrize("symlink_manifest", [False, True])
 def test_fulfill_branch_exports_creates_branch_and_audit_record(
+    symlink_manifest,
     tmp_path: Path,
 ) -> None:
     if shutil.which("git") is None:
@@ -62,6 +64,12 @@ def test_fulfill_branch_exports_creates_branch_and_audit_record(
         bundle_path,
     )
     node_state_path = write_node_manifest(output, plan)
+
+    original_manifest = node_state_path.read_bytes()
+    if symlink_manifest:
+        external_manifest = tmp_path / "external-node.json"
+        node_state_path.rename(external_manifest)
+        node_state_path.symlink_to(external_manifest)
 
     records = fulfill_branch_exports(plan, output)
 
@@ -87,6 +95,10 @@ def test_fulfill_branch_exports_creates_branch_and_audit_record(
     assert state["branch_export"]["status"] == "fulfilled"
     assert state["branch_export"]["operation"] == "created"
     assert state["branch_export"]["branch_ref"] == "refs/heads/feature/exported"
+    if symlink_manifest:
+        assert node_state_path.is_symlink()
+        assert external_manifest.read_bytes() == original_manifest
+        return
     node_state = json.loads(node_state_path.read_text(encoding="utf-8"))
     manifest_state = node_state["workspace"]["states"][0]
     assert manifest_state["branch_export"]["operation"] == "created"

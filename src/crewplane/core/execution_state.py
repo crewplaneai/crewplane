@@ -23,7 +23,7 @@ TerminalRunStatus = Literal["succeeded", "failed", "cancelled"]
 ArtifactKind = Literal["output", "findings", "generated_file"]
 
 
-def _validate_iso_datetime(value: str) -> str:
+def validate_iso_datetime(value: str) -> str:
     try:
         datetime.fromisoformat(value)
     except ValueError as exc:
@@ -79,7 +79,7 @@ class ResumeOrigin(BaseModel):
     @field_validator("hydrated_at")
     @classmethod
     def _validate_hydrated_at(cls, value: str) -> str:
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
 
 class NodeState(BaseModel):
@@ -135,7 +135,7 @@ class NodeState(BaseModel):
     @field_validator("completed_at")
     @classmethod
     def _validate_completed_at(cls, value: str) -> str:
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @model_validator(mode="after")
     def _validate_artifact_descriptor_sets(self) -> NodeState:
@@ -250,14 +250,14 @@ class RunManifest(BaseModel):
     @field_validator("started_at")
     @classmethod
     def _validate_started_at(cls, value: str) -> str:
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @field_validator("completed_at")
     @classmethod
     def _validate_completed_at(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @model_validator(mode="after")
     def _validate_terminal_completion(self) -> RunManifest:

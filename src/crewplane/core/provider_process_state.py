@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import (
@@ -11,18 +10,13 @@ from pydantic import (
     model_validator,
 )
 
-from crewplane.core.execution_state import RUN_STATE_SCHEMA_VERSION
+from crewplane.core.execution_state import (
+    RUN_STATE_SCHEMA_VERSION,
+    validate_iso_datetime,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 
 ProviderProcessStatus = Literal["started", "exited"]
-
-
-def _validate_iso_datetime(value: str) -> str:
-    try:
-        datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError("timestamp fields must be ISO 8601 datetimes.") from exc
-    return value
 
 
 class ProviderProcessState(BaseModel):
@@ -73,14 +67,14 @@ class ProviderProcessState(BaseModel):
     @field_validator("started_at")
     @classmethod
     def _validate_started_at(cls, value: str) -> str:
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @field_validator("exited_at")
     @classmethod
     def _validate_exited_at(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _validate_iso_datetime(value)
+        return validate_iso_datetime(value)
 
     @model_validator(mode="after")
     def _validate_terminal_fields(self) -> ProviderProcessState:

@@ -253,7 +253,9 @@ def test_validate_frontier_accepts_all_failed_snapshot_workspace_invocations(
     assert frontier.resumed_node_ids == ("a",)
 
 
-def test_validate_frontier_rejects_parallel_lineage_worktree_with_failed_output(
+@pytest.mark.parametrize("discarded", [False, True])
+def test_validate_frontier_checks_discarded_lineage_for_failed_output(
+    discarded,
     tmp_path,
 ) -> None:
     source = source_record(tmp_path)
@@ -319,6 +321,13 @@ def test_validate_frontier_rejects_parallel_lineage_worktree_with_failed_output(
     failed_payload.pop("result")
     failed_payload.pop("refs")
     failed_payload.pop("bundle")
+    if discarded:
+        failed_payload["workspace"]["lineage_producer"] = False
+        failed_payload["result"] = {
+            "lineage_produced": False,
+            "lineage_discarded": True,
+            "lineage_discard_reason": "remediation_context_exhausted",
+        }
     (stage_dir / "workspace-state-beta.json").write_text(
         json.dumps(failed_payload),
         encoding="utf-8",
@@ -327,7 +336,7 @@ def test_validate_frontier_rejects_parallel_lineage_worktree_with_failed_output(
 
     frontier = validate_resume_frontier(source, plan)
 
-    assert frontier.resumed_node_ids == ()
+    assert frontier.resumed_node_ids == (("a",) if discarded else ())
 
 
 def test_validate_frontier_rejects_missing_reviewer_workspace_state(

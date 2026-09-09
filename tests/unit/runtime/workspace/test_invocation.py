@@ -6,6 +6,10 @@ from pathlib import Path
 import pytest
 
 from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.artifacts.workspace.state.paths import (
+    is_workspace_claim_name,
+    workspace_state_candidates,
+)
 from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
@@ -250,3 +254,29 @@ def _write_lineage_state(path: Path, result_commit: str) -> None:
         },
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("provider_count", "audit_round", "round_num", "canonical"),
+    [
+        (1, None, 1, True),
+        (1, None, 2, False),
+        (1, 1, 1, False),
+        (2, None, 1, False),
+    ],
+)
+def test_invocation_state_writers_use_discoverable_filenames(
+    tmp_path: Path, provider_count, audit_round, round_num, canonical
+) -> None:
+    output = ArtifactStore(tmp_path)
+    node = _node()
+    node.provider_records *= provider_count
+    slug = invocation_slug("implement", "alpha", audit_round, round_num)
+    path = workspace_state_path(output, node, slug, audit_round, round_num)
+    expected_name = (
+        "workspace-state.json" if canonical else f"workspace-state-{slug}.json"
+    )
+    assert path.name == expected_name
+    path.write_text("{}")
+    assert is_workspace_claim_name(path.name)
+    assert path in workspace_state_candidates(path.parent)

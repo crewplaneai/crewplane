@@ -11,17 +11,13 @@ MAX_GENERATED_PATH_COMPONENT_CHARS = 180
 MAX_GENERATED_FILE_RESULT_DIR_CHARS = 120
 GENERATED_FILE_RESULT_DIR_HASH_CHARS = 12
 
-_STAGE_PATTERN = re.compile(r"[^a-z0-9._-]+")
 _RUN_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 build_findings_filename = _artifact_contracts.build_findings_filename
 build_result_filename = _artifact_contracts.build_result_filename
 build_stage_directory_name = _artifact_contracts.build_stage_directory_name
 safe_artifact_name = _artifact_contracts.safe_artifact_name
-
-
-def safe_stage_name(name: str) -> str:
-    return _slugify_name(name, _STAGE_PATTERN, strip_edges=False)
+safe_stage_name = _artifact_contracts.safe_stage_name
 
 
 def workflow_identity_hash(workflow_identity: str) -> str:
@@ -124,24 +120,6 @@ def _bounded_with_suffix(safe_prefix: str, suffix: str) -> str:
     if not prefix:
         prefix = "artifact"[:available]
     return f"{prefix}{suffix}"
-
-
-def _slugify_name(
-    name: str,
-    pattern: re.Pattern[str],
-    strip_edges: bool,
-) -> str:
-    stripped = name.strip().lower()
-    if not stripped or stripped in {".", ".."}:
-        return "task"
-    slug = pattern.sub("-", stripped)
-    if strip_edges:
-        slug = slug.strip("-")
-    if slug in {".", ".."}:
-        return "task"
-    if not slug.strip("-._"):
-        return "task" if strip_edges else slug
-    return slug or "task"
 
 
 def _short_hash(value: str) -> str:

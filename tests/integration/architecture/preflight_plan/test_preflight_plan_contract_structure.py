@@ -12,16 +12,11 @@ from rich.console import Console
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.config import (
-    AgentConfig,
     Config,
-    IntegrationsConfig,
-    IntegrationSpec,
-    Settings,
 )
 from crewplane.core.preflight import (
     PreflightCompileOptions,
     PreflightExecutionPlan,
-    PreflightWorkflowSource,
     compile_preflight_preview,
 )
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
@@ -30,72 +25,9 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_plan
 
-
-def _mock_config() -> Config:
-    return Config(
-        version=SCHEMA_VERSION,
-        agents={"mock": AgentConfig(cli_cmd=["mock"])},
-        settings=Settings(
-            integrations=IntegrationsConfig(
-                invoker=IntegrationSpec(
-                    implementation="mock",
-                    options={
-                        "observation_delay_seconds": 0,
-                        "output_mode": "echo",
-                    },
-                ),
-                ui=IntegrationSpec(implementation="tmux", options={}),
-                artifacts=IntegrationSpec(
-                    implementation="filesystem",
-                    options={"log_cli_output": True},
-                ),
-            )
-        ),
-    )
-
-
-def _literal_workflow() -> WorkflowPlan:
-    return WorkflowPlan(
-        name="demo",
-        nodes=[
-            WorkflowNode(
-                id="build",
-                mode="sequential",
-                providers=[ProviderSpec(provider="mock")],
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="hello")
-                ],
-            )
-        ],
-    )
-
-
-def _source(
-    workflow: WorkflowPlan,
-    workflow_content: str = "workflow source",
-    composed_workflow: dict[str, Any] | None = None,
-    node_source_paths: dict[str, Path] | None = None,
-    node_source_spans: dict[str, dict[str, int]] | None = None,
-    prompt_segment_spans: dict[str, list[dict[str, int]]] | None = None,
-) -> PreflightWorkflowSource:
-    return PreflightWorkflowSource.from_workflow(
-        workflow,
-        workflow_content=workflow_content,
-        composed_workflow=composed_workflow
-        or {
-            "schema_version": workflow.schema_version,
-            "name": workflow.name,
-            "description": workflow.description,
-            "inputs": dict(workflow.inputs),
-            "nodes": [],
-        },
-        node_source_paths=node_source_paths,
-        node_source_spans=node_source_spans,
-        prompt_segment_spans=prompt_segment_spans,
-    )
+from .helpers import literal_workflow, make_source, mock_config
 
 
 class SensitiveOptionInvokerAdapter:
@@ -131,18 +63,18 @@ def _compile_signature(
     settings_update: dict[str, object] | None = None,
     workflow: WorkflowPlan | None = None,
 ) -> str:
-    config = _mock_config()
+    config = mock_config()
     if settings_update:
         assert config.settings is not None
         config.settings = config.settings.model_copy(update=settings_update)
-    selected_workflow = workflow or _literal_workflow()
+    selected_workflow = workflow or literal_workflow()
     snapshot = build_runtime_config_snapshot(
         config=config,
         console=Console(file=None),
         no_live=no_live,
     )
     preview = compile_preflight_preview(
-        source=_source(selected_workflow),
+        source=make_source(selected_workflow),
         config=config,
         runtime_snapshot=snapshot.snapshot,
         options=PreflightCompileOptions(
@@ -240,8 +172,8 @@ def test_consensus_policy_changes_signature_when_review_loop_is_active(
 
 
 def test_mock_execution_options_change_runtime_signature() -> None:
-    first_config = _mock_config()
-    second_config = _mock_config()
+    first_config = mock_config()
+    second_config = mock_config()
     assert first_config.settings is not None
     assert second_config.settings is not None
     first_config.settings.integrations.invoker.options["seed"] = 1
@@ -268,7 +200,7 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
     workflow_file = tmp_path / ".crewplane" / "workflows" / "demo.task.md"
     workflow_file.parent.mkdir(parents=True)
     workflow_file.write_text("workflow source", encoding="utf-8")
-    config = _mock_config()
+    config = mock_config()
     workflow = WorkflowPlan(
         name="demo",
         nodes=[
@@ -300,7 +232,7 @@ def test_compiled_plan_persists_execution_contract_metadata(tmp_path: Path) -> N
     )
 
     preview = compile_preflight_preview(
-        source=_source(
+        source=make_source(
             workflow,
             workflow_content=workflow_file.read_text(encoding="utf-8"),
             node_source_paths={"review": workflow_file},
@@ -455,3 +387,24 @@ def _worktree_policy(
         "writable": True,
         "lineage_producer": True,
     }
+
+
+def test_shared_builders_preserve_mutation_isolation_and_empty_source_fallback() -> (
+    None
+):
+    first_config = mock_config()
+    first_config.agents["mock"].cli_cmd.append("changed")
+    first_config.settings.integrations.invoker.options["output_mode"] = "changed"
+    assert mock_config().agents["mock"].cli_cmd == ["mock"]
+    assert mock_config().settings.integrations.invoker.options["output_mode"] == "echo"
+
+    first_workflow = literal_workflow()
+    first_workflow.nodes[0].prompt_segments.clear()
+    assert literal_workflow().nodes[0].prompt_segments[0].content == "hello"
+    first_source = make_source(literal_workflow(), composed_workflow={})
+    assert first_source.composed_workflow["nodes"] == []
+    first_source.composed_workflow["name"] = "changed"
+    first_source.node_source_paths["build"] = Path("changed")
+    second_source = make_source(literal_workflow(), composed_workflow={})
+    assert second_source.composed_workflow["name"] == "demo"
+    assert second_source.node_source_paths == {}

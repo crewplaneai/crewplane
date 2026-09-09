@@ -4,6 +4,20 @@ from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
 
 WORKSPACE_STATE_FILENAME = "workspace-state.json"
 WORKSPACE_STATE_PREFIX = "workspace-state-"
+WORKSPACE_REUSE_CLAIM_PREFIX = "workspace-reuse-claim-"
+WORKSPACE_TEMPORARY_REFS_PREFIX = "workspace-temporary-refs-"
+
+
+def workspace_state_filename(slug: str) -> str:
+    return f"{WORKSPACE_STATE_PREFIX}{slug}.json"
+
+
+def workspace_reuse_claim_filename(state_stem: str, generation: int) -> str:
+    return f"{WORKSPACE_REUSE_CLAIM_PREFIX}{state_stem}-generation-{generation}.json"
+
+
+def workspace_temporary_refs_filename(identity: str) -> str:
+    return f"{WORKSPACE_TEMPORARY_REFS_PREFIX}{identity}.json"
 
 
 def workspace_state_candidates(stage_dir: Path) -> tuple[Path, ...]:
@@ -17,12 +31,12 @@ def workspace_state_candidates(stage_dir: Path) -> tuple[Path, ...]:
 def is_workspace_claim_name(name: str) -> bool:
     return name == WORKSPACE_STATE_FILENAME or (
         name.endswith(".json")
-        and name.startswith((WORKSPACE_STATE_PREFIX, "workspace-reuse-claim-"))
+        and name.startswith((WORKSPACE_STATE_PREFIX, WORKSPACE_REUSE_CLAIM_PREFIX))
     )
 
 
 def is_temporary_ref_evidence_name(name: str) -> bool:
-    return name.startswith("workspace-temporary-refs-") and name.endswith(".json")
+    return name.startswith(WORKSPACE_TEMPORARY_REFS_PREFIX) and name.endswith(".json")
 
 
 def is_safe_workspace_stage_path(value: str) -> bool:

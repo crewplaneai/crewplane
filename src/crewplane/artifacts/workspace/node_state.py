@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -36,6 +37,18 @@ class NodeArtifactStateStore(Protocol):
     def stages_dir(self) -> Path: ...
 
     def get_node_dir(self, request: NodeArtifactRequest) -> Path | None: ...
+
+
+@dataclass(frozen=True)
+class WorkspaceDescriptorLookup:
+    stages_dir: Path
+    node_id: str
+    stage_dir: Path
+
+    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
+        if request.node_id != self.node_id or not self.stage_dir.is_dir():
+            return None
+        return self.stage_dir
 
 
 def build_node_workspace_descriptor(

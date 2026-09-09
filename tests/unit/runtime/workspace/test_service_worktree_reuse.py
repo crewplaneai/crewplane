@@ -765,7 +765,9 @@ def test_reuse_cache_cleanup_workspace_includes_current_generation_state(
         assert state["workspace"]["retention"] == "deleted"
 
 
+@pytest.mark.parametrize("archive_collision", [None, "file", "symlink"])
 def test_same_worktree_reuse_failure_falls_back_to_fresh_checkout(
+    archive_collision,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -821,6 +823,31 @@ def test_same_worktree_reuse_failure_falls_back_to_fresh_checkout(
 
     monkeypatch.setattr(workspace_materialization.shutil, "disk_usage", record_probe)
 
+    if archive_collision is not None:
+        archive_path = (
+            output.create_node_dir(node_artifact_request("verify"))
+            / "workspace-reuse-claim-workspace-state-generation-2.json"
+        )
+        existing = (
+            tmp_path / "existing-claim.json"
+            if archive_collision == "symlink"
+            else archive_path
+        )
+        existing.write_text("preserved evidence")
+        if archive_collision == "symlink":
+            archive_path.symlink_to(existing)
+        try:
+            with pytest.raises(RuntimeError, match="archive already exists"):
+                prepare_invocation_workspace(
+                    workspace_request(plan, output, "verify", reuse_cache, limiter),
+                    workspace_invocation_context(),
+                )
+            assert existing.read_text() == "preserved evidence"
+            assert archive_path.is_symlink() is (archive_collision == "symlink")
+        finally:
+            reuse_cache.cleanup_all_best_effort()
+        return
+
     second = prepare_invocation_workspace(
         workspace_request(plan, output, "verify", reuse_cache, limiter),
         workspace_invocation_context(),
@@ -836,6 +863,10 @@ def test_same_worktree_reuse_failure_falls_back_to_fresh_checkout(
         assert state["reuse"]["strategy"] == "fresh_checkout"
         assert state["reuse"]["fallback"] is True
         assert "reset verification failed" in state["reuse"]["fallback_reason"]
+        assert (
+            state["reuse"]["abandoned_claim_artifact"]
+            == "workspace-reuse-claim-workspace-state-generation-2.json"
+        )
         assert probe_calls == 1
     finally:
         if second.workspace_path is not None:

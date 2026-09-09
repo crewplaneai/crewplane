@@ -12,6 +12,7 @@ from crewplane.artifacts.failure_artifacts import (
     build_invocation_failure_artifact,
 )
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError
 
@@ -162,7 +163,7 @@ def enforce_parallel_failure_policy(
     summary: ParallelResultSummary,
     telemetry: ExecutionTelemetry | None,
 ) -> bool:
-    if summary.failed and _lineage_worktree_node(node):
+    if summary.failed and is_lineage_worktree(node.workspace_policy):
         raise NodeExecutionError(
             f"Parallel node '{node.id}' uses a lineage-producing worktree and "
             "cannot continue after executor failure."
@@ -183,16 +184,6 @@ def enforce_parallel_failure_policy(
             f"[yellow]WARN[/] {message} Continuing due to continue_on_failure=true."
         )
     return False
-
-
-def _lineage_worktree_node(node: PreflightExecutionNode) -> bool:
-    policy = node.workspace_policy
-    return (
-        policy is not None
-        and policy.enabled
-        and policy.materialization == "worktree_checkout"
-        and policy.lineage_producer
-    )
 
 
 def _warn_on_partial_parallel_failures(

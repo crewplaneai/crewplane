@@ -3,14 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.architecture.contracts import JsonObject, NodeArtifactRequest
+from crewplane.architecture.contracts import JsonObject
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.naming import (
     build_node_state_filename,
 )
 from crewplane.artifacts.workspace.node_state import (
+    WorkspaceDescriptorLookup,
     build_node_workspace_descriptor,
 )
+from crewplane.artifacts.workspace.state.paths import WORKSPACE_STATE_FILENAME
 from crewplane.core.execution_state import NodeState
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -39,30 +41,6 @@ class BranchExportCheckpoint:
     bundle_size_bytes: int
 
 
-@dataclass(frozen=True)
-class _WorkspaceDescriptorStore:
-    run_id: str
-    run_key_name: str
-    task_name: str
-    stages_dir: Path
-    results_dir: Path
-    logs_dir: Path
-    project_root: Path
-    log_cli_output: bool
-    stage_name: str
-    stage_dir: Path
-
-    def get_stage_dir(self, stage_name: str) -> Path | None:
-        if stage_name != self.stage_name or not self.stage_dir.is_dir():
-            return None
-        return self.stage_dir
-
-    def get_node_dir(self, request: NodeArtifactRequest) -> Path | None:
-        if request.node_id != self.stage_name or not self.stage_dir.is_dir():
-            return None
-        return self.stage_dir
-
-
 def create_branch_export_ref(
     source: WorkspaceSourceSnapshot,
     branch_ref: str,
@@ -83,7 +61,6 @@ def record_branch_export_fulfillment(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     stages_dir: Path,
-    results_dir: Path,
     checkpoint: BranchExportCheckpoint,
     record_path: Path,
     record_payload: JsonObject,
@@ -109,14 +86,13 @@ def record_branch_export_fulfillment(
         checkpoint.state_path,
         lambda payload: payload.__setitem__("branch_export", branch_export),
     )
-    _refresh_node_manifest_workspace_descriptor(plan, node, stages_dir, results_dir)
+    _refresh_node_manifest_workspace_descriptor(plan, node, stages_dir)
 
 
 def record_skipped_branch_export_fulfillment(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     stages_dir: Path,
-    results_dir: Path,
     record_path: Path,
     record_payload: JsonObject,
 ) -> None:
@@ -140,7 +116,7 @@ def record_skipped_branch_export_fulfillment(
         state_path,
         lambda payload: payload.__setitem__("branch_export", branch_export),
     )
-    _refresh_node_manifest_workspace_descriptor(plan, node, stages_dir, results_dir)
+    _refresh_node_manifest_workspace_descriptor(plan, node, stages_dir)
 
 
 def _node_workspace_state_path(
@@ -150,7 +126,7 @@ def _node_workspace_state_path(
     stage_path = node.artifact_contract.stage_path
     if stage_path is None:
         return None
-    state_path = stages_dir / stage_path / "workspace-state.json"
+    state_path = stages_dir / stage_path / WORKSPACE_STATE_FILENAME
     if not state_path.is_file() or state_path.is_symlink():
         return None
     return state_path
@@ -160,7 +136,6 @@ def _refresh_node_manifest_workspace_descriptor(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     stages_dir: Path,
-    results_dir: Path,
 ) -> None:
     node_state_path = (
         stages_dir / "manifests" / "nodes" / build_node_state_filename(node.id)
@@ -173,16 +148,9 @@ def _refresh_node_manifest_workspace_descriptor(
     stage_path = node.artifact_contract.stage_path
     if stage_path is None:
         return
-    store = _WorkspaceDescriptorStore(
-        run_id=node_state.run_id,
-        run_key_name=node_state.run_key_name,
-        task_name=node_state.workflow_name,
+    store = WorkspaceDescriptorLookup(
         stages_dir=stages_dir,
-        results_dir=results_dir,
-        logs_dir=stages_dir / "logs",
-        project_root=stages_dir,
-        log_cli_output=False,
-        stage_name=node.id,
+        node_id=node.id,
         stage_dir=stages_dir / stage_path,
     )
     refreshed = node_state.model_copy(

@@ -623,3 +623,33 @@ def _workspace_runtime_snapshot() -> RuntimeConfigSnapshot:
         ui=integration,
         options=RuntimeConfigSnapshotOptions(no_live=True),
     )
+
+
+@pytest.mark.parametrize(
+    ("implementation", "expected"),
+    [
+        ("filesystem", True),
+        ("crewplane.adapters.artifacts.filesystem:FilesystemArtifactsAdapter", True),
+        ("crewplane.adapters.artifacts.filesystem.FilesystemArtifactsAdapter", True),
+        ("unknown", False),
+        ("custom.module:Adapter", False),
+        (":FilesystemArtifactsAdapter", False),
+        ("crewplane.adapters.artifacts.filesystem:", False),
+        ("crewplane.adapters.artifacts.filesystem.", False),
+        (".FilesystemArtifactsAdapter", False),
+        ("crewplane.adapters.artifacts.filesystem:FilesystemArtifactsAdapter:", False),
+    ],
+)
+def test_filesystem_identity_probe_preserves_path_matching(
+    implementation, expected, monkeypatch
+) -> None:
+    import crewplane.architecture.loader as loader
+    from crewplane.cli.run.resume import filesystem_artifacts_backend_enabled
+
+    def unexpected_import(name: str):
+        raise AssertionError(f"identity probe imported {name}")
+
+    monkeypatch.setattr(loader.importlib, "import_module", unexpected_import)
+    config = _nonfilesystem_config()
+    config.settings.integrations.artifacts.implementation = implementation
+    assert filesystem_artifacts_backend_enabled(config) is expected

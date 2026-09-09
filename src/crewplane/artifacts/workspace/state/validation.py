@@ -9,6 +9,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.preflight.workspace.observability import (
     invoker_workspace_descriptor,
 )
@@ -61,7 +62,7 @@ def workspace_node_state_is_valid(
         expected_failed_invocations,
     ):
         return False
-    if _lineage_worktree_node(node) and any(
+    if is_lineage_worktree(node.workspace_policy) and any(
         payload.get("role") == ProviderRole.EXECUTOR
         and not is_discarded_lineage(payload)
         for payload in failed_workspace_state_payloads(source, node)
@@ -115,16 +116,6 @@ def _parallel_workspace_outputs_are_complete(
     )
     actual_count = len(expected_invocations) + len(expected_failed_invocations)
     return actual_count == expected_count
-
-
-def _lineage_worktree_node(node: PreflightExecutionNode) -> bool:
-    policy = node.workspace_policy
-    return (
-        policy is not None
-        and policy.enabled
-        and policy.materialization == "worktree_checkout"
-        and policy.lineage_producer
-    )
 
 
 def _expected_workspace_invocation_is_valid(
