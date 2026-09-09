@@ -464,12 +464,19 @@ def test_pytest_reliability_contract_is_explicit() -> None:
     assert set(stress_dependencies) == {"pytest-randomly"}
 
     makefile = read_text("Makefile")
-    assert makefile.startswith("COVERAGE_FLOOR := 90\n")
+    assert "STATEMENT_COVERAGE_FLOOR ?= 96" in makefile.splitlines()
+    assert "BRANCH_COVERAGE_FLOOR ?= 90" in makefile.splitlines()
     test_target = make_target_body("test")
     assert "-p pytest_cov" in test_target
     assert '-m "not scale"' not in test_target
     assert "--cov=crewplane --cov-branch" in test_target
-    assert "--cov-fail-under=$(COVERAGE_FLOOR)" in test_target
+    assert "--cov-report=json:.coverage.json" in test_target
+    assert "--cov-fail-under=0" in test_target
+    assert "$(MAKE) coverage-check" in test_target
+    coverage_target = make_target_body("coverage-check")
+    assert "scripts/check_coverage.py .coverage.json" in coverage_target
+    assert "--statements $(STATEMENT_COVERAGE_FLOOR)" in coverage_target
+    assert "--branches $(BRANCH_COVERAGE_FLOOR)" in coverage_target
 
 
 def test_uv_lock_tracks_editable_crewplane_package() -> None:

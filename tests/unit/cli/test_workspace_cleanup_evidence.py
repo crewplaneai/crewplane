@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+from collections.abc import Iterator
 from copy import deepcopy
 from pathlib import Path
 
@@ -951,3 +953,124 @@ def _write_plan(
         manifest.model_dump_json(exclude_none=True),
         encoding="utf-8",
     )
+
+
+@pytest.mark.parametrize("directory_name", ["logs", "node"])
+def test_cleanup_evidence_rejects_unreadable_evidence_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directory_name: str
+) -> None:
+    cache = tmp_path / "cache"
+    stages = tmp_path / "stages"
+    workspace = _snapshot_path(cache)
+    (workspace / "checkout").mkdir(parents=True)
+    _write_claim(stages, RUN_KEY, _snapshot_payload(workspace))
+    blocked = stages / RUN_KEY / directory_name
+    blocked.mkdir(exist_ok=True)
+    original = Path.iterdir
+
+    def read_directory(path: Path) -> Iterator[Path]:
+        if path == blocked:
+            raise PermissionError("directory unavailable")
+        return original(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "iterdir", read_directory)
+        evidence = _evidence(stages, cache)
+
+    assert not evidence.decision(RUN_KEY, workspace).deletable
+    assert evidence.ref_cleanup_run_keys() == ()
+    assert evidence.absent_state_projections() == ()
+
+
+@pytest.mark.parametrize("target", ["claim", "plan", "manifest"])
+def test_cleanup_evidence_rejects_file_that_becomes_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    cache = tmp_path / "cache"
+    stages = tmp_path / "stages"
+    workspace = _snapshot_path(cache)
+    (workspace / "checkout").mkdir(parents=True)
+    claim = _write_claim(stages, RUN_KEY, _snapshot_payload(workspace))
+    paths = {
+        "claim": claim,
+        "plan": stages / RUN_KEY / "preflight" / "execution-plan.json",
+        "manifest": stages / RUN_KEY / "manifests" / "run.json",
+    }
+    original = Path.read_text
+
+    def read_text(path: Path, *args: object, **kwargs: object) -> str:
+        if path == paths[target]:
+            raise PermissionError("file unavailable")
+        return original(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "read_text", read_text)
+        decision = _evidence(stages, cache).decision(RUN_KEY, workspace)
+
+    assert not decision.deletable
+    assert decision.status == "invalid"
+
+
+@pytest.mark.parametrize("shape", ["file", "symlink", "hardlinked-evidence"])
+def test_cleanup_evidence_rejects_unsafe_ref_evidence(
+    tmp_path: Path, shape: str
+) -> None:
+    cache = tmp_path / "cache"
+    stages = tmp_path / "stages"
+    workspace = _snapshot_path(cache)
+    (workspace / "checkout").mkdir(parents=True)
+    _write_claim(stages, RUN_KEY, _snapshot_payload(workspace))
+    logs = stages / RUN_KEY / "logs"
+    if shape == "file":
+        logs.write_text("not a directory", encoding="utf-8")
+    elif shape == "symlink":
+        logs.symlink_to(tmp_path, target_is_directory=True)
+    else:
+        logs.mkdir()
+        evidence_file = logs / "workspace-temporary-refs-cleanup.json"
+        evidence_file.write_text("{}", encoding="utf-8")
+        (tmp_path / "alias.json").hardlink_to(evidence_file)
+
+    evidence = _evidence(stages, cache)
+    assert not evidence.decision(RUN_KEY, workspace).deletable
+    assert evidence.ref_cleanup_run_keys() == ()
+
+
+def test_cleanup_evidence_rejects_claim_disappearing_during_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = tmp_path / "cache"
+    stages = tmp_path / "stages"
+    workspace = _snapshot_path(cache)
+    (workspace / "checkout").mkdir(parents=True)
+    claim = _write_claim(stages, RUN_KEY, _snapshot_payload(workspace))
+    original = Path.lstat
+
+    def lstat(path: Path) -> os.stat_result:
+        if path == claim:
+            raise FileNotFoundError("claim removed concurrently")
+        return original(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "lstat", lstat)
+        decision = _evidence(stages, cache).decision(RUN_KEY, workspace)
+
+    assert not decision.deletable
+
+
+@pytest.mark.parametrize("relative_root", [None, "/outside", "../outside"])
+def test_cleanup_evidence_rejects_unverifiable_project_placement(
+    tmp_path: Path, relative_root: str | None
+) -> None:
+    cache = tmp_path / "cache"
+    stages = tmp_path / "stages"
+    workspace = _snapshot_path(cache)
+    (workspace / "checkout").mkdir(parents=True)
+    payload = _snapshot_payload(workspace)
+    payload["workspace"]["project_root_relative_path"] = relative_root
+    _write_claim(stages, RUN_KEY, payload)
+
+    decision = _evidence(stages, cache).decision(RUN_KEY, workspace)
+
+    assert not decision.deletable
+    assert decision.status == "invalid"

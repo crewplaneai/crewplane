@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.artifacts.workspace.node_state import (
@@ -101,6 +102,16 @@ def write_run_manifest(state_dir: Path, manifest: RunManifest) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def replace_plan_fields(payload: dict[str, Any], changes: dict[str, object]) -> None:
+    for path, value in changes.items():
+        keys = path.split("/")
+        parent: Any = payload
+        for key in keys[:-1]:
+            parent = parent[int(key)] if isinstance(parent, list) else parent[key]
+        final_key = int(keys[-1]) if isinstance(parent, list) else keys[-1]
+        parent[final_key] = value
 
 
 def make_plan(

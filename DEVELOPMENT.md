@@ -37,7 +37,8 @@ make setup
 ## Local Workflows
 
 ```bash
-make test         # pytest suite with branch coverage
+make test         # full suite with separate statement and branch coverage floors
+make coverage-check # check the existing .coverage.json without rerunning tests
 make typecheck    # strict type checking for package and fixtures
 make lint         # project-env ruff check src tests scripts
 make format       # modifies files: ruff import fixes + format src tests scripts
@@ -58,8 +59,8 @@ needs correction; it modifies files and is separate from the validation gate.
 
 ### Test suite contract
 
-`make test` runs the full suite with pytest entry-point plugin autoload
-disabled and it loads pytest-cov explicitly.
+`make test` enforces the statement and branch coverage floors defined in the
+[Makefile](Makefile).
 
 Workspace-enabled Git tests require Git 2.34.1 or newer. CI runs the relevant
 source-policy tests against exactly Git 2.34.1 and fails if any selected test

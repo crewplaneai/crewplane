@@ -1446,6 +1446,72 @@ def _resolve_workspace_cleanup_context(
     )
 
 
+@pytest.mark.parametrize("activity", ["live", "unverifiable", "read-error"])
+def test_cleanup_eligibility_blocks_active_or_unreadable_run_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, activity: str
+) -> None:
+    _, config, workspace = _cleanup_project(tmp_path, initialize_git=True)
+    context = _resolve_workspace_cleanup_context(config)
+    lock = Mock(return_value=activity)
+    if activity == "read-error":
+        lock.side_effect = OSError("lock unavailable")
+    monkeypatch.setattr(cleanup_eligibility, "run_lock_activity", lock)
+    lookup = cleanup_eligibility.workspace_cleanup_eligibility_lookup(context)
+    assert lookup is not None
+
+    result = lookup("run-1", workspace, "succeeded")
+
+    assert not result.deletable
+    assert (
+        result.reason
+        == f"run lock is {'live' if activity == 'live' else 'unverifiable'}"
+    )
+    assert workspace.exists()
+
+
+@pytest.mark.parametrize("message", ["provider still running", ""])
+def test_cleanup_eligibility_blocks_unverifiable_provider_processes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, message: str
+) -> None:
+    _, config, workspace = _cleanup_project(tmp_path, initialize_git=True)
+    context = _resolve_workspace_cleanup_context(config)
+    monkeypatch.setattr(
+        cleanup_eligibility, "run_lock_activity", Mock(return_value="none")
+    )
+    monkeypatch.setattr(
+        cleanup_eligibility,
+        "ensure_no_live_provider_processes",
+        Mock(side_effect=RuntimeError(message)),
+    )
+    lookup = cleanup_eligibility.workspace_cleanup_eligibility_lookup(context)
+    assert lookup is not None
+
+    result = lookup("run-1", workspace, "succeeded")
+
+    assert not result.deletable
+    assert result.reason == (message or "provider process state is unverifiable")
+    assert workspace.exists()
+
+
+@pytest.mark.parametrize("status", [None, "running", "invalid"])
+def test_cleanup_eligibility_rejects_unverified_workspace_state(
+    tmp_path: Path, status: str | None
+) -> None:
+    _, config, workspace = _cleanup_project(tmp_path, initialize_git=True)
+    context = _resolve_workspace_cleanup_context(config)
+    lookup = cleanup_eligibility.workspace_cleanup_eligibility_lookup(context)
+    assert lookup is not None
+
+    result = lookup("run-1", workspace, status)
+
+    assert not result.deletable
+    assert result.reason == (
+        "workspace state is unverifiable"
+        if status is None
+        else f"workspace state is {status}"
+    )
+
+
 def _write_cleanup_node_manifest(project_root: Path, run_key_name: str) -> None:
     node_manifest_path = (
         project_root

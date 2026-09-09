@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from crewplane.observability.run_summary.markdown import workspace_invocation_line
 from crewplane.observability.run_summary.models import (
     WorkspaceInvocationSummary,
     WorkspacePlanSummary,
@@ -425,3 +428,98 @@ def _workspace_invocation(
         child_environment_required=child_environment_required,
         child_environment_applied=child_environment_applied,
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("../private/result.bundle", "result.bundle"),
+        ("/private/result.bundle", "result.bundle"),
+        ("bundles/result.bundle", "bundles/result.bundle"),
+    ],
+)
+def test_workspace_bundle_labels_hide_external_parent_paths(
+    tmp_path: Path, value: object, expected: str | None
+) -> None:
+    summary = workspace_state_summary(
+        tmp_path,
+        tmp_path / "state.json",
+        {"node_id": "node", "bundle": {"path": value}},
+    )
+
+    assert summary is not None
+    assert summary.bundle_path == expected
+
+
+@pytest.mark.parametrize(
+    ("reuse", "expected"),
+    [
+        ({"strategy": "fresh_checkout"}, "not_applicable"),
+        ({"strategy": "incremental_reset", "reused": False, "fallback": False}, None),
+        (
+            {"strategy": "incremental_reset", "reused": True, "fallback": True},
+            "failed_fallback",
+        ),
+        (
+            {"strategy": "incremental_reset", "reused": True, "fallback": False},
+            "verified",
+        ),
+    ],
+)
+def test_workspace_reset_status_distinguishes_reuse_and_fallback(
+    tmp_path: Path, reuse: dict[str, object], expected: str | None
+) -> None:
+    summary = workspace_state_summary(
+        tmp_path, tmp_path / "state.json", {"node_id": "node", "reuse": reuse}
+    )
+
+    assert summary is not None
+    assert summary.reuse.reset_verification == expected
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_workspace_setup_summary_localizes_absolute_and_relative_artifacts(
+    tmp_path: Path, absolute: bool
+) -> None:
+    setup_path = tmp_path / "node" / "setup.log"
+    value = str(setup_path) if absolute else "setup.log"
+    summary = workspace_state_summary(
+        tmp_path,
+        tmp_path / "node" / "state.json",
+        {"node_id": "node", "setup": {"log_path": value}},
+    )
+
+    assert summary is not None
+    assert summary.setup.log_path == "node/setup.log"
+
+
+def test_sparse_workspace_state_renders_missing_optional_facts(tmp_path: Path) -> None:
+    summary = workspace_state_summary(
+        tmp_path,
+        tmp_path / "state.json",
+        {"node_id": "node", "worktree_contract": {"mode": "blob_exact"}},
+    )
+
+    assert summary is not None
+    rendered = workspace_invocation_line(summary)
+    assert "contract=blob_exact" in rendered
+    assert "env=" not in rendered
+    assert "None" not in rendered
+
+
+def test_merge_uses_state_status_when_event_status_is_missing(tmp_path: Path) -> None:
+    event = workspace_state_summary(
+        tmp_path, tmp_path / "state.json", {"node_id": "node"}
+    )
+    state = workspace_state_summary(
+        tmp_path, tmp_path / "state.json", {"node_id": "node", "status": "failed"}
+    )
+    assert event is not None
+    assert state is not None
+
+    merged = merge_workspace_invocations(tmp_path, (event,), (state,))
+
+    assert len(merged) == 1
+    assert merged[0].status == "failed"
