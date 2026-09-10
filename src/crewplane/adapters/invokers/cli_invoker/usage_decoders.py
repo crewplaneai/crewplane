@@ -9,6 +9,7 @@ from crewplane.architecture.contracts import (
     ProviderTokenUsage,
     UsageDecodeResult,
 )
+from crewplane.core.value_checks import is_nonnegative_int
 
 from .machine_json import read_claude_model_usage
 from .streaming import iter_stdout_lines, load_stdout_json
@@ -276,7 +277,7 @@ class _CounterReader:
         value = self.payload.get(key)
         if value is None:
             return None
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if not is_nonnegative_int(value):
             raise _MalformedUsageError(
                 f"Malformed {self.provider} usage: "
                 f"{key} must be a non-negative integer."

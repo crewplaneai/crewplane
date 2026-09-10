@@ -5,15 +5,10 @@ import json
 import pytest
 
 import crewplane.artifacts.resume.hydration as hydration_module
-from crewplane.artifacts.naming import (
-    build_node_state_filename,
-)
 from crewplane.artifacts.resume.validation import (
-    ValidatedResumeFrontier,
     validate_resume_frontier,
 )
 from crewplane.artifacts.run_history import find_same_context_runs
-from crewplane.core.execution_state import NodeState
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -28,14 +23,16 @@ from tests.helpers.resume import (
 from tests.unit.artifacts.resume_hydration_support import (
     hydration_output,
     workspace_snapshot_plan,
-    workspace_worktree_plan,
-    write_lineage_workspace_state,
     write_snapshot_workspace_state,
 )
 
 
+@pytest.mark.parametrize(
+    "state_name", ["workspace-state.json", "workspace-state-a-alpha-round1.json"]
+)
 def test_hydrate_resume_frontier_copies_workspace_setup_artifacts(
     tmp_path,
+    state_name,
 ) -> None:
     manifest = make_run_manifest("source", "workflow--source", status="failed")
     write_run_manifest(tmp_path, manifest)
@@ -50,12 +47,14 @@ def test_hydrate_resume_frontier_copies_workspace_setup_artifacts(
         source.run_dir,
         make_node_state(source.manifest, "a", [descriptor]),
     )
-    plan = workspace_worktree_plan()
+    plan = workspace_snapshot_plan()
+    write_snapshot_workspace_state(source, plan)
     stage_dir = source.run_dir / "a"
-    state_path = stage_dir / "workspace-state-a-alpha-round1.json"
-    write_lineage_workspace_state(state_path, "1" * 40, 1)
-    metadata_path = stage_dir / "workspace-setup" / f"{state_path.stem}.json"
-    log_path = stage_dir / "workspace-setup" / f"{state_path.stem}.log"
+    state_path = stage_dir / state_name
+    (stage_dir / "workspace-state.json").rename(state_path)
+    setup_stem = "setup" if state_name == "workspace-state.json" else state_path.stem
+    metadata_path = stage_dir / "workspace-setup" / f"{setup_stem}.json"
+    log_path = stage_dir / "workspace-setup" / f"{setup_stem}.log"
     setup = {
         "profile_name": "bootstrap",
         "status": "succeeded",
@@ -64,28 +63,46 @@ def test_hydrate_resume_frontier_copies_workspace_setup_artifacts(
         "log_path": log_path.relative_to(stage_dir).as_posix(),
     }
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata_path.write_text(json.dumps(setup), encoding="utf-8")
-    log_path.write_text("setup log\n", encoding="utf-8")
+    metadata_bytes = (json.dumps(setup, indent=3) + "\r\n").encode()
+    log_bytes = b"setup log\r\n\xff"
+    metadata_path.write_bytes(metadata_bytes)
+    log_path.write_bytes(log_bytes)
     state_payload = json.loads(state_path.read_text(encoding="utf-8"))
     state_payload["setup"] = setup
     state_path.write_text(json.dumps(state_payload), encoding="utf-8")
     attach_workspace_descriptor(source.run_dir, plan, "a")
-    node_state_path = (
-        source.run_dir / "manifests" / "nodes" / build_node_state_filename("a")
-    )
-    node_state = NodeState.model_validate_json(
-        node_state_path.read_text(encoding="utf-8")
-    )
-    frontier = ValidatedResumeFrontier(source, {"a": node_state})
+    frontier = validate_resume_frontier(source, plan)
+    assert frontier.resumed_node_ids == ("a",)
     output = hydration_output(tmp_path)
 
     hydration_module.hydrate_resume_frontier(frontier, plan, output)
 
     hydrated_setup_dir = output.stages_dir / "a" / "workspace-setup"
-    assert (hydrated_setup_dir / metadata_path.name).is_file()
-    assert (hydrated_setup_dir / log_path.name).read_text(
-        encoding="utf-8"
-    ) == "setup log\n"
+    assert (hydrated_setup_dir / metadata_path.name).read_bytes() == metadata_bytes
+    assert (hydrated_setup_dir / log_path.name).read_bytes() == log_bytes
+    hydrated_state = json.loads((output.stages_dir / "a" / state_name).read_bytes())
+    assert hydrated_state["run_id"] == output.run_id
+    assert hydrated_state["run_key_name"] == output.run_key_name
+    assert hydrated_state["resume_origin"]["source_run_id"] == "source"
+    assert metadata_path.read_bytes() == metadata_bytes
+
+    output.write_run_manifest(
+        make_run_manifest(output.run_id, output.run_key_name, status="failed")
+    )
+    resumed_source = next(
+        record
+        for record in find_same_context_runs(
+            tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
+        )
+        if record.manifest.run_id == output.run_id
+    )
+    next_frontier = validate_resume_frontier(resumed_source, plan)
+    assert next_frontier.resumed_node_ids == ("a",)
+    next_output = hydration_output(tmp_path)
+    hydration_module.hydrate_resume_frontier(next_frontier, plan, next_output)
+    next_setup_dir = next_output.stages_dir / "a" / "workspace-setup"
+    assert (next_setup_dir / metadata_path.name).read_bytes() == metadata_bytes
+    assert (next_setup_dir / log_path.name).read_bytes() == log_bytes
 
 
 def test_hydrate_resume_frontier_ignores_undeclared_workspace_artifacts(

@@ -187,11 +187,13 @@ def test_validate_frontier_accepts_applied_controlled_child_environment(
     assert frontier.resumed_node_ids == ("a",)
 
 
+@pytest.mark.parametrize("applied", [False, None, 0, 1, "true"])
 def test_validate_frontier_rejects_unapplied_controlled_child_environment(
     tmp_path,
+    applied,
 ) -> None:
     def mark_child_environment_unapplied(payload):
-        payload["child_process_environment"] = {"required": True, "applied": False}
+        payload["child_process_environment"] = {"required": True, "applied": applied}
 
     frontier = _provider_workspace_frontier(
         tmp_path,

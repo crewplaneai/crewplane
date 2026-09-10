@@ -11,6 +11,7 @@ from crewplane.architecture.contracts import (
     InvocationEventType,
     ProviderUsageStatus,
 )
+from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
 from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.observability.events import ExecutionEvent, InvocationEventPayload
 
@@ -30,15 +31,6 @@ _TERMINAL_INVOCATION_EVENT_TYPES: frozenset[InvocationEventType] = frozenset(
         EventType.INVOCATION_FINISHED,
         EventType.INVOCATION_FAILED,
     }
-)
-
-TOKEN_BUCKETS = (
-    "input",
-    "cached_input",
-    "cache_write",
-    "output",
-    "reasoning",
-    "total",
 )
 
 

@@ -12,6 +12,10 @@ from crewplane.architecture.contracts import (
     VerifiedNodeArtifact,
     artifact_contract_for_node,
 )
+from crewplane.architecture.contracts.artifacts import (
+    bounded_artifact_name,
+    build_review_audit_directory_name,
+)
 
 
 @pytest.mark.parametrize("locator", ("", "/absolute", "../escape", "a/../b"))
@@ -48,3 +52,27 @@ def test_derived_artifact_contract_bounds_long_node_paths() -> None:
     assert len(contract.output_path) <= 180
     assert len(contract.findings_path) <= 180
     assert contract.log_path == f"{contract.stage_path}/logs"
+
+
+@pytest.mark.parametrize("available", [1, 3, 7, 8, 9])
+def test_bounded_artifact_fallback_respects_remaining_suffix_budget(
+    available: int,
+) -> None:
+    suffix = "x" * (180 - available)
+    assert bounded_artifact_name("-._" * 100, suffix) == "artifact"[:available] + suffix
+    assert (
+        bounded_artifact_name("prefix" * 100, suffix)
+        == ("prefix" * 100)[:available] + suffix
+    )
+
+
+@pytest.mark.parametrize("length", [180, 181])
+def test_bounded_artifact_rejects_oversized_suffix(length: int) -> None:
+    with pytest.raises(
+        ValueError, match="Generated suffix exceeds path component budget."
+    ):
+        bounded_artifact_name("prefix", "x" * length)
+
+
+def test_review_audit_directory_preserves_persisted_spelling() -> None:
+    assert build_review_audit_directory_name(2) == "review-audit-round-2"

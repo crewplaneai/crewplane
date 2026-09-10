@@ -116,23 +116,25 @@ def test_snapshot_workspace_preparation_failure_removes_workspace_path(
     assert not workspace_path.exists()
 
 
+@pytest.mark.parametrize("kind", ["snapshot", "worktree"])
 @pytest.mark.parametrize("collision_kind", ["directory", "dangling_symlink"])
-def test_snapshot_workspace_collision_is_retained_without_removal(
+def test_workspace_collision_is_retained_without_removal(
     tmp_path: Path,
     collision_kind: str,
+    kind: str,
 ) -> None:
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
-    plan = workspace_plan(repo, cache_root, cleanup_on_success=False)
+    plan = workspace_plan(repo, cache_root, cleanup_on_success=False, kind=kind)
     output = workspace_output_manager(tmp_path, repo)
     stage_dir = output.create_node_dir(node_artifact_request("implement"))
     source = plan.workspace_source
     assert source is not None
     workspace_path = (
         cache_root
-        / "snapshots"
+        / ("snapshots" if kind == "snapshot" else "workspaces")
         / source.repository_id
         / plan.run_key_name
         / invocation_slug("implement", "alpha", None, 1)
@@ -148,7 +150,7 @@ def test_snapshot_workspace_collision_is_retained_without_removal(
         except OSError:
             pytest.skip("symlink creation is unavailable")
 
-    with pytest.raises(RuntimeError, match="Workspace path already exists"):
+    with pytest.raises(RuntimeError, match="already exists"):
         prepare_invocation_workspace(
             workspace_invocation_request(plan, output),
             workspace_invocation_context(),
@@ -291,3 +293,43 @@ def test_snapshot_workspace_preparation_cleanup_failure_notes_primary_error(
 
 def _exception_notes_contain(exc: BaseException, expected: str) -> bool:
     return any(expected in note for note in getattr(exc, "__notes__", ()))
+
+
+@pytest.mark.parametrize("kind", ["snapshot", "worktree"])
+def test_unmaterialized_state_write_failure_preserves_primary_exception(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=False, kind=kind)
+    output = workspace_output_manager(tmp_path, repo)
+    stage_dir = output.create_node_dir(node_artifact_request("implement"))
+    failure = RuntimeError("preparation stopped")
+
+    def fail_preparation(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise failure
+
+    def fail_state_write(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise OSError("write denied")
+
+    module, operation = (
+        (workspace_service_snapshot, "create_snapshot_workspace")
+        if kind == "snapshot"
+        else (workspace_service_worktree, "materialize_worktree_workspace")
+    )
+    monkeypatch.setattr(module, operation, fail_preparation)
+    monkeypatch.setattr(
+        workspace_service_common, "update_workspace_state", fail_state_write
+    )
+    with pytest.raises(RuntimeError, match="preparation stopped") as exc_info:
+        prepare_invocation_workspace(
+            workspace_invocation_request(plan, output), workspace_invocation_context()
+        )
+    assert exc_info.value is failure
+    assert failure.__notes__ == [
+        "Workspace failure-state recording after preparation failure failed: write denied"
+    ] * (2 if kind == "snapshot" else 1)
+    assert read_json_object(stage_dir / "workspace-state.json")["status"] == "running"

@@ -7,7 +7,9 @@ import re
 from crewplane.architecture.contracts import artifacts as _artifact_contracts
 from crewplane.core.workflow.keywords import ProviderRole
 
-MAX_GENERATED_PATH_COMPONENT_CHARS = 180
+MAX_GENERATED_PATH_COMPONENT_CHARS = (
+    _artifact_contracts.MAX_ARTIFACT_PATH_COMPONENT_CHARS
+)
 MAX_GENERATED_FILE_RESULT_DIR_CHARS = 120
 GENERATED_FILE_RESULT_DIR_HASH_CHARS = 12
 
@@ -21,7 +23,7 @@ safe_stage_name = _artifact_contracts.safe_stage_name
 
 
 def workflow_identity_hash(workflow_identity: str) -> str:
-    return _short_hash(workflow_identity)
+    return _artifact_contracts.artifact_name_hash(workflow_identity)
 
 
 def build_lock_name(
@@ -30,12 +32,16 @@ def build_lock_name(
     workflow_signature: str,
 ) -> str:
     suffix = f"--{workflow_identity_hash(workflow_identity)}--{workflow_signature}.lock"
-    return _bounded_with_suffix(safe_artifact_name(workflow_name), suffix)
+    return _artifact_contracts.bounded_artifact_name(
+        safe_artifact_name(workflow_name), suffix
+    )
 
 
 def build_run_key_name(workflow_name: str, run_id: str) -> str:
-    suffix = f"--{_short_hash(workflow_name)}-{run_id}"
-    return _bounded_with_suffix(safe_artifact_name(workflow_name), suffix)
+    suffix = f"--{_artifact_contracts.artifact_name_hash(workflow_name)}-{run_id}"
+    return _artifact_contracts.bounded_artifact_name(
+        safe_artifact_name(workflow_name), suffix
+    )
 
 
 def validate_run_key_name(run_key_name: str) -> str:
@@ -49,8 +55,8 @@ def validate_run_key_name(run_key_name: str) -> str:
 
 
 def build_node_state_filename(node_id: str) -> str:
-    suffix = f"--{_short_hash(node_id)}.json"
-    return _bounded_with_suffix(safe_stage_name(node_id), suffix)
+    suffix = f"--{_artifact_contracts.artifact_name_hash(node_id)}.json"
+    return _artifact_contracts.bounded_artifact_name(safe_stage_name(node_id), suffix)
 
 
 def build_provider_process_state_filename(
@@ -75,14 +81,16 @@ def build_provider_process_state_filename(
         ensure_ascii=True,
         separators=(",", ":"),
     )
-    suffix = f"--{_short_hash(identity)}.json"
+    suffix = f"--{_artifact_contracts.artifact_name_hash(identity)}.json"
     prefix = safe_stage_name(f"{node_id}-{task_id}")
-    return _bounded_with_suffix(prefix, suffix)
+    return _artifact_contracts.bounded_artifact_name(prefix, suffix)
 
 
 def build_workspace_export_filename(logical_worktree_name: str) -> str:
-    suffix = f"--{_short_hash(logical_worktree_name)}.json"
-    return _bounded_with_suffix(safe_artifact_name(logical_worktree_name), suffix)
+    suffix = f"--{_artifact_contracts.artifact_name_hash(logical_worktree_name)}.json"
+    return _artifact_contracts.bounded_artifact_name(
+        safe_artifact_name(logical_worktree_name), suffix
+    )
 
 
 def build_generated_file_result_dir_name(name: str) -> str:
@@ -109,18 +117,6 @@ def build_log_filename(
     safe_name = safe_artifact_name(task_id)
     if len(f"{safe_name}{suffix}") <= MAX_GENERATED_PATH_COMPONENT_CHARS:
         return f"{safe_name}{suffix}"
-    return _bounded_with_suffix(safe_name, f"--{_short_hash(task_id)}{suffix}")
-
-
-def _bounded_with_suffix(safe_prefix: str, suffix: str) -> str:
-    if len(suffix) >= MAX_GENERATED_PATH_COMPONENT_CHARS:
-        raise ValueError("Generated suffix exceeds path component budget.")
-    available = MAX_GENERATED_PATH_COMPONENT_CHARS - len(suffix)
-    prefix = safe_prefix[:available].rstrip("-._")
-    if not prefix:
-        prefix = "artifact"[:available]
-    return f"{prefix}{suffix}"
-
-
-def _short_hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    return _artifact_contracts.bounded_artifact_name(
+        safe_name, f"--{_artifact_contracts.artifact_name_hash(task_id)}{suffix}"
+    )

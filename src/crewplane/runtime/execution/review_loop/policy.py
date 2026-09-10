@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.contracts.artifacts import build_review_audit_directory_name
 from crewplane.architecture.safe_files import ensure_contained_directory
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -44,7 +45,7 @@ def audit_round_dir(node_dir: Path, audit_rounds: int, audit_round_num: int) -> 
         return node_dir
     return ensure_contained_directory(
         node_dir,
-        f"review-audit-round-{audit_round_num}",
+        build_review_audit_directory_name(audit_round_num),
     )
 
 

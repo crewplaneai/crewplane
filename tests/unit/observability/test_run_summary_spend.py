@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+from crewplane.architecture.contracts import ProviderTokenUsage
+from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
 from crewplane.observability.events import event_from_record
 from crewplane.observability.run_summary.spend import (
     invocation_usage_summaries,
@@ -83,3 +87,21 @@ def test_spend_helpers_filter_nonterminal_and_missing_attempt_events() -> None:
     assert spend_totals(summaries) is not None
     assert spend_totals(()) is None
     assert provider_usage_rollups(summaries)[0].provider == "codex"
+
+
+@pytest.mark.parametrize("bucket", TOKEN_BUCKETS)
+@pytest.mark.parametrize("value", [None, 0, 7])
+def test_every_serialized_token_bucket_reaches_aggregation(bucket, value) -> None:
+    usage = ProviderTokenUsage(**{bucket: value})
+    events = [
+        event_from_record(invocation_record(tokens=usage.as_dict())) for _ in range(2)
+    ]
+    assert all(event is not None for event in events)
+    aggregate = provider_token_aggregates(events)
+    assert aggregate.overall is not None
+    assert aggregate.overall.report_count == 2
+    for result in (aggregate.overall, *aggregate.providers):
+        assert getattr(result, bucket) == (None if value is None else 2 * value)
+        assert all(
+            getattr(result, other) is None for other in TOKEN_BUCKETS if other != bucket
+        )

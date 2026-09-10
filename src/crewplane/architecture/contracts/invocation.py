@@ -82,6 +82,17 @@ def _is_positive_integer(value: object) -> bool:
     return cast(int, value) > 0
 
 
+TokenBucket = Literal[
+    "input",
+    "cached_input",
+    "cache_write",
+    "output",
+    "reasoning",
+    "total",
+]
+TOKEN_BUCKETS: tuple[TokenBucket, ...] = get_args(TokenBucket)
+
+
 @dataclass(frozen=True)
 class ProviderTokenUsage:
     """Provider-reported token buckets, where ``None`` means unknown."""

@@ -200,11 +200,28 @@ def test_validate_frontier_rejects_missing_snapshot_provider_state(
     assert frontier.resumed_node_ids == ()
 
 
+@pytest.mark.parametrize("applied", [True, False, None, 0, 1, "true"])
 def test_validate_frontier_accepts_all_failed_snapshot_workspace_invocations(
     tmp_path,
+    applied,
 ) -> None:
     source = source_record(tmp_path)
-    plan = make_plan()
+    plan = make_plan().model_copy(
+        update={
+            "runtime_config_snapshot": {
+                "invoker": {
+                    "implementation": "cli",
+                    "capabilities": {
+                        "workspace": {
+                            "honors_cwd": True,
+                            "launch_mode": "runtime_command_runner",
+                            "controlled_child_environment": True,
+                        }
+                    },
+                }
+            }
+        }
+    )
     policy = workspace_selection_record(
         enabled=True,
         kind="snapshot",
@@ -245,6 +262,7 @@ def test_validate_frontier_accepts_all_failed_snapshot_workspace_invocations(
         )
         payload = snapshot_workspace_state_payload(source, plan, task_id)
         payload["status"] = "failed"
+        payload["child_process_environment"] = {"required": True, "applied": applied}
         payload.pop("result")
         (stage_dir / f"workspace-state-{task_id}.json").write_text(
             json.dumps(payload),
@@ -254,7 +272,7 @@ def test_validate_frontier_accepts_all_failed_snapshot_workspace_invocations(
 
     frontier = validate_resume_frontier(source, plan)
 
-    assert frontier.resumed_node_ids == ("a",)
+    assert frontier.resumed_node_ids == (("a",) if isinstance(applied, bool) else ())
 
 
 @pytest.mark.parametrize("discarded", [False, True])

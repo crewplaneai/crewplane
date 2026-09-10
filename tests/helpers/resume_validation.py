@@ -16,7 +16,7 @@ from crewplane.core.preflight.models import (
     ProviderRecord,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.preflight.workspace.observability import (
+from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
 )
 from crewplane.core.workflow.keywords import ProviderRole

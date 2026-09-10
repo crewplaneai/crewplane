@@ -8,7 +8,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.preflight.workspace.observability import (
+from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
 )
 from crewplane.core.workspace.cache import workspace_cache_root
@@ -77,6 +77,18 @@ def unmaterialized_workspace_retention(planned_workspace_path: Path) -> str:
     if planned_workspace_path.exists() or planned_workspace_path.is_symlink():
         return "retained"
     return "deleted"
+
+
+def record_failed_unmaterialized_preparation(
+    state_path: Path,
+    planned_workspace_path: Path,
+    failure: Exception,
+) -> None:
+    record_failed_preparation_state(
+        state_path,
+        failure,
+        workspace_retention=unmaterialized_workspace_retention(planned_workspace_path),
+    )
 
 
 def record_failed_preparation_state(

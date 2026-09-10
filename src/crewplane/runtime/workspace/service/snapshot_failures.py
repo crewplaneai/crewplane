@@ -10,24 +10,11 @@ from crewplane.runtime.workspace.state import (
 
 from .common import (
     record_failed_preparation_state,
+    record_failed_unmaterialized_preparation,
     remove_workspace_after_failure,
     trusted_workspace_state_payload,
-    unmaterialized_workspace_retention,
 )
 from .types import SnapshotPreparationPlan
-
-
-def record_failed_unmaterialized_snapshot_preparation(
-    plan: SnapshotPreparationPlan,
-    failure: Exception,
-) -> None:
-    record_failed_preparation_state(
-        plan.state_path,
-        failure,
-        workspace_retention=unmaterialized_workspace_retention(
-            plan.planned_workspace_path,
-        ),
-    )
 
 
 def record_failed_materialized_snapshot_preparation(
@@ -67,4 +54,6 @@ def terminalize_unhandled_snapshot_materialization_failure(
         return
     if payload.get("status") != "running":
         return
-    record_failed_unmaterialized_snapshot_preparation(plan, failure)
+    record_failed_unmaterialized_preparation(
+        plan.state_path, plan.planned_workspace_path, failure
+    )

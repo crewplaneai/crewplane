@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 from crewplane.architecture.contracts import (
@@ -19,6 +21,8 @@ from crewplane.architecture.contracts import (
     normalize_log_presentation_profile,
     validate_log_presentation_descriptor,
 )
+from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS, TokenBucket
+from crewplane.core.config import TokenPricing
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     ExecutionEventContext,
@@ -327,3 +331,13 @@ def test_invocation_event_serializes_nullable_provider_report_count(
         assert "provider_usage_report_count" not in record
     else:
         assert record["provider_usage_report_count"] == report_count
+
+
+def test_token_bucket_order_matches_serialized_and_priced_fields() -> None:
+    expected = ("input", "cached_input", "cache_write", "output", "reasoning", "total")
+    assert expected == TOKEN_BUCKETS
+    assert get_args(TokenBucket) == expected
+    assert tuple(ProviderTokenUsage().as_dict()) == expected
+    assert tuple(TokenPricing().as_dict()) == expected
+    for bucket in expected:
+        assert TokenPricing(**{bucket: 0}).configured_buckets() == (bucket,)

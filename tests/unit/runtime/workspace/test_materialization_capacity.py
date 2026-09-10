@@ -668,3 +668,41 @@ def _plan_with_disk_thresholds(
     workspace["max_concurrent_materializations"] = 2
     runtime_snapshot["workspace"] = workspace
     return plan.model_copy(update={"runtime_config_snapshot": runtime_snapshot})
+
+
+@pytest.mark.parametrize("threshold", [None, False, True, -1, 0, 10**30, 1.0, "1"])
+def test_capacity_threshold_boundary_releases_reservations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    threshold: object,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=True)
+    snapshot = dict(plan.runtime_config_snapshot)
+    snapshot["workspace"] = {
+        **snapshot["workspace"],
+        "disk": {"fail_free_bytes": threshold},
+    }
+    plan = plan.model_copy(update={"runtime_config_snapshot": snapshot})
+    source = plan.workspace_source
+    assert source is not None
+
+    def free_space(path: Path) -> SimpleNamespace:
+        del path
+        return SimpleNamespace(free=estimated_checkout_size(source))
+
+    monkeypatch.setattr(
+        "crewplane.runtime.workspace.materialization.shutil.disk_usage", free_space
+    )
+    limiter = MaterializationLimiter.from_plan(plan)
+    request = MaterializationCapacityRequest(tmp_path / "cache" / "checkout", source)
+    if type(threshold) is int and threshold > 0:
+        with (
+            pytest.raises(RuntimeError, match="fail_free_bytes"),
+            workspace_materialization_slot(plan, limiter, request),
+        ):
+            pytest.fail("capacity rejection expected")
+    else:
+        with workspace_materialization_slot(plan, limiter, request):
+            assert limiter.admitted_estimated_bytes > 0
+    assert limiter.admitted_estimated_bytes == 0

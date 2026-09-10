@@ -15,10 +15,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
-from crewplane.core.preflight.workspace.observability import (
+from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
-    node_result_descriptor,
 )
+from crewplane.core.preflight.workspace.observability import node_result_descriptor
 
 from ..atomic import atomic_write_json
 from ..naming import build_node_state_filename
