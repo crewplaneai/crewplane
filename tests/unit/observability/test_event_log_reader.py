@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.architecture.contracts import EventType
+from crewplane.architecture.contracts import EventType, TopologyNode, WorkflowTopology
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     ExecutionEventContext,
+    apply_event,
+    build_initial_state,
     event_from_line,
     event_from_record,
     execution_event_log_record,
@@ -35,6 +37,75 @@ def invocation_record(report_count: object = 2) -> dict[str, object]:
             "total": 13,
         },
     }
+
+
+def test_event_reader_rejects_invalid_utf8_log(tmp_path: Path) -> None:
+    log = tmp_path / "events.ndjson"
+    log.write_bytes(b"\xff\xfe\n")
+
+    assert read_event_log(log) == []
+
+
+def test_event_reader_rejects_invalid_provider_role() -> None:
+    assert event_from_record({**invocation_record(), "role": "unknown-role"}) is None
+
+
+def test_event_reader_ignores_boolean_cost() -> None:
+    event = event_from_record({**invocation_record(), "configured_cost_usd": True})
+
+    assert event is not None
+    assert event.payload.configured_cost_usd is None
+
+
+@pytest.mark.parametrize("missing", ["node_id", "task_id", "provider", "role"])
+def test_dashboard_rejects_incomplete_invocation_identity(missing: str) -> None:
+    record = {
+        **invocation_record(),
+        "event_type": "invocation_started",
+        "node_id": "node.a",
+        "task_id": "task",
+        "provider": "mock",
+        "role": "executor",
+    }
+    record.pop(missing)
+    event = event_from_record(record)
+    assert event is not None
+    state = build_initial_state(
+        WorkflowTopology("workflow", (TopologyNode("node.a", "parallel"),)), "run-1"
+    )
+
+    with pytest.raises(ValueError, match=f"missing {missing}"):
+        apply_event(state, event)
+
+    assert state.nodes["node.a"].invocations == {}
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("workflow_name", "other", "workflow mismatch"),
+        ("node_id", "unknown", "unknown node"),
+    ],
+)
+def test_dashboard_rejects_events_for_unrelated_workflow_or_node(
+    field: str, value: str, message: str
+) -> None:
+    record = {
+        **invocation_record(),
+        "role": "executor",
+        "task_id": "task",
+        field: value,
+    }
+    event = event_from_record(record)
+    assert event is not None
+    state = build_initial_state(
+        WorkflowTopology("workflow", (TopologyNode("node.a", "parallel"),)), "run-1"
+    )
+
+    with pytest.raises(ValueError, match=message):
+        apply_event(state, event)
+
+    assert state.nodes["node.a"].invocations == {}
 
 
 @pytest.mark.parametrize("report_count", [None, 0, 2])

@@ -1,71 +1,25 @@
 import asyncio
-import json
 import os
-import signal
 import sys
-import time
 import unittest
-from contextlib import suppress
-from dataclasses import replace
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+import pytest
+
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
-    CommandResult,
     InvocationContext,
     InvocationProcessEvent,
-    InvocationSourceContext,
-    InvocationWorkspaceContext,
-    InvocationWorktreeContract,
 )
-from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invocation.command import (
-    build_invocation_runtime,
-    cleanup_structured_output_file,
-    prepare_runtime_for_attempt,
     run_command_once,
-    run_invocation_attempt,
 )
-from crewplane.runtime.agent.process.drain import (
-    ProcessDrainError,
-    ProcessDrainEvidence,
-)
-from crewplane.runtime.agent.process.stream_capture import ProcessOutputCapture
 from crewplane.runtime.agent.workspace_environment import workspace_child_environment
-from crewplane.runtime.workspace.mutator_fence import (
-    fence_workspace_mutator,
-    release_workspace_mutator,
-    workspace_mutator_is_fenced,
+from tests.integration.runtime.agent.invocation_command_support import (
+    command_workspace_context,
 )
-from crewplane.version import SCHEMA_VERSION
-
-
-def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:
-    plan = build_cli_invocation_plan(
-        AgentConfig(
-            cli_cmd=["codex", "exec"],
-            provider_kind="codex",
-            default_model="gpt-5.5",
-            prompt_transport_arg="-",
-        ),
-        "gpt-5.5",
-        "prompt",
-        Path("output.txt"),
-    )
-    runtime = build_invocation_runtime(plan)
-    assert runtime.structured_output_file is not None
-    try:
-        runtime.structured_output_file.write_text("stale", encoding="utf-8")
-
-        prepare_runtime_for_attempt(runtime)
-
-        assert not runtime.structured_output_file.exists()
-    finally:
-        cleanup_structured_output_file(runtime.structured_output_file)
 
 
 class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
@@ -92,222 +46,16 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             idle_timeout_seconds=None,
         )
         try:
-            self.assertEqual([event.status for event in events], ["started", "exited"])
-            self.assertEqual(events[0].pid, events[1].pid)
-            self.assertEqual([event.attempt for event in events], [1, 1])
-            self.assertIsNone(events[0].returncode)
-            self.assertEqual(events[1].returncode, 0)
+            assert [event.status for event in events] == ["started", "exited"]
+            assert events[0].pid == events[1].pid
+            assert [event.attempt for event in events] == [1, 1]
+            assert events[0].returncode is None
+            assert events[1].returncode == 0
             expected_group_id = events[0].pid if os.name == "posix" else None
-            self.assertEqual(events[0].process_group_id, expected_group_id)
-            self.assertEqual(events[1].process_group_id, expected_group_id)
+            assert events[0].process_group_id == expected_group_id
+            assert events[1].process_group_id == expected_group_id
         finally:
             result.cleanup_stream_files()
-
-    async def test_cancelled_command_records_confirmed_process_drain(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            state_path = Path(temp_dir) / "workspace-state.json"
-            state_path.write_text(
-                json.dumps({"process_drain": {"status": "not_started"}}),
-                encoding="utf-8",
-            )
-            fence_workspace_mutator(state_path)
-            events: list[InvocationProcessEvent] = []
-            context = _workspace_invocation_context(Path.cwd(), lambda: None)
-            assert context.workspace is not None
-            context = replace(
-                context,
-                process_event_sink=events.append,
-                workspace=replace(
-                    context.workspace,
-                    workspace_state_path=state_path,
-                ),
-            )
-            task = asyncio.create_task(
-                run_command_once(
-                    cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
-                    stdin_data=None,
-                    log_file=None,
-                    append_log=False,
-                    log_header=None,
-                    cwd=Path.cwd(),
-                    invocation_context=context,
-                    idle_timeout_seconds=None,
-                )
-            )
-            try:
-                async with asyncio.timeout(5.0):
-                    while not events:
-                        if task.done():
-                            await task
-                            self.fail("Command completed without a process event.")
-                        await asyncio.sleep(0.01)
-
-                task.cancel()
-                with self.assertRaises(asyncio.CancelledError):
-                    await task
-
-                payload = json.loads(state_path.read_text(encoding="utf-8"))
-                self.assertEqual(payload["process_drain"]["status"], "confirmed")
-                self.assertFalse(workspace_mutator_is_fenced(state_path))
-            finally:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
-                release_workspace_mutator(state_path)
-
-    async def test_cancelled_command_records_unresolved_process_drain(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            state_path = Path(temp_dir) / "workspace-state.json"
-            state_path.write_text(
-                json.dumps({"process_drain": {"status": "not_started"}}),
-                encoding="utf-8",
-            )
-            collection_started = asyncio.Event()
-            context = _workspace_invocation_context(Path.cwd(), lambda: None)
-            assert context.workspace is not None
-            context = replace(
-                context,
-                workspace=replace(
-                    context.workspace,
-                    workspace_state_path=state_path,
-                ),
-            )
-
-            async def block_collection(*args: object, **kwargs: object) -> None:
-                del args, kwargs
-                collection_started.set()
-                await asyncio.Event().wait()
-
-            async def fail_drain(
-                process: asyncio.subprocess.Process,
-                process_group_id: int | None,
-                diagnostic_sink: object,
-            ) -> None:
-                del diagnostic_sink
-                process.kill()
-                await process.wait()
-                raise ProcessDrainError(
-                    ProcessDrainEvidence(
-                        pid=process.pid,
-                        process_group_id=process_group_id,
-                        leader_stopped=True,
-                        process_group_stopped=False,
-                    ),
-                    "provider process group remained live",
-                )
-
-            with (
-                patch(
-                    "crewplane.runtime.agent.invocation.command."
-                    "write_stdin_and_collect_output",
-                    new=block_collection,
-                ),
-                patch(
-                    "crewplane.runtime.agent.invocation.command.reap_failed_process",
-                    new=fail_drain,
-                ),
-            ):
-                task = asyncio.create_task(
-                    run_command_once(
-                        cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
-                        stdin_data=None,
-                        log_file=None,
-                        append_log=False,
-                        log_header=None,
-                        cwd=Path.cwd(),
-                        invocation_context=context,
-                        idle_timeout_seconds=None,
-                    )
-                )
-                await asyncio.wait_for(collection_started.wait(), timeout=1.0)
-                task.cancel()
-                with self.assertRaises(asyncio.CancelledError) as caught:
-                    await task
-
-            self.assertIn(
-                "provider process group remained live",
-                getattr(caught.exception, "__notes__", ()),
-            )
-            payload = json.loads(state_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["process_drain"]["status"], "unresolved")
-            self.assertTrue(workspace_mutator_is_fenced(state_path))
-            release_workspace_mutator(state_path)
-
-    async def test_process_drain_write_failure_preserves_error_and_fence(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            state_path = Path(temp_dir) / "workspace-state.json"
-            state_path.write_text(
-                json.dumps({"process_drain": {"status": "not_started"}}),
-                encoding="utf-8",
-            )
-            context = _workspace_invocation_context(Path.cwd(), lambda: None)
-            assert context.workspace is not None
-            context = replace(
-                context,
-                workspace=replace(
-                    context.workspace,
-                    workspace_state_path=state_path,
-                ),
-            )
-
-            async def fail_collection(*args: object, **kwargs: object) -> None:
-                del args, kwargs
-                raise RuntimeError("provider output collection failed")
-
-            async def fail_drain(
-                process: asyncio.subprocess.Process,
-                process_group_id: int | None,
-                diagnostic_sink: object,
-            ) -> None:
-                del diagnostic_sink
-                process.kill()
-                await process.wait()
-                raise ProcessDrainError(
-                    ProcessDrainEvidence(
-                        pid=process.pid,
-                        process_group_id=process_group_id,
-                        leader_stopped=True,
-                        process_group_stopped=False,
-                    ),
-                    "provider process group remained live",
-                )
-
-            with (
-                patch(
-                    "crewplane.runtime.agent.invocation.command."
-                    "write_stdin_and_collect_output",
-                    new=fail_collection,
-                ),
-                patch(
-                    "crewplane.runtime.agent.invocation.command.reap_failed_process",
-                    new=fail_drain,
-                ),
-                patch(
-                    "crewplane.runtime.workspace.state_evidence."
-                    "record_workspace_process_drain",
-                    side_effect=OSError("transient state write failure"),
-                ),
-                self.assertRaises(ProcessDrainError) as caught,
-            ):
-                await run_command_once(
-                    cmd=[sys.executable, "-c", "import time; time.sleep(30)"],
-                    stdin_data=None,
-                    log_file=None,
-                    append_log=False,
-                    log_header=None,
-                    cwd=Path.cwd(),
-                    invocation_context=context,
-                    idle_timeout_seconds=None,
-                )
-
-            self.assertIn(
-                "Workspace process-drain evidence persistence failed: "
-                "transient state write failure",
-                getattr(caught.exception, "__notes__", ()),
-            )
-            payload = json.loads(state_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["process_drain"]["status"], "not_started")
-            self.assertTrue(workspace_mutator_is_fenced(state_path))
-            release_workspace_mutator(state_path)
 
     async def test_run_command_once_disables_unsupported_process_groups(self) -> None:
         events: list[InvocationProcessEvent] = []
@@ -334,289 +82,10 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 idle_timeout_seconds=None,
             )
         try:
-            self.assertEqual(result.returncode, 0)
-            self.assertEqual([event.process_group_id for event in events], [None, None])
+            assert result.returncode == 0
+            assert [event.process_group_id for event in events] == [None, None]
         finally:
             result.cleanup_stream_files()
-
-    async def test_process_start_reporting_failure_reaps_spawned_process(
-        self,
-    ) -> None:
-        events: list[InvocationProcessEvent] = []
-        created_processes: list[asyncio.subprocess.Process] = []
-        workspace_environment_applied_calls = 0
-        original_create_subprocess_exec = asyncio.create_subprocess_exec
-
-        async def tracking_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
-            process = await original_create_subprocess_exec(*args, **kwargs)
-            created_processes.append(process)
-            return process
-
-        def record_process_event(event: InvocationProcessEvent) -> None:
-            events.append(event)
-            if event.status == "started":
-                raise OSError("cannot record process")
-
-        def record_workspace_environment_applied() -> None:
-            nonlocal workspace_environment_applied_calls
-            workspace_environment_applied_calls += 1
-
-        context = replace(
-            _workspace_invocation_context(
-                Path.cwd(),
-                record_workspace_environment_applied,
-            ),
-            process_event_sink=record_process_event,
-        )
-
-        with (
-            patch(
-                "crewplane.runtime.agent.invocation.command.asyncio.create_subprocess_exec",
-                new=tracking_create_subprocess_exec,
-            ),
-            self.assertRaisesRegex(RuntimeError, "process started reporting failed"),
-        ):
-            await run_command_once(
-                cmd=[sys.executable, "-c", "import time; time.sleep(10)"],
-                stdin_data=None,
-                log_file=None,
-                append_log=False,
-                log_header=None,
-                cwd=Path.cwd(),
-                invocation_context=context,
-                idle_timeout_seconds=None,
-                child_environment=ChildProcessEnvironment(set={}, unset=()),
-            )
-
-        self.assertEqual(len(created_processes), 1)
-        self.assertIsNotNone(created_processes[0].returncode)
-        self.assertEqual([event.status for event in events], ["started", "exited"])
-        self.assertIsNotNone(events[1].returncode)
-        self.assertEqual(workspace_environment_applied_calls, 1)
-
-    async def test_process_exit_reporting_does_not_mask_process_failure(self) -> None:
-        def record_process_event(event: InvocationProcessEvent) -> None:
-            if event.status == "exited":
-                raise OSError("cannot record exit")
-
-        context = InvocationContext(
-            node_id="node.a",
-            task_id="generic_executor_0",
-            provider="generic",
-            role=ProviderRole.EXECUTOR,
-            process_event_sink=record_process_event,
-        )
-
-        with (
-            patch(
-                "crewplane.runtime.agent.invocation.command.open_log_handle",
-                side_effect=OSError("cannot open log"),
-            ),
-            self.assertRaisesRegex(
-                RuntimeError, "Execution error: cannot open log"
-            ) as caught,
-        ):
-            await run_command_once(
-                cmd=[sys.executable, "-c", "import time; time.sleep(10)"],
-                stdin_data=None,
-                log_file=Path("provider.log"),
-                append_log=False,
-                log_header=None,
-                cwd=Path.cwd(),
-                invocation_context=context,
-                idle_timeout_seconds=None,
-            )
-
-        self.assertTrue(
-            any(
-                "Provider process exit reporting failed" in note
-                for note in caught.exception.__notes__
-            )
-        )
-
-    async def test_drain_failure_precedes_exit_reporting_failure(self) -> None:
-        def record_process_event(event: InvocationProcessEvent) -> None:
-            if event.status == "exited":
-                raise OSError("cannot record exit")
-
-        async def fail_collection(*args: object, **kwargs: object) -> None:
-            del args, kwargs
-            raise RuntimeError("provider output collection failed")
-
-        async def fail_drain(
-            process: asyncio.subprocess.Process,
-            process_group_id: int | None,
-            diagnostic_sink: object,
-        ) -> None:
-            del diagnostic_sink
-            process.kill()
-            await process.wait()
-            raise ProcessDrainError(
-                ProcessDrainEvidence(
-                    pid=process.pid,
-                    process_group_id=process_group_id,
-                    leader_stopped=True,
-                    process_group_stopped=False,
-                ),
-                "provider process group remained live",
-            )
-
-        context = InvocationContext(
-            node_id="node.a",
-            task_id="generic_executor_0",
-            provider="generic",
-            role=ProviderRole.EXECUTOR,
-            process_event_sink=record_process_event,
-        )
-
-        with (
-            patch(
-                "crewplane.runtime.agent.invocation.command."
-                "write_stdin_and_collect_output",
-                new=fail_collection,
-            ),
-            patch(
-                "crewplane.runtime.agent.invocation.command.reap_failed_process",
-                new=fail_drain,
-            ),
-            self.assertRaises(ProcessDrainError) as caught,
-        ):
-            await run_command_once(
-                cmd=[sys.executable, "-c", "import time; time.sleep(10)"],
-                stdin_data=None,
-                log_file=None,
-                append_log=False,
-                log_header=None,
-                cwd=Path.cwd(),
-                invocation_context=context,
-                idle_timeout_seconds=None,
-            )
-
-        self.assertEqual(str(caught.exception), "provider process group remained live")
-        self.assertIsInstance(caught.exception.__cause__, RuntimeError)
-        self.assertEqual(
-            str(caught.exception.__cause__),
-            "provider output collection failed",
-        )
-        self.assertEqual(
-            caught.exception.__notes__,
-            [
-                "Provider process exit reporting failed: Provider process exited "
-                "reporting failed: cannot record exit"
-            ],
-        )
-
-    async def test_file_not_found_after_spawn_reaps_process(self) -> None:
-        created_processes: list[asyncio.subprocess.Process] = []
-        original_create_subprocess_exec = asyncio.create_subprocess_exec
-
-        async def tracking_create_subprocess_exec(*args, **kwargs):  # type: ignore[no-untyped-def]
-            process = await original_create_subprocess_exec(*args, **kwargs)
-            created_processes.append(process)
-            return process
-
-        with (
-            patch(
-                "crewplane.runtime.agent.invocation.command.asyncio.create_subprocess_exec",
-                new=tracking_create_subprocess_exec,
-            ),
-            patch(
-                "crewplane.runtime.agent.invocation.command.open_log_handle",
-                side_effect=FileNotFoundError("log directory disappeared"),
-            ),
-            self.assertRaisesRegex(
-                RuntimeError,
-                "Execution error: log directory disappeared",
-            ),
-        ):
-            await run_command_once(
-                cmd=[sys.executable, "-c", "import time; time.sleep(10)"],
-                stdin_data=None,
-                log_file=Path("provider.log"),
-                append_log=False,
-                log_header=None,
-                cwd=Path.cwd(),
-                invocation_context=None,
-                idle_timeout_seconds=None,
-            )
-
-        self.assertEqual(len(created_processes), 1)
-        self.assertIsNotNone(created_processes[0].returncode)
-
-    async def test_process_exit_reporting_failure_cleans_stream_capture(self) -> None:
-        cleanup_calls = 0
-        original_cleanup = ProcessOutputCapture.cleanup
-
-        def record_process_event(event: InvocationProcessEvent) -> None:
-            if event.status == "exited":
-                raise OSError("cannot record exit")
-
-        def track_cleanup(capture: ProcessOutputCapture) -> None:
-            nonlocal cleanup_calls
-            cleanup_calls += 1
-            original_cleanup(capture)
-
-        context = InvocationContext(
-            node_id="node.a",
-            task_id="generic_executor_0",
-            provider="generic",
-            role=ProviderRole.EXECUTOR,
-            process_event_sink=record_process_event,
-        )
-
-        with (
-            patch.object(ProcessOutputCapture, "cleanup", new=track_cleanup),
-            self.assertRaisesRegex(RuntimeError, "process exited reporting failed"),
-        ):
-            await run_command_once(
-                cmd=[sys.executable, "-c", "print('ok')"],
-                stdin_data=None,
-                log_file=None,
-                append_log=False,
-                log_header=None,
-                cwd=Path.cwd(),
-                invocation_context=context,
-                idle_timeout_seconds=None,
-            )
-
-        self.assertEqual(cleanup_calls, 1)
-
-    async def test_cancellation_reports_process_exit_after_reaping(self) -> None:
-        events: list[InvocationProcessEvent] = []
-        process_started = asyncio.Event()
-
-        def record_process_event(event: InvocationProcessEvent) -> None:
-            events.append(event)
-            if event.status == "started":
-                process_started.set()
-
-        context = InvocationContext(
-            node_id="node.a",
-            task_id="generic_executor_0",
-            provider="generic",
-            role=ProviderRole.EXECUTOR,
-            process_event_sink=record_process_event,
-        )
-        invocation = asyncio.create_task(
-            run_command_once(
-                cmd=[sys.executable, "-c", "import time; time.sleep(10)"],
-                stdin_data=None,
-                log_file=None,
-                append_log=False,
-                log_header=None,
-                cwd=Path.cwd(),
-                invocation_context=context,
-                idle_timeout_seconds=None,
-            )
-        )
-        await asyncio.wait_for(process_started.wait(), timeout=1.0)
-
-        invocation.cancel()
-        with self.assertRaises(asyncio.CancelledError):
-            await invocation
-
-        self.assertEqual([event.status for event in events], ["started", "exited"])
-        self.assertIsNotNone(events[1].returncode)
 
     async def test_run_command_once_does_not_look_up_spawned_process_group(
         self,
@@ -640,165 +109,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.addCleanup(result.cleanup_stream_files)
-        self.assertEqual(result.returncode, 0)
-
-    async def test_normal_exit_kills_term_ignoring_process_group_member(
-        self,
-    ) -> None:
-        if os.name != "posix":
-            self.skipTest("process groups are POSIX-only")
-        events: list[InvocationProcessEvent] = []
-        diagnostics = []
-        context = InvocationContext(
-            node_id="node.a",
-            task_id="generic_executor_0",
-            provider="generic",
-            role=ProviderRole.EXECUTOR,
-            process_event_sink=events.append,
-            diagnostics=diagnostics.append,
-        )
-        with TemporaryDirectory(prefix="crewplane-process-drain-") as temp_dir:
-            child_pid_path = Path(temp_dir) / "child.pid"
-            child_script = (
-                "import os, signal, sys, time\n"
-                "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-                "open(sys.argv[1], 'w', encoding='utf-8').write(str(os.getpid()))\n"
-                "time.sleep(30)\n"
-            )
-            leader_script = (
-                "import subprocess, sys, time\n"
-                "path = sys.argv[1]\n"
-                "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
-                "while True:\n"
-                "    try:\n"
-                "        open(path, encoding='utf-8').read()\n"
-                "        break\n"
-                "    except FileNotFoundError:\n"
-                "        time.sleep(0.01)\n"
-                "print('leader exited')\n"
-            )
-
-            started_at = time.monotonic()
-            result = await asyncio.wait_for(
-                run_command_once(
-                    cmd=[
-                        sys.executable,
-                        "-c",
-                        leader_script,
-                        child_pid_path.as_posix(),
-                        child_script,
-                    ],
-                    stdin_data=None,
-                    log_file=None,
-                    append_log=False,
-                    log_header=None,
-                    cwd=Path.cwd(),
-                    invocation_context=context,
-                    idle_timeout_seconds=None,
-                ),
-                timeout=3.0,
-            )
-            child_pid = int(child_pid_path.read_text(encoding="utf-8"))
-            process_group_id = events[0].process_group_id
-            try:
-                self.assertLess(time.monotonic() - started_at, 3.0)
-                self.assertEqual(result.returncode, 0)
-                self.assertEqual(result.stdout_text.strip(), "leader exited")
-                self.assertIsNotNone(process_group_id)
-                self.assertTrue(
-                    any(
-                        diagnostic.operation == "process_pipe_drain_timeout"
-                        for diagnostic in diagnostics
-                    )
-                )
-                deadline = time.monotonic() + 1.0
-                while time.monotonic() < deadline:
-                    try:
-                        os.kill(child_pid, 0)
-                    except ProcessLookupError:
-                        break
-                    await asyncio.sleep(0.01)
-                else:
-                    self.fail("TERM-ignoring process-group member survived KILL")
-            finally:
-                result.cleanup_stream_files()
-                if process_group_id is not None:
-                    with suppress(ProcessLookupError):
-                        os.killpg(process_group_id, signal.SIGKILL)
-
-    async def test_normal_exit_fails_when_escaped_child_keeps_pipes_open(
-        self,
-    ) -> None:
-        if os.name != "posix":
-            self.skipTest("process groups are POSIX-only")
-        diagnostics = []
-        context = InvocationContext(
-            node_id="node.a",
-            task_id="generic_executor_0",
-            provider="generic",
-            role=ProviderRole.EXECUTOR,
-            diagnostics=diagnostics.append,
-        )
-        with TemporaryDirectory(prefix="crewplane-open-pipe-") as temp_dir:
-            child_pid_path = Path(temp_dir) / "child.pid"
-            child_script = (
-                "import os, sys, time\n"
-                "os.setsid()\n"
-                "open(sys.argv[1], 'w', encoding='utf-8').write(str(os.getpid()))\n"
-                "time.sleep(30)\n"
-            )
-            leader_script = (
-                "import subprocess, sys, time\n"
-                "path = sys.argv[1]\n"
-                "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
-                "while True:\n"
-                "    try:\n"
-                "        open(path, encoding='utf-8').read()\n"
-                "        break\n"
-                "    except FileNotFoundError:\n"
-                "        time.sleep(0.01)\n"
-                "print('leader exited')\n"
-            )
-            child_pid: int | None = None
-            try:
-                with self.assertRaisesRegex(
-                    ProcessDrainError,
-                    "pipes remained open",
-                ):
-                    await asyncio.wait_for(
-                        run_command_once(
-                            cmd=[
-                                sys.executable,
-                                "-c",
-                                leader_script,
-                                child_pid_path.as_posix(),
-                                child_script,
-                            ],
-                            stdin_data=None,
-                            log_file=None,
-                            append_log=False,
-                            log_header=None,
-                            cwd=Path.cwd(),
-                            invocation_context=context,
-                            idle_timeout_seconds=None,
-                        ),
-                        timeout=3.0,
-                    )
-                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
-                os.kill(child_pid, 0)
-                self.assertTrue(
-                    any(
-                        diagnostic.operation == "process_pipe_drain_timeout"
-                        for diagnostic in diagnostics
-                    )
-                )
-            finally:
-                if child_pid is None and child_pid_path.is_file():
-                    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
-                if child_pid is not None:
-                    with suppress(ProcessLookupError):
-                        os.killpg(child_pid, signal.SIGKILL)
-                    await asyncio.sleep(0.05)
+        assert result.returncode == 0
 
     async def test_run_command_once_drains_output_while_sending_large_stdin(
         self,
@@ -828,9 +139,9 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             timeout=2.0,
         )
         try:
-            self.assertEqual(result.returncode, 0)
-            self.assertEqual(result.stdout_path.read_bytes(), stdin_data)
-            self.assertEqual(result.stderr_path.read_bytes(), b"")
+            assert result.returncode == 0
+            assert result.stdout_path.read_bytes() == stdin_data
+            assert result.stderr_path.read_bytes() == b""
         finally:
             result.cleanup_stream_files()
 
@@ -862,10 +173,10 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
 
         self.addCleanup(result.cleanup_stream_files)
         lines = result.stdout_text.strip().splitlines()
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(Path(lines[0]), Path.cwd())
-        self.assertEqual(lines[1], "applied")
-        self.assertEqual(lines[2], "None")
+        assert result.returncode == 0
+        assert Path(lines[0]) == Path.cwd()
+        assert lines[1] == "applied"
+        assert lines[2] == "None"
 
     async def test_workspace_child_environment_preserves_git_transport_controls(
         self,
@@ -896,7 +207,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.addCleanup(result.cleanup_stream_files)
-        self.assertEqual(result.stdout_text.strip().splitlines(), ["0", "https"])
+        assert result.stdout_text.strip().splitlines() == ["0", "https"]
 
     async def test_run_command_once_records_child_environment_after_spawn(self) -> None:
         record_calls = 0
@@ -912,7 +223,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             append_log=False,
             log_header=None,
             cwd=Path.cwd(),
-            invocation_context=_workspace_invocation_context(
+            invocation_context=command_workspace_context(
                 Path.cwd(),
                 record_child_environment_applied,
             ),
@@ -921,8 +232,8 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.addCleanup(result.cleanup_stream_files)
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(record_calls, 1)
+        assert result.returncode == 0
+        assert record_calls == 1
 
     async def test_run_command_once_does_not_record_child_environment_when_spawn_fails(
         self,
@@ -933,7 +244,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             nonlocal record_calls
             record_calls += 1
 
-        with self.assertRaisesRegex(RuntimeError, "CLI executable not found"):
+        with pytest.raises(RuntimeError, match="CLI executable not found"):
             await run_command_once(
                 cmd=[str(Path.cwd() / "definitely-missing-provider-cli")],
                 stdin_data=None,
@@ -941,7 +252,7 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 append_log=False,
                 log_header=None,
                 cwd=Path.cwd(),
-                invocation_context=_workspace_invocation_context(
+                invocation_context=command_workspace_context(
                     Path.cwd(),
                     record_child_environment_applied,
                 ),
@@ -949,127 +260,4 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                 child_environment=ChildProcessEnvironment(set={}, unset=()),
             )
 
-        self.assertEqual(record_calls, 0)
-
-    async def test_run_invocation_attempt_passes_idle_timeout_to_runner(self) -> None:
-        observed_idle_timeouts: list[float | None] = []
-        plan = build_cli_invocation_plan(
-            AgentConfig(cli_cmd=[sys.executable], default_model="test"),
-            "test",
-            "prompt",
-            Path("output.txt"),
-        )
-        runtime = build_invocation_runtime(plan)
-
-        async def runner(
-            cmd: list[str],  # noqa: ARG001
-            stdin_data: bytes | None,  # noqa: ARG001
-            log_file: Path | None,  # noqa: ARG001
-            append_log: bool,  # noqa: ARG001
-            log_header: bytes | None,  # noqa: ARG001
-            cwd: Path,  # noqa: ARG001
-            invocation_context: InvocationContext | None,  # noqa: ARG001
-            idle_timeout_seconds: float | None,
-            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001
-        ) -> CommandResult:
-            observed_idle_timeouts.append(idle_timeout_seconds)
-            return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
-
-        result = await run_invocation_attempt(
-            runtime=runtime,
-            command_runner=runner,
-            log_file=None,
-            attempt=0,
-            cwd=Path.cwd(),
-            invocation_context=None,
-            timeout_seconds=None,
-            idle_timeout_seconds=12.5,
-            child_environment=None,
-        )
-
-        self.assertEqual(result.stdout_text, "ok")
-        self.assertEqual(observed_idle_timeouts, [12.5])
-
-    async def test_run_invocation_attempt_emits_timeout_diagnostic(self) -> None:
-        diagnostics = []
-        plan = build_cli_invocation_plan(
-            AgentConfig(cli_cmd=[sys.executable], default_model="test"),
-            "test",
-            "prompt",
-            Path("output.txt"),
-        )
-        runtime = build_invocation_runtime(plan)
-
-        async def runner(
-            cmd: list[str],  # noqa: ARG001
-            stdin_data: bytes | None,  # noqa: ARG001
-            log_file: Path | None,  # noqa: ARG001
-            append_log: bool,  # noqa: ARG001
-            log_header: bytes | None,  # noqa: ARG001
-            cwd: Path,  # noqa: ARG001
-            invocation_context: InvocationContext | None,  # noqa: ARG001
-            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001
-        ) -> CommandResult:
-            await asyncio.sleep(10)
-            return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
-
-        context = InvocationContext(
-            node_id="node.a",
-            task_id="generic_executor_0",
-            provider="generic",
-            role=ProviderRole.EXECUTOR,
-            diagnostics=diagnostics.append,
-        )
-
-        with self.assertRaisesRegex(
-            RuntimeError,
-            "wall-clock timeout reached after 0.01s",
-        ):
-            await run_invocation_attempt(
-                runtime=runtime,
-                command_runner=runner,
-                log_file=None,
-                attempt=0,
-                cwd=Path.cwd(),
-                invocation_context=context,
-                timeout_seconds=0.01,
-                idle_timeout_seconds=None,
-                child_environment=None,
-            )
-
-        self.assertEqual(
-            [diagnostic.operation for diagnostic in diagnostics], ["invocation_timeout"]
-        )
-        self.assertEqual(diagnostics[0].attributes["timeout_scope"], "wall_clock")
-
-
-def _workspace_invocation_context(
-    cwd: Path,
-    recorder,
-) -> InvocationContext:
-    return InvocationContext(
-        node_id="node.a",
-        task_id="generic_executor_0",
-        provider="generic",
-        role=ProviderRole.EXECUTOR,
-        workspace_environment_applied_recorder=recorder,
-        workspace=InvocationWorkspaceContext(
-            workspace_kind="snapshot",
-            materialization="snapshot_checkout",
-            logical_worktree_name="primary",
-            cwd=cwd,
-            invocation_source=InvocationSourceContext(
-                source_kind="project",
-                source_node_id=None,
-                source_commit="a" * 40,
-                source_tree="b" * 40,
-            ),
-            worktree_contract=InvocationWorktreeContract(
-                mode="blob_exact",
-                schema_version=SCHEMA_VERSION,
-            ),
-            child_environment_required=True,
-            child_environment_applied=False,
-        ),
-    )
+        assert record_calls == 0

@@ -5,6 +5,7 @@ import pytest
 from crewplane.observability.text_layout import (
     display_width,
     fit_text,
+    pad_text,
     wrap_text,
 )
 
@@ -79,3 +80,16 @@ def test_wrap_text_never_returns_lines_wider_than_requested_width(
 def test_wrap_text_returns_blank_rows_for_zero_width() -> None:
     assert wrap_text("alpha", 0) == [""]
     assert wrap_text("alpha\n\nbeta", 0) == ["", "", ""]
+
+
+def test_fit_text_can_disable_ellipsis() -> None:
+    assert fit_text("abcdef", 3, ellipsis="") == "abc"
+
+
+@pytest.mark.parametrize("width", [0, -1])
+def test_padding_nonpositive_width_returns_empty_text(width: int) -> None:
+    assert pad_text("content", width) == ""
+
+
+def test_wrapping_flushes_text_before_oversized_grapheme() -> None:
+    assert wrap_text("a🙂b", 1) == ["a", ".", "b"]

@@ -223,3 +223,92 @@ def inspect_args(runtime_root: Path, view: str = "auto") -> list[str]:
         "--view",
         view,
     ]
+
+
+@pytest.mark.parametrize("snapshot_kind", ["missing", "stale", "no-log", "no-format"])
+def test_inspect_rejects_unusable_selection_without_changing_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, snapshot_kind: str
+) -> None:
+    runtime_files = initialized_runtime_files(tmp_path)
+    snapshot = selected_snapshot_data(tmp_path / "provider.log", "node.a", 0)
+    if snapshot_kind == "stale":
+        snapshot["selection_generation"] = 99
+    if snapshot_kind == "no-log":
+        snapshot["log_file"] = None
+    if snapshot_kind != "missing":
+        write_json_atomic(runtime_files.selected_invocation, snapshot)
+    before = {path: path.read_bytes() for path in tmp_path.iterdir()}
+
+    def unexpected_command(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        pytest.fail("An unusable selection must not launch tmux")
+
+    view = "formatted" if snapshot_kind == "no-format" else "auto"
+
+    with monkeypatch.context() as patch:
+        patch.setattr(inspect_control.subprocess, "run", unexpected_command)
+        result = inspect_control.main(inspect_args(tmp_path, view))
+
+    assert result == 0
+    assert {path: path.read_bytes() for path in tmp_path.iterdir()} == before
+
+
+def test_respawn_os_error_removes_new_snapshot_and_restores_absent_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_files = initialized_runtime_files(tmp_path)
+    write_selected_snapshot(runtime_files, tmp_path / "provider.log")
+    runtime_files.mode.unlink()
+    runtime_files.inspect_invocation.unlink()
+
+    def fail_launch(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise FileNotFoundError("tmux was removed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(inspect_control.subprocess, "run", fail_launch)
+        result = inspect_control.main(inspect_args(tmp_path))
+
+    assert result == 0
+    assert not runtime_files.mode.exists()
+    assert not runtime_files.inspect_invocation.exists()
+
+
+def test_inspect_uses_socket_and_survives_control_activation_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_files = initialized_runtime_files(tmp_path)
+    write_selected_snapshot(runtime_files, tmp_path / "provider.log")
+    commands: list[list[str]] = []
+
+    def run(command: list[str], check: bool) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if not check:
+            raise OSError("socket disconnected")
+        return subprocess.CompletedProcess(command, 0)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(inspect_control.subprocess, "run", run)
+        result = inspect_control.main(
+            [*inspect_args(tmp_path), "--socket-name", "crewplane-test"]
+        )
+
+    assert result == 0
+    assert [command[:3] for command in commands] == [
+        ["tmux", "-L", "crewplane-test"]
+    ] * 3
+    assert [command[3] for command in commands] == [
+        "respawn-pane",
+        "set-option",
+        "select-pane",
+    ]
+    assert runtime_files.mode.read_text(encoding="utf-8") == MODE_INSPECT
+
+
+def test_restore_absent_runtime_file_is_idempotent(tmp_path: Path) -> None:
+    path = tmp_path / "removed.txt"
+
+    inspect_control.restore_runtime_file(path, None)
+    inspect_control.restore_runtime_file(path, None)
+
+    assert not path.exists()

@@ -1,4 +1,5 @@
-COVERAGE_FLOOR := 90
+STATEMENT_COVERAGE_FLOOR ?= 96
+BRANCH_COVERAGE_FLOOR ?= 90
 PYTHON ?= python
 PYPI_REPOSITORY ?= pypi
 TWINE_UPLOAD_ARGS ?=
@@ -32,7 +33,7 @@ endif
 
 RUN_RELEASE = $(RUN_PYTHON) scripts/release.py
 
-.PHONY: help setup uninstall test typecheck lint format format-check check actionlint \
+.PHONY: help setup uninstall test coverage-check typecheck lint format format-check check actionlint \
 	dependency-audit uv-bootstrap-check uv-bootstrap-update clean \
 	package-build package-check package-wheelhouse wheel-typecheck changelog-check \
 	install-smoke-pip install-smoke-uv install-smoke-pipx install-smoke \
@@ -47,7 +48,8 @@ help:
 		'' \
 		'Development:' \
 		'  setup              Install editable dev environment' \
-		'  test               Run pytest' \
+		'  test               Run pytest with statement and branch coverage gates' \
+		'  coverage-check    Check independent floors in .coverage.json' \
 		'  typecheck          Check strict typing for the package and fixtures' \
 		'  lint               Run ruff checks' \
 		'  format             Run ruff import fixes and formatter' \
@@ -94,7 +96,11 @@ uninstall:
 	$(UNINSTALL_CMD)
 
 test:
-	$(RUN_PYTEST) -p pytest_cov --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=$(COVERAGE_FLOOR)
+	$(RUN_PYTEST) -p pytest_cov --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-report=json:.coverage.json --cov-fail-under=0
+	$(MAKE) coverage-check
+
+coverage-check:
+	$(RUN_PYTHON) scripts/check_coverage.py .coverage.json --statements $(STATEMENT_COVERAGE_FLOOR) --branches $(BRANCH_COVERAGE_FLOOR)
 
 # Keep the full production package and repository typecheck fixtures under
 # strict mypy coverage.

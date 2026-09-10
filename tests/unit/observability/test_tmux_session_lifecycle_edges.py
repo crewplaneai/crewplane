@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts import RunContext, WorkflowTopology
 from crewplane.observability.tmux.runtime_files import RuntimeFiles
 from crewplane.observability.tmux.session import (
     TmuxSessionIdentity,
@@ -266,3 +267,91 @@ def test_warning_sink_failure_is_suppressed_and_stderr_is_fallback(
     TmuxCompactSessionLifecycle().rollback_start(fallback_session)
 
     assert capsys.readouterr().err == "WARN: tmux compact rollback failed: visible\n"
+
+
+@pytest.mark.parametrize("process_fails", [False, True])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_stop_attempts_process_and_directory_cleanup_after_tmux_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    process_fails: bool,
+    cleanup_fails: bool,
+) -> None:
+    original = OSError("kill failed")
+    session = started_session(tmp_path, StubTmux(fail=original))
+    process = StubProcess([0])
+    session.attach_process = process
+    cleanup_attempts: list[Path] = []
+
+    def fail_wait(timeout: float) -> int:
+        assert timeout == 1.0
+        raise OSError("attach failed")
+
+    def fail_cleanup(path: Path) -> None:
+        cleanup_attempts.append(path)
+        raise OSError("directory busy")
+
+    with monkeypatch.context() as patch:
+        if process_fails:
+            patch.setattr(process, "wait", fail_wait)
+        if cleanup_fails:
+            patch.setattr("shutil.rmtree", fail_cleanup)
+
+        with pytest.raises(OSError, match="kill failed") as caught:
+            TmuxCompactSessionLifecycle().stop_session(session, True)
+
+    assert caught.value is original
+    assert (session.attach_process is process) is process_fails
+    assert session.runtime_lease.root.exists() is cleanup_fails
+    assert cleanup_attempts == ([session.runtime_lease.root] if cleanup_fails else [])
+
+
+@pytest.mark.parametrize("rollback_fails", [False, True])
+def test_empty_pane_creation_rolls_back_and_warns_on_cleanup_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rollback_fails: bool
+) -> None:
+    root = tmp_path / "runtime"
+    root.mkdir()
+    tmux = StubTmux()
+    warnings: list[str] = []
+
+    def runtime_directory(prefix: str) -> str:
+        assert prefix.startswith("crewplane-tmux-compact-")
+        return str(root)
+
+    def make_client(socket_name: str | None) -> StubTmux:
+        assert socket_name == "runtime"
+        return tmux
+
+    def run(
+        args: list[str], capture_output: bool = False, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        del capture_output, check
+        tmux.calls.append(args)
+        if rollback_fails and args[0] == "kill-session":
+            raise OSError("kill failed")
+        return subprocess.CompletedProcess(args, 0, stdout="")
+
+    def fail_cleanup(path: Path) -> None:
+        assert path == root
+        raise OSError("directory busy")
+
+    monkeypatch.setattr(tmux, "run", run)
+    lifecycle = TmuxCompactSessionLifecycle(
+        warning_sink=warnings.append, client_factory=make_client
+    )
+    context = RunContext(WorkflowTopology("flow", ()), "run", 4)
+
+    with monkeypatch.context() as patch:
+        patch.setattr("tempfile.mkdtemp", runtime_directory)
+        patch.setattr("shutil.rmtree", fail_cleanup)
+        with pytest.raises(
+            RuntimeError, match="Failed to create tmux compact dashboard pane"
+        ):
+            lifecycle.create_session(context)
+
+    assert [args[0] for args in tmux.calls] == ["new-session", "kill-session"]
+    assert warnings == (
+        (["tmux compact rollback failed: kill failed"] if rollback_fails else [])
+        + ["tmux compact temp cleanup failed: directory busy"]
+    )

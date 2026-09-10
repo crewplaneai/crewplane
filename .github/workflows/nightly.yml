@@ -112,7 +112,7 @@ jobs:
     timeout-minutes: 10
     env:
       FOCUSED_RACE_ITERATIONS: "5"
-      FOCUSED_RACE_SELECTION: "tests/integration/runtime/execution/workflow/test_sequential_stage_basics.py::ExecutorSequentialStageBasicsTests::test_multi_provider_reviewers_run_in_parallel_within_local_round"
+      FOCUSED_RACE_SELECTION: "tests/integration/runtime/execution/workflow/test_sequential_parallel_reviewers.py::ExecutorSequentialStageBasicsTests::test_multi_provider_reviewers_run_in_parallel_within_local_round"
       TZ: UTC
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

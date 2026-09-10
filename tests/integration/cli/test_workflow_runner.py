@@ -6,11 +6,12 @@ import json
 import os
 import subprocess
 import unittest
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import pytest
 import typer
 from rich.console import Console
 
@@ -19,39 +20,30 @@ from crewplane.adapters.artifacts.terminal_history import (
 )
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
-    ObserverCapabilities,
 )
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.locks import (
-    LOCK_OWNER_FILENAME,
-    acquire_same_context_lock,
-)
 from crewplane.artifacts.manager import OutputManager
 from crewplane.cli.run.workspace.git_source import (
     GIT_MIN_VERSION,
     parse_git_version,
 )
-from crewplane.cli.workflow_runner import (
-    execute_workflow_run,
-    write_early_preflight_failure_run,
-)
-from crewplane.core.config import AgentConfig, Config, Settings
+from crewplane.core.config import AgentConfig, Config
 from crewplane.core.preflight import (
-    PreflightWorkflowSource,
     signature_for_payload,
 )
-from crewplane.core.prompt_segments import PromptSegmentRole
-from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import (
-    PromptSegment,
     ProviderSpec,
     WorkflowNode,
     WorkflowPlan,
 )
-from crewplane.observability import ObservabilityHub
-from crewplane.version import SCHEMA_VERSION
-from tests.helpers.resume_locks import FakeProcessInspector
 from tests.helpers.working_directory import temporary_project_cwd
+from tests.integration.cli.workflow_runner_support import (
+    mock_runner_config,
+    result_directories,
+    run_directories,
+    run_workflow,
+    runner_workflow,
+)
 
 DESCRIPTOR_LEAK_TOKENS = (
     "log_presentation_format",
@@ -155,89 +147,6 @@ class PreflightOrderingInvokerAdapter:
         return PreflightOrderingInvoker()
 
 
-class RequiredStopFailureObserver:
-    capabilities = ObserverCapabilities(required=True)
-
-    @property
-    def stop_requested(self) -> bool:
-        return False
-
-    def start(self, context: object) -> None:
-        del context
-
-    def on_snapshot(self, event: object, snapshot: object) -> None:
-        del event, snapshot
-
-    def stop(self, result: object) -> None:
-        del result
-        raise RuntimeError("required observer stop failed")
-
-
-class RequiredStopFailureHub(ObservabilityHub):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        observers = list(kwargs.pop("observers"))
-        super().__init__(
-            *args,
-            observers=[*observers, RequiredStopFailureObserver()],
-            **kwargs,
-        )
-
-
-def _mock_config(
-    options: dict[str, object] | None = None,
-    invoker_implementation: str = "mock",
-    artifact_implementation: str = "filesystem",
-    artifact_options: dict[str, object] | None = None,
-) -> Config:
-    resolved_artifact_options = (
-        {
-            "log_cli_output": True,
-        }
-        if artifact_options is None
-        else artifact_options
-    )
-    invoker_options = dict(options or {})
-    if invoker_implementation == "mock":
-        invoker_options = {
-            "observation_delay_seconds": 0,
-            "output_mode": "echo",
-            **invoker_options,
-        }
-    return Config(
-        version=SCHEMA_VERSION,
-        agents={"alpha": AgentConfig(cli_cmd=["mock"], default_model="model-a")},
-        settings=Settings(
-            integrations={
-                "invoker": {
-                    "implementation": invoker_implementation,
-                    "options": invoker_options,
-                },
-                "ui": {"implementation": "none", "options": {}},
-                "artifacts": {
-                    "implementation": artifact_implementation,
-                    "options": resolved_artifact_options,
-                },
-            }
-        ),
-    )
-
-
-def _workflow(prompt: str = "hello") -> WorkflowPlan:
-    return WorkflowPlan(
-        name="Task",
-        nodes=[
-            WorkflowNode(
-                id="build.node",
-                mode="sequential",
-                providers=[ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)],
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content=prompt)
-                ],
-            )
-        ],
-    )
-
-
 def _input_workflow() -> WorkflowPlan:
     return WorkflowPlan(
         name="InputTask",
@@ -249,30 +158,6 @@ def _input_workflow() -> WorkflowPlan:
             )
         ],
     )
-
-
-def _workflow_payload(workflow: WorkflowPlan) -> dict[str, object]:
-    return {
-        "schema_version": workflow.schema_version,
-        "name": workflow.name,
-        "description": workflow.description,
-        "inputs": dict(workflow.inputs),
-        "nodes": [],
-    }
-
-
-def _run_dirs(root: Path) -> list[Path]:
-    stages_root = root / ".crewplane" / "execution-stages"
-    if not stages_root.exists():
-        return []
-    return sorted(path for path in stages_root.iterdir() if path.is_dir())
-
-
-def _result_dirs(root: Path) -> list[Path]:
-    results_root = root / ".crewplane" / "execution-results"
-    if not results_root.exists():
-        return []
-    return sorted(path for path in results_root.iterdir() if path.is_dir())
 
 
 def _descriptor_leakage_paths(
@@ -320,7 +205,6 @@ def _local_git_supports_workspace_policy() -> bool:
 
 
 def _assert_descriptor_metadata_event_persisted(
-    test_case: unittest.TestCase,
     run_dir: Path,
 ) -> None:
     event_log_path = run_dir / "logs" / "events.ndjson"
@@ -329,210 +213,36 @@ def _assert_descriptor_metadata_event_persisted(
         for line in event_log_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    test_case.assertTrue(
-        any(
-            record.get("log_presentation_format") == "json_lines"
-            and record.get("log_presentation_profile") == "mock"
-            for record in records
-        )
+    assert any(
+        record.get("log_presentation_format") == "json_lines"
+        and record.get("log_presentation_profile") == "mock"
+        for record in records
     )
 
 
 def _assert_descriptor_metadata_absent(
-    test_case: unittest.TestCase,
     paths: list[Path],
 ) -> None:
-    test_case.assertGreater(len(paths), 0)
+    assert len(paths) > 0
     for path in paths:
         content = path.read_text(encoding="utf-8")
         for token in DESCRIPTOR_LEAK_TOKENS:
-            test_case.assertNotIn(token, content, msg=f"{token} leaked into {path}")
-
-
-async def _run_workflow(
-    workflow: WorkflowPlan,
-    config: Config,
-    console: Console,
-    force: bool = False,
-    which_fn: Callable[[str], str | None] | None = None,
-    execute_workflow_impl: Callable[..., Any] | None = None,
-    observability_hub_cls: type[ObservabilityHub] | None = None,
-) -> None:
-    run_kwargs = {}
-    if execute_workflow_impl is not None:
-        run_kwargs["execute_workflow_impl"] = execute_workflow_impl
-    if observability_hub_cls is not None:
-        run_kwargs["observability_hub_cls"] = observability_hub_cls
-    await execute_workflow_run(
-        config=config,
-        source=PreflightWorkflowSource.from_workflow(
-            workflow,
-            workflow_content="workflow source",
-            composed_workflow=_workflow_payload(workflow),
-            root_workflow_path=Path.cwd() / "workflow.task.md",
-        ),
-        force=force,
-        no_live=True,
-        console=console,
-        which_fn=which_fn,
-        **run_kwargs,
-    )
+            assert token not in content, f"{token} leaked into {path}"
 
 
 class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_terminal_manifest_publication_failure_recovers_exact_outcome(
-        self,
-    ) -> None:
-        with temporary_project_cwd() as root:
-            console = Console(file=io.StringIO(), force_terminal=False)
-            with (
-                patch.object(
-                    OutputManager,
-                    "update_run_manifest_status",
-                    side_effect=OSError("manifest publication failed"),
-                ),
-                self.assertRaisesRegex(OSError, "manifest publication failed"),
-            ):
-                await _run_workflow(_workflow(), _mock_config(), console)
-
-            run_dirs = _run_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            manifest = json.loads(
-                (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(manifest["status"], "running")
-            lock_dir = next((root / ".crewplane" / "locks").iterdir())
-            owner = json.loads(
-                (lock_dir / LOCK_OWNER_FILENAME).read_text(encoding="utf-8")
-            )
-            self.assertEqual(
-                owner["terminal_recovery"],
-                {
-                    "phase": "observer_shutdown_complete",
-                    "status": "succeeded",
-                },
-            )
-
-            replacement = acquire_same_context_lock(
-                root / ".crewplane",
-                _workflow().name,
-                owner["workflow_identity"],
-                owner["workflow_signature"],
-                process_inspector=FakeProcessInspector(200, "new", live=False),
-            )
-            try:
-                recovered = json.loads(
-                    (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
-                )
-                self.assertEqual(recovered["status"], "succeeded")
-                self.assertNotIn("cancel_reason", recovered)
-                events = [
-                    json.loads(line)
-                    for line in (run_dirs[0] / "logs" / "events.ndjson")
-                    .read_text(encoding="utf-8")
-                    .splitlines()
-                    if line.strip()
-                ]
-                terminal_event_types = [
-                    event["event_type"]
-                    for event in events
-                    if event["event_type"]
-                    in {
-                        "workflow_finished",
-                        "workflow_failed",
-                        "workflow_cancelled",
-                    }
-                ]
-                self.assertEqual(terminal_event_types, ["workflow_finished"])
-                summary = (run_dirs[0] / "logs" / "summary.md").read_text(
-                    encoding="utf-8"
-                )
-                self.assertIn("- Status: succeeded", summary)
-            finally:
-                replacement.release()
-
-    async def test_required_observer_stop_failure_retains_run_lock(self) -> None:
-        with temporary_project_cwd() as root:
-            console = Console(file=io.StringIO(), force_terminal=False)
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "required observer stop failed",
-            ):
-                await _run_workflow(
-                    _workflow(),
-                    _mock_config(),
-                    console,
-                    observability_hub_cls=RequiredStopFailureHub,
-                )
-
-            run_dirs = _run_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            manifest = json.loads(
-                (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(manifest["status"], "running")
-            lock_dir = next((root / ".crewplane" / "locks").iterdir())
-            owner = json.loads(
-                (lock_dir / LOCK_OWNER_FILENAME).read_text(encoding="utf-8")
-            )
-            self.assertEqual(
-                owner["terminal_recovery"],
-                {
-                    "phase": "terminal_views_published",
-                    "status": "succeeded",
-                },
-            )
-
-            replacement = acquire_same_context_lock(
-                root / ".crewplane",
-                _workflow().name,
-                owner["workflow_identity"],
-                owner["workflow_signature"],
-                process_inspector=FakeProcessInspector(200, "new", live=False),
-            )
-            try:
-                recovered = json.loads(
-                    (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
-                )
-                self.assertEqual(recovered["status"], "succeeded")
-                self.assertNotIn("cancel_reason", recovered)
-                events = [
-                    json.loads(line)
-                    for line in (run_dirs[0] / "logs" / "events.ndjson")
-                    .read_text(encoding="utf-8")
-                    .splitlines()
-                    if line.strip()
-                ]
-                terminal_event_types = [
-                    event["event_type"]
-                    for event in events
-                    if event["event_type"]
-                    in {
-                        "workflow_finished",
-                        "workflow_failed",
-                        "workflow_cancelled",
-                    }
-                ]
-                self.assertEqual(terminal_event_types, ["workflow_finished"])
-                summary = (run_dirs[0] / "logs" / "summary.md").read_text(
-                    encoding="utf-8"
-                )
-                self.assertIn("- Status: succeeded", summary)
-            finally:
-                replacement.release()
-
     async def test_duplicate_signature_skips_without_run_allocation(self) -> None:
         with temporary_project_cwd() as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
-            workflow = _workflow()
-            config = _mock_config()
-            await _run_workflow(workflow, config, console)
-            run_count = len(_run_dirs(root))
-            await _run_workflow(workflow, config, console)
+            workflow = runner_workflow()
+            config = mock_runner_config()
+            await run_workflow(workflow, config, console)
+            run_count = len(run_directories(root))
+            await run_workflow(workflow, config, console)
 
-            self.assertEqual(len(_run_dirs(root)), run_count)
-            self.assertIn("Identical context detected", stream.getvalue())
+            assert len(run_directories(root)) == run_count
+            assert "Identical context detected" in stream.getvalue()
 
     async def test_non_filesystem_artifact_real_run_fails_before_run_allocation(
         self,
@@ -540,24 +250,24 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
         with temporary_project_cwd() as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
-            workflow = _workflow()
-            config = _mock_config(
+            workflow = runner_workflow()
+            config = mock_runner_config(
                 artifact_implementation=(
                     f"{__name__}:DuplicateReportingArtifactsAdapter"
                 ),
                 artifact_options={"marker": "duplicate"},
             )
             DuplicateReportingArtifactsAdapter.reset()
-            with self.assertRaisesRegex(
+            with pytest.raises(
                 RuntimeError,
-                "Real execution requires the built-in filesystem artifacts backend",
+                match="Real execution requires the built-in filesystem artifacts backend",
             ):
-                await _run_workflow(workflow, config, console)
+                await run_workflow(workflow, config, console)
 
-            self.assertEqual(DuplicateReportingArtifactsAdapter.create_store_calls, 0)
-            self.assertEqual(_run_dirs(root), [])
-            self.assertEqual(_result_dirs(root), [])
-            self.assertFalse((root / ".crewplane" / "locks").exists())
+            assert DuplicateReportingArtifactsAdapter.create_store_calls == 0
+            assert run_directories(root) == []
+            assert result_directories(root) == []
+            assert not (root / ".crewplane" / "locks").exists()
 
     async def test_reasoning_validation_stops_real_run_before_execution_setup(
         self,
@@ -565,7 +275,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
         with temporary_project_cwd():
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
-            workflow = _workflow()
+            workflow = runner_workflow()
             workflow.nodes[0] = workflow.nodes[0].model_copy(
                 update={"providers": [ProviderSpec(provider="alpha", reasoning="high")]}
             )
@@ -581,19 +291,19 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                         "reasoning validation reached allocation"
                     ),
                 ) as allocate_output,
-                self.assertRaises(typer.Exit) as raised,
+                pytest.raises(typer.Exit) as raised,
             ):
-                await _run_workflow(
+                await run_workflow(
                     workflow,
-                    _mock_config(),
+                    mock_runner_config(),
                     console,
                     execute_workflow_impl=execute_workflow_mock,
                 )
 
-            self.assertEqual(raised.exception.exit_code, 1)
-            self.assertIn(
-                "first-class reasoning requires the built-in CLI invoker",
-                stream.getvalue(),
+            assert raised.value.exit_code == 1
+            assert (
+                "first-class reasoning requires the built-in CLI invoker"
+                in stream.getvalue()
             )
             acquire_lock.assert_not_called()
             allocate_output.assert_not_called()
@@ -602,20 +312,20 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_force_ignores_duplicate_signature(self) -> None:
         with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
-            workflow = _workflow()
-            config = _mock_config()
-            await _run_workflow(workflow, config, console)
-            await _run_workflow(workflow, config, console, force=True)
+            workflow = runner_workflow()
+            config = mock_runner_config()
+            await run_workflow(workflow, config, console)
+            await run_workflow(workflow, config, console, force=True)
 
-            self.assertEqual(len(_run_dirs(root)), 2)
+            assert len(run_directories(root)) == 2
 
     async def test_successful_run_writes_preflight_bundle_and_redacted_manifest(
         self,
     ) -> None:
         with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
-            workflow = _workflow("{{env:API_TOKEN}}")
-            config = _mock_config()
+            workflow = runner_workflow("{{env:API_TOKEN}}")
+            config = mock_runner_config()
             config.agents["alpha"].extra_args = ["--api-key", "super-secret"]
             raw_agent_config_signature = signature_for_payload(
                 config.agents["alpha"].model_dump(mode="json", exclude_none=True)
@@ -627,17 +337,17 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             original_api_token = os.environ.get("API_TOKEN")
             os.environ["API_TOKEN"] = "env-secret"
             try:
-                await _run_workflow(workflow, config, console)
+                await run_workflow(workflow, config, console)
             finally:
                 if original_api_token is None:
                     os.environ.pop("API_TOKEN", None)
                 else:
                     os.environ["API_TOKEN"] = original_api_token
 
-            run_dirs = _run_dirs(root)
-            result_dirs = _result_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            self.assertEqual(len(result_dirs), 1)
+            run_dirs = run_directories(root)
+            result_dirs = result_directories(root)
+            assert len(run_dirs) == 1
+            assert len(result_dirs) == 1
             preflight_dir = run_dirs[0] / "preflight"
             expected_preflight_files = {
                 "dependency-graph.json",
@@ -651,55 +361,45 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 "summary.md",
                 "token-catalog.json",
             }
-            self.assertTrue(
-                expected_preflight_files.issubset(
-                    {path.name for path in preflight_dir.iterdir()}
-                )
+            assert expected_preflight_files.issubset(
+                {path.name for path in preflight_dir.iterdir()}
             )
             preflight_manifest = json.loads(
                 (preflight_dir / "manifest.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(preflight_manifest["status"], "preflight_succeeded")
+            assert preflight_manifest["status"] == "preflight_succeeded"
             plan_text = (preflight_dir / "execution-plan.json").read_text(
                 encoding="utf-8"
             )
-            self.assertNotIn(raw_agent_config_signature, plan_text)
-            self.assertNotIn("env-secret", plan_text)
+            assert raw_agent_config_signature not in plan_text
+            assert "env-secret" not in plan_text
             plan = json.loads(plan_text)
-            self.assertEqual(
-                plan["runtime_config_snapshot"]["sensitive_config_paths"],
-                ["agents.alpha.extra_args.1"],
-            )
-            self.assertGreaterEqual(len(plan["value_fingerprints"]), 1)
-            self.assertTrue(
-                all("value" not in record for record in plan["value_fingerprints"])
-            )
-            self.assertEqual(plan["value_fingerprints"][0]["key"], "API_TOKEN")
-            self.assertEqual(len(plan["value_fingerprints"][0]["fingerprint"]), 64)
+            assert plan["runtime_config_snapshot"]["sensitive_config_paths"] == [
+                "agents.alpha.extra_args.1"
+            ]
+            assert len(plan["value_fingerprints"]) >= 1
+            assert all("value" not in record for record in plan["value_fingerprints"])
+            assert plan["value_fingerprints"][0]["key"] == "API_TOKEN"
+            assert len(plan["value_fingerprints"][0]["fingerprint"]) == 64
             execution_bundle = json.loads(
                 (preflight_dir / "execution-bundle.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(
-                execution_bundle["value_fingerprints"],
-                plan["value_fingerprints"],
-            )
+            assert execution_bundle["value_fingerprints"] == plan["value_fingerprints"]
             manifest_path = run_dirs[0] / "manifests" / "run.json"
             manifest_text = manifest_path.read_text(encoding="utf-8")
             manifest = json.loads(manifest_text)
 
-            self.assertNotIn("config_yaml", manifest)
-            self.assertNotIn("config_yaml_sha256", manifest)
-            self.assertNotIn("super-secret", manifest_text)
-            self.assertNotIn("env-secret", manifest_text)
-            self.assertNotIn(raw_config_yaml_signature, manifest_text)
-            self.assertNotIn(raw_agent_config_signature, manifest_text)
-            self.assertEqual(
-                manifest["runtime_config_snapshot"],
-                plan["runtime_config_snapshot"],
+            assert "config_yaml" not in manifest
+            assert "config_yaml_sha256" not in manifest
+            assert "super-secret" not in manifest_text
+            assert "env-secret" not in manifest_text
+            assert raw_config_yaml_signature not in manifest_text
+            assert raw_agent_config_signature not in manifest_text
+            assert (
+                manifest["runtime_config_snapshot"] == plan["runtime_config_snapshot"]
             )
-            _assert_descriptor_metadata_event_persisted(self, run_dirs[0])
+            _assert_descriptor_metadata_event_persisted(run_dirs[0])
             _assert_descriptor_metadata_absent(
-                self,
                 _descriptor_leakage_paths(
                     run_dir=run_dirs[0],
                     result_dir=result_dirs[0],
@@ -726,24 +426,24 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             _git(root, "commit", "-m", "initial")
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = _input_workflow()
-            config = _mock_config()
+            config = mock_runner_config()
             config.settings.workspace.enabled = True
             config.settings.workspace.cache_root = cache_root.as_posix()
-            await _run_workflow(workflow, config, console)
+            await run_workflow(workflow, config, console)
 
-            run_dirs = _run_dirs(root)
-            result_dirs = _result_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            self.assertEqual(len(result_dirs), 1)
+            run_dirs = run_directories(root)
+            result_dirs = result_directories(root)
+            assert len(run_dirs) == 1
+            assert len(result_dirs) == 1
             workspace_state_path = run_dirs[0] / "requirements" / "workspace-state.json"
-            self.assertFalse(workspace_state_path.exists())
-            self.assertFalse(cache_root.exists())
+            assert not workspace_state_path.exists()
+            assert not cache_root.exists()
 
     async def test_runtime_receives_preflight_plan_agent_configs_only(self) -> None:
         with temporary_project_cwd():
             console = Console(file=io.StringIO(), force_terminal=False)
-            workflow = _workflow()
-            config = _mock_config()
+            workflow = runner_workflow()
+            config = mock_runner_config()
             config.agents["alpha"] = AgentConfig(
                 cli_cmd=["preflight-command"],
                 default_model="model-a",
@@ -765,224 +465,26 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                     plan.runtime_config_snapshot["agents"]["alpha"]["cli_cmd"]
                 )
 
-            await _run_workflow(
+            await run_workflow(
                 workflow,
                 config,
                 console,
                 execute_workflow_impl=fake_execute_workflow,
             )
 
-            self.assertEqual(captured_command, ["preflight-command"])
-
-    async def test_preflight_failure_writes_failure_bundle(self) -> None:
-        with temporary_project_cwd() as root:
-            console = Console(file=io.StringIO(), force_terminal=False)
-            workflow = _workflow("{{env:MISSING_REQUIRED_ENV}}")
-            config = _mock_config()
-            original_env = os.environ.pop("MISSING_REQUIRED_ENV", None)
-            try:
-                with self.assertRaises(typer.Exit):
-                    await _run_workflow(workflow, config, console)
-            finally:
-                if original_env is not None:
-                    os.environ["MISSING_REQUIRED_ENV"] = original_env
-
-            run_dirs = _run_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            preflight_dir = run_dirs[0] / "preflight"
-            self.assertTrue((preflight_dir / "diagnostics.json").exists())
-            self.assertTrue((preflight_dir / "metadata.json").exists())
-            self.assertTrue((preflight_dir / "manifest.json").exists())
-            failure_manifest = json.loads(
-                (preflight_dir / "manifest.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(failure_manifest["status"], "preflight_failed")
-            self.assertFalse((run_dirs[0] / "manifests").exists())
-            self.assertEqual(_result_dirs(root), [])
-
-    async def test_cli_availability_failure_writes_preflight_bundle(self) -> None:
-        with temporary_project_cwd() as root:
-            stream = io.StringIO()
-            console = Console(file=stream, force_terminal=False)
-            workflow = _workflow()
-            config = _mock_config(invoker_implementation="cli")
-
-            def missing_cli(command: str) -> str | None:
-                self.assertTrue(command)
-                return None
-
-            with self.assertRaises(typer.Exit):
-                await _run_workflow(
-                    workflow,
-                    config,
-                    console,
-                    which_fn=missing_cli,
-                )
-
-            run_dirs = _run_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            self.assertEqual(_result_dirs(root), [])
-            diagnostics = json.loads(
-                (run_dirs[0] / "preflight" / "diagnostics.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(diagnostics[0]["code"], "PROVIDER-CLI")
-            self.assertIn("not found in PATH", diagnostics[0]["message"])
-            self.assertIn(
-                "Provider setup: docs/getting-started/provider-setup.md",
-                stream.getvalue(),
-            )
-            failure_manifest = json.loads(
-                (run_dirs[0] / "preflight" / "manifest.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(failure_manifest["status"], "preflight_failed")
-
-    async def test_preflight_warning_is_not_repeated_as_failure(self) -> None:
-        with temporary_project_cwd():
-            stream = io.StringIO()
-            console = Console(file=stream, force_terminal=False)
-            workflow = _workflow()
-            config = _mock_config(invoker_implementation="cli")
-            config.agents["alpha"] = AgentConfig(
-                cli_cmd=["missing-provider"],
-                provider_kind="codex",
-                default_model="model-a",
-                model_arg="--custom-model",
-            )
-
-            def missing_cli(command: str) -> str | None:
-                self.assertEqual(command, "missing-provider")
-                return None
-
-            with self.assertRaises(typer.Exit):
-                await _run_workflow(
-                    workflow,
-                    config,
-                    console,
-                    which_fn=missing_cli,
-                )
-
-            output = stream.getvalue()
-            warning = "Agent 'alpha': remove model_arg"
-            self.assertEqual(output.count(warning), 1)
-            self.assertNotIn("Preflight PROVIDER-CONFIG", output)
-            self.assertIn("Preflight PROVIDER-CLI", output)
-
-    async def test_runtime_config_snapshot_failure_writes_failure_bundle(self) -> None:
-        with temporary_project_cwd() as root:
-            console = Console(file=io.StringIO(), force_terminal=False)
-            workflow = _workflow()
-            config = _mock_config({"unknown_option": True})
-            with self.assertRaises(typer.Exit):
-                await _run_workflow(workflow, config, console)
-
-            run_dirs = _run_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            self.assertEqual(_result_dirs(root), [])
-            diagnostics = json.loads(
-                (run_dirs[0] / "preflight" / "diagnostics.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(diagnostics[0]["code"], "RUNTIME-CONFIG")
-            failure_manifest = json.loads(
-                (run_dirs[0] / "preflight" / "manifest.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(failure_manifest["status"], "preflight_failed")
-
-    async def test_invoker_preflight_contract_failure_writes_failure_bundle(
-        self,
-    ) -> None:
-        with temporary_project_cwd() as root:
-            stream = io.StringIO()
-            console = Console(file=stream, force_terminal=False)
-            workflow = _workflow()
-            config = _mock_config(invoker_implementation="cli")
-
-            def failing_availability_errors(
-                adapter: object,
-                checked_workflow: WorkflowPlan,
-                checked_config: Config,
-                project_root: Path,
-                executable_lookup: Callable[[str], str | None] | None = None,
-            ) -> tuple[str, ...]:
-                del (
-                    adapter,
-                    checked_workflow,
-                    checked_config,
-                    project_root,
-                    executable_lookup,
-                )
-                raise RuntimeError("probe failed")
-
-            with (
-                patch(
-                    "crewplane.adapters.invokers.cli.CliInvokerAdapter."
-                    "collect_availability_errors",
-                    new=failing_availability_errors,
-                ),
-                self.assertRaises(typer.Exit),
-            ):
-                await _run_workflow(workflow, config, console)
-
-            run_dirs = _run_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            self.assertEqual(_result_dirs(root), [])
-            diagnostics = json.loads(
-                (run_dirs[0] / "preflight" / "diagnostics.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(diagnostics[0]["code"], "RUNTIME-CONFIG")
-            self.assertIn("probe failed", diagnostics[0]["message"])
-            self.assertIn("Preflight RUNTIME-CONFIG", stream.getvalue())
-            failure_manifest = json.loads(
-                (run_dirs[0] / "preflight" / "manifest.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(failure_manifest["status"], "preflight_failed")
+            assert captured_command == ["preflight-command"]
 
     async def test_preflight_plan_is_materialized_before_invoker_construction(
         self,
     ) -> None:
         with temporary_project_cwd():
             console = Console(file=io.StringIO(), force_terminal=False)
-            workflow = _workflow()
-            config = _mock_config(
+            workflow = runner_workflow()
+            config = mock_runner_config(
                 invoker_implementation=(f"{__name__}:PreflightOrderingInvokerAdapter"),
                 options={},
             )
             PreflightOrderingInvokerAdapter.reset()
-            await _run_workflow(workflow, config, console)
+            await run_workflow(workflow, config, console)
 
-            self.assertTrue(
-                PreflightOrderingInvokerAdapter.preflight_plan_exists_at_create
-            )
-
-    def test_early_preflight_failure_uses_fallback_run_key(self) -> None:
-        with temporary_project_cwd() as root:
-            write_early_preflight_failure_run(
-                root / "bad workflow.task.md",
-                "frontmatter failed",
-            )
-
-            run_dirs = _run_dirs(root)
-            self.assertEqual(len(run_dirs), 1)
-            self.assertEqual(_result_dirs(root), [])
-            self.assertTrue(run_dirs[0].name.startswith("bad-workflow-"))
-            metadata = json.loads(
-                (run_dirs[0] / "preflight" / "metadata.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertIsNone(metadata["workflow_name"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+            assert PreflightOrderingInvokerAdapter.preflight_plan_exists_at_create
