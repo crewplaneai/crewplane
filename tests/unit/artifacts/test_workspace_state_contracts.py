@@ -12,19 +12,20 @@ from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_is_valid,
 )
 from crewplane.core.workspace.invocation_identity import invocation_slug
-from crewplane.version import SCHEMA_VERSION
+from tests.unit.artifacts.workspace_state_contracts_support import (
+    OID_C,
+    OID_D,
+    SHA256,
+    valid_snapshot_payload,
+    valid_worktree_payload,
+)
 
-OID_A: Final = "a" * 40
-OID_B: Final = "b" * 40
-OID_C: Final = "c" * 40
-OID_D: Final = "d" * 40
-SHA256: Final = "e" * 64
 DELETE: Final = object()
 
 
 @pytest.mark.parametrize(
     ("path", "value", "expected_error", "operation"),
-    (
+    [
         (("role",), "observer", "invalid provider role", "resume"),
         (("workspace_kind",), "unknown", "invalid workspace kind", "resume"),
         (
@@ -203,7 +204,7 @@ DELETE: Final = object()
             "temporary ref claim is contradictory",
             "resume",
         ),
-    ),
+    ],
 )
 def test_workspace_state_contract_rejects_contradictory_evidence(
     path: tuple[str, ...],
@@ -211,7 +212,7 @@ def test_workspace_state_contract_rejects_contradictory_evidence(
     expected_error: str,
     operation: PersistedWorkspaceOperation,
 ) -> None:
-    payload = _valid_worktree_payload()
+    payload = valid_worktree_payload()
     _set_path(payload, path, value)
 
     errors = workspace_state_contract_errors(payload, operation)
@@ -220,7 +221,7 @@ def test_workspace_state_contract_rejects_contradictory_evidence(
 
 
 def test_workspace_state_contract_validates_snapshot_reporting_shape() -> None:
-    payload = _valid_snapshot_payload()
+    payload = valid_snapshot_payload()
     assert workspace_state_contract_is_valid(payload, "resume")
 
     workspace = payload["workspace"]
@@ -241,322 +242,10 @@ def test_workspace_state_contract_validates_snapshot_reporting_shape() -> None:
     assert "incomplete snapshot drift contains exact claims" in errors
 
 
-def test_workspace_contract_preserves_workspace_error_order() -> None:
-    payload = _valid_worktree_payload()
-    workspace = payload["workspace"]
-    assert isinstance(workspace, dict)
-    workspace["materialization"] = "snapshot_checkout"
-    workspace["writable"] = False
-    workspace["retention"] = "not_applicable"
-    payload["status"] = "failed"
-
-    errors = workspace_state_contract_errors(payload, "resume")
-
-    assert errors == (
-        "worktree materialization mismatch",
-        "managed workspace must be writable",
-        "resume requires a succeeded workspace",
-        "terminal workspace has invalid retention",
-    )
-
-
-def test_workspace_contract_preserves_source_error_order() -> None:
-    payload = _valid_worktree_payload()
-    source = payload["source"]
-    assert isinstance(source, dict)
-    source.update(
-        {
-            "kind": "node",
-            "node_id": "",
-            "commit": "invalid",
-            "tree": "invalid",
-            "bundle_path": "",
-            "bundle_sha256": "",
-            "bundle_size_bytes": -1,
-            "bundle_ref": "",
-            "upstream_sources": [None],
-        }
-    )
-
-    errors = workspace_state_contract_errors(payload, "resume")
-
-    assert errors[:7] == (
-        "node source requires a source node",
-        "node source lacks bundle_path",
-        "node source lacks bundle_sha256",
-        "node source lacks bundle_size_bytes",
-        "node source lacks bundle_ref",
-        "node source upstream descriptor is invalid",
-        "source commit or tree is invalid",
-    )
-
-
-def test_workspace_contract_preserves_lineage_result_error_order() -> None:
-    payload = _valid_worktree_payload()
-    result = payload["result"]
-    bundle = payload["bundle"]
-    assert isinstance(result, dict)
-    assert isinstance(bundle, dict)
-    for field in (
-        "candidate_commit",
-        "result_commit",
-        "candidate_tree",
-        "result_tree",
-    ):
-        result[field] = None
-    result["changed_path_count"] = -1
-    bundle["verified"] = False
-
-    errors = workspace_state_contract_errors(payload, "resume")
-
-    assert errors[:6] == (
-        "lineage result lacks candidate_commit",
-        "lineage result lacks result_commit",
-        "lineage result lacks candidate_tree",
-        "lineage result lacks result_tree",
-        "lineage result lacks changed_path_count",
-        "lineage result lacks verified bundle evidence",
-    )
-
-
-def test_workspace_contract_preserves_ref_error_order() -> None:
-    payload = _valid_worktree_payload()
-    publication = payload["ref_publication"]
-    assert isinstance(publication, dict)
-    publication.update(
-        {
-            "phase": "prepared",
-            "repository_id": "other-repo",
-            "run_id": "other-run",
-            "node_id": "other-node",
-            "task_id": "other-task",
-            "role": "reviewer",
-            "round_num": 2,
-            "audit_round_num": 1,
-        }
-    )
-    destinations = publication["destinations"]
-    assert isinstance(destinations, dict)
-    destinations["candidate"] = {
-        "name": "refs/other-candidate",
-        "target_oid": OID_D,
-    }
-    destinations["result"] = {
-        "name": "refs/other-result",
-        "target_oid": OID_C,
-        "expected_old_oid": "invalid",
-    }
-    payload["temporary_refs"] = [{}, {}]
-
-    errors = workspace_state_contract_errors(payload, "resume")
-
-    assert errors == (
-        "successful lineage has only prepared ref publication",
-        "ref publication repository mismatch",
-        "ref publication run identity mismatch",
-        "ref publication node_id mismatch",
-        "ref publication task_id mismatch",
-        "ref publication role mismatch",
-        "ref publication round_num mismatch",
-        "ref publication audit_round_num mismatch",
-        "ref publication candidate expected OID is invalid",
-        "ref publication candidate name mismatch",
-        "ref publication candidate escapes invocation scope",
-        "ref publication candidate target mismatch",
-        "ref publication result expected OID is invalid",
-        "ref publication result name mismatch",
-        "ref publication result escapes invocation scope",
-        "ref publication result target mismatch",
-        "temporary ref claim is contradictory",
-        "temporary ref claim is contradictory",
-    )
-
-
-def test_workspace_contract_continues_after_malformed_destination() -> None:
-    payload = _valid_worktree_payload()
-    publication = payload["ref_publication"]
-    assert isinstance(publication, dict)
-    destinations = publication["destinations"]
-    assert isinstance(destinations, dict)
-    destinations["candidate"] = {
-        "name": "",
-        "target_oid": OID_C,
-        "expected_old_oid": "invalid",
-    }
-    destinations["result"] = {
-        "name": "refs/other-result",
-        "target_oid": OID_C,
-        "expected_old_oid": "invalid",
-    }
-
-    errors = workspace_state_contract_errors(payload, "resume")
-
-    assert errors == (
-        "invalid ref publication destination",
-        "ref publication result expected OID is invalid",
-        "ref publication result name mismatch",
-        "ref publication result escapes invocation scope",
-        "ref publication result target mismatch",
-    )
-
-
-def test_workspace_contract_preserves_invalid_publication_early_return() -> None:
-    payload = _valid_worktree_payload()
-    publication = payload["ref_publication"]
-    assert isinstance(publication, dict)
-    publication.update(
-        {
-            "phase": "unknown",
-            "repository_id": "other-repo",
-            "run_id": "other-run",
-        }
-    )
-    payload["temporary_refs"] = [{}]
-
-    errors = workspace_state_contract_errors(payload, "resume")
-
-    assert errors == (
-        "lineage result lacks ref publication phase",
-        "temporary ref claim is contradictory",
-    )
-
-
-@pytest.mark.parametrize("operation", ("cleanup", "failed_invocation"))
-def test_cleanup_contract_rejects_unresolved_failed_process_liveness(
-    operation: PersistedWorkspaceOperation,
-) -> None:
-    payload = _valid_worktree_payload()
-    payload["status"] = "failed"
-    payload["process_drain"] = {"status": "unresolved", "pid": 42}
-
-    errors = workspace_state_contract_errors(payload, operation)
-
-    assert f"{operation} workspace has unresolved process liveness" in errors
-
-
-@pytest.mark.parametrize("status", ("succeeded", "cancelled", "planned"))
-def test_failed_invocation_contract_requires_failed_status(status: str) -> None:
-    payload = _valid_worktree_payload()
-    payload["status"] = status
-
-    errors = workspace_state_contract_errors(payload, "failed_invocation")
-
-    assert "failed_invocation requires a failed workspace" in errors
-
-
-@pytest.mark.parametrize(
-    "operation",
-    (
-        "materialization",
-        "resume",
-        "duplicate_skip",
-        "rendering",
-        "export",
-        "cleanup",
-        "ref_cleanup",
-    ),
-)
-def test_succeeded_workspace_contract_rejects_unresolved_workspace_mutator(
-    operation: PersistedWorkspaceOperation,
-) -> None:
-    payload = _valid_worktree_payload()
-    payload["workspace_mutator"] = {
-        "status": "unresolved",
-        "operation": "success_finalizer",
-    }
-
-    errors = workspace_state_contract_errors(payload, operation)
-
-    assert "successful workspace has unresolved workspace mutator" in errors
-
-
-@pytest.mark.parametrize("operation", ("cleanup", "ref_cleanup", "failed_invocation"))
-def test_cleanup_contract_rejects_unresolved_failed_workspace_mutator(
-    operation: PersistedWorkspaceOperation,
-) -> None:
-    payload = _valid_worktree_payload()
-    payload["status"] = "failed"
-    payload["workspace_mutator"] = {
-        "status": "unresolved",
-        "operation": "retry_reset",
-    }
-
-    errors = workspace_state_contract_errors(payload, operation)
-
-    assert f"{operation} workspace has unresolved workspace mutator" in errors
-
-
-def test_materialization_contract_accepts_running_workspace_mutator() -> None:
-    payload = _valid_worktree_payload()
-    payload["status"] = "running"
-    payload["workspace_mutator"] = {
-        "status": "unresolved",
-        "operation": "success_finalizer",
-    }
-
-    errors = workspace_state_contract_errors(payload, "materialization")
-
-    assert "unresolved workspace mutator" not in "; ".join(errors)
-
-
-@pytest.mark.parametrize(
-    ("evidence", "expected_error"),
-    (
-        ("unresolved", "workspace mutator evidence is invalid"),
-        (
-            {"status": "unknown", "operation": "success_finalizer"},
-            "workspace mutator status is invalid",
-        ),
-        (
-            {"status": "confirmed", "operation": "", "outcome": "finished"},
-            "workspace mutator operation is invalid",
-        ),
-        (
-            {"status": "confirmed", "operation": "retry_reset"},
-            "confirmed workspace mutator outcome is invalid",
-        ),
-    ),
-)
-def test_workspace_contract_rejects_malformed_workspace_mutator_evidence(
-    evidence: object,
-    expected_error: str,
-) -> None:
-    payload = _valid_worktree_payload()
-    payload["workspace_mutator"] = evidence
-
-    errors = workspace_state_contract_errors(payload, "resume")
-
-    assert expected_error in errors
-
-
-def test_cleanup_contract_accepts_removed_publication_after_capture_failure() -> None:
-    payload = _valid_worktree_payload()
-    payload["status"] = "failed"
-    payload.pop("result")
-    payload.pop("refs")
-    payload.pop("bundle")
-    publication = payload["ref_publication"]
-    assert isinstance(publication, dict)
-    publication["phase"] = "removed"
-
-    errors = workspace_state_contract_errors(payload, "cleanup")
-
-    assert errors == ()
-
-
-def test_cleanup_contract_rejects_publication_on_ordinary_non_lineage_state() -> None:
-    payload = _valid_snapshot_payload()
-    payload["ref_publication"] = deepcopy(_valid_worktree_payload()["ref_publication"])
-
-    errors = workspace_state_contract_errors(payload, "ref_cleanup")
-
-    assert "non-lineage workspace has ref publication evidence" in errors
-
-
 def test_workspace_state_contract_validates_recursive_source_and_temporary_ref() -> (
     None
 ):
-    payload = _valid_worktree_payload()
+    payload = valid_worktree_payload()
     project_source = deepcopy(payload["source"])
     payload["source"] = {
         "kind": "node",
@@ -614,7 +303,7 @@ def test_workspace_state_contract_validates_recursive_source_and_temporary_ref()
 def test_workspace_state_contract_accepts_recursive_resume_publication_identity() -> (
     None
 ):
-    payload = _valid_worktree_payload()
+    payload = valid_worktree_payload()
     publication = payload["ref_publication"]
     assert isinstance(publication, dict)
     publication["run_id"] = "source-run"
@@ -648,18 +337,18 @@ def test_workspace_state_contract_accepts_recursive_resume_publication_identity(
 
 
 def test_workspace_state_contract_error_requests_regeneration() -> None:
-    payload = _valid_worktree_payload()
+    payload = valid_worktree_payload()
     payload["version"] = "other"
 
     with pytest.raises(RuntimeError, match="rerun or regenerate"):
         require_workspace_state_contract(payload, "resume")
 
 
-@pytest.mark.parametrize("operation", ("resume", "rendering", "failed_invocation"))
+@pytest.mark.parametrize("operation", ["resume", "rendering", "failed_invocation"])
 def test_hydrated_lineage_allows_scrubbed_publication_evidence(
     operation: PersistedWorkspaceOperation,
 ) -> None:
-    payload = _valid_worktree_payload()
+    payload = valid_worktree_payload()
     if operation == "failed_invocation":
         payload["status"] = "failed"
     workspace = payload["workspace"]
@@ -696,129 +385,6 @@ def test_hydrated_lineage_allows_scrubbed_publication_evidence(
 
     payload.pop("resume_origin")
     assert not workspace_state_contract_is_valid(payload, operation)
-
-
-def _valid_worktree_payload() -> dict[str, object]:
-    slug = invocation_slug("build", "alpha", None, 1)
-    candidate_ref = f"refs/crewplane/runs/run-key/build/{slug}/candidate"
-    result_ref = f"refs/crewplane/runs/run-key/build/{slug}/result"
-    return {
-        "version": SCHEMA_VERSION,
-        "run_id": "run",
-        "run_key_name": "run-key",
-        "workflow_name": "workflow",
-        "workflow_signature": SHA256,
-        "node_id": "build",
-        "task_id": "alpha",
-        "provider": "mock",
-        "role": "executor",
-        "round_num": 1,
-        "audit_round_num": None,
-        "status": "succeeded",
-        "workspace_kind": "worktree",
-        "logical_worktree_name": "primary",
-        "clean_start": "strict",
-        "worktree_contract": {},
-        "git": {
-            "object_format": "sha1",
-            "repo_id": "repo",
-            "run_base_commit": OID_A,
-            "source_tree": OID_B,
-            "git_top_level": "/repo",
-            "active_git_dir": "/repo/.git",
-            "common_git_dir": "/repo/.git",
-        },
-        "source": {
-            "kind": "project",
-            "node_id": None,
-            "commit": OID_A,
-            "tree": OID_B,
-            "candidate_sequence": None,
-        },
-        "invocation_source": {
-            "source_kind": "project",
-            "source_node_id": None,
-            "source_commit": OID_A,
-            "source_tree": OID_B,
-            "candidate_sequence": None,
-        },
-        "workspace": {
-            "cache_key": "alpha",
-            "path": "/cache/workspace",
-            "effective_cwd": "/cache/workspace/checkout",
-            "materialization": "worktree_checkout",
-            "writable": True,
-            "lineage_producer": True,
-            "retention": "retained",
-            "retained_reason": None,
-            "project_root_relative_path": ".",
-            "reuse_generation": 1,
-        },
-        "execution": {
-            "workspace_path": "/cache/workspace",
-            "checkout_root": "/cache/workspace/checkout",
-            "effective_cwd": "/cache/workspace/checkout",
-            "worktree_git_dir": "/repo/.git/worktrees/workspace",
-        },
-        "process_drain": {"status": "confirmed"},
-        "result": {
-            "candidate_commit": OID_C,
-            "result_commit": OID_D,
-            "candidate_tree": OID_B,
-            "result_tree": OID_B,
-            "changed_path_count": 1,
-        },
-        "refs": {"candidate": candidate_ref, "result": result_ref},
-        "bundle": {
-            "path": "build/workspace-bundles/result.bundle",
-            "sha256": SHA256,
-            "size_bytes": 42,
-            "verified": True,
-        },
-        "ref_publication": {
-            "phase": "published",
-            "repository_id": "repo",
-            "run_id": "run",
-            "run_key_name": "run-key",
-            "node_id": "build",
-            "task_id": "alpha",
-            "role": "executor",
-            "round_num": 1,
-            "audit_round_num": None,
-            "destinations": {
-                "candidate": {
-                    "name": candidate_ref,
-                    "target_oid": OID_C,
-                    "expected_old_oid": None,
-                },
-                "result": {
-                    "name": result_ref,
-                    "target_oid": OID_D,
-                    "expected_old_oid": None,
-                },
-            },
-        },
-    }
-
-
-def _valid_snapshot_payload() -> dict[str, object]:
-    payload = _valid_worktree_payload()
-    payload["workspace_kind"] = "snapshot"
-    workspace = payload["workspace"]
-    assert isinstance(workspace, dict)
-    workspace["materialization"] = "snapshot_checkout"
-    workspace["lineage_producer"] = False
-    workspace.pop("reuse_generation")
-    payload["result"] = {
-        "drift_scan_complete": True,
-        "snapshot_drift_discarded": False,
-        "changed_path_count": 0,
-        "changed_paths": [],
-        "changed_paths_truncated": False,
-    }
-    payload.pop("bundle")
-    payload.pop("ref_publication")
-    return payload
 
 
 def _set_path(payload: dict[str, object], path: tuple[str, ...], value: object) -> None:

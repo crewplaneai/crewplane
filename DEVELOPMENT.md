@@ -62,9 +62,7 @@ needs correction; it modifies files and is separate from the validation gate.
 `make test` enforces the statement and branch coverage floors defined in the
 [Makefile](Makefile).
 
-Workspace-enabled Git tests require Git 2.34.1 or newer. CI runs the relevant
-source-policy tests against exactly Git 2.34.1 and fails if any selected test
-skips.
+Workspace-enabled Git tests require Git 2.34.1 or newer.
 
 Nightly CI covers Linux and macOS on Python 3.13 and 3.14, shuffles the full
 suite with a reproducible seed, and repeats the focused reviewer-parallelism

@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import io
 import json
-import os
-import shutil
-import stat
-import tempfile
-import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+
+import pytest
 
 from crewplane.architecture.contracts import (
     NodeArtifactRequest,
@@ -17,10 +12,6 @@ from crewplane.architecture.contracts import (
     build_result_filename,
 )
 from crewplane.artifacts import OutputManager
-from crewplane.artifacts.generated_files.catalog import (
-    generated_file_snapshot_rejection_summary,
-    snapshot_generated_file_workspace,
-)
 from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
@@ -117,1079 +108,245 @@ def _running_manifest(
     )
 
 
-class OutputManagerTests(unittest.TestCase):
-    def test_artifacts_support_symlinked_base_directory_ancestor(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            temp_root = Path(tmp_dir)
-            real_parent = temp_root / "real-parent"
-            real_parent.mkdir()
-            alias = temp_root / "alias"
-            try:
-                alias.symlink_to(real_parent, target_is_directory=True)
-            except OSError as exc:
-                self.skipTest(f"symlink creation is unavailable: {exc}")
-
-            base_dir = alias / "nested" / "state"
-            output = OutputManager("Workflow", base_dir=base_dir)
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
-
-            output.finalize_node(node_artifact_request("build.node"))
-
-            self.assertEqual(output.base_dir, base_dir.resolve(strict=True))
-            self.assertTrue(
-                (output.results_dir / build_result_filename("build.node")).is_file()
-            )
-
-    def test_legacy_stage_path_and_resume_methods_remain_available(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            resume_path = output.write_node_resume_source(
-                node_artifact_request("build.node"),
-                {"source": "run-a"},
-            )
-
-            self.assertEqual(
-                output.get_node_dir(node_artifact_request("build.node")), stage_dir
-            )
-            self.assertEqual(
-                output.get_node_output_path(node_artifact_request("build.node")),
-                output.results_dir / build_result_filename("build.node"),
-            )
-            self.assertEqual(
-                output.get_node_findings_path(
-                    node_artifact_request("build.node", findings_enabled=True)
-                ),
-                output.results_dir / build_findings_filename("build.node"),
-            )
-            self.assertEqual(resume_path, stage_dir / "resume-source.json")
-            self.assertEqual(
-                json.loads(resume_path.read_text(encoding="utf-8")),
-                {"source": "run-a"},
-            )
-
-    def test_compiled_stage_directory_rejects_symlink_escape(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            outside = base_dir / "outside"
-            outside.mkdir()
-            stage_link = output.stages_dir / "build.node"
-            try:
-                stage_link.symlink_to(outside, target_is_directory=True)
-            except OSError as exc:
-                self.skipTest(f"symlink creation is unavailable: {exc}")
-
-            request = NodeArtifactRequest(
-                "build.node",
-                ArtifactContract(
-                    stage_path="build.node",
-                    output_path="build.node-result.md",
-                    log_path="build.node/logs",
-                    result_path="build.node-result.md",
-                ),
-            )
-            with self.assertRaisesRegex(ValueError, "real directory"):
-                output.create_node_dir(request)
-
-    def test_run_allocation_does_not_create_results_until_finalization(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-
-            self.assertTrue(output.stages_dir.exists())
-            self.assertFalse((base_dir / "execution-results").exists())
-
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
-            output.finalize_node(node_artifact_request("build.node"))
-
-            self.assertTrue(output.results_dir.exists())
-
-    def test_compiled_result_path_rejects_symlinked_results_root(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            outside = base_dir / "outside"
-            outside.mkdir()
-            results_root = base_dir / "execution-results"
-            try:
-                results_root.symlink_to(outside, target_is_directory=True)
-            except OSError as exc:
-                self.skipTest(f"symlink creation is unavailable: {exc}")
-
-            with self.assertRaisesRegex(ValueError, "real directory"):
-                output.get_node_output_path(node_artifact_request("build.node"))
-
-            self.assertFalse((outside / output.run_key_name).exists())
-
-    def test_compiled_result_path_rejects_symlinked_target(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            outside = base_dir / "outside.md"
-            outside.write_text("outside", encoding="utf-8")
-            result_path = output.results_dir / build_result_filename("build.node")
-            result_path.parent.mkdir(parents=True)
-            try:
-                result_path.symlink_to(outside)
-            except OSError as exc:
-                self.skipTest(f"symlink creation is unavailable: {exc}")
-
-            with self.assertRaisesRegex(ValueError, "must not be a symlink"):
-                output.get_node_output_path(node_artifact_request("build.node"))
-
-            self.assertEqual(outside.read_text(encoding="utf-8"), "outside")
-
-    def test_finalize_stage_consolidates_task_outputs(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
-            (stage_dir / "beta_round1.md").write_text("beta", encoding="utf-8")
-
-            result = output.finalize_node(node_artifact_request("build.node"))
-
-            result_text = (
-                output.results_dir / build_result_filename("build.node")
-            ).read_text(encoding="utf-8")
-            self.assertEqual(result.stage_name, "build.node")
-            self.assertIn("alpha", result_text)
-            self.assertIn("beta", result_text)
-
-    def test_finalize_stage_links_generated_files_against_project_root(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            (base_dir / "src").mkdir()
-            (base_dir / "src" / "app.txt").write_text("content", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            (stage_dir / "alpha_round1.md").write_text(
-                "Updated `src/app.txt`.\n",
-                encoding="utf-8",
-            )
-
-            output.finalize_node(node_artifact_request("build.node"))
-
-            result_text = (
-                output.results_dir / build_result_filename("build.node")
-            ).read_text(encoding="utf-8")
-            self.assertIn("## Generated Files", result_text)
-            self.assertIn("[src/app.txt]", result_text)
-
-    def test_finalize_stage_namespaces_workspace_generated_files_by_task(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            alpha_workspace = base_dir / "alpha-workspace"
-            beta_workspace = base_dir / "beta-workspace"
-            (alpha_workspace / "src").mkdir(parents=True)
-            (beta_workspace / "src").mkdir(parents=True)
-            (alpha_workspace / "src" / "app.txt").write_text(
-                "alpha content",
-                encoding="utf-8",
-            )
-            (alpha_workspace / "src" / "app.txt").chmod(0o640)
-            (beta_workspace / "src" / "app.txt").write_text(
-                "beta content",
-                encoding="utf-8",
-            )
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            beta_output = stage_dir / "beta_round1.md"
-            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-            beta_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-
-            result = output.finalize_node(
-                node_artifact_request("build.node"),
-                generated_file_workspace_roots={
-                    alpha_output.resolve(strict=False): alpha_workspace,
-                    beta_output.resolve(strict=False): beta_workspace,
-                },
-            )
-
-            result_text = (
-                output.results_dir / build_result_filename("build.node")
-            ).read_text(encoding="utf-8")
-            self.assertIn("[alpha/src/app.txt]", result_text)
-            self.assertIn("[beta/src/app.txt]", result_text)
-            self.assertEqual(len(result.generated_files), 2)
-            generated_dir = output.results_dir / "generated-files" / "build.node"
-            self.assertEqual(
-                (generated_dir / "alpha" / "src" / "app.txt").read_text(
-                    encoding="utf-8"
-                ),
-                "alpha content",
-            )
-            self.assertEqual(
-                (generated_dir / "beta" / "src" / "app.txt").read_text(
-                    encoding="utf-8"
-                ),
-                "beta content",
-            )
-            self.assertEqual(
-                stat.S_IMODE(
-                    (generated_dir / "alpha" / "src" / "app.txt").stat().st_mode
-                ),
-                0o640,
-            )
-
-    def test_finalize_stage_preserves_result_when_generated_file_copy_fails(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "blocked").mkdir(parents=True)
-            (workspace / "blocked" / "app.txt").write_text(
-                "blocked content",
-                encoding="utf-8",
-            )
-            (workspace / "good.txt").write_text("good content", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            provider_output = stage_dir / "alpha_round1.md"
-            provider_output.write_text(
-                "## Generated Files\n\n- `blocked/app.txt`\n- `good.txt`\n",
-                encoding="utf-8",
-            )
-            snapshot = snapshot_generated_file_workspace(provider_output, workspace)
-            blocking_path = (
-                output.results_dir
-                / "generated-files"
-                / "build.node"
-                / "alpha"
-                / "blocked"
-            )
-            blocking_path.parent.mkdir(parents=True, exist_ok=True)
-            blocking_path.write_text("preserve me", encoding="utf-8")
-
-            result = output.finalize_node(
-                node_artifact_request("build.node"),
-                generated_file_workspace_roots={
-                    provider_output.resolve(strict=False): snapshot,
-                },
-            )
-
-            result_text = result.result_file.read_text(encoding="utf-8")
-            generated_file = (
-                output.results_dir
-                / "generated-files"
-                / "build.node"
-                / "alpha"
-                / "good.txt"
-            )
-            self.assertTrue(provider_output.is_file())
-            self.assertIn("[alpha/good.txt]", result_text)
-            self.assertNotIn("[alpha/blocked/app.txt]", result_text)
-            self.assertEqual(result.generated_files, (generated_file,))
-            self.assertEqual(
-                generated_file.read_text(encoding="utf-8"),
-                "good content",
-            )
-            self.assertEqual(blocking_path.read_text(encoding="utf-8"), "preserve me")
-            self.assertEqual(len(result.warnings), 1)
-            self.assertIn("alpha/blocked/app.txt", result.warnings[0])
-            self.assertIn("copy failed", result.warnings[0].lower())
-
-    def test_finalize_stage_removes_partial_generated_file_copy(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            workspace.mkdir()
-            (workspace / "app.txt").write_text("complete", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            provider_output = stage_dir / "alpha_round1.md"
-            provider_output.write_text(
-                "## Generated Files\n\n- `app.txt`\n",
-                encoding="utf-8",
-            )
-            snapshot = snapshot_generated_file_workspace(provider_output, workspace)
-
-            def fail_after_partial_copy(source: Path, target: Path) -> None:  # noqa: ARG001
-                Path(target).write_text("partial", encoding="utf-8")
-                raise OSError("disk full")
-
-            with patch(
-                "crewplane.artifacts.generated_files.catalog.shutil.copyfile",
-                side_effect=fail_after_partial_copy,
-            ):
-                result = output.finalize_node(
-                    node_artifact_request("build.node"),
-                    generated_file_workspace_roots={
-                        provider_output.resolve(strict=False): snapshot,
-                    },
-                )
-
-            result_text = result.result_file.read_text(encoding="utf-8")
-            generated_file_dir = (
-                output.results_dir / "generated-files" / "build.node" / "alpha"
-            )
-            self.assertNotIn("[alpha/app.txt]", result_text)
-            self.assertEqual(result.generated_files, ())
-            self.assertEqual(len(result.warnings), 1)
-            self.assertIn("disk full", result.warnings[0])
-            self.assertFalse((generated_file_dir / "app.txt").exists())
-            self.assertEqual(list(generated_file_dir.glob(".generated-file-*.tmp")), [])
-
-    def test_workspace_generated_files_hash_truncated_stage_directories(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            stage_prefix = "a" * 120
-            generated_paths = []
-            for suffix in ("x", "y"):
-                stage_name = f"{stage_prefix}{suffix}"
-                workspace = base_dir / f"workspace-{suffix}"
-                (workspace / "src").mkdir(parents=True)
-                (workspace / "src" / "app.txt").write_text(
-                    f"{suffix} content",
-                    encoding="utf-8",
-                )
-                stage_dir = output.create_node_dir(node_artifact_request(stage_name))
-                provider_output = stage_dir / "alpha_round1.md"
-                provider_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-
-                result = output.finalize_node(
-                    node_artifact_request(stage_name),
-                    generated_file_workspace_roots={
-                        provider_output.resolve(strict=False): workspace,
-                    },
-                )
-                generated_paths.extend(result.generated_files)
-
-            self.assertEqual(len(generated_paths), 2)
-            self.assertNotEqual(generated_paths[0].parent, generated_paths[1].parent)
-            self.assertEqual(
-                generated_paths[0].read_text(encoding="utf-8"), "x content"
-            )
-            self.assertEqual(
-                generated_paths[1].read_text(encoding="utf-8"), "y content"
-            )
-
-    def test_workspace_generated_files_use_snapshot_not_mutated_workspace(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            generated_file = workspace / "src" / "app.txt"
-            generated_file.write_text("original", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-            snapshot = snapshot_generated_file_workspace(alpha_output, workspace)
-            generated_file.write_text("mutated", encoding="utf-8")
-
-            output.finalize_node(
-                node_artifact_request("build.node"),
-                generated_file_workspace_roots={
-                    alpha_output.resolve(strict=False): snapshot,
-                },
-            )
-
-            generated_dir = output.results_dir / "generated-files" / "build.node"
-            self.assertEqual(
-                (generated_dir / "alpha" / "src" / "app.txt").read_text(
-                    encoding="utf-8"
-                ),
-                "original",
-            )
-
-    def test_workspace_generated_files_resolve_original_absolute_paths_from_snapshot(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            generated_file = workspace / "src" / "app.txt"
-            generated_file.write_text("original", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text(
-                f"Updated `{generated_file.as_posix()}`.\n",
-                encoding="utf-8",
-            )
-            snapshot = snapshot_generated_file_workspace(alpha_output, workspace)
-            shutil.rmtree(workspace)
-
-            result = output.finalize_node(
-                node_artifact_request("build.node"),
-                generated_file_workspace_roots={
-                    alpha_output.resolve(strict=False): snapshot,
-                },
-            )
-
-            generated_dir = output.results_dir / "generated-files" / "build.node"
-            generated_result = generated_dir / "alpha" / "src" / "app.txt"
-            self.assertEqual(
-                generated_result.read_text(encoding="utf-8"),
-                "original",
-            )
-            self.assertEqual(result.generated_files, (generated_result,))
-
-    def test_workspace_generated_file_snapshot_skips_unchanged_claims(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            (workspace / "src" / "documented.txt").write_text(
-                "same bytes",
-                encoding="utf-8",
-            )
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text(
-                "Updated `src/documented.txt`.\n",
-                encoding="utf-8",
-            )
-
-            snapshot = snapshot_generated_file_workspace(
-                alpha_output,
-                workspace,
-                changed_paths=set(),
-            )
-            snapshot_metadata = json.loads(
-                (snapshot / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-
-            output.finalize_node(
-                node_artifact_request("build.node"),
-                generated_file_workspace_roots={
-                    alpha_output.resolve(strict=False): snapshot,
-                },
-            )
-
-            result_text = (
-                output.results_dir / build_result_filename("build.node")
-            ).read_text(encoding="utf-8")
-            self.assertNotIn("## Generated Files", result_text)
-            self.assertEqual(
-                snapshot_metadata,
-                {"files": []},
-            )
-            self.assertFalse(
-                (
-                    output.results_dir
-                    / "generated-files"
-                    / "build.node"
-                    / "alpha"
-                    / "src"
-                    / "documented.txt"
-                ).exists()
-            )
-
-    def test_workspace_generated_file_snapshot_filters_before_size_limits(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            (workspace / "src" / "created.txt").write_text("x", encoding="utf-8")
-            (workspace / "src" / "unchanged.txt").write_text(
-                "oversized unchanged",
-                encoding="utf-8",
-            )
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text(
-                "\n".join(
-                    [
-                        "## Generated Files",
-                        "",
-                        "- `src/created.txt`",
-                        "- `src/unchanged.txt`",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-
-            with patch(
-                "crewplane.artifacts.generated_files.catalog."
-                "MAX_GENERATED_FILE_SNAPSHOT_BYTES",
-                1,
-            ):
-                snapshot = snapshot_generated_file_workspace(
-                    alpha_output,
-                    workspace,
-                    changed_paths={"src/created.txt"},
-                )
-            snapshot_metadata = json.loads(
-                (snapshot / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-
-            self.assertEqual(
-                snapshot_metadata,
-                {
-                    "files": [
-                        {
-                            "changed": True,
-                            "path": "src/created.txt",
-                            "size_bytes": 1,
-                        }
-                    ]
-                },
-            )
-            self.assertTrue((snapshot / "src" / "created.txt").is_file())
-            self.assertFalse((snapshot / "src" / "unchanged.txt").exists())
-
-    def test_workspace_generated_file_snapshot_accepts_missing_output_file_with_candidates(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            created_file = workspace / "src" / "created.txt"
-            created_file.write_text("created", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-
-            snapshot = snapshot_generated_file_workspace(
-                alpha_output,
-                workspace,
-                candidate_files=(created_file,),
-            )
-            snapshot_metadata = json.loads(
-                (snapshot / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-
-            self.assertEqual(
-                snapshot_metadata,
-                {
-                    "files": [
-                        {
-                            "changed": None,
-                            "path": "src/created.txt",
-                            "size_bytes": len("created"),
-                        }
-                    ]
-                },
-            )
-            self.assertEqual(
-                (snapshot / "src" / "created.txt").read_text(encoding="utf-8"),
-                "created",
-            )
-
-    def test_workspace_generated_file_snapshot_records_files_over_count_limit(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            (workspace / "src" / "one.txt").write_text("1", encoding="utf-8")
-            (workspace / "src" / "two.txt").write_text("2", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text(
-                "\n".join(
-                    [
-                        "## Generated Files",
-                        "",
-                        "- `src/one.txt`",
-                        "- `src/two.txt`",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-
-            with patch(
-                "crewplane.artifacts.generated_files.catalog."
-                "MAX_GENERATED_FILE_SNAPSHOT_FILES",
-                1,
-            ):
-                snapshot_root = snapshot_generated_file_workspace(
-                    alpha_output, workspace
-                )
-
-            metadata = json.loads(
-                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(len(metadata["files"]), 1)
-            self.assertEqual(metadata["rejected_file_count"], 1)
-            self.assertFalse(metadata["rejected_files_truncated"])
-            self.assertEqual(
-                metadata["rejected_files"],
-                [
-                    {
-                        "configured_limit_count": 1,
-                        "discovery_source": "provider_explicit_section",
-                        "disposition": "rejected",
-                        "explicit": True,
-                        "path": "src/two.txt",
-                        "reason": "file_count_limit",
-                        "size_bytes": 1,
-                    }
-                ],
-            )
-            self.assertTrue((snapshot_root / "src" / "one.txt").is_file())
-            self.assertFalse((snapshot_root / "src" / "two.txt").exists())
-
-    def test_workspace_generated_file_snapshot_records_oversized_explicit_file(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            oversized = workspace / "src" / "large.bin"
-            oversized.write_bytes(b"xx")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text(
-                "## Generated Files\n\n- `src/large.bin`\n",
-                encoding="utf-8",
-            )
-
-            with patch(
-                "crewplane.artifacts.generated_files.catalog."
-                "MAX_GENERATED_FILE_SNAPSHOT_BYTES",
-                1,
-            ):
-                snapshot_root = snapshot_generated_file_workspace(
-                    alpha_output,
-                    workspace,
-                    candidate_files=(oversized,),
-                    explicit_claims_only=True,
-                )
-
-            metadata = json.loads(
-                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(metadata["files"], [])
-            self.assertEqual(metadata["rejected_file_count"], 1)
-            self.assertFalse(metadata["rejected_files_truncated"])
-            self.assertEqual(
-                metadata["rejected_files"],
-                [
-                    {
-                        "configured_limit_bytes": 1,
-                        "discovery_source": "provider_explicit_section",
-                        "disposition": "rejected",
-                        "explicit": True,
-                        "path": "src/large.bin",
-                        "reason": "per_file_size_limit",
-                        "size_bytes": 2,
-                    }
-                ],
-            )
-            self.assertFalse((snapshot_root / "src" / "large.bin").exists())
-
-    def test_workspace_generated_file_snapshot_bounds_rejection_details(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            source_dir = workspace / "src"
-            source_dir.mkdir(parents=True)
-            generated_files = []
-            for index in range(6):
-                generated_file = source_dir / f"{index}.txt"
-                generated_file.write_text(str(index), encoding="utf-8")
-                generated_files.append(generated_file)
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-
-            with (
-                patch(
-                    "crewplane.artifacts.generated_files.catalog."
-                    "MAX_GENERATED_FILE_SNAPSHOT_FILES",
-                    1,
-                ),
-                patch(
-                    "crewplane.artifacts.generated_files.catalog."
-                    "MAX_GENERATED_FILE_SNAPSHOT_REJECTION_DETAILS",
-                    2,
-                ),
-            ):
-                snapshot_root = snapshot_generated_file_workspace(
-                    alpha_output,
-                    workspace,
-                    candidate_files=generated_files,
-                )
-
-            metadata = json.loads(
-                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            summary = generated_file_snapshot_rejection_summary(snapshot_root)
-
-            self.assertEqual(len(metadata["files"]), 1)
-            self.assertEqual(metadata["rejected_file_count"], 5)
-            self.assertEqual(len(metadata["rejected_files"]), 2)
-            self.assertTrue(metadata["rejected_files_truncated"])
-            self.assertEqual(summary.total_count, 5)
-            self.assertEqual(len(summary.recorded_files), 2)
-            self.assertTrue(summary.truncated)
-
-    def test_workspace_generated_file_snapshot_records_size_growth_during_copy(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            (workspace / "src" / "app.txt").write_text("x", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-
-            def expanded_source(
-                descriptor: int,
-                mode: str,
-                closefd: bool = True,
-            ) -> io.BytesIO:
-                self.assertGreaterEqual(descriptor, 0)
-                self.assertEqual(mode, "rb")
-                self.assertFalse(closefd)
-                return io.BytesIO(b"expanded")
-
-            with patch(
-                "crewplane.artifacts.generated_files.snapshot_io.os.fdopen",
-                new=expanded_source,
-            ):
-                snapshot_root = snapshot_generated_file_workspace(
-                    alpha_output, workspace
-                )
-
-            metadata = json.loads(
-                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(metadata["files"], [])
-            self.assertEqual(metadata["rejected_files"][0]["reason"], "copy_failed")
-            self.assertEqual(metadata["rejected_files"][0]["path"], "src/app.txt")
-            self.assertFalse((snapshot_root / "src" / "app.txt").exists())
-
-    def test_workspace_generated_file_snapshot_removes_truncated_copy(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            (workspace / "src" / "app.txt").write_text(
-                "complete",
-                encoding="utf-8",
-            )
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-
-            def truncated_source(
-                descriptor: int,
-                mode: str,
-                closefd: bool = True,
-            ) -> io.BytesIO:
-                self.assertGreaterEqual(descriptor, 0)
-                self.assertEqual(mode, "rb")
-                self.assertFalse(closefd)
-                return io.BytesIO(b"par")
-
-            with patch(
-                "crewplane.artifacts.generated_files.snapshot_io.os.fdopen",
-                new=truncated_source,
-            ):
-                snapshot_root = snapshot_generated_file_workspace(
-                    alpha_output,
-                    workspace,
-                )
-
-            metadata = json.loads(
-                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(metadata["files"], [])
-            self.assertEqual(metadata["rejected_files"][0]["reason"], "copy_failed")
-            self.assertFalse((snapshot_root / "src" / "app.txt").exists())
-
-    def test_workspace_generated_file_snapshot_ignores_hardlinked_files(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            outside_file = base_dir / "outside.txt"
-            outside_file.write_text("external", encoding="utf-8")
-            generated_file = workspace / "src" / "leak.txt"
-            try:
-                os.link(outside_file, generated_file)
-            except OSError as exc:
-                self.skipTest(f"hard links are unavailable: {exc}")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text("Updated `src/leak.txt`.\n", encoding="utf-8")
-
-            snapshot = snapshot_generated_file_workspace(alpha_output, workspace)
-
-            self.assertFalse((snapshot / "src" / "leak.txt").exists())
-
-    def test_workspace_generated_file_snapshot_rejects_symlink_swap_during_copy(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            source = workspace / "src" / "app.txt"
-            source.write_text("inside", encoding="utf-8")
-            outside = base_dir / "outside.txt"
-            outside.write_text("escape", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-            original_open = os.open
-            swapped = False
-
-            def swap_before_source_open(
-                path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
-                flags: int,
-                dir_fd: int | None = None,
-            ) -> int:
-                nonlocal swapped
-                if path == "app.txt" and dir_fd is not None and not swapped:
-                    source.unlink()
-                    try:
-                        source.symlink_to(outside)
-                    except OSError as exc:
-                        self.skipTest(f"symlinks are unavailable: {exc}")
-                    swapped = True
-                if dir_fd is None:
-                    return original_open(path, flags)
-                return original_open(path, flags, dir_fd=dir_fd)
-
-            with patch(
-                "crewplane.artifacts.generated_files.snapshot_io.os.open",
-                new=swap_before_source_open,
-            ):
-                snapshot_root = snapshot_generated_file_workspace(
-                    alpha_output,
-                    workspace,
-                )
-
-            metadata = json.loads(
-                (snapshot_root / ".crewplane-generated-file-snapshot.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(metadata["files"], [])
-            self.assertEqual(metadata["rejected_files"][0]["reason"], "copy_failed")
-            self.assertEqual(metadata["rejected_files"][0]["path"], "src/app.txt")
-            self.assertFalse((snapshot_root / "src" / "app.txt").exists())
-            self.assertEqual(outside.read_text(encoding="utf-8"), "escape")
-
-    def test_generated_file_snapshot_rejects_symlinked_source_parent(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            workspace = base_dir / "workspace"
-            (workspace / "src").mkdir(parents=True)
-            (workspace / "src" / "app.txt").write_text("content", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            outside = base_dir / "outside"
-            outside.mkdir()
-            (stage_dir / "generated-file-sources").symlink_to(
-                outside,
-                target_is_directory=True,
-            )
-            alpha_output = stage_dir / "alpha_round1.md"
-            alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
-
-            with self.assertRaises(RuntimeError):
-                snapshot_generated_file_workspace(
-                    alpha_output,
-                    workspace,
-                    changed_paths={"src/app.txt"},
-                )
-
-            self.assertTrue(outside.exists())
-
-    def test_finalize_stage_can_disable_generated_file_detection(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            (base_dir / "src").mkdir()
-            (base_dir / "src" / "app.txt").write_text("stale", encoding="utf-8")
-            stage_dir = output.create_node_dir(node_artifact_request("build.node"))
-            (stage_dir / "alpha_round1.md").write_text(
-                "Updated `src/app.txt`.\n",
-                encoding="utf-8",
-            )
-
-            output.finalize_node(
-                node_artifact_request("build.node"),
-                generated_file_detection_enabled=False,
-            )
-
-            result_text = (
-                output.results_dir / build_result_filename("build.node")
-            ).read_text(encoding="utf-8")
-            self.assertNotIn("## Generated Files", result_text)
-            self.assertIn("Updated `src/app.txt`.", result_text)
-
-    def test_stage_names_do_not_escape_or_collide_after_normalization(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-
-            escaped_candidate = output.create_node_dir(node_artifact_request("..-"))
-            dashed = output.create_node_dir(node_artifact_request("-a"))
-            plain = output.create_node_dir(node_artifact_request("a"))
-
-            self.assertTrue(
-                escaped_candidate.resolve().is_relative_to(output.stages_dir)
-            )
-            self.assertNotEqual(dashed, plain)
-            self.assertNotEqual(
-                output.results_dir / build_result_filename("-a"),
-                output.results_dir / build_result_filename("a"),
-            )
-
-    def test_write_and_update_run_manifest(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            base_dir = Path(tmp_dir)
-            output = OutputManager("Workflow", base_dir=base_dir)
-            manifest = _running_manifest(output)
-
-            output.write_run_manifest(manifest)
-            output.update_run_manifest_status(
-                "succeeded",
-                datetime(2026, 6, 3, 12, 1).isoformat(),
-            )
-
-            manifest_path = output.stages_dir / "manifests" / "run.json"
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["status"], "succeeded")
-            self.assertEqual(payload["workflow_signature"], manifest.workflow_signature)
-            self.assertEqual(payload["run_key_name"], output.run_key_name)
-
-    def test_write_node_success_state_uses_bounded_manifest_filename(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-            node_state = NodeState(
-                run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
-                plan_schema_version=SCHEMA_VERSION,
-                workflow_identity=".crewplane/workflows/workflow.task.md",
-                workflow_name="workflow",
-                workflow_signature=_workflow_signature("workflow"),
-                run_id=output.run_id,
-                run_key_name=output.run_key_name,
-                node_id="build.node",
-                completed_at=datetime(2026, 6, 3, 12, 0).isoformat(),
-                artifacts=[
-                    ArtifactDescriptor(
-                        kind="output",
-                        relative_path="build.node-result.md",
-                        sha256=_workflow_signature("result"),
-                        size_bytes=6,
-                    )
-                ],
-            )
-
-            path = output.write_node_success_state(node_state)
-
-            self.assertEqual(path.name, "build.node--811a9309e00c.json")
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["node_id"], "build.node")
-
-    def test_write_preflight_plan_and_static_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-            plan = _minimal_plan(output)
-
-            static_path = output.write_preflight_static_file(
-                "static-files/context.txt",
-                b"context",
-            )
-            plan_path = output.write_preflight_plan(plan)
-            manifest_path = output.write_preflight_manifest(
-                {"status": "preflight_succeeded"}
-            )
-            diagnostics_path = output.write_preflight_diagnostics([])
-            metadata_path = output.write_preflight_metadata({"run_id": output.run_id})
-            render_path = output.write_preflight_render_plan([])
-            bundle_path = output.write_preflight_execution_bundle({"nodes": []})
-            summary_path = output.write_preflight_summary("# Preflight\n")
-
-            self.assertEqual(static_path.read_text(encoding="utf-8"), "context")
-            plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
-            self.assertEqual(
-                plan_payload["workflow_signature"], plan.workflow_signature
-            )
-            self.assertEqual(plan_payload["plan_schema_version"], SCHEMA_VERSION)
-            self.assertNotIn("schema_version", plan_payload)
-            self.assertEqual(plan_payload["run_key_name"], output.run_key_name)
-            self.assertEqual(manifest_path.name, "manifest.json")
-            self.assertEqual(diagnostics_path.name, "diagnostics.json")
-            self.assertEqual(metadata_path.name, "metadata.json")
-            self.assertEqual(render_path.name, "render-plans.json")
-            self.assertEqual(bundle_path.name, "execution-bundle.json")
-            self.assertEqual(summary_path.read_text(encoding="utf-8"), "# Preflight\n")
-
-    def test_preflight_and_workspace_exports_reject_symlinked_directories(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-            outside = Path(tmp_dir) / "outside"
-            outside.mkdir()
-
-            preflight_link = output.stages_dir / "preflight"
-            export_link = output.stages_dir / "workspace-exports"
-            try:
-                preflight_link.symlink_to(outside, target_is_directory=True)
-                export_link.symlink_to(outside, target_is_directory=True)
-            except OSError as exc:
-                self.skipTest(f"symlink creation is unavailable: {exc}")
-
-            with self.assertRaisesRegex(ValueError, "real directory"):
-                output.write_preflight_static_file("static-files/context.txt", b"x")
-            with self.assertRaisesRegex(ValueError, "real directory"):
-                output.write_workspace_export("primary", {"status": "succeeded"})
-            self.assertFalse((outside / "static-files" / "context.txt").exists())
-            self.assertFalse((outside / "primary.json").exists())
-
-    def test_run_manifest_signature_must_be_sha256_hex(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output = OutputManager("Workflow", base_dir=Path(tmp_dir))
-
-            with self.assertRaisesRegex(ValueError, "workflow_signature"):
-                _running_manifest(
-                    output,
-                    workflow_signature="not-a-signature",
-                )
-
-
-if __name__ == "__main__":
-    unittest.main()
+def test_artifacts_support_symlinked_base_directory_ancestor(tmp_path: Path) -> None:
+    temp_root = tmp_path
+    real_parent = temp_root / "real-parent"
+    real_parent.mkdir()
+    alias = temp_root / "alias"
+    try:
+        alias.symlink_to(real_parent, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    base_dir = alias / "nested" / "state"
+    output = OutputManager("Workflow", base_dir=base_dir)
+    stage_dir = output.create_node_dir(node_artifact_request("build.node"))
+    (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
+
+    output.finalize_node(node_artifact_request("build.node"))
+
+    assert output.base_dir == base_dir.resolve(strict=True)
+    assert (output.results_dir / build_result_filename("build.node")).is_file()
+
+
+def test_legacy_stage_path_and_resume_methods_remain_available(tmp_path: Path) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    stage_dir = output.create_node_dir(node_artifact_request("build.node"))
+    resume_path = output.write_node_resume_source(
+        node_artifact_request("build.node"),
+        {"source": "run-a"},
+    )
+
+    assert output.get_node_dir(node_artifact_request("build.node")) == stage_dir
+    assert output.get_node_output_path(
+        node_artifact_request("build.node")
+    ) == output.results_dir / build_result_filename("build.node")
+    assert output.get_node_findings_path(
+        node_artifact_request("build.node", findings_enabled=True)
+    ) == output.results_dir / build_findings_filename("build.node")
+    assert resume_path == stage_dir / "resume-source.json"
+    assert json.loads(resume_path.read_text(encoding="utf-8")) == {"source": "run-a"}
+
+
+def test_compiled_stage_directory_rejects_symlink_escape(tmp_path: Path) -> None:
+    base_dir = tmp_path
+    output = OutputManager("Workflow", base_dir=base_dir)
+    outside = base_dir / "outside"
+    outside.mkdir()
+    stage_link = output.stages_dir / "build.node"
+    try:
+        stage_link.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    request = NodeArtifactRequest(
+        "build.node",
+        ArtifactContract(
+            stage_path="build.node",
+            output_path="build.node-result.md",
+            log_path="build.node/logs",
+            result_path="build.node-result.md",
+        ),
+    )
+    with pytest.raises(ValueError, match="real directory"):
+        output.create_node_dir(request)
+
+
+def test_run_allocation_does_not_create_results_until_finalization(
+    tmp_path: Path,
+) -> None:
+    base_dir = tmp_path
+    output = OutputManager("Workflow", base_dir=base_dir)
+
+    assert output.stages_dir.exists()
+    assert not (base_dir / "execution-results").exists()
+
+    stage_dir = output.create_node_dir(node_artifact_request("build.node"))
+    (stage_dir / "alpha_round1.md").write_text("alpha", encoding="utf-8")
+    output.finalize_node(node_artifact_request("build.node"))
+
+    assert output.results_dir.exists()
+
+
+def test_compiled_result_path_rejects_symlinked_results_root(tmp_path: Path) -> None:
+    base_dir = tmp_path
+    output = OutputManager("Workflow", base_dir=base_dir)
+    outside = base_dir / "outside"
+    outside.mkdir()
+    results_root = base_dir / "execution-results"
+    try:
+        results_root.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="real directory"):
+        output.get_node_output_path(node_artifact_request("build.node"))
+
+    assert not (outside / output.run_key_name).exists()
+
+
+def test_compiled_result_path_rejects_symlinked_target(tmp_path: Path) -> None:
+    base_dir = tmp_path
+    output = OutputManager("Workflow", base_dir=base_dir)
+    outside = base_dir / "outside.md"
+    outside.write_text("outside", encoding="utf-8")
+    result_path = output.results_dir / build_result_filename("build.node")
+    result_path.parent.mkdir(parents=True)
+    try:
+        result_path.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        output.get_node_output_path(node_artifact_request("build.node"))
+
+    assert outside.read_text(encoding="utf-8") == "outside"
+
+
+def test_stage_names_do_not_escape_or_collide_after_normalization(
+    tmp_path: Path,
+) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    escaped_candidate = output.create_node_dir(node_artifact_request("..-"))
+    dashed = output.create_node_dir(node_artifact_request("-a"))
+    plain = output.create_node_dir(node_artifact_request("a"))
+
+    assert escaped_candidate.resolve().is_relative_to(output.stages_dir)
+    assert dashed != plain
+    assert output.results_dir / build_result_filename(
+        "-a"
+    ) != output.results_dir / build_result_filename("a")
+
+
+def test_write_and_update_run_manifest(tmp_path: Path) -> None:
+    base_dir = tmp_path
+    output = OutputManager("Workflow", base_dir=base_dir)
+    manifest = _running_manifest(output)
+
+    output.write_run_manifest(manifest)
+    output.update_run_manifest_status(
+        "succeeded",
+        datetime(2026, 6, 3, 12, 1).isoformat(),
+    )
+
+    manifest_path = output.stages_dir / "manifests" / "run.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "succeeded"
+    assert payload["workflow_signature"] == manifest.workflow_signature
+    assert payload["run_key_name"] == output.run_key_name
+
+
+def test_write_node_success_state_uses_bounded_manifest_filename(
+    tmp_path: Path,
+) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    node_state = NodeState(
+        run_state_schema_version=RUN_STATE_SCHEMA_VERSION,
+        plan_schema_version=SCHEMA_VERSION,
+        workflow_identity=".crewplane/workflows/workflow.task.md",
+        workflow_name="workflow",
+        workflow_signature=_workflow_signature("workflow"),
+        run_id=output.run_id,
+        run_key_name=output.run_key_name,
+        node_id="build.node",
+        completed_at=datetime(2026, 6, 3, 12, 0).isoformat(),
+        artifacts=[
+            ArtifactDescriptor(
+                kind="output",
+                relative_path="build.node-result.md",
+                sha256=_workflow_signature("result"),
+                size_bytes=6,
+            )
+        ],
+    )
+
+    path = output.write_node_success_state(node_state)
+
+    assert path.name == "build.node--811a9309e00c.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["node_id"] == "build.node"
+
+
+def test_write_preflight_plan_and_static_file(tmp_path: Path) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    plan = _minimal_plan(output)
+
+    static_path = output.write_preflight_static_file(
+        "static-files/context.txt",
+        b"context",
+    )
+    plan_path = output.write_preflight_plan(plan)
+    manifest_path = output.write_preflight_manifest({"status": "preflight_succeeded"})
+    diagnostics_path = output.write_preflight_diagnostics([])
+    metadata_path = output.write_preflight_metadata({"run_id": output.run_id})
+    render_path = output.write_preflight_render_plan([])
+    bundle_path = output.write_preflight_execution_bundle({"nodes": []})
+    summary_path = output.write_preflight_summary("# Preflight\n")
+
+    assert static_path.read_text(encoding="utf-8") == "context"
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert plan_payload["workflow_signature"] == plan.workflow_signature
+    assert plan_payload["plan_schema_version"] == SCHEMA_VERSION
+    assert "schema_version" not in plan_payload
+    assert plan_payload["run_key_name"] == output.run_key_name
+    assert manifest_path.name == "manifest.json"
+    assert diagnostics_path.name == "diagnostics.json"
+    assert metadata_path.name == "metadata.json"
+    assert render_path.name == "render-plans.json"
+    assert bundle_path.name == "execution-bundle.json"
+    assert summary_path.read_text(encoding="utf-8") == "# Preflight\n"
+
+
+def test_preflight_and_workspace_exports_reject_symlinked_directories(
+    tmp_path: Path,
+) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    preflight_link = output.stages_dir / "preflight"
+    export_link = output.stages_dir / "workspace-exports"
+    try:
+        preflight_link.symlink_to(outside, target_is_directory=True)
+        export_link.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="real directory"):
+        output.write_preflight_static_file("static-files/context.txt", b"x")
+    with pytest.raises(ValueError, match="real directory"):
+        output.write_workspace_export("primary", {"status": "succeeded"})
+    assert not (outside / "static-files" / "context.txt").exists()
+    assert not (outside / "primary.json").exists()
+
+
+def test_run_manifest_signature_must_be_sha256_hex(tmp_path: Path) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+
+    with pytest.raises(ValueError, match="workflow_signature"):
+        _running_manifest(
+            output,
+            workflow_signature="not-a-signature",
+        )
