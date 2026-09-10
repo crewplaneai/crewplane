@@ -92,7 +92,7 @@ def test_snapshot_detects_entry_changed_between_discovery_and_open(
     changed = False
 
     def open_after_change(
-        path: str | Path, flags: int, mode: int = 0o777, dir_fd: int | None = None
+        path: str | Path, flags: int, mode: int = 0o600, dir_fd: int | None = None
     ) -> int:
         nonlocal changed
         if path == "entry" and not changed:

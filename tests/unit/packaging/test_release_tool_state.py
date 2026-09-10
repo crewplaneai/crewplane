@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import urllib.error
 from pathlib import Path
@@ -68,6 +69,32 @@ def test_command_runner_reports_stdout_and_stderr_on_failure(tmp_path: Path) -> 
     message = str(caught.value)
     assert "stdout:\nvisible stdout" in message
     assert "stderr:\nvisible stderr" in message
+
+
+@pytest.mark.parametrize("stdout_size", [0, 14000])
+def test_command_runner_preserves_crash_header_and_tail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdout_size: int
+) -> None:
+    stdout = "build started\n" + "x" * stdout_size + "\nbuild finished"
+    stderr = "[BUG] interpreter crash\n" + "memory map\n" * 2000
+    stderr += "Crashed while printing bug report"
+    monkeypatch.setattr(
+        state.state_types.subprocess,
+        "run",
+        constant(subprocess.CompletedProcess(["brew"], -6, stdout, stderr)),
+    )
+
+    with pytest.raises(state.ReleaseError) as caught:
+        state.CommandRunner().run(["brew"], cwd=tmp_path)
+
+    message = str(caught.value)
+    assert "stdout:\nbuild started" in message
+    assert "build finished" in message
+    assert "stderr:\n[BUG] interpreter crash" in message
+    assert "Crashed while printing bug report" in message
+    assert "output truncated" in message
+    output = message.removeprefix("command failed (-6): brew: ")
+    assert len(output) <= state.state_types.COMMAND_FAILURE_OUTPUT_LIMIT
 
 
 def test_command_runner_redacts_credentials_from_failure(

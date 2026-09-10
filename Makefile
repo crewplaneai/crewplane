@@ -95,8 +95,11 @@ setup:
 uninstall:
 	$(UNINSTALL_CMD)
 
+# Report in fresh interpreters to avoid native crashes after the test suite.
 test:
-	$(RUN_PYTEST) -p pytest_cov --cov=crewplane --cov-branch --cov-report=term-missing:skip-covered --cov-report=json:.coverage.json --cov-fail-under=0
+	$(RUN_PYTEST) -p pytest_cov --cov=crewplane --cov-branch --cov-report= --cov-fail-under=0
+	$(RUN_PYTHON) -m coverage report --show-missing --skip-covered
+	$(RUN_PYTHON) -m coverage json -o .coverage.json
 	$(MAKE) coverage-check
 
 coverage-check:

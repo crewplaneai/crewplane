@@ -223,6 +223,7 @@ def test_pane_width_uses_reported_tmux_width() -> None:
             refresh_per_second=0,
         )
     )
+    refresh_thread = runtime.runtime._refresh_thread
 
     try:
         assert (
@@ -234,7 +235,11 @@ def test_pane_width_uses_reported_tmux_width() -> None:
             == 10
         )
     finally:
+        runtime.stop(RunResult(status="succeeded"))
         runtime.cleanup_preserved_runtime()
+
+    assert refresh_thread is not None
+    assert not refresh_thread.is_alive()
 
 
 def test_failed_start_cleans_up_partial_runtime_state() -> None:

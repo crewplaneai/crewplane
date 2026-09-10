@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import yaml
 
@@ -271,41 +272,51 @@ def _brew_smoke(context: ReleaseContext, runner: CommandRunner) -> None:
             f"Skipping brew-smoke: Homebrew formula {context.package_name} is already installed."
         )
         return
-    with tempfile.TemporaryDirectory() as temporary:
-        tmp = Path(temporary)
-        sdist = context.root / "dist" / context.sdist_filename
-        build.ensure_file(sdist)
-        sha = artifact_identity(sdist, context.root, "pypi_sdist").sha256
-        local_formula = tmp / f"{context.package_name}.rb"
-        formula = (
-            context.root
-            / "packaging"
-            / "homebrew"
-            / "Formula"
-            / f"{context.package_name}.rb"
+    sdist = root / "dist" / context.sdist_filename
+    build.ensure_file(sdist)
+    sha = artifact_identity(sdist, root, "pypi_sdist").sha256
+    formula = root / "packaging" / "homebrew" / "Formula" / f"{context.package_name}.rb"
+    text = formula.read_text(encoding="utf-8")
+    text = replace_first(text, r'url "[^"]+"', f'url "file://{sdist}"')
+    text = replace_first(text, r'sha256 "[a-f0-9]{64}"', f'sha256 "{sha}"')
+    tap_name = f"crewplane/release-smoke-{uuid4().hex}"
+    runner.run(
+        ["brew", "tap-new", "--no-git", tap_name],
+        cwd=root,
+        env={"HOMEBREW_DEVELOPER": "1"},
+    )
+    try:
+        repository = runner.run(["brew", "--repository", tap_name], cwd=root)
+        local_formula = (
+            Path(repository.stdout.strip()) / "Formula" / f"{context.package_name}.rb"
         )
-        text = formula.read_text(encoding="utf-8")
-        text = replace_first(text, r'url "[^"]+"', f'url "file://{sdist}"')
-        text = replace_first(text, r'sha256 "[a-f0-9]{64}"', f'sha256 "{sha}"')
         local_formula.write_text(text, encoding="utf-8")
-        try:
-            runner.run(
-                ["brew", "install", "--build-from-source", str(local_formula)],
-                cwd=root,
-                timeout=COMMAND_TIMEOUT_SECONDS,
-            )
-            runner.run(
-                ["brew", "test", context.package_name],
-                cwd=root,
-                timeout=COMMAND_TIMEOUT_SECONDS,
-            )
-        finally:
-            runner.run(
-                ["brew", "uninstall", context.package_name],
-                cwd=root,
-                capture_output=True,
-                check=False,
-            )
+        _check_brew_installation(context, runner, f"{tap_name}/{context.package_name}")
+    finally:
+        runner.run(["brew", "untap", tap_name], cwd=root)
+
+
+def _check_brew_installation(
+    context: ReleaseContext, runner: CommandRunner, formula_name: str
+) -> None:
+    try:
+        runner.run(
+            ["brew", "install", "--build-from-source", formula_name],
+            cwd=context.root,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+        runner.run(
+            ["brew", "test", formula_name],
+            cwd=context.root,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    finally:
+        runner.run(
+            ["brew", "uninstall", formula_name],
+            cwd=context.root,
+            capture_output=True,
+            check=False,
+        )
 
 
 def post_publish_pypi_check(

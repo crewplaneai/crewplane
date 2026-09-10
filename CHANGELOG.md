@@ -4,6 +4,20 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-09
+
+### Changed
+- Refactored shared helpers, tightened internal types, and simplified
+  provider and workspace lifecycle handling.
+- Expanded regression tests and strengthened coverage checks.
+
+### Fixed
+- Prevented a dashboard test from leaving a background refresh thread running.
+- Restored Homebrew release checks for tapped formulae while preserving
+  Homebrew's developer mode setting.
+- Preserved crash headers in lengthy release-check failure reports.
+- Isolated coverage reporting from pytest during test and release checks.
+
 ## [0.3.0] - 2026-09-07
 
 ### Changed

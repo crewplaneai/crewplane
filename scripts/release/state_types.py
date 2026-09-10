@@ -134,7 +134,21 @@ def _command_failure_output(result: CommandResult) -> str:
     output = "\n\n".join(sections)
     if len(output) <= COMMAND_FAILURE_OUTPUT_LIMIT:
         return output
-    return output[-COMMAND_FAILURE_OUTPUT_LIMIT:]
+    separator_length = 2 * (len(sections) - 1)
+    section_limit = (COMMAND_FAILURE_OUTPUT_LIMIT - separator_length) // len(sections)
+    return "\n\n".join(
+        _truncate_command_section(section, section_limit) for section in sections
+    )
+
+
+def _truncate_command_section(section: str, limit: int) -> str:
+    if len(section) <= limit:
+        return section
+    marker = "\n... output truncated ...\n"
+    retained_length = limit - len(marker)
+    head_length = retained_length // 2
+    tail_length = retained_length - head_length
+    return section[:head_length] + marker + section[-tail_length:]
 
 
 @dataclass(frozen=True)

@@ -158,7 +158,11 @@ def test_pytest_reliability_contract_is_explicit() -> None:
     assert "-p pytest_cov" in test_target
     assert '-m "not scale"' not in test_target
     assert "--cov=crewplane --cov-branch" in test_target
-    assert "--cov-report=json:.coverage.json" in test_target
+    assert "--cov-report= --cov-fail-under=0" in test_target
+    assert (
+        "$(RUN_PYTHON) -m coverage report --show-missing --skip-covered" in test_target
+    )
+    assert "$(RUN_PYTHON) -m coverage json -o .coverage.json" in test_target
     assert "--cov-fail-under=0" in test_target
     assert "$(MAKE) coverage-check" in test_target
     coverage_target = make_target_body("coverage-check")
