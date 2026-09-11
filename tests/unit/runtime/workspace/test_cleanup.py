@@ -12,6 +12,8 @@ import pytest
 import crewplane.runtime.workspace.git as workspace_git
 from crewplane.runtime.workspace.cleanup import (
     WorkspaceCleanupFilter,
+    cleanup_candidates,
+    cleanup_candidates_for_repository,
     cleanup_workspace_cache,
     parse_duration_seconds,
 )
@@ -95,6 +97,76 @@ def test_cleanup_workspace_cache_dry_run_preserves_paths(tmp_path: Path) -> None
     assert result.entries[0].removed is False
     assert result.entries[0].size_bytes == len("payload")
     assert workspace_path.exists()
+
+
+def test_cleanup_candidates_preserve_fixed_depth_order_and_exclude_links(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "cache"
+    expected = (
+        ("run-z", "review-workspaces/repo-a/run-z/node-a/reviewer"),
+        ("run-a", "review-workspaces/repo-b/run-a/node-b/reviewer"),
+        ("run-z", "snapshots/repo-a/run-z/executor"),
+        ("run-a", "workspace-runs/run-a/legacy"),
+        ("run-z", "workspaces/repo-a/run-z/a"),
+        ("run-z", "workspaces/repo-a/run-z/z"),
+        ("run-a", "workspaces/repo-b/run-a/executor"),
+    )
+    for run_key, relative in reversed(expected):
+        del run_key
+        path = cache / relative
+        (path / "nested" / "not-a-candidate").mkdir(parents=True)
+        for ancestor in (path, *path.parents):
+            if ancestor == cache:
+                break
+            link = ancestor.with_name(ancestor.name + "-link")
+            if not link.is_symlink():
+                link.symlink_to(ancestor, target_is_directory=True)
+        (path.parent / "not-a-directory").write_text("ignored")
+    (cache / "snapshots" / "repo-empty").mkdir()
+
+    assert cleanup_candidates(cache) == tuple(
+        (run_key, cache / relative) for run_key, relative in expected
+    )
+    assert cleanup_candidates_for_repository(cache, "repo-a") == tuple(
+        (run_key, cache / relative)
+        for run_key, relative in expected
+        if "/repo-a/" in relative
+    )
+    assert cleanup_candidates_for_repository(cache, "missing") == ()
+    assert cleanup_candidates_for_repository(cache, "repo-a-link") == ()
+    assert cleanup_candidates(tmp_path / "missing") == ()
+    for family in ("workspace-runs", "workspaces", "snapshots", "review-workspaces"):
+        family_path = cache / family
+        outside = tmp_path / family
+        family_path.rename(outside)
+        family_path.symlink_to(outside, target_is_directory=True)
+        assert cleanup_candidates(cache) == tuple(
+            (run_key, cache / relative)
+            for run_key, relative in expected
+            if not relative.startswith(f"{family}/")
+        )
+        # Filtered discovery starts at the repository, below the family directory.
+        assert cleanup_candidates_for_repository(cache, "repo-a") == tuple(
+            (run_key, cache / relative)
+            for run_key, relative in expected
+            if "/repo-a/" in relative
+        )
+        family_path.unlink()
+        outside.rename(family_path)
+
+
+def test_cleanup_candidates_propagate_directory_enumeration_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "workspaces").mkdir()
+
+    def deny_listing(path: Path):
+        raise PermissionError(path)
+
+    monkeypatch.setattr(Path, "iterdir", deny_listing)
+    with pytest.raises(PermissionError):
+        cleanup_candidates(tmp_path)
 
 
 def test_worktree_disk_usage_does_not_follow_symlinks(tmp_path: Path) -> None:

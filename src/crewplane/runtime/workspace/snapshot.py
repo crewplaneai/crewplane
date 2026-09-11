@@ -106,15 +106,23 @@ def workspace_run_root(
     source: WorkspaceSourceSnapshot,
     family: str,
 ) -> Path:
+    hierarchy = workspace_run_hierarchy(plan, source, family)
+    for directory in hierarchy:
+        ensure_owner_private_dir(directory)
+    return hierarchy[-1]
+
+
+def workspace_run_hierarchy(
+    plan: PreflightExecutionPlan,
+    source: WorkspaceSourceSnapshot,
+    family: str,
+) -> tuple[Path, Path, Path, Path]:
+    """Return cache, family, repository, and run paths without creating them."""
     cache_root = workspace_cache_root(runtime_workspace_cache_root(plan))
-    ensure_owner_private_dir(cache_root)
     family_root = cache_root / family
-    ensure_owner_private_dir(family_root)
     repository_root = family_root / source.repository_id
-    ensure_owner_private_dir(repository_root)
     run_root = repository_root / plan.run_key_name
-    ensure_owner_private_dir(run_root)
-    return run_root
+    return cache_root, family_root, repository_root, run_root
 
 
 def materialize_snapshot(
@@ -265,34 +273,9 @@ def _scan_snapshot_directory(
     relative_parent: str,
     entries: dict[str, str],
 ) -> None:
-    _check_snapshot_budget(budget)
-    discovered: list[tuple[str, str, os.stat_result]] = []
-    try:
-        with os.scandir(directory_descriptor) as iterator:
-            for entry in iterator:
-                relative = (
-                    f"{relative_parent}/{entry.name}" if relative_parent else entry.name
-                )
-                _count_snapshot_entry(budget, relative)
-                discovered.append(
-                    (
-                        entry.name,
-                        relative,
-                        _snapshot_lstat_at(
-                            directory_descriptor,
-                            entry.name,
-                            relative,
-                        ),
-                    )
-                )
-    except WorkspaceSnapshotError:
-        raise
-    except OSError as exc:
-        location = relative_parent or "."
-        raise WorkspaceSnapshotRaceError(
-            f"Workspace snapshot directory changed while scanning: {location}"
-        ) from exc
-
+    discovered = _discover_snapshot_entries(
+        budget, directory_descriptor, relative_parent
+    )
     for name, relative, entry_stat in sorted(discovered):
         mode = entry_stat.st_mode
         if stat.S_ISLNK(mode):
@@ -341,6 +324,41 @@ def _scan_snapshot_directory(
             relative,
             entry_stat,
         )
+
+
+def _discover_snapshot_entries(
+    budget: _WorkspaceSnapshotBudget,
+    directory_descriptor: int,
+    relative_parent: str,
+) -> list[tuple[str, str, os.stat_result]]:
+    _check_snapshot_budget(budget)
+    discovered: list[tuple[str, str, os.stat_result]] = []
+    try:
+        with os.scandir(directory_descriptor) as iterator:
+            for entry in iterator:
+                relative = (
+                    f"{relative_parent}/{entry.name}" if relative_parent else entry.name
+                )
+                _count_snapshot_entry(budget, relative)
+                discovered.append(
+                    (
+                        entry.name,
+                        relative,
+                        _snapshot_lstat_at(
+                            directory_descriptor,
+                            entry.name,
+                            relative,
+                        ),
+                    )
+                )
+    except WorkspaceSnapshotError:
+        raise
+    except OSError as exc:
+        location = relative_parent or "."
+        raise WorkspaceSnapshotRaceError(
+            f"Workspace snapshot directory changed while scanning: {location}"
+        ) from exc
+    return discovered
 
 
 def _snapshot_regular_file_digest(

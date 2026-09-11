@@ -3,6 +3,25 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal, NotRequired, TypedDict
+
+
+class GeneratedFileSnapshotMetadata(TypedDict):
+    path: str
+    changed: bool | None
+    size_bytes: int
+
+
+class GeneratedFileRejectionMetadata(TypedDict):
+    path: str
+    size_bytes: int
+    discovery_source: str
+    explicit: bool
+    disposition: Literal["rejected"]
+    reason: str
+    configured_limit_bytes: NotRequired[int]
+    configured_limit_count: NotRequired[int]
+    error: NotRequired[str]
 
 
 @dataclass(frozen=True)
@@ -33,10 +52,10 @@ class GeneratedFileSnapshotPolicy:
 @dataclass
 class GeneratedFileRejectionLog:
     detail_limit: int
-    rejected_files: list[dict[str, object]] = field(default_factory=list)
+    rejected_files: list[GeneratedFileRejectionMetadata] = field(default_factory=list)
     rejected_file_count: int = 0
 
-    def record(self, metadata: dict[str, object] | None = None) -> None:
+    def record(self, metadata: GeneratedFileRejectionMetadata | None = None) -> None:
         self.rejected_file_count += 1
         if metadata is not None and len(self.rejected_files) < self.detail_limit:
             self.rejected_files.append(metadata)
@@ -132,7 +151,7 @@ def select_generated_file_snapshot_candidates(
 
 def generated_file_snapshot_candidate_metadata(
     candidate: GeneratedFileSnapshotCandidate,
-) -> dict[str, object]:
+) -> GeneratedFileSnapshotMetadata:
     return {
         "path": candidate.relative_label,
         "changed": candidate.changed,
@@ -146,8 +165,8 @@ def generated_file_rejection_metadata(
     configured_limit_bytes: int | None = None,
     configured_limit_count: int | None = None,
     error: str | None = None,
-) -> dict[str, object]:
-    metadata: dict[str, object] = {
+) -> GeneratedFileRejectionMetadata:
+    metadata: GeneratedFileRejectionMetadata = {
         "path": candidate.relative_label,
         "size_bytes": candidate.size_bytes,
         "discovery_source": candidate.discovery_source,

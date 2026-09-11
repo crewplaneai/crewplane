@@ -6,7 +6,7 @@ from .formatting import (
     format_provider_token_aggregate_lines,
     invocation_label,
 )
-from .models import RunSummary
+from .models import RunSummary, WorkspaceInvocationSummary
 from .spend import spend_overview_rows
 
 
@@ -146,73 +146,74 @@ def terminal_workspace_lines(summary: RunSummary) -> list[str]:
         return lines
     lines.append("  Invocations:")
     for invocation in workspace.invocations[:5]:
-        source = invocation.source
-        execution = invocation.execution
-        setup = invocation.setup
-        reuse = invocation.reuse
-        branch_export = invocation.branch_export
-        label = invocation_label(
-            node_id=invocation.node_id,
-            task_id=invocation.task_id,
-            audit_round_num=invocation.audit_round_num,
-            round_num=invocation.round_num,
-        )
-        details = [
-            f"kind={invocation.workspace_kind}",
-            f"worktree={invocation.logical_worktree_name}",
-            f"status={invocation.status}",
-            f"source={source.kind}:{source.commit}",
-        ]
-        if invocation.checkpoint_count is not None:
-            details.append(f"checkpoints={invocation.checkpoint_count}")
-        if invocation.result_commit is not None:
-            details.append(f"result={invocation.result_commit}")
-        if invocation.bundle_path is not None:
-            details.append(f"bundle={invocation.bundle_path}")
-        if setup.status is not None:
-            setup_label = f"{setup.profile_name}:{setup.status}"
-            if setup.profile_name is None:
-                setup_label = setup.status
-            details.append(f"setup={setup_label}")
-        if reuse.strategy is not None:
-            details.append(
-                "reuse="
-                f"{reuse.strategy},"
-                f"reused={reuse.reused},"
-                f"fallback={reuse.fallback}"
-            )
-        if reuse.reset_verification is not None:
-            details.append(f"reset={reuse.reset_verification}")
-        if invocation.snapshot_drift_discarded is not None:
-            details.append(
-                "snapshot_drift="
-                f"discarded={invocation.snapshot_drift_discarded},"
-                f"changes={invocation.changed_path_count}"
-            )
-        if execution.cache_root is not None:
-            details.append(f"cache_root={execution.cache_root}")
-        if execution.effective_cwd is not None:
-            details.append(f"cwd={execution.effective_cwd}")
-        if branch_export.status is not None:
-            details.append(
-                "branch_export="
-                f"{branch_export.status},"
-                f"operation={branch_export.operation},"
-                f"branch={branch_export.branch_name}"
-            )
-        if invocation.rendered_file_count is not None:
-            details.append(f"rendered_files={invocation.rendered_file_count}")
-        if invocation.child_environment_required is not None:
-            details.append(
-                "env="
-                f"required={invocation.child_environment_required},"
-                f"applied={invocation.child_environment_applied}"
-            )
-        lines.append(f"    - {label}: {'; '.join(details)}")
+        lines.append(_terminal_workspace_invocation_line(invocation))
     remaining_count = len(workspace.invocations) - 5
     if remaining_count > 0:
         lines.append(f"    ... {remaining_count} more")
     return lines
+
+
+def _terminal_workspace_invocation_line(invocation: WorkspaceInvocationSummary) -> str:
+    source = invocation.source
+    execution = invocation.execution
+    setup = invocation.setup
+    reuse = invocation.reuse
+    branch_export = invocation.branch_export
+    label = invocation_label(
+        node_id=invocation.node_id,
+        task_id=invocation.task_id,
+        audit_round_num=invocation.audit_round_num,
+        round_num=invocation.round_num,
+    )
+    details = [
+        f"kind={invocation.workspace_kind}",
+        f"worktree={invocation.logical_worktree_name}",
+        f"status={invocation.status}",
+        f"source={source.kind}:{source.commit}",
+    ]
+    if invocation.checkpoint_count is not None:
+        details.append(f"checkpoints={invocation.checkpoint_count}")
+    if invocation.result_commit is not None:
+        details.append(f"result={invocation.result_commit}")
+    if invocation.bundle_path is not None:
+        details.append(f"bundle={invocation.bundle_path}")
+    if setup.status is not None:
+        setup_label = f"{setup.profile_name}:{setup.status}"
+        if setup.profile_name is None:
+            setup_label = setup.status
+        details.append(f"setup={setup_label}")
+    if reuse.strategy is not None:
+        details.append(
+            f"reuse={reuse.strategy},reused={reuse.reused},fallback={reuse.fallback}"
+        )
+    if reuse.reset_verification is not None:
+        details.append(f"reset={reuse.reset_verification}")
+    if invocation.snapshot_drift_discarded is not None:
+        details.append(
+            "snapshot_drift="
+            f"discarded={invocation.snapshot_drift_discarded},"
+            f"changes={invocation.changed_path_count}"
+        )
+    if execution.cache_root is not None:
+        details.append(f"cache_root={execution.cache_root}")
+    if execution.effective_cwd is not None:
+        details.append(f"cwd={execution.effective_cwd}")
+    if branch_export.status is not None:
+        details.append(
+            "branch_export="
+            f"{branch_export.status},"
+            f"operation={branch_export.operation},"
+            f"branch={branch_export.branch_name}"
+        )
+    if invocation.rendered_file_count is not None:
+        details.append(f"rendered_files={invocation.rendered_file_count}")
+    if invocation.child_environment_required is not None:
+        details.append(
+            "env="
+            f"required={invocation.child_environment_required},"
+            f"applied={invocation.child_environment_applied}"
+        )
+    return f"    - {label}: {'; '.join(details)}"
 
 
 def terminal_issue_lines(summary: RunSummary) -> list[str]:

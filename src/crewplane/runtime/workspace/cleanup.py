@@ -398,9 +398,7 @@ def cleanup_candidates_for_repository(
     candidates: list[tuple[str, Path]] = []
     for family in ("workspaces", "snapshots"):
         candidates.extend(
-            repository_workspace_candidates_for_repo(
-                cache_root / family / repository_id
-            )
+            flat_workspace_candidates(cache_root / family / repository_id)
         )
     candidates.extend(
         review_workspace_candidates_for_repo(
@@ -410,20 +408,11 @@ def cleanup_candidates_for_repository(
     return tuple(sorted(candidates, key=lambda item: item[1].as_posix()))
 
 
-def repository_workspace_candidates_for_repo(
-    repo_root: Path,
-) -> tuple[tuple[str, Path], ...]:
-    candidates: list[tuple[str, Path]] = []
-    for run_dir in workspace_run_dirs(repo_root):
-        candidates.extend((run_dir.name, path) for path in workspace_paths(run_dir))
-    return tuple(candidates)
-
-
 def review_workspace_candidates_for_repo(
     repo_root: Path,
 ) -> tuple[tuple[str, Path], ...]:
     candidates: list[tuple[str, Path]] = []
-    for run_dir in workspace_run_dirs(repo_root):
+    for run_dir in workspace_paths(repo_root):
         for node_dir in workspace_paths(run_dir):
             candidates.extend(
                 (run_dir.name, path) for path in workspace_paths(node_dir)
@@ -433,43 +422,30 @@ def review_workspace_candidates_for_repo(
 
 def flat_workspace_candidates(root: Path) -> tuple[tuple[str, Path], ...]:
     candidates: list[tuple[str, Path]] = []
-    for run_dir in workspace_run_dirs(root):
+    for run_dir in workspace_paths(root):
         candidates.extend((run_dir.name, path) for path in workspace_paths(run_dir))
     return tuple(candidates)
 
 
 def repository_workspace_candidates(root: Path) -> tuple[tuple[str, Path], ...]:
     candidates: list[tuple[str, Path]] = []
-    for repo_dir in workspace_run_dirs(root):
-        for run_dir in workspace_run_dirs(repo_dir):
-            candidates.extend((run_dir.name, path) for path in workspace_paths(run_dir))
+    for repo_dir in workspace_paths(root):
+        candidates.extend(flat_workspace_candidates(repo_dir))
     return tuple(candidates)
 
 
 def review_workspace_candidates(root: Path) -> tuple[tuple[str, Path], ...]:
     candidates: list[tuple[str, Path]] = []
-    for repo_dir in workspace_run_dirs(root):
-        for run_dir in workspace_run_dirs(repo_dir):
-            for node_dir in workspace_paths(run_dir):
-                candidates.extend(
-                    (run_dir.name, path) for path in workspace_paths(node_dir)
-                )
+    for repo_dir in workspace_paths(root):
+        candidates.extend(review_workspace_candidates_for_repo(repo_dir))
     return tuple(candidates)
 
 
-def workspace_run_dirs(root: Path) -> tuple[Path, ...]:
+def workspace_paths(root: Path) -> tuple[Path, ...]:
     if not safe_workspace_directory(root):
         return ()
     return tuple(
         sorted(path for path in root.iterdir() if safe_workspace_directory(path))
-    )
-
-
-def workspace_paths(run_dir: Path) -> tuple[Path, ...]:
-    if not safe_workspace_directory(run_dir):
-        return ()
-    return tuple(
-        sorted(path for path in run_dir.iterdir() if safe_workspace_directory(path))
     )
 
 

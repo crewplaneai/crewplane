@@ -32,7 +32,7 @@ from crewplane.core.execution_state import (
 )
 
 from ..atomic import atomic_write_json
-from ..naming import validate_run_key_name
+from ..naming import run_manifest_relative_path, validate_run_key_name
 
 
 class LockManifestError(RuntimeError):
@@ -366,7 +366,7 @@ def owner_manifest_path(state_dir: Path, run_key_name: str) -> Path | None:
         return None
     if not run_dir_resolved.is_relative_to(stages_root_resolved):
         return None
-    return run_dir / "manifests" / "run.json"
+    return run_dir / run_manifest_relative_path()
 
 
 def ensure_owner_path_contained(root: Path, candidate: Path) -> None:

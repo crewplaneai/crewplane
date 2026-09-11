@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from threading import Event, Thread
-from typing import cast
+from typing import TypedDict, cast
 
 from crewplane.architecture.contracts import (
     DashboardSnapshot as PublicDashboardSnapshot,
@@ -188,11 +188,16 @@ class TmuxCompactRuntime:
         dispatch_tmux_warning(self._warning_sink, message)
 
 
+class _ClockKwargs(TypedDict, total=False):
+    monotonic_now: Callable[[], float]
+    wall_time_now: Callable[[], float]
+
+
 def _clock_kwargs(
     monotonic_now: Callable[[], float] | None,
     wall_time_now: Callable[[], float] | None,
-) -> dict[str, Callable[[], float]]:
-    kwargs: dict[str, Callable[[], float]] = {}
+) -> _ClockKwargs:
+    kwargs: _ClockKwargs = {}
     if monotonic_now is not None:
         kwargs["monotonic_now"] = monotonic_now
     if wall_time_now is not None:

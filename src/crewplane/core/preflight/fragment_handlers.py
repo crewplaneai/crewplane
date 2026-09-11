@@ -14,11 +14,9 @@ from crewplane.core.workflow.models import WorkflowNode
 from .compile_state import (
     CompileState,
     PreflightCompileOptions,
-    ResolvedStaticFileReference,
     ResolvedStaticValueReference,
     allowed_template_paths,
     append_diagnostic,
-    extend_diagnostics,
     source_root,
     token_source_span,
 )
@@ -29,12 +27,11 @@ from .references import TemplateReference
 from .signatures import signature_for_payload
 from .static_resources import (
     StaticFileResult,
-    append_static_resource,
+    prepare_static_file_reference,
     resolve_static_file,
     resolve_terminal_result_file,
     static_file_metadata,
     static_file_resolved_payload,
-    static_file_token_signature,
 )
 from .token_catalog import append_token_catalog
 from .workspace.files.locators import (
@@ -244,21 +241,12 @@ def record_static_file_reference(
     occurrence_id: str,
     result: StaticFileResult,
 ) -> None:
-    extend_diagnostics(state, result.diagnostics)
-    if result.resource is None or result.payload is None:
+    resolution = prepare_static_file_reference(
+        result, node.id, occurrence_id, reference.raw_token, state
+    )
+    if resolution is None:
         return
-    signature = static_file_token_signature(
-        result.resource,
-        node.id,
-        occurrence_id,
-        reference.raw_token,
-    )
-    resource = result.resource.model_copy(update={"token_signatures": [signature]})
-    append_static_resource(state, resource, result.payload, signature)
-    state.static_file_references[occurrence_id] = ResolvedStaticFileReference(
-        resource=resource,
-        token_signature=signature,
-    )
+    state.static_file_references[occurrence_id] = resolution
 
 
 def static_value_fragment(

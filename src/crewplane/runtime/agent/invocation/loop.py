@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
-from typing import assert_never
+from typing import Never, assert_never
 
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
@@ -455,7 +455,6 @@ async def _execute_transition_action(
                 )
             case _:
                 assert_never(transition)
-        return None
     finally:
         _cleanup_transition_extracted_output(transition)
 
@@ -499,7 +498,7 @@ def _raise_retry_exhausted(
     result: CommandResult,
     retry_count: int,
     log_file: Path | None,
-) -> None:
+) -> Never:
     raise build_invocation_failure_error(
         f"Command output matched retry conditions after {retry_count} retries",
         runtime.failure_profile,
@@ -512,7 +511,7 @@ def _raise_failed_exit(
     runtime: InvocationCommandRuntime,
     result: CommandResult,
     log_file: Path | None,
-) -> None:
+) -> Never:
     raise build_invocation_failure_error(
         f"Exit code {result.returncode}",
         runtime.failure_profile,
@@ -526,7 +525,7 @@ def _raise_quota_failure(
     result: CommandResult,
     message: str,
     last_non_quota_failure: InvocationFailureSummary | None = None,
-) -> None:
+) -> Never:
     raise build_quota_failure_error(
         message,
         runtime.failure_profile,

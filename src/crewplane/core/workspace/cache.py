@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import platform
 from pathlib import Path
+from typing import Literal
 
 from .git_policy import portable_path_key
 
@@ -32,6 +33,27 @@ def workspace_cache_forbidden_roots(
         common_git_dir,
     )
     return tuple(root for root in roots if root is not None)
+
+
+def workspace_cache_root_failure(
+    cache_root: Path,
+    project_root: Path,
+    state_dir: Path,
+    active_git_dir: Path | None = None,
+    common_git_dir: Path | None = None,
+) -> Literal["relative", "symlink", "overlap"] | None:
+    """Check absolute path, symlink, then overlap constraints in order."""
+
+    if not cache_root.is_absolute():
+        return "relative"
+    if cache_root.is_symlink():
+        return "symlink"
+    blocked_roots = workspace_cache_forbidden_roots(
+        project_root, state_dir, active_git_dir, common_git_dir
+    )
+    if any(paths_overlap(cache_root, blocked) for blocked in blocked_roots):
+        return "overlap"
+    return None
 
 
 def paths_overlap(left: Path, right: Path) -> bool:

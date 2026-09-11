@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from crewplane.architecture.contracts import WorkflowTopology
+from crewplane.core.workflow.graph import (
+    build_graph_dependency_maps,
+    ordered_graph_waves,
+)
 
 
 @dataclass(frozen=True)
@@ -36,10 +40,14 @@ class TopologyLayout:
 def compute_topology_layout(topology: WorkflowTopology) -> TopologyLayout:
     """Compute stable wave and lane placement for a workflow DAG."""
 
-    waves = _topological_waves(topology)
+    dependencies, dependents = build_graph_dependency_maps(
+        [(node.id, node.dependencies) for node in topology.nodes]
+    )
+    waves = ordered_graph_waves(
+        [node.id for node in topology.nodes], dependencies, dependents
+    )
     node_order = dict(topology.node_order)
     nodes_by_id = {node.id: node for node in topology.nodes}
-    dependencies, dependents = _build_dependency_maps(topology)
 
     placements: dict[str, NodePlacement] = {}
     lane_count = 0
@@ -86,58 +94,6 @@ def compute_topology_layout(topology: WorkflowTopology) -> TopologyLayout:
             }
         ),
     )
-
-
-def _build_dependency_maps(
-    topology: WorkflowTopology,
-) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
-    dependencies: dict[str, set[str]] = {
-        node.id: set(node.dependencies) for node in topology.nodes
-    }
-    dependents: dict[str, set[str]] = {node.id: set() for node in topology.nodes}
-    for node in topology.nodes:
-        for dependency_id in node.dependencies:
-            if dependency_id not in dependents:
-                raise ValueError(
-                    f"Node '{node.id}' depends on unknown node '{dependency_id}'."
-                )
-            dependents[dependency_id].add(node.id)
-    return dependencies, dependents
-
-
-def _topological_waves(topology: WorkflowTopology) -> list[list[str]]:
-    dependencies, dependents = _build_dependency_maps(topology)
-    remaining = {
-        node_id: len(node_dependencies)
-        for node_id, node_dependencies in dependencies.items()
-    }
-    node_order = dict(topology.node_order)
-    ready = sorted(
-        (
-            node_id
-            for node_id, dependency_count in remaining.items()
-            if dependency_count == 0
-        ),
-        key=node_order.__getitem__,
-    )
-    waves: list[list[str]] = []
-    visited = 0
-
-    while ready:
-        current_wave = ready
-        waves.append(current_wave)
-        next_ready: list[str] = []
-        for node_id in current_wave:
-            visited += 1
-            for dependent_id in sorted(dependents[node_id], key=node_order.__getitem__):
-                remaining[dependent_id] -= 1
-                if remaining[dependent_id] == 0:
-                    next_ready.append(dependent_id)
-        ready = sorted(next_ready, key=node_order.__getitem__)
-
-    if visited != len(topology.nodes):
-        raise ValueError("Workflow graph contains a cycle.")
-    return waves
 
 
 def _base_lane_span(

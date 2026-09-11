@@ -16,7 +16,6 @@ from .policy import (
     reject_worktree_git_policy_drift,
 )
 from .protected_refs import (
-    ProtectedRefSnapshot,
     protected_ref_snapshot_for_source,
 )
 from .reset import reset_reusable_worktree_checkout
@@ -53,8 +52,8 @@ def reuse_worktree_workspace(
             )
         cwd = worktree_project_cwd(source, checkout_root)
         _verify_reused_worktree_ready(source, checkout_root, source_ref)
-        protected_refs = _protected_ref_snapshot(
-            source,
+        protected_refs = protected_ref_snapshot_for_source(
+            source.git_top_level,
             protected_ref_scopes,
             source_ref,
         )
@@ -92,15 +91,3 @@ def _verify_reused_worktree_ready(
         Path(source.common_git_dir),
     )
     reject_worktree_git_policy_drift(checkout_root)
-
-
-def _protected_ref_snapshot(
-    source: WorkspaceSourceSnapshot,
-    protected_ref_scopes: tuple[str, ...] | None,
-    source_ref: WorktreeSourceRef,
-) -> ProtectedRefSnapshot:
-    return protected_ref_snapshot_for_source(
-        source.git_top_level,
-        protected_ref_scopes,
-        source_ref,
-    )

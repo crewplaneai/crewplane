@@ -31,8 +31,9 @@ from .atomic import (
 from .directory_manager import DirectoryManager
 from .naming import (
     build_log_filename,
-    build_node_state_filename,
     build_workspace_export_filename,
+    node_state_relative_path,
+    run_manifest_relative_path,
     safe_artifact_name,
 )
 from .provider_process_publisher import ProviderProcessPublisher
@@ -274,7 +275,7 @@ class OutputManager:
     def write_run_manifest(self, manifest: RunManifest) -> Path:
         manifests_dir = self._directories.ensure_manifests_dir()
         return atomic_write_json(
-            manifests_dir / "run.json",
+            manifests_dir / run_manifest_relative_path().name,
             manifest.model_dump(mode="json", exclude_none=True),
         )
 
@@ -301,8 +302,11 @@ class OutputManager:
         return self.write_run_manifest(validated)
 
     def write_node_success_state(self, node_state: NodeState) -> Path:
-        node_state_dir = ensure_contained_directory(self.stages_dir, "manifests/nodes")
-        node_state_path = node_state_dir / build_node_state_filename(node_state.node_id)
+        relative_path = node_state_relative_path(node_state.node_id)
+        node_state_dir = ensure_contained_directory(
+            self.stages_dir, relative_path.parent.as_posix()
+        )
+        node_state_path = node_state_dir / relative_path.name
         return atomic_write_json(
             node_state_path,
             node_state.model_dump(mode="json", exclude_none=True),
@@ -352,7 +356,9 @@ class OutputManager:
         return atomic_write_json(export_dir / export_name, payload)
 
     def _run_manifest_path(self) -> Path:
-        manifest_path = contained_regular_file(self.stages_dir, "manifests/run.json")
+        manifest_path = contained_regular_file(
+            self.stages_dir, run_manifest_relative_path().as_posix()
+        )
         if manifest_path is None:
             raise ValueError("Run manifest is missing or is not a safe regular file.")
         return manifest_path

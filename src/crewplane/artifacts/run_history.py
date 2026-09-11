@@ -14,7 +14,7 @@ from crewplane.architecture.safe_files import (
 )
 from crewplane.core.execution_state import RunManifest
 
-from .naming import validate_run_key_name
+from .naming import run_manifest_relative_path, validate_run_key_name
 
 
 @dataclass(frozen=True)
@@ -133,7 +133,7 @@ def _candidate_run_dirs(stages_root: Path) -> tuple[Path, ...]:
 
 
 def _safe_candidate_manifest(stages_root: Path, run_dir: Path) -> Path | None:
-    manifest_path = run_dir / "manifests" / "run.json"
+    manifest_path = run_dir / run_manifest_relative_path()
     try:
         manifest_lstat = manifest_path.lstat()
     except FileNotFoundError:

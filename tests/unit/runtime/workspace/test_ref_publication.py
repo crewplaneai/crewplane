@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -493,3 +494,68 @@ def test_publication_destinations_reject_malformed_evidence(
 ) -> None:
     with pytest.raises(RuntimeError, match=message):
         ref_publication.publication_destinations({"ref_publication": publication})
+
+
+@pytest.mark.parametrize(
+    ("invalid_fields", "message"),
+    [
+        ({"node_id": ""}, "Workspace ref publication lacks node_id identity."),
+        ({"task_id": None}, "Workspace ref publication lacks task_id identity."),
+        ({"round_num": True}, "Workspace ref publication lacks round identity."),
+        (
+            {"audit_round_num": False},
+            "Workspace ref publication has invalid audit identity.",
+        ),
+        (
+            {"node_id": "", "task_id": "", "round_num": True, "audit_round_num": False},
+            "Workspace ref publication lacks node_id identity.",
+        ),
+        (
+            {"task_id": "", "round_num": True, "audit_round_num": False},
+            "Workspace ref publication lacks task_id identity.",
+        ),
+        (
+            {"round_num": True, "audit_round_num": False},
+            "Workspace ref publication lacks round identity.",
+        ),
+    ],
+)
+def test_reconciliation_rejects_invalid_invocation_before_ref_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid_fields, message: str
+) -> None:
+    repo, prepared, state = published_lineage_workspace(tmp_path)
+    assert prepared.state_path is not None
+    refs_before = run_git_text(
+        repo, "for-each-ref", "--format=%(refname) %(objectname)"
+    )
+    state.update(invalid_fields)
+    prepared.state_path.write_text(json.dumps(state))
+    state_before = prepared.state_path.read_bytes()
+    mutations = []
+    real_git = ref_publication.git
+
+    class TrackingCommand:
+        def __init__(self, cwd: Path) -> None:
+            self._command = real_git(cwd)
+
+        def text(self, *args: str) -> str:
+            return self._command.text(*args)
+
+        def run_with_input(self, stdin: bytes, *args: str):
+            mutations.append(stdin)
+            return self._command.run_with_input(stdin, *args)
+
+    monkeypatch.setattr(ref_publication, "git", TrackingCommand)
+    with pytest.raises(RuntimeError) as exc_info:
+        ref_publication.reconcile_result_ref_publication(
+            prepared.state_path, repo, repo / ".git"
+        )
+
+    assert str(exc_info.value) == message
+    assert mutations == []
+    assert prepared.state_path.read_bytes() == state_before
+    assert (
+        run_git_text(repo, "for-each-ref", "--format=%(refname) %(objectname)")
+        == refs_before
+    )
+    remove_published_workspace(repo, prepared, state)

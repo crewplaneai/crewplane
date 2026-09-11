@@ -9,6 +9,7 @@ from crewplane.version import SCHEMA_VERSION
 
 from .fields import is_nonempty_string, mapping_value
 from .ref_contracts import validate_ref_contracts
+from .source_fields import source_field_mismatches
 
 PersistedWorkspaceOperation = Literal[
     "materialization",
@@ -273,19 +274,8 @@ def _validate_invocation_source(
     errors: list[str],
 ) -> None:
     invocation = mapping_value(payload.get("invocation_source"))
-    expected = {
-        "source_kind": source.get("kind"),
-        "source_node_id": source.get("node_id"),
-        "source_commit": source.get("commit"),
-        "source_tree": source.get("tree"),
-        "candidate_sequence": source.get("candidate_sequence"),
-    }
-    for field, expected_value in expected.items():
-        if invocation.get(field) != expected_value:
-            errors.append(f"invocation source {field} mismatch")
-    for field in ("bundle_path", "bundle_sha256", "bundle_size_bytes", "bundle_ref"):
-        if invocation.get(f"source_{field}") != source.get(field):
-            errors.append(f"invocation source {field} mismatch")
+    for field in source_field_mismatches(source, invocation):
+        errors.append(f"invocation source {field} mismatch")
 
 
 def _validate_process_drain(

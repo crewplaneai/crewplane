@@ -51,39 +51,28 @@ class TmuxCompactControlState:
         session: TmuxSessionTargets,
     ) -> bool:
         if mode == MODE_INSPECT:
-            key_table_result = tmux.run(
-                [
-                    "set-option",
-                    "-t",
-                    session.session_name,
-                    "key-table",
-                    INSPECT_KEY_TABLE,
-                ],
-                check=False,
-            )
-            pane_result = tmux.run(
-                ["select-pane", "-t", session.right_pane_id],
-                check=False,
-            )
-            return key_table_result.returncode == 0 and pane_result.returncode == 0
-
-        for pane_id in (session.left_pane_id, session.right_pane_id):
-            tmux.run(
-                ["send-keys", "-X", "-t", pane_id, "cancel"],
-                check=False,
-            )
+            key_table = INSPECT_KEY_TABLE
+            selected_pane_id = session.right_pane_id
+        else:
+            for pane_id in (session.left_pane_id, session.right_pane_id):
+                tmux.run(
+                    ["send-keys", "-X", "-t", pane_id, "cancel"],
+                    check=False,
+                )
+            key_table = DASHBOARD_KEY_TABLE
+            selected_pane_id = session.left_pane_id
         key_table_result = tmux.run(
             [
                 "set-option",
                 "-t",
                 session.session_name,
                 "key-table",
-                DASHBOARD_KEY_TABLE,
+                key_table,
             ],
             check=False,
         )
         pane_result = tmux.run(
-            ["select-pane", "-t", session.left_pane_id],
+            ["select-pane", "-t", selected_pane_id],
             check=False,
         )
         return key_table_result.returncode == 0 and pane_result.returncode == 0

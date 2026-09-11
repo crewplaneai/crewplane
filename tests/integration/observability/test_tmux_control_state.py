@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from crewplane.observability.tmux.control_state import (
     PaneGeometry,
     TmuxCompactControlState,
@@ -79,6 +81,39 @@ def test_failed_resize_restore_is_retried() -> None:
         geometry,
     )
     assert any(args[3] == "key-table" for args, _, _ in client.calls)
+
+
+@pytest.mark.parametrize(
+    ("mode", "key_table", "pane_id"),
+    [
+        (MODE_DASHBOARD, "crewplane-dashboard", "%10"),
+        (MODE_INSPECT, "crewplane-inspect", "%20"),
+    ],
+)
+def test_failed_key_table_restore_still_selects_pane_in_order(
+    mode: str, key_table: str, pane_id: str
+) -> None:
+    client = FakeTmuxClient()
+    client.fail_next_key_table_restore = True
+    control_state = TmuxCompactControlState()
+
+    assert not control_state.restore_control_state(client, mode, tmux_targets())
+
+    expected = []
+    if mode == MODE_DASHBOARD:
+        expected.extend(
+            [
+                ["send-keys", "-X", "-t", "%10", "cancel"],
+                ["send-keys", "-X", "-t", "%20", "cancel"],
+            ]
+        )
+    expected.extend(
+        [
+            ["set-option", "-t", "crewplane-test", "key-table", key_table],
+            ["select-pane", "-t", pane_id],
+        ]
+    )
+    assert [args for args, _, _ in client.calls] == expected
 
 
 def tmux_targets() -> TmuxSessionTargets:

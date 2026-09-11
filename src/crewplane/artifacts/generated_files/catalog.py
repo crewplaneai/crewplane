@@ -21,10 +21,12 @@ from .detection import (
     GeneratedFileReferenceDetector,
     is_reserved_workspace_path,
 )
+from .paths import generated_file_node_prefix
 from .snapshot_io import copy_generated_file_snapshot_candidate
 from .snapshot_policy import (
     GeneratedFileRejectionLog,
     GeneratedFileSnapshotCandidate,
+    GeneratedFileSnapshotMetadata,
     GeneratedFileSnapshotPolicy,
     GeneratedFileSnapshotSelection,
     generated_file_rejection_metadata,
@@ -424,7 +426,7 @@ def _write_generated_file_source_metadata(
 
 def _write_generated_file_snapshot_metadata(
     snapshot_root: Path,
-    copied_files: Sequence[dict[str, object]],
+    copied_files: Sequence[GeneratedFileSnapshotMetadata],
     rejections: GeneratedFileRejectionLog,
 ) -> tuple[int, str]:
     payload: dict[str, object] = {"files": list(copied_files)}
@@ -450,11 +452,7 @@ def _copy_workspace_generated_file(
     stage_name: str,
     copy_namespace: str | None,
 ) -> Path:
-    target = (
-        result_file.parent
-        / "generated-files"
-        / build_generated_file_result_dir_name(stage_name)
-    )
+    target = result_file.parent / generated_file_node_prefix(stage_name)
     if copy_namespace is not None:
         target = target / build_generated_file_result_dir_name(copy_namespace)
     for part in Path(relative_path).parts:

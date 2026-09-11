@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from pathlib import Path
 
 from crewplane.architecture.contracts import artifacts as _artifact_contracts
 from crewplane.core.workflow.keywords import ProviderRole
@@ -57,6 +58,18 @@ def validate_run_key_name(run_key_name: str) -> str:
 def build_node_state_filename(node_id: str) -> str:
     suffix = f"--{_artifact_contracts.artifact_name_hash(node_id)}.json"
     return _artifact_contracts.bounded_artifact_name(safe_stage_name(node_id), suffix)
+
+
+def run_manifest_relative_path() -> Path:
+    return Path("manifests") / "run.json"
+
+
+def node_state_relative_path(node_id: str) -> Path:
+    return (
+        run_manifest_relative_path().parent
+        / "nodes"
+        / build_node_state_filename(node_id)
+    )
 
 
 def build_provider_process_state_filename(

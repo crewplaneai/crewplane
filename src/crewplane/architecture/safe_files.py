@@ -83,29 +83,30 @@ def ensure_single_link_regular_file(path: Path) -> Path:
     # At most one create attempt plus bounded retries to tolerate benign races.
     # This avoids unbounded looping if another process keeps creating the path.
     for _ in range(_CREATE_RETRIES + 1):  # noqa: B007
-        safe_path = contained_regular_file(path.parent, path.name)
+        safe_path = _ensure_single_link_regular_file_attempt(path)
         if safe_path is not None:
             return safe_path
-        try:
-            path.lstat()
-        except FileNotFoundError:
-            if not _create_regular_file_exclusively(path):
-                # Another actor created the path after the initial lookup.
-                # Retry from the start to re-check safety invariants.
-                continue
-            safe_path = contained_regular_file(path.parent, path.name)
-            if safe_path is not None:
-                return safe_path
-            raise ValueError(
-                f"Path must be a single-link regular file: {path}"
-            ) from None
-        else:
-            raise ValueError(
-                f"Path must be a single-link regular file: {path}"
-            ) from None
     raise ValueError(
         f"Path could not be created safely after {_CREATE_RETRIES + 1} attempts: {path}"
     )
+
+
+def _ensure_single_link_regular_file_attempt(path: Path) -> Path | None:
+    safe_path = contained_regular_file(path.parent, path.name)
+    if safe_path is not None:
+        return safe_path
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        if not _create_regular_file_exclusively(path):
+            # Contention requires another lookup to re-check safety invariants.
+            return None
+        safe_path = contained_regular_file(path.parent, path.name)
+        if safe_path is not None:
+            return safe_path
+        raise ValueError(f"Path must be a single-link regular file: {path}") from None
+    else:
+        raise ValueError(f"Path must be a single-link regular file: {path}") from None
 
 
 def replace_contained_file(root: Path, relative_path: str, source: Path) -> Path:

@@ -6,7 +6,10 @@ from crewplane.core.workflow.diagnostics import (
     WorkflowValidationDiagnostic,
     format_diagnostics,
 )
-from crewplane.core.workflow.graph import analyze_workflow_graph
+from crewplane.core.workflow.graph import (
+    analyze_workflow_graph,
+    has_valid_dependency_references,
+)
 from crewplane.core.workflow.keywords import (
     ALLOWED_NODE_ARTIFACT_NAME_SET,
     ALLOWED_NODE_ARTIFACT_NAMES,
@@ -176,13 +179,7 @@ def _artifact_reference_error(
 def _ancestor_map_if_available(
     workflow: WorkflowPlan,
 ) -> dict[str, set[str]] | None:
-    node_ids = {node.id for node in workflow.nodes}
-    if len(node_ids) != len(workflow.nodes):
-        return None
-    dependencies = {node.id: set(node.needs) for node in workflow.nodes}
-    if any(node_id in needs for node_id, needs in dependencies.items()):
-        return None
-    if any(not needs <= node_ids for needs in dependencies.values()):
+    if not has_valid_dependency_references(workflow):
         return None
 
     try:

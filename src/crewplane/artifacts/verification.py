@@ -6,7 +6,7 @@ from crewplane.architecture.contracts import NodeArtifactRequest, VerifiedNodeAr
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import ArtifactDescriptor, NodeState
 
-from .naming import build_node_state_filename
+from .naming import node_state_relative_path
 
 
 def read_verified_node_artifact(
@@ -62,7 +62,7 @@ def _expected_relative_path(
 def _load_successful_node_state(stages_dir: Path, node_id: str) -> NodeState:
     state_path = contained_regular_file(
         stages_dir,
-        f"manifests/nodes/{build_node_state_filename(node_id)}",
+        node_state_relative_path(node_id).as_posix(),
     )
     if state_path is None:
         raise ValueError(f"Node '{node_id}' has no valid successful state descriptor.")

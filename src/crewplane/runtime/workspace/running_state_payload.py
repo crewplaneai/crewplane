@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from crewplane.artifacts.workspace.state.source_fields import invocation_source_payload
 from crewplane.version import SCHEMA_VERSION
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ def build_running_workspace_state_payload(
     materialization: WorkspaceStateMaterializationRequest,
     updated_at: str,
 ) -> dict[str, object]:
+    source_payload = _source_payload(materialization.source_ref, source, state_path)
     payload: dict[str, object] = {
         "version": SCHEMA_VERSION,
         "run_id": request.run_id,
@@ -46,14 +48,10 @@ def build_running_workspace_state_payload(
         "clean_start": policy.clean_start,
         "worktree_contract": policy.worktree_contract.model_dump(mode="json"),
         "git": _git_payload(source, materialization),
-        "source": _source_payload(materialization.source_ref, source, state_path),
+        "source": source_payload,
         "workspace": _workspace_payload(source, materialization),
         "execution": _execution_payload(materialization),
-        "invocation_source": _invocation_source_payload(
-            materialization.source_ref,
-            source,
-            state_path,
-        ),
+        "invocation_source": invocation_source_payload(source_payload),
         "child_process_environment": {
             "required": materialization.child_environment_required,
             "applied": (False if materialization.child_environment_required else None),
@@ -177,31 +175,6 @@ def _source_payload(
             _source_payload(upstream, source, state_path)
             for upstream in source_ref.upstream_sources
         ]
-    return payload
-
-
-def _invocation_source_payload(
-    source_ref: WorktreeSourceRef | None,
-    source: WorkspaceSourceSnapshot,
-    state_path: Path,
-) -> dict[str, object]:
-    if source_ref is None:
-        return {
-            "source_kind": "project",
-            "source_node_id": None,
-            "source_commit": source.run_base_commit,
-            "source_tree": source.source_tree,
-            "candidate_sequence": None,
-        }
-    payload: dict[str, object] = {
-        "source_kind": source_ref.source_kind,
-        "source_node_id": source_ref.source_node_id,
-        "source_commit": source_ref.source_commit,
-        "source_tree": source_ref.source_tree,
-        "candidate_sequence": source_ref.candidate_sequence,
-    }
-    for key, value in _source_bundle_payload(source_ref, state_path).items():
-        payload[f"source_{key}"] = value
     return payload
 
 

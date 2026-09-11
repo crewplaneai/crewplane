@@ -224,44 +224,48 @@ def _workspace_artifact_descriptors(
     if not isinstance(states, list):
         return descriptors
     for state in states:
-        if not isinstance(state, Mapping):
-            continue
-        _collect_workspace_artifact_descriptor(
-            descriptors,
-            state.get("workspace_state_artifact"),
-            is_workspace_state=True,
-        )
-        setup = state.get("setup")
-        if isinstance(setup, Mapping):
-            _collect_workspace_artifact_descriptor(
-                descriptors,
-                setup.get("metadata_artifact"),
-            )
-            _collect_workspace_artifact_descriptor(
-                descriptors,
-                setup.get("log_artifact"),
-            )
-        bundle = state.get("bundle")
-        if isinstance(bundle, Mapping):
-            _collect_workspace_artifact_descriptor(
-                descriptors,
-                bundle.get("artifact"),
-            )
-    review_loop = workspace.get("review_loop")
-    if isinstance(review_loop, Mapping):
-        _collect_workspace_artifact_descriptor(
-            descriptors,
-            review_loop.get("status_artifact"),
-        )
-        selected_outputs = review_loop.get("selected_outputs")
-        if isinstance(selected_outputs, list):
-            for output in selected_outputs:
-                if isinstance(output, Mapping):
-                    _collect_workspace_artifact_descriptor(
-                        descriptors,
-                        output.get("artifact"),
-                    )
+        _collect_workspace_state_descriptors(descriptors, state)
+    _collect_review_loop_descriptors(descriptors, workspace.get("review_loop"))
     return descriptors
+
+
+def _collect_workspace_state_descriptors(
+    descriptors: dict[str, _WorkspaceArtifactDescriptor],
+    state: object,
+) -> None:
+    if not isinstance(state, Mapping):
+        return
+    _collect_workspace_artifact_descriptor(
+        descriptors,
+        state.get("workspace_state_artifact"),
+        is_workspace_state=True,
+    )
+    setup = state.get("setup")
+    if isinstance(setup, Mapping):
+        _collect_workspace_artifact_descriptor(
+            descriptors, setup.get("metadata_artifact")
+        )
+        _collect_workspace_artifact_descriptor(descriptors, setup.get("log_artifact"))
+    bundle = state.get("bundle")
+    if isinstance(bundle, Mapping):
+        _collect_workspace_artifact_descriptor(descriptors, bundle.get("artifact"))
+
+
+def _collect_review_loop_descriptors(
+    descriptors: dict[str, _WorkspaceArtifactDescriptor],
+    review_loop: object,
+) -> None:
+    if not isinstance(review_loop, Mapping):
+        return
+    _collect_workspace_artifact_descriptor(
+        descriptors, review_loop.get("status_artifact")
+    )
+    selected_outputs = review_loop.get("selected_outputs")
+    if not isinstance(selected_outputs, list):
+        return
+    for output in selected_outputs:
+        if isinstance(output, Mapping):
+            _collect_workspace_artifact_descriptor(descriptors, output.get("artifact"))
 
 
 def _collect_workspace_artifact_descriptor(

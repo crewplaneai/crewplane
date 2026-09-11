@@ -10,7 +10,6 @@ from rich.console import Console
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents
-from crewplane.core.execution_state import TerminalRunStatus
 from crewplane.core.preflight import PreflightExecutionPlan
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.models import WorkflowPlan
@@ -30,7 +29,7 @@ from crewplane.observability.types import WorkflowTopology
 
 from .best_effort_thread import run_best_effort_thread
 from .terminalization import (
-    TerminalizationHub,
+    TerminalizationCommitter,
     commit_terminalization_with_retry,
 )
 
@@ -158,14 +157,7 @@ class ObservabilityHubInstance(Protocol):
     def set_terminal_result(self, result: RunResult) -> None: ...
 
 
-class TerminalizationCoordinatorProtocol(Protocol):
-    def commit(
-        self,
-        hub: TerminalizationHub,
-        status: TerminalRunStatus,
-        reason: str | None = None,
-    ) -> None: ...
-
+class TerminalizationCoordinatorProtocol(TerminalizationCommitter, Protocol):
     def acknowledge_observer_shutdown(self) -> None: ...
 
 

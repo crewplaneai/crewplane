@@ -6,6 +6,9 @@ from typing import Protocol
 
 from crewplane.architecture.contracts import NodeArtifactRequest
 from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.artifacts.workspace.chain_validation import (
+    WorkspaceSourceResultMismatchError,
+)
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
@@ -31,6 +34,7 @@ from crewplane.runtime.workspace.worktree.descriptors import (
     load_source_ref_from_state,
 )
 from crewplane.runtime.workspace.worktree.lineage import (
+    WorkspaceLineageVerificationError,
     verify_source_commit_available,
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
@@ -114,30 +118,18 @@ def _verify_branch_export_source_available(
 ) -> None:
     try:
         verify_source_commit_available(source, source_ref)
+    except WorkspaceLineageVerificationError as exc:
+        if isinstance(exc.__cause__, WorkspaceSourceResultMismatchError):
+            raise RuntimeError(
+                "Workspace branch export bundle final result does not match the "
+                "recorded commit and tree."
+            ) from exc
+        raise RuntimeError(str(exc)) from exc
     except RuntimeError as exc:
-        _raise_branch_export_result_mismatch(exc)
-        raise
-
-
-def _raise_branch_export_result_mismatch(exc: RuntimeError) -> None:
-    message = str(exc)
-    if (
-        "source tree mismatch" in message
-        or "did not provide the expected commit" in message
-        or "result tree mismatch" in message
-        or "result is not a commit" in message
-        or "unexpected parent" in message
-    ):
         raise RuntimeError(
-            "Workspace branch export bundle final result does not match the "
-            "recorded commit and tree."
+            "Workspace lineage source verification failed while validating recorded "
+            f"Git artifacts: {exc}"
         ) from exc
-    if message.startswith("Workspace lineage source verification failed"):
-        raise RuntimeError(message) from exc
-    raise RuntimeError(
-        "Workspace lineage source verification failed while validating recorded "
-        f"Git artifacts: {message}"
-    ) from exc
 
 
 def _workspace_state_payload(state_path: Path) -> dict[str, object]:

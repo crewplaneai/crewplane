@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import get_args
 
 import pytest
 
 from crewplane.architecture.contracts import (
     SUPPORTED_PROVIDER_KIND_VALUES,
+    CommandResult,
     EventType,
     InvocationContext,
     InvocationProcessEvent,
@@ -30,6 +33,32 @@ from crewplane.observability.events import (
     invocation_event,
 )
 from crewplane.version import SCHEMA_VERSION
+
+
+@pytest.mark.parametrize(
+    "read_lines",
+    [
+        pytest.param(CommandResult.iter_stdout_lines, id="stdout"),
+        pytest.param(CommandResult.iter_stderr_lines, id="stderr"),
+    ],
+)
+def test_stream_selection_is_eager_and_file_reads_are_lazy(
+    tmp_path: Path, read_lines: Callable[[CommandResult], Iterator[str]]
+) -> None:
+    path = tmp_path / "stream.log"
+    result = CommandResult(0, "inline\n\n \n", "inline\n\n \n", path, path)
+    inline_lines = read_lines(result)
+    path.write_text("initial\n", encoding="utf-8")
+    assert list(inline_lines) == ["inline", " "]
+
+    file_lines = read_lines(result)
+    path.write_text("updated\n\n \n", encoding="utf-8")
+    assert list(file_lines) == ["updated", "", " "]
+
+    removed_file_lines = read_lines(result)
+    path.unlink()
+    with pytest.raises(FileNotFoundError):
+        list(removed_file_lines)
 
 
 def test_log_presentation_profile_normalizes_safe_unknown_profiles() -> None:

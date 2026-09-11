@@ -447,14 +447,10 @@ class CommandResult:
         return f"{self.stderr_text}\n{self.stdout_text}"
 
     def iter_stdout_lines(self) -> Iterator[str]:
-        if self.stdout_path is not None and self.stdout_path.is_file():
-            return _iter_lines_from_file(self.stdout_path)
-        return iter(_split_nonempty_lines(self.stdout_text))
+        return _iter_stream_lines(self.stdout_path, self.stdout_text)
 
     def iter_stderr_lines(self) -> Iterator[str]:
-        if self.stderr_path is not None and self.stderr_path.is_file():
-            return _iter_lines_from_file(self.stderr_path)
-        return iter(_split_nonempty_lines(self.stderr_text))
+        return _iter_stream_lines(self.stderr_path, self.stderr_text)
 
     def iter_combined_lines(self) -> Iterator[str]:
         yield from self.iter_stderr_lines()
@@ -490,6 +486,12 @@ class OutputExtractionResult:
 
 type UsageDecoder = Callable[[CommandResult], UsageDecodeResult]
 type OutputExtractor = Callable[[CommandResult, Path | None], OutputExtractionResult]
+
+
+def _iter_stream_lines(path: Path | None, inline_text: str) -> Iterator[str]:
+    if path is not None and path.is_file():
+        return _iter_lines_from_file(path)
+    return iter(_split_nonempty_lines(inline_text))
 
 
 def _iter_lines_from_file(path: Path) -> Iterator[str]:

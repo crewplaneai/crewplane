@@ -8,8 +8,11 @@ from pathlib import Path
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
+from crewplane.artifacts.workspace.state.invocation import (
+    InvalidInvocationField,
+    require_state_invocation_slug,
+)
 from crewplane.core.workspace.git_policy import is_git_object_id
-from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.naming import result_ref_names
 
 from ..cleanup_notes import note_cleanup_failure
@@ -263,17 +266,16 @@ def _required_identity(payload: dict[str, object], field: str) -> str:
 
 
 def _required_invocation_slug(payload: dict[str, object]) -> str:
-    node_id = _required_identity(payload, "node_id")
-    task_id = _required_identity(payload, "task_id")
-    round_num = payload.get("round_num")
-    audit_round_num = payload.get("audit_round_num")
-    if not isinstance(round_num, int) or isinstance(round_num, bool):
-        raise RuntimeError("Workspace ref publication lacks round identity.")
-    if audit_round_num is not None and (
-        not isinstance(audit_round_num, int) or isinstance(audit_round_num, bool)
-    ):
-        raise RuntimeError("Workspace ref publication has invalid audit identity.")
-    return invocation_slug(node_id, task_id, audit_round_num, round_num)
+    try:
+        return require_state_invocation_slug(payload)
+    except InvalidInvocationField as exc:
+        if exc.field == "round_num":
+            message = "Workspace ref publication lacks round identity."
+        elif exc.field == "audit_round_num":
+            message = "Workspace ref publication has invalid audit identity."
+        else:
+            message = f"Workspace ref publication lacks {exc.field} identity."
+        raise RuntimeError(message) from exc
 
 
 def _publication_destination(value: object) -> RefPublicationDestination:
