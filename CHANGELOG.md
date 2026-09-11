@@ -4,6 +4,9 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Removed
+- Removed the unused `NodeLogStreamTracker` Python API.
+
 ## [0.3.1] - 2026-09-09
 
 ### Changed

@@ -309,7 +309,7 @@ raw log passthrough. It uses the following local signals:
 | Invocation start time | `InvocationRuntimeState.started_at` | elapsed running time |
 | Log file size | `Path.stat().st_size` | liveness metadata |
 | Log modification time | `Path.stat().st_mtime` | quiet/stale metadata |
-| Body content past the provider log header | `_read_log_tail(...)` | compact tail and first-output detection |
+| Body content past the provider log header | `read_log_tail(...)` | compact tail and first-output detection |
 
 Dashboard-mode right-pane states are:
 
