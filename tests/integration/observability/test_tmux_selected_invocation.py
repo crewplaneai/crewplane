@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from crewplane.architecture.contracts import EventType
@@ -14,6 +15,10 @@ from crewplane.core.workflow.models import (
 from crewplane.observability.events import (
     apply_event,
     build_initial_state,
+)
+from crewplane.observability.tmux.rendering import (
+    SelectedOutputRenderContext,
+    render_selected_output,
 )
 from crewplane.observability.tmux.selected_invocation import (
     prepare_selected_invocation,
@@ -73,6 +78,67 @@ def test_selected_invocation_prepares_log_tail_snapshot(tmp_path: Path) -> None:
     assert prepared is not None
     assert prepared.log_snapshot is not None
     assert prepared.log_snapshot.tail_lines == ("line-2", "line-3")
+
+
+def test_selected_invocation_preserves_command_lines_when_wrapping(
+    tmp_path: Path,
+) -> None:
+    log_path = tmp_path / "codex.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "type": "item.started",
+                "item": {
+                    "type": "command_execution",
+                    "command": (
+                        "python - <<'PY'\n"
+                        "def example():\n"
+                        "    print('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')\n"
+                        "    print('next line')\n"
+                        "PY"
+                    ),
+                    "status": "in_progress",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = state_with_invocation(log_file=str(log_path))
+    invocation = next(iter(state.nodes["node.a"].invocations.values()))
+    invocation.log_presentation_format = "json_lines"
+    invocation.log_presentation_profile = "codex"
+    prepared = prepare_selected_invocation(
+        nodes=state.nodes,
+        selected_node_id="node.a",
+        pane_height=20,
+        log_tail_lines=None,
+        wall_time_now=100.0,
+    )
+
+    lines = render_selected_output(
+        SelectedOutputRenderContext(
+            nodes=state.nodes,
+            selected_node_id="node.a",
+            width=32,
+            pane_height=20,
+            log_tail_lines=None,
+            quiet_after_seconds=120.0,
+            monotonic_now=100.0,
+            prepared_invocation=prepared,
+        )
+    )
+
+    command_start = lines.index("command: python - <<'PY'")
+    assert lines[command_start:] == [
+        "command: python - <<'PY'",
+        "  def example():",
+        "      print('ABCDEFGHIJKLMNOPQRS",
+        "TUVWXYZ0123456789')",
+        "      print('next line')",
+        "  PY",
+    ]
+    assert len(lines) <= 20
+    assert all(len(line) <= 32 for line in lines)
 
 
 def state_with_invocation(log_file: str | None):

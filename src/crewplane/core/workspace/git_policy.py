@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unicodedata
+from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import TypeGuard
@@ -15,6 +16,30 @@ class GitTreeMode(StrEnum):
     EXECUTABLE_FILE = "100755"
     SYMLINK = "120000"
     GITLINK = "160000"
+
+
+class GitRefSyntaxIssue(StrEnum):
+    SYNTAX = "syntax"
+    CHARACTERS = "characters"
+    COMPONENT = "component"
+
+
+def git_ref_syntax_issue(ref: str) -> GitRefSyntaxIssue | None:
+    if ref.endswith(("/", ".")) or any(
+        sequence in ref for sequence in ("..", "//", "@{")
+    ):
+        return GitRefSyntaxIssue.SYNTAX
+    if any(ord(char) < 32 or ord(char) == 127 or char in " ~^:?*[\\" for char in ref):
+        return GitRefSyntaxIssue.CHARACTERS
+    if not all(
+        part
+        and part not in {".", ".."}
+        and not part.startswith(".")
+        and not part.endswith((".", ".lock"))
+        for part in ref.split("/")
+    ):
+        return GitRefSyntaxIssue.COMPONENT
+    return None
 
 
 REGULAR_FILE_MODES = frozenset({GitTreeMode.REGULAR_FILE, GitTreeMode.EXECUTABLE_FILE})
@@ -258,3 +283,13 @@ def _is_rejected_remote_config_key(key: str) -> bool:
 
 def _is_rejected_extension_config_key(key: str) -> bool:
     return key.startswith("extensions.") and key != "extensions.objectformat"
+
+
+def summarize_paths(paths: Sequence[str]) -> str:
+    """Render at most five paths plus an omitted-count suffix."""
+
+    selected = paths[:5]
+    suffix = (
+        f" (+{len(paths) - len(selected)} more)" if len(paths) > len(selected) else ""
+    )
+    return ", ".join(selected) + suffix

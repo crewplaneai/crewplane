@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from crewplane.architecture.ports import TerminalHistoryRead
 from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.artifacts.naming import run_manifest_relative_path
 from crewplane.core.execution_state import RUN_STATUS_RUNNING, RunManifest
 
 _EXECUTION_RESULTS_DIR = "execution-results"
@@ -83,7 +84,7 @@ class FilesystemTerminalHistoryReader:
     def _terminal_manifest_path(self, run_key_name: str) -> Path | None:
         return contained_regular_file(
             self.state_dir / _EXECUTION_STAGES_DIR,
-            f"{run_key_name}/manifests/run.json",
+            f"{run_key_name}/{run_manifest_relative_path().as_posix()}",
         )
 
     def _load_terminal_manifest(

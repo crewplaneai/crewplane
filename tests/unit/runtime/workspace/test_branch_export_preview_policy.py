@@ -9,11 +9,15 @@ import pytest
 
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.naming import build_workspace_export_filename
+from crewplane.artifacts.workspace.chain_validation import (
+    WorkspaceSourceResultMismatchError,
+)
 from crewplane.runtime.workspace.branch_export import (
     fulfill_branch_exports,
     fulfill_branch_exports_from_history,
     preview_branch_exports_from_history,
 )
+from crewplane.runtime.workspace.worktree import lineage
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_branch_export import (
@@ -409,3 +413,64 @@ def test_preview_branch_exports_rejects_sha256_prerequisite_bundles(
     assert not git_commit_exists(repo, first.commit)
     assert not git_commit_exists(repo, second.commit)
     assert not run_git_text(repo, "branch", "--list", "feature/preview")
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (
+            WorkspaceSourceResultMismatchError("wording without classification clues"),
+            "Workspace branch export bundle final result does not match the recorded commit and tree.",
+        ),
+        (
+            RuntimeError("result tree mismatch"),
+            "Workspace lineage source verification failed while validating recorded Git artifacts: result tree mismatch",
+        ),
+        (
+            RuntimeError("unrelated failure"),
+            "Workspace lineage source verification failed while validating recorded Git artifacts: unrelated failure",
+        ),
+    ],
+)
+def test_preview_and_fulfillment_classify_chain_failure_by_type(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: RuntimeError,
+    expected: str,
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = branch_export_plan(repo, tmp_path, branch_name="feature/typed-failure")
+    output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
+    result_commit, result_tree, result_ref, bundle_path = write_result_bundle(
+        repo,
+        output.create_node_dir(node_artifact_request("implement")),
+        "feature result\n",
+    )
+    write_workspace_state(
+        output.stages_dir, plan, result_commit, result_tree, result_ref, bundle_path
+    )
+    history = history_record_for_output(output)
+
+    def fail_verification(*args) -> None:
+        del args
+        raise failure
+
+    monkeypatch.setattr(lineage, "verify_workspace_source_chain", fail_verification)
+    preview = preview_branch_exports_from_history(plan, history)
+    with pytest.raises(RuntimeError) as exc_info:
+        fulfill_branch_exports_from_history(plan, history)
+
+    assert preview[0]["status"] == "failed_verification"
+    assert preview[0]["failure_message"] == expected
+    assert str(exc_info.value) == expected
+    source = plan.workspace_source
+    assert source is not None
+    with pytest.raises(lineage.WorkspaceLineageVerificationError) as wrapper:
+        lineage.verify_source_commit_available(
+            source,
+            WorktreeSourceRef(
+                "project", None, source.run_base_commit, source.source_tree
+            ),
+        )
+    assert wrapper.value.__cause__ is failure
+    assert not run_git_text(repo, "branch", "--list", "feature/typed-failure")

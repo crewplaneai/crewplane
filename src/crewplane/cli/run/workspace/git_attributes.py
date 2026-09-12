@@ -10,8 +10,8 @@ from crewplane.core.workspace.git_attributes import (
     attribute_records,
     byte_transforming_attribute,
 )
+from crewplane.core.workspace.git_policy import summarize_paths
 
-from .diagnostic_text import summarize_paths
 from .git_source import (
     GitSourceContext,
     git_error,

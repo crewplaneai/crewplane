@@ -17,10 +17,12 @@ from crewplane.runtime.execution.workspace_files import (
     latest_executor_workspace_state,
 )
 from crewplane.runtime.workspace.state import discard_workspace_lineage
-from crewplane.runtime.workspace.state_selection import workspace_state_paths
+from crewplane.runtime.workspace.state_selection import (
+    required_lineage_state_path,
+    workspace_state_paths,
+)
 from crewplane.runtime.workspace.worktree.source_refs import (
     invocation_source_ref,
-    required_lineage_state,
 )
 from tests.helpers.workspace_records import workspace_selection_record
 from tests.unit.runtime.workspace.state_selection_support import (
@@ -47,7 +49,7 @@ def test_required_lineage_state_uses_review_loop_canonical_output(
     write_selection_state(stale_state, "1" * 40, round_num=1, audit_round_num=1)
     write_selection_state(canonical_state, "2" * 40, round_num=2, audit_round_num=1)
 
-    assert required_lineage_state(store, same_selection_node()) == canonical_state
+    assert required_lineage_state_path(store, same_selection_node()) == canonical_state
 
 
 def test_downstream_invocation_source_uses_review_loop_canonical_state(
@@ -96,7 +98,7 @@ def test_required_lineage_state_keeps_review_loop_canonical_over_later_state(
     write_selection_state(canonical_state, "2" * 40, round_num=2, audit_round_num=None)
     write_selection_state(later_state, "3" * 40, round_num=3, audit_round_num=None)
 
-    assert required_lineage_state(store, same_selection_node()) == canonical_state
+    assert required_lineage_state_path(store, same_selection_node()) == canonical_state
 
 
 def test_same_node_executor_source_skips_discarded_invalid_candidate(
@@ -131,6 +133,42 @@ def test_same_node_executor_source_skips_discarded_invalid_candidate(
     assert source_ref.source_commit == "1" * 40
 
 
+@pytest.mark.parametrize(
+    ("role", "round_num", "audit", "expected_kind", "expected_commit"),
+    [
+        (ProviderRole.REVIEWER, 1, 1, "candidate", "1" * 40),
+        (ProviderRole.REVIEWER, 2, 1, "project", "0" * 40),
+        (ProviderRole.REVIEWER, 1, 2, "candidate", "1" * 40),
+        (ProviderRole.EXECUTOR, 2, 1, "candidate", "1" * 40),
+        (ProviderRole.EXECUTOR, 3, 1, "candidate", "1" * 40),
+    ],
+)
+def test_invocation_sources_preserve_role_round_and_seeded_audit_fallbacks(
+    tmp_path, role, round_num, audit, expected_kind, expected_commit
+) -> None:
+    store = ArtifactStore(tmp_path)
+    write_selection_state(
+        tmp_path / "implement" / "workspace-state-alpha-audit1-round1.json",
+        "1" * 40,
+        round_num=1,
+        audit_round_num=1,
+    )
+    node = same_selection_node()
+    assert node.workspace_policy is not None
+    source = invocation_source_ref(
+        store,
+        selection_plan_with_locator(tmp_path, runtime_dynamic_locator()),
+        node,
+        node.workspace_policy,
+        selection_source_snapshot(tmp_path),
+        role,
+        round_num,
+        audit,
+    )
+    assert source.source_kind == expected_kind
+    assert source.source_commit == expected_commit
+
+
 def test_required_lineage_state_prefers_latest_executor_without_review_status(
     tmp_path: Path,
 ) -> None:
@@ -141,7 +179,7 @@ def test_required_lineage_state_prefers_latest_executor_without_review_status(
     write_selection_state(first_state, "1" * 40, round_num=1, audit_round_num=None)
     write_selection_state(latest_state, "2" * 40, round_num=2, audit_round_num=None)
 
-    assert required_lineage_state(store, same_selection_node()) == latest_state
+    assert required_lineage_state_path(store, same_selection_node()) == latest_state
 
 
 def test_required_lineage_state_resolves_seeded_audit_copy_to_previous_state(
@@ -154,7 +192,7 @@ def test_required_lineage_state_resolves_seeded_audit_copy_to_previous_state(
     write_selection_review_status(stage_dir, "review-audit-round-2/alpha_round1.md")
     write_selection_state(previous_state, "2" * 40, round_num=2, audit_round_num=1)
 
-    assert required_lineage_state(store, same_selection_node()) == previous_state
+    assert required_lineage_state_path(store, same_selection_node()) == previous_state
 
 
 def test_required_lineage_state_fails_when_canonical_status_has_no_state(
@@ -166,7 +204,7 @@ def test_required_lineage_state_fails_when_canonical_status_has_no_state(
     write_selection_review_status(stage_dir, "alpha_round2.md")
 
     with pytest.raises(RuntimeError, match="no matching succeeded workspace state"):
-        required_lineage_state(store, same_selection_node())
+        required_lineage_state_path(store, same_selection_node())
 
 
 def test_latest_executor_workspace_state_uses_payload_order_not_filename_order(

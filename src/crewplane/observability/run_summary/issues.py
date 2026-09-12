@@ -49,29 +49,19 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
             )
             continue
         if event.event_type == EventType.INVOCATION_FAILED:
+            prefix = "Invocation failed"
+        elif event.event_type == EventType.NODE_FAILED:
+            prefix = "Node failed"
+        elif event.event_type == EventType.WORKFLOW_FAILED:
+            prefix = "Workflow failed"
+        else:
+            prefix = None
+        if prefix is not None:
             issues.append(
                 (
                     severity_rank("error"),
                     event.timestamp_utc,
-                    format_failure_issue("Invocation failed", event),
-                )
-            )
-            continue
-        if event.event_type == EventType.NODE_FAILED:
-            issues.append(
-                (
-                    severity_rank("error"),
-                    event.timestamp_utc,
-                    format_failure_issue("Node failed", event),
-                )
-            )
-            continue
-        if event.event_type == EventType.WORKFLOW_FAILED:
-            issues.append(
-                (
-                    severity_rank("error"),
-                    event.timestamp_utc,
-                    format_failure_issue("Workflow failed", event),
+                    format_failure_issue(prefix, event),
                 )
             )
             continue

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.contracts.artifacts import REVIEW_AUDIT_DIRECTORY_PREFIX
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.architecture.safe_files import contained_regular_file
 
@@ -24,7 +25,7 @@ def candidate_markdown_files(stage_dir: Path) -> list[tuple[int, Path]]:
     audit_dirs = sorted(
         (
             candidate
-            for candidate in stage_dir.glob("review-audit-round-*")
+            for candidate in stage_dir.glob(f"{REVIEW_AUDIT_DIRECTORY_PREFIX}*")
             if candidate.is_dir()
         ),
         key=lambda candidate: parse_audit_round(candidate.name),
@@ -93,10 +94,9 @@ def parse_task_round(stem: str) -> tuple[str, int]:
 
 
 def parse_audit_round(dir_name: str) -> int:
-    prefix = "review-audit-round-"
-    if not dir_name.startswith(prefix):
+    if not dir_name.startswith(REVIEW_AUDIT_DIRECTORY_PREFIX):
         return 0
     try:
-        return int(dir_name[len(prefix) :])
+        return int(dir_name[len(REVIEW_AUDIT_DIRECTORY_PREFIX) :])
     except ValueError:
         return 0

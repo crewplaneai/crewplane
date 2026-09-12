@@ -3,13 +3,8 @@ from __future__ import annotations
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.review_contract import REVIEW_RESPONSE_INSTRUCTION
 
-from ..common import (
-    ExecutionTelemetry,
-    PromptBudgetExceededError,
-    RuntimeEventContext,
-    compiled_token_budget,
-    emit_runtime_log,
-)
+from ..common import ExecutionTelemetry
+from ..prompt_budgeting import PromptBudgetInspection, enforce_prompt_budget
 from .types import ExecutorRoundArtifact
 
 REVIEWER_ONLY_INSTRUCTION = (
@@ -103,50 +98,22 @@ def resolve_previous_candidate_context(
     if not previous_executor_outputs:
         return None
     context = build_review_context(previous_executor_outputs)
-    _check_previous_candidate_budget(node, context, telemetry)
-    return context
-
-
-def _check_previous_candidate_budget(
-    node: PreflightExecutionNode,
-    context: str,
-    telemetry: ExecutionTelemetry | None,
-) -> None:
-    budget = compiled_token_budget(node)
-    fail_threshold = budget.get("fail_threshold_chars")
-    warn_threshold = budget.get("warn_threshold_chars")
-    if fail_threshold is None and warn_threshold is None:
-        return
-
-    char_count = len(context)
-    if fail_threshold is not None and char_count > fail_threshold:
-        raise PromptBudgetExceededError(
-            "Prompt budget exceeded for node "
-            f"'{node.id}': previous canonical candidate resolves to "
-            f"{char_count} chars, exceeding fail threshold {fail_threshold}. "
-            "Shorten the prior candidate or raise "
-            "the threshold intentionally."
-        )
-    if warn_threshold is not None and char_count > warn_threshold:
-        emit_runtime_log(
-            telemetry,
-            "warning",
-            (
-                "Prompt budget warning for node "
-                f"'{node.id}': previous canonical candidate resolves to "
-                f"{char_count} chars, exceeding warn threshold "
-                f"{warn_threshold}. Shorten the prior candidate or "
-                "raise the threshold intentionally."
+    enforce_prompt_budget(
+        node,
+        PromptBudgetInspection(
+            display_name="previous canonical candidate",
+            char_count=len(context),
+            shorten_advice=(
+                "Shorten the prior candidate or raise the threshold intentionally."
             ),
-            "prompt_budget_warning",
-            context=RuntimeEventContext(node_id=node.id),
-            attributes={
+            warning_attributes={
                 "upstream_node_id": node.id,
                 "upstream_artifact_name": "previous_canonical_candidate",
-                "char_count": char_count,
-                "warn_threshold_chars": warn_threshold,
             },
-        )
+        ),
+        telemetry,
+    )
+    return context
 
 
 def build_review_context(

@@ -14,7 +14,7 @@ from crewplane.architecture.contracts import (
     EventType,
     InvocationContext,
 )
-from crewplane.artifacts.generated_files.detection import (
+from crewplane.artifacts.generated_files.paths import (
     GENERATED_FILE_SNAPSHOT_METADATA_NAME,
 )
 from crewplane.core.config import AgentConfig, Config

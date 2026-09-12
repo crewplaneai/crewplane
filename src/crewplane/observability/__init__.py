@@ -9,9 +9,9 @@ from .events import (
     emit_event,
 )
 from .layout import NodePlacement, TopologyLayout, compute_topology_layout
-from .log_stream import MAX_STREAM_LINES_PER_NODE, NodeLogStreamTracker
 from .persistent import PersistentRunLogger
 from .render import RenderConfig, render_dashboard_text
+from .render.text import MAX_STREAM_LINES_PER_NODE
 from .runtime import ObservabilityHub
 from .types import (
     DashboardSnapshot,
@@ -32,7 +32,6 @@ __all__ = [
     "EventSink",
     "ExecutionEvent",
     "MAX_STREAM_LINES_PER_NODE",
-    "NodeLogStreamTracker",
     "NodePlacement",
     "ObservabilityHub",
     "PersistentRunLogger",

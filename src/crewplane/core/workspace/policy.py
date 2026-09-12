@@ -12,6 +12,7 @@ from pydantic import (
 
 from crewplane.core.workflow.keywords import validate_exact_keyword
 from crewplane.core.workflow.syntax import NODE_ID_PATTERN
+from crewplane.core.workspace.git_policy import GitRefSyntaxIssue, git_ref_syntax_issue
 from crewplane.core.workspace.naming import safe_ref_component
 from crewplane.version import SCHEMA_VERSION
 
@@ -35,7 +36,6 @@ WORKSPACE_CLEAN_START_VALUES: tuple[WorkspaceCleanStart, ...] = (
 )
 WORKSPACE_CLEAN_START_SET = frozenset(WORKSPACE_CLEAN_START_VALUES)
 PROJECT_ROOT_WORKTREE_SELECTOR = "none"
-INVALID_BRANCH_REF_CHARS = frozenset(" ~^:?*[\\")
 
 
 class WorktreeContract(BaseModel):
@@ -115,29 +115,10 @@ def validate_branch_name(name: str) -> str:
         raise ValueError("branch_name cannot be blank or padded with whitespace")
     if normalized in {"@", "HEAD"} or normalized.startswith(("refs/", "-")):
         raise ValueError("branch_name must be a branch name, not a ref path")
-    ref = f"refs/heads/{normalized}"
-    if (
-        ref.endswith("/")
-        or ref.endswith(".")
-        or ".." in ref
-        or "//" in ref
-        or "@{" in ref
-    ):
-        raise ValueError("branch_name is not a valid Git branch name")
-    if any(
-        ord(char) < 32 or ord(char) == 127 or char in INVALID_BRANCH_REF_CHARS
-        for char in ref
-    ):
+    issue = git_ref_syntax_issue(f"refs/heads/{normalized}")
+    if issue == GitRefSyntaxIssue.CHARACTERS:
         raise ValueError("branch_name contains characters Git refs do not allow")
-    parts = ref.split("/")
-    if not all(
-        part
-        and part not in {".", ".."}
-        and not part.startswith(".")
-        and not part.endswith(".")
-        and not part.endswith(".lock")
-        for part in parts
-    ):
+    if issue is not None:
         raise ValueError("branch_name is not a valid Git branch name")
     return normalized
 

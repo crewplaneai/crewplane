@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -140,6 +141,55 @@ def test_provider_process_exit_requires_started_state(tmp_path) -> None:
                 returncode=0,
             ),
         )
+
+
+@pytest.mark.parametrize("unsafe_state", ["hardlink", "permission"])
+def test_provider_process_exit_rejects_unsafe_state(
+    tmp_path, monkeypatch, unsafe_state
+) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    invocation = _invocation()
+    state_path = output.write_provider_process_event(
+        invocation,
+        InvocationProcessEvent(
+            attempt=1, pid=os.getpid(), process_group_id=None, status="started"
+        ),
+    ).path
+    original_bytes = state_path.read_bytes()
+    if unsafe_state == "hardlink":
+        (tmp_path / "state-copy").hardlink_to(state_path)
+    else:
+        original_lstat = Path.lstat
+
+        def denied_lstat(path):
+            if path == state_path:
+                raise PermissionError("blocked")
+            return original_lstat(path)
+
+        monkeypatch.setattr(Path, "lstat", denied_lstat)
+
+    with pytest.raises(
+        RuntimeError,
+        match="^Provider process state is missing, malformed, or unreadable\\.$",
+    ) as caught:
+        output.write_provider_process_event(
+            invocation,
+            InvocationProcessEvent(
+                attempt=1,
+                pid=os.getpid(),
+                process_group_id=None,
+                status="exited",
+                returncode=0,
+            ),
+        )
+
+    if unsafe_state == "permission":
+        assert isinstance(caught.value.__cause__, PermissionError)
+    else:
+        assert (
+            str(caught.value.__cause__) == "Provider process state is not a safe file."
+        )
+    assert state_path.read_bytes() == original_bytes
 
 
 def test_provider_process_state_accepts_initial_reviewer_round_zero(tmp_path) -> None:

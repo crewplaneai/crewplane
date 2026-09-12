@@ -129,12 +129,9 @@ def persist_review_state(
     round_num: int,
     reviewer_output: ReviewerRoundArtifact,
 ) -> Path:
-    state_file_name = (
-        f"{safe_artifact_name(reviewer_output.task_id)}-round-{round_num}.state.json"
-    )
     raw_output_path = _review_raw_output_path(reviewer_output.output_file)
     metadata_path = _review_metadata_path(reviewer_output.output_file)
-    payload = {
+    payload: dict[str, object] = {
         "reviewer": reviewer_output.provider.provider,
         "task_id": reviewer_output.task_id,
         "audit_round_num": audit_round_num,
@@ -158,10 +155,8 @@ def persist_review_state(
         "raw_output_artifact": raw_output_path.name,
         "metadata_artifact": metadata_path.name,
     }
-    return _write_review_state_file(
-        artifact_dir=artifact_dir,
-        file_name=state_file_name,
-        content=json.dumps(payload, allow_nan=False, indent=2, sort_keys=True),
+    return _write_reviewer_state(
+        reviewer_output.task_id, round_num, artifact_dir, payload
     )
 
 
@@ -171,10 +166,7 @@ def persist_reviewer_failure_state(
     round_num: int,
     failure: ReviewerInvocationFailure,
 ) -> Path:
-    state_file_name = (
-        f"{safe_artifact_name(failure.task_id)}-round-{round_num}.state.json"
-    )
-    payload = {
+    payload: dict[str, object] = {
         "reviewer": failure.provider.provider,
         "task_id": failure.task_id,
         "audit_round_num": audit_round_num,
@@ -188,9 +180,18 @@ def persist_reviewer_failure_state(
         ),
         "warnings": [failure.warning],
     }
+    return _write_reviewer_state(failure.task_id, round_num, artifact_dir, payload)
+
+
+def _write_reviewer_state(
+    task_id: str,
+    round_num: int,
+    artifact_dir: Path,
+    payload: dict[str, object],
+) -> Path:
     return _write_review_state_file(
         artifact_dir=artifact_dir,
-        file_name=state_file_name,
+        file_name=f"{safe_artifact_name(task_id)}-round-{round_num}.state.json",
         content=json.dumps(payload, allow_nan=False, indent=2, sort_keys=True),
     )
 

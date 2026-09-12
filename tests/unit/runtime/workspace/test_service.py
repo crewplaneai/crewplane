@@ -19,10 +19,12 @@ from crewplane.runtime.agent.workspace_environment import (
     workspace_child_environment,
 )
 from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.filesystem import (
+    remove_workspace_path,
+)
 from crewplane.runtime.workspace.git import git
 from crewplane.runtime.workspace.snapshot import (
     WorkspaceSnapshotPolicy,
-    remove_workspace_path,
     runtime_git_env,
 )
 from tests.helpers.artifacts import node_artifact_request

@@ -4,7 +4,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.runtime.workspace.snapshot import runtime_workspace_cache_root
+from crewplane.runtime.workspace.filesystem import (
+    runtime_workspace_cache_root,
+)
 from crewplane.runtime.workspace.state import (
     WorkspaceStateMaterializationRequest,
     write_running_workspace_state,

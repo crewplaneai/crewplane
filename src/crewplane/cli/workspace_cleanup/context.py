@@ -9,9 +9,8 @@ from rich.console import Console
 from crewplane.core.config import Settings, load_config
 from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.core.workspace.cache import (
-    paths_overlap,
-    workspace_cache_forbidden_roots,
     workspace_cache_root,
+    workspace_cache_root_failure,
 )
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace.cleanup import (
@@ -174,25 +173,24 @@ def validate_cleanup_cache_root(
     git_context: GitSourceContext | None,
 ) -> Path:
     cache_root = workspace_cache_root(settings.workspace.cache_root)
-    if not cache_root.is_absolute():
-        raise RuntimeError(
-            "settings.workspace.cache_root must be absolute for workspace cleanup."
-        )
-    if cache_root.is_symlink():
-        raise RuntimeError(
-            f"Workspace cache root must not be a symlink: {cache_root.as_posix()}"
-        )
-    state_dir = project_root / STATE_DIR_NAME
-    blocked_roots = workspace_cache_forbidden_roots(
+    failure = workspace_cache_root_failure(
+        cache_root,
         project_root,
-        state_dir,
+        project_root / STATE_DIR_NAME,
         git_context.active_git_dir if git_context is not None else None,
         git_context.common_git_dir if git_context is not None else None,
     )
-    for blocked in blocked_roots:
-        if paths_overlap(cache_root, blocked):
-            raise RuntimeError(
-                "Workspace cache root must not overlap the project, .crewplane, "
-                f"or Git metadata paths: {cache_root.as_posix()}"
-            )
+    if failure == "relative":
+        raise RuntimeError(
+            "settings.workspace.cache_root must be absolute for workspace cleanup."
+        )
+    if failure == "symlink":
+        raise RuntimeError(
+            f"Workspace cache root must not be a symlink: {cache_root.as_posix()}"
+        )
+    if failure == "overlap":
+        raise RuntimeError(
+            "Workspace cache root must not overlap the project, .crewplane, "
+            f"or Git metadata paths: {cache_root.as_posix()}"
+        )
     return cache_root

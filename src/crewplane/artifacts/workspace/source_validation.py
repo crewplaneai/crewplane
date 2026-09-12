@@ -29,6 +29,7 @@ from .state.lineage import (
     invocation_round_order,
     review_output_coordinates,
 )
+from .state.source_fields import normalized_source_descriptor, source_field_mismatches
 
 
 def workspace_invocation_source_matches(
@@ -55,31 +56,9 @@ def _normalized_source_descriptor(
 ) -> dict[str, object] | None:
     source = _mapping(payload.get("source"))
     invocation_source = _mapping(payload.get("invocation_source"))
-    descriptor = {
-        "kind": source.get("kind"),
-        "node_id": source.get("node_id"),
-        "commit": source.get("commit"),
-        "tree": source.get("tree"),
-        "candidate_sequence": source.get("candidate_sequence"),
-        "bundle_path": source.get("bundle_path"),
-        "bundle_sha256": source.get("bundle_sha256"),
-        "bundle_size_bytes": source.get("bundle_size_bytes"),
-        "bundle_ref": source.get("bundle_ref"),
-    }
-    alternate = {
-        "kind": invocation_source.get("source_kind"),
-        "node_id": invocation_source.get("source_node_id"),
-        "commit": invocation_source.get("source_commit"),
-        "tree": invocation_source.get("source_tree"),
-        "candidate_sequence": invocation_source.get("candidate_sequence"),
-        "bundle_path": invocation_source.get("source_bundle_path"),
-        "bundle_sha256": invocation_source.get("source_bundle_sha256"),
-        "bundle_size_bytes": invocation_source.get("source_bundle_size_bytes"),
-        "bundle_ref": invocation_source.get("source_bundle_ref"),
-    }
-    if descriptor != alternate:
+    if source_field_mismatches(source, invocation_source):
         return None
-    return descriptor
+    return normalized_source_descriptor(source)
 
 
 def _project_source_matches(

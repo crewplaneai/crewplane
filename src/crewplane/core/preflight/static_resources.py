@@ -11,7 +11,11 @@ from crewplane.core.state_paths import FILE_TOKEN_EXCLUDED_ROOTS, is_reserved_st
 if TYPE_CHECKING:
     from crewplane.architecture.ports import TerminalHistoryReaderPort
 
-from .compile_state import CompileState
+from .compile_state import (
+    CompileState,
+    ResolvedStaticFileReference,
+    extend_diagnostics,
+)
 from .diagnostics import (
     PreflightDiagnostic,
     PreflightDiagnosticCode,
@@ -26,6 +30,24 @@ class StaticFileResult:
     resource: StaticResource | None
     payload: bytes | None
     diagnostics: tuple[PreflightDiagnostic, ...] = ()
+
+
+def prepare_static_file_reference(
+    result: StaticFileResult,
+    node_id: str,
+    occurrence_id: str,
+    raw_token: str,
+    state: CompileState,
+) -> ResolvedStaticFileReference | None:
+    extend_diagnostics(state, result.diagnostics)
+    if result.resource is None or result.payload is None:
+        return None
+    signature = static_file_token_signature(
+        result.resource, node_id, occurrence_id, raw_token
+    )
+    resource = result.resource.model_copy(update={"token_signatures": [signature]})
+    append_static_resource(state, resource, result.payload, signature)
+    return ResolvedStaticFileReference(resource=resource, token_signature=signature)
 
 
 def static_file_token_signature(

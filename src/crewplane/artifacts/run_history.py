@@ -9,12 +9,13 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from crewplane.architecture.safe_files import (
+    is_single_link_regular_file,
     path_has_symlink_component,
     path_is_symlink,
 )
 from crewplane.core.execution_state import RunManifest
 
-from .naming import validate_run_key_name
+from .naming import run_manifest_relative_path, validate_run_key_name
 
 
 @dataclass(frozen=True)
@@ -133,7 +134,7 @@ def _candidate_run_dirs(stages_root: Path) -> tuple[Path, ...]:
 
 
 def _safe_candidate_manifest(stages_root: Path, run_dir: Path) -> Path | None:
-    manifest_path = run_dir / "manifests" / "run.json"
+    manifest_path = run_dir / run_manifest_relative_path()
     try:
         manifest_lstat = manifest_path.lstat()
     except FileNotFoundError:
@@ -147,7 +148,7 @@ def _safe_candidate_manifest(stages_root: Path, run_dir: Path) -> Path | None:
     _ensure_contained_run_path(stages_root, run_dir)
     _ensure_no_symlink_metadata_components(stages_root, manifest_path)
     _ensure_contained_run_path(stages_root, manifest_path)
-    if not stat.S_ISREG(manifest_lstat.st_mode) or manifest_lstat.st_nlink != 1:
+    if not is_single_link_regular_file(manifest_lstat):
         raise RunHistoryError("Run history metadata path is not a safe file.")
     return manifest_path
 

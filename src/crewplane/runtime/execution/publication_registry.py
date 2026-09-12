@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import stat
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
@@ -12,6 +11,7 @@ from pathlib import Path
 from threading import RLock
 from typing import BinaryIO
 
+from crewplane.architecture.safe_files import is_single_link_regular_file
 from crewplane.core.file_hashing import ContentSignature
 
 _RECOVERY_COPY_CHUNK_BYTES = 1024 * 1024
@@ -299,7 +299,7 @@ def _append_recovery_source(
         size_bytes = 0
         with source.open("rb") as source_file:
             source_stat = os.fstat(source_file.fileno())
-            if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1:
+            if not is_single_link_regular_file(source_stat):
                 raise RuntimeError(
                     "Runtime publication recovery source must be a single-link "
                     f"regular file: {source.as_posix()}"

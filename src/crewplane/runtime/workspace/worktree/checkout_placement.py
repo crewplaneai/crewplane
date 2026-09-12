@@ -9,7 +9,10 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.workspace.naming import safe_file_component
 
-from ..snapshot import ensure_owner_private_dir, workspace_run_root
+from ..filesystem import (
+    ensure_owner_private_dir,
+    workspace_run_root,
+)
 
 
 def allocate_worktree_workspace(

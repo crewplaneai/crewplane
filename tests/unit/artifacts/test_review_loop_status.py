@@ -355,3 +355,33 @@ def test_rejects_invalid_status_json(
         ReviewLoopStatusError, match="^Invalid review-loop status artifact"
     ):
         resolve_review_loop_status("stage", stage_dir)
+
+
+@pytest.mark.parametrize("value", [None, False, True, -1, 1.0, "1", 0, 10**30])
+def test_status_counter_boundary(tmp_path: Path, value: object) -> None:
+    create_referenced_outputs(tmp_path)
+    payload = valid_status_payload()
+    payload["no_progress_round_count"] = value
+    write_status(tmp_path, payload)
+    if type(value) is int and value >= 0:
+        assert resolve_review_loop_status("stage", tmp_path) is not None
+    else:
+        with pytest.raises(
+            ReviewLoopStatusError,
+            match="no_progress_round_count must be a non-negative integer",
+        ):
+            resolve_review_loop_status("stage", tmp_path)
+
+
+@pytest.mark.parametrize("value", [None, False, True, -1, 1.0, "1", 0])
+def test_status_round_boundary_rejects_nonpositive_values(
+    tmp_path: Path, value: object
+) -> None:
+    create_referenced_outputs(tmp_path)
+    payload = valid_status_payload()
+    payload["canonical_executor_outputs"][0]["round_num"] = value
+    write_status(tmp_path, payload)
+    with pytest.raises(
+        ReviewLoopStatusError, match=r"round_num must be (non-negative|positive)"
+    ):
+        resolve_review_loop_status("stage", tmp_path)

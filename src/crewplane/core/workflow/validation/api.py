@@ -6,7 +6,10 @@ from crewplane.core.workflow.diagnostics import (
     format_diagnostics,
     node_id_from_message,
 )
-from crewplane.core.workflow.graph import analyze_workflow_graph
+from crewplane.core.workflow.graph import (
+    analyze_workflow_graph,
+    has_valid_dependency_references,
+)
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.core.workflow.validation.nodes import (
     collect_workflow_node_diagnostics,
@@ -72,13 +75,7 @@ def collect_workflow_topology_diagnostics(
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
     """Collect diagnostics that require a structurally valid dependency graph."""
 
-    node_ids = {node.id for node in workflow.nodes}
-    if len(node_ids) != len(workflow.nodes):
-        return ()
-    dependencies = {node.id: set(node.needs) for node in workflow.nodes}
-    if any(node_id in needs for node_id, needs in dependencies.items()):
-        return ()
-    if any(not needs <= node_ids for needs in dependencies.values()):
+    if not has_valid_dependency_references(workflow):
         return ()
 
     try:

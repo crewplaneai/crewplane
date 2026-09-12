@@ -19,6 +19,7 @@ from crewplane.architecture.contracts import (
     PromptTransport,
     ProviderKind,
 )
+from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
 from crewplane.version import SCHEMA_VERSION
 
 from .provider_names import normalize_provider_name
@@ -68,7 +69,7 @@ class TokenPricing(BaseModel):
     ) -> float | None:
         if value is None:
             return value
-        sibling_keys = ("input", "cached_input", "cache_write", "output", "reasoning")
+        sibling_keys = tuple(bucket for bucket in TOKEN_BUCKETS if bucket != "total")
         configured_siblings = [
             key for key in sibling_keys if info.data.get(key) is not None
         ]
@@ -82,16 +83,7 @@ class TokenPricing(BaseModel):
 
     def configured_buckets(self) -> tuple[str, ...]:
         return tuple(
-            bucket
-            for bucket in (
-                "input",
-                "cached_input",
-                "cache_write",
-                "output",
-                "reasoning",
-                "total",
-            )
-            if getattr(self, bucket) is not None
+            bucket for bucket in TOKEN_BUCKETS if getattr(self, bucket) is not None
         )
 
     def as_dict(self) -> dict[str, float | None]:

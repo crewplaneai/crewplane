@@ -18,7 +18,6 @@ from .activity.telemetry import (
 )
 from .prompt_budgeting import (
     PromptBudgetExceededError,
-    compiled_token_budget,
     resolve_prompt_with_output_budget,
     resolve_prompt_with_output_budget_details,
 )
@@ -55,7 +54,6 @@ __all__ = [
     "RuntimeEventContext",
     "WorkflowExecutionState",
     "build_stage_task_specs",
-    "compiled_token_budget",
     "emit_runtime_log",
     "emit_stage_finalize_logs",
     "emit_workflow_event",

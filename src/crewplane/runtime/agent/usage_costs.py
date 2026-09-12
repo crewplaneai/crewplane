@@ -8,13 +8,13 @@ from crewplane.architecture.contracts import (
     ProviderKind,
     ProviderUsageStatus,
 )
+from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS, TokenBucket
 from crewplane.core.config import AgentConfig
 
 from .usage_types import (
     STRUCTURED_PROVIDER_KINDS,
     InvocationUsage,
     ProviderTokenUsage,
-    TokenBucket,
 )
 
 TOKENS_PER_MILLION = 1_000_000
@@ -129,13 +129,8 @@ def provider_usage_buckets(config: AgentConfig) -> tuple[TokenBucket, ...]:
     if "total" in pricing_buckets:
         return ("total",)
     required_buckets: list[TokenBucket] = ["input", "output"]
-    optional_buckets: tuple[TokenBucket, ...] = (
-        "cached_input",
-        "cache_write",
-        "reasoning",
-    )
-    for bucket in optional_buckets:
-        if bucket in pricing_buckets:
+    for bucket in TOKEN_BUCKETS:
+        if bucket not in required_buckets and bucket in pricing_buckets:
             required_buckets.append(bucket)
     return tuple(required_buckets)
 

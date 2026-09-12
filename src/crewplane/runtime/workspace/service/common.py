@@ -8,17 +8,16 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.preflight.workspace.observability import (
+from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
 )
-from crewplane.core.workspace.cache import workspace_cache_root
 from crewplane.core.workspace.naming import safe_file_component
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
-from crewplane.runtime.workspace.setup import WorkspaceSetupError
-from crewplane.runtime.workspace.snapshot import (
+from crewplane.runtime.workspace.filesystem import (
     remove_workspace_path,
-    runtime_workspace_cache_root,
+    workspace_run_hierarchy,
 )
+from crewplane.runtime.workspace.setup import WorkspaceSetupError
 from crewplane.runtime.workspace.state import (
     WorkspaceStateRetention,
     WorkspaceStateUpdateRequest,
@@ -77,6 +76,18 @@ def unmaterialized_workspace_retention(planned_workspace_path: Path) -> str:
     if planned_workspace_path.exists() or planned_workspace_path.is_symlink():
         return "retained"
     return "deleted"
+
+
+def record_failed_unmaterialized_preparation(
+    state_path: Path,
+    planned_workspace_path: Path,
+    failure: Exception,
+) -> None:
+    record_failed_preparation_state(
+        state_path,
+        failure,
+        workspace_retention=unmaterialized_workspace_retention(planned_workspace_path),
+    )
 
 
 def record_failed_preparation_state(
@@ -157,12 +168,7 @@ def planned_workspace_path(
     slug: str,
     parent_slug: str | None = None,
 ) -> Path:
-    run_root = (
-        workspace_cache_root(runtime_workspace_cache_root(plan))
-        / family
-        / source.repository_id
-        / plan.run_key_name
-    )
+    run_root = workspace_run_hierarchy(plan, source, family)[-1]
     if parent_slug is not None:
         run_root = run_root / safe_file_component(parent_slug)
     return run_root / slug

@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.architecture.safe_files import is_single_link_regular_file
 from crewplane.artifacts.workspace.state.paths import (
     is_safe_workspace_stage_path,
     is_temporary_ref_evidence_name,
@@ -85,7 +86,7 @@ def single_link_regular_file(path: Path) -> bool:
         file_stat = path.lstat()
     except OSError:
         return False
-    return stat.S_ISREG(file_stat.st_mode) and file_stat.st_nlink == 1
+    return is_single_link_regular_file(file_stat)
 
 
 def path_has_symlink_component(path: Path, root: Path) -> bool:

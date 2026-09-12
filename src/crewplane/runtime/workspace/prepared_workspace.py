@@ -7,10 +7,12 @@ from typing import Literal
 
 from crewplane.architecture.contracts import InvocationContext
 
+from .filesystem import (
+    remove_workspace_path,
+)
 from .locks import git_metadata_lock
 from .snapshot import (
     WorkspaceSnapshotPolicy,
-    remove_workspace_path,
 )
 from .snapshot_reporting import snapshot_success_outcome
 from .state import read_workspace_state, require_workspace_state_identity

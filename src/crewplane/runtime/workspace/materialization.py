@@ -13,6 +13,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.core.workspace.checkout_size import (
     estimated_tree_checkout_size_bytes,
     estimated_working_tree_size_bytes,
@@ -227,7 +228,7 @@ def _disk_thresholds(
 
 
 def _optional_nonnegative_int(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+    if is_nonnegative_int(value):
         return value
     return None
 

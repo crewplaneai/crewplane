@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+
+import pytest
 
 from crewplane.artifacts.resume.validation import validate_resume_frontier
+from crewplane.artifacts.workspace.source_validation import (
+    workspace_invocation_source_matches,
+)
+from crewplane.artifacts.workspace.state.contracts import (
+    workspace_state_contract_errors,
+)
 from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
@@ -386,3 +395,36 @@ def _source_with_downstream_workspace_state(tmp_path):
     )
     write_lineage_bundle_for_payload(repo, source, b_payload)
     return source, plan, a_payload, b_payload
+
+
+@pytest.mark.parametrize(
+    ("source_field", "invocation_field", "label"),
+    [
+        ("kind", "source_kind", "source_kind"),
+        ("node_id", "source_node_id", "source_node_id"),
+        ("commit", "source_commit", "source_commit"),
+        ("tree", "source_tree", "source_tree"),
+        ("candidate_sequence", "candidate_sequence", "candidate_sequence"),
+        ("bundle_path", "source_bundle_path", "bundle_path"),
+        ("bundle_sha256", "source_bundle_sha256", "bundle_sha256"),
+        ("bundle_size_bytes", "source_bundle_size_bytes", "bundle_size_bytes"),
+        ("bundle_ref", "source_bundle_ref", "bundle_ref"),
+    ],
+)
+@pytest.mark.parametrize("section", ["source", "invocation_source"])
+def test_source_validators_reject_each_correspondence_mismatch(
+    tmp_path, source_field, invocation_field, label, section
+) -> None:
+    run, plan, upstream, payload = _source_with_downstream_workspace_state(tmp_path)
+    attach_source_bundle_descriptor(payload, upstream)
+    (run.run_dir / "a" / "workspace-state.json").write_text(json.dumps(upstream))
+    node = plan.nodes[1]
+    assert workspace_invocation_source_matches(run, plan, node, payload)
+    changed = deepcopy(payload)
+    field = source_field if section == "source" else invocation_field
+    changed[section][field] = "mismatched"
+
+    assert not workspace_invocation_source_matches(run, plan, node, changed)
+    assert f"invocation source {label} mismatch" in workspace_state_contract_errors(
+        changed, "resume"
+    )

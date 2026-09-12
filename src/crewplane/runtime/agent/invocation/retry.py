@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from crewplane.architecture.contracts import (
     CommandResult,
     OneShotFailureRetryPolicy,
+    QuotaClassification,
     QuotaParserProfile,
 )
 from crewplane.core.config import AgentConfig
@@ -266,6 +267,19 @@ def evaluate_quota_retry(
             ),
         )
 
+    return _schedule_quota_retry(
+        config, cmd, quota, quota_retry_started_at, quota_retry_count, wait_seconds
+    )
+
+
+def _schedule_quota_retry(
+    config: AgentConfig,
+    cmd: list[str],
+    quota: QuotaClassification,
+    quota_retry_started_at: float,
+    quota_retry_count: int,
+    wait_seconds: float,
+) -> ScheduleQuotaRetry:
     quota_retry_count += 1
     if quota.reset_after_seconds is None:
         wait_detail = f"{format_wait_duration(wait_seconds)} (configured fixed delay)"

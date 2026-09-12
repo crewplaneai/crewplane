@@ -207,10 +207,7 @@ def _bundle_result_is_commit(
     object_format: str,
 ) -> bool:
     with tempfile.TemporaryDirectory() as temp_dir:
-        git_dir = Path(temp_dir) / "bundle.git"
-        env = _sanitized_git_env()
-        _init_isolated_bare_repo(git_dir, env, object_format)
-        _run_git_dir(git_dir, env, "bundle", "unbundle", bundle_path.as_posix())
+        git_dir, env = _prepare_bundle_repository(temp_dir, bundle_path, object_format)
         object_type = _run_git_dir(
             git_dir,
             env,
@@ -228,10 +225,7 @@ def _bundle_result_tree_matches(
     object_format: str,
 ) -> bool:
     with tempfile.TemporaryDirectory() as temp_dir:
-        git_dir = Path(temp_dir) / "bundle.git"
-        env = _sanitized_git_env()
-        _init_isolated_bare_repo(git_dir, env, object_format)
-        _run_git_dir(git_dir, env, "bundle", "unbundle", bundle_path.as_posix())
+        git_dir, env = _prepare_bundle_repository(temp_dir, bundle_path, object_format)
         object_type = _run_git_dir(
             git_dir,
             env,
@@ -256,15 +250,24 @@ def _bundle_blob_descriptor_matches(
     object_format: str,
 ) -> bool:
     with tempfile.TemporaryDirectory() as temp_dir:
-        git_dir = Path(temp_dir) / "bundle.git"
-        env = _sanitized_git_env()
-        _init_isolated_bare_repo(git_dir, env, object_format)
-        _run_git_dir(git_dir, env, "bundle", "unbundle", bundle_path.as_posix())
+        git_dir, env = _prepare_bundle_repository(temp_dir, bundle_path, object_format)
         return _git_dir_blob_descriptor_matches(
             git_dir,
             env,
             descriptor,
         )
+
+
+def _prepare_bundle_repository(
+    temp_dir: str,
+    bundle_path: Path,
+    object_format: str,
+) -> tuple[Path, dict[str, str]]:
+    git_dir = Path(temp_dir) / "bundle.git"
+    env = _sanitized_git_env()
+    _init_isolated_bare_repo(git_dir, env, object_format)
+    _run_git_dir(git_dir, env, "bundle", "unbundle", bundle_path.as_posix())
+    return git_dir, env
 
 
 def _repo_blob_descriptor_matches(

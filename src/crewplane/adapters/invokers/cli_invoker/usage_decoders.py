@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from crewplane.architecture.contracts import (
@@ -9,6 +9,7 @@ from crewplane.architecture.contracts import (
     ProviderTokenUsage,
     UsageDecodeResult,
 )
+from crewplane.core.value_checks import is_nonnegative_int
 
 from .machine_json import read_claude_model_usage
 from .streaming import iter_stdout_lines, load_stdout_json
@@ -28,6 +29,18 @@ class _UsageAccumulator:
 
     def record_error(self, error: str) -> None:
         self.malformed_error = error
+
+    def decode_and_record(
+        self,
+        decoder: Callable[[Mapping[str, object]], ProviderTokenUsage],
+        payload: Mapping[str, object],
+    ) -> None:
+        try:
+            usage = decoder(payload)
+        except _MalformedUsageError as exc:
+            self.record_error(str(exc))
+            return
+        self.record_usage(usage)
 
     def result(self) -> UsageDecodeResult:
         return _retained_usage_result(
@@ -83,12 +96,7 @@ def decode_claude_usage(result: CommandResult) -> UsageDecodeResult:
         if not isinstance(model_name, str) or not isinstance(model_usage, dict):
             accumulator.record_error("Malformed Claude modelUsage payload.")
             continue
-        try:
-            row_usage = _claude_row_usage(model_usage)
-        except _MalformedUsageError as exc:
-            accumulator.record_error(str(exc))
-            continue
-        accumulator.record_usage(row_usage)
+        accumulator.decode_and_record(_claude_row_usage, model_usage)
     return accumulator.result()
 
 
@@ -117,12 +125,7 @@ def decode_gemini_usage(result: CommandResult) -> UsageDecodeResult:
         if not isinstance(tokens, dict):
             accumulator.record_error("Malformed Gemini model tokens payload.")
             continue
-        try:
-            row_usage = _gemini_row_usage(tokens)
-        except _MalformedUsageError as exc:
-            accumulator.record_error(str(exc))
-            continue
-        accumulator.record_usage(row_usage)
+        accumulator.decode_and_record(_gemini_row_usage, tokens)
     return accumulator.result()
 
 
@@ -145,12 +148,7 @@ def decode_kilo_usage(result: CommandResult) -> UsageDecodeResult:
         if not isinstance(tokens, dict):
             accumulator.record_error("Malformed Kilo token payload.")
             continue
-        try:
-            row_usage = _kilo_row_usage(tokens)
-        except _MalformedUsageError as exc:
-            accumulator.record_error(str(exc))
-            continue
-        accumulator.record_usage(row_usage)
+        accumulator.decode_and_record(_kilo_row_usage, tokens)
     return accumulator.result()
 
 
@@ -276,7 +274,7 @@ class _CounterReader:
         value = self.payload.get(key)
         if value is None:
             return None
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if not is_nonnegative_int(value):
             raise _MalformedUsageError(
                 f"Malformed {self.provider} usage: "
                 f"{key} must be a non-negative integer."

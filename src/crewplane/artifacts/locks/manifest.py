@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +21,7 @@ from crewplane.architecture.contracts.run_summary import (
 )
 from crewplane.architecture.safe_files import (
     contained_regular_file,
+    is_single_link_regular_file,
     path_has_symlink_component,
     path_is_symlink,
 )
@@ -32,7 +32,7 @@ from crewplane.core.execution_state import (
 )
 
 from ..atomic import atomic_write_json
-from ..naming import validate_run_key_name
+from ..naming import run_manifest_relative_path, validate_run_key_name
 
 
 class LockManifestError(RuntimeError):
@@ -344,7 +344,7 @@ def safe_owner_manifest_path(
 
 
 def _ensure_safe_file(manifest_lstat: os.stat_result) -> None:
-    if not stat.S_ISREG(manifest_lstat.st_mode) or manifest_lstat.st_nlink != 1:
+    if not is_single_link_regular_file(manifest_lstat):
         raise LockManifestError("Stale run manifest is not a safe file.")
 
 
@@ -366,7 +366,7 @@ def owner_manifest_path(state_dir: Path, run_key_name: str) -> Path | None:
         return None
     if not run_dir_resolved.is_relative_to(stages_root_resolved):
         return None
-    return run_dir / "manifests" / "run.json"
+    return run_dir / run_manifest_relative_path()
 
 
 def ensure_owner_path_contained(root: Path, candidate: Path) -> None:

@@ -49,7 +49,6 @@ from .policy import (
     reject_worktree_git_policy_drift,
 )
 from .protected_refs import (
-    ProtectedRefSnapshot,
     protected_ref_snapshot_for_source,
     reject_protected_ref_drift,
 )
@@ -112,8 +111,8 @@ def create_worktree_workspace(
             claim,
         )
         _verify_worktree_ready(source, checkout_root, source_ref)
-        protected_refs = _protected_ref_snapshot(
-            source,
+        protected_refs = protected_ref_snapshot_for_source(
+            source.git_top_level,
             protected_ref_scopes,
             source_ref,
         )
@@ -478,16 +477,4 @@ def _reject_capture_policy_drift(request: WorktreeCaptureRequest) -> None:
     reject_common_git_policy_drift(
         Path(request.source.git_top_level),
         Path(request.source.common_git_dir),
-    )
-
-
-def _protected_ref_snapshot(
-    source: WorkspaceSourceSnapshot,
-    protected_ref_scopes: tuple[str, ...] | None,
-    source_ref: WorktreeSourceRef,
-) -> ProtectedRefSnapshot:
-    return protected_ref_snapshot_for_source(
-        source.git_top_level,
-        protected_ref_scopes,
-        source_ref,
     )

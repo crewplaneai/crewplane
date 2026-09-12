@@ -641,3 +641,32 @@ def test_retry_reports_keep_incomplete_aggregate_buckets_unknown() -> None:
     assert usage.provider_tokens["output"] is None
     assert usage.provider_tokens["total"] is None
     assert usage.invocation_cost_confidence == "partial"
+
+
+@pytest.mark.parametrize(
+    ("usage", "count", "error"),
+    [
+        ({}, None, False),
+        ({"input_tokens": None}, None, False),
+        ({"input_tokens": False}, None, True),
+        ({"input_tokens": True}, None, True),
+        ({"input_tokens": -1}, None, True),
+        ({"input_tokens": 0}, 0, False),
+        ({"input_tokens": 10**30}, 10**30, False),
+        ({"input_tokens": 1.0}, None, True),
+        ({"input_tokens": "1"}, None, True),
+    ],
+)
+def test_usage_counter_boundary_preserves_optionality_and_report_count(
+    usage, count, error
+):
+    decoded = decode_codex_usage(
+        CommandResult(0, json.dumps({"type": "turn.completed", "usage": usage}), "")
+    )
+    assert bool(decoded.error) is error
+    assert decoded.valid_report_count == int(count is not None)
+    if count is None:
+        assert decoded.tokens is None
+    else:
+        assert decoded.tokens is not None
+        assert decoded.tokens.input == count

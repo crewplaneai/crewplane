@@ -14,7 +14,7 @@ from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
 )
-from crewplane.artifacts.generated_files.detection import (
+from crewplane.artifacts.generated_files.paths import (
     GENERATED_FILE_SOURCE_METADATA_NAME,
 )
 from crewplane.core.workflow.keywords import ProviderRole
@@ -321,6 +321,46 @@ def test_ignored_and_cache_files_are_excluded(tmp_path: Path) -> None:
     assert "ignored.txt" not in result_text
     assert "module.pyc" not in result_text
     assert generated_files == ()
+
+
+@pytest.mark.parametrize(
+    "reserved",
+    [
+        ".crewplane",
+        "__pycache__",
+        "node_modules",
+        ".crewplane-generated-file-source.json",
+        ".crewplane-generated-file-snapshot.json",
+    ],
+)
+def test_filesystem_discovery_and_final_links_exclude_only_reserved_roots(
+    tmp_path, reserved
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    baseline = GeneratedFileChangeBaseline.capture(
+        workspace, filesystem_fallback_enabled=True
+    )
+    relative = (
+        Path(reserved) if reserved.endswith(".json") else Path(reserved) / "file.txt"
+    )
+    excluded = workspace / relative
+    nested = workspace / "nested" / relative
+    for path in (excluded, nested):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("generated")
+
+    candidates = baseline.candidate_files()
+
+    assert candidates == (nested,)
+    result_text, files = _finalize_with_snapshot(
+        workspace,
+        baseline,
+        f"## Generated Files\n- `{relative}`\n- `nested/{relative}`\n",
+    )
+    assert len(files) == 1
+    assert files[0].read_text() == "generated"
+    assert f"[alpha/nested/{relative}]" in result_text
 
 
 def test_explicit_generated_files_section_orders_valid_candidates(

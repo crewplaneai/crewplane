@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from crewplane.architecture.contracts import InvocationContext
-from crewplane.architecture.contracts.artifacts import build_task_round_filename
+from crewplane.architecture.contracts.artifacts import (
+    build_review_audit_directory_name,
+    build_task_round_filename,
+)
 
 
 def fixture_candidates(
@@ -16,7 +19,7 @@ def fixture_candidates(
         node_dir = output_dir / context.node_id
         role_name = context.role.strip().lower()
         grouped_node_dir = (
-            node_dir / f"review-audit-round-{context.audit_round_num}"
+            node_dir / build_review_audit_directory_name(context.audit_round_num)
             if context.audit_round_num is not None
             else None
         )

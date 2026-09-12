@@ -17,6 +17,9 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.runtime.workspace.filesystem import (
+    runtime_workspace_cache_root,
+)
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
     invocation_slug,
@@ -32,7 +35,6 @@ from crewplane.runtime.workspace.snapshot import (
     WorkspaceSnapshotPolicy,
     create_snapshot_workspace,
     materialize_snapshot,
-    runtime_workspace_cache_root,
     snapshot_entries,
     snapshot_retry_reset,
 )
@@ -45,13 +47,13 @@ from crewplane.runtime.workspace.worktree.cleanup import worktree_disk_usage
 
 from .common import (
     planned_workspace_path,
+    record_failed_unmaterialized_preparation,
     trusted_workspace_state_payload,
     workspace_cwd,
     workspace_state_request,
 )
 from .snapshot_failures import (
     record_failed_materialized_snapshot_preparation,
-    record_failed_unmaterialized_snapshot_preparation,
     terminalize_unhandled_snapshot_materialization_failure,
 )
 from .types import (
@@ -203,7 +205,9 @@ def _create_snapshot_workspace_with_failure_state(
     try:
         return create_snapshot_workspace(request.plan, plan.slug, plan.source)
     except Exception as exc:
-        record_failed_unmaterialized_snapshot_preparation(plan, exc)
+        record_failed_unmaterialized_preparation(
+            plan.state_path, plan.planned_workspace_path, exc
+        )
         raise
 
 

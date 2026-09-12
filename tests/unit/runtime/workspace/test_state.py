@@ -20,8 +20,10 @@ from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
 
 
+@pytest.mark.parametrize("source_kind", ["project", "node", "candidate"])
 def test_running_workspace_state_records_node_source_bundle_descriptor(
     tmp_path: Path,
+    source_kind: str,
 ) -> None:
     repo = create_git_repo(tmp_path)
     plan = workspace_plan(
@@ -63,8 +65,10 @@ def test_running_workspace_state_records_node_source_bundle_descriptor(
         WorkspaceStateMaterializationRequest(
             workspace_path=tmp_path / "workspace",
             child_environment_required=False,
-            source_ref=WorktreeSourceRef(
-                source_kind="node",
+            source_ref=None
+            if source_kind == "project"
+            else WorktreeSourceRef(
+                source_kind=source_kind,
                 source_node_id="implement",
                 source_commit="1" * 40,
                 source_tree="2" * 40,
@@ -81,8 +85,24 @@ def test_running_workspace_state_records_node_source_bundle_descriptor(
 
     payload = json.loads(state_path.read_text(encoding="utf-8"))
 
+    if source_kind == "project":
+        assert payload["source"] == {
+            "kind": "project",
+            "node_id": None,
+            "commit": source.run_base_commit,
+            "tree": source.source_tree,
+            "candidate_sequence": None,
+        }
+        assert payload["invocation_source"] == {
+            "source_kind": "project",
+            "source_node_id": None,
+            "source_commit": source.run_base_commit,
+            "source_tree": source.source_tree,
+            "candidate_sequence": None,
+        }
+        return
     assert payload["source"] == {
-        "kind": "node",
+        "kind": source_kind,
         "node_id": "implement",
         "commit": "1" * 40,
         "tree": "2" * 40,
@@ -92,16 +112,17 @@ def test_running_workspace_state_records_node_source_bundle_descriptor(
         "bundle_size_bytes": 123,
         "bundle_ref": "refs/crewplane/runs/run/implement/result",
     }
-    assert (
-        payload["invocation_source"]["source_bundle_path"]
-        == "implement/workspace-bundles/result.bundle"
-    )
-    assert payload["invocation_source"]["source_bundle_sha256"] == "3" * 64
-    assert payload["invocation_source"]["source_bundle_size_bytes"] == 123
-    assert (
-        payload["invocation_source"]["source_bundle_ref"]
-        == "refs/crewplane/runs/run/implement/result"
-    )
+    assert payload["invocation_source"] == {
+        "source_kind": source_kind,
+        "source_node_id": "implement",
+        "source_commit": "1" * 40,
+        "source_tree": "2" * 40,
+        "candidate_sequence": 1,
+        "source_bundle_path": "implement/workspace-bundles/result.bundle",
+        "source_bundle_sha256": "3" * 64,
+        "source_bundle_size_bytes": 123,
+        "source_bundle_ref": "refs/crewplane/runs/run/implement/result",
+    }
 
 
 def test_running_workspace_state_records_source_chain(
@@ -183,6 +204,7 @@ def test_running_workspace_state_records_source_chain(
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     upstreams = payload["source"]["upstream_sources"]
 
+    assert "upstream_sources" not in payload["invocation_source"]
     assert len(upstreams) == 1
     assert upstreams[0]["node_id"] == "implement"
     assert upstreams[0]["bundle_path"] == "implement/workspace-bundles/a.bundle"

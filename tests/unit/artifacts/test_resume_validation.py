@@ -6,6 +6,10 @@ import pytest
 
 from crewplane.artifacts.naming import build_generated_file_result_dir_name
 from crewplane.artifacts.resume.validation import validate_resume_frontier
+from crewplane.artifacts.workspace.node_state import (
+    WorkspaceDescriptorLookup,
+    refresh_node_workspace_descriptor,
+)
 from crewplane.core.execution_state import ArtifactDescriptor
 from crewplane.core.preflight.models import WorkspaceBranchExportRecord
 from crewplane.version import SCHEMA_VERSION
@@ -23,6 +27,7 @@ from tests.helpers.resume_validation import (
     source_record,
     write_lineage_bundle_for_payload,
 )
+from tests.helpers.workspace_branch_export import record_node_branch_export
 from tests.helpers.workspace_records import workspace_selection_record
 
 
@@ -39,8 +44,10 @@ def test_validate_frontier_accepts_dependency_closed_node_state(tmp_path) -> Non
     assert frontier.resumed_node_ids == ("a",)
 
 
+@pytest.mark.parametrize("refresh", ["original", "cleanup", "branch_export"])
 def test_validate_frontier_accepts_provider_workspace_state_with_bundle(
     tmp_path,
+    refresh: str,
 ) -> None:
     source = source_record(tmp_path)
     plan = make_plan()
@@ -76,6 +83,12 @@ def test_validate_frontier_accepts_provider_workspace_state_with_bundle(
         encoding="utf-8",
     )
     attach_workspace_descriptor(source.run_dir, plan, "a")
+
+    if refresh == "cleanup":
+        store = WorkspaceDescriptorLookup(source.run_dir, "a", state_path.parent)
+        refresh_node_workspace_descriptor(plan.nodes[0], plan, store)
+    elif refresh == "branch_export":
+        record_node_branch_export(plan, plan.nodes[0], source.run_dir, state_path)
 
     frontier = validate_resume_frontier(source, plan)
 
@@ -187,11 +200,13 @@ def test_validate_frontier_accepts_applied_controlled_child_environment(
     assert frontier.resumed_node_ids == ("a",)
 
 
+@pytest.mark.parametrize("applied", [False, None, 0, 1, "true"])
 def test_validate_frontier_rejects_unapplied_controlled_child_environment(
     tmp_path,
+    applied,
 ) -> None:
     def mark_child_environment_unapplied(payload):
-        payload["child_process_environment"] = {"required": True, "applied": False}
+        payload["child_process_environment"] = {"required": True, "applied": applied}
 
     frontier = _provider_workspace_frontier(
         tmp_path,

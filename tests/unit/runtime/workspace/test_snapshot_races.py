@@ -7,12 +7,14 @@ from unittest.mock import patch
 
 import pytest
 
+from crewplane.runtime.workspace.filesystem import (
+    ensure_owner_private_dir,
+    remove_workspace_path,
+)
 from crewplane.runtime.workspace.snapshot import (
     WorkspaceSnapshotEntryError,
     WorkspaceSnapshotPolicy,
     WorkspaceSnapshotRaceError,
-    ensure_owner_private_dir,
-    remove_workspace_path,
     snapshot_digest,
     snapshot_entries,
     workspace_directory_identity,

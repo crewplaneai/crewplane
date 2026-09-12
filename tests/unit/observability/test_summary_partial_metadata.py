@@ -12,13 +12,19 @@ from crewplane.observability.run_summary.formatting import (
 )
 from crewplane.observability.run_summary.markdown import render_run_summary_markdown
 from crewplane.observability.run_summary.models import (
+    InvocationUsageSummary,
     NodeCounts,
     ProviderTokenAggregate,
+    ProviderTokenAggregates,
+    ProviderUsageRollup,
     RunSummary,
     SpendTotals,
     WorkspaceRunSummary,
 )
-from crewplane.observability.run_summary.terminal import render_run_summary_terminal
+from crewplane.observability.run_summary.terminal import (
+    render_run_summary_terminal,
+    terminal_spend_lines,
+)
 from crewplane.observability.run_summary.workspace import workspace_plan_summary
 
 
@@ -85,6 +91,77 @@ def test_zero_invocation_spend_has_no_provider_breakdown(tmp_path: Path) -> None
 
     assert "Spend Observability" in terminal
     assert "  Providers:" not in terminal
+
+
+def test_terminal_spend_lines_preserves_provider_record_order_and_format(
+    tmp_path: Path,
+) -> None:
+    summary = replace(
+        _empty_summary(tmp_path),
+        spend=SpendTotals(3, 4, 2, 1, 1, 1, 1_234, None, "mixed"),
+        provider_token_aggregates=ProviderTokenAggregates(
+            overall=ProviderTokenAggregate(None, 3, input=30, total=40),
+            providers=(
+                ProviderTokenAggregate("alpha", 2, input=20, total=25),
+                ProviderTokenAggregate("beta", 1, output=10, total=15),
+            ),
+        ),
+        provider_rollups=(
+            ProviderUsageRollup("alpha", 2, 3, 1, 1, 1, 0, 1_000, None, "none"),
+            ProviderUsageRollup("beta", 1, 1, 1, 0, 0, 1, 234, 0.5, "full"),
+        ),
+        invocation_usages=(_invocation_usage("alpha"), _invocation_usage("beta")),
+        omitted_invocation_usage_count=1,
+    )
+
+    assert terminal_spend_lines(summary) == [
+        "Spend Observability",
+        "  Provider-reported tokens: 40 across 3 reports",
+        "  Input: 30",
+        "  Provider alpha",
+        "    Provider-reported tokens: 25 across 2 reports",
+        "    Input: 20",
+        "  Provider beta",
+        "    Provider-reported tokens: 15 across 1 reports",
+        "    Output: 10",
+        "  Terminal invocations: 3",
+        "  CLI invocations captured: 2/3",
+        "  Provider usage status: 1/3 full, 1/3 partial, 1/3 malformed",
+        "  Visible-text estimate (lower-bound): 1,234 tokens",
+        "  Configured cost estimate: n/a (mixed)",
+        "  Invocation detail: retained latest 2 invocation(s); 1 earlier omitted",
+        "  Providers:",
+        "    - alpha: 2 invocation(s); captured 1/2; usage 1/2 full, 1/2 partial, "
+        "0/2 malformed; visible est 1,000 tokens; cost n/a (none)",
+        "    - beta: 1 invocation(s); captured 1/1; usage 0/1 full, 0/1 partial, "
+        "1/1 malformed; visible est 234 tokens; cost $0.500000 (full)",
+    ]
+
+
+def _invocation_usage(provider: str) -> InvocationUsageSummary:
+    return InvocationUsageSummary(
+        provider=provider,
+        node_id=None,
+        task_id=None,
+        audit_round_num=None,
+        round_num=None,
+        attempt_count=1,
+        cli_captured=True,
+        output_extraction_status="success",
+        provider_usage_status="full",
+        provider_usage_report_count=1,
+        provider_tokens={},
+        visible_estimate_tokens=None,
+        visible_estimate_method=None,
+        visible_estimate_is_lower_bound=False,
+        configured_cost_usd=None,
+        invocation_cost_confidence="none",
+        usage_parse_error=None,
+        failure_kind=None,
+        failure_phase=None,
+        failure_source=None,
+        failure_advice=None,
+    )
 
 
 @pytest.mark.parametrize(

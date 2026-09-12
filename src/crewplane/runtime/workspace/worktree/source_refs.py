@@ -31,11 +31,13 @@ def invocation_source_ref(
     audit_round_num: int | None,
 ) -> WorktreeSourceRef:
     if role_label == ProviderRole.REVIEWER:
-        state_path = same_node_executor_state(output, node, round_num, audit_round_num)
+        state_path = same_node_executor_state_path(
+            output, node, round_num, audit_round_num
+        )
         if state_path is not None:
             return _candidate_ref_from_state(state_path)
     if role_label == ProviderRole.EXECUTOR and round_num > 1:
-        state_path = same_node_executor_state(
+        state_path = same_node_executor_state_path(
             output,
             node,
             round_num - 1,
@@ -46,7 +48,7 @@ def invocation_source_ref(
             return _candidate_ref_from_state(state_path)
     if policy.source_kind == "node" and policy.source_node_id is not None:
         return load_source_ref_from_state(
-            required_lineage_state(
+            required_lineage_state_path(
                 output,
                 workspace_plan_node(plan, policy.source_node_id),
             )
@@ -57,29 +59,6 @@ def invocation_source_ref(
         source_commit=source.run_base_commit,
         source_tree=source.source_tree,
         candidate_sequence=None,
-    )
-
-
-def required_lineage_state(
-    output: ArtifactStorePort,
-    node: PreflightExecutionNode,
-) -> Path:
-    return required_lineage_state_path(output, node)
-
-
-def same_node_executor_state(
-    output: ArtifactStorePort,
-    node: PreflightExecutionNode,
-    round_num: int,
-    audit_round_num: int | None,
-    allow_prior_fallback: bool = False,
-) -> Path | None:
-    return same_node_executor_state_path(
-        output,
-        node,
-        round_num,
-        audit_round_num,
-        allow_prior_fallback,
     )
 
 

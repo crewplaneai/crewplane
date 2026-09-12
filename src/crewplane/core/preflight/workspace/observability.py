@@ -14,6 +14,11 @@ from ..models import (
     WorkspaceFileTarget,
     WorkspaceSourceSnapshot,
 )
+from ..runtime_config.workspace import (
+    bool_value,
+    invoker_workspace_descriptor,
+    runtime_snapshot_payload,
+)
 
 WorkspacePlan = PreflightCompilationPreview | PreflightExecutionPlan
 
@@ -144,28 +149,6 @@ def rendered_file_summary(locators: list[WorkspaceFileLocator]) -> JsonObject:
     }
 
 
-def invoker_workspace_descriptor(snapshot: object) -> JsonObject | None:
-    payload = runtime_snapshot_payload(snapshot)
-    invoker = payload.get("invoker") if payload is not None else None
-    if not isinstance(invoker, Mapping):
-        return None
-    capabilities = invoker.get("capabilities")
-    workspace = (
-        capabilities.get("workspace") if isinstance(capabilities, Mapping) else None
-    )
-    if not isinstance(workspace, Mapping):
-        return None
-    descriptor: JsonObject = {
-        "implementation": string_value(invoker.get("implementation")),
-        "honors_cwd": bool_value(workspace.get("honors_cwd")),
-        "launch_mode": string_value(workspace.get("launch_mode")),
-        "controlled_child_environment": bool_value(
-            workspace.get("controlled_child_environment")
-        ),
-    }
-    return descriptor
-
-
 def cleanup_descriptor(snapshot: object) -> JsonObject:
     payload = runtime_snapshot_payload(snapshot)
     workspace = payload.get("workspace") if payload is not None else None
@@ -178,18 +161,6 @@ def cleanup_descriptor(snapshot: object) -> JsonObject:
         "cleanup_on_success": bool_value(workspace.get("cleanup_on_success")),
         "cache_root_configured": isinstance(workspace.get("cache_root"), str),
     }
-
-
-def runtime_snapshot_payload(snapshot: object) -> Mapping[str, object] | None:
-    if snapshot is None:
-        return None
-    if isinstance(snapshot, Mapping):
-        return snapshot
-    model_dump = getattr(snapshot, "model_dump", None)
-    if callable(model_dump):
-        payload = model_dump(mode="json")
-        return payload if isinstance(payload, Mapping) else None
-    return None
 
 
 def effective_materialization(node: PreflightExecutionNode) -> str:
@@ -226,11 +197,3 @@ def node_result_descriptor(node: PreflightExecutionNode) -> JsonObject:
     if policy.declaration_kind == "worktree":
         return {"capture": "discarded_drift_summary", "bundle": "not_applicable"}
     return {"capture": "discarded_snapshot_drift", "bundle": "not_applicable"}
-
-
-def string_value(value: object) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def bool_value(value: object) -> bool | None:
-    return value if isinstance(value, bool) else None

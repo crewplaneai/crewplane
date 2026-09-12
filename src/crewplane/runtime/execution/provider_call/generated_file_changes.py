@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.artifacts.generated_files.detection import is_reserved_workspace_path
+from crewplane.artifacts.generated_files.paths import is_reserved_workspace_path
 from crewplane.core.workspace.git_policy import (
     sanitized_workspace_git_environment,
     workspace_git_config_args,

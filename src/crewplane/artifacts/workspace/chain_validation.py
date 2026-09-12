@@ -18,6 +18,10 @@ from .bundle_validation import (
 from .persisted_chain import workspace_result_descriptor_from_payload
 
 
+class WorkspaceSourceResultMismatchError(RuntimeError):
+    """A source result is not the recorded commit, parent, or tree."""
+
+
 class WorkspaceSourceDescriptor(Protocol):
     @property
     def source_kind(self) -> str: ...
@@ -198,7 +202,9 @@ def _verify_commit(
         .strip()
     )
     if object_type != "commit":
-        raise RuntimeError("Workspace source bundle result is not a commit.")
+        raise WorkspaceSourceResultMismatchError(
+            "Workspace source bundle result is not a commit."
+        )
     parent_record = (
         _run_git_dir(
             git_dir,
@@ -213,7 +219,9 @@ def _verify_commit(
         .split()
     )
     if parent_record != [descriptor.source_commit, expected_parent]:
-        raise RuntimeError("Workspace source bundle result has an unexpected parent.")
+        raise WorkspaceSourceResultMismatchError(
+            "Workspace source bundle result has an unexpected parent."
+        )
     _verify_commit_tree(git_dir, descriptor.source_commit, descriptor.source_tree)
 
 
@@ -228,7 +236,9 @@ def _verify_commit_tree(git_dir: Path, commit: str, expected_tree: str) -> None:
         .strip()
     )
     if actual_tree != expected_tree:
-        raise RuntimeError("Workspace source bundle result tree mismatch.")
+        raise WorkspaceSourceResultMismatchError(
+            "Workspace source bundle result tree mismatch."
+        )
 
 
 def _validated_bundle_file(descriptor: WorkspaceSourceDescriptor) -> Path:

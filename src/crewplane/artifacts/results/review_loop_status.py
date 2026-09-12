@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypedDict
 
+from crewplane.architecture.contracts.artifacts import build_review_audit_directory_name
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.core.workflow.keywords import ProviderRole
 
 REVIEW_LOOP_STATUS_RELATIVE_PATH = Path("review-state") / "review-loop-status.json"
@@ -230,7 +232,7 @@ def validate_status_identity(payload: dict[str, object], stage_name: str) -> Non
 def validate_status_counters(payload: dict[str, object]) -> None:
     for field_name in REQUIRED_COUNTER_FIELDS:
         value = payload.get(field_name)
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        if not is_nonnegative_int(value):
             raise status_error(f"{field_name} must be a non-negative integer")
     final_round = payload["final_local_round_num"]
     attempted_round = payload["attempted_local_round_num"]
@@ -322,7 +324,7 @@ def non_negative_entry_int(
     key: str,
 ) -> int:
     value = raw_entry.get(key)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    if not is_nonnegative_int(value):
         raise status_error(f"{field_name}[{index}].{key} must be non-negative")
     return value
 
@@ -361,7 +363,7 @@ def validate_entry_locator_attribution(
     expected_parent = (
         Path(".")
         if audit_round_num is None
-        else Path(f"review-audit-round-{audit_round_num}")
+        else Path(build_review_audit_directory_name(audit_round_num))
     )
     if path.parent != expected_parent or not path.stem.endswith(f"_round{round_num}"):
         raise status_error(

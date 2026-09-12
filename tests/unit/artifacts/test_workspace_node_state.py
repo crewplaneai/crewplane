@@ -6,8 +6,10 @@ import os
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from crewplane.artifacts.manager import OutputManager
+from crewplane.artifacts.naming import build_node_state_filename
 from crewplane.artifacts.workspace.node_state import (
     WorkspaceDescriptorLookup,
     build_node_workspace_descriptor,
@@ -23,6 +25,7 @@ from tests.helpers.resume import (
     make_workspace_source_snapshot,
     write_result,
 )
+from tests.helpers.workspace_branch_export import record_node_branch_export
 from tests.helpers.workspace_records import workspace_selection_record
 
 
@@ -142,8 +145,15 @@ def test_build_node_workspace_descriptor_rejects_symlinked_setup_parent(
         build_node_workspace_descriptor(plan.nodes[0], plan, output)
 
 
+@pytest.mark.parametrize("branch_export", [False, True])
+@pytest.mark.parametrize("symlink", [False, True])
+@pytest.mark.parametrize("publication_failure", [False, True])
 def test_refresh_node_workspace_descriptor_updates_manifest_from_state(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    branch_export: bool,
+    symlink: bool,
+    publication_failure: bool,
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _workspace_plan()
@@ -164,18 +174,90 @@ def test_refresh_node_workspace_descriptor_updates_manifest_from_state(
             "workspace": build_node_workspace_descriptor(plan.nodes[0], plan, output),
         }
     )
-    output.write_node_success_state(node_state)
+    node_manifest_path = output.write_node_success_state(node_state)
+    original = node_manifest_path.read_bytes()
+    if symlink:
+        target = tmp_path / "original-node-state.json"
+        node_manifest_path.rename(target)
+        node_manifest_path.symlink_to(target)
     state_payload["workspace"]["retention"] = "deleted"
     state_payload["workspace"]["retained_reason"] = None
     state_path.write_text(json.dumps(state_payload), encoding="utf-8")
 
-    refresh_node_workspace_descriptor(plan.nodes[0], plan, output)
+    original_replace = Path.replace
 
-    node_manifest_path = next((output.stages_dir / "manifests/nodes").glob("*.json"))
+    def fail_manifest_replace(path: Path, target: Path) -> Path:
+        if target == node_manifest_path:
+            raise OSError("publication failed")
+        return original_replace(path, target)
+
+    if publication_failure:
+        monkeypatch.setattr(Path, "replace", fail_manifest_replace)
+
+    def refresh() -> Path | None:
+        if branch_export:
+            return record_node_branch_export(
+                plan, plan.nodes[0], output.stages_dir, state_path
+            )
+        return refresh_node_workspace_descriptor(plan.nodes[0], plan, output)
+
+    if branch_export and symlink:
+        assert refresh() is None
+        assert node_manifest_path.is_symlink()
+        assert node_manifest_path.read_bytes() == original
+        return
+    if publication_failure:
+        with pytest.raises(OSError, match="publication failed"):
+            refresh()
+        assert node_manifest_path.read_bytes() == original
+        assert not list(node_manifest_path.parent.glob(".*.tmp"))
+        return
+
+    assert refresh() == (None if branch_export else node_manifest_path)
     refreshed = json.loads(node_manifest_path.read_text(encoding="utf-8"))
+    expected = node_state.model_dump(mode="json", exclude_none=True)
+    expected["workspace"] = build_node_workspace_descriptor(plan.nodes[0], plan, output)
+    assert node_manifest_path.read_bytes() == (
+        json.dumps(expected, allow_nan=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    assert not node_manifest_path.is_symlink()
+    if symlink:
+        assert target.read_bytes() == original
     workspace_state = refreshed["workspace"]["states"][0]
     assert workspace_state["workspace"]["retention"] == "deleted"
     assert workspace_state["workspace"]["retained_reason"] is None
+
+
+@pytest.mark.parametrize("malformed", [False, True])
+def test_branch_export_parses_manifest_before_skipping_absent_stage(
+    tmp_path: Path, malformed: bool
+) -> None:
+    plan = make_plan()
+    node = plan.nodes[0].model_copy(
+        update={
+            "artifact_contract": plan.nodes[0].artifact_contract.model_copy(
+                update={"stage_path": None}
+            )
+        }
+    )
+    path = tmp_path / "manifests" / "nodes" / build_node_state_filename(node.id)
+    path.parent.mkdir(parents=True)
+    state = make_node_state(
+        make_run_manifest(plan.run_id, plan.run_key_name), node.id, []
+    )
+    original = "{" if malformed else state.model_dump_json()
+    path.write_text(original, encoding="utf-8")
+    state_path = tmp_path / "workspace-state.json"
+    state_path.write_text(
+        json.dumps(_workspace_state_payload(_workspace_plan(), b"bundle"))
+    )
+
+    if malformed:
+        with pytest.raises(ValidationError):
+            record_node_branch_export(plan, node, tmp_path, state_path)
+    else:
+        assert record_node_branch_export(plan, node, tmp_path, state_path) is None
+    assert path.read_text(encoding="utf-8") == original
 
 
 def _workspace_plan():

@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, field_validator
 
 MAX_ARTIFACT_PATH_COMPONENT_CHARS = 180
+REVIEW_AUDIT_DIRECTORY_PREFIX = "review-audit-round-"
 _STAGE_PATTERN = re.compile(r"[^a-z0-9._-]+")
 _ARTIFACT_PATTERN = re.compile(r"[^a-z0-9]+")
 
@@ -95,15 +96,19 @@ def build_stage_directory_name(node_id: str) -> str:
     safe_name = safe_stage_name(node_id)
     if len(safe_name) <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
         return safe_name
-    return _bounded_with_suffix(safe_name, f"--{_short_hash(node_id)}")
+    return bounded_artifact_name(safe_name, f"--{artifact_name_hash(node_id)}")
 
 
 def build_result_filename(node_id: str) -> str:
-    return _bounded_artifact_filename(node_id, "-result.md")
+    return bounded_artifact_filename(node_id, safe_stage_name(node_id), "-result.md")
 
 
 def build_findings_filename(node_id: str) -> str:
-    return _bounded_artifact_filename(node_id, "-findings.md")
+    return bounded_artifact_filename(node_id, safe_stage_name(node_id), "-findings.md")
+
+
+def build_review_audit_directory_name(audit_round_num: int) -> str:
+    return f"{REVIEW_AUDIT_DIRECTORY_PREFIX}{audit_round_num}"
 
 
 def build_task_round_filename(task_id: str, round_num: int) -> str:
@@ -118,19 +123,20 @@ def safe_artifact_name(name: str) -> str:
     return slug or "task"
 
 
-def _bounded_artifact_filename(node_id: str, suffix: str) -> str:
-    safe_name = safe_stage_name(node_id)
-    if len(f"{safe_name}{suffix}") <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
-        return f"{safe_name}{suffix}"
-    return _bounded_with_suffix(safe_name, f"--{_short_hash(node_id)}{suffix}")
+def bounded_artifact_filename(name: str, safe_prefix: str, suffix: str) -> str:
+    if len(f"{safe_prefix}{suffix}") <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
+        return f"{safe_prefix}{suffix}"
+    return bounded_artifact_name(safe_prefix, f"--{artifact_name_hash(name)}{suffix}")
 
 
-def _bounded_with_suffix(safe_prefix: str, suffix: str) -> str:
+def bounded_artifact_name(safe_prefix: str, suffix: str) -> str:
     if len(suffix) >= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
         raise ValueError("Generated suffix exceeds path component budget.")
     available = MAX_ARTIFACT_PATH_COMPONENT_CHARS - len(suffix)
     prefix = safe_prefix[:available].rstrip("-._")
-    return f"{prefix or 'artifact'}{suffix}"
+    if not prefix:
+        prefix = "artifact"[:available]
+    return f"{prefix}{suffix}"
 
 
 def safe_stage_name(name: str) -> str:
@@ -145,5 +151,5 @@ def safe_stage_name(name: str) -> str:
     return slug or "task"
 
 
-def _short_hash(value: str) -> str:
+def artifact_name_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]

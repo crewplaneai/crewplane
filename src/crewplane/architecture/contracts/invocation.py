@@ -9,6 +9,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast, get_args
 
+from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .json import JsonObject
@@ -72,14 +73,21 @@ def _add_exact_counter(current: int | None, additional: int | None) -> int | Non
     return current + additional
 
 
-def _is_non_boolean_integer(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def _is_positive_integer(value: object) -> bool:
-    if not _is_non_boolean_integer(value):
+    if not is_strict_int(value):
         return False
-    return cast(int, value) > 0
+    return value > 0
+
+
+TokenBucket = Literal[
+    "input",
+    "cached_input",
+    "cache_write",
+    "output",
+    "reasoning",
+    "total",
+]
+TOKEN_BUCKETS: tuple[TokenBucket, ...] = get_args(TokenBucket)
 
 
 @dataclass(frozen=True)
@@ -339,7 +347,7 @@ class InvocationProcessEvent:
     def _validate_lifecycle(self) -> None:
         if not isinstance(self.status, str) or self.status not in {"started", "exited"}:
             raise ValueError(f"unsupported invocation process status: {self.status!r}")
-        if self.returncode is not None and not _is_non_boolean_integer(self.returncode):
+        if self.returncode is not None and not is_strict_int(self.returncode):
             raise ValueError(
                 "invocation process return code must be an integer or None"
             )
@@ -436,14 +444,10 @@ class CommandResult:
         return f"{self.stderr_text}\n{self.stdout_text}"
 
     def iter_stdout_lines(self) -> Iterator[str]:
-        if self.stdout_path is not None and self.stdout_path.is_file():
-            return _iter_lines_from_file(self.stdout_path)
-        return iter(_split_nonempty_lines(self.stdout_text))
+        return _iter_stream_lines(self.stdout_path, self.stdout_text)
 
     def iter_stderr_lines(self) -> Iterator[str]:
-        if self.stderr_path is not None and self.stderr_path.is_file():
-            return _iter_lines_from_file(self.stderr_path)
-        return iter(_split_nonempty_lines(self.stderr_text))
+        return _iter_stream_lines(self.stderr_path, self.stderr_text)
 
     def iter_combined_lines(self) -> Iterator[str]:
         yield from self.iter_stderr_lines()
@@ -479,6 +483,12 @@ class OutputExtractionResult:
 
 type UsageDecoder = Callable[[CommandResult], UsageDecodeResult]
 type OutputExtractor = Callable[[CommandResult, Path | None], OutputExtractionResult]
+
+
+def _iter_stream_lines(path: Path | None, inline_text: str) -> Iterator[str]:
+    if path is not None and path.is_file():
+        return _iter_lines_from_file(path)
+    return iter(_split_nonempty_lines(inline_text))
 
 
 def _iter_lines_from_file(path: Path) -> Iterator[str]:

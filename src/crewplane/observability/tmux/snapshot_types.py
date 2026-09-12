@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Literal, NotRequired, TypedDict, TypeGuard
 
+from crewplane.core.value_checks import is_strict_int
 from crewplane.observability.events.types import InvocationStatus
 
 
@@ -75,7 +76,7 @@ def is_selected_invocation_snapshot(
     snapshot: Mapping[str, object] = value
     return (
         _matches_required_fields(snapshot, _REQUIRED_STRING_FIELDS, _is_string)
-        and _matches_required_fields(snapshot, _REQUIRED_INTEGER_FIELDS, _is_integer)
+        and _matches_required_fields(snapshot, _REQUIRED_INTEGER_FIELDS, is_strict_int)
         and _field_is(snapshot, "node_id", _is_nullable_string)
         and _field_is(snapshot, "written_at", _is_float)
         and _matches_optional_fields(snapshot, _OPTIONAL_STRING_FIELDS, _is_string)
@@ -102,7 +103,7 @@ def is_inspect_invocation_snapshot(
     snapshot: Mapping[str, object] = value
     return (
         _field_is(snapshot, "inspect_view", _is_inspect_view)
-        and _field_is(snapshot, "line_budget", _is_integer)
+        and _field_is(snapshot, "line_budget", is_strict_int)
         and _field_is(snapshot, "created_at", _is_float)
     )
 
@@ -147,10 +148,6 @@ def _is_string(value: object) -> bool:
     return isinstance(value, str)
 
 
-def _is_integer(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def _is_float(value: object) -> bool:
     return isinstance(value, float)
 
@@ -160,7 +157,7 @@ def _is_nullable_string(value: object) -> bool:
 
 
 def _is_nullable_integer(value: object) -> bool:
-    return value is None or _is_integer(value)
+    return value is None or is_strict_int(value)
 
 
 def _is_invocation_status(value: object) -> bool:

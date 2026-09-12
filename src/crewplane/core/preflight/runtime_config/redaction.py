@@ -8,7 +8,7 @@ for deterministic signatures and persisted plans.
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Literal, TypedDict
 
 from crewplane.architecture.contracts import (
     CanonicalIntegrationConfig,
@@ -35,6 +35,11 @@ _SENSITIVE_ARGV_PATTERN = re.compile(
 _ARGV_FIELD_NAMES = frozenset({"argv", "cli_cmd", "extra_args"})
 _ARGV_SCALAR_FIELD_NAMES = frozenset({"model_arg", "prompt_transport_arg"})
 type RedactionOutput = Literal["redacted", "fingerprinted"]
+
+
+class _FingerprintRecord(TypedDict):
+    path: str
+    fingerprint: str
 
 
 def config_value_handle(path: str) -> str:
@@ -65,7 +70,10 @@ def redact_sensitive_config_with_fingerprints(
         fingerprint_key,
         "fingerprinted",
     )
-    return _ensure_dict(redacted), sorted(fingerprints, key=lambda item: item["path"])
+    return _ensure_dict(redacted), [
+        {"path": record["path"], "fingerprint": record["fingerprint"]}
+        for record in sorted(fingerprints, key=lambda item: item["path"])
+    ]
 
 
 def sensitive_integration_option_paths(
@@ -84,7 +92,7 @@ def integration_with_sensitive_option_fingerprints(
     integration_name: str,
     fingerprint_key: bytes | None,
 ) -> tuple[CanonicalIntegrationConfig, list[dict[str, str]]]:
-    fingerprints: list[dict[str, str]] = []
+    fingerprints: list[_FingerprintRecord] = []
 
     def redact_sensitive_value(pointer: str, value: JsonValue) -> JsonValue:
         path_prefix = json_pointer(("integrations", integration_name, "options"))
@@ -107,14 +115,18 @@ def integration_with_sensitive_option_fingerprints(
         return config.model_copy(update={"option_fingerprints": []}), []
 
     fingerprints.sort(key=lambda item: item["path"])
+    fingerprint_payloads = [
+        {"path": record["path"], "fingerprint": record["fingerprint"]}
+        for record in fingerprints
+    ]
 
     return (
         config.with_generated_redaction(
             options=redacted_options,
             sensitive_options=sorted(sensitive_pointers),
-            option_fingerprints=fingerprints,
+            option_fingerprints=fingerprint_payloads,
         ),
-        fingerprints,
+        fingerprint_payloads,
     )
 
 
@@ -153,7 +165,7 @@ def _redact_sensitive_value(
     fingerprint_key: bytes | None,
     output: RedactionOutput,
     list_parent: str | None = None,
-) -> tuple[JsonValue, list[str], list[dict[str, str]]]:
+) -> tuple[JsonValue, list[str], list[_FingerprintRecord]]:
     if _is_sensitive_config_value(value, path, list_parent):
         return _redacted_sensitive_leaf(value, path, fingerprint_key, output)
     if isinstance(value, dict):
@@ -168,7 +180,7 @@ def _redacted_sensitive_leaf(
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
     output: RedactionOutput,
-) -> tuple[JsonObject, list[str], list[dict[str, str]]]:
+) -> tuple[JsonObject, list[str], list[_FingerprintRecord]]:
     path_label = _path_label(path)
     fingerprint = config_fingerprint(fingerprint_key, path_label, value)
     redacted_value: JsonObject = {"redacted": True}
@@ -189,9 +201,9 @@ def _redacted_sensitive_dict(
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
     output: RedactionOutput,
-) -> tuple[JsonObject, list[str], list[dict[str, str]]]:
+) -> tuple[JsonObject, list[str], list[_FingerprintRecord]]:
     paths: list[str] = []
-    fingerprints: list[dict[str, str]] = []
+    fingerprints: list[_FingerprintRecord] = []
     redacted: JsonObject = {}
     for key, child in sorted(value.items()):
         child_value, child_paths, child_fingerprints = _redact_sensitive_value(
@@ -225,9 +237,9 @@ def _redacted_sensitive_list(
     path: tuple[str, ...],
     fingerprint_key: bytes | None,
     output: RedactionOutput,
-) -> tuple[list[JsonValue], list[str], list[dict[str, str]]]:
+) -> tuple[list[JsonValue], list[str], list[_FingerprintRecord]]:
     paths: list[str] = []
-    fingerprints: list[dict[str, str]] = []
+    fingerprints: list[_FingerprintRecord] = []
     redacted_list: list[JsonValue] = []
     sensitive_indices = _sensitive_argv_indices(value, path)
     for index, child in enumerate(value):

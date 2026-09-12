@@ -7,10 +7,8 @@ from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from .compile_state import (
     CompileState,
     PreflightCompileOptions,
-    ResolvedStaticFileReference,
     allowed_template_paths,
     append_diagnostic,
-    extend_diagnostics,
     node_source_span,
     source_root,
 )
@@ -19,12 +17,11 @@ from .models import WorkspaceFileTarget
 from .references import TemplateReference, iter_template_references
 from .static_resources import (
     StaticFileResult,
-    append_static_resource,
+    prepare_static_file_reference,
     resolve_static_file,
     resolve_terminal_result_file,
     static_file_metadata,
     static_file_resolved_payload,
-    static_file_token_signature,
 )
 from .token_catalog import append_token_catalog
 from .workspace.files.locators import (
@@ -149,25 +146,14 @@ def record_static_input_source(
     result: StaticFileResult,
     state: CompileState,
 ) -> None:
-    extend_diagnostics(state, result.diagnostics)
-    if result.resource is None or result.payload is None:
+    resolution = prepare_static_file_reference(
+        result, node.id, occurrence_id, reference.raw_token, state
+    )
+    if resolution is None:
         return
-    token_signature = static_file_token_signature(
-        result.resource,
-        node.id,
-        occurrence_id,
-        reference.raw_token,
-    )
-    resource = result.resource.model_copy(
-        update={"token_signatures": [token_signature]}
-    )
-    append_static_resource(state, resource, result.payload, token_signature)
-    state.input_content_refs[node.id] = resource.content_ref
+    state.input_content_refs[node.id] = resolution.resource.content_ref
     state.input_source_tokens[node.id] = reference
-    state.static_file_references[occurrence_id] = ResolvedStaticFileReference(
-        resource=resource,
-        token_signature=token_signature,
-    )
+    state.static_file_references[occurrence_id] = resolution
 
 
 def append_input_source_token_catalog(

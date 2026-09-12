@@ -6,7 +6,7 @@ from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.execution_state import ArtifactDescriptor
 
-from ..naming import build_generated_file_result_dir_name
+from ..generated_files.paths import generated_file_path_belongs_to_node
 from .verified_copy import VerifiedCopyLabels, copy_verified_artifact
 
 
@@ -54,15 +54,4 @@ def copy_generated_file_descriptor(
             hydrated_artifact="Hydrated generated file artifact",
             node_id=node_id,
         ),
-    )
-
-
-def generated_file_path_belongs_to_node(relative_path: str, node_id: str) -> bool:
-    parts = relative_path.split("/")
-    expected_node_dir = build_generated_file_result_dir_name(node_id)
-    return (
-        len(parts) >= 4
-        and parts[0] == "generated-files"
-        and parts[1] == expected_node_dir
-        and all(part not in {"", ".", ".."} for part in parts)
     )

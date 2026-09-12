@@ -2,14 +2,59 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal, TypedDict
 
 from crewplane.architecture.contracts import (
     InvocationContext,
-    JsonObject,
     MockInvokerOptions,
 )
 
 from .outputs import OutputResolution
+
+
+class _WorktreeContractRecord(TypedDict):
+    mode: str
+    schema_version: str
+
+
+class _InvocationSourceRecord(TypedDict):
+    candidate_sequence: int | None
+    source_commit: str
+    source_kind: str
+    source_node_id: str | None
+    source_tree: str
+
+
+class _WorkspaceRecord(TypedDict):
+    candidate_commit: str | None
+    child_environment_applied: bool | None
+    child_environment_required: bool
+    cwd: str
+    lineage_producer: bool
+    logical_worktree_name: str
+    materialization: str
+    result_commit: str | None
+    workspace_kind: str
+    worktree_contract: _WorktreeContractRecord
+    workspace_state_path: str | None
+    writable: bool
+    invocation_source: _InvocationSourceRecord
+
+
+class _InvocationLogRecord(TypedDict):
+    invoker: Literal["mock"]
+    output_mode: str
+    source: str
+    fixture_path: str | None
+    cwd: str
+    output_file: str
+    node_id: str | None
+    task_id: str | None
+    provider: str | None
+    role: str | None
+    audit_round_num: int | None
+    round_num: int | None
+    workspace: _WorkspaceRecord | None
 
 
 def write_invocation_log(
@@ -23,7 +68,7 @@ def write_invocation_log(
     if log_file is None:
         return
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    record = {
+    record: _InvocationLogRecord = {
         "invoker": "mock",
         "output_mode": options.output_mode,
         "source": resolution.source,
@@ -46,7 +91,7 @@ def write_invocation_log(
         handle.write(json.dumps(record, allow_nan=False, sort_keys=True) + "\n")
 
 
-def _workspace_record(context: InvocationContext | None) -> JsonObject | None:
+def _workspace_record(context: InvocationContext | None) -> _WorkspaceRecord | None:
     if context is None or context.workspace is None:
         return None
     workspace = context.workspace

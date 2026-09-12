@@ -22,14 +22,14 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.workflow.keywords import FINDINGS_ARTIFACT_KEYS
 
-from ..naming import build_node_state_filename
+from ..generated_files.paths import generated_file_path_belongs_to_node
+from ..naming import node_state_relative_path
 from ..run_history import RunHistoryRecord
 from ..workspace.node_state import (
     WorkspaceDescriptorLookup,
     build_node_workspace_descriptor,
 )
 from ..workspace.state.validation import workspace_node_state_is_valid
-from .generated_files import generated_file_path_belongs_to_node
 
 
 @dataclass(frozen=True)
@@ -74,7 +74,7 @@ def validate_resume_frontier(
 def _read_node_state(source: RunHistoryRecord, node_id: str) -> NodeState | None:
     node_state_path = contained_regular_file(
         source.run_dir,
-        f"manifests/nodes/{build_node_state_filename(node_id)}",
+        node_state_relative_path(node_id).as_posix(),
     )
     if node_state_path is None:
         return None

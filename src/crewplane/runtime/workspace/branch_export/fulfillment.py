@@ -4,13 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.architecture.contracts import JsonObject
-from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.naming import (
     build_node_state_filename,
 )
 from crewplane.artifacts.workspace.node_state import (
     WorkspaceDescriptorLookup,
-    build_node_workspace_descriptor,
+    publish_node_workspace_descriptor,
 )
 from crewplane.artifacts.workspace.state.paths import WORKSPACE_STATE_FILENAME
 from crewplane.core.execution_state import NodeState
@@ -153,11 +152,4 @@ def _refresh_node_manifest_workspace_descriptor(
         node_id=node.id,
         stage_dir=stages_dir / stage_path,
     )
-    refreshed = node_state.model_copy(
-        update={"workspace": build_node_workspace_descriptor(node, plan, store)}
-    )
-    validated = NodeState.model_validate(refreshed.model_dump(mode="json"))
-    atomic_write_json(
-        node_state_path,
-        validated.model_dump(mode="json", exclude_none=True),
-    )
+    publish_node_workspace_descriptor(node, plan, store, node_state, node_state_path)

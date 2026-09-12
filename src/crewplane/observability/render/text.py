@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from crewplane.observability.log_stream import MAX_STREAM_LINES_PER_NODE
 from crewplane.observability.text_layout import fit_text, pad_text
 
+MAX_STREAM_LINES_PER_NODE = 20
 ROW_HEIGHT = 3
 
 

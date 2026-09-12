@@ -182,3 +182,91 @@ def test_registered_reserved_publication_created_during_window_is_restored(
     assert result_path in drift.fatal_paths
     assert result_path.read_bytes() == trusted_payload
     publications.close()
+
+
+@pytest.mark.parametrize("with_registry", [False, True])
+def test_reserved_scope_covers_roots_and_excludes_only_shared_log_artifacts(
+    tmp_path, with_registry
+) -> None:
+    request, output, node_dir = make_drift_request(tmp_path)
+    publications = request.runtime_context.runtime_publications
+    roots = (
+        output.results_dir,
+        output.stages_dir / "manifests",
+        output.get_run_log_dir(),
+    )
+    expected = {}
+    directories = set()
+    for root in roots:
+        nested = root / "nested"
+        nested.mkdir(parents=True, exist_ok=True)
+        directories.update((root, nested))
+        for name in ("record", "events.ndjson", "summary.md"):
+            path = nested / name
+            path.write_bytes(b"nested")
+            expected[path] = b"nested"
+        path = root / "record"
+        path.write_bytes(b"reserved")
+        expected[path] = b"reserved"
+    output.get_run_event_log_path().write_bytes(b"events")
+    output.get_run_summary_path().write_bytes(b"summary")
+    try:
+        baseline = review_loop_drift_capture.capture_drift_recovery_baseline(
+            node_dir, output, publications if with_registry else None
+        )
+        assert baseline.shared_reserved_snapshot == {
+            path: (len(payload), hashlib.sha256(payload).hexdigest())
+            for path, payload in expected.items()
+        }
+        assert set(baseline.shared_reserved_directory_snapshot) == directories
+        assert baseline.shared_reserved_original_bytes == (
+            {} if with_registry else expected
+        )
+        if with_registry:
+            for path, payload in expected.items():
+                assert recovery_payload(publications, path) == payload
+        window = review_loop_drift_capture.capture_drift_monitoring_window(
+            request.node.id, node_dir, output, None, recovery_baseline=baseline
+        )
+        assert window.event_log_before == b"events"
+        assert window.summary_before == b"summary"
+    finally:
+        publications.close()
+
+
+@pytest.mark.parametrize(
+    "scan_name",
+    [
+        "shared_reserved_snapshot",
+        "shared_reserved_original_bytes",
+        "shared_reserved_directory_snapshot",
+    ],
+)
+def test_reserved_scans_preserve_missing_roots_and_unsafe_entries(
+    tmp_path, scan_name
+) -> None:
+    request, output, _node_dir = make_drift_request(tmp_path)
+    scan = getattr(review_loop_drift_capture, scan_name)
+    manifests = output.stages_dir / "manifests"
+    try:
+        initial = scan(output)
+        assert not any(
+            path == manifests or path.is_relative_to(manifests) for path in initial
+        )
+        manifests.mkdir()
+        safe = manifests / "safe"
+        safe.write_bytes(b"safe")
+        hardlink = manifests / "hardlink"
+        hardlink.hardlink_to(safe)
+        symlink = manifests / "symlink"
+        symlink.symlink_to(tmp_path / "outside")
+        snapshot = scan(output)
+        if scan_name == "shared_reserved_snapshot":
+            assert {safe, hardlink, symlink} <= snapshot.keys()
+        elif scan_name == "shared_reserved_original_bytes":
+            assert snapshot == {}
+        else:
+            assert manifests in snapshot
+            assert not {safe, hardlink, symlink} & snapshot.keys()
+    finally:
+        request.runtime_context.runtime_publications.close()

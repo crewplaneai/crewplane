@@ -10,13 +10,14 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
-from crewplane.core.preflight.workspace.models import is_lineage_worktree
-from crewplane.core.preflight.workspace.observability import (
+from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
+    requires_controlled_child_environment,
 )
+from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.core.workspace.git_policy import is_git_object_id
+from crewplane.core.workspace.git_policy import git_ref_syntax_issue, is_git_object_id
 from crewplane.core.workspace.policy import WorkspaceMaterialization
 from crewplane.version import SCHEMA_VERSION
 
@@ -399,26 +400,10 @@ def _workspace_result_tree(payload: dict[str, object]) -> str | None:
 
 
 def _safe_workspace_result_ref(ref: str) -> bool:
-    if (
-        not ref.startswith("refs/crewplane/")
-        or not ref.endswith("/result")
-        or ref == "@"
-        or "@{" in ref
-        or ".." in ref
-        or "//" in ref
-    ):
-        return False
-    invalid_chars = set(" ~^:?*[\\")
-    if any(ord(char) < 32 or ord(char) == 127 or char in invalid_chars for char in ref):
-        return False
-    parts = ref.split("/")
-    return all(
-        part
-        and part not in {".", ".."}
-        and not part.startswith(".")
-        and not part.endswith(".")
-        and not part.endswith(".lock")
-        for part in parts
+    return (
+        ref.startswith("refs/crewplane/")
+        and ref.endswith("/result")
+        and git_ref_syntax_issue(ref) is None
     )
 
 
@@ -489,7 +474,7 @@ def _child_process_environment_matches(
     invoker: Mapping[str, object],
     payload: dict[str, object],
 ) -> bool:
-    if not _controlled_child_environment_required(invoker):
+    if not requires_controlled_child_environment(invoker):
         return True
     child_environment = _mapping(payload.get("child_process_environment"))
     return (
@@ -502,16 +487,9 @@ def _failed_child_process_environment_matches(
     invoker: Mapping[str, object],
     payload: dict[str, object],
 ) -> bool:
-    if not _controlled_child_environment_required(invoker):
+    if not requires_controlled_child_environment(invoker):
         return True
     child_environment = _mapping(payload.get("child_process_environment"))
     return child_environment.get("required") is True and isinstance(
         child_environment.get("applied"), bool
-    )
-
-
-def _controlled_child_environment_required(invoker: Mapping[str, object]) -> bool:
-    return (
-        invoker.get("launch_mode") == "runtime_command_runner"
-        and invoker.get("controlled_child_environment") is True
     )

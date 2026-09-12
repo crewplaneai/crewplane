@@ -5,9 +5,11 @@ from pathlib import Path
 
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 
+from ..filesystem import (
+    remove_workspace_path,
+)
 from ..git import git
 from ..locks import git_metadata_lock
-from ..snapshot import remove_workspace_path
 from .checkout_identity import (
     require_regular_worktree_git_file,
     verify_worktree_git_metadata_identity,

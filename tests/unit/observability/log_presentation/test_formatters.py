@@ -342,6 +342,82 @@ def test_codex_json_lines_preserves_command_execution_output_lines(
     )
 
 
+@pytest.mark.parametrize(
+    ("phase", "output_fields", "expected_output"),
+    [
+        pytest.param("started", {}, (), id="started-without-output"),
+        pytest.param(
+            "updated", {"aggregated_output": ""}, (), id="updated-with-empty-output"
+        ),
+        pytest.param(
+            "completed",
+            {"aggregated_output": "done"},
+            ("aggregated_output: done",),
+            id="completed-with-single-line-output",
+        ),
+        pytest.param(
+            "completed",
+            {"aggregated_output": "first\nsecond\n"},
+            ("aggregated_output: first", "  second"),
+            id="completed-with-multiline-output",
+        ),
+        pytest.param(
+            "completed",
+            {"stderr": "failed\nreason"},
+            ("stderr: failed", "  reason"),
+            id="completed-with-stderr",
+        ),
+    ],
+)
+def test_codex_json_lines_preserves_multiline_commands(
+    tmp_path: Path,
+    phase: str,
+    output_fields: dict[str, str],
+    expected_output: tuple[str, ...],
+) -> None:
+    log_path = tmp_path / "codex.log"
+    payload = json.dumps(
+        {
+            "type": f"item.{phase}",
+            "status": "failed" if phase == "completed" else "in_progress",
+            "exit_code": 1 if phase == "completed" else None,
+            "item": {
+                "type": "command_execution",
+                "command": (
+                    "python - <<'PY'\r\n"
+                    "def example():\r\n"
+                    "    print('\x1b[31mfirst\x1b[0m')\r\n"
+                    "\r\n"
+                    "    print('second')\r\n"
+                    "PY"
+                ),
+                **output_fields,
+            },
+        }
+    )
+    log_path.write_text(payload, encoding="utf-8")
+
+    snapshot = format_log_file(
+        log_path,
+        LogPresentationDescriptor(format="json_lines", profile="codex"),
+        line_budget=20,
+        wall_time_now=0.0,
+    )
+
+    status = "failed | exit_code: 1" if phase == "completed" else "in_progress"
+    assert snapshot.lines == (
+        f"command_execution {phase}: status: {status}",
+        "command: python - <<'PY'",
+        "  def example():",
+        "      print('first')",
+        "  ",
+        "      print('second')",
+        "  PY",
+        *expected_output,
+    )
+    assert log_path.read_text(encoding="utf-8") == payload
+
+
 def test_codex_json_lines_renders_observed_aggregated_output_snippet(
     tmp_path: Path,
 ) -> None:

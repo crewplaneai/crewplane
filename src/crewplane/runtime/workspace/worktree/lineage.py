@@ -33,6 +33,10 @@ from .temporary_refs import (
 from .types import WorktreeCaptureRequest, WorktreeSourceRef
 
 
+class WorkspaceLineageVerificationError(RuntimeError):
+    """Runtime context for a chain verification failure retained as its cause."""
+
+
 @contextmanager
 def ensure_source_commit_available(
     source: WorkspaceSourceSnapshot,
@@ -100,13 +104,12 @@ def _verify_source_chain(
 ) -> None:
     try:
         verify_workspace_source_chain(source, source_ref)
+    except WorkspaceLineageVerificationError:
+        raise
     except RuntimeError as exc:
-        message = str(exc)
-        if message.startswith("Workspace lineage source verification failed"):
-            raise
-        raise RuntimeError(
+        raise WorkspaceLineageVerificationError(
             "Workspace lineage source verification failed while validating "
-            f"recorded Git artifacts: {message}"
+            f"recorded Git artifacts: {exc}"
         ) from exc
 
 

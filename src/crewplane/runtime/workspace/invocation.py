@@ -12,6 +12,9 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.preflight.runtime_config.workspace import (
+    requires_controlled_child_environment,
+)
 from crewplane.core.workspace import invocation_identity as _invocation_identity
 
 MAX_INVOCATION_SLUG_CHARS = _invocation_identity.MAX_INVOCATION_SLUG_CHARS
@@ -64,7 +67,4 @@ def controlled_child_environment_required(plan: PreflightExecutionPlan) -> bool:
     workspace = capabilities.get("workspace")
     if not isinstance(workspace, dict):
         return False
-    return (
-        workspace.get("launch_mode") == "runtime_command_runner"
-        and workspace.get("controlled_child_environment") is True
-    )
+    return requires_controlled_child_environment(workspace)

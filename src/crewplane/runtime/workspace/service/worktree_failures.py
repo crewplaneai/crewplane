@@ -18,24 +18,11 @@ from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
 
 from .common import (
-    record_failed_preparation_state,
+    record_failed_unmaterialized_preparation,
     unmaterialized_workspace_retention,
     worktree_preparation_failure_state,
 )
 from .types import WorkspaceInvocationRequest, WorktreePreparationPlan
-
-
-def record_failed_unmaterialized_worktree_preparation(
-    plan: WorktreePreparationPlan,
-    failure: Exception,
-) -> None:
-    record_failed_preparation_state(
-        plan.state_path,
-        failure,
-        workspace_retention=unmaterialized_workspace_retention(
-            plan.planned_workspace_path,
-        ),
-    )
 
 
 def record_cancelled_unmaterialized_worktree_preparation(
@@ -87,7 +74,9 @@ def record_worktree_materialization_failure(
             request.worktree_reuse_cache,
         )
         return
-    record_failed_unmaterialized_worktree_preparation(plan, failure)
+    record_failed_unmaterialized_preparation(
+        plan.state_path, plan.planned_workspace_path, failure
+    )
 
 
 def _record_cancelled_materialization(

@@ -18,13 +18,56 @@ from crewplane.core.execution_state import (
     RunManifest,
 )
 from crewplane.core.preflight.models import (
+    PreflightExecutionNode,
     PreflightExecutionPlan,
     WorkspaceBranchExportRecord,
 )
 from crewplane.core.workspace.invocation_identity import invocation_slug
+from crewplane.runtime.workspace.branch_export.fulfillment import (
+    BranchExportCheckpoint,
+    record_branch_export_fulfillment,
+)
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_service import run_git_text, workspace_plan
+
+
+def record_node_branch_export(
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    stages_dir: Path,
+    state_path: Path,
+) -> None:
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    bundle = payload["bundle"]
+    result = payload["result"]
+    checkpoint = BranchExportCheckpoint(
+        state_path=state_path,
+        state_relative_path=state_path.relative_to(stages_dir).as_posix(),
+        node_id=node.id,
+        task_id=payload["task_id"],
+        result_commit=result["result_commit"],
+        result_tree=result["result_tree"],
+        result_ref=payload["refs"]["result"],
+        bundle_path=stages_dir / bundle["path"],
+        bundle_relative_path=bundle["path"],
+        bundle_sha256=bundle["sha256"],
+        bundle_size_bytes=bundle["size_bytes"],
+    )
+    record_branch_export_fulfillment(
+        plan,
+        node,
+        stages_dir,
+        checkpoint,
+        stages_dir / "workspace-exports" / "primary.json",
+        {
+            "status": "fulfilled",
+            "branch_name": "feature/cleanup",
+            "branch_ref": "refs/heads/feature/cleanup",
+            "created_at": "2026-09-11T12:00:00",
+        },
+        "created",
+    )
 
 
 def branch_export_plan(

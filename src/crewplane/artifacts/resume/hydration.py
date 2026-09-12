@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +35,12 @@ from .validation import (
     required_resume_artifact_paths,
 )
 from .verified_copy import VerifiedCopyLabels, copy_verified_artifact
+
+
+@dataclass(frozen=True)
+class _WorkspaceArtifactDescriptor:
+    integrity: Mapping[str, object]
+    is_workspace_state: bool
 
 
 def hydrate_resume_frontier(
@@ -172,9 +179,9 @@ def _copy_workspace_artifacts(
             expected_artifacts,
         )
         source_descriptor = expected_artifacts[run_relative_path]
-        expected_size = source_descriptor["size_bytes"]
-        expected_sha256 = source_descriptor["sha256"]
-        if relative.name.startswith("workspace-state") and relative.suffix == ".json":
+        expected_size = source_descriptor.integrity["size_bytes"]
+        expected_sha256 = source_descriptor.integrity["sha256"]
+        if source_descriptor.is_workspace_state:
             payload = _hydrated_workspace_state_payload(
                 payload,
                 frontier,
@@ -209,56 +216,62 @@ def _stage_relative_workspace_artifact_path(
 
 def _workspace_artifact_descriptors(
     workspace: JsonObject | None,
-) -> dict[str, Mapping[str, object]]:
-    descriptors: dict[str, Mapping[str, object]] = {}
+) -> dict[str, _WorkspaceArtifactDescriptor]:
+    descriptors: dict[str, _WorkspaceArtifactDescriptor] = {}
     if not isinstance(workspace, Mapping):
         return descriptors
     states = workspace.get("states")
     if not isinstance(states, list):
         return descriptors
     for state in states:
-        if not isinstance(state, Mapping):
-            continue
-        _collect_workspace_artifact_descriptor(
-            descriptors,
-            state.get("workspace_state_artifact"),
-        )
-        setup = state.get("setup")
-        if isinstance(setup, Mapping):
-            _collect_workspace_artifact_descriptor(
-                descriptors,
-                setup.get("metadata_artifact"),
-            )
-            _collect_workspace_artifact_descriptor(
-                descriptors,
-                setup.get("log_artifact"),
-            )
-        bundle = state.get("bundle")
-        if isinstance(bundle, Mapping):
-            _collect_workspace_artifact_descriptor(
-                descriptors,
-                bundle.get("artifact"),
-            )
-    review_loop = workspace.get("review_loop")
-    if isinstance(review_loop, Mapping):
-        _collect_workspace_artifact_descriptor(
-            descriptors,
-            review_loop.get("status_artifact"),
-        )
-        selected_outputs = review_loop.get("selected_outputs")
-        if isinstance(selected_outputs, list):
-            for output in selected_outputs:
-                if isinstance(output, Mapping):
-                    _collect_workspace_artifact_descriptor(
-                        descriptors,
-                        output.get("artifact"),
-                    )
+        _collect_workspace_state_descriptors(descriptors, state)
+    _collect_review_loop_descriptors(descriptors, workspace.get("review_loop"))
     return descriptors
 
 
+def _collect_workspace_state_descriptors(
+    descriptors: dict[str, _WorkspaceArtifactDescriptor],
+    state: object,
+) -> None:
+    if not isinstance(state, Mapping):
+        return
+    _collect_workspace_artifact_descriptor(
+        descriptors,
+        state.get("workspace_state_artifact"),
+        is_workspace_state=True,
+    )
+    setup = state.get("setup")
+    if isinstance(setup, Mapping):
+        _collect_workspace_artifact_descriptor(
+            descriptors, setup.get("metadata_artifact")
+        )
+        _collect_workspace_artifact_descriptor(descriptors, setup.get("log_artifact"))
+    bundle = state.get("bundle")
+    if isinstance(bundle, Mapping):
+        _collect_workspace_artifact_descriptor(descriptors, bundle.get("artifact"))
+
+
+def _collect_review_loop_descriptors(
+    descriptors: dict[str, _WorkspaceArtifactDescriptor],
+    review_loop: object,
+) -> None:
+    if not isinstance(review_loop, Mapping):
+        return
+    _collect_workspace_artifact_descriptor(
+        descriptors, review_loop.get("status_artifact")
+    )
+    selected_outputs = review_loop.get("selected_outputs")
+    if not isinstance(selected_outputs, list):
+        return
+    for output in selected_outputs:
+        if isinstance(output, Mapping):
+            _collect_workspace_artifact_descriptor(descriptors, output.get("artifact"))
+
+
 def _collect_workspace_artifact_descriptor(
-    descriptors: dict[str, Mapping[str, object]],
+    descriptors: dict[str, _WorkspaceArtifactDescriptor],
     value: object,
+    is_workspace_state: bool = False,
 ) -> None:
     if not isinstance(value, Mapping):
         return
@@ -270,32 +283,33 @@ def _collect_workspace_artifact_descriptor(
         and isinstance(sha256, str)
         and is_strict_int(size_bytes)
     ):
-        descriptors[relative_path] = value
+        descriptors[relative_path] = _WorkspaceArtifactDescriptor(
+            integrity=value, is_workspace_state=is_workspace_state
+        )
 
 
 def _validate_workspace_artifact_payload(
     node_id: str,
     relative_path: str,
     payload: bytes,
-    expected_artifacts: dict[str, Mapping[str, object]],
+    expected_artifacts: dict[str, _WorkspaceArtifactDescriptor],
 ) -> None:
     descriptor = expected_artifacts.get(relative_path)
     if descriptor is None:
         raise ValueError(
             f"Workspace resume artifact for node '{node_id}' is not reusable."
         )
-    if _validate_workspace_state_resume_payload(
+    if descriptor.is_workspace_state and _validate_workspace_state_resume_payload(
         node_id,
-        relative_path,
         payload,
-        descriptor,
+        descriptor.integrity,
     ):
         return
-    if hashlib.sha256(payload).hexdigest() != descriptor["sha256"]:
+    if hashlib.sha256(payload).hexdigest() != descriptor.integrity["sha256"]:
         raise ValueError(
             f"Workspace resume artifact hash changed for node '{node_id}'."
         )
-    if len(payload) != descriptor["size_bytes"]:
+    if len(payload) != descriptor.integrity["size_bytes"]:
         raise ValueError(
             f"Workspace resume artifact size changed for node '{node_id}'."
         )
@@ -303,17 +317,12 @@ def _validate_workspace_artifact_payload(
 
 def _validate_workspace_state_resume_payload(
     node_id: str,
-    relative_path: str,
     payload: bytes,
     descriptor: Mapping[str, object],
 ) -> bool:
     resume_sha256 = descriptor.get("resume_sha256")
     resume_size_bytes = descriptor.get("resume_size_bytes")
-    if (
-        not Path(relative_path).name.startswith("workspace-state")
-        or not isinstance(resume_sha256, str)
-        or not is_strict_int(resume_size_bytes)
-    ):
+    if not isinstance(resume_sha256, str) or not is_strict_int(resume_size_bytes):
         return False
     try:
         state = json.loads(payload.decode("utf-8"))

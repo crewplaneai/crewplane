@@ -4,6 +4,12 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+- Preserved multiline commands and indentation in formatted Codex log views.
+
+### Removed
+- Removed the unused `NodeLogStreamTracker` Python API.
+
 ## [0.3.1] - 2026-09-09
 
 ### Changed
