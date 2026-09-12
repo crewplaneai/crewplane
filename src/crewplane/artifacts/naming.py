@@ -127,9 +127,6 @@ def build_log_filename(
     audit_part = f"-audit{audit_round_num}" if audit_round_num is not None else ""
     round_part = f"-round{round_num}" if round_num is not None else ""
     suffix = f"{audit_part}{round_part}.log"
-    safe_name = safe_artifact_name(task_id)
-    if len(f"{safe_name}{suffix}") <= MAX_GENERATED_PATH_COMPONENT_CHARS:
-        return f"{safe_name}{suffix}"
-    return _artifact_contracts.bounded_artifact_name(
-        safe_name, f"--{_artifact_contracts.artifact_name_hash(task_id)}{suffix}"
+    return _artifact_contracts.bounded_artifact_filename(
+        task_id, safe_artifact_name(task_id), suffix
     )

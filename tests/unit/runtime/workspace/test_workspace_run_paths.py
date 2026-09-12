@@ -7,8 +7,10 @@ import pytest
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.filesystem import (
+    workspace_run_root,
+)
 from crewplane.runtime.workspace.service.common import planned_workspace_path
-from crewplane.runtime.workspace.snapshot import workspace_run_root
 from crewplane.runtime.workspace.worktree.checkout_placement import (
     allocate_worktree_workspace,
 )

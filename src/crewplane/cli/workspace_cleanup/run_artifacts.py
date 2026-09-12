@@ -8,6 +8,7 @@ from crewplane.architecture.safe_files import (
     contained_directory,
     contained_regular_file,
 )
+from crewplane.artifacts.naming import run_manifest_relative_path
 from crewplane.artifacts.workspace.node_state import refresh_node_workspace_descriptor
 from crewplane.core.execution_state import RunManifest
 from crewplane.core.preflight.models import PreflightExecutionPlan
@@ -116,7 +117,7 @@ def _run_manifest_path(state_dir: Path, run_key_name: str) -> Path | None:
     try:
         return contained_regular_file(
             state_dir / "execution-stages",
-            f"{run_key_name}/manifests/run.json",
+            f"{run_key_name}/{run_manifest_relative_path().as_posix()}",
         )
     except OSError:
         return None

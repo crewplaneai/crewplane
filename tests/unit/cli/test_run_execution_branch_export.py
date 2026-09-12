@@ -24,7 +24,6 @@ from crewplane.cli.run.terminalization import TerminalizationCoordinator
 from crewplane.core.config import Config
 from crewplane.core.preflight import (
     DependencyEdge,
-    PreflightCompilationPreview,
     PreflightExecutionPlan,
 )
 from crewplane.core.preflight.runtime_config import (
@@ -40,6 +39,7 @@ from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     make_node_state,
     make_plan,
+    make_preview_from_plan,
     make_run_manifest,
 )
 from tests.helpers.workspace_branch_export import (
@@ -181,7 +181,7 @@ def test_duplicate_skip_prints_branch_export_fulfillment(
         width=240,
     )
     plan = make_plan()
-    preview = _preview_from_plan(plan)
+    preview = make_preview_from_plan(plan, _runtime_snapshot())
     source = PreflightWorkflowSource.from_workflow(
         WorkflowPlan(name=plan.workflow_name, nodes=[]),
         root_workflow_path=tmp_path / ".crewplane" / "workflows" / "workflow.task.md",
@@ -281,7 +281,7 @@ def test_resume_reconciles_branch_export_history_before_output_allocation(
         width=240,
     )
     plan = make_plan()
-    preview = _preview_from_plan(plan)
+    preview = make_preview_from_plan(plan, _runtime_snapshot())
     source = PreflightWorkflowSource.from_workflow(
         WorkflowPlan(name=plan.workflow_name, nodes=[]),
         root_workflow_path=tmp_path / ".crewplane" / "workflows" / "workflow.task.md",
@@ -442,7 +442,7 @@ def test_resume_historical_branch_export_skips_incomplete_final_checkpoint(
 
     execution_helpers_module.fulfill_historical_branch_exports(
         context,
-        _preview_from_plan(plan),
+        make_preview_from_plan(plan, _runtime_snapshot()),
         source_run,
         ("implement",),
     )
@@ -501,7 +501,7 @@ def test_duplicate_skip_refreshes_historical_summary_after_branch_export(
 
     execution_helpers_module.fulfill_historical_branch_exports(
         context,
-        _preview_from_plan(plan),
+        make_preview_from_plan(plan, _runtime_snapshot()),
         history,
     )
 
@@ -509,24 +509,6 @@ def test_duplicate_skip_refreshes_historical_summary_after_branch_export(
     assert "stale summary without branch export" not in summary_text
     assert "branch_export=status=skipped" in summary_text
     assert "operation=skipped" in summary_text
-
-
-def _preview_from_plan(plan: PreflightExecutionPlan) -> PreflightCompilationPreview:
-    return PreflightCompilationPreview(
-        workflow_name=plan.workflow_name,
-        workflow_signature=plan.workflow_signature,
-        execution_order=list(plan.execution_order),
-        nodes=list(plan.nodes),
-        render_plans=list(plan.render_plans),
-        static_resources=list(plan.static_resources),
-        workspace_file_locators=list(plan.workspace_file_locators),
-        token_catalog=list(plan.token_catalog),
-        dependency_graph=list(plan.dependency_graph),
-        runtime_config_snapshot=_runtime_snapshot(),
-        effective_runtime_config_signature=plan.effective_runtime_config_signature,
-        workspace_source=plan.workspace_source,
-        fingerprint_metadata=dict(plan.fingerprint_metadata),
-    )
 
 
 def _two_node_same_worktree_plan(

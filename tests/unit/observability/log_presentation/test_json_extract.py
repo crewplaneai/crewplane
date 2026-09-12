@@ -90,6 +90,46 @@ def test_codex_item_event_combines_search_text_status_and_outputs() -> None:
     ]
 
 
+def test_codex_multiline_command_keeps_text_status_and_structured_output() -> None:
+    record = {
+        "type": "item.completed",
+        "status": "failed",
+        "exit_code": 1,
+        "item": {
+            "type": "command_execution",
+            "command": "echo first\necho second",
+            "text": "Finished both commands",
+            "status": "completed",
+            "exit_code": 0,
+            "stdout": {"lines": 2, "token": "hidden"},
+        },
+    }
+
+    assert render_json_record(record, "codex", LIMITS) == [
+        "command_execution completed: status: completed | exit_code: 0",
+        "command: echo first",
+        "  echo second",
+        "Finished both commands",
+        'stdout: {"lines": 2, "token": "[redacted]"}',
+    ]
+
+
+def test_codex_single_line_command_keeps_literal_escapes_and_semicolons() -> None:
+    record = {
+        "type": "item.started",
+        "item": {
+            "type": "command_execution",
+            "command": r"printf 'first\nsecond'; echo done",
+            "status": "in_progress",
+        },
+    }
+
+    assert render_json_record(record, "codex", LIMITS) == [
+        r"command_execution started: command: printf 'first\nsecond'; echo done"
+        " | status: in_progress"
+    ]
+
+
 def test_codex_empty_web_search_and_unknown_event_have_stable_labels() -> None:
     assert render_json_record(
         {"type": "item.started", "item": {"type": "web_search"}},

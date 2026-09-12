@@ -20,6 +20,7 @@ from crewplane.core.preflight.models import (
     ArtifactContract,
     DependencyEdge,
     ExecutionPolicy,
+    PreflightCompilationPreview,
     PreflightExecutionNode,
     PreflightExecutionPlan,
     ProviderRecord,
@@ -28,6 +29,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.preflight.runtime_config import RuntimeConfigSnapshot
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.version import SCHEMA_VERSION
@@ -190,6 +192,26 @@ def make_plan(
         runtime_config_snapshot=runtime_config_snapshot,
         effective_runtime_config_signature=RUNTIME_SIGNATURE,
         fingerprint_metadata={"payload_version": "1"},
+    )
+
+
+def make_preview_from_plan(
+    plan: PreflightExecutionPlan, runtime_snapshot: RuntimeConfigSnapshot
+) -> PreflightCompilationPreview:
+    return PreflightCompilationPreview(
+        workflow_name=plan.workflow_name,
+        workflow_signature=plan.workflow_signature,
+        execution_order=list(plan.execution_order),
+        nodes=list(plan.nodes),
+        render_plans=list(plan.render_plans),
+        static_resources=list(plan.static_resources),
+        workspace_file_locators=list(plan.workspace_file_locators),
+        token_catalog=list(plan.token_catalog),
+        dependency_graph=list(plan.dependency_graph),
+        runtime_config_snapshot=runtime_snapshot,
+        effective_runtime_config_signature=plan.effective_runtime_config_signature,
+        workspace_source=plan.workspace_source,
+        fingerprint_metadata=dict(plan.fingerprint_metadata),
     )
 
 

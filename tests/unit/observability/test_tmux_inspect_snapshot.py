@@ -126,3 +126,18 @@ def inspect_snapshot() -> dict[str, object]:
         }
     )
     return snapshot
+
+
+@pytest.mark.parametrize(
+    "field", ["requested_selected_index", "round_num", "audit_round_num", "line_budget"]
+)
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, 0, -1, None])
+def test_snapshot_integer_contract(tmp_path, field, value) -> None:
+    snapshot = inspect_snapshot()
+    snapshot[field] = value
+    expected_valid = (type(value) is int) or (
+        value is None and field in {"round_num", "audit_round_num"}
+    )
+    assert read_snapshot(write_snapshot(tmp_path, snapshot)) == (
+        snapshot if expected_valid else None
+    )

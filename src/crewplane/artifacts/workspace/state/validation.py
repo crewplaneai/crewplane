@@ -17,7 +17,7 @@ from crewplane.core.preflight.runtime_config.workspace import (
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.core.workspace.git_policy import is_git_object_id
+from crewplane.core.workspace.git_policy import git_ref_syntax_issue, is_git_object_id
 from crewplane.core.workspace.policy import WorkspaceMaterialization
 from crewplane.version import SCHEMA_VERSION
 
@@ -400,26 +400,10 @@ def _workspace_result_tree(payload: dict[str, object]) -> str | None:
 
 
 def _safe_workspace_result_ref(ref: str) -> bool:
-    if (
-        not ref.startswith("refs/crewplane/")
-        or not ref.endswith("/result")
-        or ref == "@"
-        or "@{" in ref
-        or ".." in ref
-        or "//" in ref
-    ):
-        return False
-    invalid_chars = set(" ~^:?*[\\")
-    if any(ord(char) < 32 or ord(char) == 127 or char in invalid_chars for char in ref):
-        return False
-    parts = ref.split("/")
-    return all(
-        part
-        and part not in {".", ".."}
-        and not part.startswith(".")
-        and not part.endswith(".")
-        and not part.endswith(".lock")
-        for part in parts
+    return (
+        ref.startswith("refs/crewplane/")
+        and ref.endswith("/result")
+        and git_ref_syntax_issue(ref) is None
     )
 
 

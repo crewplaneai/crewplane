@@ -213,7 +213,7 @@ def test_invocation_context_preserves_existing_positional_contract() -> None:
     assert context.process_event_sink is None
 
 
-@pytest.mark.parametrize("attempt_num", [0, True, 1.5])
+@pytest.mark.parametrize("attempt_num", [0, -1, True, False, "1", 1.5])
 def test_invocation_context_rejects_invalid_attempt_numbers(
     attempt_num: object,
 ) -> None:
@@ -370,3 +370,25 @@ def test_token_bucket_order_matches_serialized_and_priced_fields() -> None:
     assert tuple(TokenPricing().as_dict()) == expected
     for bucket in expected:
         assert TokenPricing(**{bucket: 0}).configured_buckets() == (bucket,)
+
+
+@pytest.mark.parametrize("field", ["attempt", "pid", "process_group_id"])
+@pytest.mark.parametrize("value", [True, False, "1", 1.5, 0, -1])
+def test_process_event_requires_positive_integer_identity(field, value) -> None:
+    values = {"attempt": 1, "pid": 123, "process_group_id": None, "status": "started"}
+    values[field] = value
+    with pytest.raises(ValueError, match="positive integer"):
+        InvocationProcessEvent(**values)
+
+
+@pytest.mark.parametrize("returncode", [True, False, "0", 0.0])
+def test_process_exit_rejects_non_integer_returncode(returncode) -> None:
+    with pytest.raises(ValueError, match="return code"):
+        InvocationProcessEvent(1, 123, None, "exited", returncode)
+
+
+@pytest.mark.parametrize("returncode", [0, -15])
+def test_process_exit_preserves_integer_returncode(returncode) -> None:
+    event = InvocationProcessEvent(1, 123, None, "exited", returncode)
+    assert event.returncode == returncode
+    assert event.process_group_id is None

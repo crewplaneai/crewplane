@@ -46,6 +46,40 @@ def test_history_scans_current_run_manifests_sorted_by_started_at(tmp_path) -> N
     assert [record.manifest.run_id for record in records] == ["newer", "older"]
 
 
+@pytest.mark.parametrize("manifest_state", ["hardlink", "missing", "permission"])
+def test_history_manifest_file_contract(tmp_path, monkeypatch, manifest_state) -> None:
+    manifest = make_run_manifest("run", "workflow--run")
+    write_run_manifest(tmp_path, manifest)
+    manifest_path = (
+        tmp_path / "execution-stages" / manifest.run_key_name / "manifests" / "run.json"
+    )
+    if manifest_state == "hardlink":
+        (tmp_path / "manifest-copy").hardlink_to(manifest_path)
+    elif manifest_state == "missing":
+        manifest_path.unlink()
+    else:
+        original_lstat = Path.lstat
+
+        def denied_lstat(path):
+            if path == manifest_path:
+                raise PermissionError("blocked")
+            return original_lstat(path)
+
+        monkeypatch.setattr(Path, "lstat", denied_lstat)
+
+    args = (tmp_path, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE)
+    if manifest_state == "missing":
+        assert find_same_context_runs(*args) == ()
+    elif manifest_state == "permission":
+        with pytest.raises(PermissionError, match="^blocked$"):
+            find_same_context_runs(*args)
+    else:
+        with pytest.raises(
+            RunHistoryError, match="^Run history metadata path is not a safe file\\.$"
+        ):
+            find_same_context_runs(*args)
+
+
 def test_history_ignores_corrupt_malformed_and_wrong_context_records(tmp_path) -> None:
     valid = make_run_manifest("valid", "workflow--valid", status="succeeded")
     write_run_manifest(tmp_path, valid)

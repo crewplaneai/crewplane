@@ -2,17 +2,48 @@ from __future__ import annotations
 
 import json
 import shutil
+from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from crewplane.architecture.contracts import (
     build_result_filename,
 )
 from crewplane.artifacts import OutputManager
 from crewplane.artifacts.generated_files.catalog import (
+    generated_file_source_root,
     snapshot_generated_file_workspace,
 )
 from tests.helpers.artifacts import node_artifact_request
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+@pytest.mark.parametrize(
+    "output_path",
+    [
+        "stage/Alpha_round1.md",
+        "stage/review-audit-round-2/Alpha_round1.md",
+        "other/Alpha_round1.md",
+        "stage/..-.md",
+    ],
+)
+def test_generated_file_source_root_preserves_invocation_path_and_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, absolute: bool, output_path: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    output = Path(output_path)
+    if absolute:
+        output = tmp_path / output
+    digest = sha256((tmp_path / output_path).as_posix().encode()).hexdigest()[:12]
+    stem = "stage" if output.stem == "..-" else "Alpha_round1"
+
+    root = generated_file_source_root(output)
+
+    assert root == output.parent / "generated-file-sources" / f"{stem}-{digest}"
+    assert root.is_absolute() is absolute
+    assert not root.exists()
 
 
 def test_workspace_generated_files_hash_truncated_stage_directories(

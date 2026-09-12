@@ -10,9 +10,9 @@ from crewplane.core.workspace.git_policy import (
     effective_policy_lines,
     local_config_policy_summary,
     portable_path_key,
+    summarize_paths,
 )
 
-from .diagnostic_text import summarize_paths
 from .git_attributes import validate_byte_transforming_attributes
 from .git_source import (
     GitSourceContext,

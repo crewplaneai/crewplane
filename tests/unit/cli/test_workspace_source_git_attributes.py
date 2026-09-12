@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.cli.run.workspace import source_policy as policy
+from crewplane.core.workspace.git_policy import summarize_paths
 from tests.helpers import isolated_git as _isolated_git_support
 from tests.helpers.isolated_git import (
     IsolatedGit,
@@ -25,16 +26,29 @@ isolated_git = _isolated_git_support.isolated_git
 pytestmark = pytest.mark.usefixtures("isolated_git")
 
 
+@pytest.mark.parametrize(
+    ("paths", "display"),
+    [
+        (["asset.bin"], "asset.bin"),
+        (
+            ["a.bin", "b.bin", "c.bin", "d.bin", "e.bin", "f.bin"],
+            "a.bin, b.bin, c.bin, d.bin, e.bin (+1 more)",
+        ),
+    ],
+)
 def test_workspace_source_policy_rejects_lfs_attributes_with_remediation(
     tmp_path: Path,
+    paths,
+    display,
 ) -> None:
     create_clean_source_repo(tmp_path)
     (tmp_path / ".gitattributes").write_text(
         "*.bin filter=lfs diff=lfs merge=lfs -text\n",
         encoding="utf-8",
     )
-    (tmp_path / "asset.bin").write_bytes(b"binary\n")
-    run_git_text(tmp_path, "add", ".gitattributes", "asset.bin")
+    for path in paths:
+        (tmp_path / path).write_bytes(b"binary\n")
+    run_git_text(tmp_path, "add", ".gitattributes", *paths)
     run_git_text(tmp_path, "commit", "-m", "lfs attributes")
 
     result = policy.collect_workspace_source_policy(
@@ -45,12 +59,15 @@ def test_workspace_source_policy_rejects_lfs_attributes_with_remediation(
         real_execution=False,
     )
 
-    assert any(
-        "Git LFS filter=lfs" in error
-        and "asset.bin" in error
-        and "settings.workspace.enabled: false" in error
-        for error in result.errors
-    )
+    assert (
+        "Workspace source policy failed: workspace-enabled mode with "
+        "worktree_contract: blob_exact does not support Git LFS or "
+        "byte-transforming Git attributes: "
+        f"Git LFS filter=lfs: {display}. Remove those attributes for "
+        "selected paths, commit already-normalized content without "
+        "byte-transforming filters, or set settings.workspace.enabled: false "
+        "for this run."
+    ) in result.errors
 
 
 def test_workspace_source_policy_rejects_custom_filter_attributes_with_remediation(
@@ -274,3 +291,17 @@ def test_workspace_source_policy_rejects_index_extension_state_without_config(
         and "settings.workspace.enabled: false" in error
         for error in result.errors
     )
+
+
+@pytest.mark.parametrize(
+    ("paths", "expected"),
+    [
+        ([], ""),
+        (["a", "b", "c", "d", "e"], "a, b, c, d, e"),
+        (["a", "b", "c", "d", "e", "f"], "a, b, c, d, e (+1 more)"),
+        ([" z ", "é", "é", "a", "", "last"], " z , é, é, a,  (+1 more)"),
+    ],
+)
+def test_workspace_path_summary_preserves_display_contract(paths, expected) -> None:
+    assert summarize_paths(paths) == expected
+    assert summarize_paths(tuple(paths)) == expected

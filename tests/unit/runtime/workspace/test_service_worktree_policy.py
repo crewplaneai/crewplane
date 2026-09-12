@@ -408,10 +408,17 @@ def test_worktree_capture_rejects_attributes_for_new_files(
     assert prepared.workspace_path is not None
     source = plan.workspace_source
     assert source is not None
-    (prepared.cwd / "result.txt").write_text("captured\n", encoding="utf-8")
+    for name in ("a", "b", "c", "d", "e", "f"):
+        (prepared.cwd / f"{name}.txt").write_text("captured\n", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="byte-transforming Git attributes"):
+    with pytest.raises(
+        RuntimeError, match="byte-transforming Git attributes"
+    ) as caught:
         prepared.mark_succeeded()
+    assert str(caught.value) == (
+        "Workspace result capture rejected byte-transforming Git attributes: "
+        "text=a.txt, b.txt, c.txt, d.txt, e.txt (+1 more)."
+    )
 
     assert prepared.workspace_path.exists()
     remove_worktree_workspace(source, prepared.workspace_path)

@@ -17,6 +17,9 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.runtime.workspace.filesystem import (
+    runtime_workspace_cache_root,
+)
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
     invocation_slug,
@@ -32,7 +35,6 @@ from crewplane.runtime.workspace.snapshot import (
     WorkspaceSnapshotPolicy,
     create_snapshot_workspace,
     materialize_snapshot,
-    runtime_workspace_cache_root,
     snapshot_entries,
     snapshot_retry_reset,
 )

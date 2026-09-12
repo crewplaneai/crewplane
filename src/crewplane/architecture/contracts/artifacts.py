@@ -100,11 +100,11 @@ def build_stage_directory_name(node_id: str) -> str:
 
 
 def build_result_filename(node_id: str) -> str:
-    return _bounded_artifact_filename(node_id, "-result.md")
+    return bounded_artifact_filename(node_id, safe_stage_name(node_id), "-result.md")
 
 
 def build_findings_filename(node_id: str) -> str:
-    return _bounded_artifact_filename(node_id, "-findings.md")
+    return bounded_artifact_filename(node_id, safe_stage_name(node_id), "-findings.md")
 
 
 def build_review_audit_directory_name(audit_round_num: int) -> str:
@@ -123,11 +123,10 @@ def safe_artifact_name(name: str) -> str:
     return slug or "task"
 
 
-def _bounded_artifact_filename(node_id: str, suffix: str) -> str:
-    safe_name = safe_stage_name(node_id)
-    if len(f"{safe_name}{suffix}") <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
-        return f"{safe_name}{suffix}"
-    return bounded_artifact_name(safe_name, f"--{artifact_name_hash(node_id)}{suffix}")
+def bounded_artifact_filename(name: str, safe_prefix: str, suffix: str) -> str:
+    if len(f"{safe_prefix}{suffix}") <= MAX_ARTIFACT_PATH_COMPONENT_CHARS:
+        return f"{safe_prefix}{suffix}"
+    return bounded_artifact_name(safe_prefix, f"--{artifact_name_hash(name)}{suffix}")
 
 
 def bounded_artifact_name(safe_prefix: str, suffix: str) -> str:

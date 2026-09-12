@@ -17,7 +17,9 @@ from crewplane.runtime.execution.workspace_files.generated import (
 from crewplane.runtime.workspace import (
     prepare_invocation_workspace,
 )
-from crewplane.runtime.workspace.snapshot import remove_workspace_path
+from crewplane.runtime.workspace.filesystem import (
+    remove_workspace_path,
+)
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.artifacts import node_artifact_request

@@ -37,6 +37,7 @@ from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
     make_plan,
+    make_preview_from_plan,
     make_run_manifest,
     write_node_state,
     write_result,
@@ -161,7 +162,7 @@ def test_resume_plan_rejects_non_filesystem_artifacts_for_real_run(tmp_path) -> 
 def test_workspace_enabled_resume_plan_skips_valid_success(tmp_path) -> None:
     state_dir = tmp_path / ".crewplane"
     plan = make_plan()
-    preview = _preview_from_plan(plan)
+    preview = make_preview_from_plan(plan, _runtime_snapshot())
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
     write_run_manifest(state_dir, manifest)
     source_run_dir = state_dir / "execution-stages" / manifest.run_key_name
@@ -195,7 +196,7 @@ def test_project_root_success_reexecutes_when_node_artifacts_are_missing(
 ) -> None:
     state_dir = tmp_path / ".crewplane"
     plan = make_plan()
-    preview = _preview_from_plan(plan)
+    preview = make_preview_from_plan(plan, _runtime_snapshot())
     manifest = make_run_manifest("success", "workflow--success", status="succeeded")
     write_run_manifest(state_dir, manifest)
 
@@ -216,7 +217,7 @@ def test_project_root_success_uses_older_valid_artifacts_when_newest_is_corrupt(
 ) -> None:
     state_dir = tmp_path / ".crewplane"
     plan = make_plan()
-    preview = _preview_from_plan(plan)
+    preview = make_preview_from_plan(plan, _runtime_snapshot())
     older = make_run_manifest(
         "older",
         "workflow--older",
@@ -538,7 +539,7 @@ def _nonfilesystem_config() -> Config:
 
 def _provider_workspace_preview() -> PreflightCompilationPreview:
     plan = make_plan()
-    return _preview_from_plan(plan).model_copy(
+    return make_preview_from_plan(plan, _runtime_snapshot()).model_copy(
         update={
             "runtime_config_snapshot": _runtime_snapshot(),
             "effective_runtime_config_signature": "f" * 64,
@@ -546,28 +547,10 @@ def _provider_workspace_preview() -> PreflightCompilationPreview:
     )
 
 
-def _preview_from_plan(plan: PreflightExecutionPlan) -> PreflightCompilationPreview:
-    return PreflightCompilationPreview(
-        workflow_name=plan.workflow_name,
-        workflow_signature=plan.workflow_signature,
-        execution_order=list(plan.execution_order),
-        nodes=list(plan.nodes),
-        render_plans=list(plan.render_plans),
-        static_resources=list(plan.static_resources),
-        workspace_file_locators=list(plan.workspace_file_locators),
-        token_catalog=list(plan.token_catalog),
-        dependency_graph=list(plan.dependency_graph),
-        runtime_config_snapshot=_runtime_snapshot(),
-        effective_runtime_config_signature=plan.effective_runtime_config_signature,
-        workspace_source=plan.workspace_source,
-        fingerprint_metadata=dict(plan.fingerprint_metadata),
-    )
-
-
 def _workspace_preview_from_plan(
     plan: PreflightExecutionPlan,
 ) -> PreflightCompilationPreview:
-    preview = _preview_from_plan(plan)
+    preview = make_preview_from_plan(plan, _runtime_snapshot())
     return preview.model_copy(
         update={"runtime_config_snapshot": _workspace_runtime_snapshot()}
     )
@@ -653,3 +636,38 @@ def test_filesystem_identity_probe_preserves_path_matching(
     config = _nonfilesystem_config()
     config.settings.integrations.artifacts.implementation = implementation
     assert filesystem_artifacts_backend_enabled(config) is expected
+
+
+def test_preview_projection_preserves_values_and_isolates_containers() -> None:
+    plan = make_plan()
+    runtime_snapshot = _runtime_snapshot()
+    preview = make_preview_from_plan(plan, runtime_snapshot)
+    assert preview.runtime_config_snapshot is runtime_snapshot
+    assert preview.workflow_name == plan.workflow_name
+    assert preview.workflow_signature == plan.workflow_signature
+    assert (
+        preview.effective_runtime_config_signature
+        == plan.effective_runtime_config_signature
+    )
+    assert preview.workspace_source is plan.workspace_source
+    for field in (
+        "execution_order",
+        "nodes",
+        "render_plans",
+        "static_resources",
+        "workspace_file_locators",
+        "token_catalog",
+        "dependency_graph",
+        "fingerprint_metadata",
+    ):
+        original = getattr(plan, field)
+        projected = getattr(preview, field)
+        assert projected == original
+        assert projected is not original
+        if isinstance(original, list):
+            assert all(
+                left is right for left, right in zip(original, projected, strict=True)
+            )
+        original_contents = original.copy()
+        projected.clear()
+        assert getattr(plan, field) == original_contents

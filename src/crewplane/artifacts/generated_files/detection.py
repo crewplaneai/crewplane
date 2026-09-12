@@ -6,6 +6,8 @@ from pathlib import Path
 
 from crewplane.architecture.safe_files import contained_regular_file
 
+from .paths import is_reserved_workspace_path
+
 GENERATED_FILE_ACTION_PATTERN = re.compile(
     r"\b(?P<action>created|wrote|written|saved|generated|renamed|moved|updated)\b",
     re.IGNORECASE,
@@ -49,25 +51,6 @@ BARE_PATH_PATTERN = re.compile(
     r"[A-Za-z0-9_./@%+-]+\.[A-Za-z0-9]{1,16})(?::\d+(?:-\d+)?)?"
 )
 LINE_NUMBER_SUFFIX_PATTERN = re.compile(r":\d+(?:-\d+)?$")
-RESERVED_WORKSPACE_PATH_ROOTS = frozenset(
-    {
-        ".crewplane",
-        ".git",
-        ".hg",
-        ".mypy_cache",
-        ".nox",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".svn",
-        ".tox",
-        "__pycache__",
-        "execution-results",
-        "execution-stages",
-        "node_modules",
-    }
-)
-GENERATED_FILE_SOURCE_METADATA_NAME = ".crewplane-generated-file-source.json"
-GENERATED_FILE_SNAPSHOT_METADATA_NAME = ".crewplane-generated-file-snapshot.json"
 
 
 @dataclass(frozen=True)
@@ -245,17 +228,6 @@ class GeneratedFileReferenceDetector:
         if not candidate or candidate.startswith(("#", "~")) or "://" in candidate:
             return None
         return candidate
-
-
-def is_reserved_workspace_path(relative_path: Path) -> bool:
-    if relative_path.parts and relative_path.parts[0] in {
-        GENERATED_FILE_SOURCE_METADATA_NAME,
-        GENERATED_FILE_SNAPSHOT_METADATA_NAME,
-    }:
-        return True
-    return bool(
-        relative_path.parts and relative_path.parts[0] in RESERVED_WORKSPACE_PATH_ROOTS
-    )
 
 
 def line_claims_generated_file(line: str) -> bool:

@@ -414,8 +414,25 @@ def test_validate_frontier_rejects_missing_reviewer_workspace_state(
     assert frontier.resumed_node_ids == ()
 
 
-def test_validate_frontier_rejects_lineage_state_missing_result_ref(
+@pytest.mark.parametrize(
+    "result_ref",
+    [
+        None,
+        "refs/crewplane-other/x/result",
+        "refs/heads/x/result",
+        "refs/crewplane/x/result-more",
+        "refs/crewplane/x/Result",
+        "refs/crewplane//result",
+        "refs/crewplane/.hidden/result",
+        "refs/crewplane/a.lock/result",
+        "refs/crewplane/a?b/result",
+        "@",
+        "",
+    ],
+)
+def test_validate_frontier_rejects_lineage_state_missing_or_invalid_result_ref(
     tmp_path,
+    result_ref: str | None,
 ) -> None:
     source = source_record(tmp_path)
     plan = make_plan()
@@ -447,11 +464,16 @@ def test_validate_frontier_rejects_lineage_state_missing_result_ref(
     write_lineage_bundle_for_payload(repo, source, payload)
     refs = payload["refs"]
     assert isinstance(refs, dict)
-    del refs["result"]
-    (source.run_dir / "a" / "workspace-state.json").write_text(
-        json.dumps(payload),
-        encoding="utf-8",
-    )
+    state_path = source.run_dir / "a" / "workspace-state.json"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+    assert validate_resume_frontier(source, plan).resumed_node_ids == ("a",)
+    if result_ref is None:
+        del refs["result"]
+    else:
+        refs["result"] = result_ref
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    attach_workspace_descriptor(source.run_dir, plan, "a")
 
     frontier = validate_resume_frontier(source, plan)
 

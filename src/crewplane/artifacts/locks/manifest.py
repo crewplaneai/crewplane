@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +21,7 @@ from crewplane.architecture.contracts.run_summary import (
 )
 from crewplane.architecture.safe_files import (
     contained_regular_file,
+    is_single_link_regular_file,
     path_has_symlink_component,
     path_is_symlink,
 )
@@ -344,7 +344,7 @@ def safe_owner_manifest_path(
 
 
 def _ensure_safe_file(manifest_lstat: os.stat_result) -> None:
-    if not stat.S_ISREG(manifest_lstat.st_mode) or manifest_lstat.st_nlink != 1:
+    if not is_single_link_regular_file(manifest_lstat):
         raise LockManifestError("Stale run manifest is not a safe file.")
 
 

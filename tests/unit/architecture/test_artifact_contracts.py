@@ -13,6 +13,7 @@ from crewplane.architecture.contracts import (
     artifact_contract_for_node,
 )
 from crewplane.architecture.contracts.artifacts import (
+    bounded_artifact_filename,
     bounded_artifact_name,
     build_review_audit_directory_name,
 )
@@ -76,3 +77,22 @@ def test_bounded_artifact_rejects_oversized_suffix(length: int) -> None:
 
 def test_review_audit_directory_preserves_persisted_spelling() -> None:
     assert build_review_audit_directory_name(2) == "review-audit-round-2"
+
+
+def test_conditional_filename_shortening_trims_only_when_over_budget() -> None:
+    assert bounded_artifact_filename("original", "-._", ".log") == "-._.log"
+    digest = hashlib.sha256(b"original").hexdigest()[:12]
+    assert bounded_artifact_filename("original", "-._" * 100, ".log") == (
+        f"artifact--{digest}.log"
+    )
+    assert bounded_artifact_filename("original", "abc._" + "a" * 200, "s" * 161) == (
+        f"abc--{digest}" + "s" * 161
+    )
+
+
+@pytest.mark.parametrize("suffix_length", [166, 180, 181])
+def test_conditional_filename_rejects_oversized_hashed_suffix(suffix_length) -> None:
+    with pytest.raises(
+        ValueError, match="Generated suffix exceeds path component budget."
+    ):
+        bounded_artifact_filename("original", "prefix" * 100, "s" * suffix_length)

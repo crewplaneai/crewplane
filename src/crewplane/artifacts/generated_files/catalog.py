@@ -15,13 +15,15 @@ from crewplane.architecture.safe_files import contained_regular_file
 
 from ..naming import build_generated_file_result_dir_name
 from .detection import (
-    GENERATED_FILE_SNAPSHOT_METADATA_NAME,
-    GENERATED_FILE_SOURCE_METADATA_NAME,
     GeneratedFileLink,
     GeneratedFileReferenceDetector,
+)
+from .paths import (
+    GENERATED_FILE_SNAPSHOT_METADATA_NAME,
+    GENERATED_FILE_SOURCE_METADATA_NAME,
+    generated_file_node_prefix,
     is_reserved_workspace_path,
 )
-from .paths import generated_file_node_prefix
 from .snapshot_io import copy_generated_file_snapshot_candidate
 from .snapshot_policy import (
     GeneratedFileRejectionLog,
@@ -320,7 +322,12 @@ def _safe_unique_candidate_files(
 
 
 def generated_file_source_root(output_file: Path) -> Path:
-    return _generated_file_source_root(output_file)
+    digest = sha256(output_file.resolve(strict=False).as_posix().encode()).hexdigest()
+    return (
+        output_file.parent
+        / "generated-file-sources"
+        / f"{build_generated_file_result_dir_name(output_file.stem)}-{digest[:12]}"
+    )
 
 
 def _generated_file_snapshot_source_root(snapshot_root: Path) -> Path | None:
@@ -476,15 +483,6 @@ def _copy_workspace_generated_file(
                 temporary_path.unlink()
         raise
     return target
-
-
-def _generated_file_source_root(output_file: Path) -> Path:
-    digest = sha256(output_file.resolve(strict=False).as_posix().encode()).hexdigest()
-    return (
-        output_file.parent
-        / "generated-file-sources"
-        / f"{build_generated_file_result_dir_name(output_file.stem)}-{digest[:12]}"
-    )
 
 
 def _replace_generated_file_source_root(path: Path) -> None:

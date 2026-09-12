@@ -77,37 +77,37 @@ def capture_activity_window(
     )
 
 
-def shared_reserved_snapshot(
+def _shared_reserved_scope(
     output: ArtifactStorePort,
-) -> dict[Path, ContentSignature]:
+) -> tuple[tuple[Path, set[Path] | None], ...]:
     manifests_dir = manifests_dir_for(output)
     run_log_dir = output.get_run_log_dir()
     excluded_run_log_paths = {
         output.get_run_event_log_path(),
         output.get_run_summary_path(),
     }
+    return (
+        (output.results_dir, None),
+        (manifests_dir, None),
+        (run_log_dir, excluded_run_log_paths),
+    )
+
+
+def shared_reserved_snapshot(
+    output: ArtifactStorePort,
+) -> dict[Path, ContentSignature]:
     snapshot: dict[Path, ContentSignature] = {}
-    for root in (output.results_dir, manifests_dir):
-        snapshot.update(snapshot_files(root))
-    snapshot.update(snapshot_files(run_log_dir, excluded_paths=excluded_run_log_paths))
+    for root, excluded_paths in _shared_reserved_scope(output):
+        snapshot.update(snapshot_files(root, excluded_paths=excluded_paths))
     return snapshot
 
 
 def shared_reserved_original_bytes(
     output: ArtifactStorePort,
 ) -> dict[Path, bytes]:
-    manifests_dir = manifests_dir_for(output)
-    run_log_dir = output.get_run_log_dir()
-    excluded_run_log_paths = {
-        output.get_run_event_log_path(),
-        output.get_run_summary_path(),
-    }
     original_bytes: dict[Path, bytes] = {}
-    for root in (output.results_dir, manifests_dir):
-        original_bytes.update(snapshot_file_bytes(root))
-    original_bytes.update(
-        snapshot_file_bytes(run_log_dir, excluded_paths=excluded_run_log_paths)
-    )
+    for root, excluded_paths in _shared_reserved_scope(output):
+        original_bytes.update(snapshot_file_bytes(root, excluded_paths=excluded_paths))
     return original_bytes
 
 
@@ -288,14 +288,7 @@ def _capture_recovery_snapshots(
 def shared_reserved_directory_snapshot(
     output: ArtifactStorePort,
 ) -> dict[Path, DirectorySnapshot]:
-    manifests_dir = manifests_dir_for(output)
-    run_log_dir = output.get_run_log_dir()
-    excluded_paths = {
-        output.get_run_event_log_path(),
-        output.get_run_summary_path(),
-    }
     snapshot: dict[Path, DirectorySnapshot] = {}
-    for root in (output.results_dir, manifests_dir):
-        snapshot.update(snapshot_directories(root))
-    snapshot.update(snapshot_directories(run_log_dir, excluded_paths))
+    for root, excluded_paths in _shared_reserved_scope(output):
+        snapshot.update(snapshot_directories(root, excluded_paths=excluded_paths))
     return snapshot

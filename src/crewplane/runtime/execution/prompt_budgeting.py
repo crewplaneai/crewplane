@@ -25,30 +25,11 @@ class PromptBudgetExceededError(NodeExecutionError):
 
 
 @dataclass(frozen=True)
-class PromptBudgetThresholds:
-    fail_threshold_chars: int | None
-    warn_threshold_chars: int | None
-
-
-@dataclass(frozen=True)
 class PromptBudgetInspection:
     display_name: str
     char_count: int
     shorten_advice: str
     warning_attributes: dict[str, RuntimeLogValue]
-
-
-def compiled_token_budget(node: PreflightExecutionNode) -> dict[str, int | None]:
-    budget = node.execution_policy.token_budget
-    if budget is None:
-        return {
-            "fail_threshold_chars": None,
-            "warn_threshold_chars": None,
-        }
-    return {
-        "fail_threshold_chars": budget.fail_threshold_chars,
-        "warn_threshold_chars": budget.warn_threshold_chars,
-    }
 
 
 def resolve_prompt_with_output_budget(
@@ -80,11 +61,6 @@ def resolve_prompt_with_output_budget_details(
     workspace_candidate_source: bool = False,
     workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
 ) -> ResolvedPrompt:
-    budget_payload = compiled_token_budget(node)
-    thresholds = PromptBudgetThresholds(
-        fail_threshold_chars=budget_payload.get("fail_threshold_chars"),
-        warn_threshold_chars=budget_payload.get("warn_threshold_chars"),
-    )
     inspections = inspect_runtime_locators(
         runtime_context.plan,
         node,
@@ -92,7 +68,7 @@ def resolve_prompt_with_output_budget_details(
         output,
     )
     for locator_inspection in inspections:
-        _enforce_prompt_budget(
+        enforce_prompt_budget(
             node,
             PromptBudgetInspection(
                 display_name=(
@@ -108,7 +84,6 @@ def resolve_prompt_with_output_budget_details(
                     "upstream_artifact_name": locator_inspection.artifact_name,
                 },
             ),
-            thresholds,
             telemetry,
         )
     resolved_prompt = assemble_prompt_details(
@@ -123,7 +98,7 @@ def resolve_prompt_with_output_budget_details(
     for inspection in _workspace_file_budget_inspections(
         resolved_prompt.workspace_files
     ):
-        _enforce_prompt_budget(node, inspection, thresholds, telemetry)
+        enforce_prompt_budget(node, inspection, telemetry)
     if not resolved_prompt.text.strip():
         raise NodeExecutionError(
             f"Resolved {role} prompt for node '{node.id}' is empty after fragment assembly."
@@ -161,13 +136,15 @@ def _workspace_file_budget_inspections(
     return tuple(inspections)
 
 
-def _enforce_prompt_budget(
+def enforce_prompt_budget(
     node: PreflightExecutionNode,
     inspection: PromptBudgetInspection,
-    thresholds: PromptBudgetThresholds,
     telemetry: ExecutionTelemetry | None,
 ) -> None:
-    fail_threshold = thresholds.fail_threshold_chars
+    budget = node.execution_policy.token_budget
+    if budget is None:
+        return
+    fail_threshold = budget.fail_threshold_chars
     if fail_threshold is not None and inspection.char_count > fail_threshold:
         raise PromptBudgetExceededError(
             "Prompt budget exceeded for node "
@@ -175,7 +152,7 @@ def _enforce_prompt_budget(
             f"{inspection.char_count} chars, exceeding fail threshold "
             f"{fail_threshold}. {inspection.shorten_advice}"
         )
-    warn_threshold = thresholds.warn_threshold_chars
+    warn_threshold = budget.warn_threshold_chars
     if warn_threshold is None or inspection.char_count <= warn_threshold:
         return
     emit_runtime_log(

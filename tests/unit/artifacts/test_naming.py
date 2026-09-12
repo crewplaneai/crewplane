@@ -107,7 +107,7 @@ def test_stage_normalization_preserves_persisted_names(name, expected) -> None:
     assert build_node_state_filename(name) == f"{prefix}--{digest}.json"
 
 
-@pytest.mark.parametrize("length", [169, 170, 179, 180, 181])
+@pytest.mark.parametrize("length", [169, 170, 171, 179, 180, 181])
 def test_stage_names_preserve_exact_length_boundaries(length) -> None:
     name = "a" * length
     digest = hashlib.sha256(name.encode()).hexdigest()[:12]
@@ -161,7 +161,7 @@ def test_state_run_lock_and_export_names_preserve_exact_output(
 
 
 @pytest.mark.parametrize(
-    "length", [152, 153, 154, 159, 160, 161, 168, 169, 170, 180, 181]
+    "length", [152, 153, 154, 159, 160, 161, 167, 168, 169, 170, 180, 181]
 )
 def test_findings_and_log_names_preserve_exact_boundaries(length):
     name = "a" * length
@@ -176,3 +176,36 @@ def test_findings_and_log_names_preserve_exact_boundaries(length):
     )
     assert build_findings_filename(name) == expected_findings
     assert build_log_filename(name, 12, 34) == expected_log
+
+
+@pytest.mark.parametrize("total_length", [179, 180, 181])
+@pytest.mark.parametrize(
+    ("audit", "round_num"), [(None, None), (0, None), (None, 0), (12, 34)]
+)
+def test_complete_log_filename_threshold(total_length, audit, round_num):
+    suffix = "" if audit is None else f"-audit{audit}"
+    suffix += ("" if round_num is None else f"-round{round_num}") + ".log"
+    name = "a" * (total_length - len(suffix))
+    digest = hashlib.sha256(name.encode()).hexdigest()[:12]
+    expected = (
+        name + suffix
+        if total_length <= 180
+        else ("a" * (180 - 14 - len(suffix)) + f"--{digest}{suffix}")
+    )
+    assert build_log_filename(name, audit, round_num) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "stage", "log"),
+    [
+        ("Build.A", "build.a", "build-a"),
+        ("Ünicode", "-nicode", "nicode"),
+        ("..-", "..-", "task"),
+        ("  ", "task", "task"),
+        ("!!!", "-", "task"),
+    ],
+)
+def test_result_findings_and_log_keep_distinct_normalization(name, stage, log):
+    assert build_result_filename(name) == f"{stage}-result.md"
+    assert build_findings_filename(name) == f"{stage}-findings.md"
+    assert build_log_filename(name) == f"{log}.log"

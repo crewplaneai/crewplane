@@ -263,20 +263,31 @@ def _codex_command_execution_lines(
     phase: str,
     limits: LogPresentationLimits,
 ) -> list[str] | None:
-    output = item.get("aggregated_output")
-    if item_type != "command_execution" or not isinstance(output, str):
-        return None
-    if not output.strip() or "\n" not in output:
+    if item_type != "command_execution":
         return None
 
-    metadata = _codex_command_execution_metadata(record, item, limits)
+    command = _string_field(item, "command")
+    output = item.get("aggregated_output")
+    if command and "\n" in command:
+        metadata = _codex_command_status_metadata(record, item, limits)
+        body = display_string_lines(command, limits, label="command")
+        text = _first_display_value(item, _CODEX_ITEM_TEXT_FIELDS, limits)
+        if text:
+            body.extend(display_string_lines(text, limits))
+        for key in _CODEX_ITEM_OUTPUT_FIELDS:
+            value = _display_field_value(item.get(key), limits)
+            if value:
+                body.extend(display_string_lines(value, limits, label=key))
+    elif isinstance(output, str) and output.strip() and "\n" in output:
+        metadata = _codex_command_execution_metadata(record, item, limits)
+        body = display_string_lines(output, limits, label="aggregated_output")
+    else:
+        return None
+
     first_line = f"{item_type} {phase}"
     if metadata:
         first_line = f"{first_line}: {metadata}"
-    return [
-        sanitize_line(first_line, limits),
-        *display_string_lines(output, limits, label="aggregated_output"),
-    ]
+    return [sanitize_line(first_line, limits), *body]
 
 
 def _codex_command_execution_metadata(
@@ -288,6 +299,18 @@ def _codex_command_execution_metadata(
     command = _display_field_value(item.get("command"), limits)
     if command:
         components.append(f"command: {command}")
+    status = _codex_command_status_metadata(record, item, limits)
+    if status:
+        components.append(status)
+    return " | ".join(components)
+
+
+def _codex_command_status_metadata(
+    record: Mapping[object, object],
+    item: Mapping[object, object],
+    limits: LogPresentationLimits,
+) -> str:
+    components: list[str] = []
     for key in ("status", "exit_code"):
         raw_value = item.get(key)
         if raw_value is None:

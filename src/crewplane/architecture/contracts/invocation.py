@@ -9,6 +9,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast, get_args
 
+from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .json import JsonObject
@@ -72,14 +73,10 @@ def _add_exact_counter(current: int | None, additional: int | None) -> int | Non
     return current + additional
 
 
-def _is_non_boolean_integer(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def _is_positive_integer(value: object) -> bool:
-    if not _is_non_boolean_integer(value):
+    if not is_strict_int(value):
         return False
-    return cast(int, value) > 0
+    return value > 0
 
 
 TokenBucket = Literal[
@@ -350,7 +347,7 @@ class InvocationProcessEvent:
     def _validate_lifecycle(self) -> None:
         if not isinstance(self.status, str) or self.status not in {"started", "exited"}:
             raise ValueError(f"unsupported invocation process status: {self.status!r}")
-        if self.returncode is not None and not _is_non_boolean_integer(self.returncode):
+        if self.returncode is not None and not is_strict_int(self.returncode):
             raise ValueError(
                 "invocation process return code must be an integer or None"
             )

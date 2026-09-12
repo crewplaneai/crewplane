@@ -10,6 +10,7 @@ import pytest
 import crewplane.runtime.workspace.worktree.orchestration as worktree_module
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace import prepare_invocation_workspace
+from crewplane.runtime.workspace.state_selection import required_lineage_state_path
 from crewplane.runtime.workspace.worktree import (
     WorktreeSourceRef,
     create_worktree_workspace,
@@ -17,9 +18,6 @@ from crewplane.runtime.workspace.worktree import (
 )
 from crewplane.runtime.workspace.worktree.lineage import (
     worktree_protected_ref_scopes,
-)
-from crewplane.runtime.workspace.worktree.source_refs import (
-    required_lineage_state,
 )
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
@@ -243,7 +241,7 @@ def test_required_lineage_state_skips_disposable_reviewer_state(
         encoding="utf-8",
     )
 
-    assert required_lineage_state(output, node) == executor_state
+    assert required_lineage_state_path(output, node) == executor_state
 
 
 def test_worktree_workspace_rejects_source_tree_mismatch_before_checkout(

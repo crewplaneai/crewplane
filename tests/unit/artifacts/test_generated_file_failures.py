@@ -13,10 +13,13 @@ from crewplane.artifacts.generated_files.catalog import (
     snapshot_generated_file_workspace,
 )
 from crewplane.artifacts.generated_files.detection import (
-    GENERATED_FILE_SNAPSHOT_METADATA_NAME,
-    GENERATED_FILE_SOURCE_METADATA_NAME,
     GeneratedFileLink,
     GeneratedFileReferenceDetector,
+)
+from crewplane.artifacts.generated_files.paths import (
+    GENERATED_FILE_SNAPSHOT_METADATA_NAME,
+    GENERATED_FILE_SOURCE_METADATA_NAME,
+    is_reserved_workspace_path,
 )
 from crewplane.artifacts.generated_files.snapshot_io import (
     copy_generated_file_snapshot_candidate,
@@ -25,6 +28,46 @@ from crewplane.artifacts.generated_files.snapshot_policy import (
     GeneratedFileSnapshotPolicy,
     select_generated_file_snapshot_candidates,
 )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        ".crewplane",
+        ".git",
+        ".hg",
+        ".mypy_cache",
+        ".nox",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".svn",
+        ".tox",
+        "__pycache__",
+        "execution-results",
+        "execution-stages",
+        "node_modules",
+        ".crewplane-generated-file-source.json",
+        ".crewplane-generated-file-snapshot.json",
+    ],
+)
+def test_generated_file_reservations_are_case_sensitive_root_components(name) -> None:
+    assert is_reserved_workspace_path(Path(name))
+    assert is_reserved_workspace_path(Path(name) / "file.txt")
+    assert not is_reserved_workspace_path(Path("nested") / name)
+    assert not is_reserved_workspace_path(Path(name.upper()))
+    assert not is_reserved_workspace_path(Path(name + "-output"))
+
+
+def test_missing_snapshot_metadata_allows_ordinary_generated_file_links(
+    tmp_path,
+) -> None:
+    assert not is_reserved_workspace_path(Path())
+    report = tmp_path / "report.md"
+    report.write_text("retained")
+    result = generated_file_links_for_content(
+        "## Generated Files\n- `report.md`\n", tmp_path, tmp_path / "result.md", "draft"
+    )
+    assert result.links == (GeneratedFileLink("report.md", report),)
 
 
 @pytest.mark.parametrize(

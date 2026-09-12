@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import stat
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -13,7 +12,10 @@ from crewplane.architecture.ports.artifacts import (
     ProviderProcessInvocation,
     ProviderProcessPublication,
 )
-from crewplane.architecture.safe_files import ensure_contained_directory
+from crewplane.architecture.safe_files import (
+    ensure_contained_directory,
+    is_single_link_regular_file,
+)
 from crewplane.core.execution_state import RUN_STATE_SCHEMA_VERSION
 from crewplane.core.provider_process_state import ProviderProcessState
 
@@ -175,7 +177,7 @@ class ProviderProcessPublisher:
     def _read_state(path: Path) -> ProviderProcessState:
         try:
             state = path.lstat()
-            if not stat.S_ISREG(state.st_mode) or state.st_nlink != 1:
+            if not is_single_link_regular_file(state):
                 raise RuntimeError("Provider process state is not a safe file.")
             return ProviderProcessState.model_validate_json(
                 path.read_text(encoding="utf-8")

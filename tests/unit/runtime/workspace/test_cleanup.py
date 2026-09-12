@@ -17,7 +17,9 @@ from crewplane.runtime.workspace.cleanup import (
     cleanup_workspace_cache,
     parse_duration_seconds,
 )
-from crewplane.runtime.workspace.snapshot import remove_workspace_path
+from crewplane.runtime.workspace.filesystem import (
+    remove_workspace_path,
+)
 from crewplane.runtime.workspace.worktree import cleanup as worktree_cleanup
 from crewplane.runtime.workspace.worktree.ref_cleanup import (
     cleanup_plan_workspace_refs,

@@ -118,6 +118,18 @@ def refresh_node_workspace_descriptor(
     node_state = NodeState.model_validate_json(
         node_state_path.read_text(encoding="utf-8")
     )
+    return publish_node_workspace_descriptor(
+        node, plan, output, node_state, node_state_path
+    )
+
+
+def publish_node_workspace_descriptor(
+    node: PreflightExecutionNode,
+    plan: PreflightExecutionPlan,
+    output: NodeArtifactStateStore,
+    node_state: NodeState,
+    node_state_path: Path,
+) -> Path:
     refreshed = node_state.model_copy(
         update={"workspace": build_node_workspace_descriptor(node, plan, output)}
     )

@@ -17,6 +17,9 @@ from crewplane.core.preflight.models import (
     WorkspaceSourceSnapshot,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.workspace.filesystem import (
+    runtime_workspace_cache_root,
+)
 from crewplane.runtime.workspace.invocation import (
     controlled_child_environment_required,
     invocation_slug,
@@ -28,7 +31,6 @@ from crewplane.runtime.workspace.setup import (
     WorkspaceSetupCancelled,
     run_workspace_setup,
 )
-from crewplane.runtime.workspace.snapshot import runtime_workspace_cache_root
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
     WorkspaceStateMaterializationRequest,
