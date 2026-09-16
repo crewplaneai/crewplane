@@ -4,7 +4,7 @@ from crewplane.architecture.contracts import (
     artifact_contract_for_node,
     safe_artifact_name,
 )
-from crewplane.core.config import Config
+from crewplane.core.config import AgentConfig, Config
 from crewplane.core.token_budget import resolve_token_budget
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workflow.models import ProviderSpec, WorkflowNode
@@ -121,9 +121,7 @@ def provider_records(
         role_index = role_indices[provider.role]
         role_indices[provider.role] += 1
         agent_config = config.agents.get(provider.provider)
-        resolved_model = provider.model or (
-            agent_config.default_model if agent_config is not None else None
-        )
+        resolved_model = resolve_provider_model(provider, agent_config)
         records.append(
             ProviderRecord(
                 provider=provider.provider,
@@ -182,3 +180,12 @@ def resolved_token_budget_payload(
 
 def artifact_task_id(provider: ProviderSpec, index: int) -> str:
     return f"{safe_artifact_name(provider.provider)}_{provider.role.value}_{index}"
+
+
+def resolve_provider_model(
+    provider: ProviderSpec, agent_config: AgentConfig | None
+) -> str | None:
+    """Resolve the signed workflow model before the configured agent default."""
+    return provider.model or (
+        agent_config.default_model if agent_config is not None else None
+    )

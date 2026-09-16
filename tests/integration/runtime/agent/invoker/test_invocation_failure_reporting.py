@@ -2,21 +2,19 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.adapters.invokers.cli_invoker import (
+    build_cli_invocation_plan,
+    get_cli_provider_capability,
+)
+from crewplane.adapters.invokers.cli_invoker.failures.patterns import MAX_FAILURE_LINES
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
-from crewplane.runtime.agent.failures import (
-    InvocationFailureError,
-    classify_invocation_failure,
-)
-from crewplane.runtime.agent.failures.patterns import MAX_FAILURE_LINES
-from crewplane.runtime.agent.invoker import (
-    invoke_agent_with_runner,
-)
+from crewplane.runtime.agent.failures import InvocationFailureError
+from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 
 
 class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
@@ -334,7 +332,9 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
             expected_source,
         ) in cases:
             with self.subTest(provider_kind=provider_kind):
-                summary = classify_invocation_failure(provider_kind, result)
+                summary = get_cli_provider_capability(provider_kind).failure_classifier(
+                    result
+                )
 
                 self.assertEqual(summary.kind, expected_kind)
                 self.assertEqual(summary.phase, expected_phase)
@@ -350,8 +350,7 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 encoding="utf-8",
             )
-            summary = classify_invocation_failure(
-                "kilo",
+            summary = get_cli_provider_capability("kilo").failure_classifier(
                 CommandResult(
                     returncode=1,
                     stdout_text="",
@@ -374,8 +373,7 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                 "\n".join(["noise"] * (MAX_FAILURE_LINES + 5) + [marker]),
                 encoding="utf-8",
             )
-            summary = classify_invocation_failure(
-                "kilo",
+            summary = get_cli_provider_capability("kilo").failure_classifier(
                 CommandResult(
                     returncode=1,
                     stdout_text="",

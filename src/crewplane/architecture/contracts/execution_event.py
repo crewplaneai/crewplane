@@ -96,8 +96,10 @@ TERMINAL_WORKFLOW_EVENT_TYPES: frozenset[WorkflowEventType] = frozenset(
 
 
 WorkflowStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
-NodeStatus = Literal["pending", "running", "succeeded", "failed", "blocked"]
-InvocationStatus = Literal["pending", "running", "succeeded", "failed"]
+NodeStatus = Literal[
+    "pending", "running", "succeeded", "failed", "blocked", "cancelled"
+]
+InvocationStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
 LogLevel = Literal["debug", "info", "warning", "error"]
 
 

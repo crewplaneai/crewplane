@@ -30,6 +30,8 @@ def test_provider_ready_config_renders_each_known_provider(tmp_path) -> None:
         "gemini": "auto",
         "copilot": "claude-sonnet-5",
         "kilo": "kilo/kilo-auto/frontier",
+        "pi": None,
+        "deepseek": None,
     }
     assert set(expected_models) == set(KNOWN_PROVIDER_NAMES)
     for provider in KNOWN_PROVIDER_NAMES:

@@ -15,10 +15,10 @@ from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.invocation.command import (
     build_invocation_runtime,
-    cleanup_structured_output_file,
     prepare_runtime_for_attempt,
     run_invocation_attempt,
 )
+from crewplane.runtime.agent.invocation.output import cleanup_structured_output_file
 
 
 def test_prepare_runtime_for_attempt_clears_stale_structured_output() -> None:

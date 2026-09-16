@@ -3,16 +3,16 @@ from __future__ import annotations
 import time
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from crewplane.architecture.contracts import (
     CommandResult,
     OneShotFailureRetryPolicy,
     QuotaClassification,
-    QuotaParserProfile,
+    QuotaClassifier,
 )
 from crewplane.core.config import AgentConfig
 
-from ..quota import classify_quota, compute_quota_wait_seconds
 from ..retry_units import format_wait_duration
 from .state import InvocationDiagnosticNotice
 
@@ -177,7 +177,7 @@ def _matches_one_shot_failure_retry(
 def evaluate_quota_retry(
     config: AgentConfig,
     cmd: list[str],
-    quota_parser: QuotaParserProfile,
+    quota_classifier: QuotaClassifier,
     result: CommandResult,
     quota_retry_started_at: float | None,
     quota_retry_count: int,
@@ -190,7 +190,9 @@ def evaluate_quota_retry(
             quota_retry_count=quota_retry_count,
         )
 
-    quota = classify_quota(config, result, quota_parser)
+    quota = quota_classifier(
+        result, tuple(config.quota_reached_on_contains), datetime.now(UTC)
+    )
     if not quota.is_quota:
         return NoQuotaRetry(
             quota_retry_started_at=quota_retry_started_at,
@@ -351,3 +353,16 @@ def quota_retry_guard_will_exhaust(
 ) -> bool:
     elapsed = quota_retry_elapsed_seconds(started_at)
     return elapsed + wait_seconds >= QUOTA_RETRY_GUARD_SECONDS
+
+
+def compute_quota_wait_seconds(
+    config: AgentConfig, quota: QuotaClassification
+) -> float:
+    configured_delay = config.quota_reached_retry_delay_seconds
+    if quota.reset_after_seconds is None:
+        return configured_delay
+    parsed_wait = max(
+        quota.reset_after_seconds + config.quota_reset_sleep_floor_seconds,
+        config.quota_reset_sleep_floor_seconds,
+    )
+    return max(parsed_wait, configured_delay)

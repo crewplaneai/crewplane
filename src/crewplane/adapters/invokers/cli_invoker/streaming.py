@@ -5,8 +5,29 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from crewplane.architecture.contracts import CommandResult
-from crewplane.core.file_text import STREAM_READ_BYTES, path_has_non_whitespace_text
+from crewplane.architecture.contracts import CommandResult, OutputExtractionResult
+from crewplane.core.file_text import (
+    STREAM_READ_BYTES,
+    path_decoded_character_count,
+    path_has_non_whitespace_text,
+)
+
+
+def extract_strict_stdout(
+    result: CommandResult,
+    structured_output_file: Path | None,  # noqa: ARG001 - OutputExtractor contract.
+) -> OutputExtractionResult:
+    """Select nonblank stdout without publishing stderr diagnostics."""
+    path = result.stdout_path
+    if path is not None and path.is_file():
+        if not path_has_non_whitespace_text(path):
+            return OutputExtractionResult("", "missing")
+        return OutputExtractionResult(
+            "", "success", path, path_decoded_character_count(path)
+        )
+    if not result.stdout_text.strip():
+        return OutputExtractionResult("", "missing")
+    return OutputExtractionResult(result.stdout_text, "success")
 
 
 def load_stdout_json(

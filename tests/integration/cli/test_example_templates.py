@@ -11,7 +11,7 @@ from rich.console import Console
 
 import crewplane.cli.templates as templates
 import crewplane.cli.workflow_runner as workflow_runner
-from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
+from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
 from crewplane.architecture.contracts import CommandResult
 from crewplane.cli.onboarding.rendering import (
     manual_config_snippet,
@@ -185,7 +185,15 @@ class ExampleTemplateTests(unittest.TestCase):
             "commented out so the first run stays mock-only",
             rendered,
         )
-        for provider_name in ("claude", "codex", "gemini", "copilot", "kilo"):
+        for provider_name in (
+            "claude",
+            "codex",
+            "gemini",
+            "copilot",
+            "kilo",
+            "pi",
+            "deepseek",
+        ):
             self.assertIn(f"# {provider_name}:", rendered)
             self.assertNotIn(f"\n  {provider_name}:", rendered)
         self.assertIn('#   cli_cmd: ["claude"]', rendered)

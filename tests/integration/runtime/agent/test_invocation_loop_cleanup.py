@@ -194,3 +194,56 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             assert not structured_output_path.exists()
             assert usages == []
             assert not output_file.exists()
+
+
+@pytest.mark.parametrize("phase", ["environment", "runtime", "idle_timeout"])
+def test_plan_output_is_owned_during_runtime_setup(
+    tmp_path, monkeypatch, phase
+) -> None:
+    from dataclasses import replace
+    from unittest.mock import AsyncMock
+
+    from crewplane.runtime.agent import invoker
+    from crewplane.runtime.agent.invocation import loop
+
+    owned = tmp_path / "owned"
+    config = AgentConfig(cli_cmd=["provider"])
+    plan = replace(
+        build_cli_invocation_plan(config, None, "prompt", tmp_path / "out"),
+        structured_output_file=owned,
+    )
+    owned.write_text("allocated")
+
+    def fail_setup(*args, **kwargs):
+        assert args or kwargs
+        raise RuntimeError("setup failed")
+
+    def build_plan(*args):
+        assert args[-1] == tmp_path
+        return plan
+
+    if phase == "environment":
+        monkeypatch.setattr(invoker, "prepare_workspace_child_environment", fail_setup)
+    elif phase == "runtime":
+        monkeypatch.setattr(loop, "build_invocation_runtime", fail_setup)
+    else:
+        config.invocation_idle_timeout_seconds = 1
+        plan = replace(plan, supports_output_idle_timeout=False)
+        monkeypatch.setattr(loop, "emit_invocation_diagnostic", fail_setup)
+    runner = AsyncMock()
+    with pytest.raises(RuntimeError, match="setup failed"):
+        asyncio.run(
+            invoke_agent_with_runner(
+                config,
+                None,
+                "prompt",
+                tmp_path / "out",
+                tmp_path,
+                None,
+                None,
+                runner,
+                build_plan,
+            )
+        )
+    runner.assert_not_called()
+    assert not owned.exists()

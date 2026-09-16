@@ -13,6 +13,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 from ..common import ProviderCallDisplay, resolve_prompt_with_output_budget_details
 from ..provider_call import ProviderOutputPolicy, read_bound_invocation_output
 from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
+from .candidate_identity import bind_candidate_identities, observe_project
 from .drift import run_provider_call_with_drift_guard
 from .prompts import (
     build_executor_prompt,
@@ -60,7 +61,9 @@ async def run_executor_round(
         previous_candidate_context,
         request.previous_review_packet,
         request.initial_review_handoff,
+        request.recovery_attempt,
     )
+    project_before = await observe_project(request)
     for provider in request.executors:
         task_id = provider.task_id
         output_file = request.artifact_dir / build_task_round_filename(
@@ -123,7 +126,9 @@ async def run_executor_round(
             )
         )
     return ExecutorRoundRunResult(
-        outputs=executor_outputs,
+        outputs=await bind_candidate_identities(
+            request, executor_outputs, project_before
+        ),
         drift_warning_count=drift_warning_count,
     )
 

@@ -307,6 +307,7 @@ def build_review_loop_status_payload(
     node_dir: Path,
     progress: ReviewLoopProgress,
 ) -> ReviewLoopStatusPayload:
+    progress = progress.snapshot()
     selected_round_num = progress.selected_round_num or _selected_round_num(progress)
     return {
         "node_id": node_id,
@@ -318,6 +319,9 @@ def build_review_loop_status_payload(
         "invalid_candidate_round_count": progress.invalid_candidate_round_count,
         "no_progress_round_count": progress.no_progress_round_count,
         "artifact_drift_warning_count": progress.artifact_drift_warning_count,
+        "stop_reason": progress.stop_reason,
+        "continued_after_stop": progress.continued_after_stop,
+        "consecutive_no_progress_round_count": progress.stall.consecutive_round_count,
         "canonical_executor_outputs": [
             _status_output_entry(node_dir, artifact, ProviderRole.EXECUTOR)
             for artifact in progress.latest_executor_outputs or []

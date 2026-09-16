@@ -21,7 +21,7 @@ from crewplane.observability.log_presentation.limits import (
 from crewplane.observability.tmux.snapshot_types import require_snapshot_string
 
 _VALID_STATUSES: frozenset[str] = frozenset(
-    {"pending", "running", "succeeded", "failed"}
+    {"pending", "running", "succeeded", "failed", "cancelled"}
 )
 
 

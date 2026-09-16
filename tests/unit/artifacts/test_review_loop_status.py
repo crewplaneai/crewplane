@@ -82,6 +82,28 @@ def test_resolves_valid_status_with_outputs(tmp_path: Path) -> None:
     assert resolved.selected_output_files["executor"].name == "executor_round2.md"
 
 
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("stop_reason", "unknown"),
+        ("stop_reason", []),
+        ("consecutive_no_progress_round_count", True),
+        ("consecutive_no_progress_round_count", -1),
+        ("continued_after_stop", "true"),
+    ],
+)
+def test_rejects_invalid_stop_metadata(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    payload = valid_status_payload()
+    payload[field] = value
+    create_referenced_outputs(tmp_path)
+    write_status(tmp_path, payload)
+
+    with pytest.raises(ReviewLoopStatusError, match=field):
+        resolve_review_loop_status("stage", tmp_path)
+
+
 def test_rejects_reviewer_output_retained_from_a_prior_audit(
     tmp_path: Path,
 ) -> None:

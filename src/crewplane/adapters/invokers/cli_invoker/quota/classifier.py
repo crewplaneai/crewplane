@@ -1,29 +1,28 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import datetime
 from itertools import chain
 
 from crewplane.architecture.contracts import (
     CommandResult,
     QuotaClassification,
-    QuotaParserProfile,
 )
-from crewplane.core.config import AgentConfig
 
 from .evidence import collect_quota_context_lines, find_quota_evidence
 from .waits import extract_wait_candidates_from_line
 
 
-def classify_quota(
-    config: AgentConfig,
+def classify_generic_quota(
     result: CommandResult,
-    parser: QuotaParserProfile,
+    configured_hints: tuple[str, ...],
+    now_utc: datetime,
+    family_hints: tuple[str, ...] = (),
 ) -> QuotaClassification:
     quota_evidence = find_quota_evidence(
         _result_lines_for_quota(result),
-        parser,
-        config,
+        family_hints,
+        configured_hints,
     )
     if quota_evidence is None:
         return QuotaClassification(
@@ -32,11 +31,10 @@ def classify_quota(
             evidence=None,
         )
 
-    now_utc = datetime.now(UTC)
     context_lines = collect_quota_context_lines(
         _result_lines_for_quota(result),
-        parser,
-        config,
+        family_hints,
+        configured_hints,
     )
     wait_candidates: list[float] = []
     for line in context_lines:
@@ -60,16 +58,3 @@ def _has_successful_stdout(result: CommandResult) -> bool:
     if result.returncode != 0:
         return False
     return any(line.strip() for line in result.iter_stdout_lines())
-
-
-def compute_quota_wait_seconds(
-    config: AgentConfig, quota: QuotaClassification
-) -> float:
-    configured_delay = config.quota_reached_retry_delay_seconds
-    if quota.reset_after_seconds is None:
-        return configured_delay
-    parsed_wait = max(
-        quota.reset_after_seconds + config.quota_reset_sleep_floor_seconds,
-        config.quota_reset_sleep_floor_seconds,
-    )
-    return max(parsed_wait, configured_delay)

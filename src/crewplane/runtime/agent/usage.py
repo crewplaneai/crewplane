@@ -5,7 +5,6 @@ from pathlib import Path
 from crewplane.architecture.contracts import (
     CommandResult,
     OutputExtractionStatus,
-    ProviderKind,
     ProviderTokenUsage,
     UsageDecodeResult,
 )
@@ -31,7 +30,6 @@ __all__ = [
     "classify_provider_usage_status",
     "estimate_token_count",
     "output_text_for_usage",
-    "provider_kind_for_config",
     "roll_up_cost_confidence",
 ]
 
@@ -129,23 +127,14 @@ def output_text_for_usage(result: CommandResult) -> str:
     return stdout_text
 
 
-def provider_kind_for_config(config: AgentConfig) -> ProviderKind:
-    return config.provider_kind
-
-
 class InvocationUsageAccumulator:
-    def __init__(self, provider_kind: ProviderKind, prompt: str) -> None:
-        self._provider_kind = provider_kind
+    def __init__(self, prompt: str) -> None:
         self._prompt_chars_per_attempt = len(prompt)
         self._attempt_count = 0
         self._visible_output_chars_total = 0
         self._provider_tokens: ProviderTokenUsage | None = None
         self._provider_usage_report_count = 0
         self._usage_parse_error: str | None = None
-
-    @property
-    def provider_kind(self) -> ProviderKind:
-        return self._provider_kind
 
     def record_attempt_start(self) -> None:
         self._attempt_count += 1
@@ -191,7 +180,6 @@ class InvocationUsageAccumulator:
             output_extraction_status=output_extraction_status,
             provider_usage_status=classify_provider_usage_status(
                 config=config,
-                provider_kind=self._provider_kind,
                 provider_tokens=provider_tokens,
                 provider_usage_report_count=self._provider_usage_report_count,
                 usage_parse_error=self._usage_parse_error,

@@ -41,7 +41,7 @@ class ClaudeJsonDocument:
 
 def extract_claude_output(
     result: CommandResult,
-    max_captured_usage_bytes: int,  # noqa: ARG001 - Stable parser facade contract.
+    structured_output_file: Path | None,  # noqa: ARG001 - OutputExtractor callback.
 ) -> OutputExtractionResult:
     """Extract Claude's result string into an owned temporary output file."""
     extraction = _extract_claude_document(result)

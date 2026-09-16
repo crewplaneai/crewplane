@@ -72,10 +72,10 @@ def test_validate_executor_outputs_reports_sorted_invalid_task_ids() -> None:
     assert result.invalid_task_ids == ("b",)
 
 
-def test_executor_fingerprint_is_whitespace_normalized() -> None:
+def test_executor_fingerprint_preserves_meaningful_whitespace() -> None:
     first = [_artifact("exec_executor_0", "Candidate\n\nwith   spacing")]
     second = [_artifact("exec_executor_0", "Candidate with spacing")]
 
     assert build_executor_output_fingerprint(
         first
-    ) == build_executor_output_fingerprint(second)
+    ) != build_executor_output_fingerprint(second)

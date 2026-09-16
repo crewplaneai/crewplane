@@ -5,11 +5,17 @@ from collections import deque
 from collections.abc import Iterable, Mapping
 from itertools import chain
 
-from crewplane.architecture.contracts import CommandResult, ProviderKind
+from crewplane.architecture.contracts import CommandResult
+from crewplane.architecture.contracts.invocation_failures import (
+    ADVICE_BY_KIND,
+    FailureKind,
+    FailurePhase,
+    FailureSource,
+    InvocationFailureSummary,
+)
 
 from .formatting import clip_failure_summary, is_failure_hint
 from .patterns import (
-    ADVICE_BY_KIND,
     AUTH_OR_PERMISSION_PATTERNS,
     INITIAL_REQUEST_TOO_LARGE_PATTERNS,
     JSON_FAILURE_MARKERS,
@@ -24,13 +30,7 @@ from .patterns import (
     TOOL_ERROR_PATTERNS,
     TRANSPORT_ERROR_PATTERNS,
 )
-from .types import (
-    FailureEvidence,
-    FailureKind,
-    FailurePhase,
-    FailureSource,
-    InvocationFailureSummary,
-)
+from .types import FailureEvidence
 
 
 def failure_lines(result: CommandResult) -> Iterable[tuple[str, FailureSource]]:
@@ -41,7 +41,7 @@ def failure_lines(result: CommandResult) -> Iterable[tuple[str, FailureSource]]:
 
 
 def collect_failure_evidence(
-    provider_kind: ProviderKind,
+    quota_patterns: tuple[str, ...],
     lines: Iterable[tuple[str, FailureSource]],
 ) -> tuple[list[FailureEvidence], list[tuple[str, FailureSource]], int]:
     evidence: list[FailureEvidence] = []
@@ -49,11 +49,11 @@ def collect_failure_evidence(
     line_count = 0
     for sequence, (line, source) in enumerate(lines):
         line_count += 1
-        item = _json_failure_evidence(provider_kind, line, source, sequence)
+        item = _json_failure_evidence(quota_patterns, line, source, sequence)
         if item is not None:
             evidence.append(item)
             continue
-        item = _text_failure_evidence(provider_kind, line, source, sequence)
+        item = _text_failure_evidence(quota_patterns, line, source, sequence)
         if item is not None:
             evidence.append(item)
         candidate_lines.append((line, source))
@@ -74,7 +74,7 @@ def _stream_lines(
 
 
 def _json_failure_evidence(
-    provider_kind: ProviderKind,
+    quota_patterns: tuple[str, ...],
     line: str,
     source: FailureSource,
     sequence: int,
@@ -90,20 +90,20 @@ def _json_failure_evidence(
     message = _json_failure_message(payload)
     if message is None:
         return None
-    summary = _summary_for_message(provider_kind, message, source, False)
+    summary = _summary_for_message(quota_patterns, message, source, False)
     priority = KIND_PRIORITY[summary.kind] + _json_event_priority(payload)
     return FailureEvidence(summary=summary, priority=priority, sequence=sequence)
 
 
 def _text_failure_evidence(
-    provider_kind: ProviderKind,
+    quota_patterns: tuple[str, ...],
     line: str,
     source: FailureSource,
     sequence: int,
 ) -> FailureEvidence | None:
     if source not in {"stdout_text", "stderr_text"}:
         return None
-    summary = _summary_for_message(provider_kind, line, source, False)
+    summary = _summary_for_message(quota_patterns, line, source, False)
     if summary.kind == "unknown_provider_error" and not is_failure_hint(line):
         return None
     return FailureEvidence(
@@ -126,7 +126,7 @@ def _should_parse_json(line: str) -> bool:
     )
 
 
-def _payload_reports_error(payload: dict[str, object]) -> bool:
+def _payload_reports_error(payload: Mapping[str, object]) -> bool:
     event_type = str(payload.get("type") or "").casefold()
     if any(marker in event_type for marker in PROVIDER_ERROR_EVENT_TYPES):
         return True
@@ -136,7 +136,7 @@ def _payload_reports_error(payload: dict[str, object]) -> bool:
     return error is not None and error != "" and error is not False
 
 
-def _json_failure_message(payload: dict[str, object]) -> str | None:
+def _json_failure_message(payload: Mapping[str, object]) -> str | None:
     error = payload.get("error")
     if isinstance(error, dict):
         message = _first_string(error, ("message", "detail", "type", "code", "status"))
@@ -155,7 +155,7 @@ def _first_string(payload: Mapping[str, object], keys: tuple[str, ...]) -> str |
     return None
 
 
-def _json_event_priority(payload: dict[str, object]) -> int:
+def _json_event_priority(payload: Mapping[str, object]) -> int:
     event_type = str(payload.get("type") or "").casefold()
     if event_type == "turn.failed":
         return 500
@@ -172,13 +172,13 @@ def _json_event_priority(payload: dict[str, object]) -> int:
 
 
 def _summary_for_message(
-    provider_kind: ProviderKind,
+    quota_patterns: tuple[str, ...],
     message: str,
     source: FailureSource,
     condensed: bool,
 ) -> InvocationFailureSummary:
     clipped_message, was_clipped = clip_failure_summary(message.strip())
-    kind, phase = _classify_message(provider_kind, message)
+    kind, phase = _classify_message(quota_patterns, message)
     return InvocationFailureSummary(
         kind=kind,
         phase=phase,
@@ -190,11 +190,11 @@ def _summary_for_message(
 
 
 def _classify_message(
-    provider_kind: ProviderKind,
+    quota_patterns: tuple[str, ...],
     message: str,
 ) -> tuple[FailureKind, FailurePhase]:
     text = message.casefold()
-    if _contains_any(text, _quota_patterns(provider_kind)):
+    if _contains_any(text, quota_patterns):
         return "quota_or_rate_limit", "provider_transport"
     if _contains_any(text, AUTH_OR_PERMISSION_PATTERNS):
         return "auth_or_permission", "provider_config"
@@ -215,34 +215,6 @@ def _classify_message(
     if is_failure_hint(text):
         return "provider_error", "unknown"
     return "unknown_provider_error", "unknown"
-
-
-def _quota_patterns(provider_kind: ProviderKind) -> tuple[str, ...]:
-    if provider_kind == ProviderKind.GEMINI:
-        return (
-            "resource exhausted",
-            "resource_exhausted",
-            "resource-exhausted",
-            "exhausted your capacity",
-            "quota will reset",
-            "quota exhausted",
-            "rate limit exceeded",
-            "too many requests",
-            "429",
-        )
-    return (
-        "usage limit reached",
-        "usage limit exceeded",
-        "resource exhausted",
-        "resource_exhausted",
-        "resource-exhausted",
-        "quota reached",
-        "quota exceeded",
-        "rate limit reached",
-        "rate limit exceeded",
-        "too many requests",
-        "429",
-    )
 
 
 def _contains_any(text: str, patterns: tuple[str, ...]) -> bool:

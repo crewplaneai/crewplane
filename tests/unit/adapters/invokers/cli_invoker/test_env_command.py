@@ -166,12 +166,12 @@ def test_parse_env_command_context_consumes_option_looking_values() -> None:
     [
         pytest.param(
             ["env", "--unknown", "provider"],
-            "Cannot validate env option '--unknown' with a workflow reasoning request.",
+            "Cannot validate env wrapper argument at cli_cmd position 2.",
             id="unknown-long-option",
         ),
         pytest.param(
-            ["env", "-vx", "provider"],
-            "Cannot validate env option '-x' with a workflow reasoning request.",
+            ["env", "--debug", "-vx", "provider"],
+            "Cannot validate env wrapper argument at cli_cmd position 3.",
             id="unknown-short-option",
         ),
         pytest.param(

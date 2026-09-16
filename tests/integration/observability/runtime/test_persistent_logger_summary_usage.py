@@ -1,8 +1,8 @@
 import tempfile
 from pathlib import Path
 
-from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
-from crewplane.architecture.contracts import CommandResult, EventType, ProviderKind
+from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
+from crewplane.architecture.contracts import CommandResult, EventType
 from crewplane.artifacts import OutputManager
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
@@ -14,19 +14,11 @@ from crewplane.observability.persistent import (
 from crewplane.observability.run_summary.accumulator import (
     MAX_RETAINED_INVOCATION_USAGE_DETAILS,
 )
-from crewplane.observability.run_summary.logger import (
-    MAX_RETAINED_SUMMARY_EVENTS,
-)
+from crewplane.observability.run_summary.logger import MAX_RETAINED_SUMMARY_EVENTS
 from crewplane.observability.runtime import ObservabilityHub
-from crewplane.observability.types import (
-    RunContext,
-    RunResult,
-)
+from crewplane.observability.types import RunContext, RunResult
 from crewplane.runtime.agent.usage import InvocationUsageAccumulator
-from tests.helpers.observability import (
-    make_execution_event,
-    topology_from_workflow,
-)
+from tests.helpers.observability import make_execution_event, topology_from_workflow
 from tests.integration.observability.runtime.observability_runtime_helpers import (
     single_node_workflow,
 )
@@ -334,7 +326,6 @@ def test_codex_fixture_totals_render_for_success_and_failure() -> None:
         / "codex_24_reports.jsonl"
     )
     usage_accumulator = InvocationUsageAccumulator(
-        ProviderKind.CODEX,
         prompt="prompt",
     )
     for line in fixture_path.read_text(encoding="utf-8").splitlines():

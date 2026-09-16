@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from .patterns import (
+from crewplane.architecture.contracts.invocation_failures import (
     ADVICE_BY_KIND,
+    FailureSource,
+    InvocationFailureSummary,
+)
+
+from .patterns import (
     FAILURE_SUMMARY_HINTS,
     FAILURE_SUMMARY_MAX_CHARS,
     FAILURE_SUMMARY_NOISE_PREFIXES,
 )
-from .types import FailureSource, InvocationFailureSummary
 
 
 def is_failure_hint(text: str) -> bool:

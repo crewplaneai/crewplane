@@ -1,3 +1,8 @@
+from crewplane.architecture.contracts.invocation_failures import (
+    FailureKind,
+    FailurePhase,
+    InvocationFailureSummary,
+)
 from crewplane.core.preflight.models import (
     ArtifactContract,
     ExecutionPolicy,
@@ -8,12 +13,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.failures import (
-    FailureKind,
-    FailurePhase,
-    InvocationFailureError,
-    InvocationFailureSummary,
-)
+from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.execution.common import CompiledRuntimeContext
 from crewplane.runtime.execution.consensus import (
     ParsedReviewResult,

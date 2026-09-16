@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.observability.tmux import inspect_control
+from crewplane.observability.tmux.inspect_snapshot import read_inspect_snapshot
 from crewplane.observability.tmux.runtime_files import (
     MODE_DASHBOARD,
     MODE_INSPECT,
@@ -54,14 +55,24 @@ def test_inspect_control_rolls_back_runtime_state_when_respawn_fails(
     )
 
 
+@pytest.mark.parametrize("invocation_status", [None, "cancelled"])
+@pytest.mark.parametrize("view", ["auto", "raw", "formatted"])
 def test_inspect_control_commits_runtime_state_after_respawn_succeeds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    invocation_status: str | None,
+    view: str,
 ) -> None:
     runtime_files = initialized_runtime_files(tmp_path)
     log_file = tmp_path / "provider.log"
     log_file.write_text("provider output\n", encoding="utf-8")
-    write_selected_snapshot(runtime_files, log_file)
+    selected = selected_snapshot_data(log_file, "node.a", 0)
+    if invocation_status is not None:
+        selected["invocation_status"] = invocation_status
+    if view == "formatted":
+        selected["log_presentation_format"] = "plain"
+        selected["log_presentation_profile"] = "generic"
+    write_json_atomic(runtime_files.selected_invocation, selected)
 
     calls: list[tuple[list[str], bool]] = []
 
@@ -74,13 +85,15 @@ def test_inspect_control_commits_runtime_state_after_respawn_succeeds(
 
     monkeypatch.setattr(inspect_control.subprocess, "run", succeed)
 
-    result = inspect_control.main(inspect_args(tmp_path))
+    result = inspect_control.main(inspect_args(tmp_path, view))
 
     assert result == 0
     assert runtime_files.mode.read_text(encoding="utf-8") == MODE_INSPECT
-    assert '"inspect_view": "raw"' in runtime_files.inspect_invocation.read_text(
-        encoding="utf-8"
-    )
+    snapshot = read_inspect_snapshot(runtime_files.inspect_invocation)
+    assert snapshot is not None
+    assert snapshot["inspect_view"] == ("raw" if view == "auto" else view)
+    assert snapshot.get("invocation_status") == invocation_status
+    assert snapshot["log_file"] == str(log_file)
     assert calls[0][0][:5] == ["tmux", "respawn-pane", "-k", "-t", "%20"]
     assert calls[0][1] is True
     assert calls[1][0][:4] == ["tmux", "set-option", "-t", "session"]

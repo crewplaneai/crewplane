@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import ExecutionTelemetry, RuntimeEventContext, emit_runtime_log
 from ..consensus import EvaluatedReviewResult
+from .candidate_identity import content_fingerprint
 from .types import (
     INVALID_CANDIDATE_EMPTY,
     INVALID_CANDIDATE_REDIRECTED,
@@ -23,7 +23,6 @@ from .types import (
     ReviewerRoundArtifact,
 )
 
-WHITESPACE_PATTERN = re.compile(r"\s+")
 ROUND_ARTIFACT_REFERENCE_PATTERN = re.compile(
     r"(?:^|[`(/<\s])([\w./-]+_round\d+\.md)\b"
 )
@@ -67,27 +66,28 @@ def count_unresolved_review_issues(
     )
 
 
-def _normalize_candidate_content(content: str) -> str:
-    return WHITESPACE_PATTERN.sub(" ", content).strip()
-
-
 def build_executor_output_fingerprint(
     executor_outputs: list[ExecutorRoundArtifact],
-) -> str:
-    payload = "\n".join(
-        f"{artifact.task_id}\n{_normalize_candidate_content(artifact.content)}"
-        for artifact in executor_outputs
-    )
-    return hashlib.sha256(payload.encode()).hexdigest()
+) -> str | None:
+    identities = []
+    for artifact in executor_outputs:
+        identity = artifact.candidate_identity
+        if identity is not None and identity.fingerprint is None:
+            return None
+        identities.append(
+            (artifact.task_id, identity.fingerprint if identity else artifact.content)
+        )
+    return content_fingerprint(identities)
 
 
 def is_no_progress_candidate(
     progress: AuditRoundProgress,
-    current_executor_fingerprint: str,
+    current_executor_fingerprint: str | None,
     round_num: int,
 ) -> bool:
     return (
         round_num > 1
+        and current_executor_fingerprint is not None
         and progress.previous_review_packet is not None
         and progress.previous_executor_fingerprint == current_executor_fingerprint
     )
@@ -102,7 +102,7 @@ def emit_review_stall_warning(
     current_unresolved_fingerprints: tuple[str, ...],
     current_unresolved_issue_count: int,
     previous_executor_fingerprint: str | None,
-    current_executor_fingerprint: str,
+    current_executor_fingerprint: str | None,
 ) -> None:
     repeated_fingerprints = sorted(
         set(previous_unresolved_fingerprints).intersection(
@@ -356,8 +356,9 @@ def emit_no_progress_warning(
         level="warning",
         message=(
             f"Sequential review loop for node '{node_id}' skipped reviewer invocation "
-            "because the remediation candidate was unchanged after whitespace "
-            "normalization."
+            "because the remediation deliverable was unchanged and review "
+            "feedback remains unresolved. Two consecutive unchanged attempts "
+            "stop the node."
         ),
         operation="review_loop_no_progress",
         context=RuntimeEventContext(

@@ -12,6 +12,9 @@ from crewplane.architecture.contracts import (
     NodeArtifactRequest,
     ObserverCapabilities,
 )
+from crewplane.architecture.contracts.invocation_failures import (
+    InvocationFailureSummary,
+)
 from crewplane.artifacts import OutputManager, safe_artifact_name
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.core.config import AgentConfig, Config
@@ -26,10 +29,7 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from crewplane.runtime.agent.failures import (
-    InvocationFailureError,
-    InvocationFailureSummary,
-)
+from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.execution import (
     execute_parallel_stage as _execute_compiled_parallel_stage,
 )

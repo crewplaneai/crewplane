@@ -57,15 +57,13 @@ IMPORT_RULES = (
             "crewplane.runtime.agent.usage_parsing",
             "crewplane.runtime.agent.quota",
             "crewplane.runtime.agent.failures",
+            "crewplane.adapters.invokers.cli_invoker",
         ),
     ),
     ForbiddenImportRule(
         name="runtime agent stays provider neutral",
         roots=(SRC_ROOT / "crewplane" / "runtime" / "agent",),
-        forbidden_prefixes=(
-            "crewplane.adapters.invokers.cli_invoker.machine_json",
-            "crewplane.adapters.invokers.cli_invoker.usage_decoders",
-        ),
+        forbidden_prefixes=("crewplane.adapters.invokers.cli_invoker",),
     ),
     ForbiddenImportRule(
         name="run preflight dispatches invoker diagnostics through adapters",

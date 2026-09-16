@@ -5,12 +5,12 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import (
     CommandResult,
-    FailureClassificationProfile,
+    FailureClassifier,
     InvocationLogLevel,
     OneShotFailureRetryPolicy,
     OutputExtractionStatus,
     OutputExtractor,
-    QuotaParserProfile,
+    QuotaClassifier,
     RuntimeLogValue,
     UsageDecoder,
 )
@@ -39,10 +39,10 @@ class ExtractedInvocationOutput:
 
 @dataclass(frozen=True)
 class InvocationCommandRuntime:
-    failure_profile: FailureClassificationProfile
+    failure_classifier: FailureClassifier
     output_extractor: OutputExtractor | None
     usage_decoder: UsageDecoder | None
-    quota_parser: QuotaParserProfile
+    quota_classifier: QuotaClassifier
     structured_output_file: Path | None
     cmd: list[str]
     stdin_data: bytes | None

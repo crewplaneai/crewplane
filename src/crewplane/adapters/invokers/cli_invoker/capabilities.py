@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import os
-import shutil
-import tempfile
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,131 +7,34 @@ from crewplane.architecture.contracts import (
     InvocationContext,
     InvocationPlan,
     LogPresentationDescriptor,
-    LogPresentationFormat,
-    OneShotFailureRetryPolicy,
-    OutputExtractor,
     ProviderKind,
-    QuotaParserProfile,
-    StructuredOutputMode,
-    UsageDecoder,
 )
 from crewplane.architecture.contracts.provider_log import build_provider_log_header
 from crewplane.core.config import AgentConfig
 
-from .machine_json import (
-    extract_claude_output,
-    extract_codex_output,
-    extract_gemini_output,
-    extract_kilo_output,
-)
-from .reasoning import build_reasoning_args
-from .usage_decoders import (
-    decode_claude_usage,
-    decode_codex_usage,
-    decode_gemini_usage,
-    decode_kilo_usage,
-)
-
-# Codex can sporadically report false model capacity; keep this temporary
-# workaround narrow and adapter-owned so it can be removed independently.
-CODEX_MODEL_CAPACITY_MESSAGE = (
-    "Selected model is at capacity. Please try a different model."
-)
-CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS = 5.0
-CODEX_MODEL_CAPACITY_RETRY_POLICY = OneShotFailureRetryPolicy(
-    output_contains=(CODEX_MODEL_CAPACITY_MESSAGE,),
-    wait_seconds=CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS,
-    reason="codex_model_capacity",
-    notice_message=(
-        f'Codex reported "{CODEX_MODEL_CAPACITY_MESSAGE}" '
-        "Crewplane will retry in five seconds (built-in attempt 1/1)."
-    ),
-)
-
-
-@dataclass(frozen=True)
-class CliProviderCapability:
-    """Adapter-owned invocation behavior for one provider CLI family."""
-
-    provider_kind: ProviderKind
-    structured_output_mode: StructuredOutputMode
-    output_extractor: OutputExtractor | None
-    usage_decoder: UsageDecoder | None
-    quota_parser: QuotaParserProfile
-    log_presentation_format: LogPresentationFormat
-    log_presentation_profile: str
-    model_arg: str | None = "--model"
-    structured_output_args: tuple[str, ...] = ()
-    one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
-    supports_output_idle_timeout: bool = True
-
+from .capability import CliInvocationRequest, CliProviderCapability
+from .providers import claude, codex, copilot, deepseek, gemini, generic, kilo, pi
 
 CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
-    ProviderKind.CLAUDE: CliProviderCapability(
-        provider_kind=ProviderKind.CLAUDE,
-        structured_output_mode="claude_json",
-        output_extractor=extract_claude_output,
-        usage_decoder=decode_claude_usage,
-        quota_parser="claude",
-        log_presentation_format="json_object",
-        log_presentation_profile="claude",
-        structured_output_args=("--output-format", "json"),
-    ),
-    ProviderKind.CODEX: CliProviderCapability(
-        provider_kind=ProviderKind.CODEX,
-        structured_output_mode="codex_last_message_file",
-        output_extractor=extract_codex_output,
-        usage_decoder=decode_codex_usage,
-        quota_parser="codex",
-        log_presentation_format="json_lines",
-        log_presentation_profile="codex",
-        one_shot_failure_retry=CODEX_MODEL_CAPACITY_RETRY_POLICY,
-    ),
-    ProviderKind.COPILOT: CliProviderCapability(
-        provider_kind=ProviderKind.COPILOT,
-        structured_output_mode="none",
-        output_extractor=None,
-        usage_decoder=None,
-        quota_parser="copilot",
-        log_presentation_format="plain",
-        log_presentation_profile="generic",
-    ),
-    ProviderKind.GEMINI: CliProviderCapability(
-        provider_kind=ProviderKind.GEMINI,
-        structured_output_mode="gemini_json",
-        output_extractor=extract_gemini_output,
-        usage_decoder=decode_gemini_usage,
-        quota_parser="gemini",
-        log_presentation_format="json_object",
-        log_presentation_profile="gemini",
-        structured_output_args=("--output-format", "json"),
-        supports_output_idle_timeout=False,
-    ),
-    ProviderKind.KILO: CliProviderCapability(
-        provider_kind=ProviderKind.KILO,
-        structured_output_mode="kilo_json",
-        output_extractor=extract_kilo_output,
-        usage_decoder=decode_kilo_usage,
-        quota_parser="kilo",
-        log_presentation_format="json_lines",
-        log_presentation_profile="kilo",
-        structured_output_args=("--format", "json"),
-    ),
-    ProviderKind.GENERIC: CliProviderCapability(
-        provider_kind=ProviderKind.GENERIC,
-        structured_output_mode="none",
-        output_extractor=None,
-        usage_decoder=None,
-        quota_parser="generic",
-        log_presentation_format="plain",
-        log_presentation_profile="generic",
-    ),
+    ProviderKind.CLAUDE: claude.CLAUDE,
+    ProviderKind.CODEX: codex.CODEX,
+    ProviderKind.COPILOT: copilot.COPILOT,
+    ProviderKind.GEMINI: gemini.GEMINI,
+    ProviderKind.KILO: kilo.KILO,
+    ProviderKind.PI: pi.PI,
+    ProviderKind.DEEPSEEK: deepseek.DEEPSEEK,
+    ProviderKind.GENERIC: generic.GENERIC,
 }
 
 
 def get_cli_provider_capability(provider_kind: ProviderKind) -> CliProviderCapability:
-    """Return the complete capability record for a supported provider kind."""
-    return CAPABILITIES[ProviderKind(provider_kind)]
+    """Fail explicitly when a schema family has no installed implementation."""
+    try:
+        return CAPABILITIES[ProviderKind(provider_kind)]
+    except KeyError as exc:
+        raise ValueError(
+            f"No CLI capability registered for {provider_kind!r}."
+        ) from exc
 
 
 def build_cli_invocation_plan(
@@ -146,44 +45,43 @@ def build_cli_invocation_plan(
     invocation_context: InvocationContext | None = None,
     working_directory: Path | None = None,
 ) -> InvocationPlan:
-    """Build a provider-neutral invocation plan and any owned temp output path."""
+    """Validate before allocation, then transfer ownership of a complete plan."""
     capability = get_cli_provider_capability(config.provider_kind)
-    requested_reasoning = (
-        invocation_context.requested_reasoning
-        if invocation_context is not None
-        else None
-    )
-    structured_output_file = _structured_output_file(capability)
-    cmd = _build_argv(
-        config,
-        capability,
-        model,
-        prompt,
-        structured_output_file,
-        requested_reasoning,
-        working_directory,
-    )
-    stdin_data = prompt.encode("utf-8") if config.prompt_transport == "stdin" else None
-    return InvocationPlan(
-        cmd=cmd,
-        stdin_data=stdin_data,
-        structured_output_file=structured_output_file,
-        structured_output_mode=capability.structured_output_mode,
-        output_extractor=capability.output_extractor,
-        usage_decoder=capability.usage_decoder,
-        quota_parser=capability.quota_parser,
-        failure_profile=capability.provider_kind,
-        log_provider_kind=capability.provider_kind,
-        log_header=build_provider_log_header(
-            started_at=datetime.now(UTC).isoformat(),
-            cli_executable=cmd[0],
-            model=model,
-            output_file=output_file,
-            requested_reasoning=requested_reasoning,
+    request = CliInvocationRequest(
+        config=config,
+        model=model,
+        requested_reasoning=(
+            invocation_context.requested_reasoning
+            if invocation_context is not None
+            else None
         ),
-        one_shot_failure_retry=capability.one_shot_failure_retry,
-        supports_output_idle_timeout=capability.supports_output_idle_timeout,
+        working_directory=working_directory,
     )
+    capability.validate_request(request)
+    command = capability.build_command(request, prompt)
+    try:
+        return InvocationPlan(
+            cmd=command.cmd,
+            stdin_data=command.stdin_data,
+            structured_output_file=command.structured_output_file,
+            output_extractor=capability.output_extractor,
+            usage_decoder=capability.usage_decoder,
+            quota_classifier=capability.quota_classifier,
+            failure_classifier=capability.failure_classifier,
+            log_header=build_provider_log_header(
+                started_at=datetime.now(UTC).isoformat(),
+                cli_executable=command.cmd[0],
+                model=model,
+                output_file=output_file,
+                requested_reasoning=request.requested_reasoning,
+            ),
+            one_shot_failure_retry=capability.one_shot_failure_retry,
+            supports_output_idle_timeout=capability.supports_output_idle_timeout,
+        )
+    except BaseException:
+        if command.structured_output_file is not None:
+            command.structured_output_file.unlink(missing_ok=True)
+        raise
 
 
 def build_cli_log_presentation(config: AgentConfig) -> LogPresentationDescriptor:
@@ -193,102 +91,3 @@ def build_cli_log_presentation(config: AgentConfig) -> LogPresentationDescriptor
         format=capability.log_presentation_format,
         profile=capability.log_presentation_profile,
     )
-
-
-def _build_argv(
-    config: AgentConfig,
-    capability: CliProviderCapability,
-    model: str | None,
-    prompt: str,
-    structured_output_file: Path | None,
-    requested_reasoning: str | None = None,
-    working_directory: Path | None = None,
-) -> list[str]:
-    """Build the provider CLI argv and resolve the executable when available."""
-    cmd = config.get_command()
-    cmd[0] = _resolved_cli_executable(cmd[0])
-    model_arg = (
-        config.model_arg
-        if config.provider_kind == ProviderKind.GENERIC
-        else capability.model_arg
-    )
-    if model_arg is not None and model is not None:
-        cmd.extend([model_arg, model])
-    cmd.extend(
-        build_reasoning_args(
-            config,
-            requested_reasoning,
-            working_directory,
-        )
-    )
-    cmd.extend(config.extra_args)
-    cmd.extend(_structured_output_args(capability, structured_output_file))
-    if config.prompt_transport == "stdin":
-        if config.prompt_transport_arg:
-            cmd.append(config.prompt_transport_arg)
-        return cmd
-    if config.prompt_transport_arg is None:
-        raise ValueError("prompt_transport_arg is required for argv prompt transport.")
-    cmd.extend([config.prompt_transport_arg, prompt])
-    return cmd
-
-
-def _resolved_cli_executable(executable: str) -> str:
-    """Return an executable path suitable for subprocess invocation.
-
-    Bare executable names are resolved through `PATH` when available. Missing
-    bare names are preserved so injected command runners and subprocess launch
-    handle the execution boundary consistently. Absolute paths are validated
-    directly. Relative path-like commands are preserved so subprocess can
-    resolve them relative to the configured working directory.
-    """
-    executable_path = Path(executable)
-    if executable_path.is_absolute():
-        return _resolved_existing_executable(executable_path)
-    if _contains_path_separator(executable):
-        return executable
-    resolved = shutil.which(executable)
-    if resolved is None:
-        return executable
-    return _resolved_existing_executable(Path(resolved))
-
-
-def _resolved_existing_executable(executable: Path) -> str:
-    """Resolve an existing executable path and fail clearly if it is unusable."""
-    resolved = executable.resolve(strict=True)
-    if not resolved.is_file():
-        raise FileNotFoundError(
-            f"CLI executable '{executable.as_posix()}' is not a file."
-        )
-    if not os.access(resolved, os.X_OK):
-        raise PermissionError(
-            f"CLI executable '{resolved.as_posix()}' is not executable."
-        )
-    return resolved.as_posix()
-
-
-def _contains_path_separator(value: str) -> bool:
-    return "/" in value or "\\" in value
-
-
-def _structured_output_args(
-    capability: CliProviderCapability,
-    structured_output_file: Path | None,
-) -> tuple[str, ...]:
-    if capability.structured_output_mode == "codex_last_message_file":
-        if structured_output_file is None:
-            raise ValueError("Codex invocations require a structured output file.")
-        return ("--json", "--output-last-message", str(structured_output_file))
-    return capability.structured_output_args
-
-
-def _structured_output_file(capability: CliProviderCapability) -> Path | None:
-    if capability.structured_output_mode != "codex_last_message_file":
-        return None
-    file_descriptor, temp_path = tempfile.mkstemp(
-        prefix="crewplane-codex-",
-        suffix=".last-message.txt",
-    )
-    os.close(file_descriptor)
-    Path(temp_path).unlink(missing_ok=True)
-    return Path(temp_path)

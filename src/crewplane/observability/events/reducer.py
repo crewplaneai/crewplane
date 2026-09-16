@@ -45,6 +45,7 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
         case EventType.WORKFLOW_CANCELLED:
             state.workflow_status = "cancelled"
             state.workflow_finished_at = event.timestamp
+            cancel_unfinished_children(state, event.timestamp)
         case EventType.RUNTIME_LOG:
             if context.node_id is None:
                 return
@@ -113,6 +114,22 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             return
         case _:
             raise ValueError(f"Unsupported event type: {event.event_type}")
+
+
+def cancel_unfinished_children(state: RunDashboardState, timestamp: float) -> None:
+    for node in state.nodes.values():
+        if node.status in {"pending", "running"}:
+            node.status = "cancelled"
+            node.finished_at = timestamp
+        for invocation in node.invocations.values():
+            if invocation.status not in {"pending", "running"}:
+                continue
+            invocation.status = "cancelled"
+            invocation.finished_at = timestamp
+            if invocation.started_at is not None:
+                invocation.duration_ms = int(
+                    max(0.0, timestamp - invocation.started_at) * 1000
+                )
 
 
 def require_node(state: RunDashboardState, node_id: str | None) -> NodeRuntimeState:

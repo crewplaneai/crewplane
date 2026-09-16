@@ -63,6 +63,7 @@ class WorkspaceSnapshotPolicy:
     max_elapsed_seconds: float = DEFAULT_SNAPSHOT_MAX_ELAPSED_SECONDS
     cancel_requested: Callable[[], bool] | None = None
     clock: Callable[[], float] = monotonic
+    excluded_roots: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.max_entries < 1:
@@ -318,6 +319,8 @@ def _discover_snapshot_entries(
                 relative = (
                     f"{relative_parent}/{entry.name}" if relative_parent else entry.name
                 )
+                if relative in budget.policy.excluded_roots:
+                    continue
                 _count_snapshot_entry(budget, relative)
                 discovered.append(
                     (

@@ -1,19 +1,19 @@
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
-from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
+from crewplane.adapters.invokers.cli_invoker import (
+    build_cli_invocation_plan,
+    get_cli_provider_capability,
+)
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig, Config
-from crewplane.core.preflight.models import (
-    PreflightExecutionPlan,
-    ProviderRecord,
-)
+from crewplane.core.preflight.models import PreflightExecutionPlan, ProviderRecord
 from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
     runtime_agent_signature_payload,
@@ -21,12 +21,7 @@ from crewplane.core.preflight.runtime_config import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.invoker import (
-    invoke_agent_with_runner,
-)
-from crewplane.runtime.agent.quota import (
-    classify_quota,
-)
+from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 from crewplane.runtime.execution.common import (
     CompiledRuntimeContext,
     resolve_provider_model,
@@ -350,14 +345,14 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             default_model="claude-sonnet-4.6",
         )
 
-        quota = classify_quota(
-            config=config,
-            result=CommandResult(
+        quota = get_cli_provider_capability("copilot").quota_classifier(
+            CommandResult(
                 returncode=0,
                 stdout_text="rate limit reached, retry after 3s",
                 stderr_text="",
             ),
-            parser="copilot",
+            tuple((config).quota_reached_on_contains),
+            datetime(2026, 9, 13, tzinfo=UTC),
         )
 
         self.assertTrue(quota.is_quota)
@@ -371,19 +366,23 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 "\n".join(["noise"] * 500 + ["rate limit reached, retry after 3s"]),
                 encoding="utf-8",
             )
-            quota = classify_quota(
-                config=AgentConfig(
-                    cli_cmd=["copilot"],
-                    provider_kind="copilot",
-                    default_model="claude-sonnet-4.6",
-                ),
-                result=CommandResult(
+            quota = get_cli_provider_capability("copilot").quota_classifier(
+                CommandResult(
                     returncode=0,
                     stdout_text="",
                     stderr_text="",
                     stdout_path=path,
                 ),
-                parser="copilot",
+                tuple(
+                    (
+                        AgentConfig(
+                            cli_cmd=["copilot"],
+                            provider_kind="copilot",
+                            default_model="claude-sonnet-4.6",
+                        )
+                    ).quota_reached_on_contains
+                ),
+                datetime(2026, 9, 13, tzinfo=UTC),
             )
 
             self.assertTrue(quota.is_quota)
@@ -401,9 +400,8 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
             quota_reached_on_contains=["rate limit", "quota", "too many requests"],
         )
 
-        quota = classify_quota(
-            config=config,
-            result=CommandResult(
+        quota = get_cli_provider_capability("copilot").quota_classifier(
+            CommandResult(
                 returncode=0,
                 stdout_text=(
                     "Consolidated report: quota handling and rate limit handling "
@@ -413,7 +411,8 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 stderr_text="",
             ),
-            parser="copilot",
+            tuple((config).quota_reached_on_contains),
+            datetime(2026, 9, 13, tzinfo=UTC),
         )
 
         self.assertFalse(quota.is_quota)
@@ -438,14 +437,14 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         }
         for output_text, expected_evidence in cases.items():
             with self.subTest(output_text=output_text):
-                quota = classify_quota(
-                    config=config,
-                    result=CommandResult(
+                quota = get_cli_provider_capability("copilot").quota_classifier(
+                    CommandResult(
                         returncode=0,
                         stdout_text=output_text,
                         stderr_text="",
                     ),
-                    parser="copilot",
+                    tuple((config).quota_reached_on_contains),
+                    datetime(2026, 9, 13, tzinfo=UTC),
                 )
 
                 self.assertTrue(quota.is_quota)

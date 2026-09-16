@@ -144,6 +144,25 @@ agents:
   #   quota_reached_retry_delay_seconds: 300
   #   quota_retry_max_wait_seconds: null
   #   quota_retry_max_attempts: null
+  #
+  # pi:
+  #   cli_cmd: ["pi"]
+  #   provider_kind: "pi"
+  #   prompt_transport: "stdin"
+  #   # Avoid approval prompts from automatically loaded extensions.
+  #   extra_args: ["--no-extensions"]
+  #   # Text output arrives at completion; only a wall-clock limit is enforceable.
+  #   invocation_timeout_seconds: null
+  #   invocation_idle_timeout_seconds: null
+  #
+  # deepseek:
+  #   cli_cmd: [env, DSH_PERMISSION_MODE=danger-full-access, dsh, --profile, headless]
+  #   provider_kind: deepseek
+  #   prompt_transport: argv
+  #   prompt_transport_arg: "--"
+  #   # Configure native model/auth and permission.defaultPreset in DeepSeek settings.
+  #   invocation_timeout_seconds: null
+  #   invocation_idle_timeout_seconds: 1800
 
 settings:
   # Core-owned authorization for {{file:...}} references outside this project.

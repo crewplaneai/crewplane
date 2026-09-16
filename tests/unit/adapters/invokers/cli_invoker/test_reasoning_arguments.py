@@ -1,11 +1,12 @@
+import os
 from pathlib import Path
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker.reasoning import (
+from crewplane.adapters.invokers.cli_invoker import get_cli_provider_capability
+from crewplane.adapters.invokers.cli_invoker.capability import CliInvocationRequest
+from crewplane.adapters.invokers.cli_invoker.providers.claude import (
     CLAUDE_REASONING_ENV,
-    build_reasoning_args,
-    validate_reasoning_request,
 )
 from crewplane.core.config import AgentConfig
 
@@ -33,12 +34,21 @@ def test_reasoning_args_are_native_and_none_is_a_noop() -> None:
     codex = config("codex", "codex")
     claude = config("claude", "claude")
 
-    assert build_reasoning_args(codex, None) == ()
-    assert build_reasoning_args(codex, "high") == (
-        "--config",
-        'model_reasoning_effort="high"',
-    )
-    assert build_reasoning_args(claude, "high") == ("--effort", "high")
+    codex_builder = get_cli_provider_capability("codex").build_command
+    claude_builder = get_cli_provider_capability("claude").build_command
+    for requested in (None, "high"):
+        request = CliInvocationRequest(codex, None, requested)
+        command = codex_builder(request, "prompt")
+        assert ("--config" in command.cmd) is (requested is not None)
+        if requested is not None:
+            assert (
+                command.cmd[command.cmd.index("--config") + 1]
+                == 'model_reasoning_effort="high"'
+            )
+        command.structured_output_file.unlink(missing_ok=True)
+    assert claude_builder(CliInvocationRequest(claude, None, "high"), "prompt").cmd[
+        -4:
+    ] == ["--effort", "high", "--output-format", "json"]
 
 
 def test_reasoning_request_rejects_unsupported_provider() -> None:
@@ -236,12 +246,12 @@ def test_env_prefix_can_remove_inherited_reasoning_or_use_safe_options(
     [
         pytest.param(
             ["env", "--unknown", "claude"],
-            "Cannot validate env option '--unknown'",
+            "Cannot validate env wrapper argument at cli_cmd position 2",
             id="unknown-long",
         ),
         pytest.param(
             ["env", "--path=bin", "claude"],
-            "Cannot validate env option '--path=bin'",
+            "Cannot validate env wrapper argument at cli_cmd position 2",
             id="unsupported-path-long",
         ),
         pytest.param(
@@ -251,7 +261,7 @@ def test_env_prefix_can_remove_inherited_reasoning_or_use_safe_options(
         ),
         pytest.param(
             ["env", "-x", "claude"],
-            "Cannot validate env option '-x'",
+            "Cannot validate env wrapper argument at cli_cmd position 2",
             id="unknown-short",
         ),
         pytest.param(
@@ -281,3 +291,17 @@ def test_env_prefix_rejects_options_that_cannot_be_validated(
             "high",
             environment={},
         )
+
+
+def validate_reasoning_request(
+    config, requested_reasoning, environment=None, working_directory=None
+):
+    get_cli_provider_capability(config.provider_kind).validate_request(
+        CliInvocationRequest(
+            config,
+            None,
+            requested_reasoning,
+            working_directory,
+            os.environ if environment is None else environment,
+        )
+    )

@@ -24,9 +24,9 @@ from .constants import (
     PROVIDER_SETUP_URL,
     WORKFLOW_RELATIVE_PATH,
 )
+from .detection import ProviderDetection, detect_providers
 from .history import find_successful_mock_run_evidence
 from .rendering import (
-    KNOWN_PROVIDER_NAMES,
     OnboardingRenderingError,
     render_provider_ready_config,
     render_provider_ready_workflow,
@@ -48,16 +48,6 @@ class OnboardingOptions:
     read_input: ReadInput
     which_fn: WhichFunction
     write_text: TextWriter
-
-
-@dataclass(frozen=True)
-class ProviderDetection:
-    provider: str
-    executable_path: str | None
-
-    @property
-    def found(self) -> bool:
-        return self.executable_path is not None
 
 
 @dataclass(frozen=True)
@@ -330,9 +320,8 @@ class OnboardingRunner:
         )
 
     def detect_providers(self) -> tuple[ProviderDetection, ...]:
-        detections = tuple(
-            ProviderDetection(provider, self.options.which_fn(provider))
-            for provider in KNOWN_PROVIDER_NAMES
+        detections = detect_providers(
+            rendered_default_config(), self.options.project_root, self.options.which_fn
         )
         messages.print_provider_detection(
             self.console,

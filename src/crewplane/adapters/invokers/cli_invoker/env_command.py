@@ -118,8 +118,8 @@ class _EnvCommandParser:
                 self._index += 1
             case _:
                 raise ValueError(
-                    f"Cannot validate env option {token!r} with a workflow "
-                    "reasoning request."
+                    "Cannot validate env wrapper argument at cli_cmd position "
+                    f"{self._index + 1}."
                 )
 
     def _consume_long_value_option(
@@ -143,8 +143,8 @@ class _EnvCommandParser:
                 continue
             if option not in _SHORT_VALUE_OPTIONS:
                 raise ValueError(
-                    f"Cannot validate env option '-{option}' "
-                    "with a workflow reasoning request."
+                    "Cannot validate env wrapper argument at cli_cmd position "
+                    f"{self._index + 1}."
                 )
             inline_value = cluster[option_index + 1 :] or None
             self._consume_short_value_option(option, inline_value)

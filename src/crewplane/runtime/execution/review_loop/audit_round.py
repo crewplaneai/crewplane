@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError
 
@@ -47,10 +48,25 @@ async def execute_single_audit_round(
     request: AuditRoundRequest,
 ) -> AuditRoundResult:
     """Execute one fresh-audit plus remediation loop for cases 2-9 and 11-12."""
-    progress = AuditRoundProgress(executor_outputs=request.initial_executor_outputs)
+    progress = request.progress or AuditRoundProgress(
+        executor_outputs=request.initial_executor_outputs
+    )
+    try:
+        return await execute_audit_round_iterations(request, progress)
+    finally:
+        if request.checkpoint is not None:
+            request.checkpoint()
+
+
+async def execute_audit_round_iterations(
+    request: AuditRoundRequest,
+    progress: AuditRoundProgress,
+) -> AuditRoundResult:
 
     for round_num in range(1, request.remediation_depth + 2):
         progress.last_round_num = round_num
+        if request.checkpoint is not None:
+            request.checkpoint()
         try:
             await run_remediation_executor_round(request, progress, round_num)
         except InvocationFailureError as exc:
@@ -79,8 +95,16 @@ async def execute_single_audit_round(
         )
         if is_no_progress_candidate(progress, current_executor_fingerprint, round_num):
             record_no_progress_candidate(request, progress, round_num)
+            if progress.stall.record_unchanged_attempt():
+                progress.stop_reason = ReviewLoopStopReason.NO_PROGRESS
+                break
             continue
 
+        if (
+            current_executor_fingerprint is None
+            or current_executor_fingerprint != progress.stall.candidate_fingerprint
+        ):
+            progress.stall.consecutive_round_count = 0
         round_state = await run_review_phase(
             request,
             progress,
@@ -90,6 +114,9 @@ async def execute_single_audit_round(
         emit_review_stall_warning_if_needed(request, progress, round_state, round_num)
 
         if review_phase_reached_consensus(request, round_state, round_num):
+            progress.stall.observe_review(
+                current_executor_fingerprint, round_state.reviewer_outputs
+            )
             return progress.to_result(
                 consensus_reached=True,
                 clean_fresh_approval=round_num == 1,
@@ -130,6 +157,7 @@ async def run_remediation_executor_round(
             executor_prompt_workspace_files=request.executor_prompt_workspace_files,
             previous_review_packet=progress.previous_review_packet,
             previous_executor_outputs=progress.previous_executor_outputs,
+            recovery_attempt=progress.stall.consecutive_round_count > 0,
         )
     )
     progress.executor_outputs = executor_run.outputs
@@ -139,10 +167,9 @@ async def run_remediation_executor_round(
 async def run_review_phase(
     request: AuditRoundRequest,
     progress: AuditRoundProgress,
-    current_executor_fingerprint: str,
+    current_executor_fingerprint: str | None,
     round_num: int,
 ) -> ReviewRoundState:
-    progress.latest_valid_executor_outputs = progress.executor_outputs
     reviewer_prompt_context = request.reviewer_prompt_context
     reviewer_prompt_workspace_files = request.reviewer_prompt_workspace_files
     if not reviewer_prompt_context:
@@ -179,6 +206,7 @@ async def run_review_phase(
         )
     )
     reviewer_outputs = reviewer_run.outputs
+    progress.latest_valid_executor_outputs = progress.executor_outputs
     progress.selected_round_num = round_num
     progress.add_artifact_drift_warnings(reviewer_run.drift_warning_count)
     progress.record_review_outputs(reviewer_outputs)
@@ -254,6 +282,7 @@ def record_invalid_candidate_and_should_stop(
     round_num: int,
 ) -> bool:
     progress.record_invalid_candidate()
+    progress.stall.consecutive_round_count = 0
     discard_executor_workspace_lineage(
         request.output,
         request.stage,

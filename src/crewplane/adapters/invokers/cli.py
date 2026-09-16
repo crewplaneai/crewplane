@@ -15,12 +15,14 @@ from crewplane.architecture.contracts import (
     ProviderKind,
 )
 from crewplane.core.config import AgentConfig, Config
+from crewplane.core.preflight.execution_nodes import resolve_provider_model
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.runtime.agent.invoker import PlannedAgentInvoker
 
 from .cli_invoker import build_cli_invocation_plan, build_cli_log_presentation
+from .cli_invoker.capabilities import get_cli_provider_capability
+from .cli_invoker.capability import CliInvocationRequest
 from .cli_invoker.env_command import EnvCommandContext, parse_env_command_context
-from .cli_invoker.reasoning import validate_reasoning_request
 
 _PLATFORM_ENV_EXECUTABLES = (Path("/bin/env"), Path("/usr/bin/env"))
 
@@ -35,12 +37,13 @@ class _ExecutableRequirement:
 
 
 @dataclass(frozen=True, slots=True)
-class _ReasoningValidationTarget:
-    """Configured workflow provider requiring reasoning validation."""
+class _RequestValidationTarget:
+    """Configured workflow provider requiring request validation."""
 
     location: str
     agent_config: AgentConfig
-    requested_reasoning: str
+    requested_reasoning: str | None
+    model: str | None
 
 
 def collect_cli_availability_errors(
@@ -73,55 +76,73 @@ def collect_cli_availability_errors(
     return _format_missing_cli_errors(missing_cli_locations)
 
 
-def collect_cli_reasoning_errors(
+def collect_cli_request_errors(
     workflow: WorkflowPlan,
     config: Config,
     environment: Mapping[str, str] | None = None,
     working_directory: Path | None = None,
 ) -> list[str]:
-    """Collect reasoning validation errors for configured workflow providers."""
+    """Collect request validation errors for configured workflow providers."""
 
     errors: list[str] = []
-    for target in _reasoning_validation_targets(workflow, config):
+    for target in _request_validation_targets(workflow, config):
         try:
-            validate_reasoning_request(
-                target.agent_config,
-                target.requested_reasoning,
-                environment,
-                working_directory,
+            request = CliInvocationRequest(
+                config=target.agent_config,
+                model=target.model,
+                requested_reasoning=target.requested_reasoning,
+                working_directory=working_directory,
+                environment=os.environ if environment is None else environment,
             )
+            get_cli_provider_capability(
+                target.agent_config.provider_kind
+            ).validate_request(request)
         except ValueError as exc:
             errors.append(f"{target.location}: {exc}")
     return errors
 
 
-def _reasoning_validation_targets(
+def cli_command_available(
+    cli_command: list[str],
+    project_root: Path,
+    which_fn: Callable[[str], str | None],
+) -> bool:
+    """Check a configured command and supported wrapper without starting either."""
+    executable_lookup = cache(which_fn)
+    requirements = _required_cli_executables(
+        cli_command, project_root, executable_lookup
+    )
+    return all(
+        _cli_executable_available(requirement, executable_lookup)
+        for requirement in requirements
+    )
+
+
+def _request_validation_targets(
     workflow: WorkflowPlan,
     config: Config,
-) -> Iterator[_ReasoningValidationTarget]:
+) -> Iterator[_RequestValidationTarget]:
     for node in workflow.nodes:
         for provider in node.providers:
-            if provider.reasoning is None:
-                continue
             agent_config = config.agents.get(provider.provider)
             if agent_config is None:
                 continue
-            yield _ReasoningValidationTarget(
+            yield _RequestValidationTarget(
                 location=(
                     f"workflow '{workflow.name}' -> node '{node.id}' -> provider "
                     f"'{provider.provider}'"
                 ),
                 agent_config=agent_config,
                 requested_reasoning=provider.reasoning,
+                model=resolve_provider_model(provider, agent_config),
             )
 
 
 def collect_cli_model_arg_warnings(config: Config) -> list[str]:
     return [
         (
-            f"Agent '{agent_key}': remove model_arg. Crewplane chooses the model "
-            f"flag automatically for built-in provider '{agent.provider_kind.value}'. "
-            "Set model_arg only when provider_kind is 'generic'."
+            f"Agent '{agent_key}': remove model_arg for provider_kind '{agent.provider_kind.value}'. "
+            "The field applies only when provider_kind is 'generic'."
         )
         for agent_key, agent in sorted(config.agents.items())
         if agent.provider_kind != ProviderKind.GENERIC
@@ -310,16 +331,16 @@ class CliInvokerAdapter:
             )
         )
 
-    def collect_reasoning_errors(
+    def collect_request_errors(
         self,
         workflow: WorkflowPlan,
         config: Config,
         working_directory: Path | None = None,
     ) -> tuple[str, ...]:
-        """Collect built-in CLI reasoning eligibility diagnostics."""
+        """Collect built-in CLI request diagnostics."""
 
         return tuple(
-            collect_cli_reasoning_errors(
+            collect_cli_request_errors(
                 workflow,
                 config,
                 working_directory=working_directory,

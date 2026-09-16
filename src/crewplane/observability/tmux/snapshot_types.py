@@ -61,7 +61,9 @@ _OPTIONAL_STRING_FIELDS = (
 )
 _OPTIONAL_NULLABLE_STRING_FIELDS = ("model", "output_file", "log_file")
 _OPTIONAL_NULLABLE_INTEGER_FIELDS = ("audit_round_num", "round_num")
-_INVOCATION_STATUSES = frozenset({"pending", "running", "succeeded", "failed"})
+_INVOCATION_STATUSES = frozenset(
+    {"pending", "running", "succeeded", "failed", "cancelled"}
+)
 _INSPECT_VIEWS = frozenset({"raw", "formatted"})
 
 

@@ -11,14 +11,11 @@ from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     build_cli_log_presentation,
 )
-from crewplane.adapters.invokers.cli_invoker.capabilities import (
-    CAPABILITIES,
+from crewplane.adapters.invokers.cli_invoker.capabilities import CAPABILITIES
+from crewplane.adapters.invokers.cli_invoker.providers.codex import (
     CODEX_MODEL_CAPACITY_MESSAGE,
 )
-from crewplane.architecture.contracts import (
-    SUPPORTED_PROVIDER_KINDS,
-    ProviderKind,
-)
+from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KINDS, ProviderKind
 from crewplane.core.config import AgentConfig, Config
 from crewplane.version import SCHEMA_VERSION
 
@@ -189,23 +186,30 @@ def test_gemini_and_kilo_plans_enable_machine_readable_output() -> None:
         "--format",
         "json",
     ]
-    assert gemini_plan.structured_output_mode == "gemini_json"
-    assert kilo_plan.structured_output_mode == "kilo_json"
+    assert (
+        gemini_plan.output_extractor
+        is CAPABILITIES[ProviderKind.GEMINI].output_extractor
+    )
+    assert (
+        kilo_plan.output_extractor is CAPABILITIES[ProviderKind.KILO].output_extractor
+    )
     assert not gemini_plan.supports_output_idle_timeout
     assert kilo_plan.supports_output_idle_timeout
 
 
-def test_only_gemini_disables_output_idle_timeout(subtests: pytest.Subtests) -> None:
-    assert not CAPABILITIES[ProviderKind.GEMINI].supports_output_idle_timeout
-    for provider in set(SUPPORTED_PROVIDER_KINDS) - {ProviderKind.GEMINI}:
+def test_completion_buffered_families_disable_output_idle_timeout(
+    subtests: pytest.Subtests,
+) -> None:
+    for provider in SUPPORTED_PROVIDER_KINDS:
         with subtests.test(provider=provider):
-            assert CAPABILITIES[provider].supports_output_idle_timeout
+            assert CAPABILITIES[provider].supports_output_idle_timeout == (
+                provider not in {ProviderKind.GEMINI, ProviderKind.PI}
+            )
 
 
 def test_codex_capability_owns_one_shot_capacity_retry() -> None:
     policy = CAPABILITIES[ProviderKind.CODEX].one_shot_failure_retry
 
-    assert policy is not None
     assert policy is not None
     assert policy.output_contains == (CODEX_MODEL_CAPACITY_MESSAGE,)
     assert policy.wait_seconds == 5.0

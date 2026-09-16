@@ -21,26 +21,26 @@ If you want a quick setup for one real provider, start with the
 
 ## Connect One Provider Manually
 
-Manual setup connects the workflow to provider profiles, then chooses the
-invoker:
+Manual setup connects three settings:
 
 - `.crewplane/config.yml` defines named provider profiles under `agents`.
 - The workflow lists those same agent names under each node's `providers`.
-- `settings.integrations.invoker.implementation` decides whether those names use
-  mock output or real CLI calls.
+- `settings.integrations.invoker.implementation` controls whether Crewplane
+  generates mock output or runs the provider CLIs.
 
-The names must match exactly. Setting the invoker implementation to `cli` is the
-point where `crewplane run` can start the external provider commands listed
-under `agents`.
+The names must match exactly. Set the invoker implementation to `cli` to enable
+real provider commands.
 
 ![Provider setup diagram showing that `agents.codex` in `.crewplane/config.yml` must match `providers: ["codex"]` in the workflow, then the invoker changes from mock to cli before validation and execution.](../images/providers/provider-setup-two-files.png)
 
-First, confirm the provider CLI works outside Crewplane:
+First, confirm the provider CLI is installed. For Codex, this command should
+print its version:
 
 ```bash
 codex --version
 ```
 
+Sign in or configure credentials using the provider CLI before continuing.
 Then add or uncomment one real provider profile in `.crewplane/config.yml` and
 switch the invoker to `cli`. A minimal Codex setup looks like this:
 
@@ -87,9 +87,8 @@ crewplane run
 
 ## How Agent Names Work
 
-In Crewplane, an `agent` is a named provider CLI configuration. It is not a
-Python object or a long-running service. Workflow nodes reference agents by
-name:
+In Crewplane, an `agent` is a named set of provider CLI settings. Workflow nodes
+use that name to select the settings:
 
 ```yaml
 agents:
@@ -133,9 +132,12 @@ settings:
         observation_delay_seconds: 5
 ```
 
-With `implementation: "mock"`, Crewplane writes deterministic mock output and
-does not start provider CLIs. The `options` keys here belong to the mock
-invoker.
+With `implementation: "mock"`, Crewplane generates sample output without
+starting provider CLIs. The `options` keys here control that sample output.
+
+The generated agent named `mock` is used by the quickstart and onboarding demo.
+You can remove it once no workflow references `providers: ["mock"]`; the
+invoker setting still controls whether other agents use mock output.
 
 To run real provider CLIs, switch the same setting to `cli` and remove those
 mock-only options:
@@ -149,15 +151,14 @@ settings:
 ```
 
 With `implementation: "cli"`, `crewplane run` starts the external commands
-configured under `agents`. Keep `options: {}` unless your chosen CLI invoker
-configuration specifically needs additional options.
+configured under `agents`. Keep `options: {}`; the built-in CLI invoker does
+not accept additional options.
 
 ## Choose A Provider Kind
 
-`provider_kind` tells the built-in CLI invoker which provider-aware behavior to
-use at the invoker boundary. It can affect output extraction, quota parsing, log
-formatting, and usage parsing. It does not install or authenticate the provider
-tool.
+`provider_kind` tells Crewplane which provider CLI you use. Crewplane uses it to
+choose command options, read answers and usage reports, recognize usage limits,
+and format logs. Install the provider CLI and configure its credentials separately.
 
 Supported values:
 
@@ -166,10 +167,13 @@ Supported values:
 - `copilot`
 - `gemini`
 - `kilo`
+- `pi`
+- `deepseek`
 - `generic`
 
-Confirm provider commands directly before running Crewplane with the `cli`
-invoker:
+Use `generic` for a CLI without a dedicated provider kind.
+
+Check that each provider CLI you plan to use is installed. For example:
 
 ```bash
 claude --version
@@ -178,10 +182,94 @@ gemini --version
 copilot version
 ```
 
+## Pi Text Mode
+
+Install Pi and configure its credentials before using it with Crewplane.
+The generated `.crewplane/config.yml` includes this commented profile.
+Uncomment it and use `pi` in your workflow's `providers` list:
+
+```yaml
+agents:
+  pi:
+    cli_cmd: [pi]
+    provider_kind: pi
+    prompt_transport: stdin
+    extra_args: ["--no-extensions"]
+    invocation_timeout_seconds: null
+    invocation_idle_timeout_seconds: null
+```
+
+Keep `prompt_transport: stdin` and leave out `prompt_transport_arg`. Crewplane
+sends the prompt and adds the options needed for Pi's text mode automatically.
+To choose a model, set `default_model` in the agent profile or `model` in the
+workflow. Leave out workflow `reasoning`; this profile does not support it.
+
+Crewplane runs Pi without saving a session and tells it to trust project
+resources. The generated profile disables automatic extension loading so
+installed extensions cannot introduce approval prompts. Pi's built-in file and
+shell tools remain available. Extensions load only if you explicitly add them
+with `--extension`; choose extensions that work without user input.
+
+Pi returns its answer when the command finishes. Crewplane therefore ignores
+`invocation_idle_timeout_seconds` for Pi.
+
+Crewplane treats a failed command or blank answer as an error. This mode does
+not report token usage; Crewplane shows an estimate based on the text it captures.
+
+## DeepSeek Headless Mode
+
+The DeepSeek profile runs `dsh` in headless mode, without an interactive
+interface. Install and configure `dsh` before using it with Crewplane.
+Onboarding checks that `dsh` and the `env` command are available.
+
+Setup requires changes in both Crewplane and DeepSeek.
+
+### Crewplane Configuration
+
+Add or uncomment this profile in `.crewplane/config.yml` and use `deepseek` in
+your workflow's `providers` list:
+
+```yaml
+agents:
+  deepseek:
+    cli_cmd: [env, DSH_PERMISSION_MODE=danger-full-access, dsh, --profile, headless]
+    provider_kind: deepseek
+    prompt_transport: argv
+    prompt_transport_arg: "--"
+    invocation_timeout_seconds: null
+    invocation_idle_timeout_seconds: 1800
+```
+
+Keep the command and prompt settings shown above. Crewplane supplies the
+prompt automatically. Choose the model and configure credentials in DeepSeek
+itself. Leave out Crewplane's `default_model`, workflow `model`, and workflow
+`reasoning` fields for this profile.
+
+### DeepSeek Permissions
+
+This profile requires DeepSeek's `danger-full-access` permission preset. It
+removes DeepSeek's file sandbox and lets ordinary file and shell operations
+run without asking for approval. Any request that still needs approval is
+rejected instead of prompting.
+
+Set this preset in `~/.dsh/settings.yaml`. If you set the `DSH_HOME` environment
+variable to another directory, edit `settings.yaml` in that directory instead:
+
+```yaml
+permission:
+  defaultPreset: danger-full-access
+```
+
+DeepSeek's saved preset takes priority over the `DSH_PERMISSION_MODE` setting in
+the Crewplane command, so configure both. Crewplane checks the command but does
+not check DeepSeek's saved permissions. See
+[DeepSeek's settings guide](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/settings/settings-file/README.md)
+for more about its settings file.
+
 ## Choose A Model
 
-`default_model` is optional. If you omit it, the provider CLI chooses its
-configured default.
+Set `default_model` in an agent profile to choose its model. If you leave it
+out, the provider CLI uses its own default.
 
 To override the model for one workflow node, use a provider object:
 
@@ -191,18 +279,19 @@ providers:
     model: gpt-5.3
 ```
 
-When a workflow node supplies `model`, Crewplane passes that value to the
-provider CLI. With the built-in `cli` invoker, built-in provider kinds do not
-need `model_arg`; if you set it, Crewplane ignores it and warns you to remove
-it. For
-`provider_kind: generic`, use `model_arg` to choose the flag; it defaults to
-`--model`. Set `model_arg: null` if your generic CLI should not receive a model
-flag.
+Crewplane passes a workflow's `model` value to the provider CLI. DeepSeek is the
+exception: leave out both model fields and choose its model in DeepSeek's own
+settings.
+
+Use `model_arg` only with `provider_kind: generic` to choose the model flag; it
+defaults to `--model`. Set it to `null` to send no model flag. For other provider
+kinds, the built-in CLI invoker ignores `model_arg` and warns if you set it.
 
 ## Choose Reasoning
 
-Provider objects can request a provider-native reasoning value when the
-built-in `cli` invoker uses `provider_kind: codex` or `provider_kind: claude`:
+For Codex and Claude, you can use `reasoning` to request how much effort the
+provider spends on a task. This requires the built-in `cli` invoker and the
+matching `provider_kind`. Use a value supported by your chosen provider and model:
 
 ```yaml
 providers:
@@ -211,31 +300,32 @@ providers:
     reasoning: xhigh
 ```
 
-Crewplane passes Codex requests through
-`--config model_reasoning_effort="..."` and Claude requests through
-`--effort ...`. The value is provider-native and may be model-dependent;
-Crewplane records the request but does not claim that it was applied
-unchanged. Omit `reasoning` to leave the provider's current defaults and user
-configuration unmanaged.
+Crewplane records the value it sends; the provider decides how to apply it.
+Leave out `reasoning` to use the provider's existing defaults and settings.
 
-Do not configure a second reasoning authority in `cli_cmd` or `extra_args`.
-For Claude, a non-empty inherited `CLAUDE_CODE_EFFORT_LEVEL` also conflicts.
-Explicit `--settings` JSON or files may contain unrelated settings, but
-`effortLevel` or `env.CLAUDE_CODE_EFFORT_LEVEL` conflicts with the workflow
-field. When reasoning is requested, Crewplane must be able to read and parse
-each explicit Claude settings source so `crewplane validate` can report
-conflicts before launch. An `env` wrapper cannot use `--chdir` or `-C` with a
-workflow reasoning request because it would change relative settings resolution.
+When a workflow sets `reasoning`, remove any Codex `model_reasoning_effort` or
+Claude `--effort` options from `cli_cmd` and `extra_args` to avoid conflicting
+settings. For Claude, also remove any non-empty `CLAUDE_CODE_EFFORT_LEVEL`
+environment setting. Claude's `--settings` JSON or files may contain other
+options, but must not also set `effortLevel` or `env.CLAUDE_CODE_EFFORT_LEVEL`.
+
+Crewplane must be able to read those Claude settings during `crewplane validate`
+to check for conflicts. When using `env` with a workflow reasoning request,
+omit `--chdir` and `-C`: they change how relative settings paths are read.
 
 ## Choose Prompt Transport
 
-Crewplane can send the rendered prompt to a provider CLI in two ways:
+`prompt_transport` controls how Crewplane sends the full workflow prompt to a
+provider CLI:
 
-- `stdin`: pass the rendered prompt through standard input.
-- `argv`: pass the rendered prompt as an argument after `prompt_transport_arg`.
+- `stdin`: send the prompt directly to the running CLI through standard input.
+- `argv`: include the prompt as an argument in the command that starts the CLI.
 
-Use `stdin` when the provider CLI supports it. It keeps long prompts out of the
-command line and is the generated default for supported providers.
+Keep the prompt settings from your provider's example. Pi requires `stdin`;
+DeepSeek requires `argv`. For other CLIs, prefer `stdin` when supported to keep
+prompts out of the command line.
+
+These examples show both formats. Replace `provider-cli` with your CLI's command:
 
 ```yaml
 agents:
@@ -249,18 +339,22 @@ agents:
     prompt_transport_arg: "--prompt"
 ```
 
-In `stdin` mode, Crewplane sends the prompt on standard input. If
-`prompt_transport_arg` is set, that token is appended by itself; this is useful
-for CLIs that require a stdin sentinel such as `-`.
+In `stdin` mode, set `prompt_transport_arg` only if the CLI needs an argument to
+read from standard input. For example, Codex uses `prompt_transport_arg: "-"`.
 
-When `prompt_transport: "argv"` is used, `prompt_transport_arg` is required and
-Crewplane appends both the flag and the rendered prompt. Preflight emits a
-warning because argv prompts can be visible in process lists or shell histories
-depending on the platform and tooling.
+In `argv` mode, `prompt_transport_arg` is required. Set it to the argument the
+CLI expects before the prompt, such as `--prompt` in the example above.
+Crewplane adds that argument and the full prompt automatically.
+
+Prompts sent through `argv` may be visible to tools that list running processes
+or record command arguments. Crewplane warns about this before the run. Very
+long prompts can also exceed the operating system's command-length limit and
+prevent the provider command from starting.
 
 ## Tune Retries, Quota, And Timeouts
 
-Per-agent retry and quota behavior is configured under `agents.<name>`:
+Set retry delays and timeouts under `agents.<name>`. The same section controls
+how Crewplane waits for provider usage limits to reset:
 
 ```yaml
 agents:
@@ -279,20 +373,20 @@ agents:
     invocation_idle_timeout_seconds: 1800
 ```
 
-**Generic retries** and **quota retries** are separate:
+**Configured error retries** and **quota retries** are separate:
 
-- **Generic retries** use `retry_on_exit_codes`, `retry_on_stderr_contains`, and
+- **Configured error retries** use `retry_on_exit_codes`, `retry_on_stderr_contains`, and
   `retry_on_output_contains`. They only run when `max_retries` is greater than
   `0`; each retry waits `retry_delay_seconds`.
-- **Quota retries** start when provider output matches built-in quota detection or
-  one of your `quota_reached_on_contains` strings. They are not limited by
-  `max_retries`; Crewplane retries quota hits inside a five-hour guard window.
+- **Quota retries** start when Crewplane recognizes a provider usage limit
+  or finds one of your `quota_reached_on_contains` strings in the output. These
+  retries are not capped by `max_retries`. Their five-hour time limit starts
+  with the first response reporting a usage limit.
 - If Crewplane can parse a provider reset time, it waits until that reset plus
   `quota_reset_sleep_floor_seconds`, but never less than
   `quota_reached_retry_delay_seconds`.
-- Crewplane does not sleep past the five-hour guard.
-  - It stops immediately when a provider reports a reset more than five hours away.
-  - If earlier quota waits have already used part of the window, Crewplane also stops when the next wait would bring the same quota-retry sequence to five hours or more.
+- Crewplane stops if the provider reports a reset more than five hours away, or
+  if the retry period has ended or the next wait would reach its end.
 
 > ⚠️ **Wall-clock timeout is a hard kill switch.**
 > Leave `invocation_timeout_seconds` as `null` unless you explicitly want
@@ -314,11 +408,11 @@ After provider setup, start the real provider run:
 crewplane run
 ```
 
-`crewplane run` performs preflight validation before execution, so it stops
-before starting provider CLIs if the workflow or config is invalid.
+`crewplane run` checks the workflow and config before starting provider CLIs.
+If those checks fail, no provider command starts.
 
 Continue to [Running workflows](../guides/running-workflows.md) to run the
-configured provider workflow and understand preflight, resume, duplicate skips,
-and reruns.
+configured workflow and learn about validation, resuming interrupted runs,
+skipping completed work, and rerunning workflows.
 
 Or browse the [Guides](../index.md#guided-tutorial-track).

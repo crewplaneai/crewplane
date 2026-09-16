@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from crewplane.runtime.agent.quota.waits import extract_wait_candidates_from_line
+from crewplane.adapters.invokers.cli_invoker.quota.waits import (
+    extract_wait_candidates_from_line,
+)
 
 NOW = datetime(2026, 4, 10, 12, 0, 0, tzinfo=UTC)
 

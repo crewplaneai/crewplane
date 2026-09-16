@@ -11,6 +11,9 @@ from rich.console import Console
 
 from crewplane.adapters.invokers.mock_invoker.invoker import MockAgentInvoker
 from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts.invocation_failures import (
+    InvocationFailureSummary,
+)
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.models import (
     PromptSegment,
@@ -18,10 +21,7 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
-from crewplane.runtime.agent.failures import (
-    InvocationFailureError,
-    InvocationFailureSummary,
-)
+from crewplane.runtime.agent.failures import InvocationFailureError
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit
 from tests.helpers.workspace_workflow_fixtures import (

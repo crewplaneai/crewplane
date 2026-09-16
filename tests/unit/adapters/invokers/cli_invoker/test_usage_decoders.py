@@ -5,16 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker.machine_json import extract_gemini_output
-from crewplane.adapters.invokers.cli_invoker.usage_decoders import (
-    decode_claude_usage,
-    decode_codex_usage,
+from crewplane.adapters.invokers.cli_invoker.providers.claude import decode_claude_usage
+from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
+from crewplane.adapters.invokers.cli_invoker.providers.gemini import (
     decode_gemini_usage,
-    decode_kilo_usage,
+    extract_gemini_output,
 )
+from crewplane.adapters.invokers.cli_invoker.providers.kilo import decode_kilo_usage
 from crewplane.architecture.contracts import (
     CommandResult,
-    ProviderKind,
     ProviderTokenUsage,
 )
 from crewplane.core.config import AgentConfig, TokenPricing
@@ -199,7 +198,7 @@ def test_kilo_decoder_sums_step_finish_records() -> None:
         total=168,
     )
 
-    accumulator = InvocationUsageAccumulator(ProviderKind.KILO, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     accumulator.record_provider_usage(decoded)
     usage = accumulator.build_usage(
         config=AgentConfig(cli_cmd=["kilo"], provider_kind="kilo"),
@@ -549,7 +548,7 @@ def test_empty_stdout_path_falls_back_to_stdout_tail(tmp_path: Path) -> None:
 
 
 def test_twenty_four_codex_reports_accumulate_once_per_returned_report() -> None:
-    accumulator = InvocationUsageAccumulator(ProviderKind.CODEX, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     for line in (FIXTURE_DIR / "codex_24_reports.jsonl").read_text().splitlines():
         accumulator.record_provider_usage(
             decode_codex_usage(CommandResult(0, line, ""))
@@ -574,7 +573,7 @@ def test_twenty_four_codex_reports_accumulate_once_per_returned_report() -> None
 def test_retry_reports_are_added_and_malformed_later_report_does_not_erase_them() -> (
     None
 ):
-    accumulator = InvocationUsageAccumulator(ProviderKind.CODEX, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     accumulator.record_provider_usage(
         decode_codex_usage(
             CommandResult(
@@ -618,7 +617,7 @@ def test_retry_reports_are_added_and_malformed_later_report_does_not_erase_them(
 
 
 def test_retry_reports_keep_incomplete_aggregate_buckets_unknown() -> None:
-    accumulator = InvocationUsageAccumulator(ProviderKind.CODEX, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     for stdout_text in (
         '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":3}}',
         '{"type":"turn.completed","usage":{"input_tokens":4}}',

@@ -6,7 +6,7 @@ from crewplane.adapters.invokers.cli import CliInvokerAdapter
 from crewplane.bootstrap import build_runtime_config_snapshot
 from crewplane.cli.run.preflight import (
     BUILTIN_CLI_INVOKER_IDENTITY,
-    run_reasoning_control_errors,
+    run_request_validation_errors,
 )
 from crewplane.core.config import (
     AgentConfig,
@@ -23,11 +23,7 @@ from crewplane.core.preflight import (
 )
 from crewplane.core.preflight.secrets import FingerprintKeyPolicy
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
-from crewplane.core.workflow.models import (
-    ProviderSpec,
-    WorkflowNode,
-    WorkflowPlan,
-)
+from crewplane.core.workflow.models import ProviderSpec, WorkflowNode, WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -341,7 +337,7 @@ def test_reasoning_control_rejects_non_cli_invoker() -> None:
         ],
     )
 
-    errors = run_reasoning_control_errors(
+    errors = run_request_validation_errors(
         workflow,
         _config(),
         CliInvokerAdapter(),
@@ -394,7 +390,7 @@ def test_reasoning_control_checks_relative_claude_settings_file(
         ),
     )
 
-    errors = run_reasoning_control_errors(
+    errors = run_request_validation_errors(
         workflow,
         config,
         CliInvokerAdapter(),

@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast, get_args
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
+from .invocation_failures import InvocationFailureSummary
 from .json import JsonObject
 
 # Config imports these contracts, so keep AgentConfig type-only to avoid a cycle.
@@ -27,6 +29,8 @@ class ProviderKind(StrEnum):
     COPILOT = "copilot"
     GEMINI = "gemini"
     KILO = "kilo"
+    PI = "pi"
+    DEEPSEEK = "deepseek"
     GENERIC = "generic"
 
 
@@ -35,16 +39,7 @@ SUPPORTED_PROVIDER_KIND_VALUES = tuple(kind.value for kind in SUPPORTED_PROVIDER
 SUPPORTED_PROVIDER_KIND_VALUE_SET = frozenset(SUPPORTED_PROVIDER_KIND_VALUES)
 
 PromptTransport = Literal["stdin", "argv"]
-StructuredOutputMode = Literal[
-    "none",
-    "codex_last_message_file",
-    "claude_json",
-    "gemini_json",
-    "kilo_json",
-]
 OutputExtractionStatus = Literal["success", "missing", "malformed"]
-QuotaParserProfile = Literal["codex", "copilot", "claude", "kilo", "gemini", "generic"]
-type FailureClassificationProfile = ProviderKind
 ProviderUsageStatus = Literal["full", "partial", "none", "malformed"]
 InvocationCostConfidence = Literal["full", "partial", "none"]
 AggregateCostConfidence = Literal["full", "partial", "none", "mixed"]
@@ -513,6 +508,12 @@ class QuotaClassification:
     evidence: str | None
 
 
+type QuotaClassifier = Callable[
+    [CommandResult, tuple[str, ...], datetime], QuotaClassification
+]
+type FailureClassifier = Callable[[CommandResult], InvocationFailureSummary]
+
+
 @dataclass(frozen=True)
 class OneShotFailureRetryPolicy:
     """Adapter-owned single retry rule for a narrowly identified failure."""
@@ -530,13 +531,11 @@ class InvocationPlan:
     cmd: list[str]
     stdin_data: bytes | None
     structured_output_file: Path | None
-    structured_output_mode: StructuredOutputMode
     output_extractor: OutputExtractor | None
     usage_decoder: UsageDecoder | None
-    quota_parser: QuotaParserProfile
-    failure_profile: FailureClassificationProfile
+    quota_classifier: QuotaClassifier
+    failure_classifier: FailureClassifier
     log_header: bytes
-    log_provider_kind: ProviderKind
     one_shot_failure_retry: OneShotFailureRetryPolicy | None = None
     supports_output_idle_timeout: bool = True
 
