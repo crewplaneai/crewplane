@@ -10,6 +10,9 @@ from ..env_command import parse_env_command_context
 from ..streaming import extract_strict_stdout
 from ..validation import reject_unsupported_reasoning
 
+_MANAGEMENT_SUBCOMMANDS = frozenset(
+    {"auth", "config", "install", "remove", "uninstall", "update", "list"}
+)
 _CONFLICTING_OPTIONS = frozenset(
     {
         "--continue",
@@ -69,20 +72,16 @@ def validate_pi_request(request: CliInvocationRequest) -> None:
 
 
 def _validate_arguments(arguments: tuple[str, ...]) -> None:
-    if arguments and arguments[0] in {
-        "auth",
-        "config",
-        "install",
-        "remove",
-        "uninstall",
-        "update",
-        "list",
-    }:
+    if arguments and arguments[0] in _MANAGEMENT_SUBCOMMANDS:
         raise ValueError("Pi management subcommands conflict with managed text mode.")
     if "--" in arguments:
         raise ValueError(
             "Pi managed flags cannot follow a configured option separator."
         )
+    _validate_managed_options(arguments)
+
+
+def _validate_managed_options(arguments: tuple[str, ...]) -> None:
     tokens = iter(arguments)
     for token in tokens:
         option, separator, _ = token.partition("=")

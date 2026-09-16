@@ -19,10 +19,35 @@ from ..quota.classifier import classify_generic_quota
 from ..streaming import load_stdout_json
 from ..usage_decoders import (
     CounterReader,
+    MalformedUsageError,
     UsageAccumulator,
     sum_present,
 )
 from ..validation import reject_unsupported_reasoning
+
+QUOTA_HINTS = (
+    "exhausted your capacity",
+    "resource exhausted",
+    "no capacity available",
+    "retryable quota error",
+    "max attempts reached",
+    "rate limit exceeded",
+    "too many requests",
+    "429",
+    "quota will reset",
+    "quota exhausted",
+)
+FAILURE_QUOTA_PATTERNS = (
+    "resource exhausted",
+    "resource_exhausted",
+    "resource-exhausted",
+    "exhausted your capacity",
+    "quota will reset",
+    "quota exhausted",
+    "rate limit exceeded",
+    "too many requests",
+    "429",
+)
 
 
 def decode_gemini_usage(result: CommandResult) -> UsageDecodeResult:
@@ -31,27 +56,38 @@ def decode_gemini_usage(result: CommandResult) -> UsageDecodeResult:
         return UsageDecodeResult(error=error)
     if payload is None:
         return UsageDecodeResult()
+    try:
+        rows = _gemini_model_rows(payload)
+    except MalformedUsageError as exc:
+        return UsageDecodeResult(error=str(exc))
+    accumulator = UsageAccumulator()
+    for row in rows:
+        _record_gemini_model_usage(row, accumulator)
+    return accumulator.result()
+
+
+def _gemini_model_rows(payload: Mapping[str, object]) -> list[object]:
     stats = payload.get("stats")
     if not isinstance(stats, dict) or "models" not in stats:
-        return UsageDecodeResult()
+        return []
     models = stats["models"]
     rows = list(models.values()) if isinstance(models, dict) else models
     if not isinstance(rows, list):
-        return UsageDecodeResult(error="Malformed Gemini stats.models payload.")
+        raise MalformedUsageError("Malformed Gemini stats.models payload.")
+    return rows
 
-    accumulator = UsageAccumulator()
-    for row in rows:
-        if not isinstance(row, dict):
-            accumulator.record_error("Malformed Gemini model usage row.")
-            continue
-        tokens = row.get("tokens")
-        if tokens is None:
-            continue
-        if not isinstance(tokens, dict):
-            accumulator.record_error("Malformed Gemini model tokens payload.")
-            continue
-        accumulator.decode_and_record(_gemini_row_usage, tokens)
-    return accumulator.result()
+
+def _record_gemini_model_usage(row: object, accumulator: UsageAccumulator) -> None:
+    if not isinstance(row, dict):
+        accumulator.record_error("Malformed Gemini model usage row.")
+        return
+    tokens = row.get("tokens")
+    if tokens is None:
+        return
+    if not isinstance(tokens, dict):
+        accumulator.record_error("Malformed Gemini model tokens payload.")
+        return
+    accumulator.decode_and_record(_gemini_row_usage, tokens)
 
 
 def _gemini_row_usage(
@@ -105,32 +141,6 @@ def _malformed_output() -> OutputExtractionResult:
         output_extraction_status="malformed",
     )
 
-
-QUOTA_HINTS = (
-    "exhausted your capacity",
-    "resource exhausted",
-    "no capacity available",
-    "retryable quota error",
-    "max attempts reached",
-    "rate limit exceeded",
-    "too many requests",
-    "429",
-    "quota will reset",
-    "quota exhausted",
-    "retry after",
-    "try again in",
-)
-FAILURE_QUOTA_PATTERNS = (
-    "resource exhausted",
-    "resource_exhausted",
-    "resource-exhausted",
-    "exhausted your capacity",
-    "quota will reset",
-    "quota exhausted",
-    "rate limit exceeded",
-    "too many requests",
-    "429",
-)
 
 GEMINI = CliProviderCapability(
     provider_kind=ProviderKind.GEMINI,

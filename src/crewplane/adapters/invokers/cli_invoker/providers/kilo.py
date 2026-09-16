@@ -27,28 +27,38 @@ from ..usage_decoders import (
 )
 from ..validation import reject_unsupported_reasoning
 
+QUOTA_HINTS = ("too many requests",)
+
 
 def decode_kilo_usage(result: CommandResult) -> UsageDecodeResult:
     accumulator = UsageAccumulator()
     for line in iter_stdout_lines(result):
-        if not line.strip():
-            continue
         try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            accumulator.record_error("Malformed Kilo JSON output.")
+            tokens = _decode_kilo_usage_line(line)
+        except MalformedUsageError as exc:
+            accumulator.record_error(str(exc))
             continue
-        if not isinstance(event, dict) or event.get("type") != "step_finish":
-            continue
-        part = event.get("part")
-        if not isinstance(part, dict) or "tokens" not in part:
-            continue
-        tokens = part["tokens"]
-        if not isinstance(tokens, dict):
-            accumulator.record_error("Malformed Kilo token payload.")
-            continue
-        accumulator.decode_and_record(_kilo_row_usage, tokens)
+        if tokens is not None:
+            accumulator.record_usage(tokens)
     return accumulator.result()
+
+
+def _decode_kilo_usage_line(line: str) -> ProviderTokenUsage | None:
+    if not line.strip():
+        return None
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise MalformedUsageError("Malformed Kilo JSON output.") from exc
+    if not isinstance(event, dict) or event.get("type") != "step_finish":
+        return None
+    part = event.get("part")
+    if not isinstance(part, dict) or "tokens" not in part:
+        return None
+    tokens = part["tokens"]
+    if not isinstance(tokens, dict):
+        raise MalformedUsageError("Malformed Kilo token payload.")
+    return _kilo_row_usage(tokens)
 
 
 def _kilo_row_usage(
@@ -125,16 +135,6 @@ def _kilo_text_event(event: Mapping[str, object]) -> str | None:
     text = part.get("text") if isinstance(part, dict) else event.get("text")
     return text if isinstance(text, str) else None
 
-
-QUOTA_HINTS = (
-    "rate limit",
-    "quota",
-    "too many requests",
-    "429",
-    "retry after",
-    "reset after",
-    "try again in",
-)
 
 KILO = CliProviderCapability(
     provider_kind=ProviderKind.KILO,

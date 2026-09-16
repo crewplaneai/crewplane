@@ -334,6 +334,47 @@ def test_kilo_decoder_ignores_events_without_token_parts() -> None:
 
 
 @pytest.mark.parametrize(
+    ("decoder", "events", "expected_input", "report_count", "expected_error"),
+    [
+        pytest.param(
+            decode_codex_usage,
+            [
+                {"type": "turn.completed", "usage": {"input_tokens": 2}},
+                {"type": "turn.completed", "usage": {"input_tokens": 3}},
+            ],
+            3,
+            1,
+            None,
+            id="codex-latest",
+        ),
+        pytest.param(
+            decode_kilo_usage,
+            [
+                {"type": "step_finish", "part": {"tokens": {"input": 2}}},
+                {"type": "step_finish", "part": {"tokens": {"input": 3}}},
+            ],
+            5,
+            2,
+            "Malformed Kilo JSON output.",
+            id="kilo-accumulated",
+        ),
+    ],
+)
+def test_usage_decoders_continue_after_malformed_json(
+    decoder, events, expected_input, report_count, expected_error
+) -> None:
+    stdout = "\n".join(
+        [json.dumps(events[0]), "not json", "[]", " ", json.dumps(events[1])]
+    )
+
+    decoded = decoder(CommandResult(0, stdout, ""))
+
+    assert decoded.tokens == ProviderTokenUsage(input=expected_input)
+    assert decoded.valid_report_count == report_count
+    assert decoded.error == expected_error
+
+
+@pytest.mark.parametrize(
     ("decoder", "payload", "expected"),
     [
         (

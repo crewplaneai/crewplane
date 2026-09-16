@@ -128,6 +128,16 @@ def test_codex_reasoning_rejects_ambiguous_or_conflicting_command_tokens(
             id="settings-invalid-json",
         ),
         pytest.param(
+            ["claude", "--settings={bad", "--effort"],
+            "valid JSON object",
+            id="settings-error-before-later-missing-effort",
+        ),
+        pytest.param(
+            ["claude", "--effort=low", "--settings"],
+            "--effort conflicts",
+            id="effort-conflict-before-later-missing-settings",
+        ),
+        pytest.param(
             ["claude", '--settings={"effortLevel":true}'],
             "effortLevel conflicts",
             id="settings-non-string-effort",

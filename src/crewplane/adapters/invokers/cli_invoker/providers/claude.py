@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from functools import partial
 from pathlib import Path
 
@@ -23,6 +23,13 @@ from ..usage_decoders import (
     sum_present,
 )
 from ..validation import reasoning_command_context
+
+CLAUDE_REASONING_ENV = "CLAUDE_CODE_EFFORT_LEVEL"
+MAX_CAPTURED_CLAUDE_USAGE_BYTES = 1024 * 1024
+QUOTA_HINTS = (
+    "usage limit reached",
+    "too many requests",
+)
 
 
 def decode_claude_usage(result: CommandResult) -> UsageDecodeResult:
@@ -66,44 +73,38 @@ def _claude_row_usage(
     )
 
 
-CLAUDE_REASONING_ENV = "CLAUDE_CODE_EFFORT_LEVEL"
-
-MAX_CAPTURED_CLAUDE_USAGE_BYTES = 1024 * 1024
-
-
 def _reject_claude_reasoning_conflict(
     tokens: Sequence[str],
     working_directory: Path | None,
 ) -> None:
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
+    for option, value in _iter_claude_reasoning_options(tokens):
+        if option == "--effort":
+            raise ValueError("--effort conflicts with the workflow reasoning request.")
+        _reject_claude_settings_reasoning_conflict(value, working_directory)
+
+
+def _iter_claude_reasoning_options(
+    tokens: Sequence[str],
+) -> Iterator[tuple[str, str]]:
+    remaining = iter(tokens)
+    for token in remaining:
         if token == "--":
             return
-        if token == "--effort":
-            if index + 1 >= len(tokens) or tokens[index + 1] == "--":
-                raise ValueError("--effort requires a value.")
-            raise ValueError("--effort conflicts with the workflow reasoning request.")
-        if token.startswith("--effort="):
-            raise ValueError("--effort conflicts with the workflow reasoning request.")
-        if token == "--settings":
-            if index + 1 >= len(tokens) or tokens[index + 1] == "--":
-                raise ValueError("--settings requires a JSON object or file path.")
-            _reject_claude_settings_reasoning_conflict(
-                tokens[index + 1],
-                working_directory,
-            )
-            index += 2
+        option, separator, value = token.partition("=")
+        if option not in {"--effort", "--settings"}:
             continue
-        if token.startswith("--settings="):
-            settings_value = token.removeprefix("--settings=")
-            if not settings_value:
+        if separator:
+            if option == "--settings" and not value:
                 raise ValueError("--settings requires a JSON object or file path.")
-            _reject_claude_settings_reasoning_conflict(
-                settings_value,
-                working_directory,
-            )
-        index += 1
+        else:
+            next_value = next(remaining, None)
+            if next_value is None or next_value == "--":
+                requirement = (
+                    "a value" if option == "--effort" else "a JSON object or file path"
+                )
+                raise ValueError(f"{option} requires {requirement}.")
+            value = next_value
+        yield option, value
 
 
 def _reject_claude_settings_reasoning_conflict(
@@ -129,23 +130,32 @@ def _load_claude_settings(
     settings_value: str,
     working_directory: Path | None,
 ) -> Mapping[str, object]:
-    stripped_value = settings_value.lstrip()
-    if stripped_value.startswith("{"):
-        raw_settings = settings_value
-    else:
-        settings_path = Path(settings_value).expanduser()
-        if not settings_path.is_absolute():
-            base_directory = (
-                Path.cwd() if working_directory is None else working_directory
-            )
-            settings_path = base_directory / settings_path
-        try:
-            raw_settings = settings_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError, ValueError) as exc:
-            raise ValueError(
-                "Cannot validate the Claude --settings file against the workflow "
-                "reasoning request."
-            ) from exc
+    raw_settings = (
+        settings_value
+        if settings_value.lstrip().startswith("{")
+        else _read_claude_settings_file(settings_value, working_directory)
+    )
+    return _parse_claude_settings(raw_settings)
+
+
+def _read_claude_settings_file(
+    settings_value: str,
+    working_directory: Path | None,
+) -> str:
+    settings_path = Path(settings_value).expanduser()
+    if not settings_path.is_absolute():
+        base_directory = Path.cwd() if working_directory is None else working_directory
+        settings_path = base_directory / settings_path
+    try:
+        return settings_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ValueError(
+            "Cannot validate the Claude --settings file against the workflow "
+            "reasoning request."
+        ) from exc
+
+
+def _parse_claude_settings(raw_settings: str) -> Mapping[str, object]:
     try:
         settings: object = json.loads(raw_settings)
     except json.JSONDecodeError as exc:
@@ -196,15 +206,6 @@ def build_claude_command(request: CliInvocationRequest, prompt: str) -> CliComma
         request, prompt, ("--output-format", "json"), reasoning_args
     )
 
-
-QUOTA_HINTS = (
-    "usage limit reached",
-    "rate limit",
-    "quota",
-    "too many requests",
-    "reset at",
-    "retry after",
-)
 
 CLAUDE = CliProviderCapability(
     provider_kind=ProviderKind.CLAUDE,

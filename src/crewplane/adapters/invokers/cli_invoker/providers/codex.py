@@ -31,37 +31,66 @@ from ..usage_decoders import (
 )
 from ..validation import reasoning_command_context
 
+CODEX_REASONING_KEY = "model_reasoning_effort"
+CODEX_MODEL_CAPACITY_MESSAGE = (
+    "Selected model is at capacity. Please try a different model."
+)
+CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS = 5.0
+CODEX_MODEL_CAPACITY_RETRY_POLICY = OneShotFailureRetryPolicy(
+    output_contains=(CODEX_MODEL_CAPACITY_MESSAGE,),
+    wait_seconds=CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS,
+    reason="codex_model_capacity",
+    notice_message=(
+        f'Codex reported "{CODEX_MODEL_CAPACITY_MESSAGE}" '
+        "Crewplane will retry in five seconds (built-in attempt 1/1)."
+    ),
+)
+QUOTA_HINTS = (
+    "usage limit exceeded",
+    "usage limit",
+    "rate limit",
+    "too many requests",
+    "try again in",
+    "retry after",
+    "reset after",
+    "reset at",
+    "resetsat",
+)
+
 
 def decode_codex_usage(result: CommandResult) -> UsageDecodeResult:
     latest_tokens: ProviderTokenUsage | None = None
     malformed_error: str | None = None
     for line in iter_stdout_lines(result):
-        if not line.strip():
-            continue
         try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict) or payload.get("type") != "turn.completed":
-            continue
-        usage = payload.get("usage")
-        if usage is None:
-            continue
-        if not isinstance(usage, dict):
-            malformed_error = "Malformed Codex usage report."
-            continue
-        try:
-            tokens = _codex_tokens(usage)
+            tokens = _decode_codex_usage_line(line)
         except MalformedUsageError as exc:
             malformed_error = str(exc)
             continue
-        if tokens.has_any_value():
+        if tokens is not None and tokens.has_any_value():
             latest_tokens = tokens
     if latest_tokens is not None:
         return UsageDecodeResult(tokens=latest_tokens, valid_report_count=1)
     if malformed_error is not None:
         return UsageDecodeResult(error=malformed_error)
     return UsageDecodeResult()
+
+
+def _decode_codex_usage_line(line: str) -> ProviderTokenUsage | None:
+    if not line.strip():
+        return None
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict) or payload.get("type") != "turn.completed":
+        return None
+    usage = payload.get("usage")
+    if usage is None:
+        return None
+    if not isinstance(usage, dict):
+        raise MalformedUsageError("Malformed Codex usage report.")
+    return _codex_tokens(usage)
 
 
 def _codex_tokens(
@@ -102,9 +131,6 @@ def extract_codex_output(
 
 def _missing_output() -> OutputExtractionResult:
     return OutputExtractionResult(output_text="", output_extraction_status="missing")
-
-
-CODEX_REASONING_KEY = "model_reasoning_effort"
 
 
 def _reject_codex_reasoning_conflict(tokens: Sequence[str]) -> None:
@@ -154,25 +180,6 @@ def _require_toml_assignment(value: str, option: str) -> str:
     return value
 
 
-CODEX_MODEL_CAPACITY_MESSAGE = (
-    "Selected model is at capacity. Please try a different model."
-)
-
-
-CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS = 5.0
-
-
-CODEX_MODEL_CAPACITY_RETRY_POLICY = OneShotFailureRetryPolicy(
-    output_contains=(CODEX_MODEL_CAPACITY_MESSAGE,),
-    wait_seconds=CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS,
-    reason="codex_model_capacity",
-    notice_message=(
-        f'Codex reported "{CODEX_MODEL_CAPACITY_MESSAGE}" '
-        "Crewplane will retry in five seconds (built-in attempt 1/1)."
-    ),
-)
-
-
 def validate_codex_request(request: CliInvocationRequest) -> None:
     if request.requested_reasoning is None:
         return
@@ -205,18 +212,6 @@ def build_codex_command(request: CliInvocationRequest, prompt: str) -> CliComman
         output_path.unlink(missing_ok=True)
         raise
 
-
-QUOTA_HINTS = (
-    "usage limit exceeded",
-    "usage limit",
-    "rate limit",
-    "too many requests",
-    "try again in",
-    "retry after",
-    "reset after",
-    "reset at",
-    "resetsat",
-)
 
 CODEX = CliProviderCapability(
     provider_kind=ProviderKind.CODEX,

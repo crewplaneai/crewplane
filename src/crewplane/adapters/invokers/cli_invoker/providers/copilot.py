@@ -12,14 +12,7 @@ from ..failures.classifier import classify_generic_failure
 from ..quota.classifier import classify_generic_quota
 from ..validation import reject_unsupported_reasoning
 
-QUOTA_HINTS = (
-    "rate limit",
-    "quota",
-    "too many requests",
-    "429",
-    "retry after",
-    "try again in",
-)
+QUOTA_HINTS = ("too many requests",)
 
 COPILOT = CliProviderCapability(
     provider_kind=ProviderKind.COPILOT,
