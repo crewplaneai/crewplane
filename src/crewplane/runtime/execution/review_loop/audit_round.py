@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import Literal
+
 from crewplane.architecture.contracts import LogLevel
 from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.workflow.keywords import ProviderRole
@@ -13,6 +17,7 @@ from ..common import (
     should_print_console,
 )
 from ..consensus import check_consensus
+from ..fragment_assembler import ResolvedPrompt
 from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
 from .executor_round import run_executor_round
 from .prompts import build_review_context
@@ -45,6 +50,21 @@ from .validation import (
 from .workspace_state_paths import discard_executor_workspace_lineage
 
 
+class AuditIterationOutcome(Enum):
+    """Control whether the audit advances, stops, or returns an approval."""
+
+    CONTINUE = auto()
+    STOP = auto()
+    CONSENSUS = auto()
+
+
+@dataclass(frozen=True)
+class ReviewCandidate:
+    """A candidate ready for review, even when its fingerprint is unavailable."""
+
+    fingerprint: str | None
+
+
 async def execute_single_audit_round(
     request: AuditRoundRequest,
 ) -> AuditRoundResult:
@@ -63,76 +83,84 @@ async def execute_audit_round_iterations(
     request: AuditRoundRequest,
     progress: AuditRoundProgress,
 ) -> AuditRoundResult:
-
+    """Run audit iterations until consensus, a stop decision, or depth exhaustion."""
     for round_num in range(1, request.remediation_depth + 2):
         progress.last_round_num = round_num
         if request.checkpoint is not None:
             request.checkpoint()
-        try:
-            await run_remediation_executor_round(request, progress, round_num)
-        except InvocationFailureError as exc:
-            if recover_after_remediation_context_exhaustion(
-                request,
-                progress,
-                round_num,
-                exc,
-            ):
-                break
-            raise
-
-        validation = validate_executor_outputs(progress.executor_outputs)
-        if not validation.valid:
-            if record_invalid_candidate_and_should_stop(
-                request,
-                progress,
-                validation,
-                round_num,
-            ):
-                break
-            continue
-
-        current_executor_fingerprint = build_executor_output_fingerprint(
-            progress.executor_outputs
-        )
-        if is_no_progress_candidate(progress, current_executor_fingerprint, round_num):
-            record_no_progress_candidate(request, progress, round_num)
-            if progress.stall.record_unchanged_attempt():
-                progress.stop_reason = ReviewLoopStopReason.NO_PROGRESS
-                break
-            continue
-
-        if (
-            current_executor_fingerprint is None
-            or current_executor_fingerprint != progress.stall.candidate_fingerprint
-        ):
-            progress.stall.consecutive_round_count = 0
-        round_state = await run_review_phase(
-            request,
-            progress,
-            current_executor_fingerprint,
-            round_num,
-        )
-        emit_review_stall_warning_if_needed(request, progress, round_state, round_num)
-
-        if review_phase_reached_consensus(request, round_state, round_num):
-            progress.stall.observe_review(
-                current_executor_fingerprint, round_state.reviewer_outputs
-            )
+        outcome = await _execute_audit_iteration(request, progress, round_num)
+        if outcome is AuditIterationOutcome.STOP:
+            break
+        if outcome is AuditIterationOutcome.CONSENSUS:
             return progress.to_result(
                 consensus_reached=True,
                 clean_fresh_approval=round_num == 1,
             )
-
-        progress.advance_review_state(
-            current_review_packet=round_state.current_review_packet,
-            current_unresolved_fingerprints=round_state.current_unresolved_fingerprints,
-            current_executor_fingerprint=round_state.current_executor_fingerprint,
-        )
-
     return progress.to_result(
         consensus_reached=False,
         clean_fresh_approval=False,
     )
+
+
+async def _execute_audit_iteration(
+    request: AuditRoundRequest,
+    progress: AuditRoundProgress,
+    round_num: int,
+) -> AuditIterationOutcome:
+    try:
+        await run_remediation_executor_round(request, progress, round_num)
+    except InvocationFailureError as exc:
+        if recover_after_remediation_context_exhaustion(
+            request, progress, round_num, exc
+        ):
+            return AuditIterationOutcome.STOP
+        raise
+
+    candidate = _prepare_review_candidate(request, progress, round_num)
+    if isinstance(candidate, AuditIterationOutcome):
+        return candidate
+    round_state = await run_review_phase(
+        request, progress, candidate.fingerprint, round_num
+    )
+    emit_review_stall_warning_if_needed(request, progress, round_state, round_num)
+    if review_phase_reached_consensus(request, round_state, round_num):
+        progress.stall.observe_review(
+            candidate.fingerprint, round_state.reviewer_outputs
+        )
+        return AuditIterationOutcome.CONSENSUS
+    progress.advance_review_state(
+        current_review_packet=round_state.current_review_packet,
+        current_unresolved_fingerprints=round_state.current_unresolved_fingerprints,
+        current_executor_fingerprint=round_state.current_executor_fingerprint,
+    )
+    return AuditIterationOutcome.CONTINUE
+
+
+def _prepare_review_candidate(
+    request: AuditRoundRequest,
+    progress: AuditRoundProgress,
+    round_num: int,
+) -> (
+    ReviewCandidate
+    | Literal[AuditIterationOutcome.CONTINUE, AuditIterationOutcome.STOP]
+):
+    validation = validate_executor_outputs(progress.executor_outputs)
+    if not validation.valid:
+        if record_invalid_candidate_and_should_stop(
+            request, progress, validation, round_num
+        ):
+            return AuditIterationOutcome.STOP
+        return AuditIterationOutcome.CONTINUE
+    fingerprint = build_executor_output_fingerprint(progress.executor_outputs)
+    if is_no_progress_candidate(progress, fingerprint, round_num):
+        record_no_progress_candidate(request, progress, round_num)
+        if progress.stall.record_unchanged_attempt():
+            progress.stop_reason = ReviewLoopStopReason.NO_PROGRESS
+            return AuditIterationOutcome.STOP
+        return AuditIterationOutcome.CONTINUE
+    if fingerprint is None or fingerprint != progress.stall.candidate_fingerprint:
+        progress.stall.consecutive_round_count = 0
+    return ReviewCandidate(fingerprint)
 
 
 async def run_remediation_executor_round(
@@ -171,46 +199,12 @@ async def run_review_phase(
     current_executor_fingerprint: str | None,
     round_num: int,
 ) -> ReviewRoundState:
-    reviewer_prompt_context = request.reviewer_prompt_context
-    reviewer_prompt_workspace_files = request.reviewer_prompt_workspace_files
-    if not reviewer_prompt_context:
-        resolved_prompt = resolve_prompt_with_output_budget_details(
-            request.runtime_context,
-            request.stage,
-            request.output,
-            role=ProviderRole.REVIEWER,
-            telemetry=request.telemetry,
-            workspace_candidate_context=WorkspaceCandidateSourceContext(
-                role_label=ProviderRole.REVIEWER,
-                round_num=round_num,
-                audit_round_num=request.audit_round_num,
-            ),
-        )
-        reviewer_prompt_context = resolved_prompt.text
-        reviewer_prompt_workspace_files = resolved_prompt.workspace_files
+    """Run reviewers and record their completed round before rendering its state."""
     reviewer_run = await run_reviewer_round(
-        ReviewerRoundRequest(
-            runtime_context=request.runtime_context,
-            node=request.stage,
-            output=request.output,
-            node_dir=request.node_dir,
-            invoker=request.invoker,
-            telemetry=request.telemetry,
-            reviewers=request.reviewers,
-            audit_round_num=request.audit_round_num,
-            round_num=round_num,
-            artifact_dir=request.audit_dir,
-            reviewer_prompt_context=reviewer_prompt_context,
-            reviewer_prompt_workspace_files=reviewer_prompt_workspace_files,
-            review_context=build_review_context(progress.executor_outputs),
-            previous_review_packet=progress.previous_review_packet,
-        )
+        _build_reviewer_round_request(request, progress, round_num)
     )
     reviewer_outputs = reviewer_run.outputs
-    progress.latest_valid_executor_outputs = progress.executor_outputs
-    progress.selected_round_num = round_num
-    progress.add_artifact_drift_warnings(reviewer_run.drift_warning_count)
-    progress.record_review_outputs(reviewer_outputs)
+    progress.record_completed_review(reviewer_run, round_num)
     persist_round_review_inbox(request, progress, reviewer_outputs, round_num)
     return ReviewRoundState(
         reviewer_outputs=reviewer_outputs,
@@ -220,6 +214,51 @@ async def run_review_phase(
             reviewer_outputs
         ),
         current_executor_fingerprint=current_executor_fingerprint,
+    )
+
+
+def _build_reviewer_round_request(
+    request: AuditRoundRequest,
+    progress: AuditRoundProgress,
+    round_num: int,
+) -> ReviewerRoundRequest:
+    prompt = _resolve_reviewer_prompt(request, round_num)
+    return ReviewerRoundRequest(
+        runtime_context=request.runtime_context,
+        node=request.stage,
+        output=request.output,
+        node_dir=request.node_dir,
+        invoker=request.invoker,
+        telemetry=request.telemetry,
+        reviewers=request.reviewers,
+        audit_round_num=request.audit_round_num,
+        round_num=round_num,
+        artifact_dir=request.audit_dir,
+        reviewer_prompt_context=prompt.text,
+        reviewer_prompt_workspace_files=prompt.workspace_files,
+        review_context=build_review_context(progress.executor_outputs),
+        previous_review_packet=progress.previous_review_packet,
+    )
+
+
+def _resolve_reviewer_prompt(
+    request: AuditRoundRequest, round_num: int
+) -> ResolvedPrompt:
+    if request.reviewer_prompt_context:
+        return ResolvedPrompt(
+            request.reviewer_prompt_context, request.reviewer_prompt_workspace_files
+        )
+    return resolve_prompt_with_output_budget_details(
+        request.runtime_context,
+        request.stage,
+        request.output,
+        role=ProviderRole.REVIEWER,
+        telemetry=request.telemetry,
+        workspace_candidate_context=WorkspaceCandidateSourceContext(
+            role_label=ProviderRole.REVIEWER,
+            round_num=round_num,
+            audit_round_num=request.audit_round_num,
+        ),
     )
 
 

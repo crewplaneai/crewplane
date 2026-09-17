@@ -203,3 +203,73 @@ def test_project_snapshot_limit_defers_to_reviewers(tmp_path: Path) -> None:
         handle.truncate(129 * 1024 * 1024)
 
     assert asyncio.run(observe_project(request)).fingerprint is None
+
+
+@pytest.mark.parametrize(
+    "invalid_entry",
+    [
+        None,
+        {"path": 1, "size_bytes": 4},
+        {"path": "missing.txt", "size_bytes": 4},
+        {"path": "valid.txt", "size_bytes": 99},
+        {"path": "../outside.txt", "size_bytes": 4},
+        {"path": "link.txt", "size_bytes": 4},
+    ],
+)
+def test_invalid_generated_file_invalidates_entire_candidate(
+    tmp_path: Path, invalid_entry: object
+) -> None:
+    request = request_for(tmp_path)
+    artifact = artifact_for(request, "Candidate body")
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    (generated / "valid.txt").write_text("data", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("data", encoding="utf-8")
+    (generated / "link.txt").symlink_to(outside)
+    (generated / GENERATED_FILE_SNAPSHOT_METADATA_NAME).write_text(
+        json.dumps({"files": [{"path": "valid.txt", "size_bytes": 4}, invalid_entry]}),
+        encoding="utf-8",
+    )
+    request.runtime_context.generated_file_workspaces.record(
+        request.node.id, artifact.output_file, generated
+    )
+
+    outputs = asyncio.run(
+        bind_candidate_identities(request, [artifact], ProjectObservation(None, None))
+    )
+
+    identity = outputs[0].candidate_identity
+    assert identity is not None
+    assert identity.kind == "unverified"
+    assert identity.reason == "generated_files_unavailable"
+    assert build_executor_output_fingerprint(outputs) is None
+
+
+@pytest.mark.parametrize("metadata_available", [False, True])
+def test_generated_file_capture_distinguishes_empty_from_missing_metadata(
+    tmp_path: Path, metadata_available: bool
+) -> None:
+    request = request_for(tmp_path)
+    request.node = request.node.model_copy(
+        update={"workspace_policy": workspace_selection_record(kind="snapshot")}
+    )
+    artifact = artifact_for(request, "Candidate body")
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    if metadata_available:
+        (generated / GENERATED_FILE_SNAPSHOT_METADATA_NAME).write_text(
+            json.dumps({"files": []}), encoding="utf-8"
+        )
+    request.runtime_context.generated_file_workspaces.record(
+        request.node.id, artifact.output_file, generated
+    )
+
+    outputs = asyncio.run(
+        bind_candidate_identities(request, [artifact], ProjectObservation(None, None))
+    )
+
+    identity = outputs[0].candidate_identity
+    assert identity is not None
+    assert identity.kind == ("document" if metadata_available else "unverified")
+    assert (identity.fingerprint is not None) == metadata_available

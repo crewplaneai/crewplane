@@ -139,18 +139,22 @@ def _candidate_identity(
             "files" if generated else "document",
             content_fingerprint(generated or artifact.content),
         )
+    return _project_candidate_identity(request, artifact, generated, before, after)
+
+
+def _project_candidate_identity(
+    request: ExecutorRoundRequest,
+    artifact: ExecutorRoundArtifact,
+    generated: list[tuple[str, int, str]],
+    before: ProjectObservation,
+    after: ProjectObservation,
+) -> CandidateIdentity:
     if not _project_observation_is_reliable(request, before, after):
         return CandidateIdentity(
             "unverified", None, reason="project_changes_unattributable"
         )
-    file_backed = len(request.executors) == 1 and (
-        bool(generated)
-        or before.fingerprint != after.fingerprint
-        or any(
-            previous.candidate_identity is not None
-            and previous.candidate_identity.kind == "files"
-            for previous in request.previous_executor_outputs or []
-        )
+    file_backed = _is_file_candidate(
+        request, generated, before.fingerprint != after.fingerprint
     )
     return CandidateIdentity(
         "files" if file_backed else "document",
@@ -158,6 +162,22 @@ def _candidate_identity(
             [after.fingerprint, None if file_backed else artifact.content]
         ),
         source_fingerprint=after.fingerprint,
+    )
+
+
+def _is_file_candidate(
+    request: ExecutorRoundRequest,
+    generated: list[tuple[str, int, str]],
+    project_changed: bool,
+) -> bool:
+    return len(request.executors) == 1 and (
+        bool(generated)
+        or project_changed
+        or any(
+            previous.candidate_identity is not None
+            and previous.candidate_identity.kind == "files"
+            for previous in request.previous_executor_outputs or []
+        )
     )
 
 
@@ -215,6 +235,7 @@ def _generated_file_descriptors(
     request: ExecutorRoundRequest,
     artifact: ExecutorRoundArtifact,
 ) -> list[tuple[str, int, str]] | None:
+    """Return verified descriptors, or None when capture evidence is unavailable."""
     roots = request.runtime_context.generated_file_workspaces.roots_for_node(
         request.node.id
     )
@@ -224,27 +245,47 @@ def _generated_file_descriptors(
     root = roots[key]
     if root is None:
         return None
+    entries = _read_generated_file_entries(root)
+    if entries is None:
+        return None
+    descriptors = []
+    for entry in entries:
+        descriptor = _verified_generated_file_descriptor(root, entry)
+        if descriptor is None:
+            return None
+        descriptors.append(descriptor)
+    return sorted(descriptors)
+
+
+def _read_generated_file_entries(root: Path) -> list[object] | None:
     metadata = contained_regular_file(root, GENERATED_FILE_SNAPSHOT_METADATA_NAME)
     if metadata is None:
         return None
     try:
-        payload = json.loads(metadata.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict) or payload.get("rejected_file_count", 0):
-            return None
-        files = payload.get("files")
-        if not isinstance(files, list):
-            return None
-        descriptors = []
-        for entry in files:
-            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
-                return None
-            path = contained_regular_file(root, entry["path"])
-            if path is None:
-                return None
-            size, digest = file_size_and_sha256(path)
-            if size != entry.get("size_bytes"):
-                return None
-            descriptors.append((entry["path"], size, digest))
+        payload: object = json.loads(metadata.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return sorted(descriptors)
+    if not isinstance(payload, dict) or payload.get("rejected_file_count", 0):
+        return None
+    files = payload.get("files")
+    return files if isinstance(files, list) else None
+
+
+def _verified_generated_file_descriptor(
+    root: Path, entry: object
+) -> tuple[str, int, str] | None:
+    if not isinstance(entry, dict):
+        return None
+    relative_path = entry.get("path")
+    if not isinstance(relative_path, str):
+        return None
+    try:
+        path = contained_regular_file(root, relative_path)
+        if path is None:
+            return None
+        size, digest = file_size_and_sha256(path)
+    except (OSError, ValueError):
+        return None
+    if size != entry.get("size_bytes"):
+        return None
+    return relative_path, size, digest

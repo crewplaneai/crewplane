@@ -308,11 +308,16 @@ class AuditRoundProgress:
     def record_no_progress(self) -> None:
         self.no_progress_round_count += 1
 
-    def record_review_outputs(
+    def record_completed_review(
         self,
-        reviewer_outputs: list[ReviewerRoundArtifact],
+        reviewer_run: ReviewerRoundRunResult,
+        round_num: int,
     ) -> None:
-        self.latest_reviewer_outputs = reviewer_outputs
+        """Record the candidate and reviewer results from a completed review phase."""
+        self.latest_valid_executor_outputs = self.executor_outputs
+        self.selected_round_num = round_num
+        self.add_artifact_drift_warnings(reviewer_run.drift_warning_count)
+        self.latest_reviewer_outputs = reviewer_run.outputs
 
     def advance_review_state(
         self,
