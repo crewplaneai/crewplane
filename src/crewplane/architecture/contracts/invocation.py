@@ -15,6 +15,7 @@ from crewplane.core.workflow.keywords import ProviderRole
 
 from .invocation_failures import InvocationFailureSummary
 from .json import JsonObject
+from .logging import LogLevel
 
 # Config imports these contracts, so keep AgentConfig type-only to avoid a cycle.
 if TYPE_CHECKING:
@@ -284,19 +285,19 @@ class AgentInvoker(Protocol):
 
 
 RuntimeLogValue = str | int | float | bool | None
-InvocationLogLevel = Literal["debug", "info", "warning", "error"]
 
 
 @dataclass(frozen=True)
 class InvocationDiagnostic:
     """Structured diagnostic emitted while an invocation is running."""
 
-    level: InvocationLogLevel
+    level: LogLevel
     message: str
     operation: str
     attributes: Mapping[str, RuntimeLogValue] | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "level", LogLevel(self.level))
         if self.attributes is not None:
             object.__setattr__(
                 self,

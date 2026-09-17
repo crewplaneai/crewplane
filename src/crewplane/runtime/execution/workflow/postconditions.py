@@ -9,7 +9,7 @@ from ...workspace.worktree.cache import WorktreeReuseCleanupResult
 from ..common import (
     CompiledRuntimeContext,
     ExecutionTelemetry,
-    NodeStatus,
+    SchedulerNodeStatus,
     safe_error_message,
 )
 from ..errors import WorkflowExecutionError
@@ -178,7 +178,7 @@ async def _collect_descriptor_refresh_errors(
     generated_file_cleanup: GeneratedFileWorkspaceCleanupResult,
 ) -> list[Exception]:
     plan = session.runtime_context.plan
-    statuses: dict[str, NodeStatus] = session.state.statuses
+    statuses: dict[str, SchedulerNodeStatus] = session.state.statuses
     postcondition_errors: list[Exception] = []
     state_refresh_failures = await refresh_workspace_node_manifests_for_state_paths(
         plan,

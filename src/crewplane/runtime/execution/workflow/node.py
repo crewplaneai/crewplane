@@ -5,6 +5,7 @@ from pathlib import Path
 from crewplane.architecture.contracts import (
     AgentInvoker,
     EventType,
+    LogLevel,
     NodeArtifactRequest,
 )
 from crewplane.architecture.ports import ArtifactStorePort
@@ -161,7 +162,7 @@ def _emit_generated_file_workspace_cleanup_errors(
         return
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=(
             "Generated-file workspace cleanup failed "
             f"({len(errors)} error(s)); workspace was retained for later cleanup."

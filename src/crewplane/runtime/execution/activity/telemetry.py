@@ -2,20 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Literal
 
 from rich.console import Console
 
+from crewplane.architecture.contracts import SchedulerNodeStatus
 from crewplane.observability.events import EventSink
-
-type NodeStatus = Literal["pending", "running", "succeeded", "failed", "blocked"]
 
 
 @dataclass
 class WorkflowExecutionState:
     ready: list[str]
     running: dict[str, asyncio.Task[None]]
-    statuses: dict[str, NodeStatus]
+    statuses: dict[str, SchedulerNodeStatus]
     node_errors: dict[str, Exception]
     failed_dependencies: dict[str, set[str]]
     remaining_dependencies: dict[str, int]

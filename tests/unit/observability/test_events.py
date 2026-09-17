@@ -116,6 +116,11 @@ def test_terminal_workflow_event_types_are_exact() -> None:
     "export_name",
     [
         "EventType",
+        "ExecutionStatus",
+        "LogLevel",
+        "WorkflowStatus",
+        "InvocationStatus",
+        "NodeStatus",
         "WorkflowEventType",
         "NodeEventType",
         "InvocationEventType",

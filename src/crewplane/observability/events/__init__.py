@@ -40,6 +40,7 @@ from crewplane.observability.events.reducer import apply_event
 from crewplane.observability.events.types import (
     TERMINAL_WORKFLOW_EVENT_TYPES,
     EventType,
+    ExecutionStatus,
     InvocationEventType,
     InvocationStatus,
     LogLevel,
@@ -60,6 +61,7 @@ __all__ = [
     "EventType",
     "ExecutionEvent",
     "ExecutionEventContext",
+    "ExecutionStatus",
     "InvocationEventPayload",
     "InvocationEventType",
     "InvocationRuntimeState",

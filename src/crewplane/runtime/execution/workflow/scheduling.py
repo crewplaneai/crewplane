@@ -4,14 +4,19 @@ import asyncio
 
 from rich.text import Text
 
-from crewplane.architecture.contracts import AgentInvoker, EventType
+from crewplane.architecture.contracts import (
+    AgentInvoker,
+    EventType,
+    ExecutionStatus,
+    LogLevel,
+)
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
 
 from ..common import (
     ExecutionTelemetry,
-    NodeStatus,
     RuntimeEventContext,
+    SchedulerNodeStatus,
     WorkflowExecutionState,
     emit_runtime_log,
     emit_workflow_event,
@@ -69,9 +74,9 @@ def _schedule_ready_nodes(
         or len(state.running) < session.max_concurrent_nodes
     ):
         node_id = state.ready.pop(0)
-        if state.statuses[node_id] != "pending":
+        if state.statuses[node_id] != ExecutionStatus.PENDING:
             continue
-        state.statuses[node_id] = "running"
+        state.statuses[node_id] = ExecutionStatus.RUNNING
         mark_node_running_activity(session.telemetry, node_id)
         state.running[node_id] = _wrap_node_task(
             session.nodes_by_id[node_id],
@@ -108,7 +113,7 @@ def _mark_node_failed(
     telemetry: ExecutionTelemetry | None,
 ) -> None:
     mark_node_finished_activity(telemetry, node_id)
-    state.statuses[node_id] = "failed"
+    state.statuses[node_id] = ExecutionStatus.FAILED
     state.node_errors[node_id] = exc
     if should_print_console(telemetry):
         execution_console(telemetry).print(
@@ -140,7 +145,7 @@ def _mark_node_succeeded(
     telemetry: ExecutionTelemetry | None,
 ) -> None:
     mark_node_finished_activity(telemetry, node_id)
-    state.statuses[node_id] = "succeeded"
+    state.statuses[node_id] = ExecutionStatus.SUCCEEDED
     emit_workflow_event(telemetry, EventType.NODE_FINISHED, node_id=node_id)
     _queue_satisfied_dependents(node_id, state)
 
@@ -176,13 +181,13 @@ async def _consume_completed_nodes(session: WorkflowExecutionSession) -> None:
 
 def _unsatisfied_dependencies(
     node_id: str,
-    statuses: dict[str, NodeStatus],
+    statuses: dict[str, SchedulerNodeStatus],
     dependencies_by_node: dict[str, set[str]],
 ) -> list[str]:
     return [
         dependency
         for dependency in dependencies_by_node[node_id]
-        if statuses[dependency] != "succeeded"
+        if statuses[dependency] != ExecutionStatus.SUCCEEDED
     ]
 
 
@@ -191,10 +196,12 @@ def _mark_blocked_nodes(
     telemetry: ExecutionTelemetry | None,
 ) -> list[str]:
     blocked_nodes = [
-        node_id for node_id, status in state.statuses.items() if status == "pending"
+        node_id
+        for node_id, status in state.statuses.items()
+        if status == ExecutionStatus.PENDING
     ]
     for node_id in blocked_nodes:
-        state.statuses[node_id] = "blocked"
+        state.statuses[node_id] = ExecutionStatus.BLOCKED
         unsatisfied = _unsatisfied_dependencies(
             node_id,
             state.statuses,
@@ -209,7 +216,7 @@ def _mark_blocked_nodes(
         )
         emit_runtime_log(
             telemetry,
-            level="warning",
+            level=LogLevel.WARNING,
             message=f"Node blocked; unsatisfied dependencies: {details}",
             operation="blocked_dependencies",
             context=RuntimeEventContext(node_id=node_id),
@@ -225,7 +232,7 @@ def _build_workflow_failure_details(
     node_errors: dict[str, Exception],
     blocked_nodes: list[str],
     dependencies_by_node: dict[str, set[str]],
-    statuses: dict[str, NodeStatus],
+    statuses: dict[str, SchedulerNodeStatus],
 ) -> str:
     lines = [
         f"- failed: {node_id} ({node_errors[node_id]})"
@@ -248,7 +255,7 @@ def _raise_if_workflow_failed(
     node_errors: dict[str, Exception],
     blocked_nodes: list[str],
     dependencies_by_node: dict[str, set[str]],
-    statuses: dict[str, NodeStatus],
+    statuses: dict[str, SchedulerNodeStatus],
 ) -> None:
     if not node_errors and not blocked_nodes:
         return

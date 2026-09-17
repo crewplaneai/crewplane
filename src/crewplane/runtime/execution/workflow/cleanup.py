@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from crewplane.architecture.contracts import ExecutionStatus, LogLevel
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.workspace.node_state import (
     refresh_node_workspace_descriptor,
@@ -14,8 +15,8 @@ from crewplane.runtime.workspace.worktree.ref_cleanup import (
 
 from ..common import (
     ExecutionTelemetry,
-    NodeStatus,
     RuntimeEventContext,
+    SchedulerNodeStatus,
     emit_runtime_log,
     safe_error_message,
 )
@@ -33,7 +34,7 @@ async def cleanup_successful_workspace_run_refs(
     if removed_ref_count:
         emit_runtime_log(
             telemetry,
-            level="info",
+            level=LogLevel.INFO,
             message=(f"Removed {removed_ref_count} run-owned workspace Git ref(s)."),
             operation="workspace_ref_cleanup",
             context=RuntimeEventContext(),
@@ -54,7 +55,7 @@ def emit_cleanup_errors(
         return
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=f"{operation} cleanup failed ({len(errors)} error(s)).",
         operation=operation,
         context=RuntimeEventContext(),
@@ -68,7 +69,7 @@ def emit_cleanup_errors(
 async def refresh_workspace_node_manifests_for_state_paths(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
-    statuses: dict[str, NodeStatus],
+    statuses: dict[str, SchedulerNodeStatus],
     updated_state_paths: tuple[Path, ...],
     telemetry: ExecutionTelemetry | None,
 ) -> tuple[tuple[str, Exception], ...]:
@@ -86,7 +87,7 @@ async def refresh_workspace_node_manifests_for_state_paths(
 def workspace_manifest_refresh_failures_for_state_paths(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
-    statuses: dict[str, NodeStatus],
+    statuses: dict[str, SchedulerNodeStatus],
     updated_state_paths: tuple[Path, ...],
 ) -> tuple[tuple[str, Exception], ...]:
     if not updated_state_paths:
@@ -102,7 +103,7 @@ def workspace_manifest_refresh_failures_for_state_paths(
 async def refresh_workspace_node_manifests(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
-    statuses: dict[str, NodeStatus],
+    statuses: dict[str, SchedulerNodeStatus],
     node_ids: set[str],
     telemetry: ExecutionTelemetry | None,
 ) -> tuple[tuple[str, Exception], ...]:
@@ -120,7 +121,7 @@ async def refresh_workspace_node_manifests(
 def workspace_manifest_refresh_failures(
     plan: PreflightExecutionPlan,
     output: ArtifactStorePort,
-    statuses: dict[str, NodeStatus],
+    statuses: dict[str, SchedulerNodeStatus],
     node_ids: set[str],
 ) -> tuple[tuple[str, Exception], ...]:
     if not node_ids:
@@ -128,7 +129,7 @@ def workspace_manifest_refresh_failures(
     nodes_by_id = {node.id: node for node in plan.nodes}
     failures: list[tuple[str, Exception]] = []
     for node_id in sorted(node_ids):
-        if statuses.get(node_id) != "succeeded":
+        if statuses.get(node_id) != ExecutionStatus.SUCCEEDED:
             continue
         node = nodes_by_id[node_id]
         try:
@@ -145,7 +146,7 @@ def emit_workspace_manifest_refresh_failures(
     for node_id, exc in failures:
         emit_runtime_log(
             telemetry,
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 f"Workspace manifest refresh failed for node '{node_id}': "
                 f"{safe_error_message(exc)}"

@@ -7,8 +7,8 @@ from typing import Generic, Literal, Protocol, TypeVar
 
 from crewplane.core.workflow.keywords import ProviderRole
 
-from .execution_event import (
-    ExecutionEvent,
+from .execution_event import ExecutionEvent
+from .execution_status import (
     InvocationStatus,
     NodeStatus,
     WorkflowStatus,

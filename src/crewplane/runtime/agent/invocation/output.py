@@ -6,6 +6,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import (
     CommandResult,
+    LogLevel,
     OutputExtractionResult,
     OutputExtractor,
 )
@@ -124,7 +125,7 @@ def _extract_visible_output(
             output_path = stderr_path
             output_char_count = stderr_char_count
             notice = InvocationDiagnosticNotice(
-                level="warning",
+                level=LogLevel.WARNING,
                 message=(
                     f"{cmd[0]} invocation succeeded with empty stdout; "
                     "using stderr as output. Provider log contains the original stderr "

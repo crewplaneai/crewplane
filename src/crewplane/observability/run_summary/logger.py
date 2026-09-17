@@ -8,6 +8,7 @@ from typing import cast
 
 from crewplane.architecture.contracts import (
     TERMINAL_WORKFLOW_EVENT_TYPES,
+    LogLevel,
     ObserverCapabilities,
 )
 from crewplane.architecture.contracts import (
@@ -221,7 +222,7 @@ class PersistentRunLogger:
             runtime_log_event(
                 workflow_name=workflow_name,
                 run_id=run_id,
-                level="error",
+                level=LogLevel.ERROR,
                 message=message,
                 operation="runtime_error",
             ),

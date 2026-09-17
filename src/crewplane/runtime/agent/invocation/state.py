@@ -6,7 +6,7 @@ from pathlib import Path
 from crewplane.architecture.contracts import (
     CommandResult,
     FailureClassifier,
-    InvocationLogLevel,
+    LogLevel,
     OneShotFailureRetryPolicy,
     OutputExtractionStatus,
     OutputExtractor,
@@ -20,7 +20,7 @@ from ..usage import InvocationUsageAccumulator
 
 @dataclass(frozen=True)
 class InvocationDiagnosticNotice:
-    level: InvocationLogLevel
+    level: LogLevel
     message: str
     operation: str
     attributes: dict[str, RuntimeLogValue] | None = None

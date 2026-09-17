@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from crewplane.architecture.contracts import RuntimeLogValue
+from crewplane.architecture.contracts import LogLevel, RuntimeLogValue
 from crewplane.artifacts.failure_artifacts import (
     is_synthetic_invocation_failure,
 )
@@ -129,7 +129,7 @@ def emit_review_stall_warning(
         )
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=message,
         operation="review_stall_detection",
         context=RuntimeEventContext(
@@ -179,7 +179,7 @@ def emit_review_evaluation_warnings(
     for warning in evaluation.warnings:
         emit_runtime_log(
             telemetry,
-            level="warning",
+            level=LogLevel.WARNING,
             message=warning,
             operation="review_output_normalization",
             context=context,
@@ -196,7 +196,7 @@ def emit_reviewer_failure_warning(
 ) -> None:
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=failure.warning,
         operation="reviewer_invocation_failure",
         context=RuntimeEventContext(
@@ -326,7 +326,7 @@ def emit_invalid_candidate_warning(
         return
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=(
             f"Sequential review loop for node '{node_id}' skipped reviewer invocation "
             f"because the current round candidate was invalid "
@@ -353,7 +353,7 @@ def emit_no_progress_warning(
 ) -> None:
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=(
             f"Sequential review loop for node '{node_id}' skipped reviewer invocation "
             "because the remediation deliverable was unchanged and review "

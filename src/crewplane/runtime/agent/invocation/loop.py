@@ -11,6 +11,7 @@ from crewplane.architecture.contracts import (
     CommandRunner,
     InvocationContext,
     InvocationPlan,
+    LogLevel,
     UsageDecodeResult,
 )
 from crewplane.architecture.contracts.invocation_failures import (
@@ -234,7 +235,7 @@ def _resolve_output_idle_timeout(
     if "invocation_idle_timeout_seconds" in config.model_fields_set:
         emit_invocation_diagnostic(
             invocation_context,
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 "Configured output-idle timeout cannot be enforced because this "
                 "invocation emits output only after completion; continuing without an "

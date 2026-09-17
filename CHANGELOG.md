@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced `InvocationLogLevel` with shared `LogLevel` enum members for invocation diagnostics and runtime log events.
+
 ### Added
 
 - Added Pi CLI and DeepSeek Harness CLI to provider setup and onboarding,

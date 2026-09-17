@@ -16,6 +16,7 @@ from crewplane.architecture.contracts import (
     InvocationDiagnosticSink,
     InvocationPlan,
     InvocationProcessEvent,
+    LogLevel,
 )
 from crewplane.core.platform import supports_posix_process_groups
 from crewplane.runtime.workspace.state_evidence import (
@@ -424,7 +425,7 @@ async def _await_invocation_attempt(
         )
         emit_invocation_diagnostic(
             invocation_context,
-            level="error",
+            level=LogLevel.ERROR,
             message=message,
             operation="invocation_timeout",
             attributes={

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from crewplane.architecture.contracts import (
     AgentInvoker,
+    LogLevel,
     LogPresentationDescriptor,
     validate_log_presentation_descriptor,
 )
@@ -53,7 +54,7 @@ def emit_invalid_descriptor_warning(
 ) -> None:
     emit_runtime_log(
         telemetry,
-        "warning",
+        LogLevel.WARNING,
         _INVALID_DESCRIPTOR_MESSAGE,
         _INVALID_DESCRIPTOR_OPERATION,
         context=context,

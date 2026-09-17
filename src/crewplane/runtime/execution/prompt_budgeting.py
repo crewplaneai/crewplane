@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from crewplane.architecture.contracts import RuntimeLogValue
+from crewplane.architecture.contracts import LogLevel, RuntimeLogValue
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
@@ -157,7 +157,7 @@ def enforce_prompt_budget(
         return
     emit_runtime_log(
         telemetry,
-        "warning",
+        LogLevel.WARNING,
         (
             "Prompt budget warning for node "
             f"'{node.id}': {inspection.display_name} resolves "

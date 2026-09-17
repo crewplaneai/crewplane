@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import LogLevel
 from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import InvocationFailureError
@@ -255,7 +256,7 @@ def emit_remediation_context_exhaustion_warning(
 ) -> None:
     emit_runtime_log(
         request.telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=(
             f"Sequential review loop for node '{request.stage.id}' stopped "
             "remediation after provider session context exhaustion. Continuing "

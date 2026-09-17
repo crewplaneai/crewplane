@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from crewplane.architecture.contracts import (
     CommandResult,
+    LogLevel,
     OneShotFailureRetryPolicy,
     QuotaClassification,
     QuotaClassifier,
@@ -114,7 +115,7 @@ def _schedule_configured_failure_retry(
         retry_count=next_retry_count,
         wait_seconds=config.retry_delay_seconds,
         notice=InvocationDiagnosticNotice(
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 f"{cmd[0]} {failure_detail}; retrying in "
                 f"{config.retry_delay_seconds}s "
@@ -146,7 +147,7 @@ def _schedule_one_shot_failure_retry(
         retry_count=retry_count,
         wait_seconds=policy.wait_seconds,
         notice=InvocationDiagnosticNotice(
-            level="warning",
+            level=LogLevel.WARNING,
             message=policy.notice_message,
             operation="retry_scheduled",
             attributes={
@@ -296,7 +297,7 @@ def _schedule_quota_retry(
         quota_retry_count=quota_retry_count,
         wait_seconds=wait_seconds,
         notice=InvocationDiagnosticNotice(
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 f"Quota reached for {cmd[0]}; retrying in {wait_detail} "
                 f"(quota attempt {quota_retry_count}; independent of max_retries)"

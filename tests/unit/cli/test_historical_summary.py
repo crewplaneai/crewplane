@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import get_args
+
+import pytest
 
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.cli.run import historical_summary
-from crewplane.observability.events.reader import LOG_LEVELS
+from crewplane.observability.events import RuntimeLogEventPayload, event_from_record
 from crewplane.observability.events.types import EventType, LogLevel
 from tests.helpers.resume import make_plan, make_run_manifest
 
 
-def test_historical_log_levels_track_observability_literal() -> None:
-    assert frozenset(get_args(LogLevel)) == LOG_LEVELS
+@pytest.mark.parametrize("level", LogLevel)
+def test_historical_log_reader_parses_each_supported_level(level: LogLevel) -> None:
+    event = event_from_record(_runtime_log_record(level=level.value))
+
+    assert event is not None
+    assert isinstance(event.payload, RuntimeLogEventPayload)
+    assert event.payload.level is level
 
 
 def test_refresh_historical_summary_replays_valid_historical_events(

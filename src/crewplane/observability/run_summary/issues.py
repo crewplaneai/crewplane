@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import LogLevel
 from crewplane.observability.events import (
     EventType,
     ExecutionEvent,
@@ -38,7 +39,10 @@ def collect_issues(events: list[ExecutionEvent]) -> list[tuple[int, str, str]]:
     for event in events:
         if event.event_type == EventType.RUNTIME_LOG:
             payload = runtime_payload(event)
-            if payload.level not in {"warning", "error"} or not payload.message:
+            if (
+                payload.level not in {LogLevel.WARNING, LogLevel.ERROR}
+                or not payload.message
+            ):
                 continue
             issues.append(
                 (

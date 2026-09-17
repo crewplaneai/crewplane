@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from crewplane.architecture.contracts import ExecutionStatus
 from crewplane.observability.dag_render import render_dag_summary
 from crewplane.observability.events import (
     InvocationRuntimeState,
@@ -197,9 +198,9 @@ def render_selected_output(context: SelectedOutputRenderContext) -> list[str]:
 
 
 def _node_waiting_message(node: NodeRuntimeState) -> str:
-    if node.status == "pending":
+    if node.status == ExecutionStatus.PENDING:
         return "Waiting for dependencies to complete..."
-    if node.status == "blocked":
+    if node.status == ExecutionStatus.BLOCKED:
         return f"Blocked: {_blocked_reason(node)}"
     return "No invocation logs yet."
 
@@ -211,7 +212,7 @@ def _append_log_snapshot_lines(
     presentation_snapshot: LogPresentationSnapshot | None,
     context: SelectedOutputRenderContext,
 ) -> None:
-    if invocation.status == "running" and not log_snapshot.tail_lines:
+    if invocation.status == ExecutionStatus.RUNNING and not log_snapshot.tail_lines:
         _append_running_metadata(lines, invocation, log_snapshot, context)
         lines.extend(
             _wrap_pane_line("Awaiting first output from provider...", context.width)
@@ -349,7 +350,7 @@ def _is_quiet_running_invocation(
     quiet_after_seconds: float,
 ) -> bool:
     return (
-        invocation.status == "running"
+        invocation.status == ExecutionStatus.RUNNING
         and bool(log_snapshot.tail_lines)
         and log_snapshot.updated_age_seconds >= quiet_after_seconds
     )

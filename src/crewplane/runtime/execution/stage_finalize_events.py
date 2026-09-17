@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import LogLevel
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 
 from .activity.events import RuntimeEventContext, emit_runtime_log
@@ -18,7 +19,7 @@ def emit_stage_finalize_logs(
         for skipped_output in result.skipped_empty_outputs:
             emit_runtime_log(
                 telemetry,
-                "warning",
+                LogLevel.WARNING,
                 f"Skipping empty output file {skipped_output.name}",
                 "empty_output_skipped",
                 context=RuntimeEventContext(
@@ -32,7 +33,7 @@ def emit_stage_finalize_logs(
             continue
         emit_runtime_log(
             telemetry,
-            "warning",
+            LogLevel.WARNING,
             warning,
             "stage_finalize_warning",
             context=RuntimeEventContext(
@@ -42,7 +43,7 @@ def emit_stage_finalize_logs(
         )
     emit_runtime_log(
         telemetry,
-        "info",
+        LogLevel.INFO,
         (
             f"Finalized stage '{result.stage_name}' with "
             f"{len(result.included_outputs)} included outputs"

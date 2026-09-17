@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.architecture.contracts import NodeArtifactRequest
+from crewplane.architecture.contracts import LogLevel, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.artifacts.atomic import atomic_write_text
@@ -53,7 +53,7 @@ def execute_input_stage(
     atomic_write_text(output_file, input_content)
     emit_runtime_log(
         telemetry,
-        level="info",
+        level=LogLevel.INFO,
         message="Materialized raw input artifact.",
         operation="input_materialized",
         context=RuntimeEventContext(

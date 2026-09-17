@@ -6,7 +6,7 @@ from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
-from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts import AgentInvoker, LogLevel
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
@@ -104,7 +104,7 @@ def _emit_consensus_exhaustion(
         message = f"{message} Continuing due to {continuation_reason}."
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=message,
         operation="review_loop_consensus_exhausted",
         context=RuntimeEventContext(node_id=node_id),
@@ -118,7 +118,7 @@ def _emit_no_canonical_candidate(
 ) -> None:
     emit_runtime_log(
         telemetry,
-        level="error",
+        level=LogLevel.ERROR,
         message=(
             f"Sequential node '{node_id}' did not produce any valid canonical "
             "candidate across all audit rounds."
@@ -268,7 +268,7 @@ def finish_stalled_review_loop(
         message += " Continuing due to continue_on_failure=true."
     emit_runtime_log(
         context.telemetry,
-        level="warning" if continued else "error",
+        level=LogLevel.WARNING if continued else LogLevel.ERROR,
         message=message,
         operation="review_loop_stopped",
         context=RuntimeEventContext(node_id=context.stage.id),

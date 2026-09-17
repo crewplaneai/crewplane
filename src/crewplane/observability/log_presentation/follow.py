@@ -9,7 +9,9 @@ from time import sleep, time
 from typing import cast
 
 from crewplane.architecture.contracts import (
+    ExecutionStatus,
     LogPresentationDescriptor,
+    parse_lifecycle_status,
     validate_log_presentation_descriptor,
 )
 from crewplane.observability.events.types import InvocationStatus
@@ -19,10 +21,6 @@ from crewplane.observability.log_presentation.limits import (
     DEFAULT_LIMITS,
 )
 from crewplane.observability.tmux.snapshot_types import require_snapshot_string
-
-_VALID_STATUSES: frozenset[str] = frozenset(
-    {"pending", "running", "succeeded", "failed", "cancelled"}
-)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,10 +95,13 @@ def snapshot_line_budget(snapshot: Mapping[str, object]) -> int:
 
 
 def status_from_snapshot(snapshot: Mapping[str, object]) -> InvocationStatus:
-    value = snapshot.get("invocation_status", "running")
-    if not isinstance(value, str) or value not in _VALID_STATUSES:
-        return "running"
-    return cast(InvocationStatus, value)
+    value = snapshot.get("invocation_status", ExecutionStatus.RUNNING)
+    if not isinstance(value, str):
+        return ExecutionStatus.RUNNING
+    try:
+        return parse_lifecycle_status(value)
+    except ValueError:
+        return ExecutionStatus.RUNNING
 
 
 if __name__ == "__main__":
