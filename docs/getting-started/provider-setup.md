@@ -194,6 +194,8 @@ agents:
     cli_cmd: [pi]
     provider_kind: pi
     prompt_transport: stdin
+    # Example for Pi's Codex login; choose your authenticated provider/model.
+    # default_model: "openai-codex/gpt-5.5"
     extra_args: ["--no-extensions"]
     invocation_timeout_seconds: null
     invocation_idle_timeout_seconds: null
@@ -201,8 +203,15 @@ agents:
 
 Keep `prompt_transport: stdin` and leave out `prompt_transport_arg`. Crewplane
 sends the prompt and adds the options needed for Pi's text mode automatically.
-To choose a model, set `default_model` in the agent profile or `model` in the
-workflow. Leave out workflow `reasoning`; this profile does not support it.
+
+Pi can use models from multiple providers. Set `default_model` to a
+`provider/model` value matching the provider you authenticated with in Pi.
+For a Pi Codex login, uncomment `default_model: "openai-codex/gpt-5.5"` above.
+Use `pi --list-models` to find model IDs available in your installation.
+
+A workflow's `model` takes precedence over the agent's `default_model`.
+If neither is set, Pi chooses using its own configuration and available
+credentials. Leave out workflow `reasoning`; this profile does not support it.
 
 Crewplane runs Pi without saving a session and tells it to trust project
 resources. The generated profile disables automatic extension loading so

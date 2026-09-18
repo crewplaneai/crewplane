@@ -149,6 +149,8 @@ agents:
   #   cli_cmd: ["pi"]
   #   provider_kind: "pi"
   #   prompt_transport: "stdin"
+  #   # Example for Pi's Codex login; choose your authenticated provider/model.
+  #   # default_model: "openai-codex/gpt-5.5"
   #   # Avoid approval prompts from automatically loaded extensions.
   #   extra_args: ["--no-extensions"]
   #   # Text output arrives at completion; only a wall-clock limit is enforceable.
