@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from crewplane.adapters.invokers.cli_invoker.capabilities import (
+from crewplane.adapters.invokers.cli_invoker.providers.codex import (
     CODEX_MODEL_CAPACITY_MESSAGE,
 )
 from crewplane.architecture.contracts import (
@@ -15,12 +15,8 @@ from crewplane.architecture.contracts import (
     InvocationContext,
 )
 from crewplane.core.config import AgentConfig
-from crewplane.runtime.agent.failures import (
-    InvocationFailureError,
-)
-from crewplane.runtime.agent.invoker import (
-    invoke_agent_with_runner,
-)
+from crewplane.runtime.agent.failures import InvocationFailureError
+from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 
 
 class InvokerRetryBehaviorTests(unittest.IsolatedAsyncioTestCase):

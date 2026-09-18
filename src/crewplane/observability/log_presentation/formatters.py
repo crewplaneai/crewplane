@@ -7,6 +7,7 @@ from pathlib import Path
 from time import time
 
 from crewplane.architecture.contracts import (
+    ExecutionStatus,
     LogPresentationDescriptor,
     validate_log_presentation_descriptor,
 )
@@ -37,7 +38,7 @@ def format_log_file(
     log_path: Path,
     descriptor: LogPresentationDescriptor | object,
     line_budget: int,
-    invocation_status: InvocationStatus = "running",
+    invocation_status: InvocationStatus = ExecutionStatus.RUNNING,
     wall_time_now: float | None = None,
     limits: LogPresentationLimits = DEFAULT_LIMITS,
 ) -> LogPresentationSnapshot:

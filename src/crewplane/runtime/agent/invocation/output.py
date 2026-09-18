@@ -6,6 +6,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import (
     CommandResult,
+    LogLevel,
     OutputExtractionResult,
     OutputExtractor,
 )
@@ -36,10 +37,7 @@ def build_invocation_attempt_result(
     )
     if extracted_output is not None:
         return InvocationAttemptResult(
-            result=_retry_result_from_extracted_output(
-                extracted_output=extracted_output,
-                result=result,
-            ),
+            result=_retry_result_from_extracted_output(extracted_output, result),
             extracted_output=extracted_output,
             usage_output=extracted_output.output_text,
         )
@@ -78,6 +76,7 @@ def _extract_successful_structured_output(
         structured_output_file=structured_output_file,
     )
     if extracted_output.output_extraction_status != "success":
+        cleanup_extracted_invocation_output(extracted_output)
         return None
     return extracted_output
 
@@ -126,7 +125,7 @@ def _extract_visible_output(
             output_path = stderr_path
             output_char_count = stderr_char_count
             notice = InvocationDiagnosticNotice(
-                level="warning",
+                level=LogLevel.WARNING,
                 message=(
                     f"{cmd[0]} invocation succeeded with empty stdout; "
                     "using stderr as output. Provider log contains the original stderr "
@@ -213,3 +212,12 @@ def _write_decoded_stream_file(source: Path, destination: Path) -> None:
         while chunk := source_handle.read(STREAM_READ_BYTES):
             destination_handle.write(decoder.decode(chunk))
         destination_handle.write(decoder.decode(b"", final=True))
+
+
+def cleanup_structured_output_file(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return

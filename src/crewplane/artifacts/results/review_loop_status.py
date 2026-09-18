@@ -4,8 +4,9 @@ import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import Protocol, TypedDict
+from typing import NotRequired, Protocol, TypedDict
 
 from crewplane.architecture.contracts.artifacts import build_review_audit_directory_name
 from crewplane.architecture.ports.artifacts import StageTaskSpec
@@ -26,6 +27,15 @@ REQUIRED_BOOLEAN_FIELDS = (
     "consensus_reached",
     "continued_after_consensus_exhaustion",
 )
+
+
+class ReviewLoopStopReason(StrEnum):
+    CONSENSUS = "consensus"
+    CONSENSUS_EXHAUSTED = "consensus_exhausted"
+    NO_PROGRESS = "no_progress"
+    NO_VALID_CANDIDATE = "no_valid_candidate"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
 
 
 class ReviewLoopStatusOutputEntry(TypedDict):
@@ -51,6 +61,9 @@ class ReviewLoopStatusPayload(TypedDict):
     artifact_drift_warning_count: int
     canonical_executor_outputs: list[ReviewLoopStatusOutputEntry]
     reviewer_outputs: list[ReviewLoopStatusOutputEntry]
+    stop_reason: NotRequired[ReviewLoopStopReason | None]
+    consecutive_no_progress_round_count: NotRequired[int]
+    continued_after_stop: NotRequired[bool]
 
 
 class ReviewLoopStatusError(RuntimeError):
@@ -170,6 +183,19 @@ def validate_status_metadata(
     validate_status_identity(payload, stage_name)
     validate_status_counters(payload)
     validate_status_booleans(payload)
+    reason = payload.get("stop_reason")
+    if reason is not None and (
+        not isinstance(reason, str) or reason not in set(ReviewLoopStopReason)
+    ):
+        raise status_error("stop_reason is not a recognized review-loop stop reason")
+    if "consecutive_no_progress_round_count" in payload and not is_nonnegative_int(
+        payload["consecutive_no_progress_round_count"]
+    ):
+        raise status_error("consecutive_no_progress_round_count must be non-negative")
+    if "continued_after_stop" in payload and not isinstance(
+        payload["continued_after_stop"], bool
+    ):
+        raise status_error("continued_after_stop must be a boolean")
 
 
 def resolve_status_outputs(
@@ -234,16 +260,6 @@ def validate_status_counters(payload: dict[str, object]) -> None:
         value = payload.get(field_name)
         if not is_nonnegative_int(value):
             raise status_error(f"{field_name} must be a non-negative integer")
-    final_round = payload["final_local_round_num"]
-    attempted_round = payload["attempted_local_round_num"]
-    if (
-        isinstance(final_round, int)
-        and isinstance(attempted_round, int)
-        and final_round > attempted_round
-    ):
-        raise status_error(
-            "final_local_round_num cannot exceed attempted_local_round_num"
-        )
 
 
 def validate_status_booleans(payload: dict[str, object]) -> None:
@@ -445,6 +461,24 @@ def validate_round_attribution(
         raise status_error("selected outputs must belong to one audit and local round")
     if entries and entries[0].round_num != payload["final_local_round_num"]:
         raise status_error("selected output round does not match final_local_round_num")
+    final_round = payload["final_local_round_num"]
+    attempted_round = payload["attempted_local_round_num"]
+    executed_audits = payload["executed_audit_rounds"]
+    selected_audit = entries[0].audit_round_num if entries else None
+    selected_earlier_audit = (
+        selected_audit is not None
+        and isinstance(executed_audits, int)
+        and selected_audit < executed_audits
+    )
+    if (
+        isinstance(final_round, int)
+        and isinstance(attempted_round, int)
+        and final_round > attempted_round
+        and not selected_earlier_audit
+    ):
+        raise status_error(
+            "final_local_round_num cannot exceed attempted_local_round_num"
+        )
 
 
 def status_error(message: str) -> ReviewLoopStatusError:

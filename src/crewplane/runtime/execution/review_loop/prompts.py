@@ -62,6 +62,15 @@ EXECUTOR_CANONICAL_OUTPUT_INSTRUCTION = (
     "Do not include progress notes, process commentary, or references to what you "
     "inspected before the candidate."
 )
+NO_PROGRESS_RECOVERY_INSTRUCTION = (
+    "Runtime no-progress notice: the previous remediation attempt left the "
+    "deliverable unchanged while the review below remains unresolved.\n"
+    "This is the final recovery attempt before this node stops with no_progress.\n"
+    "Make a concrete change addressing the unresolved feedback. Rewording a "
+    "handoff without changing its file deliverable does not count as progress. "
+    "If blocked, preserve the candidate and explain the blocker; do not claim "
+    "approval or repeat an unsupported claim that the findings are fixed."
+)
 
 
 def build_executor_prompt(
@@ -69,8 +78,11 @@ def build_executor_prompt(
     previous_candidate_context: str | None,
     previous_review_packet: str | None,
     initial_review_handoff: str | None = None,
+    recovery_attempt: bool = False,
 ) -> str:
     sections = [base_prompt, EXECUTOR_CANONICAL_OUTPUT_INSTRUCTION]
+    if recovery_attempt:
+        sections.append(NO_PROGRESS_RECOVERY_INSTRUCTION)
     if initial_review_handoff:
         sections.append(f"Initial reviewer handoff:\n{initial_review_handoff}")
     if previous_review_packet:

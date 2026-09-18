@@ -11,6 +11,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 import crewplane.cli.app as cli
+from crewplane.adapters.invokers.cli import CliInvokerAdapter
 from crewplane.artifacts.naming import build_run_key_name
 from crewplane.cli.onboarding import (
     CONFIG_RELATIVE_PATH,
@@ -269,7 +270,7 @@ def test_missing_mock_evidence_can_continue_and_select_provider(tmp_path: Path) 
 
     assert "Provider detection" in output
     assert "Onboarding complete." in output
-    assert which.calls == [*known_provider_names(), "codex"]
+    assert which.calls == [*known_provider_names()[:-1], "env", "codex"]
 
 
 def test_no_provider_found_stops_with_setup_guidance(tmp_path: Path) -> None:
@@ -280,7 +281,7 @@ def test_no_provider_found_stops_with_setup_guidance(tmp_path: Path) -> None:
 
     assert "No known provider CLI names were found on PATH." in output
     assert "provider-setup.md" in output
-    assert sorted(which.calls) == sorted(known_provider_names())
+    assert sorted(which.calls) == sorted([*known_provider_names()[:-1], "env"])
 
 
 def test_successful_onboarding_selects_provider_writes_and_validates(
@@ -331,7 +332,7 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
     assert no_live_index < output.index("crewplane run --no-live", no_live_index)
     assert "has not checked Gemini auth" in output
     assert not any("backup" in path.name.lower() for path in tmp_path.rglob("*"))
-    assert which.calls == [*known_provider_names(), "gemini"]
+    assert which.calls == [*known_provider_names()[:-1], "env", "gemini"]
 
 
 def test_provider_selection_eof_leaves_files_unchanged(
@@ -366,7 +367,17 @@ def test_onboarding_enables_multiple_selected_providers(
     available = known_provider_names()
     selected = tuple(reversed(available if select_all else available[:2]))
     choices = [str(available.index(provider) + 1) for provider in selected]
-    which = WhichRecorder({provider: f"/usr/bin/{provider}" for provider in available})
+    which = WhichRecorder(
+        {
+            **{
+                provider: f"/usr/bin/{provider}"
+                for provider in available
+                if provider != "deepseek"
+            },
+            "env": "/usr/bin/env",
+            "dsh": "/test/dsh",
+        }
+    )
 
     output, _ = run_onboarding_in_project(
         tmp_path, answers=[", ".join([*choices, choices[0]]), ""], which=which
@@ -380,7 +391,12 @@ def test_onboarding_enables_multiple_selected_providers(
     assert f"    providers: [{', '.join(selected)}]" in workflow_text
     assert f"Selected {', '.join(selected)}." in output
     assert "Onboarding complete." in output
-    assert which.calls == [*available, *selected]
+    selected_commands = [
+        command
+        for provider in selected
+        for command in (("env", "dsh") if provider == "deepseek" else (provider,))
+    ]
+    assert which.calls == [*available[:-1], "env", "dsh", *selected_commands]
 
 
 @pytest.mark.parametrize("invalid", ["", " ", ",", "0", "1,0", "1,3", "1,codex"])
@@ -679,3 +695,56 @@ def write_successful_mock_history(root: Path) -> None:
         root / ".crewplane",
         manifest.model_copy(update={"runtime_config_snapshot": snapshot}),
     )
+
+
+@pytest.mark.parametrize("provider", ["pi", "deepseek"])
+def test_generated_text_profile_validates_and_dry_runs_without_launch(
+    tmp_path, monkeypatch, provider
+) -> None:
+    initialize_default_project(tmp_path)
+    (tmp_path / CONFIG_RELATIVE_PATH).write_text(
+        render_provider_ready_config(rendered_default_config(), (provider,))
+    )
+    (tmp_path / WORKFLOW_RELATIVE_PATH).write_text(
+        render_provider_ready_workflow(rendered_default_workflow(), (provider,))
+    )
+    monkeypatch.chdir(tmp_path)
+
+    def find_provider(executable):
+        assert executable in {"pi", "dsh", "env"}
+        return "/usr/bin/env" if executable == "env" else f"/test/{executable}"
+
+    def unexpected_invoker(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("preflight must not construct an invoker")
+
+    monkeypatch.setattr("crewplane.adapters.invokers.cli.shutil.which", find_provider)
+    monkeypatch.setattr(CliInvokerAdapter, "create_invoker", unexpected_invoker)
+    for arguments in (["validate"], ["run", "--dry-run", "--no-live"]):
+        result = CliRunner().invoke(cli.app, arguments)
+        assert result.exit_code == 0, result.output
+        if provider == "deepseek":
+            assert "argv" in result.output
+    assert not list((tmp_path / ".crewplane/execution-stages").glob("*"))
+
+
+@pytest.mark.parametrize(
+    "arguments", [["validate"], ["run", "--dry-run"], ["run", "--no-live"]]
+)
+def test_pi_conflicts_fail_all_cli_preflight_routes(
+    tmp_path, monkeypatch, arguments
+) -> None:
+    initialize_default_project(tmp_path)
+    (tmp_path / CONFIG_RELATIVE_PATH).write_text(
+        render_provider_ready_config(rendered_default_config(), ("pi",)).replace(
+            'cli_cmd: ["pi"]', 'cli_cmd: ["pi", "--mode", "rpc"]'
+        )
+    )
+    (tmp_path / WORKFLOW_RELATIVE_PATH).write_text(
+        render_provider_ready_workflow(rendered_default_workflow(), ("pi",))
+    )
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli.app, arguments)
+    assert result.exit_code != 0
+    assert "Pi requires --mode text" in result.output
+    assert not list((tmp_path / ".crewplane/execution-results").glob("*.md"))

@@ -5,16 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker.machine_json import extract_gemini_output
-from crewplane.adapters.invokers.cli_invoker.usage_decoders import (
-    decode_claude_usage,
-    decode_codex_usage,
+from crewplane.adapters.invokers.cli_invoker.providers.claude import decode_claude_usage
+from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
+from crewplane.adapters.invokers.cli_invoker.providers.gemini import (
     decode_gemini_usage,
-    decode_kilo_usage,
+    extract_gemini_output,
 )
+from crewplane.adapters.invokers.cli_invoker.providers.kilo import decode_kilo_usage
 from crewplane.architecture.contracts import (
     CommandResult,
-    ProviderKind,
     ProviderTokenUsage,
 )
 from crewplane.core.config import AgentConfig, TokenPricing
@@ -199,7 +198,7 @@ def test_kilo_decoder_sums_step_finish_records() -> None:
         total=168,
     )
 
-    accumulator = InvocationUsageAccumulator(ProviderKind.KILO, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     accumulator.record_provider_usage(decoded)
     usage = accumulator.build_usage(
         config=AgentConfig(cli_cmd=["kilo"], provider_kind="kilo"),
@@ -332,6 +331,47 @@ def test_kilo_decoder_ignores_events_without_token_parts() -> None:
 
     assert decoded.tokens is None
     assert decoded.error is None
+
+
+@pytest.mark.parametrize(
+    ("decoder", "events", "expected_input", "report_count", "expected_error"),
+    [
+        pytest.param(
+            decode_codex_usage,
+            [
+                {"type": "turn.completed", "usage": {"input_tokens": 2}},
+                {"type": "turn.completed", "usage": {"input_tokens": 3}},
+            ],
+            3,
+            1,
+            None,
+            id="codex-latest",
+        ),
+        pytest.param(
+            decode_kilo_usage,
+            [
+                {"type": "step_finish", "part": {"tokens": {"input": 2}}},
+                {"type": "step_finish", "part": {"tokens": {"input": 3}}},
+            ],
+            5,
+            2,
+            "Malformed Kilo JSON output.",
+            id="kilo-accumulated",
+        ),
+    ],
+)
+def test_usage_decoders_continue_after_malformed_json(
+    decoder, events, expected_input, report_count, expected_error
+) -> None:
+    stdout = "\n".join(
+        [json.dumps(events[0]), "not json", "[]", " ", json.dumps(events[1])]
+    )
+
+    decoded = decoder(CommandResult(0, stdout, ""))
+
+    assert decoded.tokens == ProviderTokenUsage(input=expected_input)
+    assert decoded.valid_report_count == report_count
+    assert decoded.error == expected_error
 
 
 @pytest.mark.parametrize(
@@ -549,7 +589,7 @@ def test_empty_stdout_path_falls_back_to_stdout_tail(tmp_path: Path) -> None:
 
 
 def test_twenty_four_codex_reports_accumulate_once_per_returned_report() -> None:
-    accumulator = InvocationUsageAccumulator(ProviderKind.CODEX, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     for line in (FIXTURE_DIR / "codex_24_reports.jsonl").read_text().splitlines():
         accumulator.record_provider_usage(
             decode_codex_usage(CommandResult(0, line, ""))
@@ -574,7 +614,7 @@ def test_twenty_four_codex_reports_accumulate_once_per_returned_report() -> None
 def test_retry_reports_are_added_and_malformed_later_report_does_not_erase_them() -> (
     None
 ):
-    accumulator = InvocationUsageAccumulator(ProviderKind.CODEX, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     accumulator.record_provider_usage(
         decode_codex_usage(
             CommandResult(
@@ -618,7 +658,7 @@ def test_retry_reports_are_added_and_malformed_later_report_does_not_erase_them(
 
 
 def test_retry_reports_keep_incomplete_aggregate_buckets_unknown() -> None:
-    accumulator = InvocationUsageAccumulator(ProviderKind.CODEX, prompt="prompt")
+    accumulator = InvocationUsageAccumulator(prompt="prompt")
     for stdout_text in (
         '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":3}}',
         '{"type":"turn.completed","usage":{"input_tokens":4}}',

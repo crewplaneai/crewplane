@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from crewplane.architecture.contracts import validate_log_presentation_format
+from crewplane.architecture.contracts import (
+    ExecutionStatus,
+    LogLevel,
+    validate_log_presentation_format,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.dashboard_state import (
     InvocationRuntimeState,
@@ -34,17 +38,18 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
 
     match event.event_type:
         case EventType.WORKFLOW_STARTED:
-            state.workflow_status = "running"
+            state.workflow_status = ExecutionStatus.RUNNING
             state.workflow_started_at = event.timestamp
         case EventType.WORKFLOW_FINISHED:
-            state.workflow_status = "succeeded"
+            state.workflow_status = ExecutionStatus.SUCCEEDED
             state.workflow_finished_at = event.timestamp
         case EventType.WORKFLOW_FAILED:
-            state.workflow_status = "failed"
+            state.workflow_status = ExecutionStatus.FAILED
             state.workflow_finished_at = event.timestamp
         case EventType.WORKFLOW_CANCELLED:
-            state.workflow_status = "cancelled"
+            state.workflow_status = ExecutionStatus.CANCELLED
             state.workflow_finished_at = event.timestamp
+            cancel_unfinished_children(state, event.timestamp)
         case EventType.RUNTIME_LOG:
             if context.node_id is None:
                 return
@@ -52,30 +57,30 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             apply_runtime_log_event(node, event)
         case EventType.NODE_STARTED:
             node = require_node(state, context.node_id)
-            node.status = "running"
+            node.status = ExecutionStatus.RUNNING
             node.started_at = event.timestamp
             node.finished_at = None
         case EventType.NODE_FINISHED:
             node = require_node(state, context.node_id)
-            node.status = "succeeded"
+            node.status = ExecutionStatus.SUCCEEDED
             node.finished_at = event.timestamp
         case EventType.NODE_FAILED:
             node = require_node(state, context.node_id)
-            node.status = "failed"
+            node.status = ExecutionStatus.FAILED
             node.finished_at = event.timestamp
             node_payload = _node_payload(event)
             if node_payload.error:
                 node.recent_events.append(f"FAIL {node_payload.error}")
         case EventType.NODE_BLOCKED:
             node = require_node(state, context.node_id)
-            node.status = "blocked"
+            node.status = ExecutionStatus.BLOCKED
             node_payload = _node_payload(event)
             if node_payload.error:
                 node.recent_events.append(f"BLOCKED {node_payload.error}")
         case EventType.INVOCATION_STARTED:
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
-            invocation.status = "running"
+            invocation.status = ExecutionStatus.RUNNING
             invocation.started_at = event.timestamp
             invocation.finished_at = None
             record_node_event(node, f"RUN {invocation.task_id}")
@@ -83,7 +88,7 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
             finished_payload = _invocation_payload(event)
-            invocation.status = "succeeded"
+            invocation.status = ExecutionStatus.SUCCEEDED
             invocation.finished_at = event.timestamp
             invocation.duration_ms = finished_payload.duration_ms
             suffix = (
@@ -96,7 +101,7 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             node = require_node(state, context.node_id)
             invocation = require_invocation(node, event)
             failed_payload = _invocation_payload(event)
-            invocation.status = "failed"
+            invocation.status = ExecutionStatus.FAILED
             invocation.finished_at = event.timestamp
             invocation.duration_ms = failed_payload.duration_ms
             invocation.error = failed_payload.error
@@ -113,6 +118,25 @@ def apply_event(state: RunDashboardState, event: ExecutionEvent) -> None:
             return
         case _:
             raise ValueError(f"Unsupported event type: {event.event_type}")
+
+
+def cancel_unfinished_children(state: RunDashboardState, timestamp: float) -> None:
+    for node in state.nodes.values():
+        if node.status in {ExecutionStatus.PENDING, ExecutionStatus.RUNNING}:
+            node.status = ExecutionStatus.CANCELLED
+            node.finished_at = timestamp
+        for invocation in node.invocations.values():
+            if invocation.status not in {
+                ExecutionStatus.PENDING,
+                ExecutionStatus.RUNNING,
+            }:
+                continue
+            invocation.status = ExecutionStatus.CANCELLED
+            invocation.finished_at = timestamp
+            if invocation.started_at is not None:
+                invocation.duration_ms = int(
+                    max(0.0, timestamp - invocation.started_at) * 1000
+                )
 
 
 def require_node(state: RunDashboardState, node_id: str | None) -> NodeRuntimeState:
@@ -198,9 +222,9 @@ def apply_runtime_log_event(
     payload = event.payload
     if not isinstance(payload, RuntimeLogEventPayload):
         return
-    if payload.level not in {"warning", "error"} or not payload.message:
+    if payload.level not in {LogLevel.WARNING, LogLevel.ERROR} or not payload.message:
         return
-    prefix = "WARN" if payload.level == "warning" else "ERROR"
+    prefix = "WARN" if payload.level == LogLevel.WARNING else "ERROR"
     record_node_event(node, f"{prefix} {clip(payload.message, 64)}")
 
 

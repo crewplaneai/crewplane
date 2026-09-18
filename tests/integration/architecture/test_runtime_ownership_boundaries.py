@@ -57,6 +57,18 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
     forbidden_names = {
         "AUTO_QUOTA_PARSER_PROVIDER_BY_EXECUTABLE",
         "parser_resolution",
+        "ProviderKind",
+        "StructuredOutputMode",
+        "QuotaParserProfile",
+        "FailureClassificationProfile",
+        "quota_parser",
+        "failure_profile",
+        "log_provider_kind",
+        "STRUCTURED_PROVIDER_KINDS",
+        "QUOTA_PARSER_HINTS",
+        "STRICT_QUOTA_EVIDENCE_PATTERNS",
+        "AUTH_OR_PERMISSION_PATTERNS",
+        "PROVIDER_ERROR_EVENT_TYPES",
     }
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "agent"):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from crewplane.architecture.contracts import LogLevel
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
@@ -45,7 +46,7 @@ def emit_artifact_drift(
     if drift.warning_paths:
         emit_runtime_log(
             telemetry,
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 f"Invocation for node '{node_id}' task '{task_id}' modified "
                 f"unexpected artifacts: {format_drift_paths(output, drift.warning_paths)}"
@@ -64,7 +65,7 @@ def emit_artifact_drift(
     if drift.fatal_paths:
         emit_runtime_log(
             telemetry,
-            level="error",
+            level=LogLevel.ERROR,
             message=(
                 f"Invocation for node '{node_id}' task '{task_id}' modified fatal "
                 f"artifacts: {format_drift_paths(output, drift.fatal_paths)}"

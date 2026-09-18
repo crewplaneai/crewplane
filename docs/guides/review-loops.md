@@ -1,13 +1,12 @@
 # Review Loops
 
-The node modes guide introduces the review-loop shape: a `sequential` node with
-providers in the executor role followed by providers in the reviewer role. This
-guide explains what happens after you choose that shape.
+A review loop uses a `sequential` node with providers assigned to the `executor`
+and `reviewer` roles. Executors produce work for reviewers to check. That work
+is called the candidate. Reviewers approve it or request changes, and executors
+get a limited number of attempts to address their feedback.
 
-In a review loop, providers in the executor role produce a candidate, providers
-in the reviewer role approve or block it, and blocked reviews can send feedback
-into bounded fix attempts. Start with the smallest loop first, then add controls
-only when the workflow needs them.
+Start with one executor and one reviewer, then add providers or fix attempts as
+needed.
 
 For separate structured issue artifacts, see
 [Findings artifacts](findings.md).
@@ -39,7 +38,7 @@ This example uses the defaults:
 
 - the provider in the executor role runs first
 - providers in the reviewer role run after a candidate exists
-- the same authored prompt is used for both roles
+- the same node prompt is used for both roles
 - one blocked review can trigger one fix attempt by the provider in the
   executor role
 - the loop ends when reviewers approve or the configured attempts are exhausted
@@ -49,14 +48,13 @@ This example uses the defaults:
 A candidate is the output from the provider in the executor role that is
 currently being reviewed. In the smallest loop, Crewplane first sends the node
 prompt to the provider in the executor role. When that provider writes a
-candidate, Crewplane sends the same authored prompt to the provider in the
-reviewer role, plus the current candidate and the structured review contract.
+candidate, Crewplane sends the same node prompt to the provider in the reviewer
+role, plus the current candidate and the required review format.
 
 If the reviewer blocks the candidate, Crewplane carries the unresolved feedback
 into the next fix prompt for the provider in the executor role. Review-loop
-status records which executor candidate is canonical. Reviewer output remains
-available as review evidence, but it is not a replacement for the executor
-candidate.
+status records which executor output is selected as the result. Reviewer output
+remains available as review evidence; the final result comes from the executor.
 
 ## Provider Order
 
@@ -86,15 +84,9 @@ nodes:
 Implement the requested change and list the files changed.
 ```
 
-**Provider order is the role contract.** Review loops have one valid provider
-shape: a contiguous segment of providers in the executor role followed by a
-contiguous segment of providers in the reviewer role.
-
-This order declares roles; it does not create one-to-one pairs. Crewplane does
-not treat the first reviewer as the reviewer for the first executor, or the
-second reviewer as the reviewer for the second executor. It runs the executor
-segment as one executor phase, then runs the reviewer segment as one review
-phase.
+**List every executor before any reviewer.** Crewplane runs the executors in
+order, then runs the reviewers in parallel. Reviewers are not paired with
+individual executors: every reviewer checks the complete set of executor outputs.
 
 ![Provider role order diagram showing a sequential provider list split into executor and reviewer segments, the executor phase producing one candidate set, and every reviewer checking that same set instead of one-to-one executor-reviewer pairs.](../images/review-loops/review-loop-provider-roles.png)
 
@@ -110,12 +102,9 @@ reviewers to approve a partial candidate set. If reviewers block and another
 fix attempt is available, unresolved feedback is carried into the next executor
 round for all providers in the executor role.
 
-Use the provider counts to choose the review shape:
-
-Use provider counts to choose how much fanout and review pressure the node needs.
 Most review loops should start with one executor. Add more reviewers when the
 same candidate needs independent checks. Add more executors only when multiple
-executor outputs should remain part of the reviewed candidate set.
+outputs need to be reviewed together.
 
 - **Multiple executors, one reviewer**: executors run in declaration order and
   produce one candidate set. One reviewer checks the whole set and must approve
@@ -135,8 +124,7 @@ executor outputs should remain part of the reviewed candidate set.
   set. Every reviewer checks the same full set, and every reviewer must approve.
   Blocking feedback from any reviewer goes to the next executor round for all
   executors.
-  - **Use this only when both sides need fanout**: multiple executor outputs must be
-    reviewed together, and approval needs more than one independent reviewer.
+  - **Use this when several outputs need several independent reviews.**
     For ordinary implementation review, prefer one executor with multiple
     reviewers.
 
@@ -169,10 +157,10 @@ End with the structured review verdict.
 <!-- /crewplane:reviewer -->
 ```
 
-Authored role markers are only `executor` and `reviewer`; there is no authored
-`shared` marker. During review-loop execution, Crewplane also adds the current
-executor candidate set, any unresolved previous feedback, reviewer-only safety
-instructions, and the review contract to the reviewer prompt.
+Use `executor` and `reviewer` as role markers; unmarked text is shared.
+Crewplane also adds the current executor outputs, unresolved feedback,
+instructions to review without changing the candidate, and the required review
+format to each reviewer prompt.
 
 ![Prompt role routing diagram showing the authored Markdown prompt on the left, with unmarked shared content sent to both roles, the executor block sent only to executor-role providers, and the reviewer block sent only to reviewer-role providers.](../images/review-loops/review-loop-prompt-roles.png)
 
@@ -200,7 +188,7 @@ blocks it and sends feedback to the next executor fix attempt.
 One reviewer and multiple reviewers use the same loop. The difference is the
 review phase:
 
-| Reviewer count | Runtime behavior | Approval rule |
+| Reviewer count | What happens | Approval rule |
 | --- | --- | --- |
 | One reviewer | One reviewer receives the reviewer prompt and current candidate set. | That reviewer must approve. |
 | Multiple reviewers | Reviewers run in parallel against the same current candidate set. | Every reviewer must approve. |
@@ -208,10 +196,10 @@ review phase:
 Reviewers do not see each other's current-round feedback before responding.
 `settings.max_parallel_invocations` can cap parallel reviewer calls.
 
-If reviewer output is malformed or ambiguous, Crewplane preserves the text as
-unstructured feedback and does not count it as approval. Plain-language approval
-or blocker cues may be inferred when no structured block is present, but the
-structured block is the reliable contract.
+If a reviewer returns text without a clear verdict, Crewplane saves it as
+feedback and does not count it as approval. Crewplane can recognize some plain
+text approvals or requests for changes, but the structured format above is the
+reliable way to report a verdict.
 
 ## Add Fix Attempts With `depth`
 
@@ -251,7 +239,7 @@ unless a reviewer writes them as major or minor concerns.
 ## Add Fresh Passes With `audit_rounds`
 
 Use `audit_rounds` when reviewers should get a fresh pass over a candidate
-that was approved only after remediation:
+that was approved only after fixes:
 
 ```yaml
 nodes:
@@ -266,9 +254,8 @@ nodes:
     audit_rounds: 2
 ```
 
-`audit_rounds` wraps the whole review pass. Each audit round has its own local
-`depth` budget. A later audit round reviews the latest valid executor candidate
-from the previous audit round.
+Each audit round is a fresh review pass with its own `depth` budget. Later
+rounds start from the latest valid executor candidate from the previous round.
 
 ![Audit rounds diagram showing the depth loop wrapped inside audit round containers, with a later audit round starting from the latest valid candidate and resetting the local depth budget.](../images/review-loops/review-loop-audit-rounds.png)
 
@@ -281,7 +268,7 @@ Use the controls for different reasons:
 
 Start with `depth: 1` and `audit_rounds: 1`. Raise `depth` first when failures
 are usually fixable. Raise `audit_rounds` when you want reviewers to inspect a
-fixed candidate again without inherited unresolved feedback from the prior pass.
+fixed candidate again without carrying over feedback from the prior pass.
 `audit_rounds` must not exceed `settings.max_audit_rounds`.
 
 ## Start With Reviewers
@@ -323,8 +310,8 @@ What changes:
 
 What reviewers can inspect:
 
-Round 0 gives reviewers a chance to inspect the context you author before any
-same-node executor candidate exists. Include any of these in the prompt:
+Round 0 gives reviewers a chance to inspect the context you provide before this
+node's executor produces a candidate. Include any of these in the prompt:
 
 - shared prompt text
 - reviewer-only prompt blocks
@@ -336,12 +323,11 @@ What happens next:
 
 After round 0, local round 1 runs the executor:
 
-- If reviewers approve the existing context, the executor receives preservation
-  guidance and writes this node's executor output.
+- If reviewers approve the existing context, the executor is told to preserve
+  it while writing this node's output.
 - If reviewers report major issues, minor issues, or unstructured feedback, that
-  feedback becomes the executor handoff.
-- Reviewers then inspect the executor candidate through the normal review
-  contract.
+  feedback is passed to the executor.
+- Reviewers then inspect the executor candidate using the usual review format.
 
 Be explicit about inputs. `needs` controls node ordering, but it does not tell
 reviewers what to inspect. Reference the review context in shared prompt text or
@@ -369,13 +355,22 @@ Use these files as context for the initial review and any required fix:
 
 ## Continue Or Fail On Exhaustion
 
-Reviewer verdicts are part of the loop, not invocation failures.
-`CHANGES_REQUESTED` drives remediation while attempts remain.
+A `CHANGES_REQUESTED` verdict asks for another fix attempt while attempts remain.
 
-`continue_on_failure` applies to reviewer invocation failures and review-loop
-consensus exhaustion. When a valid candidate exists and continuation is allowed,
-Crewplane preserves the run record and completes the node instead of failing the
-workflow for exhaustion. Failed dependencies still block downstream nodes.
+When attempts run out without approval, `continue_on_failure` and
+`settings.sequential_consensus_on_exhaustion` determine whether the node fails or
+the workflow continues with a valid candidate. `continue_on_failure` also applies
+when a reviewer command fails. Failed dependencies still block later nodes.
+
+Crewplane also stops a node with `no_progress` after two consecutive fix attempts
+leave the work unchanged and the same feedback unresolved. After the first such
+attempt, it warns the executor that one more unchanged attempt will stop the
+node. This limit carries across audit rounds and resets when the work or review
+feedback changes.
+
+The global `sequential_consensus_on_exhaustion: continue` setting cannot override
+this stop. Set `continue_on_failure: true` on the node only if you want the
+workflow to continue with work that reviewers have not approved.
 
 ## What You Can Inspect
 
@@ -389,27 +384,38 @@ The important file is:
 <node-id>/review-state/review-loop-status.json
 ```
 
-It records the selected executor candidate, reviewer verdicts, exhaustion state,
-and enough information to verify that the selected files have not changed.
-Crewplane checks them before choosing the final node result. Downstream
-`{{node.output}}` therefore points at the executor result chosen by the review
-loop.
+It records which executor output was selected, the reviewers' verdicts, why the
+loop stopped, and whether the allowed attempts were used up. It also stores
+enough information to check that the selected files have not changed. Crewplane
+checks those files before choosing the final node result. Downstream
+`{{node.output}}` points to that selected executor output.
 
-Each provider’s response remains separate until that provider finishes. While providers are running, Crewplane protects the current candidate, reviewer results, and other run data from unexpected changes. If protected data changes, Crewplane fails the node. An audit that produces no valid reviewer results does not carry forward results from an earlier audit.
+Crewplane saves status between attempts and if a run fails or is cancelled. The
+file distinguishes the latest attempted round from the last completed review,
+so an interrupted attempt does not attach an older verdict to new work.
+
+Files ending in `.candidate.json` are stored beside executor outputs. They record
+how Crewplane compared the content to detect progress, or why it could not make
+that comparison. If file changes cannot be checked reliably, reviewers run again.
+
+Each provider's response remains separate until that provider finishes. While
+providers are running, Crewplane protects the current candidate, reviewer results,
+and other run data from unexpected changes. If protected data changes, Crewplane
+fails the node. A completed audit with no valid reviewer results does not reuse
+verdicts from an earlier audit.
 
 ## Workspace Notes
 
-When Worktrees are enabled, reviewer invocations inspect the
-current executor candidate but do not advance source lineage. Executor and
-remediation rounds produce candidate lineage. A mutable `kind: worktree` node
-can have only one provider in the executor role; providers in the reviewer role
-remain allowed in sequential review loops.
+When Worktrees are enabled, reviewers inspect the executor's current files.
+Reviewer runs do not update the file version used by later nodes; executor runs
+do. A `kind: worktree` node can have only one executor, but review loops can still
+have multiple reviewers.
 
-With Managed workspaces, reviewer-first `{{file:...}}` context
-uses compiled Git source state: same-node candidate if one already exists,
-otherwise upstream lineage for node-sourced worktrees, otherwise project initial
-source. It does not add support for uncommitted manual edits inside managed
-workspaces.
+For a reviewer-first run in a managed workspace, `{{file:...}}` reads a recorded
+Git version. It uses this node's existing candidate if available, otherwise the
+upstream node's files when the worktree takes its source from another node,
+otherwise the project's starting files. Uncommitted manual changes are not
+included.
 
 ## Next
 

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
+from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 
-from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts import AgentInvoker, LogLevel
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.atomic import atomic_write_text
+from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
+from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -51,6 +55,7 @@ from .state import (
     render_unresolved_review_packet,
 )
 from .types import (
+    AuditRoundProgress,
     AuditRoundRequest,
     AuditRoundResult,
     ExecutorRoundArtifact,
@@ -60,6 +65,7 @@ from .types import (
     ReviewLoopProgress,
     ReviewLoopRunContext,
 )
+from .validation import validate_executor_outputs
 
 # Failure-policy case map:
 # 1. Executor invocation failure: normal invocation failure path.
@@ -98,7 +104,7 @@ def _emit_consensus_exhaustion(
         message = f"{message} Continuing due to {continuation_reason}."
     emit_runtime_log(
         telemetry,
-        level="warning",
+        level=LogLevel.WARNING,
         message=message,
         operation="review_loop_consensus_exhausted",
         context=RuntimeEventContext(node_id=node_id),
@@ -112,7 +118,7 @@ def _emit_no_canonical_candidate(
 ) -> None:
     emit_runtime_log(
         telemetry,
-        level="error",
+        level=LogLevel.ERROR,
         message=(
             f"Sequential node '{node_id}' did not produce any valid canonical "
             "candidate across all audit rounds."
@@ -165,6 +171,24 @@ async def execute_review_loop_stage(
         audit_rounds=resolve_audit_rounds(stage),
     )
     progress = ReviewLoopProgress()
+    try:
+        await execute_review_loop_audits(context, progress)
+    except asyncio.CancelledError:
+        progress.stop_reason = ReviewLoopStopReason.CANCELLED
+        progress.consensus_reached = False
+        _persist_review_loop_status(context, progress)
+        raise
+    except Exception:
+        if progress.stop_reason is None:
+            progress.stop_reason = ReviewLoopStopReason.FAILED
+        _persist_review_loop_status(context, progress)
+        raise
+
+
+async def execute_review_loop_audits(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
 
     for audit_round_num in range(1, context.audit_rounds + 1):
         progress.executed_audit_rounds = audit_round_num
@@ -173,15 +197,21 @@ async def execute_review_loop_stage(
             progress,
             audit_round_num,
         )
+        if audit_result.stop_reason == ReviewLoopStopReason.NO_PROGRESS:
+            finish_stalled_review_loop(context, progress)
+            return
         if review_loop_can_finish(
             context,
             audit_result,
             audit_round_num,
         ):
+            progress.stop_reason = ReviewLoopStopReason.CONSENSUS
+            _persist_review_loop_status(context, progress)
             return
 
     if progress.latest_executor_outputs is None:
         progress.mark_consensus_exhausted(continued=False)
+        progress.stop_reason = ReviewLoopStopReason.NO_VALID_CANDIDATE
         _persist_review_loop_status(context, progress)
         _emit_no_canonical_candidate(context.telemetry, context.stage.id)
         raise NodeExecutionError(
@@ -222,6 +252,32 @@ async def execute_review_loop_stage(
         )
 
 
+def finish_stalled_review_loop(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
+    continued = context.stage.execution_policy.continue_on_failure
+    progress.continued_after_stop = continued
+    _persist_review_loop_status(context, progress)
+    message = (
+        f"Sequential node '{context.stage.id}' stopped with no_progress after "
+        f"{progress.stall.consecutive_round_count} consecutive unchanged "
+        "remediation attempts. Review feedback remains unresolved."
+    )
+    if continued:
+        message += " Continuing due to continue_on_failure=true."
+    emit_runtime_log(
+        context.telemetry,
+        level=LogLevel.WARNING if continued else LogLevel.ERROR,
+        message=message,
+        operation="review_loop_stopped",
+        context=RuntimeEventContext(node_id=context.stage.id),
+        attributes={"stop_reason": "no_progress", "continued": continued},
+    )
+    if not continued:
+        raise NodeExecutionError(message)
+
+
 async def _execute_review_loop_audit_round(
     context: ReviewLoopRunContext,
     progress: ReviewLoopProgress,
@@ -244,12 +300,22 @@ async def _execute_review_loop_audit_round(
         audit_context,
         audit_round_num,
     )
+    progress.last_round_num = 1
     initial_executor_outputs = await _initial_audit_executor_outputs(
         context,
         progress,
         audit_dir,
         audit_context,
         initial_review_handoff,
+    )
+    progress.active_audit = AuditRoundProgress(
+        executor_outputs=initial_executor_outputs,
+        latest_valid_executor_outputs=(
+            initial_executor_outputs
+            if validate_executor_outputs(initial_executor_outputs).valid
+            else None
+        ),
+        stall=progress.stall,
     )
     audit_result = await execute_single_audit_round(
         AuditRoundRequest(
@@ -269,6 +335,8 @@ async def _execute_review_loop_audit_round(
             remediation_depth=context.remediation_depth,
             initial_executor_outputs=initial_executor_outputs,
             audit_round_num=audit_context,
+            progress=progress.active_audit,
+            checkpoint=partial(_persist_review_loop_status, context, progress),
         )
     )
     progress.record_audit_result(audit_result)
@@ -480,6 +548,11 @@ def seed_executor_outputs(
             artifact.output_file,
             output_file,
         )
+        if artifact.candidate_identity is not None:
+            atomic_write_json(
+                output_file.with_suffix(".candidate.json"),
+                asdict(artifact.candidate_identity),
+            )
         seeded_outputs.append(
             ExecutorRoundArtifact(
                 provider=artifact.provider,
@@ -489,6 +562,7 @@ def seed_executor_outputs(
                 audit_round_num=audit_round_num,
                 round_num=round_num,
                 output_signature=output_signature,
+                candidate_identity=artifact.candidate_identity,
             )
         )
     return seeded_outputs

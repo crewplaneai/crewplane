@@ -30,7 +30,6 @@ from crewplane.observability.events.types import (
     is_workflow_event_type,
 )
 
-LOG_LEVELS: frozenset[str] = frozenset(get_args(LogLevel))
 _OUTPUT_EXTRACTION_STATUSES: frozenset[str] = frozenset(
     get_args(OutputExtractionStatus)
 )
@@ -187,10 +186,10 @@ def _workspace_payload_from_record(
 def _runtime_log_payload_from_record(
     record: Mapping[str, object],
 ) -> RuntimeLogEventPayload | None:
-    level = _string(record.get("level"))
+    level = _log_level(record.get("level"))
     message = _string(record.get("message"))
     operation = _string(record.get("operation"))
-    if not _is_log_level(level) or message is None or operation is None:
+    if level is None or message is None or operation is None:
         return None
     return RuntimeLogEventPayload(
         level=level,
@@ -231,8 +230,13 @@ def _timestamp_value(timestamp_utc: str) -> float:
         return 0.0
 
 
-def _is_log_level(value: str | None) -> TypeGuard[LogLevel]:
-    return isinstance(value, str) and value in LOG_LEVELS
+def _log_level(value: object) -> LogLevel | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return LogLevel(value)
+    except ValueError:
+        return None
 
 
 def _output_extraction_status(value: object) -> OutputExtractionStatus | None:

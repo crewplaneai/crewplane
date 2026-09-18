@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import ExecutionStatus
 from crewplane.core.preflight.models import (
     DependencyEdge,
     PreflightExecutionPlan,
@@ -37,7 +38,11 @@ def initialize_workflow_execution_state(
         ready=ready,
         running={},
         statuses={
-            node.id: ("succeeded" if node.id in resumed_nodes else "pending")
+            node.id: (
+                ExecutionStatus.SUCCEEDED
+                if node.id in resumed_nodes
+                else ExecutionStatus.PENDING
+            )
             for node in plan.nodes
         },
         node_errors={},

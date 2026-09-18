@@ -275,7 +275,7 @@ def run_invoker_preflight_diagnostics(
         "invoker",
         settings.integrations.invoker.implementation,
     )
-    reasoning_errors = run_reasoning_control_errors(
+    request_errors = run_request_validation_errors(
         workflow,
         config,
         adapter,
@@ -294,7 +294,7 @@ def run_invoker_preflight_diagnostics(
         else ()
     )
     return (
-        reasoning_errors + availability_errors,
+        request_errors + availability_errors,
         run_model_arg_warnings(config, adapter),
     )
 
@@ -323,7 +323,7 @@ def run_availability_errors(
     return validated_adapter_messages(errors, "collect_availability_errors")
 
 
-def run_reasoning_control_errors(
+def run_request_validation_errors(
     workflow: WorkflowPlan,
     config: Config,
     adapter: InvokerAdapterPort,
@@ -331,14 +331,12 @@ def run_reasoning_control_errors(
     working_directory: Path | None = None,
 ) -> tuple[str, ...]:
     requested_locations = _reasoning_requested_locations(workflow)
-    if not requested_locations:
-        return ()
     if not is_builtin_implementation("invoker", resolved_identity, "cli"):
         return _reasoning_ineligibility_errors(requested_locations)
-    collector = getattr(adapter, "collect_reasoning_errors", None)
+    collector = getattr(adapter, "collect_request_errors", None)
     if not callable(collector):
         raise AdapterContractError(
-            "Built-in CLI invoker adapter must define collect_reasoning_errors()."
+            "Built-in CLI invoker adapter must define collect_request_errors()."
         )
     try:
         errors = collector(
@@ -348,9 +346,9 @@ def run_reasoning_control_errors(
         )
     except Exception as exc:
         raise AdapterContractError(
-            f"Built-in CLI invoker collect_reasoning_errors() failed: {exc}"
+            f"Built-in CLI invoker collect_request_errors() failed: {exc}"
         ) from exc
-    return validated_adapter_messages(errors, "collect_reasoning_errors")
+    return validated_adapter_messages(errors, "collect_request_errors")
 
 
 def run_model_arg_warnings(

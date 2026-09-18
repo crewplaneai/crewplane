@@ -650,10 +650,20 @@ The validator is intentionally conservative. Mixed commentary plus a real
 candidate, short but plausible candidates, and oddly formatted self-contained
 candidates remain reviewable.
 
-Remediation reviewer calls are skipped when the current canonical candidate is
-unchanged from the previous canonical candidate after whitespace normalization.
-Claims of fixes without identical content still go to reviewers; the runtime
-does not attempt semantic diffing of reviewer claims.
+Remediation reviewer calls are skipped only when the deliverable is verifiably
+unchanged and the preceding review still has unresolved feedback. Comparison
+uses delivered document or file contents, preserves whitespace, and ignores
+execution metadata. Reviewers run when the comparison is inconclusive or
+changes cannot be attributed to the executor. Each executor output has a
+`.candidate.json` sidecar recording the comparison identity or why it could not
+be established.
+
+The first unchanged remediation attempt gives the executor a final recovery
+notice. Two consecutive unchanged attempts against the same candidate and
+unresolved feedback stop the node with `no_progress`. This count carries across
+audits and resets when the candidate or review feedback changes. Only
+`node.continue_on_failure` permits continuation after this stop, without
+claiming consensus; the global consensus-exhaustion policy does not apply.
 
 Every review-loop node writes
 `review-state/review-loop-status.json` at the node stage root. It records:
@@ -662,8 +672,13 @@ Every review-loop node writes
 - executed audit rounds and final local round number
 - consensus and continuation flags
 - invalid-candidate, no-progress, and artifact-drift warning counts
+- stop reason and consecutive no-progress count
 - final canonical executor output descriptors
 - reviewer output descriptors
+
+Status is saved between attempts and on cancellation or failure. It distinguishes
+the attempted round from the selected completed review, so an interrupted
+reviewer cannot pair a new candidate with an older verdict.
 
 Selected descriptors bind task, provider, role, audit, round, relative path,
 size, and SHA-256. Consumers verify them before use. An empty reviewer set
@@ -907,8 +922,7 @@ because they are easy to misread from the high-level workflow:
   invalid status fails finalization instead of selecting outputs by filename.
   Nodes without reviewers continue to use latest-round filename selection.
 - Review inboxes are Markdown-only in the current implementation. A parallel
-  JSON inbox, an explicit stall failure policy, and reviewer-scope-based
-  skipping remain future design questions.
+  JSON inbox and reviewer-scope-based skipping remain future design questions.
 - Reviewer output handling distinguishes reviewer content problems from
   executor candidate problems. Parser failures with actual text preserve that
   text as unstructured feedback; missing review content follows reviewer
@@ -945,6 +959,8 @@ because they are easy to misread from the high-level workflow:
 - **2026-08-05**: Added retry-aware provider usage accumulation and exact
   run-level token totals reconstructed from durable terminal invocation events.
   Structured usage reporting now covers Codex, Claude, Gemini, and Kilo.
+- **2026-09-14**: Documented stopping after repeated unchanged remediation across
+  audits and preserving review status on cancellation or failure.
 
 ## References
 - [ADR 0001: Ports + Adapters Runtime Integrations](0001-ports-adapters-runtime-integrations.md)

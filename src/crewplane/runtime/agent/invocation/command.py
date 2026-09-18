@@ -16,6 +16,7 @@ from crewplane.architecture.contracts import (
     InvocationDiagnosticSink,
     InvocationPlan,
     InvocationProcessEvent,
+    LogLevel,
 )
 from crewplane.core.platform import supports_posix_process_groups
 from crewplane.runtime.workspace.state_evidence import (
@@ -283,10 +284,10 @@ def _workspace_state_path(
 
 def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:
     return InvocationCommandRuntime(
-        failure_profile=plan.failure_profile,
+        failure_classifier=plan.failure_classifier,
         output_extractor=plan.output_extractor,
         usage_decoder=plan.usage_decoder,
-        quota_parser=plan.quota_parser,
+        quota_classifier=plan.quota_classifier,
         structured_output_file=plan.structured_output_file,
         cmd=plan.cmd,
         stdin_data=plan.stdin_data,
@@ -303,15 +304,6 @@ def prepare_structured_output_file(path: Path | None) -> None:
     if path is None:
         return
     path.unlink(missing_ok=True)
-
-
-def cleanup_structured_output_file(path: Path | None) -> None:
-    if path is None:
-        return
-    try:
-        path.unlink()
-    except FileNotFoundError:
-        return
 
 
 async def run_invocation_attempt(
@@ -433,7 +425,7 @@ async def _await_invocation_attempt(
         )
         emit_invocation_diagnostic(
             invocation_context,
-            level="error",
+            level=LogLevel.ERROR,
             message=message,
             operation="invocation_timeout",
             attributes={

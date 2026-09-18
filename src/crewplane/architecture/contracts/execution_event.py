@@ -15,6 +15,7 @@ from crewplane.architecture.contracts.invocation import (
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .json import JsonObject
+from .logging import LogLevel
 
 
 @unique
@@ -93,12 +94,6 @@ TERMINAL_WORKFLOW_EVENT_TYPES: frozenset[WorkflowEventType] = frozenset(
         EventType.WORKFLOW_CANCELLED,
     }
 )
-
-
-WorkflowStatus = Literal["pending", "running", "succeeded", "failed", "cancelled"]
-NodeStatus = Literal["pending", "running", "succeeded", "failed", "blocked"]
-InvocationStatus = Literal["pending", "running", "succeeded", "failed"]
-LogLevel = Literal["debug", "info", "warning", "error"]
 
 
 @dataclass(frozen=True)
@@ -247,6 +242,7 @@ class RuntimeLogEventPayload(EventPayload):
     error: str | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "level", LogLevel(self.level))
         if self.attributes is not None:
             object.__setattr__(
                 self,
@@ -257,7 +253,7 @@ class RuntimeLogEventPayload(EventPayload):
     @override
     def as_event_fields(self) -> JsonObject:
         return {
-            "level": self.level,
+            "level": self.level.value,
             "message": self.message,
             "operation": self.operation,
             "attributes": (

@@ -5,14 +5,12 @@ from math import ceil
 from crewplane.architecture.contracts import (
     AggregateCostConfidence,
     InvocationCostConfidence,
-    ProviderKind,
     ProviderUsageStatus,
 )
 from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS, TokenBucket
 from crewplane.core.config import AgentConfig
 
 from .usage_types import (
-    STRUCTURED_PROVIDER_KINDS,
     InvocationUsage,
     ProviderTokenUsage,
 )
@@ -137,13 +135,10 @@ def provider_usage_buckets(config: AgentConfig) -> tuple[TokenBucket, ...]:
 
 def classify_provider_usage_status(
     config: AgentConfig,
-    provider_kind: ProviderKind,
     provider_tokens: ProviderTokenUsage,
     provider_usage_report_count: int,
     usage_parse_error: str | None,
 ) -> ProviderUsageStatus:
-    if provider_kind not in STRUCTURED_PROVIDER_KINDS:
-        return "none"
     if provider_usage_report_count == 0:
         if usage_parse_error is not None:
             return "malformed"

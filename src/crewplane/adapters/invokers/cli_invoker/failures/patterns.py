@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .types import FailureKind
+from crewplane.architecture.contracts.invocation_failures import FailureKind
 
 FAILURE_SUMMARY_MAX_CHARS = 240
 MAX_FAILURE_LINES = 1_000
@@ -48,45 +48,6 @@ KIND_PRIORITY: dict[FailureKind, int] = {
     "provider_transport_error": 600,
     "provider_error": 400,
     "unknown_provider_error": 0,
-}
-ADVICE_BY_KIND: dict[FailureKind, str] = {
-    "provider_session_context_exhausted": (
-        "Provider context filled during tool or file exploration. Split the "
-        "workflow, narrow file scope, or reduce provider tool output."
-    ),
-    "initial_request_too_large": (
-        "The initial resolved prompt or artifact input is too large. Use smaller "
-        "inputs, findings artifacts, or token-budget fail-fast settings."
-    ),
-    "provider_output_limit_exceeded": (
-        "The provider hit an output limit. Narrow the task, request a smaller "
-        "answer, or use a model/profile with a larger output budget."
-    ),
-    "quota_or_rate_limit": (
-        "The provider reported quota or rate limiting. Quota retries are independent "
-        "of max_retries; check retry/reset details and provider account limits."
-    ),
-    "auth_or_permission": (
-        "The provider CLI is unauthenticated or lacks required tool, file, or "
-        "account permissions."
-    ),
-    "model_or_config_error": (
-        "The provider rejected the configured model, profile, flag, or request "
-        "configuration."
-    ),
-    "provider_transport_error": (
-        "The provider CLI or network stream failed. Retry only when configured "
-        "retry rules identify the condition as transient."
-    ),
-    "provider_tool_error": (
-        "A provider-side tool call failed. Inspect the provider log for the "
-        "specific tool and arguments."
-    ),
-    "malformed_provider_output": (
-        "The provider did not emit the structured output crewplane requires."
-    ),
-    "provider_error": "The provider CLI reported an error.",
-    "unknown_provider_error": "The provider CLI failed; inspect the invocation log.",
 }
 
 AUTH_OR_PERMISSION_PATTERNS: tuple[str, ...] = (

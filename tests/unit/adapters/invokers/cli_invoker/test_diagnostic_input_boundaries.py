@@ -5,16 +5,23 @@ from datetime import UTC, datetime
 
 import pytest
 
-from crewplane.architecture.contracts import ProviderKind
-from crewplane.core.config import AgentConfig
-from crewplane.runtime.agent.failures.evidence import collect_failure_evidence
-from crewplane.runtime.agent.failures.formatting import fallback_summary
-from crewplane.runtime.agent.failures.types import FailureSource
-from crewplane.runtime.agent.quota.evidence import (
+from crewplane.adapters.invokers.cli_invoker.failures.classifier import (
+    GENERIC_QUOTA_PATTERNS,
+)
+from crewplane.adapters.invokers.cli_invoker.failures.evidence import (
+    collect_failure_evidence,
+)
+from crewplane.adapters.invokers.cli_invoker.failures.formatting import fallback_summary
+from crewplane.adapters.invokers.cli_invoker.providers import codex, gemini
+from crewplane.adapters.invokers.cli_invoker.quota.evidence import (
     collect_quota_context_lines,
     find_quota_evidence,
 )
-from crewplane.runtime.agent.quota.waits import extract_wait_candidates_from_line
+from crewplane.adapters.invokers.cli_invoker.quota.waits import (
+    extract_wait_candidates_from_line,
+)
+from crewplane.architecture.contracts.invocation_failures import FailureSource
+from crewplane.core.config import AgentConfig
 
 
 @pytest.mark.parametrize(
@@ -38,7 +45,7 @@ from crewplane.runtime.agent.quota.waits import extract_wait_candidates_from_lin
 )
 def test_invalid_or_nonfailure_json_does_not_become_failure_evidence(line: str) -> None:
     evidence, candidates, count = collect_failure_evidence(
-        ProviderKind.GENERIC, [(line, "stdout_json")]
+        GENERIC_QUOTA_PATTERNS, [(line, "stdout_json")]
     )
     assert evidence == []
     assert candidates == [(line, "stdout_json")]
@@ -72,7 +79,7 @@ def test_failure_json_preserves_error_message_and_transport_classification(
     payload: dict[str, object], message: str
 ) -> None:
     evidence, candidates, count = collect_failure_evidence(
-        ProviderKind.GENERIC, [(json.dumps(payload), "stderr_json")]
+        GENERIC_QUOTA_PATTERNS, [(json.dumps(payload), "stderr_json")]
     )
     assert len(evidence) == 1
     assert evidence[0].summary.message == message
@@ -115,7 +122,7 @@ def test_malformed_output_has_specific_failure_classification(
     source: FailureSource,
 ) -> None:
     evidence, _, _ = collect_failure_evidence(
-        ProviderKind.GENERIC, [("invalid json output", source)]
+        GENERIC_QUOTA_PATTERNS, [("invalid json output", source)]
     )
     assert len(evidence) == 1
     assert evidence[0].summary.kind == "malformed_provider_output"
@@ -129,19 +136,28 @@ def test_configured_quota_hint_accepts_punctuation_variants(line: str) -> None:
     config = AgentConfig(
         cli_cmd=["local"], quota_reached_on_contains=["", "budget is depleted"]
     )
-    assert find_quota_evidence([" ", line], "generic", config) == "budget is depleted"
+    assert (
+        find_quota_evidence([" ", line], (), tuple(config.quota_reached_on_contains))
+        == "budget is depleted"
+    )
 
 
 def test_parser_specific_quota_hint_is_detected_without_custom_configuration() -> None:
     config = AgentConfig(cli_cmd=["local"])
     assert (
         find_quota_evidence(
-            ["The server reports exhausted your capacity"], "gemini", config
+            ["The server reports exhausted your capacity"],
+            gemini.QUOTA_HINTS,
+            tuple(config.quota_reached_on_contains),
         )
         == "exhausted your capacity"
     )
     assert (
-        find_quota_evidence(["Provider says usage-limit-exceeded"], "codex", config)
+        find_quota_evidence(
+            ["Provider says usage-limit-exceeded"],
+            codex.QUOTA_HINTS,
+            tuple(config.quota_reached_on_contains),
+        )
         == "usage limit exceeded"
     )
 
@@ -158,7 +174,9 @@ def test_quota_context_retains_following_blank_and_custom_reset_details() -> Non
         "reset at tomorrow",
         "specific detail",
     ]
-    assert collect_quota_context_lines(lines, "generic", config) == [
+    assert collect_quota_context_lines(
+        lines, (), tuple(config.quota_reached_on_contains)
+    ) == [
         "budget depleted",
         "",
         "reset at tomorrow",

@@ -14,6 +14,7 @@ from crewplane.core.config import AgentConfig
 
 from .invocation import command as invocation_command_module
 from .invocation import loop as invocation_loop_module
+from .invocation.output import cleanup_structured_output_file
 from .workspace_environment import prepare_workspace_child_environment
 
 
@@ -74,24 +75,27 @@ async def invoke_agent_with_runner(
     plan_builder: InvocationPlanBuilder,
     child_environment: ChildProcessEnvironment | None = None,
 ) -> None:
-    plan = plan_builder(config, model, prompt, output_file)
-    effective_context, effective_child_environment = (
-        prepare_workspace_child_environment(
-            invocation_context,
-            child_environment,
+    plan = plan_builder(config, model, prompt, output_file, invocation_context, cwd)
+    try:
+        effective_context, effective_child_environment = (
+            prepare_workspace_child_environment(
+                invocation_context,
+                child_environment,
+            )
         )
-    )
-    return await invocation_loop_module.run_invocation_loop(
-        config=config,
-        prompt=prompt,
-        output_file=output_file,
-        log_file=log_file,
-        cwd=cwd,
-        invocation_context=effective_context,
-        command_runner=command_runner,
-        plan=plan,
-        child_environment=effective_child_environment,
-    )
+        return await invocation_loop_module.run_invocation_loop(
+            config=config,
+            prompt=prompt,
+            output_file=output_file,
+            log_file=log_file,
+            cwd=cwd,
+            invocation_context=effective_context,
+            command_runner=command_runner,
+            plan=plan,
+            child_environment=effective_child_environment,
+        )
+    finally:
+        cleanup_structured_output_file(plan.structured_output_file)
 
 
 class PlannedAgentInvoker:
@@ -121,26 +125,6 @@ class PlannedAgentInvoker:
         log_file: Path | None = None,
         invocation_context: InvocationContext | None = None,
     ) -> None:
-        bound_invocation_context = invocation_context
-        bound_working_directory = cwd
-
-        def build_plan(
-            config: AgentConfig,
-            model: str | None,
-            prompt: str,
-            output_file: Path,
-            invocation_context: InvocationContext | None = None,  # noqa: ARG001 - Required by InvocationPlanBuilder.
-            working_directory: Path | None = None,  # noqa: ARG001 - Required by InvocationPlanBuilder.
-        ) -> InvocationPlan:
-            return self._plan_builder(
-                config,
-                model,
-                prompt,
-                output_file,
-                bound_invocation_context,
-                bound_working_directory,
-            )
-
         return await invoke_agent(
             config,
             model,
@@ -149,5 +133,5 @@ class PlannedAgentInvoker:
             cwd,
             log_file,
             invocation_context=invocation_context,
-            plan_builder=build_plan,
+            plan_builder=self._plan_builder,
         )

@@ -7,7 +7,7 @@ from typing import Protocol
 
 from rich.console import Console
 
-from crewplane.architecture.contracts import AgentInvoker
+from crewplane.architecture.contracts import AgentInvoker, LogLevel
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents
 from crewplane.core.preflight import PreflightExecutionPlan
@@ -92,7 +92,7 @@ class WorkflowWarningRecorder:
         return runtime_log_event(
             workflow_name=self.workflow.name,
             run_id=self.run_id,
-            level="warning",
+            level=LogLevel.WARNING,
             message=message,
             operation="runtime_warning",
         )

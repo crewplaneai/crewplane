@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
-from crewplane.adapters.invokers.cli_invoker.usage_decoders import decode_codex_usage
+from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
 from crewplane.architecture.contracts import (
     ChildProcessEnvironment,
     CommandResult,
@@ -17,10 +17,7 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.invoker import (
-    invoke_agent,
-    invoke_agent_with_runner,
-)
+from crewplane.runtime.agent.invoker import invoke_agent, invoke_agent_with_runner
 
 
 class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):

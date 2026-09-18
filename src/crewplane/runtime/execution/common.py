@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import SchedulerNodeStatus
+
 from .activity.console import execution_console, should_print_console
 from .activity.events import (
     InvocationEventCapture,
@@ -12,7 +14,6 @@ from .activity.events import (
 from .activity.telemetry import (
     ActivityTrackerSnapshot,
     ExecutionTelemetry,
-    NodeStatus,
     RuntimeActivityTracker,
     WorkflowExecutionState,
 )
@@ -43,7 +44,7 @@ __all__ = [
     "ExecutionTelemetry",
     "InvocationEventCapture",
     "InvocationMetadata",
-    "NodeStatus",
+    "SchedulerNodeStatus",
     "ParallelInvocation",
     "ParallelResultSummary",
     "PromptBudgetExceededError",

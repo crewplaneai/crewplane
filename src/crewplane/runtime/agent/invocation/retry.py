@@ -3,16 +3,17 @@ from __future__ import annotations
 import time
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from crewplane.architecture.contracts import (
     CommandResult,
+    LogLevel,
     OneShotFailureRetryPolicy,
     QuotaClassification,
-    QuotaParserProfile,
+    QuotaClassifier,
 )
 from crewplane.core.config import AgentConfig
 
-from ..quota import classify_quota, compute_quota_wait_seconds
 from ..retry_units import format_wait_duration
 from .state import InvocationDiagnosticNotice
 
@@ -114,7 +115,7 @@ def _schedule_configured_failure_retry(
         retry_count=next_retry_count,
         wait_seconds=config.retry_delay_seconds,
         notice=InvocationDiagnosticNotice(
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 f"{cmd[0]} {failure_detail}; retrying in "
                 f"{config.retry_delay_seconds}s "
@@ -146,7 +147,7 @@ def _schedule_one_shot_failure_retry(
         retry_count=retry_count,
         wait_seconds=policy.wait_seconds,
         notice=InvocationDiagnosticNotice(
-            level="warning",
+            level=LogLevel.WARNING,
             message=policy.notice_message,
             operation="retry_scheduled",
             attributes={
@@ -177,7 +178,7 @@ def _matches_one_shot_failure_retry(
 def evaluate_quota_retry(
     config: AgentConfig,
     cmd: list[str],
-    quota_parser: QuotaParserProfile,
+    quota_classifier: QuotaClassifier,
     result: CommandResult,
     quota_retry_started_at: float | None,
     quota_retry_count: int,
@@ -190,7 +191,9 @@ def evaluate_quota_retry(
             quota_retry_count=quota_retry_count,
         )
 
-    quota = classify_quota(config, result, quota_parser)
+    quota = quota_classifier(
+        result, tuple(config.quota_reached_on_contains), datetime.now(UTC)
+    )
     if not quota.is_quota:
         return NoQuotaRetry(
             quota_retry_started_at=quota_retry_started_at,
@@ -294,7 +297,7 @@ def _schedule_quota_retry(
         quota_retry_count=quota_retry_count,
         wait_seconds=wait_seconds,
         notice=InvocationDiagnosticNotice(
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 f"Quota reached for {cmd[0]}; retrying in {wait_detail} "
                 f"(quota attempt {quota_retry_count}; independent of max_retries)"
@@ -351,3 +354,16 @@ def quota_retry_guard_will_exhaust(
 ) -> bool:
     elapsed = quota_retry_elapsed_seconds(started_at)
     return elapsed + wait_seconds >= QUOTA_RETRY_GUARD_SECONDS
+
+
+def compute_quota_wait_seconds(
+    config: AgentConfig, quota: QuotaClassification
+) -> float:
+    configured_delay = config.quota_reached_retry_delay_seconds
+    if quota.reset_after_seconds is None:
+        return configured_delay
+    parsed_wait = max(
+        quota.reset_after_seconds + config.quota_reset_sleep_floor_seconds,
+        config.quota_reset_sleep_floor_seconds,
+    )
+    return max(parsed_wait, configured_delay)

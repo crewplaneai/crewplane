@@ -2,7 +2,6 @@ import pytest
 
 from crewplane.architecture.contracts import (
     InvocationUsage,
-    ProviderKind,
     ProviderTokenUsage,
 )
 from crewplane.core.config import AgentConfig, TokenPricing
@@ -141,18 +140,16 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
 
 
 @pytest.mark.parametrize(
-    ("provider", "tokens", "report_count", "error", "expected"),
+    ("tokens", "report_count", "error", "expected"),
     [
         pytest.param(
-            ProviderKind.GENERIC,
             ProviderTokenUsage(input=1, output=1),
             1,
             None,
-            "none",
-            id="unstructured-provider",
+            "full",
+            id="reports-independent-of-family",
         ),
         pytest.param(
-            ProviderKind.CODEX,
             ProviderTokenUsage(),
             0,
             "bad",
@@ -160,7 +157,6 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
             id="malformed",
         ),
         pytest.param(
-            ProviderKind.CODEX,
             ProviderTokenUsage(),
             0,
             None,
@@ -168,7 +164,6 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
             id="absent",
         ),
         pytest.param(
-            ProviderKind.CLAUDE,
             ProviderTokenUsage(),
             1,
             None,
@@ -176,7 +171,6 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
             id="no-required-values",
         ),
         pytest.param(
-            ProviderKind.CLAUDE,
             ProviderTokenUsage(input=1, output=2),
             1,
             None,
@@ -184,7 +178,6 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
             id="full",
         ),
         pytest.param(
-            ProviderKind.CLAUDE,
             ProviderTokenUsage(input=1),
             1,
             None,
@@ -194,7 +187,6 @@ def test_provider_usage_buckets_follow_pricing_shape() -> None:
     ],
 )
 def test_provider_usage_status_classification(
-    provider: ProviderKind,
     tokens: ProviderTokenUsage,
     report_count: int,
     error: str | None,
@@ -203,7 +195,6 @@ def test_provider_usage_status_classification(
     assert (
         classify_provider_usage_status(
             agent_config(),
-            provider,
             tokens,
             report_count,
             error,

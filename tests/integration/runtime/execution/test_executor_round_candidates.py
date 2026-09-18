@@ -28,6 +28,7 @@ from crewplane.runtime.execution.review_loop import (
 )
 from crewplane.runtime.execution.review_loop.types import (
     AuditRoundRequest,
+    DriftGuardCallRequest,
     ExecutorRoundArtifact,
     ExecutorRoundRequest,
     ExecutorRoundRunResult,
@@ -238,6 +239,78 @@ def test_executor_round_rejects_output_changed_after_runtime_publication(
 
     with pytest.raises(RuntimeError, match="bound bytes"):
         asyncio.run(review_loop_executor_round.run_executor_round(request))
+
+
+@pytest.mark.parametrize(
+    ("output_state", "error"),
+    [
+        ("missing", None),
+        ("published", None),
+        ("unbound", "does not have a bound runtime publication"),
+        ("directory", "missing or unsafe"),
+        ("dangling_symlink", "missing or unsafe"),
+    ],
+)
+def test_executor_round_distinguishes_missing_output_from_unsafe_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_state: str,
+    error: str | None,
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    node = make_review_node()
+    node_dir = output.create_node_dir(node_artifact_request(node.id))
+    runtime_context = make_round_runtime_context()
+    runtime_context.plan = runtime_context.plan.model_copy(
+        update={"project_root": str(tmp_path)}
+    )
+
+    async def fake_guard(call: DriftGuardCallRequest) -> int:
+        if output_state == "directory":
+            call.output_file.mkdir()
+        elif output_state == "dangling_symlink":
+            call.output_file.symlink_to(tmp_path / "missing-target")
+        elif output_state in {"published", "unbound"}:
+            call.output_file.write_text("Candidate body", encoding="utf-8")
+            if output_state == "published":
+                runtime_context.runtime_publications.publish(
+                    call.output_file, file_size_and_sha256(call.output_file)
+                )
+        return 1
+
+    monkeypatch.setattr(
+        review_loop_executor_round, "run_provider_call_with_drift_guard", fake_guard
+    )
+    request = ExecutorRoundRequest(
+        runtime_context=runtime_context,
+        node=node,
+        output=output,
+        node_dir=node_dir,
+        invoker=object(),
+        telemetry=None,
+        executors=(provider("exec", ProviderRole.EXECUTOR, "exec_executor_0"),),
+        artifact_dir=node_dir,
+        executor_prompt="Implement.",
+        previous_review_packet=None,
+        previous_executor_outputs=None,
+        audit_round_num=None,
+        round_num=2,
+    )
+
+    if error is not None:
+        with pytest.raises(RuntimeError, match=error):
+            asyncio.run(review_loop_executor_round.run_executor_round(request))
+        return
+    result = asyncio.run(review_loop_executor_round.run_executor_round(request))
+
+    assert result.drift_warning_count == 1
+    artifact = result.outputs[0]
+    assert artifact.content == ("Candidate body" if output_state == "published" else "")
+    assert artifact.output_signature == (
+        file_size_and_sha256(artifact.output_file)
+        if output_state == "published"
+        else None
+    )
 
 
 def test_seed_executor_outputs_aliases_generated_file_workspace_roots(

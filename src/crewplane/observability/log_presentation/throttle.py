@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
+from crewplane.architecture.contracts import ExecutionStatus
 from crewplane.observability.events.types import InvocationStatus
 
 from .limits import DEFAULT_LIMITS, LogPresentationLimits
@@ -27,7 +28,7 @@ class IncompleteJsonObjectThrottle:
         limits: LogPresentationLimits = DEFAULT_LIMITS,
         now: float | None = None,
     ) -> bool:
-        if status in {"succeeded", "failed"}:
+        if status in {ExecutionStatus.SUCCEEDED, ExecutionStatus.FAILED}:
             self.clear_path(path)
             return True
         current_time = monotonic() if now is None else now

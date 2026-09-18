@@ -7,7 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from crewplane.adapters.invokers.cli_invoker.capabilities import (
+from crewplane.adapters.invokers.cli_invoker import get_cli_provider_capability
+from crewplane.adapters.invokers.cli_invoker.providers.codex import (
     CODEX_MODEL_CAPACITY_MESSAGE,
     CODEX_MODEL_CAPACITY_RETRY_DELAY_SECONDS,
     CODEX_MODEL_CAPACITY_RETRY_POLICY,
@@ -299,7 +300,7 @@ def test_codex_model_capacity_failure_bypasses_quota_retry() -> None:
             quota_reached_on_contains=[CODEX_MODEL_CAPACITY_MESSAGE],
         ),
         cmd=["codex", "exec"],
-        quota_parser="codex",
+        quota_classifier=get_cli_provider_capability("codex").quota_classifier,
         result=CommandResult(
             returncode=1,
             stdout_text="",
@@ -325,7 +326,7 @@ def test_evaluate_quota_retry_schedules_retry_with_parsed_reset() -> None:
             quota_reset_sleep_floor_seconds=5,
         ),
         cmd=["gemini"],
-        quota_parser="gemini",
+        quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
         result=CommandResult(
             returncode=0,
             stdout_text=(
@@ -352,7 +353,7 @@ def test_evaluate_quota_retry_returns_failure_when_reset_exceeds_guard() -> None
             default_model="test",
         ),
         cmd=["gemini"],
-        quota_parser="gemini",
+        quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
         result=CommandResult(
             returncode=0,
             stdout_text=(
@@ -377,7 +378,7 @@ def test_evaluate_quota_retry_enforces_configured_attempt_ceiling() -> None:
             quota_retry_max_attempts=2,
         ),
         cmd=["gemini"],
-        quota_parser="gemini",
+        quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
         result=CommandResult(
             returncode=1,
             stdout_text="You have exhausted your capacity on this model.",
@@ -400,7 +401,7 @@ def test_evaluate_quota_retry_enforces_configured_wait_ceiling() -> None:
             quota_retry_max_wait_seconds=60,
         ),
         cmd=["gemini"],
-        quota_parser="gemini",
+        quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
         result=CommandResult(
             returncode=1,
             stdout_text="You have exhausted your capacity on this model.",
@@ -427,7 +428,7 @@ def test_quota_wait_ceiling_excludes_provider_execution_time() -> None:
                 quota_retry_max_wait_seconds=25,
             ),
             cmd=["gemini"],
-            quota_parser="gemini",
+            quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
             result=CommandResult(
                 returncode=1,
                 stdout_text="You have exhausted your capacity on this model.",
@@ -450,7 +451,7 @@ def test_bare_local_reset_uses_configured_delay_in_utc_timezone() -> None:
                 quota_reached_retry_delay_seconds=73,
             ),
             cmd=["gemini"],
-            quota_parser="gemini",
+            quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
             result=CommandResult(
                 returncode=1,
                 stdout_text=(
@@ -502,7 +503,7 @@ def test_evaluate_failure_retry_reads_retried_output_from_persisted_stream() -> 
 def test_codex_usage_limit_with_local_reset_schedules_quota_retry() -> None:
     with (
         patch(
-            "crewplane.runtime.agent.quota.classifier.datetime",
+            "crewplane.runtime.agent.invocation.retry.datetime",
             FixedQuotaRetryDateTime,
         ),
         local_timezone("America/Vancouver"),
@@ -521,7 +522,7 @@ def test_codex_usage_limit_with_local_reset_schedules_quota_retry() -> None:
                 quota_reset_sleep_floor_seconds=5,
             ),
             cmd=["codex", "exec"],
-            quota_parser="codex",
+            quota_classifier=get_cli_provider_capability("codex").quota_classifier,
             result=CommandResult(
                 returncode=1,
                 stdout_text=(
@@ -562,7 +563,7 @@ def test_evaluate_quota_retry_reads_retried_quota_marker_from_persisted_stream()
                 quota_reset_sleep_floor_seconds=0,
             ),
             cmd=["gemini"],
-            quota_parser="gemini",
+            quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
             result=CommandResult(
                 returncode=0,
                 stdout_text="",

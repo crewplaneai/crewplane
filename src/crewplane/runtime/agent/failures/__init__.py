@@ -2,31 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.architecture.contracts import CommandResult, ProviderKind
-
-from .classifier import classify_invocation_failure
-from .patterns import ADVICE_BY_KIND
-from .types import (
-    FailureEvidence,
-    FailureKind,
-    FailurePhase,
-    FailureSource,
-    InvocationFailureError,
+from crewplane.architecture.contracts import CommandResult, FailureClassifier
+from crewplane.architecture.contracts.invocation_failures import (
+    ADVICE_BY_KIND,
     InvocationFailureSummary,
 )
 
+from .types import InvocationFailureError
+
 __all__ = [
-    "FailureEvidence",
-    "FailureKind",
-    "FailurePhase",
-    "FailureSource",
     "InvocationFailureError",
-    "InvocationFailureSummary",
     "build_adapter_invocation_failure_error",
     "build_invocation_failure_error",
     "build_output_extraction_failure_error",
     "build_quota_failure_error",
-    "classify_invocation_failure",
 ]
 
 
@@ -47,13 +36,13 @@ def build_adapter_invocation_failure_error(
 
 def build_invocation_failure_error(
     prefix: str,
-    provider_kind: ProviderKind,
+    failure_classifier: FailureClassifier,
     result: CommandResult,
     log_file: Path | None,
 ) -> InvocationFailureError:
     return InvocationFailureError(
         prefix,
-        classify_invocation_failure(provider_kind, result),
+        failure_classifier(result),
         log_file,
     )
 
@@ -79,12 +68,12 @@ def build_output_extraction_failure_error(
 
 def build_quota_failure_error(
     prefix: str,
-    provider_kind: ProviderKind,
+    failure_classifier: FailureClassifier,
     result: CommandResult,
     log_file: Path | None,
     last_non_quota_failure: InvocationFailureSummary | None = None,
 ) -> InvocationFailureError:
-    summary = classify_invocation_failure(provider_kind, result)
+    summary = failure_classifier(result)
     if summary.kind != "quota_or_rate_limit":
         summary = InvocationFailureSummary(
             kind="quota_or_rate_limit",

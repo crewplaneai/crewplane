@@ -3,7 +3,7 @@ from __future__ import annotations
 from crewplane.architecture.contracts import (
     InvocationContext,
     InvocationDiagnostic,
-    InvocationLogLevel,
+    LogLevel,
     RuntimeLogValue,
 )
 from crewplane.core.config import AgentConfig
@@ -26,7 +26,7 @@ from .state import (
 
 def emit_invocation_diagnostic(
     invocation_context: InvocationContext | None,
-    level: InvocationLogLevel,
+    level: LogLevel,
     message: str,
     operation: str,
     attributes: dict[str, RuntimeLogValue] | None = None,

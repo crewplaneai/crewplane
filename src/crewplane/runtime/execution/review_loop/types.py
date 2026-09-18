@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from threading import Lock
 
 from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
+from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.file_hashing import ContentSignature
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -26,6 +28,8 @@ from ..consensus import EvaluatedReviewResult
 from ..provider_call.display import ProviderCallDisplay
 from ..provider_call.types import ProviderOutputPolicy
 from ..publication_registry import RuntimePublicationRegistry
+from .candidate_identity import CandidateIdentity
+from .stall import ReviewStallState
 
 DEFAULT_REMEDIATION_DEPTH = 1
 DEFAULT_AUDIT_ROUNDS = 1
@@ -208,6 +212,7 @@ class ExecutorRoundArtifact:
     audit_round_num: int | None
     round_num: int
     output_signature: ContentSignature | None = None
+    candidate_identity: CandidateIdentity | None = None
 
 
 @dataclass(frozen=True)
@@ -274,6 +279,7 @@ class AuditRoundResult:
     artifact_drift_warning_count: int
     last_round_num: int
     selected_round_num: int = 0
+    stop_reason: ReviewLoopStopReason | None = None
 
 
 @dataclass
@@ -290,6 +296,8 @@ class AuditRoundProgress:
     artifact_drift_warning_count: int = 0
     last_round_num: int = 0
     selected_round_num: int = 0
+    stop_reason: ReviewLoopStopReason | None = None
+    stall: ReviewStallState = field(default_factory=ReviewStallState)
 
     def add_artifact_drift_warnings(self, count: int) -> None:
         self.artifact_drift_warning_count += count
@@ -300,22 +308,30 @@ class AuditRoundProgress:
     def record_no_progress(self) -> None:
         self.no_progress_round_count += 1
 
-    def record_review_outputs(
+    def record_completed_review(
         self,
-        reviewer_outputs: list[ReviewerRoundArtifact],
+        reviewer_run: ReviewerRoundRunResult,
+        round_num: int,
     ) -> None:
-        self.latest_reviewer_outputs = reviewer_outputs
+        """Record the candidate and reviewer results from a completed review phase."""
+        self.latest_valid_executor_outputs = self.executor_outputs
+        self.selected_round_num = round_num
+        self.add_artifact_drift_warnings(reviewer_run.drift_warning_count)
+        self.latest_reviewer_outputs = reviewer_run.outputs
 
     def advance_review_state(
         self,
         current_review_packet: str | None,
         current_unresolved_fingerprints: tuple[str, ...],
-        current_executor_fingerprint: str,
+        current_executor_fingerprint: str | None,
     ) -> None:
         self.previous_executor_outputs = self.executor_outputs
         self.previous_review_packet = current_review_packet
         self.previous_unresolved_fingerprints = current_unresolved_fingerprints
         self.previous_executor_fingerprint = current_executor_fingerprint
+        self.stall.observe_review(
+            current_executor_fingerprint, self.latest_reviewer_outputs
+        )
 
     def to_result(
         self,
@@ -332,6 +348,7 @@ class AuditRoundProgress:
             artifact_drift_warning_count=self.artifact_drift_warning_count,
             last_round_num=self.last_round_num,
             selected_round_num=self.selected_round_num,
+            stop_reason=self.stop_reason,
         )
 
 
@@ -347,6 +364,25 @@ class ReviewLoopProgress:
     no_progress_round_count: int = 0
     artifact_drift_warning_count: int = 0
     selected_round_num: int = 0
+    stop_reason: ReviewLoopStopReason | None = None
+    continued_after_stop: bool = False
+    stall: ReviewStallState = field(default_factory=ReviewStallState)
+    active_audit: AuditRoundProgress | None = None
+
+    def snapshot(self) -> ReviewLoopProgress:
+        snapshot = replace(self, active_audit=None)
+        if self.active_audit is not None:
+            snapshot.record_audit_result(self.active_audit.to_result(False, False))
+            if (
+                self.active_audit.selected_round_num == 0
+                and self.latest_executor_outputs
+            ):
+                snapshot.latest_executor_outputs = self.latest_executor_outputs
+                snapshot.latest_reviewer_outputs = self.latest_reviewer_outputs
+                snapshot.selected_round_num = self.selected_round_num
+        if self.stop_reason is not None:
+            snapshot.stop_reason = self.stop_reason
+        return snapshot
 
     def record_initial_executor_run(self, executor_run: ExecutorRoundRunResult) -> None:
         self.artifact_drift_warning_count += executor_run.drift_warning_count
@@ -355,6 +391,7 @@ class ReviewLoopProgress:
         self.artifact_drift_warning_count += reviewer_run.drift_warning_count
 
     def record_audit_result(self, audit_result: AuditRoundResult) -> None:
+        self.active_audit = None
         self.invalid_candidate_round_count += audit_result.invalid_candidate_round_count
         self.no_progress_round_count += audit_result.no_progress_round_count
         self.artifact_drift_warning_count += audit_result.artifact_drift_warning_count
@@ -363,14 +400,21 @@ class ReviewLoopProgress:
             self.selected_round_num = audit_result.selected_round_num
         self.consensus_reached = audit_result.consensus_reached
         self.continued_after_exhaustion = False
+        self.stop_reason = audit_result.stop_reason
 
         if audit_result.latest_executor_outputs is not None:
             self.latest_executor_outputs = audit_result.latest_executor_outputs
+            if audit_result.selected_round_num == 0:
+                self.selected_round_num = audit_result.latest_executor_outputs[
+                    0
+                ].round_num
         self.latest_reviewer_outputs = audit_result.latest_reviewer_outputs
 
     def mark_consensus_exhausted(self, continued: bool) -> None:
         self.consensus_reached = False
         self.continued_after_exhaustion = continued
+        self.continued_after_stop = continued
+        self.stop_reason = ReviewLoopStopReason.CONSENSUS_EXHAUSTED
 
 
 @dataclass
@@ -390,6 +434,7 @@ class ExecutorRoundRequest:
     round_num: int
     executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
     initial_review_handoff: str | None = None
+    recovery_attempt: bool = False
 
 
 @dataclass
@@ -441,6 +486,8 @@ class AuditRoundRequest:
     audit_round_num: int | None
     executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
     reviewer_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+    progress: AuditRoundProgress | None = None
+    checkpoint: Callable[[], object] | None = None
 
 
 @dataclass
@@ -467,4 +514,4 @@ class ReviewRoundState:
     reviewer_failure_count: int
     current_review_packet: str | None
     current_unresolved_fingerprints: tuple[str, ...]
-    current_executor_fingerprint: str
+    current_executor_fingerprint: str | None

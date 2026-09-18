@@ -6,16 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.adapters.invokers.cli_invoker import (
-    claude_json,
-    machine_json,
-)
-from crewplane.adapters.invokers.cli_invoker.machine_json import (
-    extract_claude_output,
-    extract_codex_output,
+from crewplane.adapters.invokers.cli_invoker import claude_json
+from crewplane.adapters.invokers.cli_invoker.claude_json import extract_claude_output
+from crewplane.adapters.invokers.cli_invoker.providers import claude, kilo
+from crewplane.adapters.invokers.cli_invoker.providers.codex import extract_codex_output
+from crewplane.adapters.invokers.cli_invoker.providers.gemini import (
     extract_gemini_output,
-    extract_kilo_output,
 )
+from crewplane.adapters.invokers.cli_invoker.providers.kilo import extract_kilo_output
 from crewplane.architecture.contracts import CommandResult
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "provider_usage"
@@ -316,9 +314,12 @@ def test_claude_output_extractor_streams_large_ignored_number() -> None:
 
 
 def test_claude_usage_parser_reports_missing_and_malformed_payloads() -> None:
-    missing = machine_json.read_claude_model_usage(CommandResult(0, "", ""))
-    malformed = machine_json.read_claude_model_usage(
-        CommandResult(0, '{"modelUsage":{"model":[}}', "")
+    missing = claude_json.read_claude_model_usage(
+        CommandResult(0, "", ""), claude.MAX_CAPTURED_CLAUDE_USAGE_BYTES
+    )
+    malformed = claude_json.read_claude_model_usage(
+        CommandResult(0, '{"modelUsage":{"model":[}}', ""),
+        claude.MAX_CAPTURED_CLAUDE_USAGE_BYTES,
     )
 
     assert missing == (None, None)
@@ -327,12 +328,13 @@ def test_claude_usage_parser_reports_missing_and_malformed_payloads() -> None:
 
 
 def test_claude_usage_parser_uses_stderr_when_stdout_is_empty() -> None:
-    usage, error = machine_json.read_claude_model_usage(
+    usage, error = claude_json.read_claude_model_usage(
         CommandResult(
             0,
             "",
             '{"result":"stderr response","modelUsage":{"model":{"inputTokens":4}}}',
-        )
+        ),
+        claude.MAX_CAPTURED_CLAUDE_USAGE_BYTES,
     )
 
     assert error is None
@@ -340,12 +342,13 @@ def test_claude_usage_parser_uses_stderr_when_stdout_is_empty() -> None:
 
 
 def test_claude_usage_parser_does_not_fall_back_after_valid_stdout() -> None:
-    usage, error = machine_json.read_claude_model_usage(
+    usage, error = claude_json.read_claude_model_usage(
         CommandResult(
             0,
             "{}",
             '{"modelUsage":{"model":{"inputTokens":4}}}',
-        )
+        ),
+        claude.MAX_CAPTURED_CLAUDE_USAGE_BYTES,
     )
 
     assert usage is None
@@ -353,10 +356,11 @@ def test_claude_usage_parser_does_not_fall_back_after_valid_stdout() -> None:
 
 
 def test_claude_usage_parser_bounds_captured_model_usage(monkeypatch) -> None:
-    monkeypatch.setattr(machine_json, "MAX_CAPTURED_CLAUDE_USAGE_BYTES", 1)
+    monkeypatch.setattr(claude, "MAX_CAPTURED_CLAUDE_USAGE_BYTES", 1)
 
-    usage, error = machine_json.read_claude_model_usage(
-        CommandResult(0, '{"modelUsage":12}', "")
+    usage, error = claude_json.read_claude_model_usage(
+        CommandResult(0, '{"modelUsage":12}', ""),
+        claude.MAX_CAPTURED_CLAUDE_USAGE_BYTES,
     )
 
     assert usage is None
@@ -364,12 +368,13 @@ def test_claude_usage_parser_bounds_captured_model_usage(monkeypatch) -> None:
 
 
 def test_claude_usage_parser_ignores_non_string_result() -> None:
-    usage, error = machine_json.read_claude_model_usage(
+    usage, error = claude_json.read_claude_model_usage(
         CommandResult(
             0,
             '{"result":123,"modelUsage":{"model":{"inputTokens":4}}}',
             "",
-        )
+        ),
+        claude.MAX_CAPTURED_CLAUDE_USAGE_BYTES,
     )
 
     assert error is None
@@ -377,7 +382,7 @@ def test_claude_usage_parser_ignores_non_string_result() -> None:
 
 
 def test_claude_output_extractor_ignores_oversized_model_usage(monkeypatch) -> None:
-    monkeypatch.setattr(machine_json, "MAX_CAPTURED_CLAUDE_USAGE_BYTES", 1)
+    monkeypatch.setattr(claude, "MAX_CAPTURED_CLAUDE_USAGE_BYTES", 1)
 
     extracted = extract_claude_output(
         CommandResult(
@@ -471,7 +476,7 @@ def test_kilo_output_extractor_discards_partial_text_and_stops_on_malformed_even
         yield None
         raise AssertionError("Read past the malformed event")
 
-    monkeypatch.setattr(machine_json, "iter_stdout_json_objects", events)
+    monkeypatch.setattr(kilo, "iter_stdout_json_objects", events)
 
     extracted = extract_kilo_output(CommandResult(0, "", ""), None)
 

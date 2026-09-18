@@ -141,4 +141,6 @@ class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
                 patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
                 self.assertRaisesRegex(ValueError, "--settings effortLevel"),
             ):
-                plan_builder(config, None, "prompt", output_file)
+                plan_builder(
+                    config, None, "prompt", output_file, context, working_directory
+                )

@@ -8,10 +8,12 @@ from crewplane.architecture.contracts import (
     LogPresentationDescriptor,
     MockInvokerOptions,
 )
+from crewplane.architecture.contracts.invocation_failures import (
+    InvocationFailureSummary,
+)
 from crewplane.core.config import AgentConfig
 from crewplane.runtime.agent.failures import (
     InvocationFailureError,
-    InvocationFailureSummary,
 )
 
 from .context import is_reviewer_context

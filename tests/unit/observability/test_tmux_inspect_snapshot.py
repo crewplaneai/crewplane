@@ -40,7 +40,7 @@ def test_read_inspect_snapshot_rejects_snapshot_without_inspect_fields(
         pytest.param("workflow_name", 42, id="wrong-required-type"),
         pytest.param("selection_generation", "zero", id="wrong-integer-type"),
         pytest.param("written_at", 0, id="wrong-float-type"),
-        pytest.param("invocation_status", "cancelled", id="wrong-optional-type"),
+        pytest.param("invocation_status", "unknown", id="unsupported-status"),
     ],
 )
 def test_read_snapshot_rejects_invalid_field_types(

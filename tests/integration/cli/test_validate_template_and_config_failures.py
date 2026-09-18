@@ -258,7 +258,10 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             output_text = stream.getvalue()
             self.assertIn("Preflight warnings:", output_text)
             self.assertIn("Agent 'alpha': remove model_arg", output_text)
-            self.assertIn("chooses the model flag automatically", output_text)
+            self.assertIn(
+                "applies only when provider_kind is 'generic'",
+                " ".join(output_text.split()),
+            )
             self.assertIn("provider_kind is 'generic'", output_text)
 
     def test_validate_keeps_provider_warning_out_of_missing_env_failure(self) -> None:

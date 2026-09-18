@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import os
@@ -27,6 +28,62 @@ from tests.integration.cli.workflow_runner_support import (
     run_workflow,
     runner_workflow,
 )
+
+
+@pytest.mark.parametrize("location", ["cli_cmd", "extra_args", "env_wrapper"])
+@pytest.mark.parametrize("inline", [True, False])
+def test_deepseek_validation_failure_artifacts_do_not_disclose_credentials(
+    location, inline, monkeypatch
+) -> None:
+    secret = "deepseek-credential-sentinel"
+    arguments = [f"--api-key={secret}"] if inline else ["--api-key", secret]
+    config = mock_runner_config(invoker_implementation="cli")
+    config.agents["alpha"] = AgentConfig(
+        cli_cmd=["dsh", "--profile", "headless"],
+        provider_kind="deepseek",
+        prompt_transport="argv",
+        prompt_transport_arg="--",
+    )
+    if location == "env_wrapper":
+        config.agents["alpha"].cli_cmd[:0] = [
+            "env",
+            *arguments,
+            "DSH_PERMISSION_MODE=danger-full-access",
+        ]
+        expected_message = "env wrapper argument at cli_cmd position 2"
+    else:
+        getattr(config.agents["alpha"], location).extend(arguments)
+        expected_message = "launcher argument at position 3"
+    monkeypatch.setenv("DSH_PERMISSION_MODE", "danger-full-access")
+    stream = io.StringIO()
+
+    with temporary_project_cwd() as root:
+        with pytest.raises(typer.Exit):
+            asyncio.run(
+                run_workflow(
+                    runner_workflow(),
+                    config,
+                    Console(file=stream, force_terminal=False),
+                )
+            )
+
+        run_dirs = run_directories(root)
+        assert len(run_dirs) == 1
+        assert result_directories(root) == []
+        preflight_dir = run_dirs[0] / "preflight"
+        diagnostics = json.loads((preflight_dir / "diagnostics.json").read_text())
+        assert any(
+            expected_message in diagnostic["message"] for diagnostic in diagnostics
+        )
+        assert (preflight_dir / "summary.md").is_file()
+        assert (
+            json.loads((preflight_dir / "manifest.json").read_text())["status"]
+            == "preflight_failed"
+        )
+        for artifact in run_dirs[0].rglob("*"):
+            if artifact.is_file():
+                assert secret.encode() not in artifact.read_bytes(), artifact
+        assert secret not in stream.getvalue()
 
 
 class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):

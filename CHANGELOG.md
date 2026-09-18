@@ -4,10 +4,25 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced `InvocationLogLevel` with shared `LogLevel` enum members for invocation diagnostics and runtime log events.
+
+### Added
+
+- Added Pi CLI and DeepSeek Harness CLI to provider setup and onboarding,
+  with automatic Pi extension loading disabled by default.
+
 ### Fixed
+
+- Stopped review loops when repeated fix attempts leave the work unchanged.
+- Kept review and dashboard status accurate after cancellation and fixed log
+  viewing for cancelled runs.
+- Cleaned up temporary provider output files after failures.
 - Preserved multiline commands and indentation in formatted Codex log views.
 
 ### Removed
+
 - Removed the unused `NodeLogStreamTracker` Python API.
 
 ## [0.3.1] - 2026-09-09

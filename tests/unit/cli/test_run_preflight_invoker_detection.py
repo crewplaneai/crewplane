@@ -31,11 +31,7 @@ from crewplane.core.preflight.diagnostics import (
     PreflightDiagnosticPhase,
 )
 from crewplane.core.prompt_segments import PromptSegment, PromptSegmentRole
-from crewplane.core.workflow.models import (
-    ProviderSpec,
-    WorkflowNode,
-    WorkflowPlan,
-)
+from crewplane.core.workflow.models import ProviderSpec, WorkflowNode, WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
 
 TEST_MODULE = "tests.unit.cli.test_run_preflight_invoker_detection"
@@ -428,11 +424,11 @@ def test_missing_builtin_reasoning_hook_fails_adapter_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(CliInvokerAdapter, "collect_reasoning_errors", None)
+    monkeypatch.setattr(CliInvokerAdapter, "collect_request_errors", None)
 
     with pytest.raises(
         AdapterContractError,
-        match="must define collect_reasoning_errors",
+        match="must define collect_request_errors",
     ):
         _compile_with_availability(
             tmp_path,
@@ -457,13 +453,13 @@ def test_invalid_builtin_reasoning_hook_return_fails_adapter_contract(
 
     monkeypatch.setattr(
         CliInvokerAdapter,
-        "collect_reasoning_errors",
+        "collect_request_errors",
         invalid_reasoning_errors,
     )
 
     with pytest.raises(
         AdapterContractError,
-        match=r"collect_reasoning_errors\(\) must return tuple",
+        match=r"collect_request_errors\(\) must return tuple",
     ):
         _compile_with_availability(
             tmp_path,
@@ -488,13 +484,13 @@ def test_builtin_reasoning_hook_exception_fails_adapter_contract(
 
     monkeypatch.setattr(
         CliInvokerAdapter,
-        "collect_reasoning_errors",
+        "collect_request_errors",
         failing_reasoning_errors,
     )
 
     with pytest.raises(
         AdapterContractError,
-        match=r"collect_reasoning_errors\(\) failed: reasoning validation failed",
+        match=r"collect_request_errors\(\) failed: reasoning validation failed",
     ):
         _compile_with_availability(
             tmp_path,
@@ -518,3 +514,57 @@ def test_identity_probes_do_not_load_adapters(monkeypatch) -> None:
         _config_for("crewplane.adapters.invokers.mock:MockInvokerAdapter")
     )
     assert not uses_cli_invoker(_config_for("custom.module:Adapter"))
+
+
+@pytest.mark.parametrize("workflow_model", [None, "native/model"])
+def test_request_validation_covers_every_referenced_provider_without_allocating(
+    tmp_path, monkeypatch, workflow_model
+) -> None:
+    from dataclasses import replace
+
+    from crewplane.adapters.invokers.cli import collect_cli_request_errors
+    from crewplane.adapters.invokers.cli_invoker.capabilities import CAPABILITIES
+    from crewplane.architecture.contracts import ProviderKind
+
+    seen = []
+
+    def validate(request):
+        seen.append(request)
+        raise ValueError("request rejected")
+
+    def build_command(request, prompt):
+        raise AssertionError(f"preflight built command for {request.model}: {prompt}")
+
+    monkeypatch.setitem(
+        CAPABILITIES,
+        ProviderKind.GENERIC,
+        replace(
+            CAPABILITIES[ProviderKind.GENERIC],
+            validate_request=validate,
+            build_command=build_command,
+        ),
+    )
+    workflow = _workflow()
+    workflow.nodes[0].providers.append(
+        ProviderSpec(provider="second", model=workflow_model)
+    )
+    config = Config(
+        version=SCHEMA_VERSION,
+        agents={
+            "alpha": AgentConfig(cli_cmd=["provider"]),
+            "second": AgentConfig(cli_cmd=["provider"], default_model="default"),
+            "unused": AgentConfig(cli_cmd=["provider"]),
+        },
+    )
+    errors = collect_cli_request_errors(
+        workflow, config, environment={"TEST": "value"}, working_directory=tmp_path
+    )
+    assert len(errors) == len(seen) == 2
+    assert [request.model for request in seen] == [None, workflow_model or "default"]
+    assert all(
+        request.working_directory == tmp_path
+        and request.environment == {"TEST": "value"}
+        for request in seen
+    )
+    assert all("request rejected" in error for error in errors)
+    assert list(tmp_path.iterdir()) == []

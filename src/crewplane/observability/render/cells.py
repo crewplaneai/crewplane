@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from crewplane.architecture.contracts import ExecutionStatus
 from crewplane.observability.events import NodeRuntimeState
 from crewplane.observability.text_layout import (
     display_width,
@@ -85,7 +86,7 @@ def node_summary(node: NodeRuntimeState) -> str:
         running = sorted(
             invocation.task_id
             for invocation in node.invocations.values()
-            if invocation.status == "running"
+            if invocation.status == ExecutionStatus.RUNNING
         )
         primary = running[0]
         additional = len(running) - 1

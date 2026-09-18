@@ -392,3 +392,25 @@ def test_process_exit_preserves_integer_returncode(returncode) -> None:
     event = InvocationProcessEvent(1, 123, None, "exited", returncode)
     assert event.returncode == returncode
     assert event.process_group_id is None
+
+
+def test_ephemeral_plan_callbacks_do_not_extend_persisted_preflight() -> None:
+    from dataclasses import fields
+
+    from crewplane.architecture.contracts import InvocationPlan
+    from crewplane.core.preflight.models import PreflightExecutionPlan
+
+    names = {field.name for field in fields(InvocationPlan)}
+    assert {"quota_classifier", "failure_classifier"} <= names
+    assert names.isdisjoint(
+        {
+            "quota_parser",
+            "failure_profile",
+            "structured_output_mode",
+            "log_provider_kind",
+        }
+    )
+    assert not any(
+        "classifier" in name or "callback" in name
+        for name in PreflightExecutionPlan.model_fields
+    )

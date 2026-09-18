@@ -159,6 +159,9 @@ def test_status_payload_shape_and_paths_are_relative_to_node_dir(
         "invalid_candidate_round_count",
         "no_progress_round_count",
         "artifact_drift_warning_count",
+        "stop_reason",
+        "continued_after_stop",
+        "consecutive_no_progress_round_count",
         "canonical_executor_outputs",
         "reviewer_outputs",
     ]

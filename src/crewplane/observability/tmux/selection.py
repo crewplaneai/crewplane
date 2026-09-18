@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import overload
 
+from crewplane.architecture.contracts import ExecutionStatus
 from crewplane.observability.events import (
     InvocationRuntimeState,
     NodeRuntimeState,
@@ -80,7 +81,7 @@ def select_invocation(
     running = [
         invocation
         for invocation in node.invocations.values()
-        if invocation.status == "running"
+        if invocation.status == ExecutionStatus.RUNNING
     ]
     if running:
         return max(running, key=_running_invocation_sort_key)
@@ -88,7 +89,7 @@ def select_invocation(
     non_pending = [
         invocation
         for invocation in node.invocations.values()
-        if invocation.status != "pending"
+        if invocation.status != ExecutionStatus.PENDING
     ]
     if non_pending:
         return max(non_pending, key=_completed_invocation_sort_key)
@@ -101,7 +102,7 @@ def _default_selected_node_id(
     nodes: Mapping[str, DashboardNodeState],
 ) -> str:
     for node_id in ordered_node_ids:
-        if nodes[node_id].status == "running":
+        if nodes[node_id].status == ExecutionStatus.RUNNING:
             return node_id
     return ordered_node_ids[0]
 

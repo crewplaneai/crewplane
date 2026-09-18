@@ -2,59 +2,6 @@ from __future__ import annotations
 
 import re
 
-QUOTA_PARSER_HINTS: dict[str, tuple[str, ...]] = {
-    "codex": (
-        "usage limit exceeded",
-        "usage limit",
-        "rate limit",
-        "too many requests",
-        "try again in",
-        "retry after",
-        "reset after",
-        "reset at",
-        "resetsat",
-    ),
-    "copilot": (
-        "rate limit",
-        "quota",
-        "too many requests",
-        "429",
-        "retry after",
-        "try again in",
-    ),
-    "claude": (
-        "usage limit reached",
-        "rate limit",
-        "quota",
-        "too many requests",
-        "reset at",
-        "retry after",
-    ),
-    "kilo": (
-        "rate limit",
-        "quota",
-        "too many requests",
-        "429",
-        "retry after",
-        "reset after",
-        "try again in",
-    ),
-    "gemini": (
-        "exhausted your capacity",
-        "resource exhausted",
-        "no capacity available",
-        "retryable quota error",
-        "max attempts reached",
-        "rate limit exceeded",
-        "too many requests",
-        "429",
-        "quota will reset",
-        "quota exhausted",
-        "retry after",
-        "try again in",
-    ),
-    "generic": (),
-}
 QUOTA_CONTEXT_HINTS: tuple[str, ...] = (
     "quota",
     "rate limit",

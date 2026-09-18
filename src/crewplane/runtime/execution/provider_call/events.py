@@ -8,6 +8,7 @@ from crewplane.architecture.contracts import (
     InvocationContext,
     InvocationDiagnostic,
     InvocationProcessEvent,
+    LogLevel,
     RuntimeLogValue,
 )
 from crewplane.architecture.ports import (
@@ -160,7 +161,7 @@ def emit_artifact_capture_event(
         return
     emit_runtime_log(
         telemetry,
-        "warning",
+        LogLevel.WARNING,
         message,
         operation,
         context=invocation_metadata.event_context(),

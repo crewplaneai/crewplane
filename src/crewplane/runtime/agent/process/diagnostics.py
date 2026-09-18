@@ -3,6 +3,7 @@ from __future__ import annotations
 from crewplane.architecture.contracts import (
     InvocationDiagnostic,
     InvocationDiagnosticSink,
+    LogLevel,
 )
 
 PROCESS_EXIT_WARNING_MESSAGE = "Provider process already exited before signal delivery."
@@ -17,7 +18,7 @@ def emit_idle_timeout_diagnostic(
         return
     diagnostic_sink(
         InvocationDiagnostic(
-            level="error",
+            level=LogLevel.ERROR,
             message=(
                 "Provider invocation produced no stdout or stderr during the "
                 "idle timeout window."
@@ -39,7 +40,7 @@ def emit_pipe_drain_timeout_diagnostic(
         return
     diagnostic_sink(
         InvocationDiagnostic(
-            level="warning",
+            level=LogLevel.WARNING,
             message=(
                 "Provider process exited while stdio pipes remained open; "
                 "continuing with captured output."
@@ -62,7 +63,7 @@ def emit_process_already_exited_diagnostic(
         return
     diagnostic_sink(
         InvocationDiagnostic(
-            level="warning",
+            level=LogLevel.WARNING,
             message=PROCESS_EXIT_WARNING_MESSAGE,
             operation="process_already_exited_before_signal",
             attributes={"attempted_signal": attempted_signal},

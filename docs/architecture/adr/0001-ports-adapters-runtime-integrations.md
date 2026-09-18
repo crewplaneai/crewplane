@@ -59,6 +59,26 @@ for runtime integration boundaries. It adds these settled rules:
   observability, artifact, quota, usage, and mock-invoker modules. Module-size
   and source-hygiene checks keep those boundaries from regressing.
 
+## CLI Capabilities Update
+
+Each CLI family’s behavior stays within the invoker adapter, with explicit resource ownership:
+
+- Each `provider_kind` selects capabilities for validation, command construction,
+  output and usage parsing, quota and failure classification, and log presentation.
+- Runtime consumes neutral callbacks and owns process execution, retry policy,
+  output publication, and cleanup.
+- Preflight and execution share read-only provider validation before temporary
+  output allocation.
+- Planning owns temporary files until a complete plan reaches runtime. Each
+  planning stage releases its allocations on failure; runtime cleans up on
+  success, failure, or cancellation. Classifiers borrow captured output and
+  must not retain or remove it.
+- Extraction and classification failures fail invocation; usage parsing
+  failures affect telemetry only.
+- New CLI families extend the adapter registry without changing runtime or
+  composition-root wiring. Different execution transports use the invoker
+  adapter port.
+
 ## Context
 The project is an orchestration layer for AI CLIs, with planned support for API-based invokers and alternative UI surfaces.
 
@@ -107,6 +127,8 @@ The prior structure had meaningful seams but orchestration wiring still hardcode
   materialization, capture, setup, branch export, and cleanup inside
   runtime-owned services.
 - **2026-08-12**: Added JSON Pointer declarations for nested adapter secrets.
+- **2026-09-14**: Documented CLI capability ownership, shared provider validation,
+  and cleanup on success, failure, or cancellation.
 
 ## Follow-ups
 1. Add `llm_api` invoker adapter.

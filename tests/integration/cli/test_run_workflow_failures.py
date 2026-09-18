@@ -14,11 +14,11 @@ from crewplane.architecture.contracts import (
     JsonObject,
     LogPresentationDescriptor,
 )
-from crewplane.core.config import AgentConfig, Config
-from crewplane.runtime.agent.failures import (
-    InvocationFailureError,
+from crewplane.architecture.contracts.invocation_failures import (
     InvocationFailureSummary,
 )
+from crewplane.core.config import AgentConfig, Config
+from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.cli_workflow_helpers import ConsoleFactory

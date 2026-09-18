@@ -7,6 +7,7 @@ from enum import StrEnum
 from threading import Lock
 from time import monotonic, time
 
+from crewplane.architecture.contracts import parse_lifecycle_status
 from crewplane.observability.events import (
     ExecutionEvent,
     RunDashboardState,
@@ -136,7 +137,7 @@ class TmuxCompactRefreshController:
             snapshot = copy.deepcopy(self._latest_snapshot)
             if snapshot is None:
                 return RefreshOutcome()
-            snapshot.state.workflow_status = result.status
+            snapshot.state.workflow_status = parse_lifecycle_status(result.status)
             if snapshot.state.workflow_finished_at is None:
                 snapshot.state.workflow_finished_at = self._monotonic_now()
             self._latest_snapshot = copy.deepcopy(snapshot)

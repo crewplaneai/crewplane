@@ -116,6 +116,11 @@ def test_terminal_workflow_event_types_are_exact() -> None:
     "export_name",
     [
         "EventType",
+        "ExecutionStatus",
+        "LogLevel",
+        "WorkflowStatus",
+        "InvocationStatus",
+        "NodeStatus",
         "WorkflowEventType",
         "NodeEventType",
         "InvocationEventType",
@@ -635,6 +640,30 @@ def test_reducer_applies_every_lifecycle_transition(
             state.nodes["node.a"].invocations["alpha_executor_0"].status
             == expected_status
         )
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_workflow_cancellation_terminates_only_unfinished_children(
+    completed: bool,
+) -> None:
+    state = _single_node_state()
+    apply_event(state, _event_for_type(EventType.NODE_STARTED))
+    apply_event(state, _event_for_type(EventType.INVOCATION_STARTED))
+    if completed:
+        apply_event(state, _event_for_type(EventType.INVOCATION_FINISHED))
+        apply_event(state, _event_for_type(EventType.NODE_FINISHED))
+
+    event = _event_for_type(EventType.WORKFLOW_CANCELLED)
+    apply_event(state, event)
+
+    node = state.nodes["node.a"]
+    invocation = node.invocations["alpha_executor_0"]
+    assert node.status == ("succeeded" if completed else "cancelled")
+    assert invocation.status == ("succeeded" if completed else "cancelled")
+    assert node.finished_at is not None
+    assert invocation.finished_at is not None
+    assert state.running_nodes == 0
+    assert node.running_invocations == 0
 
 
 @pytest.mark.parametrize(

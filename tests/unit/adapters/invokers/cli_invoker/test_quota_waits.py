@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from crewplane.runtime.agent.quota.waits import extract_wait_candidates_from_line
+from crewplane.adapters.invokers.cli_invoker.quota.waits import (
+    extract_wait_candidates_from_line,
+)
 
 NOW = datetime(2026, 4, 10, 12, 0, 0, tzinfo=UTC)
 
@@ -72,6 +74,22 @@ def test_absolute_machine_readable_waits(
     assert extract_wait_candidates_from_line(line, NOW) == [expected_seconds]
 
 
+def test_mixed_reset_formats_preserve_candidate_order_and_duplicates() -> None:
+    line = (
+        "Retry after 2s; reset at 1 pm (Etc/UTC); "
+        "resetAt=2026-04-10T12:01:30Z; quota |1775822520"
+    )
+
+    assert extract_wait_candidates_from_line(line, NOW) == [
+        2.0,
+        3600.0,
+        120.0,
+        90.0,
+        120.0,
+        90.0,
+    ]
+
+
 @pytest.mark.parametrize(
     "line",
     [
@@ -86,13 +104,23 @@ def test_invalid_or_past_machine_readable_waits_are_ignored(line: str) -> None:
     assert extract_wait_candidates_from_line(line, NOW) == []
 
 
-def test_timezone_qualified_local_time_rolls_to_next_day() -> None:
+@pytest.mark.parametrize(
+    ("local_time", "expected_seconds"),
+    [
+        pytest.param("7 am", 23 * 60 * 60.0, id="past-time"),
+        pytest.param("8 am", 24 * 60 * 60.0, id="current-time"),
+        pytest.param("8:30 a.m.", 30 * 60.0, id="future-time-with-minutes"),
+    ],
+)
+def test_timezone_qualified_local_time_selects_next_reset(
+    local_time: str, expected_seconds: float
+) -> None:
     waits = extract_wait_candidates_from_line(
-        "Your limit will reset at 7 am (America/New_York)",
+        f"Your limit will reset at {local_time} (America/New_York)",
         NOW,
     )
 
-    assert waits == [23 * 60 * 60.0]
+    assert waits == [expected_seconds]
 
 
 def test_invalid_timezone_qualified_local_time_is_ignored() -> None:

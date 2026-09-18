@@ -4,7 +4,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-from crewplane.architecture.contracts import EventType
+from crewplane.architecture.contracts import EventType, LogLevel
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts.workspace.node_state import (
@@ -61,7 +61,7 @@ def emit_resumed_node_events(
     emit_workflow_event(telemetry, EventType.NODE_STARTED, node_id=node_id)
     emit_runtime_log(
         telemetry,
-        level="info",
+        level=LogLevel.INFO,
         message=f"Node '{node_id}' resumed from validated artifacts.",
         operation="node_resumed",
         context=RuntimeEventContext(node_id=node_id),

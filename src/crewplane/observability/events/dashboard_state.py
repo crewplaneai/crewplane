@@ -4,7 +4,12 @@ from collections import deque
 from dataclasses import dataclass, field
 from time import monotonic
 
-from crewplane.architecture.contracts import LogPresentationFormat, WorkflowTopology
+from crewplane.architecture.contracts import (
+    ExecutionStatus,
+    LogPresentationFormat,
+    WorkflowTopology,
+    parse_lifecycle_status,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.types import (
     InvocationStatus,
@@ -23,7 +28,7 @@ class InvocationRuntimeState:
     model: str | None
     audit_round_num: int | None
     round_num: int | None
-    status: InvocationStatus = "pending"
+    status: InvocationStatus = ExecutionStatus.PENDING
     started_at: float | None = None
     finished_at: float | None = None
     duration_ms: int | None = None
@@ -35,6 +40,7 @@ class InvocationRuntimeState:
 
     def __post_init__(self) -> None:
         self.role = ProviderRole(self.role)
+        self.status = parse_lifecycle_status(self.status)
 
 
 @dataclass
@@ -44,11 +50,14 @@ class NodeRuntimeState:
     node_id: str
     mode: str
     configured_providers: tuple[str, ...]
-    status: NodeStatus = "pending"
+    status: NodeStatus = ExecutionStatus.PENDING
     started_at: float | None = None
     finished_at: float | None = None
     invocations: dict[str, InvocationRuntimeState] = field(default_factory=dict)
     recent_events: deque[str] = field(default_factory=lambda: deque(maxlen=5))
+
+    def __post_init__(self) -> None:
+        self.status = ExecutionStatus(self.status)
 
     @property
     def total_invocations(self) -> int:
@@ -56,15 +65,21 @@ class NodeRuntimeState:
 
     @property
     def running_invocations(self) -> int:
-        return sum(inv.status == "running" for inv in self.invocations.values())
+        return sum(
+            inv.status == ExecutionStatus.RUNNING for inv in self.invocations.values()
+        )
 
     @property
     def succeeded_invocations(self) -> int:
-        return sum(inv.status == "succeeded" for inv in self.invocations.values())
+        return sum(
+            inv.status == ExecutionStatus.SUCCEEDED for inv in self.invocations.values()
+        )
 
     @property
     def failed_invocations(self) -> int:
-        return sum(inv.status == "failed" for inv in self.invocations.values())
+        return sum(
+            inv.status == ExecutionStatus.FAILED for inv in self.invocations.values()
+        )
 
 
 @dataclass
@@ -74,10 +89,13 @@ class RunDashboardState:
     workflow_name: str
     run_id: str
     node_order: dict[str, int]
-    workflow_status: WorkflowStatus = "pending"
+    workflow_status: WorkflowStatus = ExecutionStatus.PENDING
     workflow_started_at: float | None = None
     workflow_finished_at: float | None = None
     nodes: dict[str, NodeRuntimeState] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.workflow_status = parse_lifecycle_status(self.workflow_status)
 
     @property
     def elapsed_seconds(self) -> float:
@@ -92,23 +110,33 @@ class RunDashboardState:
 
     @property
     def pending_nodes(self) -> int:
-        return sum(node.status == "pending" for node in self.nodes.values())
+        return sum(
+            node.status == ExecutionStatus.PENDING for node in self.nodes.values()
+        )
 
     @property
     def running_nodes(self) -> int:
-        return sum(node.status == "running" for node in self.nodes.values())
+        return sum(
+            node.status == ExecutionStatus.RUNNING for node in self.nodes.values()
+        )
 
     @property
     def succeeded_nodes(self) -> int:
-        return sum(node.status == "succeeded" for node in self.nodes.values())
+        return sum(
+            node.status == ExecutionStatus.SUCCEEDED for node in self.nodes.values()
+        )
 
     @property
     def failed_nodes(self) -> int:
-        return sum(node.status == "failed" for node in self.nodes.values())
+        return sum(
+            node.status == ExecutionStatus.FAILED for node in self.nodes.values()
+        )
 
     @property
     def blocked_nodes(self) -> int:
-        return sum(node.status == "blocked" for node in self.nodes.values())
+        return sum(
+            node.status == ExecutionStatus.BLOCKED for node in self.nodes.values()
+        )
 
 
 def build_initial_state(topology: WorkflowTopology, run_id: str) -> RunDashboardState:
