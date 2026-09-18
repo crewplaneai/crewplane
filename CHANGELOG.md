@@ -4,18 +4,24 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-17
+
+### Added
+
+- Added support for Pi CLI and DeepSeek Harness CLI (`dsh`), including
+  onboarding detection and provider configuration checks.
+
 ### Changed
 
 - Replaced `InvocationLogLevel` with shared `LogLevel` enum members for invocation diagnostics and runtime log events.
 
-### Added
-
-- Added Pi CLI and DeepSeek Harness CLI to provider setup and onboarding,
-  with automatic Pi extension loading disabled by default.
-
 ### Fixed
 
-- Stopped review loops when repeated fix attempts leave the work unchanged.
+- Improved review-loop progress detection: skip redundant reviews when
+  work is verifiably unchanged, and stop with `no_progress` after two
+  consecutive unchanged fix attempts against the same unresolved feedback.
+- Prevented interrupted review attempts from being associated with
+  an earlier review verdict.
 - Kept review and dashboard status accurate after cancellation and fixed log
   viewing for cancelled runs.
 - Cleaned up temporary provider output files after failures.
