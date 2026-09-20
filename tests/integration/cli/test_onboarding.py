@@ -270,7 +270,7 @@ def test_missing_mock_evidence_can_continue_and_select_provider(tmp_path: Path) 
 
     assert "Provider detection" in output
     assert "Onboarding complete." in output
-    assert which.calls == [*known_provider_names()[:-1], "env", "codex"]
+    assert which.calls == [*known_provider_names()[:-2], "env", "opencode", "codex"]
 
 
 def test_no_provider_found_stops_with_setup_guidance(tmp_path: Path) -> None:
@@ -281,7 +281,9 @@ def test_no_provider_found_stops_with_setup_guidance(tmp_path: Path) -> None:
 
     assert "No known provider CLI names were found on PATH." in output
     assert "provider-setup.md" in output
-    assert sorted(which.calls) == sorted([*known_provider_names()[:-1], "env"])
+    assert sorted(which.calls) == sorted(
+        [*known_provider_names()[:-2], "env", "opencode"]
+    )
 
 
 def test_successful_onboarding_selects_provider_writes_and_validates(
@@ -332,7 +334,7 @@ def test_successful_onboarding_selects_provider_writes_and_validates(
     assert no_live_index < output.index("crewplane run --no-live", no_live_index)
     assert "has not checked Gemini auth" in output
     assert not any("backup" in path.name.lower() for path in tmp_path.rglob("*"))
-    assert which.calls == [*known_provider_names()[:-1], "env", "gemini"]
+    assert which.calls == [*known_provider_names()[:-2], "env", "opencode", "gemini"]
 
 
 def test_provider_selection_eof_leaves_files_unchanged(
@@ -356,6 +358,22 @@ def test_provider_selection_eof_leaves_files_unchanged(
     assert (tmp_path / CONFIG_RELATIVE_PATH).read_text(
         encoding="utf-8"
     ) == default_config
+
+
+def test_onboarding_selects_opencode_with_native_model_default(tmp_path):
+    initialize_default_project(tmp_path)
+    write_successful_mock_history(tmp_path)
+    output, _ = run_onboarding_in_project(
+        tmp_path,
+        answers=["1", ""],
+        which=WhichRecorder({"opencode": "/test/opencode"}),
+    )
+    config = load_config(tmp_path / CONFIG_RELATIVE_PATH)
+    assert list(config.agents) == ["opencode"]
+    assert config.agents["opencode"].cli_cmd == ["opencode", "run"]
+    assert config.agents["opencode"].default_model is None
+    assert "Selected opencode." in output
+    assert "Onboarding complete." in output
 
 
 @pytest.mark.parametrize("select_all", [False, True])
@@ -396,7 +414,13 @@ def test_onboarding_enables_multiple_selected_providers(
         for provider in selected
         for command in (("env", "dsh") if provider == "deepseek" else (provider,))
     ]
-    assert which.calls == [*available[:-1], "env", "dsh", *selected_commands]
+    assert which.calls == [
+        *available[:-2],
+        "env",
+        "dsh",
+        "opencode",
+        *selected_commands,
+    ]
 
 
 @pytest.mark.parametrize("invalid", ["", " ", ",", "0", "1,0", "1,3", "1,codex"])

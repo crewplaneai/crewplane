@@ -32,6 +32,7 @@ def test_provider_ready_config_renders_each_known_provider(tmp_path) -> None:
         "kilo": "kilo/kilo-auto/frontier",
         "pi": None,
         "deepseek": None,
+        "opencode": None,
     }
     assert set(expected_models) == set(KNOWN_PROVIDER_NAMES)
     for provider in KNOWN_PROVIDER_NAMES:

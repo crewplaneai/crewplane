@@ -166,6 +166,11 @@ agents:
   #   invocation_timeout_seconds: null
   #   invocation_idle_timeout_seconds: 1800
 
+  # opencode:
+  #   cli_cmd: [opencode, run]
+  #   provider_kind: opencode
+  #   prompt_transport: stdin
+
 settings:
   # Core-owned authorization for {{file:...}} references outside this project.
   file_access:

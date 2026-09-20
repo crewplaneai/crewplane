@@ -13,7 +13,17 @@ from crewplane.architecture.contracts.provider_log import build_provider_log_hea
 from crewplane.core.config import AgentConfig
 
 from .capability import CliInvocationRequest, CliProviderCapability
-from .providers import claude, codex, copilot, deepseek, gemini, generic, kilo, pi
+from .providers import (
+    claude,
+    codex,
+    copilot,
+    deepseek,
+    gemini,
+    generic,
+    kilo,
+    opencode,
+    pi,
+)
 
 CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
     ProviderKind.CLAUDE: claude.CLAUDE,
@@ -23,6 +33,7 @@ CAPABILITIES: dict[ProviderKind, CliProviderCapability] = {
     ProviderKind.KILO: kilo.KILO,
     ProviderKind.PI: pi.PI,
     ProviderKind.DEEPSEEK: deepseek.DEEPSEEK,
+    ProviderKind.OPENCODE: opencode.OPENCODE,
     ProviderKind.GENERIC: generic.GENERIC,
 }
 

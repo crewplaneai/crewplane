@@ -7,6 +7,15 @@ from crewplane.cli.onboarding.rendering import rendered_default_config
 from crewplane.core.provider_names import known_provider_names
 
 
+@pytest.mark.parametrize("present", [False, True])
+def test_detection_finds_opencode_without_launch(tmp_path, present) -> None:
+    found = {"opencode": "/test/opencode"} if present else {}
+    detections = detect_providers(rendered_default_config(), tmp_path, found.get)
+    assert [item.provider for item in detections if item.found] == (
+        ["opencode"] if present else []
+    )
+
+
 @pytest.mark.parametrize(
     "found",
     [

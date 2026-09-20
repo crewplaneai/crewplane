@@ -1,0 +1,8 @@
+{"type": "step_start", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "start-1", "sessionID": "session-1", "messageID": "message-1"}}
+{"type": "text", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "text-1", "sessionID": "session-1", "messageID": "message-1", "text": "Planning commentary", "time": {"end": 2}}}
+{"type": "tool_use", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "tool-1", "sessionID": "session-1", "messageID": "message-1", "state": {"status": "completed", "output": "tool transcript"}}}
+{"type": "step_finish", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "finish-1", "sessionID": "session-1", "messageID": "message-1", "reason": "tool-calls", "tokens": {"input": 10, "output": 6, "reasoning": 3, "cache": {"read": 4, "write": 2}}}}
+{"type": "step_start", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "start-2", "sessionID": "session-1", "messageID": "message-2"}}
+{"type": "text", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "text-2", "sessionID": "session-1", "messageID": "message-2", "text": "Final answer", "time": {"end": 2}}}
+{"type": "text", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "text-3", "sessionID": "session-1", "messageID": "message-2", "text": "Second part", "time": {"end": 2}}}
+{"type": "step_finish", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "finish-2", "sessionID": "session-1", "messageID": "message-2", "reason": "stop", "tokens": {"input": 10, "output": 6, "reasoning": 3, "cache": {"read": 4, "write": 2}}}}

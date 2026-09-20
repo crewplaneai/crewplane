@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added OpenCode as a supported provider.
+
 ## [0.3.2] - 2026-09-17
 
 ### Added
