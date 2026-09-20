@@ -134,12 +134,16 @@ def test_builtin_provider_log_presentation_descriptors() -> None:
     kilo = build_cli_log_presentation(
         AgentConfig(cli_cmd=["kilo", "run"], provider_kind="kilo")
     )
+    opencode = build_cli_log_presentation(
+        AgentConfig(cli_cmd=["opencode", "run"], provider_kind="opencode")
+    )
     generic = build_cli_log_presentation(AgentConfig(cli_cmd=["echo"]))
 
     assert (claude.format, claude.profile) == ("json_object", "claude")
     assert (codex.format, codex.profile) == ("json_lines", "codex")
     assert (gemini.format, gemini.profile) == ("json_object", "gemini")
     assert (kilo.format, kilo.profile) == ("json_lines", "kilo")
+    assert (opencode.format, opencode.profile) == ("json_lines", "generic")
     assert (generic.format, generic.profile) == ("plain", "generic")
 
 
@@ -152,7 +156,7 @@ def test_machine_readable_provider_capabilities_supply_decoder_and_extractor() -
         capability = CAPABILITIES[provider]
         assert capability.output_extractor is not None
         assert capability.usage_decoder is not None
-    for provider in (ProviderKind.GEMINI, ProviderKind.KILO):
+    for provider in (ProviderKind.GEMINI, ProviderKind.KILO, ProviderKind.OPENCODE):
         capability = CAPABILITIES[provider]
         assert capability.output_extractor is not None
         assert capability.usage_decoder is not None

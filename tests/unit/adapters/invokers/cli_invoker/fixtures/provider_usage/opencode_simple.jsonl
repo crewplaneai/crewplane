@@ -1,0 +1,2 @@
+{"type": "text", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "text-1", "sessionID": "session-1", "messageID": "message-1", "text": "Answer λ", "time": {"end": 2}}}
+{"type": "step_finish", "timestamp": 1800000000000, "sessionID": "session-1", "part": {"id": "finish-1", "sessionID": "session-1", "messageID": "message-1", "reason": "stop", "tokens": {"input": 10, "output": 6, "reasoning": 3, "cache": {"read": 4, "write": 2}}}}

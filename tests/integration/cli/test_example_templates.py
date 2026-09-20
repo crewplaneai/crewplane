@@ -193,6 +193,7 @@ class ExampleTemplateTests(unittest.TestCase):
             "kilo",
             "pi",
             "deepseek",
+            "opencode",
         ):
             self.assertIn(f"# {provider_name}:", rendered)
             self.assertNotIn(f"\n  {provider_name}:", rendered)
@@ -201,6 +202,7 @@ class ExampleTemplateTests(unittest.TestCase):
         self.assertIn('#   cli_cmd: ["gemini"]', rendered)
         self.assertIn('#   cli_cmd: ["copilot"]', rendered)
         self.assertIn('#   cli_cmd: ["kilo", "run"]', rendered)
+        self.assertIn("#   cli_cmd: [opencode, run]", rendered)
         for flag in (
             "--dangerously-skip-permissions",
             "--dangerously-bypass-approvals-and-sandbox",

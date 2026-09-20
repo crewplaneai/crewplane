@@ -169,6 +169,7 @@ Supported values:
 - `kilo`
 - `pi`
 - `deepseek`
+- `opencode`
 - `generic`
 
 Use `generic` for a CLI without a dedicated provider kind.
@@ -275,6 +276,66 @@ not check DeepSeek's saved permissions. See
 [DeepSeek's settings guide](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/settings/settings-file/README.md)
 for more about its settings file.
 
+## OpenCode Local Runs
+
+Install OpenCode, set up your model provider, and confirm that it works on its
+own before connecting it to Crewplane. See the
+[OpenCode CLI guide](https://opencode.ai/docs/cli/) for setup instructions.
+
+You can select OpenCode with `crewplane onboarding`, or merge these settings into
+your `.crewplane/config.yml` to enable it manually:
+
+```yaml
+agents:
+  opencode:
+    cli_cmd: [opencode, run]
+    provider_kind: opencode
+    prompt_transport: stdin
+
+settings:
+  integrations:
+    invoker:
+      implementation: cli
+      options: {}
+```
+
+Set `providers: [opencode]` on the workflow nodes that should use OpenCode, then
+check your configuration:
+
+```bash
+crewplane validate
+crewplane run --dry-run
+```
+
+These checks do not start OpenCode or verify that it can access your model.
+Once they pass, use `crewplane run` to start the workflow.
+
+Keep the command and prompt settings shown above, and leave out
+`prompt_transport_arg`. Crewplane sends the prompt automatically and runs
+OpenCode in the project directory, or in the node's workspace if configured.
+Each attempt starts a new OpenCode session.
+
+To choose a model, set the profile's `default_model` to an OpenCode
+`provider/model` name. A workflow's `model` overrides that choice. Leave both
+unset to use OpenCode's usual model selection. Leave out workflow `reasoning`;
+use OpenCode's `--variant` option if your model supports it. See
+[OpenCode options](../reference/configuration.md#opencode-options) for the
+optional command settings.
+
+OpenCode uses your existing agents, tools, plugins, permissions, and sharing
+settings. Configure these in OpenCode itself. Requests that need interactive
+approval are rejected by default. To let OpenCode approve those requests
+automatically, add `extra_args: [--auto]` to the profile. Explicit permission
+denials still apply; see [OpenCode permissions](https://opencode.ai/docs/permissions/#auto-mode).
+
+Crewplane saves OpenCode's final answer and keeps tool activity and diagnostics
+in the provider log. Failed runs and incomplete or empty answers are treated as
+errors. OpenCode keeps its own session history.
+
+Token counts are shown when OpenCode reports them; missing counts stay unknown.
+Cost estimates use your Crewplane pricing settings. Usage and cost totals may
+exclude tasks that OpenCode delegates to other agents.
+
 ## Choose A Model
 
 Set `default_model` in an agent profile to choose its model. If you leave it
@@ -330,7 +391,7 @@ provider CLI:
 - `stdin`: send the prompt directly to the running CLI through standard input.
 - `argv`: include the prompt as an argument in the command that starts the CLI.
 
-Keep the prompt settings from your provider's example. Pi requires `stdin`;
+Keep the prompt settings from your provider's example. Pi and OpenCode require `stdin`;
 DeepSeek requires `argv`. For other CLIs, prefer `stdin` when supported to keep
 prompts out of the command line.
 

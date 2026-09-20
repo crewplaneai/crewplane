@@ -5,9 +5,21 @@
     Crewplane is an open-source workflow runner for reviewable, resumable
     coding-agent workflows. Define the whole process in Markdown — the prompts,
     stages, agents, handoffs, and rules for what happens next.
-    Crewplane runs Claude Code, Codex, Copilot CLI, Gemini, Kilo, or another CLI.
+    Crewplane runs your coding-agent CLIs.
     Review becomes a gate, completed work survives failure, and every handoff
     stays on disk.
+  </p>
+  <p>
+    Works with:
+    <img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/claudecode-color.svg" width="20" height="20" align="top" alt="">&nbsp;Claude&nbsp;Code ·
+    <img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/codex-color.svg" width="20" height="20" align="top" alt="">&nbsp;Codex ·
+    <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/dark/githubcopilot.png"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/githubcopilot.png" width="20" height="20" align="top" alt=""></picture>&nbsp;Copilot&nbsp;CLI ·
+    <img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/geminicli-color.svg" width="20" height="20" align="top" alt="">&nbsp;Gemini&nbsp;CLI ·
+    <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/dark/kilocode.png"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/kilocode.png" width="20" height="20" align="top" alt=""></picture>&nbsp;Kilo&nbsp;Code ·
+    <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/dark/pi.png"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/pi.png" width="20" height="20" align="top" alt=""></picture>&nbsp;Pi ·
+    <img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/deepseek-color.svg" width="20" height="20" align="top" alt="">&nbsp;DeepSeek ·
+    <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/dark/opencode.png"><img src="https://raw.githubusercontent.com/lobehub/lobe-icons/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-png/light/opencode.png" width="20" height="20" align="top" alt=""></picture>&nbsp;OpenCode ·
+    <a href="docs/getting-started/provider-setup.md">Provider&nbsp;setup&nbsp;→</a>
   </p>
   <p>
     <a href="https://github.com/crewplaneai/crewplane/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/crewplaneai/crewplane/actions/workflows/ci.yml/badge.svg?branch=master"></a>

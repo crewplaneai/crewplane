@@ -32,6 +32,7 @@ class ProviderKind(StrEnum):
     KILO = "kilo"
     PI = "pi"
     DEEPSEEK = "deepseek"
+    OPENCODE = "opencode"
     GENERIC = "generic"
 
 

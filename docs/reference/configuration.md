@@ -46,9 +46,9 @@ Generated config from `crewplane init` starts with one active `mock` agent and
 `crewplane validate` and `crewplane run` work without a provider. Mock runs use
 repeatable sample output and make no model calls.
 
-The generated config also includes commented provider examples for Claude,
-Codex, Gemini, Copilot, Kilo, Pi, and DeepSeek. Uncomment and review only the
-agents you need before switching the invoker to `cli`.
+The generated config includes examples for Claude, Codex, Gemini, Copilot, Kilo,
+Pi, DeepSeek, and OpenCode. To enable a provider, remove the leading `#` from its
+example and review its settings before switching the invoker to `cli`.
 
 ```yaml
 version: "1.0"
@@ -103,7 +103,7 @@ settings use dotted paths in the left column.
 | Field | Description |
 | --- | --- |
 | `cli_cmd` | Provider command and its arguments, as a non-empty list. |
-| `provider_kind` | `claude`, `codex`, `copilot`, `gemini`, `kilo`, `pi`, `deepseek`, or `generic`. Defaults to `generic`. |
+| `provider_kind` | `claude`, `codex`, `copilot`, `gemini`, `kilo`, `pi`, `deepseek`, `opencode`, or `generic`. Defaults to `generic`. |
 | `default_model` | Model to use when the workflow provider omits `model`. Leave both fields unset for DeepSeek and choose its model in DeepSeek's settings. |
 | `model_arg` | Model flag for `provider_kind: generic`. Defaults to `--model`; set it to `null` to send no model flag. The built-in CLI invoker ignores it for other provider kinds and warns before the run. |
 | `prompt_transport` | `stdin` sends the prompt through standard input; `argv` passes it as a command argument. Defaults to `stdin`. |
@@ -146,6 +146,39 @@ used by the workflow during `crewplane validate`, dry runs, and before starting
 a real run. Provider token counts and Crewplane's estimates from captured text
 are reported separately. A provider profile may have no token counts even when
 estimates are available.
+
+### OpenCode Options
+
+For OpenCode, set `provider_kind: opencode`, `cli_cmd: [opencode, run]`, and
+`prompt_transport: stdin`. Leave out `prompt_transport_arg`. Follow
+[OpenCode setup](../getting-started/provider-setup.md#opencode-local-runs) to
+connect it to a workflow and configure permissions.
+
+You can add these OpenCode options to `extra_args` or after `run` in `cli_cmd`:
+
+| Option | What it does |
+| --- | --- |
+| `--agent` | Chooses an OpenCode agent, such as `build` or `plan`. |
+| `--variant` | Chooses a model variant, such as `high`, if the model supports it. |
+| `--title` | Names the session saved by OpenCode. |
+| `--log-level` | Sets OpenCode's log level: `DEBUG`, `INFO`, `WARN`, or `ERROR`. |
+| `--thinking` | Includes the model's thinking in the provider log. |
+| `--print-logs` | Includes OpenCode's diagnostic logs. |
+| `--auto` | Automatically approves permission requests unless OpenCode's settings explicitly deny them. |
+
+The first four options need a value, for example `extra_args: [--agent, build]`
+or `extra_args: [--agent=build]`. Keep each option and its value in the same list,
+and specify each option only once across `cli_cmd` and `extra_args`.
+For the last three options, use the flag by itself or add `=true` or `=false`,
+for example `extra_args: [--thinking=false]`.
+
+Prefer `default_model` or the workflow's `model` field to choose a model.
+You can also use `--model` (or `-m`) with a value, but only once and only when both
+of those fields are unset.
+
+Crewplane supplies `--format` and `--dir` automatically. Other options and extra
+prompt text are rejected, including options for continuing sessions, connecting
+to a server, or attaching files. Keep `run` immediately after the executable.
 
 ## `agents.<name>.pricing`
 
