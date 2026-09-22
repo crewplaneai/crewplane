@@ -97,7 +97,9 @@ Current CI policy:
   updater generates `packaging/uv-bootstrap-version.txt` from this manifest for
   workflows; do not edit the generated file directly. This keeps scheduled
   updates from rewriting workflow definitions.
-- Weekly automation follows the Dependabot Python update. When that PR updates packaging/uv-bootstrap-version.txt, the workflow regenerates all uv bootstrap metadata and commits it to the same branch. Dependabot remains responsible for creating the PR.
+- uv bootstrap metadata is synchronized automatically after Dependabot PR checks
+  complete, including failed checks. Weekly and manual runs remain available
+  for recovery. Dependabot creates the PR.
 
 Operational notes:
 

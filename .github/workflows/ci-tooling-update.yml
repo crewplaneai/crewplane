@@ -1,6 +1,10 @@
 name: uv bootstrap update
 
 on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: ["dependabot/**"]
   schedule:
     - cron: "30 20 * * 1"
   workflow_dispatch:
@@ -10,12 +14,17 @@ permissions:
 
 concurrency:
   group: uv-bootstrap-update-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   uv-bootstrap-update:
     name: update pinned uv metadata
-    if: github.repository == 'crewplaneai/crewplane' && github.ref == 'refs/heads/master'
+    if: >-
+      github.repository == 'crewplaneai/crewplane' && github.ref == 'refs/heads/master' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -28,6 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: master
           fetch-depth: 0
 
       - name: Preserve the trusted updater
@@ -49,6 +59,8 @@ jobs:
       - name: Select the Dependabot uv PR
         id: lane
         shell: bash
+        env:
+          TARGET_HEAD_REF: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -60,6 +72,9 @@ jobs:
             --jq '.[] | select(.isCrossRepository == false) | select(.headRefName | startswith("dependabot/")) | [.number, .headRefName] | @tsv' \
             > "$pull_request_candidates"
           while IFS=$'\t' read -r pr_number head_ref; do
+            if [ -n "${TARGET_HEAD_REF:-}" ] && [ "$head_ref" != "$TARGET_HEAD_REF" ]; then
+              continue
+            fi
             changes_uv_pin="$(
               gh pr view "$pr_number" --json files \
                 --jq 'any(.files[]; .path == "packaging/uv-bootstrap-version.txt")'
@@ -71,7 +86,7 @@ jobs:
 
           case "${#matching_head_refs[@]}" in
             0)
-              printf 'No open same-repository Dependabot PR changes packaging/uv-bootstrap-version.txt; waiting for the next weekly update.\n'
+              printf 'No matching open same-repository Dependabot PR changes packaging/uv-bootstrap-version.txt.\n'
               printf 'active=false\n' >> "$GITHUB_OUTPUT"
               exit 0
               ;;
