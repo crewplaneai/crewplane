@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 
+from crewplane.architecture.contracts import ExecutionStatus
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.workspace.state.paths import workspace_reuse_claim_filename
 from crewplane.core.preflight.models import (
@@ -326,7 +327,7 @@ def _resolve_cancelled_reuse_claim(
     try:
         publish_terminal_workspace_state(
             state_path,
-            "cancelled",
+            ExecutionStatus.CANCELLED,
             cleanup_intended=True,
             diagnostics=[
                 {
@@ -457,7 +458,7 @@ def _archive_failed_reuse_claim(
     atomic_write_json(archive_path, read_workspace_state(state_path))
     publish_terminal_workspace_state(
         archive_path,
-        "failed",
+        ExecutionStatus.FAILED,
         cleanup_intended=True,
         diagnostics=[
             {

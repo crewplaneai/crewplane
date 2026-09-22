@@ -5,9 +5,9 @@ from enum import Enum, auto
 from typing import Literal
 
 from crewplane.architecture.contracts import LogLevel
+from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.failures import InvocationFailureError
 
 from ..common import (
     RuntimeEventContext,

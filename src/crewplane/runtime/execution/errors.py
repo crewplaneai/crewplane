@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from crewplane.runtime.agent.failures import InvocationFailureError
+from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 
 

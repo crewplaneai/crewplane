@@ -33,6 +33,7 @@ from .naming import (
     build_log_filename,
     build_workspace_export_filename,
     node_state_relative_path,
+    preflight_plan_relative_path,
     run_manifest_relative_path,
     safe_artifact_name,
 )
@@ -217,7 +218,9 @@ class OutputManager:
         return self._directories.get_run_summary_path()
 
     def write_preflight_plan(self, plan: PreflightExecutionPlan) -> Path:
-        plan_path = self._preflight_artifact_path("execution-plan.json")
+        plan_path = self._preflight_artifact_path(
+            preflight_plan_relative_path().relative_to("preflight").as_posix()
+        )
         return atomic_write_text(plan_path, pretty_sorted_json(plan) + "\n")
 
     def write_preflight_static_file(self, content_ref: str, payload: bytes) -> Path:

@@ -397,3 +397,31 @@ def _set_path(payload: dict[str, object], path: tuple[str, ...], value: object) 
         current.pop(path[-1])
     else:
         current[path[-1]] = value
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "succeeded",
+        "failed",
+        "cancelled",
+        "running",
+        "planned",
+        "blocked",
+        "unknown",
+        None,
+    ],
+)
+def test_cleanup_contract_uses_workspace_terminal_outcomes(status: str | None) -> None:
+    payload = valid_snapshot_payload()
+    payload["status"] = status
+    errors = workspace_state_contract_errors(payload, "cleanup")
+    if status in {"succeeded", "failed", "cancelled"}:
+        assert errors == ()
+    else:
+        assert "cleanup requires a terminal outcome" in errors
+    if status != "succeeded":
+        assert (
+            "resume requires a succeeded workspace"
+            in workspace_state_contract_errors(payload, "resume")
+        )

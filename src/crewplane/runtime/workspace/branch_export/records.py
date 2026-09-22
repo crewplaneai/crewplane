@@ -36,12 +36,7 @@ def branch_export_record(
     dry_run: bool = False,
 ) -> JsonObject:
     payload: JsonObject = {
-        "version": SCHEMA_VERSION,
-        "run_id": run_id,
-        "run_key_name": run_key_name,
-        "workflow_name": plan.workflow_name,
-        "workflow_signature": plan.workflow_signature,
-        "logical_worktree_name": logical_worktree_name,
+        **_branch_export_identity(plan, run_id, run_key_name, logical_worktree_name),
         "branch_name": branch_name,
         "branch_ref": branch_ref,
         "status": "fulfilled",
@@ -70,12 +65,7 @@ def skipped_branch_export_record(
     repository_id: str | None = None,
 ) -> JsonObject:
     return {
-        "version": SCHEMA_VERSION,
-        "run_id": run_id,
-        "run_key_name": run_key_name,
-        "workflow_name": plan.workflow_name,
-        "workflow_signature": plan.workflow_signature,
-        "logical_worktree_name": logical_worktree_name,
+        **_branch_export_identity(plan, run_id, run_key_name, logical_worktree_name),
         "branch_name": None,
         "branch_ref": None,
         "status": "skipped",
@@ -109,12 +99,7 @@ def failed_branch_export_record(
     repository_id: str | None = None,
 ) -> JsonObject:
     payload: JsonObject = {
-        "version": SCHEMA_VERSION,
-        "run_id": run_id,
-        "run_key_name": run_key_name,
-        "workflow_name": plan.workflow_name,
-        "workflow_signature": plan.workflow_signature,
-        "logical_worktree_name": logical_worktree_name,
+        **_branch_export_identity(plan, run_id, run_key_name, logical_worktree_name),
         "branch_name": branch_name,
         "branch_ref": branch_ref,
         "status": "failed_verification",
@@ -148,13 +133,8 @@ def prepared_branch_export_record(
     recovery_mode: str,
 ) -> JsonObject:
     payload: JsonObject = {
-        "version": SCHEMA_VERSION,
-        "run_id": run_id,
-        "run_key_name": run_key_name,
-        "workflow_name": plan.workflow_name,
-        "workflow_signature": plan.workflow_signature,
+        **_branch_export_identity(plan, run_id, run_key_name, logical_worktree_name),
         "repository_id": repository_id,
-        "logical_worktree_name": logical_worktree_name,
         "branch_name": branch_name,
         "branch_ref": branch_ref,
         "status": "prepared",
@@ -169,6 +149,22 @@ def prepared_branch_export_record(
     }
     payload.update(checkpoint_record(checkpoint))
     return payload
+
+
+def _branch_export_identity(
+    plan: PreflightExecutionPlan,
+    run_id: str,
+    run_key_name: str,
+    logical_worktree_name: str,
+) -> JsonObject:
+    return {
+        "version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "run_key_name": run_key_name,
+        "workflow_name": plan.workflow_name,
+        "workflow_signature": plan.workflow_signature,
+        "logical_worktree_name": logical_worktree_name,
+    }
 
 
 def checkpoint_record(checkpoint: BranchExportCheckpoint) -> JsonObject:

@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
+from crewplane.architecture.contracts.execution_status import (
+    TERMINAL_WORKSPACE_STATUSES,
+)
+
 from .state import WorkspaceStateRetention, update_workspace_retention
 from .worktree.cleanup import remove_unknown_workspace_path, worktree_disk_usage
 from .worktree.ref_cleanup import WorkspaceRunRefCleanup
@@ -328,7 +332,7 @@ def _reconcile_absent_state_projections(
             request.cleanup_filter,
         ):
             continue
-        if not _absent_projection_matches_filter(
+        if not absent_projection_matches_filter(
             projection,
             request.cleanup_filter,
         ) or not _workspace_path_is_confirmed_absent(projection.workspace_path):
@@ -345,13 +349,14 @@ def _projection_targets_requested_run(
     return cleanup_filter.run_key_name in (None, projection.run_key_name)
 
 
-def _absent_projection_matches_filter(
+def absent_projection_matches_filter(
     projection: AbsentWorkspaceStateProjection,
     cleanup_filter: WorkspaceCleanupFilter,
 ) -> bool:
-    return cleanup_filter.older_than_seconds is None and status_matches(
-        projection.status,
-        cleanup_filter,
+    return (
+        _projection_targets_requested_run(projection, cleanup_filter)
+        and cleanup_filter.older_than_seconds is None
+        and status_matches(projection.status, cleanup_filter)
     )
 
 
@@ -480,7 +485,7 @@ def status_matches(
     if status is None:
         return cleanup_filter.orphans
     if not cleanup_filter.statuses and not cleanup_filter.orphans:
-        return status in {"succeeded", "failed", "cancelled"} or (
+        return status in TERMINAL_WORKSPACE_STATUSES or (
             cleanup_filter.repository_id is None and status == "unknown"
         )
     return status in cleanup_filter.statuses

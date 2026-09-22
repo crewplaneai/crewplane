@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
+from crewplane.architecture.contracts.execution_status import TerminalWorkspaceStatus
+
 from .mutator_fence import workspace_mutator_is_fenced
 from .state import (
     WorkspaceStateRetention,
@@ -13,7 +15,6 @@ from .state import (
     update_workspace_state,
 )
 
-TerminalWorkspaceStatus = Literal["succeeded", "failed", "cancelled"]
 WorkspaceDiagnosticLevel = Literal["error", "warning"]
 
 

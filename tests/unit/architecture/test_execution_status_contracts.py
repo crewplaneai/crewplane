@@ -9,6 +9,10 @@ from crewplane.architecture.contracts import (
     NodeStatus,
     WorkflowStatus,
 )
+from crewplane.architecture.contracts.execution_status import (
+    TERMINAL_WORKSPACE_STATUSES,
+    TerminalWorkspaceStatus,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     InvocationRuntimeState,
@@ -28,6 +32,28 @@ def invocation_state(status: InvocationStatus) -> InvocationRuntimeState:
         round_num=None,
         status=status,
     )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ExecutionStatus.SUCCEEDED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED],
+)
+def test_terminal_workspace_statuses_share_enum_members_and_persisted_values(
+    status: TerminalWorkspaceStatus,
+) -> None:
+    assert any(member is status for member in TERMINAL_WORKSPACE_STATUSES)
+    assert json.loads(json.dumps(status)) in TERMINAL_WORKSPACE_STATUSES
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ExecutionStatus.PENDING, ExecutionStatus.RUNNING, ExecutionStatus.BLOCKED],
+)
+def test_terminal_workspace_statuses_exclude_nonterminal_members(
+    status: ExecutionStatus,
+) -> None:
+    assert status not in TERMINAL_WORKSPACE_STATUSES
+    assert status.value not in TERMINAL_WORKSPACE_STATUSES
 
 
 @pytest.mark.parametrize("status", ExecutionStatus)

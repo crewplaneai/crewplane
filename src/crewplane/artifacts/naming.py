@@ -64,6 +64,10 @@ def run_manifest_relative_path() -> Path:
     return Path("manifests") / "run.json"
 
 
+def preflight_plan_relative_path() -> Path:
+    return Path("preflight") / "execution-plan.json"
+
+
 def node_state_relative_path(node_id: str) -> Path:
     return (
         run_manifest_relative_path().parent

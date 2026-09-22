@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
 from typing import Any
 
 from crewplane.runtime.workspace import mutator_fence, state
@@ -56,6 +56,20 @@ class WorkspaceWorkerFence:
 class WorkspaceWorkerCancellation:
     cleanup_registry: DeferredAsyncCleanupRegistry
     timeout_seconds: float
+
+    async def wait[T](
+        self,
+        task: asyncio.Task[T],
+        cancel_requested: Event,
+        failure_context: str,
+        worker_fence: WorkspaceWorkerFence,
+    ) -> T:
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError as cancel:
+            cancel_requested.set()
+            await self.wait_for_completion(task, failure_context, cancel, worker_fence)
+            raise
 
     async def wait_for_completion(
         self,

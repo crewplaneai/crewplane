@@ -1,7 +1,7 @@
 """Execution states and the subsets supported by each lifecycle."""
 
 from enum import StrEnum, unique
-from typing import Literal
+from typing import Literal, get_args
 
 
 @unique
@@ -14,6 +14,16 @@ class ExecutionStatus(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     BLOCKED = "blocked"
+
+
+type TerminalWorkspaceStatus = Literal[
+    ExecutionStatus.SUCCEEDED,
+    ExecutionStatus.FAILED,
+    ExecutionStatus.CANCELLED,
+]
+TERMINAL_WORKSPACE_STATUSES: frozenset[TerminalWorkspaceStatus] = frozenset(
+    get_args(TerminalWorkspaceStatus.__value__)
+)
 
 
 type LifecycleStatus = Literal[

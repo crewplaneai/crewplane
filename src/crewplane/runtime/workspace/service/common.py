@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.contracts import ExecutionStatus, JsonObject
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
@@ -104,7 +104,7 @@ def record_failed_preparation_state(
         update_workspace_state(
             state_path,
             WorkspaceStateUpdateRequest(
-                status="failed",
+                status=ExecutionStatus.FAILED,
                 diagnostics=diagnostics,
                 retention=WorkspaceStateRetention(
                     retention=workspace_retention,

@@ -11,6 +11,7 @@ from os import scandir
 from pathlib import Path
 from typing import Never
 
+from crewplane.artifacts.naming import preflight_plan_relative_path
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
@@ -272,8 +273,8 @@ def _planned_stage_paths(run_dir: Path, run_key_name: str) -> tuple[Path, ...]:
 
 
 def _cleanup_plan_path(run_dir: Path) -> Path | None:
-    preflight_path = run_dir / "preflight"
-    plan_path = preflight_path / "execution-plan.json"
+    plan_path = run_dir / preflight_plan_relative_path()
+    preflight_path = plan_path.parent
     try:
         preflight_mode = preflight_path.lstat().st_mode
         plan_stat = plan_path.lstat()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Never
 from unittest.mock import Mock
@@ -354,3 +355,77 @@ def _workspace_manifest_content(manifest_kind: str) -> str:
             status="running",
         ).model_dump_json()
     raise AssertionError(f"Unsupported manifest kind: {manifest_kind}")
+
+
+@pytest.mark.parametrize("run_key", ["run-1", "other-run"])
+@pytest.mark.parametrize("age", [None, 0, 3600])
+@pytest.mark.parametrize(
+    "status, statuses, orphans, selected_status",
+    [
+        ("failed", frozenset(), False, True),
+        ("succeeded", frozenset({"failed"}), False, False),
+        ("cancelled", frozenset({"cancelled"}), False, True),
+        (None, frozenset(), False, False),
+        (None, frozenset(), True, True),
+        ("failed", frozenset(), True, False),
+        ("failed", frozenset({"failed"}), True, True),
+        ("unknown", frozenset(), False, False),
+    ],
+)
+def test_absent_workspace_reconciliation_and_refresh_select_the_same_filters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    run_key: str,
+    age: int | None,
+    status: str | None,
+    statuses: frozenset[str],
+    orphans: bool,
+    selected_status: bool,
+) -> None:
+    project_root, config_path, _ = cleanup_project(
+        tmp_path, initialize_git=True, create_workspace=False
+    )
+    context = replace(
+        resolve_workspace_cleanup_context(config_path),
+        run_key_name="run-1",
+        older_than_seconds=age,
+        statuses=statuses,
+        orphans=orphans,
+    )
+    projection = workspace_cleanup.AbsentWorkspaceStateProjection(
+        run_key,
+        tmp_path / "absent",
+        status,
+        (),
+    )
+    deleted_runs: list[str] = []
+
+    def cleanup_refs(run_key_name: str) -> int:
+        deleted_runs.append(run_key_name)
+        return 1
+
+    monkeypatch.setattr(
+        cleanup_execution,
+        "eligible_absent_state_projections",
+        Mock(return_value=(projection,)),
+    )
+    monkeypatch.setattr(
+        cleanup_execution, "inactive_ref_cleanup_runs", Mock(return_value=())
+    )
+    monkeypatch.setattr(
+        cleanup_execution,
+        "workspace_ref_cleanup_for_project",
+        Mock(return_value=cleanup_refs),
+    )
+    refresh = Mock()
+    monkeypatch.setattr(
+        cleanup_execution, "refresh_cleanup_workspace_descriptors", refresh
+    )
+
+    result = cleanup_execution.execute_workspace_cleanup(context, destructive=True)
+    expected = (
+        [run_key] if run_key == "run-1" and age is None and selected_status else []
+    )
+    assert deleted_runs == expected
+    assert result.removed_ref_count == len(expected)
+    refresh.assert_called_once_with(project_root, tuple(expected))

@@ -8,8 +8,8 @@ from crewplane.runtime.workspace.cleanup import (
     AbsentWorkspaceStateProjection,
     WorkspaceCleanupFilter,
     WorkspaceCleanupResult,
+    absent_projection_matches_filter,
     cleanup_workspace_cache,
-    status_matches,
 )
 from crewplane.runtime.workspace.worktree.ref_cleanup import (
     WorkspaceRunRefCleanup,
@@ -137,26 +137,12 @@ def _successful_cleanup_refresh_run_keys(
     run_key_names.update(
         projection.run_key_name
         for projection in inputs.absent_state_projections
-        if _absent_projection_matches_filter(
+        if absent_projection_matches_filter(
             projection,
             inputs.cleanup_filter,
         )
     )
     return tuple(sorted(run_key_names))
-
-
-def _absent_projection_matches_filter(
-    projection: AbsentWorkspaceStateProjection,
-    cleanup_filter: WorkspaceCleanupFilter,
-) -> bool:
-    return (
-        (
-            cleanup_filter.run_key_name is None
-            or cleanup_filter.run_key_name == projection.run_key_name
-        )
-        and cleanup_filter.older_than_seconds is None
-        and status_matches(projection.status, cleanup_filter)
-    )
 
 
 def _workspace_cleanup_evidence(
