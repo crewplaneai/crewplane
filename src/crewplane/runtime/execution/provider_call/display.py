@@ -9,10 +9,10 @@ from crewplane.architecture.contracts import (
     ConsoleMessageSink,
     InvocationContext,
 )
+from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.agent.failures import (
-    InvocationFailureError,
     build_adapter_invocation_failure_error,
 )
 

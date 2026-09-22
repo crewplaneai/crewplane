@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.core.value_checks import is_nonnegative_int
+
 
 @dataclass(frozen=True)
 class PersistedWorkspaceSourceDescriptor:
@@ -106,7 +108,7 @@ def _optional_string(value: object) -> str | None:
 
 
 def _required_int(value: object) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    if not is_nonnegative_int(value):
         raise RuntimeError("Workspace source descriptor lacks a required size.")
     return value
 

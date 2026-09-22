@@ -280,6 +280,26 @@ def test_serialized_plan_rejects_invalid_workspace_source_lineage(
         PreflightExecutionPlan.model_validate_json(json.dumps(payload))
 
 
+@pytest.mark.parametrize("malformed", [False, True])
+def test_serialized_plan_validates_policy_before_lineage_semantics(
+    malformed: bool,
+) -> None:
+    payload = make_plan().model_dump(mode="json")
+    payload["nodes"][0]["workspace_policy"] = _worktree_policy("primary")
+    payload["nodes"][1]["workspace_policy"] = _worktree_policy(
+        "primary", source_node_id="a"
+    )
+    if malformed:
+        payload["nodes"][0]["workspace_policy"]["materialization"] = "snapshot_checkout"
+        with pytest.raises(
+            ValueError, match="kind and materialization are inconsistent"
+        ):
+            PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+    else:
+        plan = PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+        assert plan.nodes[1].workspace_policy.source_node_id == "a"
+
+
 def test_serialized_plan_rejects_project_source_lineage_rollback() -> None:
     payload = make_plan().model_dump(mode="json")
     payload["nodes"][0]["workspace_policy"] = _worktree_policy("primary")

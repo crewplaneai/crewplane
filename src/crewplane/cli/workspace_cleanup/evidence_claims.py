@@ -4,7 +4,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewplane.artifacts.naming import run_manifest_relative_path
+from crewplane.artifacts.naming import (
+    preflight_plan_relative_path,
+    run_manifest_relative_path,
+)
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
@@ -130,7 +133,7 @@ def claim_has_pending_ref_cleanup(claim: WorkspaceClaim) -> bool:
 
 
 def _read_authoritative_descriptors(run_dir: Path) -> tuple[str, str] | None:
-    plan_path = run_dir / "preflight" / "execution-plan.json"
+    plan_path = run_dir / preflight_plan_relative_path()
     manifest_path = run_dir / run_manifest_relative_path()
     if not _descriptor_is_safe(run_dir, plan_path) or not _descriptor_is_safe(
         run_dir, manifest_path
@@ -350,7 +353,7 @@ def _plan_manifest_identity_matches(
     run_dir: Path,
 ) -> bool:
     return (
-        manifest.preflight_plan_path == "preflight/execution-plan.json"
+        manifest.preflight_plan_path == preflight_plan_relative_path().as_posix()
         and Path(plan.context_root).resolve(strict=False)
         == run_dir.resolve(strict=False)
         and Path(plan.manifest_root).resolve(strict=False)

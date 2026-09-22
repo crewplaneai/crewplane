@@ -8,6 +8,23 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+_TEMPORARY_SUFFIX = ".tmp"
+
+
+def _temporary_name_prefix(target_name: str) -> str:
+    return f".{target_name}."
+
+
+def atomic_temporary_target_name(name: str) -> str | None:
+    """Decode a temporary basename without imposing target-file eligibility."""
+    if not name.startswith(".") or not name.endswith(_TEMPORARY_SUFFIX):
+        return None
+    target_and_token = name[1 : -len(_TEMPORARY_SUFFIX)]
+    target_name, separator, token = target_and_token.rpartition(".")
+    if not separator or not token or not target_name:
+        return None
+    return target_name
+
 
 def json_bytes(payload: Any) -> bytes:
     return (
@@ -32,8 +49,8 @@ def atomic_write_bytes(path: Path, payload: bytes, ensure_parent: bool = True) -
         with tempfile.NamedTemporaryFile(
             mode="wb",
             dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
+            prefix=_temporary_name_prefix(path.name),
+            suffix=_TEMPORARY_SUFFIX,
             delete=False,
         ) as handle:
             publication_phase = "write temporary file"
@@ -75,8 +92,8 @@ def atomic_write_bytes_if_absent(
         with tempfile.NamedTemporaryFile(
             mode="wb",
             dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
+            prefix=_temporary_name_prefix(path.name),
+            suffix=_TEMPORARY_SUFFIX,
             delete=False,
         ) as handle:
             publication_phase = "write temporary file"

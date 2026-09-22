@@ -4,6 +4,7 @@ import json
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -67,6 +68,35 @@ def test_result_refs_are_published_in_one_transaction_after_prepared_evidence(
     state = read_json_object(prepared.state_path)
     assert state["ref_publication"]["phase"] == "published"
     remove_published_workspace(repo, prepared, state)
+
+
+def test_capture_cancellation_before_ref_publication_keeps_prepared_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, prepared = prepared_lineage_workspace(tmp_path)
+    capture = prepared.worktree_capture
+    assert capture is not None
+    assert prepared.workspace_path is not None
+    assert prepared.state_path is not None
+    cancelled = Event()
+    original_commit_tree = worktree_orchestration.commit_tree
+
+    def commit_then_cancel(
+        checkout_root: Path, tree: str, parent: str, message: str
+    ) -> str:
+        commit = original_commit_tree(checkout_root, tree, parent, message)
+        cancelled.set()
+        return commit
+
+    monkeypatch.setattr(worktree_orchestration, "commit_tree", commit_then_cancel)
+    with pytest.raises(RuntimeError, match="lock acquisition was cancelled"):
+        worktree_orchestration.capture_worktree_result(capture, cancelled.is_set)
+
+    publication = read_json_object(prepared.state_path)["ref_publication"]
+    assert publication["phase"] == "prepared"
+    for destination in publication["destinations"].values():
+        assert ref_oid(repo, destination["name"]) is None
+    remove_worktree_workspace(capture.source, prepared.workspace_path, capture.git_dir)
 
 
 def test_result_ref_transaction_atomically_verifies_consumed_refs(

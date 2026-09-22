@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from crewplane.architecture.contracts import EventType, InvocationWorkspaceContext
+from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
     ExecutionEventContext,
@@ -22,7 +23,6 @@ from crewplane.observability.events import (
     workspace_event,
 )
 from crewplane.observability.events.payloads import WorkspaceEventPayload
-from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.agent.usage import InvocationUsage
 
 from .telemetry import ExecutionTelemetry

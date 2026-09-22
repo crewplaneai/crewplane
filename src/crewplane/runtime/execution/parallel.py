@@ -7,6 +7,7 @@ from rich.text import Text
 
 from crewplane.architecture.contracts import AgentInvoker, NodeArtifactRequest
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
+from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.artifacts.failure_artifacts import (
@@ -15,7 +16,6 @@ from crewplane.artifacts.failure_artifacts import (
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.failures import InvocationFailureError
 
 from .common import (
     CompiledRuntimeContext,

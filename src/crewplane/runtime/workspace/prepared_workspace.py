@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts import ExecutionStatus, InvocationContext
 
 from .filesystem import (
     remove_workspace_path,
@@ -203,7 +203,7 @@ class PreparedWorkspace:
             retained_reason = "cleanup_on_success_false"
         publish_terminal_workspace_state(
             state_path,
-            "succeeded",
+            ExecutionStatus.SUCCEEDED,
             self.cleanup_on_success,
             diagnostics=diagnostics,
             result=result,
@@ -434,7 +434,7 @@ class PreparedWorkspace:
         child_environment_applied: bool | None = None,
     ) -> None:
         self._mark_terminal_state(
-            "failed",
+            ExecutionStatus.FAILED,
             "error",
             "failure",
             message,
@@ -448,7 +448,7 @@ class PreparedWorkspace:
         cancel_requested: Callable[[], bool] | None = None,
     ) -> None:
         self._mark_terminal_state(
-            "cancelled",
+            ExecutionStatus.CANCELLED,
             "warning",
             "cancelled",
             message,
@@ -458,7 +458,7 @@ class PreparedWorkspace:
 
     def _mark_terminal_state(
         self,
-        status: Literal["failed", "cancelled"],
+        status: Literal[ExecutionStatus.FAILED, ExecutionStatus.CANCELLED],
         diagnostic_level: WorkspaceDiagnosticLevel,
         retention_reason: str,
         message: str,

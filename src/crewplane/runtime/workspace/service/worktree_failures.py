@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from crewplane.architecture.contracts import ExecutionStatus
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.setup import WorkspaceSetupCancelled
@@ -34,7 +35,7 @@ def record_cancelled_unmaterialized_worktree_preparation(
         update_workspace_state(
             plan.state_path,
             WorkspaceStateUpdateRequest(
-                status="cancelled",
+                status=ExecutionStatus.CANCELLED,
                 diagnostics=[{"level": "warning", "message": str(failure)}],
                 retention=WorkspaceStateRetention(
                     retention,
@@ -114,7 +115,7 @@ def record_failed_worktree_preparation(
         failure,
         reuse_cache,
         WorkspaceStateUpdateRequest(
-            status="failed",
+            status=ExecutionStatus.FAILED,
             diagnostics=diagnostics,
             retention=WorkspaceStateRetention("pending_cleanup", retained_reason),
             setup=setup,
@@ -138,7 +139,7 @@ def record_cancelled_worktree_preparation(
         failure,
         reuse_cache,
         WorkspaceStateUpdateRequest(
-            status="cancelled",
+            status=ExecutionStatus.CANCELLED,
             diagnostics=diagnostics,
             retention=WorkspaceStateRetention("pending_cleanup", "cancelled"),
             setup=setup,
@@ -163,8 +164,14 @@ def _finish_worktree_preparation(
             update,
             retention=WorkspaceStateRetention("retained", "process_drain_unresolved"),
         )
-    preparation_outcome = "failure" if update.status == "failed" else "cancellation"
-    state_label = "failure-state" if update.status == "failed" else "cancelled-state"
+    preparation_outcome = (
+        "failure" if update.status == ExecutionStatus.FAILED else "cancellation"
+    )
+    state_label = (
+        "failure-state"
+        if update.status == ExecutionStatus.FAILED
+        else "cancelled-state"
+    )
     try:
         update_workspace_state(state_path, update)
     except Exception as exc:

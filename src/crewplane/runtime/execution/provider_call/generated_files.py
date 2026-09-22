@@ -116,17 +116,12 @@ async def capture_generated_file_change_baseline_async(
         cancel_requested,
         worker_fence,
     )
-    try:
-        return await asyncio.shield(baseline_task)
-    except asyncio.CancelledError as cancel:
-        cancel_requested.set()
-        await _workspace_worker_cancellation(cleanup_registry).wait_for_completion(
-            baseline_task,
-            "Workspace generated-file baseline after cancellation",
-            cancel,
-            worker_fence,
-        )
-        raise
+    return await _workspace_worker_cancellation(cleanup_registry).wait(
+        baseline_task,
+        cancel_requested,
+        "Workspace generated-file baseline after cancellation",
+        worker_fence,
+    )
 
 
 def _run_generated_file_change_baseline(
@@ -159,17 +154,12 @@ async def mark_workspace_succeeded(
         cancel_requested,
         worker_fence,
     )
-    try:
-        await asyncio.shield(finalization)
-    except asyncio.CancelledError as cancel:
-        cancel_requested.set()
-        await _workspace_worker_cancellation(cleanup_registry).wait_for_completion(
-            finalization,
-            "Workspace success finalization after cancellation",
-            cancel,
-            worker_fence,
-        )
-        raise
+    await _workspace_worker_cancellation(cleanup_registry).wait(
+        finalization,
+        cancel_requested,
+        "Workspace success finalization after cancellation",
+        worker_fence,
+    )
 
 
 async def finalize_successful_workspace(
@@ -385,19 +375,14 @@ async def snapshot_invocation_generated_files_async(
         cancel_requested,
         worker_fence,
     )
-    try:
-        return await asyncio.shield(snapshot_task)
-    except asyncio.CancelledError as cancel:
-        cancel_requested.set()
-        await _workspace_worker_cancellation(
-            request.runtime_context.deferred_workspace_cleanups
-        ).wait_for_completion(
-            snapshot_task,
-            "Workspace generated-file snapshot after cancellation",
-            cancel,
-            worker_fence,
-        )
-        raise
+    return await _workspace_worker_cancellation(
+        request.runtime_context.deferred_workspace_cleanups
+    ).wait(
+        snapshot_task,
+        cancel_requested,
+        "Workspace generated-file snapshot after cancellation",
+        worker_fence,
+    )
 
 
 def _run_generated_file_snapshot(

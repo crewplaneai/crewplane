@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-import re
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.prompt_segments import PromptSegmentRole
+from crewplane.core.sensitive_names import is_sensitive_name
 from crewplane.core.workflow.keywords import (
     ALLOWED_NODE_ARTIFACT_NAME_SET,
     ProviderRole,
@@ -38,11 +38,6 @@ from .workspace.files.locators import (
     token_signature_for_workspace_locator,
     workspace_locator_metadata,
     workspace_locator_resolved_payload,
-)
-
-_SENSITIVE_KEY_PATTERN = re.compile(
-    r"(secret|token|password|passwd|api[_-]?key|credential|private)",
-    re.IGNORECASE,
 )
 
 
@@ -341,9 +336,7 @@ def resolve_static_value_reference(
     value = lookup_static_value(reference.kind, key, variables, options, state, node.id)
     if value is None:
         return
-    sensitive = (
-        reference.kind == "env" or _SENSITIVE_KEY_PATTERN.search(key) is not None
-    )
+    sensitive = reference.kind == "env" or is_sensitive_name(key)
     if sensitive:
         state.sensitive_values_required = True
     handle = f"{reference.kind}:{key}" if sensitive else None

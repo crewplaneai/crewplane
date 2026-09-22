@@ -148,15 +148,27 @@ def test_build_node_workspace_descriptor_rejects_symlinked_setup_parent(
 @pytest.mark.parametrize("branch_export", [False, True])
 @pytest.mark.parametrize("symlink", [False, True])
 @pytest.mark.parametrize("publication_failure", [False, True])
+@pytest.mark.parametrize(
+    ("node_id", "filename_prefix"),
+    [
+        ("a", "a"),
+        ("Build.A!", "build.a"),
+        ("Ünicode", "-nicode"),
+        ("a" * 200, "a" * 161),
+    ],
+)
 def test_refresh_node_workspace_descriptor_updates_manifest_from_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     branch_export: bool,
     symlink: bool,
     publication_failure: bool,
+    node_id: str,
+    filename_prefix: str,
 ) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _workspace_plan()
+    plan.nodes[0] = plan.nodes[0].model_copy(update={"id": node_id})
     stage_dir = output.create_node_dir(node_artifact_request("a"))
     bundle_payload = b"bundle"
     bundle_path = stage_dir / "workspace-bundles" / "a.bundle"
@@ -164,10 +176,11 @@ def test_refresh_node_workspace_descriptor_updates_manifest_from_state(
     bundle_path.write_bytes(bundle_payload)
     state_path = stage_dir / "workspace-state.json"
     state_payload = _workspace_state_payload(plan, bundle_payload)
+    state_payload["node_id"] = node_id
     state_path.write_text(json.dumps(state_payload), encoding="utf-8")
     manifest = make_run_manifest(output.run_id, output.run_key_name)
     descriptor = write_result(output.results_dir, "a-result.md", "a output")
-    node_state = make_node_state(manifest, "a", [descriptor]).model_copy(
+    node_state = make_node_state(manifest, node_id, [descriptor]).model_copy(
         update={
             "run_id": output.run_id,
             "run_key_name": output.run_key_name,
@@ -175,6 +188,10 @@ def test_refresh_node_workspace_descriptor_updates_manifest_from_state(
         }
     )
     node_manifest_path = output.write_node_success_state(node_state)
+    digest = hashlib.sha256(node_id.encode()).hexdigest()[:12]
+    assert node_manifest_path.relative_to(output.stages_dir).as_posix() == (
+        f"manifests/nodes/{filename_prefix}--{digest}.json"
+    )
     original = node_manifest_path.read_bytes()
     if symlink:
         target = tmp_path / "original-node-state.json"

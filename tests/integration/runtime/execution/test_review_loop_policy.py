@@ -6,7 +6,6 @@ from crewplane.core.preflight.models import (
     ArtifactContract,
     ExecutionPolicy,
     PreflightExecutionNode,
-    ProviderRecord,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop.policy import (
@@ -17,6 +16,8 @@ from crewplane.runtime.execution.review_loop.policy import (
     resolve_remediation_depth,
     split_sequential_review_loop_providers,
 )
+
+from .review_loop_rounds_support import provider
 
 
 def _node(
@@ -34,18 +35,6 @@ def _node(
             consensus_on_exhaustion="fatal",
         ),
         artifact_contract=ArtifactContract(output_path="review.node-result.md"),
-    )
-
-
-def provider(provider: str, role: ProviderRole, task_id: str) -> ProviderRecord:
-    return ProviderRecord(
-        provider=provider,
-        role=role,
-        task_id=task_id,
-        agent_config_key=provider,
-        invoker_alias="mock",
-        agent_config_signature=f"{provider}-agent",
-        invoker_config_signature="mock-config",
     )
 
 

@@ -9,6 +9,7 @@ from typing import Literal
 
 import pytest
 
+from crewplane.artifacts.atomic import atomic_write_json, atomic_write_json_if_absent
 from crewplane.artifacts.locks import (
     ResumeLockError,
     acquire_same_context_lock,
@@ -98,6 +99,85 @@ def _write_interrupted_exit_state(state_path: Path) -> Path:
     temp_path = _atomic_temp_path(state_path)
     temp_path.write_text(json.dumps(payload), encoding="utf-8")
     return temp_path
+
+
+@pytest.mark.parametrize("exclusive", [False, True])
+@pytest.mark.parametrize("live", [False, True])
+def test_recovery_reads_temporaries_from_interrupted_atomic_writers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exclusive: bool, live: bool
+) -> None:
+    stale = acquire_same_context_lock(
+        tmp_path,
+        WORKFLOW_NAME,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_SIGNATURE,
+        process_inspector=FakeProcessInspector(100, "old"),
+    )
+    stale.update_run("source", "workflow--source")
+    manifest_path = write_run_manifest(
+        tmp_path,
+        make_run_manifest("source", "workflow--source", status="running"),
+    )
+    state_path = _write_provider_process_state(tmp_path)
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    if exclusive:
+        state_path.unlink()
+    else:
+        payload.update(status="exited", exited_at="2026-08-07T12:01:00", returncode=0)
+    temporaries: list[Path] = []
+    original_link = os.link
+
+    def interrupt_publication(temporary: Path, target: Path) -> None:
+        temporaries.append(temporary)
+        assert target == state_path
+        if exclusive:
+            original_link(temporary, target)
+        raise OSError("interrupted publication")
+
+    def preserve_temporary(path: Path) -> None:
+        assert path == temporaries[0]
+        raise OSError("interrupted cleanup")
+
+    writer = atomic_write_json_if_absent if exclusive else atomic_write_json
+    with monkeypatch.context() as publication_patch:
+        publication_patch.setattr(Path, "unlink", preserve_temporary)
+        if exclusive:
+            publication_patch.setattr(os, "link", interrupt_publication)
+        else:
+            publication_patch.setattr(Path, "replace", interrupt_publication)
+        with pytest.raises(OSError, match="interrupted publication"):
+            writer(state_path, payload)
+
+    assert len(temporaries) == 1
+    temporary = temporaries[0]
+    assert temporary.exists()
+    assert temporary.name.startswith(f".{state_path.name}.")
+    assert temporary.name.endswith(".tmp")
+    assert json.loads(temporary.read_text(encoding="utf-8")) == payload
+    inspector = FakeProcessInspector(200, "new", live_checks=[False, live, False])
+    if live:
+        with pytest.raises(ResumeLockError, match="provider process.*still active"):
+            acquire_same_context_lock(
+                tmp_path,
+                WORKFLOW_NAME,
+                WORKFLOW_IDENTITY,
+                WORKFLOW_SIGNATURE,
+                process_inspector=inspector,
+            )
+        assert json.loads(manifest_path.read_text())["status"] == "running"
+        stale.release()
+    else:
+        lock = acquire_same_context_lock(
+            tmp_path,
+            WORKFLOW_NAME,
+            WORKFLOW_IDENTITY,
+            WORKFLOW_SIGNATURE,
+            process_inspector=inspector,
+        )
+        try:
+            assert json.loads(manifest_path.read_text())["status"] == "cancelled"
+        finally:
+            lock.release()
 
 
 def test_stale_lock_takeover_blocks_live_provider_process(tmp_path) -> None:

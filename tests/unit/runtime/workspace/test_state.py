@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts.execution_status import (
+    ExecutionStatus,
+    TerminalWorkspaceStatus,
+)
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,
@@ -13,9 +17,11 @@ from crewplane.runtime.workspace.state import (
     WorkspaceStateUpdateRequest,
     WorkspaceStateWriteRequest,
     discard_workspace_lineage,
+    update_workspace_retention,
     update_workspace_state,
     write_running_workspace_state,
 )
+from crewplane.runtime.workspace.terminalization import publish_terminal_workspace_state
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from tests.helpers.workspace_service import create_git_repo, workspace_plan
 
@@ -291,6 +297,14 @@ def test_running_workspace_state_repeated_write_preserves_unowned_fields(
             "Workspace materialization cannot rewrite a terminal outcome.",
         ),
         (
+            {"status": "failed"},
+            "Workspace materialization cannot rewrite a terminal outcome.",
+        ),
+        (
+            {"status": "cancelled"},
+            "Workspace materialization cannot rewrite a terminal outcome.",
+        ),
+        (
             {"run_id": "contradictory-run"},
             "Workspace materialization state identity is contradictory.",
         ),
@@ -362,7 +376,7 @@ def test_running_workspace_state_rejection_does_not_rewrite_existing_state(
     [
         (
             WorkspaceStateUpdateRequest(
-                status="failed",
+                status=ExecutionStatus.FAILED,
                 diagnostics=[{"level": "error", "message": "replacement"}],
                 result={"commit": "changed"},
                 refs={"result": "changed"},
@@ -375,7 +389,7 @@ def test_running_workspace_state_rejection_does_not_rewrite_existing_state(
         ),
         (
             WorkspaceStateUpdateRequest(
-                status="succeeded",
+                status=ExecutionStatus.SUCCEEDED,
                 diagnostics=[{"level": "error", "message": "replacement"}],
                 result={"commit": "changed"},
                 refs={"result": "changed"},
@@ -385,7 +399,7 @@ def test_running_workspace_state_rejection_does_not_rewrite_existing_state(
         ),
         (
             WorkspaceStateUpdateRequest(
-                status="succeeded",
+                status=ExecutionStatus.SUCCEEDED,
                 diagnostics=[{"level": "error", "message": "replacement"}],
                 result={"commit": "original"},
                 refs={"result": "changed"},
@@ -395,7 +409,7 @@ def test_running_workspace_state_rejection_does_not_rewrite_existing_state(
         ),
         (
             WorkspaceStateUpdateRequest(
-                status="succeeded",
+                status=ExecutionStatus.SUCCEEDED,
                 diagnostics=[{"level": "error", "message": "replacement"}],
                 result={"commit": "original"},
                 refs={"result": "original"},
@@ -435,14 +449,19 @@ def test_terminal_evidence_rejection_preserves_state_and_error_precedence(
     assert state_path.read_bytes() == before
 
 
+@pytest.mark.parametrize(
+    "status",
+    [ExecutionStatus.SUCCEEDED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED],
+)
 def test_cleanup_update_preserves_terminal_child_environment_false(
     tmp_path: Path,
+    status: TerminalWorkspaceStatus,
 ) -> None:
     state_path = tmp_path / "workspace-state.json"
     state_path.write_text(
         json.dumps(
             {
-                "status": "succeeded",
+                "status": status,
                 "workspace": {
                     "retention": "pending_cleanup",
                     "retained_reason": "stage_finalization_pending",
@@ -464,7 +483,7 @@ def test_cleanup_update_preserves_terminal_child_environment_false(
     update_workspace_state(
         state_path,
         WorkspaceStateUpdateRequest(
-            status="succeeded",
+            status=status,
             diagnostics=diagnostics,
             retention=WorkspaceStateRetention(
                 retention="deleted",
@@ -474,6 +493,7 @@ def test_cleanup_update_preserves_terminal_child_environment_false(
     )
 
     payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert payload["status"] == status.value
     assert payload["child_process_environment"]["applied"] is False
     assert payload["workspace"]["retention"] == "deleted"
     assert payload["diagnostics"] == diagnostics
@@ -521,3 +541,42 @@ def test_discard_workspace_lineage_removes_lineage_result_fields(
     assert "candidate_tree" not in result
     assert "result_tree" not in result
     assert payload["diagnostics"][-1]["message"].endswith("invalid_candidate.empty")
+
+
+@pytest.mark.parametrize(
+    "status", ["planned", "pending", "running", "blocked", "unknown", None]
+)
+def test_retention_rejects_nonterminal_workspace_without_rewriting(
+    tmp_path: Path, status: str | None
+) -> None:
+    state_path = tmp_path / "workspace-state.json"
+    state_path.write_text(json.dumps({"status": status}), encoding="utf-8")
+    before = state_path.read_bytes()
+    with pytest.raises(RuntimeError, match="only after terminal outcome publication"):
+        update_workspace_retention(state_path, WorkspaceStateRetention("deleted"))
+    assert state_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ExecutionStatus.SUCCEEDED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED],
+)
+@pytest.mark.parametrize("blocker", ["process_drain", "workspace_mutator"])
+def test_terminal_publication_retains_workspace_with_unresolved_owner(
+    tmp_path: Path, status: TerminalWorkspaceStatus, blocker: str
+) -> None:
+    state_path = tmp_path / "workspace-state.json"
+    state_path.write_text(
+        json.dumps(
+            {"status": "running", "workspace": {}, blocker: {"status": "unresolved"}}
+        ),
+        encoding="utf-8",
+    )
+    publish_terminal_workspace_state(state_path, status, cleanup_intended=True)
+    payload = json.loads(state_path.read_bytes())
+    assert payload["status"] == status.value
+    assert payload[blocker] == {"status": "unresolved"}
+    assert payload["workspace"] == {
+        "retention": "retained",
+        "retained_reason": "process_drain_unresolved",
+    }

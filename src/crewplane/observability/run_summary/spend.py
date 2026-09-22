@@ -11,7 +11,10 @@ from crewplane.architecture.contracts import (
     InvocationEventType,
     ProviderUsageStatus,
 )
-from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
+from crewplane.architecture.contracts.invocation import (
+    TOKEN_BUCKETS,
+    ProviderTokenUsage,
+)
 from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.observability.events import ExecutionEvent, InvocationEventPayload
 
@@ -50,9 +53,7 @@ class _UsageRollupFields(TypedDict):
 class _MutableProviderTokenAggregate:
     provider: str | None
     report_count: int = 0
-    values: dict[str, int | None] = field(
-        default_factory=lambda: dict.fromkeys(TOKEN_BUCKETS)
-    )
+    tokens: ProviderTokenUsage = field(default_factory=ProviderTokenUsage)
 
     def record(self, payload: InvocationEventPayload) -> None:
         report_count = payload.provider_usage_report_count
@@ -63,26 +64,20 @@ class _MutableProviderTokenAggregate:
         if report_count == 0:
             return
         provider_tokens = payload.provider_tokens or {}
-        for bucket in TOKEN_BUCKETS:
-            value = provider_tokens.get(bucket)
-            current = self.values[bucket]
-            if not had_reports:
-                self.values[bucket] = value if is_nonnegative_int(value) else None
-            elif current is None or not is_nonnegative_int(value):
-                self.values[bucket] = None
-            else:
-                self.values[bucket] = current + value
+        tokens = ProviderTokenUsage(
+            **{
+                bucket: value if is_nonnegative_int(value) else None
+                for bucket, value in provider_tokens.items()
+                if bucket in TOKEN_BUCKETS
+            }
+        )
+        self.tokens = self.tokens.add_exact(tokens) if had_reports else tokens
 
     def freeze(self) -> ProviderTokenAggregate:
         return ProviderTokenAggregate(
             provider=self.provider,
             report_count=self.report_count,
-            input=self.values["input"],
-            cached_input=self.values["cached_input"],
-            cache_write=self.values["cache_write"],
-            output=self.values["output"],
-            reasoning=self.values["reasoning"],
-            total=self.values["total"],
+            **self.tokens.as_dict(),
         )
 
 

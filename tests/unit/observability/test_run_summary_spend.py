@@ -105,3 +105,50 @@ def test_every_serialized_token_bucket_reaches_aggregation(bucket, value) -> Non
         assert all(
             getattr(result, other) is None for other in TOKEN_BUCKETS if other != bucket
         )
+
+
+@pytest.mark.parametrize("bucket", TOKEN_BUCKETS)
+@pytest.mark.parametrize(
+    "values, expected",
+    [
+        ([5, None], None),
+        ([None, 5], None),
+        ([0, 5], 5),
+        ([5, 0], 5),
+        ([-1, 5], None),
+        ([5, -1], None),
+        ([True, 5], None),
+        ([5, "7"], None),
+    ],
+)
+def test_token_aggregation_preserves_unknown_and_invalid_contributions(
+    bucket: str, values: list[object], expected: int | None
+) -> None:
+    events = []
+    for value in values:
+        record = invocation_record()
+        record["provider_tokens"] = {bucket: value}
+        event = event_from_record(record)
+        assert event is not None
+        events.append(event)
+    aggregates = provider_token_aggregates(events)
+    assert aggregates.overall is not None
+    for result in (aggregates.overall, *aggregates.providers):
+        assert result.report_count == 2
+        assert getattr(result, bucket) == expected
+
+
+def test_all_unknown_positive_report_poisoning_survives_zero_report_rows() -> None:
+    events = [
+        event_from_record(invocation_record(report_count=0, tokens={"input": 99})),
+        event_from_record(invocation_record(report_count=2, tokens={})),
+        event_from_record(
+            invocation_record(tokens={bucket: 0 for bucket in TOKEN_BUCKETS})
+        ),
+    ]
+    assert all(event is not None for event in events)
+    aggregates = provider_token_aggregates(events)
+    assert aggregates.overall is not None
+    for result in (aggregates.overall, *aggregates.providers):
+        assert result.report_count == 3
+        assert all(getattr(result, bucket) is None for bucket in TOKEN_BUCKETS)

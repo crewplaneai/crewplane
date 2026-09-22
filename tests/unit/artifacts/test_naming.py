@@ -14,10 +14,23 @@ from crewplane.artifacts.naming import (
     build_run_key_name,
     build_stage_directory_name,
     build_workspace_export_filename,
+    preflight_manifest_relative_path,
+    preflight_runtime_config_snapshot_relative_path,
+    run_event_log_relative_path,
+    run_summary_relative_path,
     safe_stage_name,
     validate_run_key_name,
 )
 from crewplane.core.workflow.keywords import ProviderRole
+
+
+def test_fixed_run_artifact_paths_preserve_persisted_names() -> None:
+    assert run_event_log_relative_path().as_posix() == "logs/events.ndjson"
+    assert run_summary_relative_path().as_posix() == "logs/summary.md"
+    assert preflight_manifest_relative_path().as_posix() == "preflight/manifest.json"
+    assert preflight_runtime_config_snapshot_relative_path().as_posix() == (
+        "preflight/runtime-config-snapshot.json"
+    )
 
 
 def test_generated_names_budget_final_component_length() -> None:

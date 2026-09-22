@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewplane.architecture.contracts.execution_status import (
+    TERMINAL_WORKSPACE_STATUSES,
+)
 from crewplane.artifacts.locks import run_lock_activity
 from crewplane.artifacts.locks.manifest import LockManifestError, LockRunMetadata
 from crewplane.artifacts.locks.process_identity import ProcessInspector
@@ -153,7 +156,7 @@ def _workspace_state_blocker_reason(
         if orphan_cleanup_requested:
             return None
         return "workspace state is unverifiable"
-    if workspace_state not in {"succeeded", "failed", "cancelled"}:
+    if workspace_state not in TERMINAL_WORKSPACE_STATUSES:
         return f"workspace state is {workspace_state}"
     return None
 

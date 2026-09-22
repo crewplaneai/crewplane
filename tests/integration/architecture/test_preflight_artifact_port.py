@@ -18,6 +18,8 @@ from crewplane.architecture.ports.artifacts import (
     StageTaskSpec,
 )
 from crewplane.artifacts import OutputManager
+from crewplane.cli.run.manifest import build_run_manifest_from_plan
+from crewplane.cli.workspace_cleanup.evidence_claims import load_authoritative_plan
 from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     ArtifactDescriptor,
@@ -31,7 +33,9 @@ from crewplane.core.preflight.models import (
     ProviderRecord,
     RenderPlan,
 )
+from crewplane.core.preflight.source import PreflightWorkflowSource
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.version import SCHEMA_VERSION
 
 
@@ -241,3 +245,48 @@ def _artifact_descriptor(
         sha256=hashlib.sha256(payload).hexdigest(),
         size_bytes=len(payload),
     )
+
+
+@pytest.mark.parametrize(
+    "evidence", ["valid", "missing", "malformed", "symlink", "hardlink"]
+)
+def test_published_plan_manifest_and_cleanup_share_literal_locator(
+    tmp_path: Path, evidence: str
+) -> None:
+    store = FilesystemArtifactsAdapter().create_store(
+        workflow_name="workflow", state_dir=tmp_path, project_root=tmp_path, options={}
+    )
+    plan = _plan(store.stages_dir)
+    source = PreflightWorkflowSource.from_workflow(
+        WorkflowPlan(name="workflow", nodes=[])
+    )
+    manifest = build_run_manifest_from_plan(plan, source, "workflow.task.md")
+    plan_path = store.write_preflight_plan(plan)
+    store.write_run_manifest(manifest)
+
+    assert manifest.preflight_plan_path == "preflight/execution-plan.json"
+    assert plan_path == store.stages_dir / manifest.preflight_plan_path
+    assert plan_path.read_bytes() == (
+        json.dumps(
+            plan.model_dump(mode="json", exclude_none=True),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if evidence == "missing":
+        plan_path.unlink()
+    elif evidence == "malformed":
+        plan_path.write_text("{broken", encoding="utf-8")
+    elif evidence in {"symlink", "hardlink"}:
+        original = tmp_path / "original-plan.json"
+        plan_path.rename(original)
+        if evidence == "symlink":
+            plan_path.symlink_to(original)
+        else:
+            plan_path.hardlink_to(original)
+
+    loaded = load_authoritative_plan(store.stages_dir, store.run_key_name)
+    assert loaded.invalid is (evidence != "valid")
+    assert loaded.plan == (plan if evidence == "valid" else None)

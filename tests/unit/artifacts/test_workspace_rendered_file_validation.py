@@ -219,6 +219,50 @@ def test_rendered_workspace_file_accepts_audit_round_invocation_id() -> None:
     assert provider_rendered_workspace_files_match(plan, plan.nodes[0], payload)
 
 
+@pytest.mark.parametrize("field", ["round_num", "audit_round_num", "byte_size"])
+@pytest.mark.parametrize(
+    ("values", "integer", "nonnegative"),
+    [
+        ({}, False, False),
+        ({"value": None}, False, False),
+        ({"value": True}, False, False),
+        ({"value": False}, False, False),
+        ({"value": "1"}, False, False),
+        ({"value": 1.0}, False, False),
+        ({"value": -1}, True, False),
+        ({"value": 0}, True, True),
+        ({"value": 1}, True, True),
+    ],
+)
+def test_rendered_workspace_file_integer_boundaries(
+    field: str, values: dict[str, object], integer: bool, nonnegative: bool
+) -> None:
+    locator = make_workspace_file_locator().model_copy(
+        update={"target": "executor_prompt", "byte_size": None}
+    )
+    plan, payload, descriptor = _rendered_case(locators=[locator])
+    for record in (payload, descriptor):
+        if "value" in values:
+            record[field] = values["value"]
+        else:
+            record.pop(field, None)
+    value = values.get("value")
+    if field == "byte_size":
+        expected = nonnegative
+    elif field == "round_num":
+        descriptor["invocation_id"] = f"a.executor.alpha.round-{value}"
+        expected = integer
+    else:
+        audit_part = "" if value is None else f"audit-{value}."
+        descriptor["invocation_id"] = f"a.executor.alpha.{audit_part}round-1"
+        expected = integer or value is None
+
+    assert (
+        provider_rendered_workspace_files_match(plan, plan.nodes[0], payload)
+        is expected
+    )
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

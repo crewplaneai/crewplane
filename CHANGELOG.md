@@ -4,6 +4,15 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Standardized terminal workspace status types on the shared `ExecutionStatus` enum.
+
+### Fixed
+
+- Automatically synchronize uv installer metadata after Dependabot PR checks,
+  preventing version updates and rebases from waiting for weekly automation.
+
 ## [0.3.3] - 2026-09-19
 
 ### Added

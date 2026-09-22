@@ -3,6 +3,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from crewplane.architecture.contracts.execution_status import (
+    TERMINAL_WORKSPACE_STATUSES,
+)
 from crewplane.architecture.safe_files import path_is_absent
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
@@ -14,8 +17,6 @@ from crewplane.runtime.workspace.worktree.cleanup import (
 )
 
 from .evidence_claims import WorkspaceClaim
-
-_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
 
 
 class WorkspaceClaimValidator:
@@ -200,7 +201,7 @@ def _claim_state_blocker(claims: tuple[WorkspaceClaim, ...]) -> str | None:
 
 def _status_blocker(claims: tuple[WorkspaceClaim, ...]) -> str | None:
     statuses = {claim.payload.get("status") for claim in claims}
-    nonterminal_statuses = statuses - _TERMINAL_STATUSES
+    nonterminal_statuses = statuses - TERMINAL_WORKSPACE_STATUSES
     if not nonterminal_statuses:
         return None
     if len(nonterminal_statuses) == 1:

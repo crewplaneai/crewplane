@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TypeGuard
 
+from crewplane.core.value_checks import is_strict_int
+
 
 @dataclass(frozen=True)
 class NullableIntField:
@@ -14,7 +16,7 @@ class NullableIntField:
 
 def int_field(payload: Mapping[str, object], key: str) -> int | None:
     value = payload.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
+    if not is_strict_int(value):
         return None
     return value
 
@@ -26,7 +28,7 @@ def nullable_int_field(
     value = payload.get(key)
     if value is None:
         return NullableIntField(value=None, valid=True)
-    if isinstance(value, bool) or not isinstance(value, int):
+    if not is_strict_int(value):
         return NullableIntField(value=None, valid=False)
     return NullableIntField(value=value, valid=True)
 

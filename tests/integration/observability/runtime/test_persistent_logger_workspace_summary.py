@@ -22,6 +22,7 @@ from crewplane.observability.run_summary.workspace import (
     merge_workspace_invocations,
     workspace_state_summaries,
 )
+from crewplane.observability.run_summary.workspace_readers import workspace_descriptor
 from crewplane.observability.types import (
     RunContext,
     RunResult,
@@ -35,6 +36,32 @@ from tests.helpers.observability import (
 from tests.integration.observability.runtime.observability_runtime_helpers import (
     single_node_workflow,
 )
+
+
+@pytest.mark.parametrize(
+    "run_manifest", ["valid", "missing", "malformed", "no-workspace", "symlink"]
+)
+def test_workspace_descriptor_prefers_run_manifest_with_preflight_fallback(
+    tmp_path: Path, run_manifest: str
+) -> None:
+    output = OutputManager("workflow", base_dir=tmp_path)
+    output.write_preflight_manifest({"workspace": {"origin": "preflight"}})
+    path = output.stages_dir / "manifests" / "run.json"
+    if run_manifest != "missing":
+        path.parent.mkdir()
+        text = {"malformed": "{", "no-workspace": "{}"}.get(
+            run_manifest, '{"workspace": {"origin": "run"}}'
+        )
+        if run_manifest == "symlink":
+            outside = tmp_path / "outside.json"
+            outside.write_text(text, encoding="utf-8")
+            path.symlink_to(outside)
+        else:
+            path.write_text(text, encoding="utf-8")
+
+    assert workspace_descriptor(output.stages_dir) == {
+        "origin": "run" if run_manifest == "valid" else "preflight"
+    }
 
 
 def test_persistent_run_summary_includes_workspace_observability() -> None:

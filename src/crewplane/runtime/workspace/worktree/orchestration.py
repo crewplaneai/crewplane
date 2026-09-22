@@ -41,7 +41,6 @@ from .lineage import (
     cleanup_result_refs_after_failure,
     ensure_source_commit_available,
     export_bundle,
-    update_result_refs,
 )
 from .policy import (
     active_git_dir,
@@ -52,6 +51,7 @@ from .protected_refs import (
     protected_ref_snapshot_for_source,
     reject_protected_ref_drift,
 )
+from .ref_publication import publish_result_refs
 from .removal import (
     remove_claimed_worktree_workspace,
     remove_unclaimed_worktree_workspace,
@@ -318,7 +318,7 @@ def _publish_capture_result(
     result_commit: str,
     cancel_requested: Callable[[], bool] | None,
 ) -> tuple[tuple[str, str], Path]:
-    refs = update_result_refs(
+    refs = publish_result_refs(
         request,
         result_commit,
         result_commit,

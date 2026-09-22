@@ -4,9 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.architecture.contracts import JsonObject
-from crewplane.artifacts.naming import (
-    build_node_state_filename,
-)
+from crewplane.artifacts.naming import node_state_relative_path
 from crewplane.artifacts.workspace.node_state import (
     WorkspaceDescriptorLookup,
     publish_node_workspace_descriptor,
@@ -136,9 +134,7 @@ def _refresh_node_manifest_workspace_descriptor(
     node: PreflightExecutionNode,
     stages_dir: Path,
 ) -> None:
-    node_state_path = (
-        stages_dir / "manifests" / "nodes" / build_node_state_filename(node.id)
-    )
+    node_state_path = stages_dir / node_state_relative_path(node.id)
     if not node_state_path.is_file() or node_state_path.is_symlink():
         return
     node_state = NodeState.model_validate_json(

@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal
 
+from crewplane.architecture.contracts.execution_status import (
+    TERMINAL_WORKSPACE_STATUSES,
+)
 from crewplane.core.value_checks import is_nonnegative_int, is_sha256
 from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.version import SCHEMA_VERSION
@@ -21,8 +24,6 @@ PersistedWorkspaceOperation = Literal[
     "ref_cleanup",
     "failed_invocation",
 ]
-
-_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
 
 
 def require_workspace_state_contract(
@@ -178,7 +179,7 @@ def _validate_workspace_operation_eligibility(
         and status != "succeeded"
     ):
         errors.append(f"{operation} requires a succeeded workspace")
-    if operation == "cleanup" and status not in _TERMINAL_STATUSES:
+    if operation == "cleanup" and status not in TERMINAL_WORKSPACE_STATUSES:
         errors.append("cleanup requires a terminal outcome")
     if operation == "failed_invocation" and status != "failed":
         errors.append("failed_invocation requires a failed workspace")
@@ -192,7 +193,7 @@ def _validate_workspace_retention(
     status = payload.get("status")
     retention = workspace.get("retention")
     if (
-        status in _TERMINAL_STATUSES
+        status in TERMINAL_WORKSPACE_STATUSES
         and retention not in {"pending_cleanup", "deleted", "retained"}
         and not _hydrated_resume_placement(payload, workspace)
     ):

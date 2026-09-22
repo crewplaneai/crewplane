@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-from crewplane.artifacts.naming import run_manifest_relative_path
+from crewplane.artifacts.naming import (
+    preflight_manifest_relative_path,
+    run_manifest_relative_path,
+)
 from crewplane.version import SCHEMA_VERSION
 
 from .models import (
@@ -114,7 +117,7 @@ def workspace_plan_summary(stages_dir: Path) -> WorkspacePlanSummary | None:
 def workspace_descriptor(stages_dir: Path) -> Mapping[str, object] | None:
     for path in (
         stages_dir / run_manifest_relative_path(),
-        stages_dir / "preflight" / "manifest.json",
+        stages_dir / preflight_manifest_relative_path(),
     ):
         payload = read_json_mapping(path)
         workspace = payload.get("workspace") if payload is not None else None

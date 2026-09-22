@@ -8,10 +8,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
+from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import ProviderRecord
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.failures import InvocationFailureError
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 
 from ..common import (

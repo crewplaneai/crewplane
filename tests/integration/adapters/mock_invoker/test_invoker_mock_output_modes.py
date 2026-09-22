@@ -1,16 +1,24 @@
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import InvocationContext
+from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.core.config import AgentConfig
 from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.runtime.agent import failures
+from crewplane.runtime.execution.activity.events import failure_event_fields
 from crewplane.runtime.execution.consensus import (
     VERDICT_NO_FINDINGS,
     ParsedReviewResult,
     parse_review_result,
     render_review_contract,
+)
+from crewplane.runtime.execution.provider_call.display import (
+    ProviderCallDisplay,
+    invoke_with_display,
 )
 from tests.integration.adapters.mock_invoker.mock_invoker_test_case import (
     MockInvokerAdapterTestCase,
@@ -212,7 +220,9 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
         )
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_file = Path(tmp_dir) / "out.md"
-            with self.assertRaisesRegex(RuntimeError, "forced failure"):
+            with self.assertRaisesRegex(
+                InvocationFailureError, "forced failure"
+            ) as caught:
                 await invoker.invoke(
                     config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
                     model="model-a",
@@ -227,6 +237,38 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                         round_num=1,
                     ),
                 )
+
+        failure = caught.exception
+        self.assertIs(failures.InvocationFailureError, InvocationFailureError)
+        failure.add_note("adapter failure note")
+        with (
+            patch.object(invoker, "invoke", side_effect=failure),
+            self.assertRaises(InvocationFailureError) as propagated,
+        ):
+            await invoke_with_display(
+                ProviderCallDisplay(telemetry=None),
+                invoker,
+                AgentConfig(cli_cmd=["echo"]),
+                None,
+                "x",
+                output_file,
+                output_file.parent,
+                None,
+                self._context(),
+            )
+        self.assertIs(propagated.exception, failure)
+        self.assertIsNone(failure.log_file)
+        self.assertIsNone(failure.__cause__)
+        self.assertEqual(failure.__notes__, ["adapter failure note"])
+        self.assertEqual(
+            failure_event_fields(failure),
+            {
+                "failure_kind": "provider_error",
+                "failure_phase": "provider_transport",
+                "failure_source": "none",
+                "failure_advice": "The mock invoker reported a deterministic provider failure.",
+            },
+        )
 
     async def test_fail_when_matches_composite_selector(self) -> None:
         adapter = MockInvokerAdapter()

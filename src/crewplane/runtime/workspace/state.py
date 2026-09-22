@@ -11,6 +11,11 @@ from threading import Lock, RLock
 from typing import TYPE_CHECKING, Literal, TypedDict
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.contracts.execution_status import (
+    TERMINAL_WORKSPACE_STATUSES,
+    ExecutionStatus,
+    TerminalWorkspaceStatus,
+)
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -96,7 +101,7 @@ class WorkspaceStateRetention:
 
 @dataclass(frozen=True)
 class WorkspaceStateUpdateRequest:
-    status: Literal["succeeded", "failed", "cancelled"]
+    status: TerminalWorkspaceStatus
     diagnostics: list[dict[str, str]] | None = None
     retention: WorkspaceStateRetention = field(default_factory=WorkspaceStateRetention)
     result: Mapping[str, object] | None = None
@@ -127,7 +132,7 @@ def write_running_workspace_state(
     with _state_lock(state_path):
         if state_path.exists():
             current = read_workspace_state(state_path)
-            if current.get("status") in {"succeeded", "failed", "cancelled"}:
+            if current.get("status") in TERMINAL_WORKSPACE_STATUSES:
                 raise RuntimeError(
                     "Workspace materialization cannot rewrite a terminal outcome."
                 )
@@ -202,7 +207,6 @@ _TERMINAL_WORKSPACE_STATE_FIELDS = frozenset(
         "temporary_refs",
     }
 )
-_TERMINAL_WORKSPACE_STATUSES = frozenset({"cancelled", "failed", "succeeded"})
 
 
 def require_workspace_state_payload_identity(
@@ -210,8 +214,8 @@ def require_workspace_state_payload_identity(
     expected: Mapping[str, object],
 ) -> None:
     terminalized = (
-        current.get("status") in _TERMINAL_WORKSPACE_STATUSES
-        and expected.get("status") in _TERMINAL_WORKSPACE_STATUSES
+        current.get("status") in TERMINAL_WORKSPACE_STATUSES
+        and expected.get("status") in TERMINAL_WORKSPACE_STATUSES
     )
     if _workspace_state_identity(current, terminalized) != _workspace_state_identity(
         expected,
@@ -300,15 +304,15 @@ def _apply_workspace_state_update(
 
 def _require_valid_terminal_transition(
     previous_status: object,
-    requested_status: str,
+    requested_status: TerminalWorkspaceStatus,
 ) -> None:
     if (
-        previous_status in _TERMINAL_WORKSPACE_STATUSES
+        previous_status in TERMINAL_WORKSPACE_STATUSES
         and requested_status != previous_status
     ):
         raise RuntimeError(
             "Workspace terminal outcome cannot be rewritten from "
-            f"{previous_status!r} to {requested_status!r}."
+            f"{previous_status!r} to {str(requested_status)!r}."
         )
 
 
@@ -327,7 +331,7 @@ def _apply_terminal_evidence(
     request: WorkspaceStateUpdateRequest,
     previous_status: object,
 ) -> None:
-    terminalized = previous_status in _TERMINAL_WORKSPACE_STATUSES
+    terminalized = previous_status in TERMINAL_WORKSPACE_STATUSES
     _apply_evidence_field(payload, "result", request.result, terminalized)
     _apply_evidence_field(payload, "refs", request.refs, terminalized)
     _apply_evidence_field(payload, "bundle", request.bundle, terminalized)
@@ -357,7 +361,10 @@ def _apply_child_environment_status(
         return
     if request.child_environment_applied is not None:
         environment["applied"] = request.child_environment_applied
-    elif request.status == "succeeded" and previous_status == "running":
+    elif (
+        request.status == ExecutionStatus.SUCCEEDED
+        and previous_status == ExecutionStatus.RUNNING
+    ):
         environment["applied"] = True
 
 
@@ -367,7 +374,7 @@ def update_workspace_retention(
     diagnostic: Mapping[str, str] | None = None,
 ) -> None:
     def apply_retention(payload: dict[str, object]) -> None:
-        if payload.get("status") not in {"succeeded", "failed", "cancelled"}:
+        if payload.get("status") not in TERMINAL_WORKSPACE_STATUSES:
             raise RuntimeError(
                 "Workspace retention can change only after terminal outcome publication."
             )

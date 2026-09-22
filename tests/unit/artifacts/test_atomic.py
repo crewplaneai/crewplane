@@ -7,11 +7,31 @@ from unittest.mock import patch
 import pytest
 
 from crewplane.artifacts.atomic import (
+    atomic_temporary_target_name,
     atomic_write_bytes,
     atomic_write_json,
     atomic_write_json_if_absent,
     atomic_write_text,
 )
+
+
+@pytest.mark.parametrize(
+    ("name", "target"),
+    [
+        (".payload.json.token.tmp", "payload.json"),
+        (".node.with.dots.json.a-b_雪.tmp", "node.with.dots.json"),
+        (".payload.txt.!.tmp", "payload.txt"),
+        ("..json.token.tmp", ".json"),
+        (".payload.json..tmp", None),
+        (".payload.tmp", None),
+        ("payload.json.token.tmp", None),
+        (".payload.json.token.temp", None),
+        ("..token.tmp", None),
+        ("", None),
+    ],
+)
+def test_atomic_temporary_name_contract(name: str, target: str | None) -> None:
+    assert atomic_temporary_target_name(name) == target
 
 
 def test_atomic_write_json_creates_parent_and_replaces_existing(tmp_path) -> None:

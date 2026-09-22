@@ -5,10 +5,9 @@ from pathlib import Path
 from crewplane.architecture.contracts import CommandResult, FailureClassifier
 from crewplane.architecture.contracts.invocation_failures import (
     ADVICE_BY_KIND,
+    InvocationFailureError,
     InvocationFailureSummary,
 )
-
-from .types import InvocationFailureError
 
 __all__ = [
     "InvocationFailureError",

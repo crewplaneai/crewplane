@@ -389,6 +389,16 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             manifest_text = manifest_path.read_text(encoding="utf-8")
             manifest = json.loads(manifest_text)
 
+            assert manifest["preflight_manifest_path"] == "preflight/manifest.json"
+            assert manifest["runtime_config_snapshot_path"] == (
+                "preflight/runtime-config-snapshot.json"
+            )
+            assert (
+                json.loads(
+                    (run_dirs[0] / manifest["runtime_config_snapshot_path"]).read_text()
+                )
+                == plan["runtime_config_snapshot"]
+            )
             assert "config_yaml" not in manifest
             assert "config_yaml_sha256" not in manifest
             assert "super-secret" not in manifest_text

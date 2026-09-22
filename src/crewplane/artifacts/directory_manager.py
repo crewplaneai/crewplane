@@ -14,7 +14,9 @@ from .naming import (
     build_findings_filename,
     build_result_filename,
     build_run_key_name,
+    run_event_log_relative_path,
     run_manifest_relative_path,
+    run_summary_relative_path,
     safe_artifact_name,
     safe_stage_name,
 )
@@ -46,7 +48,7 @@ class DirectoryManager:
             self.results_dir,
         ) = self._create_run_dirs()
 
-        self.logs_dir = self.stages_dir / "logs"
+        self.logs_dir = self.stages_dir / run_event_log_relative_path().parent
         self.manifests_dir = self.stages_dir / run_manifest_relative_path().parent
 
     def get_stage_result_file(self, stage_name: str) -> Path:
@@ -58,13 +60,17 @@ class DirectoryManager:
         return self.results_dir / build_findings_filename(stage_name)
 
     def ensure_run_logs_dir(self) -> Path:
-        return ensure_contained_directory(self.stages_dir, "logs")
+        return ensure_contained_directory(
+            self.stages_dir, run_event_log_relative_path().parent.as_posix()
+        )
 
     def get_run_event_log_path(self) -> Path:
-        return self.ensure_run_logs_dir() / "events.ndjson"
+        self.ensure_run_logs_dir()
+        return self.stages_dir / run_event_log_relative_path()
 
     def get_run_summary_path(self) -> Path:
-        return self.ensure_run_logs_dir() / "summary.md"
+        self.ensure_run_logs_dir()
+        return self.stages_dir / run_summary_relative_path()
 
     def ensure_manifests_dir(self) -> Path:
         return ensure_contained_directory(
