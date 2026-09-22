@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.naming import preflight_plan_relative_path
+from crewplane.artifacts.naming import (
+    preflight_plan_relative_path,
+    preflight_runtime_config_snapshot_relative_path,
+)
 from crewplane.core.preflight import (
     PREFLIGHT_STATUS_SUCCEEDED,
     PreflightExecutionPlan,
@@ -62,7 +65,9 @@ def write_preflight_success_artifacts(
         }
     )
     output.write_preflight_json(
-        "runtime-config-snapshot.json",
+        preflight_runtime_config_snapshot_relative_path()
+        .relative_to("preflight")
+        .as_posix(),
         plan.runtime_config_snapshot,
     )
     output.write_preflight_summary(

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .workspace.models import is_lineage_worktree
+
 if TYPE_CHECKING:
-    from .models import PreflightExecutionNode, WorkspaceSelectionRecord
+    from .models import PreflightExecutionNode
 
 
 def validate_workspace_source_lineage(
@@ -18,7 +20,7 @@ def validate_workspace_source_lineage(
         return
     _validate_declared_workspace_source(node, nodes_by_id, node_order)
     _validate_direct_worktree_dependencies(node, nodes_by_id)
-    if not _is_lineage_worktree_policy(policy):
+    if not is_lineage_worktree(policy):
         return
     expected_source = _latest_same_worktree_source(node, nodes_by_id, node_order)
     if expected_source is None:
@@ -81,16 +83,14 @@ def _validate_direct_worktree_dependencies(
     nodes_by_id: dict[str, PreflightExecutionNode],
 ) -> None:
     policy = node.workspace_policy
-    if policy is None or not _is_lineage_worktree_policy(policy):
+    if policy is None or not is_lineage_worktree(policy):
         return
     for dependency_id in node.dependencies:
         dependency = nodes_by_id.get(dependency_id)
         dependency_policy = (
             dependency.workspace_policy if dependency is not None else None
         )
-        if dependency_policy is None or not _is_lineage_worktree_policy(
-            dependency_policy
-        ):
+        if dependency_policy is None or not is_lineage_worktree(dependency_policy):
             continue
         if dependency_policy.logical_worktree_name != policy.logical_worktree_name:
             raise ValueError(
@@ -111,9 +111,7 @@ def _latest_same_worktree_source(
     candidates: list[str] = []
     for node_id in _ancestor_node_ids(node, nodes_by_id):
         candidate_policy = nodes_by_id[node_id].workspace_policy
-        if candidate_policy is None or not _is_lineage_worktree_policy(
-            candidate_policy
-        ):
+        if candidate_policy is None or not is_lineage_worktree(candidate_policy):
             continue
         if candidate_policy.logical_worktree_name == policy.logical_worktree_name:
             candidates.append(node_id)
@@ -143,14 +141,3 @@ def _ancestor_node_ids(
         if dependency is not None:
             pending.extend(dependency.dependencies)
     return ancestors.intersection(nodes_by_id)
-
-
-def _is_lineage_worktree_policy(
-    policy: WorkspaceSelectionRecord | None,
-) -> bool:
-    return bool(
-        policy is not None
-        and policy.enabled
-        and policy.declaration_kind == "worktree"
-        and policy.lineage_producer
-    )

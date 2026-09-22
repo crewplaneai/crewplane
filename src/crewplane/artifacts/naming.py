@@ -68,6 +68,22 @@ def preflight_plan_relative_path() -> Path:
     return Path("preflight") / "execution-plan.json"
 
 
+def preflight_manifest_relative_path() -> Path:
+    return Path("preflight") / "manifest.json"
+
+
+def preflight_runtime_config_snapshot_relative_path() -> Path:
+    return Path("preflight") / "runtime-config-snapshot.json"
+
+
+def run_event_log_relative_path() -> Path:
+    return Path("logs") / "events.ndjson"
+
+
+def run_summary_relative_path() -> Path:
+    return Path("logs") / "summary.md"
+
+
 def node_state_relative_path(node_id: str) -> Path:
     return (
         run_manifest_relative_path().parent

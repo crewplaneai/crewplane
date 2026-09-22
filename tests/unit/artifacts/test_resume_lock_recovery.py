@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -189,16 +190,24 @@ def test_stale_lock_replays_recorded_terminal_recovery(
 
 
 @pytest.mark.parametrize(
-    ("event_count", "summary_status"),
+    ("event_count", "summary_status", "unsafe_view", "fault"),
     [
-        pytest.param(0, "succeeded", id="missing-terminal-event"),
-        pytest.param(1, "failed", id="mismatched-summary"),
+        pytest.param(0, "succeeded", None, None, id="missing-terminal-event"),
+        pytest.param(1, "failed", None, None, id="mismatched-summary"),
+        (1, "succeeded", "events.ndjson", "missing"),
+        (1, "succeeded", "summary.md", "missing"),
+        (1, "succeeded", "events.ndjson", "symlink"),
+        (1, "succeeded", "summary.md", "symlink"),
+        (1, "succeeded", "events.ndjson", "hardlink"),
+        (1, "succeeded", "summary.md", "hardlink"),
     ],
 )
 def test_stale_lock_cancels_selected_outcome_without_matching_terminal_views(
     tmp_path,
     event_count: int,
     summary_status: Literal["succeeded", "failed", "cancelled"],
+    unsafe_view: str | None,
+    fault: str | None,
 ) -> None:
     stale = acquire_same_context_lock(
         tmp_path,
@@ -220,6 +229,14 @@ def test_stale_lock_cancels_selected_outcome_without_matching_terminal_views(
         event_count=event_count,
         summary_status=summary_status,
     )
+    if unsafe_view is not None:
+        view_path = manifest_path.parent.parent / "logs" / unsafe_view
+        outside = tmp_path / unsafe_view
+        view_path.replace(outside)
+        if fault == "symlink":
+            view_path.symlink_to(outside)
+        elif fault == "hardlink":
+            os.link(outside, view_path)
 
     lock = acquire_same_context_lock(
         tmp_path,

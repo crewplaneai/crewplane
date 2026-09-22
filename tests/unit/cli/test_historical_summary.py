@@ -45,9 +45,30 @@ def test_refresh_historical_summary_replays_valid_historical_events(
     )
 
     summary_text = summary_path.read_text(encoding="utf-8")
+    assert summary_path == record.run_dir / "logs" / "summary.md"
     assert "valid historical warning" in summary_text
     assert "ignored unknown event" not in summary_text
     assert "ignored invalid log level" not in summary_text
+
+
+def test_historical_log_lookup_does_not_create_missing_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = _history_record(tmp_path)
+    read_event_log = historical_summary.read_event_log
+
+    def read_missing_log(path: Path):
+        assert path == record.run_dir / "logs" / "events.ndjson"
+        assert not path.parent.exists()
+        return read_event_log(path)
+
+    monkeypatch.setattr(historical_summary, "read_event_log", read_missing_log)
+    summary_path = historical_summary.refresh_historical_run_summary(
+        make_plan(), record
+    )
+    assert summary_path == record.run_dir / "logs" / "summary.md"
+    assert summary_path.is_file()
+    assert not (record.run_dir / "logs" / "events.ndjson").exists()
 
 
 def test_refresh_historical_summary_handles_each_declared_event_type(

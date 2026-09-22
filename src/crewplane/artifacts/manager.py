@@ -33,6 +33,7 @@ from .naming import (
     build_log_filename,
     build_workspace_export_filename,
     node_state_relative_path,
+    preflight_manifest_relative_path,
     preflight_plan_relative_path,
     run_manifest_relative_path,
     safe_artifact_name,
@@ -228,7 +229,10 @@ class OutputManager:
         return atomic_write_bytes(path, payload)
 
     def write_preflight_manifest(self, payload: object) -> Path:
-        return self.write_preflight_json("manifest.json", payload)
+        return self.write_preflight_json(
+            preflight_manifest_relative_path().relative_to("preflight").as_posix(),
+            payload,
+        )
 
     def write_preflight_diagnostics(self, payload: object) -> Path:
         return self.write_preflight_json("diagnostics.json", payload)

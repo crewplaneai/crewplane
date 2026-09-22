@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from crewplane.core.provider_process_state import ProviderProcessState
 
+from ..atomic import atomic_temporary_target_name
 from ..naming import (
     build_provider_process_state_filename,
     validate_run_key_name,
@@ -228,8 +229,8 @@ def _validate_interrupted_publications(
     for file in files:
         if file.path.suffix == ".json":
             continue
-        canonical_name = _atomic_target_name(file.path)
-        if canonical_name is None:
+        canonical_name = atomic_temporary_target_name(file.path.name)
+        if canonical_name is None or not canonical_name.endswith(".json"):
             raise LockManifestError("Provider process state is not a safe file.")
         canonical = canonical_files.get(canonical_name)
         if canonical is None or canonical_name in paired_names:
@@ -237,16 +238,6 @@ def _validate_interrupted_publications(
         _validate_interrupted_publication(canonical, file)
         paired_names.add(canonical_name)
     return paired_names
-
-
-def _atomic_target_name(path: Path) -> str | None:
-    if not path.name.startswith(".") or not path.name.endswith(".tmp"):
-        return None
-    target_and_token = path.name[1 : -len(".tmp")]
-    target_name, separator, token = target_and_token.rpartition(".")
-    if not separator or not token or not target_name.endswith(".json"):
-        return None
-    return target_name
 
 
 def _validate_interrupted_publication(

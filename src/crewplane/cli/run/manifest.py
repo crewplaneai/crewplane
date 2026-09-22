@@ -4,7 +4,11 @@ from datetime import datetime
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.naming import preflight_plan_relative_path
+from crewplane.artifacts.naming import (
+    preflight_manifest_relative_path,
+    preflight_plan_relative_path,
+    preflight_runtime_config_snapshot_relative_path,
+)
 from crewplane.core.execution_state import (
     RUN_STATE_SCHEMA_VERSION,
     RunManifest,
@@ -85,8 +89,8 @@ def build_run_manifest_from_plan(
         status="running",
         effective_runtime_config_signature=plan.effective_runtime_config_signature,
         preflight_plan_path=preflight_plan_relative_path().as_posix(),
-        preflight_manifest_path="preflight/manifest.json",
-        runtime_config_snapshot_path="preflight/runtime-config-snapshot.json",
+        preflight_manifest_path=preflight_manifest_relative_path().as_posix(),
+        runtime_config_snapshot_path=preflight_runtime_config_snapshot_relative_path().as_posix(),
         runtime_config_snapshot=plan.runtime_config_snapshot,
         workflow_source=source.workflow_content,
         composed_workflow=_json_object(source.composed_workflow),

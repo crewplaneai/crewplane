@@ -4,15 +4,13 @@ import re
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 
+from crewplane.core.sensitive_names import is_sensitive_name
+
 from .json import JsonObject, JsonValue
 
 type JsonPathSegment = str | int
 type SensitiveOptionTransform = Callable[[str, JsonValue], JsonValue]
 
-_SENSITIVE_OPTION_PATTERN = re.compile(
-    r"(secret|token|password|passwd|api[_-]?key|credential|private)",
-    re.IGNORECASE,
-)
 _INVALID_JSON_POINTER_ESCAPE = re.compile(r"~(?:[^01]|$)")
 _JSON_ARRAY_INDEX = re.compile(r"0|[1-9][0-9]*")
 
@@ -117,10 +115,7 @@ class _SensitiveOptionWalker:
     @staticmethod
     def _is_sensitive_name(path: tuple[JsonPathSegment, ...]) -> bool:
         segment = path[-1]
-        return (
-            isinstance(segment, str)
-            and _SENSITIVE_OPTION_PATTERN.search(segment) is not None
-        )
+        return isinstance(segment, str) and is_sensitive_name(segment)
 
     def _has_explicit_descendant(self, pointer: str) -> bool:
         prefix = f"{pointer}/"

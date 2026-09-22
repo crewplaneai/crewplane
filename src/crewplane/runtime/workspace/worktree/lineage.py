@@ -20,10 +20,7 @@ from crewplane.core.workspace.naming import result_ref_names, safe_file_componen
 from ..cleanup_notes import note_cleanup_failure
 from ..git import GitCommand, git
 from ..locks import git_metadata_lock
-from .ref_publication import (
-    publish_result_refs,
-    reconcile_result_ref_publication,
-)
+from .ref_publication import reconcile_result_ref_publication
 from .temporary_refs import (
     TemporaryImportRef,
     TemporaryRefOwner,
@@ -199,20 +196,6 @@ def _ensure_bundled_source_available(
             "Workspace lineage source bundle import did not provide the expected "
             "commit."
         )
-
-
-def update_result_refs(
-    request: WorktreeCaptureRequest,
-    candidate_commit: str,
-    result_commit: str,
-    cancel_requested: Callable[[], bool] | None = None,
-) -> tuple[str, str]:
-    return publish_result_refs(
-        request,
-        candidate_commit,
-        result_commit,
-        cancel_requested,
-    )
 
 
 def delete_result_refs(

@@ -10,7 +10,7 @@ from crewplane.core.preflight.models import (
     WorkspaceFileLocator,
     WorkspaceFileTarget,
 )
-from crewplane.core.value_checks import is_sha256
+from crewplane.core.value_checks import is_nonnegative_int, is_sha256, is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.git_policy import REGULAR_FILE_MODES, is_git_object_id
 from crewplane.core.workspace.invocation_identity import (
@@ -140,13 +140,10 @@ def _expected_invocation_id(payload: dict[str, object]) -> str | None:
         not isinstance(node_id, str)
         or not isinstance(role, str)
         or not isinstance(task_id, str)
-        or isinstance(round_num, bool)
-        or not isinstance(round_num, int)
+        or not is_strict_int(round_num)
     ):
         return None
-    if audit_round_num is not None and (
-        isinstance(audit_round_num, bool) or not isinstance(audit_round_num, int)
-    ):
+    if audit_round_num is not None and not is_strict_int(audit_round_num):
         return None
     return rendered_workspace_file_invocation_id(
         node_id, task_id, role, round_num, audit_round_num
@@ -179,7 +176,7 @@ def _rendered_descriptor_blob_matches(
     source: RunHistoryRecord | None,
 ) -> bool:
     byte_size = descriptor.get("byte_size")
-    if isinstance(byte_size, bool) or not isinstance(byte_size, int) or byte_size < 0:
+    if not is_nonnegative_int(byte_size):
         return False
     if not is_git_object_id(descriptor.get("git_blob")):
         return False
@@ -218,8 +215,7 @@ def _dynamic_rendered_descriptor_matches(
     if (
         not isinstance(git_blob, str)
         or not isinstance(git_file_mode, str)
-        or isinstance(byte_size, bool)
-        or not isinstance(byte_size, int)
+        or not is_strict_int(byte_size)
         or not isinstance(canonical, str)
         or not isinstance(source_commit, str)
         or not isinstance(source_tree, str)

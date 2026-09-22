@@ -21,7 +21,7 @@ from crewplane.core.preflight.runtime_config.workspace import (
 from crewplane.core.preflight.workspace.observability import node_result_descriptor
 
 from ..atomic import atomic_write_json
-from ..naming import build_node_state_filename
+from ..naming import node_state_relative_path
 from ..results.review_loop_status import (
     REVIEW_LOOP_STATUS_RELATIVE_PATH,
     ReviewLoopStatusEntry,
@@ -110,9 +110,7 @@ def refresh_node_workspace_descriptor(
     plan: PreflightExecutionPlan,
     output: NodeArtifactStateStore,
 ) -> Path | None:
-    node_state_path = (
-        output.stages_dir / "manifests" / "nodes" / build_node_state_filename(node.id)
-    )
+    node_state_path = output.stages_dir / node_state_relative_path(node.id)
     if not node_state_path.is_file():
         return None
     node_state = NodeState.model_validate_json(

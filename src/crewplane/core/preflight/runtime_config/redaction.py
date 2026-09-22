@@ -19,13 +19,10 @@ from crewplane.architecture.contracts import (
     sensitive_integration_option_pointers,
     transform_sensitive_integration_options,
 )
+from crewplane.core.sensitive_names import is_sensitive_name
 
 from ..secrets import FINGERPRINT_PAYLOAD_VERSION, fingerprint_payload
 
-_SENSITIVE_CONFIG_PATH_PATTERN = re.compile(
-    r"(secret|token|password|passwd|api[_-]?key|credential|private)",
-    re.IGNORECASE,
-)
 _SENSITIVE_ARGV_PATTERN = re.compile(
     r"^(?:--|(?=[A-Za-z_][A-Za-z0-9_]*=))"
     r"[^=\s]*(?:secret|token|password|passwd|api[_-]?key|credential|private)"
@@ -275,7 +272,7 @@ def _is_sensitive_config_value(
 ) -> bool:
     if not path:
         return False
-    if any(_SENSITIVE_CONFIG_PATH_PATTERN.search(segment) for segment in path):
+    if any(is_sensitive_name(segment) for segment in path):
         return not isinstance(value, (dict, list))
     if path[-1] in _ARGV_SCALAR_FIELD_NAMES and isinstance(value, str):
         return "=" in value and _SENSITIVE_ARGV_PATTERN.search(value) is not None

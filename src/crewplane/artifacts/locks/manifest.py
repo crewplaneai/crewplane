@@ -32,7 +32,12 @@ from crewplane.core.execution_state import (
 )
 
 from ..atomic import atomic_write_json
-from ..naming import run_manifest_relative_path, validate_run_key_name
+from ..naming import (
+    run_event_log_relative_path,
+    run_manifest_relative_path,
+    run_summary_relative_path,
+    validate_run_key_name,
+)
 
 
 class LockManifestError(RuntimeError):
@@ -215,10 +220,15 @@ def _terminal_view_file_paths(
     manifest: RunManifest,
 ) -> tuple[Path | None, Path | None]:
     stages_root = state_dir / "execution-stages"
-    log_prefix = f"{manifest.run_key_name}/logs"
     return (
-        contained_regular_file(stages_root, f"{log_prefix}/events.ndjson"),
-        contained_regular_file(stages_root, f"{log_prefix}/summary.md"),
+        contained_regular_file(
+            stages_root,
+            f"{manifest.run_key_name}/{run_event_log_relative_path().as_posix()}",
+        ),
+        contained_regular_file(
+            stages_root,
+            f"{manifest.run_key_name}/{run_summary_relative_path().as_posix()}",
+        ),
     )
 
 

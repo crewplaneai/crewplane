@@ -1,7 +1,6 @@
 from crewplane.core.preflight.models import (
     ArtifactContract,
     PreflightExecutionNode,
-    ProviderRecord,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.review_loop.prompts import (
@@ -12,17 +11,7 @@ from crewplane.runtime.execution.review_loop.prompts import (
 )
 from crewplane.runtime.execution.review_loop.types import ExecutorRoundArtifact
 
-
-def provider(provider: str, role: ProviderRole, task_id: str) -> ProviderRecord:
-    return ProviderRecord(
-        provider=provider,
-        role=role,
-        task_id=task_id,
-        agent_config_key=provider,
-        invoker_alias="mock",
-        agent_config_signature=f"{provider}-agent",
-        invoker_config_signature="mock-config",
-    )
+from .review_loop_rounds_support import provider
 
 
 def _node() -> PreflightExecutionNode:

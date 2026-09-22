@@ -8,6 +8,10 @@ from crewplane.architecture.contracts import (
     NodeArtifactRequest,
 )
 from crewplane.artifacts.atomic import atomic_write_text
+from crewplane.artifacts.naming import (
+    run_event_log_relative_path,
+    run_summary_relative_path,
+)
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.core.execution_state import TerminalRunStatus
 from crewplane.core.preflight.models import PreflightExecutionPlan
@@ -38,13 +42,13 @@ class _HistoricalArtifactStore:
 
     @property
     def logs_dir(self) -> Path:
-        return self.source.run_dir / "logs"
+        return self.source.run_dir / run_event_log_relative_path().parent
 
     def get_run_event_log_path(self) -> Path:
-        return self.logs_dir / "events.ndjson"
+        return self.source.run_dir / run_event_log_relative_path()
 
     def get_run_summary_path(self) -> Path:
-        return self.logs_dir / "summary.md"
+        return self.source.run_dir / run_summary_relative_path()
 
     def get_node_artifact_request(
         self,

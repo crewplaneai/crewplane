@@ -289,6 +289,29 @@ def test_write_node_success_state_uses_bounded_manifest_filename(
     assert payload["node_id"] == "build.node"
 
 
+@pytest.mark.parametrize("symlink", [False, True])
+def test_run_log_paths_create_only_safe_live_directories(
+    tmp_path: Path, symlink: bool
+) -> None:
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    if symlink:
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (output.stages_dir / "logs").symlink_to(outside, target_is_directory=True)
+        for accessor in (output.get_run_event_log_path, output.get_run_summary_path):
+            with pytest.raises(ValueError, match="real directory"):
+                accessor()
+        assert list(outside.iterdir()) == []
+        return
+
+    assert not (output.stages_dir / "logs").exists()
+    assert (
+        output.get_run_event_log_path() == output.stages_dir / "logs" / "events.ndjson"
+    )
+    assert output.get_run_summary_path() == output.stages_dir / "logs" / "summary.md"
+    assert (output.stages_dir / "logs").is_dir()
+
+
 def test_write_preflight_plan_and_static_file(tmp_path: Path) -> None:
     output = OutputManager("Workflow", base_dir=tmp_path)
     plan = _minimal_plan(output)
@@ -311,7 +334,7 @@ def test_write_preflight_plan_and_static_file(tmp_path: Path) -> None:
     assert plan_payload["plan_schema_version"] == SCHEMA_VERSION
     assert "schema_version" not in plan_payload
     assert plan_payload["run_key_name"] == output.run_key_name
-    assert manifest_path.name == "manifest.json"
+    assert manifest_path == output.stages_dir / "preflight" / "manifest.json"
     assert diagnostics_path.name == "diagnostics.json"
     assert metadata_path.name == "metadata.json"
     assert render_path.name == "render-plans.json"
