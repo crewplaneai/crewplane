@@ -12,6 +12,7 @@ import crewplane.cli.app as cli
 from crewplane.adapters.invokers.mock_invoker.invoker import MockAgentInvoker
 from crewplane.artifacts.manager import OutputManager
 from crewplane.observability import ObservabilityHub
+from tests.integration.cli import repeat_force_run_support
 from tests.integration.cli.repeat_force_run_support import create_project
 from tests.integration.cli.test_workflow_runner_terminal_recovery import (
     RequiredStopFailureHub,
@@ -20,6 +21,8 @@ from tests.integration.cli.workflow_runner_support import run_directories
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     provider_failure,
 )
+
+run_allocation_clock = repeat_force_run_support.run_allocation_clock
 
 
 @pytest.mark.parametrize(
@@ -75,6 +78,7 @@ def test_failure_in_complete_run_stops_repetition(
         )
 
 
+@pytest.mark.usefixtures("run_allocation_clock")
 @pytest.mark.parametrize("cancellation", ["dashboard", "task"])
 def test_interrupted_invocation_starts_full_count_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancellation: str
@@ -82,7 +86,7 @@ def test_interrupted_invocation_starts_full_count_again(
     monkeypatch.chdir(tmp_path)
     project = create_project(tmp_path, 3, node_count=1)
     original = cli.execute_workflow
-    calls = 0
+    started_runs: list[Path] = []
     stop_requested = False
 
     class StopHub(ObservabilityHub):
@@ -91,9 +95,11 @@ def test_interrupted_invocation_starts_full_count_again(
             return stop_requested
 
     async def interrupt_second_pass(*args: Any, **kwargs: Any) -> None:
-        nonlocal calls, stop_requested
-        calls += 1
-        if calls == 2:
+        nonlocal stop_requested
+        new_runs = set(run_directories(tmp_path)) - set(started_runs)
+        assert len(new_runs) == 1
+        started_runs.append(new_runs.pop())
+        if len(started_runs) == 2:
             (tmp_path / "retained.txt").write_text("partial edit", encoding="utf-8")
             if cancellation == "task":
                 raise asyncio.CancelledError()
@@ -112,8 +118,8 @@ def test_interrupted_invocation_starts_full_count_again(
             interrupted = project.run("--no-live")
             assert interrupted.exit_code == 130, interrupted.output
             assert "Run 3 of 3" not in interrupted.output
-    records = project.manifests()
-    assert calls == 2
+    records = project.manifests(started_runs)
+    assert len(started_runs) == 2
     assert [record["status"] for record in records] == ["succeeded", "cancelled"]
     assert records[1]["cancel_reason"] == (
         "external_cancellation" if cancellation == "task" else "ui_stop_requested"
@@ -124,9 +130,11 @@ def test_interrupted_invocation_starts_full_count_again(
     assert result.exit_code == 0, result.output
     assert "Run 1 of 3 (fresh)" in result.output
     assert len(project.manifests()) == 5
+    restarted_runs = set(run_directories(tmp_path)) - set(started_runs)
+    assert len(restarted_runs) == 3
     assert all(
         record["status"] == "succeeded" and not record.get("resumed_nodes")
-        for record in project.manifests()[2:]
+        for record in project.manifests(restarted_runs)
     )
 
 

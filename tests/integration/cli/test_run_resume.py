@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -37,9 +38,13 @@ from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import make_execution_event
 from tests.helpers.working_directory import temporary_project_cwd
+from tests.integration.cli import repeat_force_run_support
 from tests.integration.cli.repeat_force_run_support import create_project
 
+run_allocation_clock = repeat_force_run_support.run_allocation_clock
 
+
+@pytest.mark.usefixtures("run_allocation_clock")
 @pytest.mark.parametrize("count", [None, 1, 3])
 @pytest.mark.parametrize("force", [False, True])
 def test_cli_repetition_bypasses_failed_history(
@@ -59,6 +64,7 @@ def test_cli_repetition_bypasses_failed_history(
     with patch.object(cli, "execute_workflow", new=fail_after_first_node):
         failed = project.run("--no-live")
     assert isinstance(failed.exception, RuntimeError)
+    (failed_manifest,) = project.manifests()
     project.set_count(count)
     result = project.run("--no-live", *(["--force"] if force else []))
     assert result.exit_code == 0, result.output
@@ -67,7 +73,9 @@ def test_cli_repetition_bypasses_failed_history(
     assert len({record["workflow_signature"] for record in records}) == 1
     expected_resumed = ["node0"] if count is None and not force else []
     assert all(
-        record.get("resumed_nodes", []) == expected_resumed for record in records[1:]
+        record.get("resumed_nodes", []) == expected_resumed
+        for record in records
+        if record["run_id"] != failed_manifest["run_id"]
     )
 
 
@@ -159,14 +167,25 @@ def write_successful_node_output(
 
 
 class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        allocation_clock = self.enterContext(
+            patch("crewplane.artifacts.directory_manager.datetime")
+        )
+        allocation_clock.now.side_effect = [
+            datetime(2026, 9, 23, 12, 0, 1),
+            datetime(2026, 9, 23, 12),
+        ]
+
     async def test_failed_run_resumes_validated_node_boundary_into_fresh_run(
         self,
     ) -> None:
         with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             calls: list[tuple[str, ...]] = []
+            run_dirs: list[Path] = []
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
+                run_dirs.append(output.stages_dir)
                 resumed_node_ids = tuple(kwargs.get("resumed_node_ids", ()))
                 calls.append(resumed_node_ids)
                 if len(calls) == 1:
@@ -212,7 +231,9 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(calls, [(), ("a",)])
-            run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
+            self.assertCountEqual(
+                run_dirs, (root / ".crewplane" / "execution-stages").iterdir()
+            )
             self.assertEqual(len(run_dirs), 2)
             second_run = run_dirs[1]
             self.assertTrue((second_run / "a" / "resume-source.json").exists())
@@ -229,8 +250,10 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
         with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             calls: list[tuple[str, ...]] = []
+            run_dirs: list[Path] = []
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
+                run_dirs.append(output.stages_dir)
                 resumed_node_ids = tuple(kwargs.get("resumed_node_ids", ()))
                 calls.append(resumed_node_ids)
                 if len(calls) == 1:
@@ -293,7 +316,9 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(calls, [(), ("a",)])
-            run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
+            self.assertCountEqual(
+                run_dirs, (root / ".crewplane" / "execution-stages").iterdir()
+            )
             self.assertEqual(len(run_dirs), 2)
             first_manifest = json.loads(
                 (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")
@@ -326,6 +351,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
         with temporary_project_cwd() as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             calls: list[tuple[str, ...]] = []
+            run_dirs: list[Path] = []
             hub_instances = []
 
             class StopRequestedHub(ObservabilityHub):
@@ -342,6 +368,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
                     self._test_stop_requested = True
 
             async def fake_execute_workflow(plan, output, **kwargs):  # type: ignore[no-untyped-def]
+                run_dirs.append(output.stages_dir)
                 resumed_node_ids = tuple(kwargs.get("resumed_node_ids", ()))
                 calls.append(resumed_node_ids)
                 if len(calls) == 1:
@@ -408,7 +435,9 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(calls, [(), ("a",)])
-            run_dirs = sorted((root / ".crewplane" / "execution-stages").iterdir())
+            self.assertCountEqual(
+                run_dirs, (root / ".crewplane" / "execution-stages").iterdir()
+            )
             self.assertEqual(len(run_dirs), 2)
             first_manifest = json.loads(
                 (run_dirs[0] / "manifests" / "run.json").read_text(encoding="utf-8")

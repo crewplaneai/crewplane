@@ -16,6 +16,7 @@ from crewplane.core.config import AgentConfig
 from crewplane.observability import ObservabilityHub
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit
+from tests.integration.cli import repeat_force_run_support
 from tests.integration.cli.repeat_force_run_support import create_project
 from tests.integration.cli.workflow_runner_support import (
     result_directories,
@@ -23,6 +24,7 @@ from tests.integration.cli.workflow_runner_support import (
 )
 
 isolated_git = isolated_git_support.isolated_git
+run_allocation_clock = repeat_force_run_support.run_allocation_clock
 
 
 def test_rapid_repetition_uses_existing_unique_run_allocation(
@@ -71,6 +73,7 @@ def test_force_count_matrix_bypasses_successful_history(
         assert "(fresh)" not in result.output
 
 
+@pytest.mark.usefixtures("run_allocation_clock")
 def test_three_passes_match_manual_forced_runs_and_retain_project_edits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_git: IsolatedGit
 ) -> None:
@@ -84,7 +87,10 @@ def test_three_passes_match_manual_forced_runs_and_retain_project_edits(
     class RecordingHub(ObservabilityHub):
         def __enter__(self):  # type: ignore[no-untyped-def]
             root = Path.cwd()
-            previous = run_directories(root)[:-1]
+            previous = [
+                root / ".crewplane/execution-stages" / key
+                for key in observed_runs[root]
+            ]
             assert all(
                 json.loads((path / "manifests/run.json").read_text())["status"]
                 == "succeeded"
@@ -178,7 +184,9 @@ def test_three_passes_match_manual_forced_runs_and_retain_project_edits(
         if count:
             assert len(set(event_loops[root])) == 1
         normalized = []
-        for directory in result_directories(root):
+        results_by_name = {path.name: path for path in result_directories(root)}
+        for run_key in observed_runs[root]:
+            directory = results_by_name[run_key]
             normalized.append(
                 {
                     path.name: path.read_text()
@@ -198,6 +206,7 @@ def test_three_passes_match_manual_forced_runs_and_retain_project_edits(
     ]
 
 
+@pytest.mark.usefixtures("run_allocation_clock")
 @pytest.mark.parametrize("later_count", [1, 9, None])
 def test_reload_count_changes_keep_original_total_and_manifest_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, later_count: int | None
@@ -206,10 +215,15 @@ def test_reload_count_changes_keep_original_total_and_manifest_evidence(
     project = create_project(tmp_path, 3, node_count=1)
     original = cli.workflow_runner.execute_workflow_run
     captured_forces = []
+    completed_runs: list[Path] = []
 
     async def run_and_edit(**kwargs: Any) -> None:
         captured_forces.append(kwargs["force"])
+        previous_runs = set(run_directories(tmp_path))
         await original(**kwargs)
+        new_runs = set(run_directories(tmp_path)) - previous_runs
+        assert len(new_runs) == 1
+        completed_runs.append(new_runs.pop())
         project.set_count(later_count)
         # Later loads must use the selected path even when discovery becomes ambiguous.
         (project.workflow_path.parent / "extra.task.md").write_text(
@@ -222,7 +236,7 @@ def test_reload_count_changes_keep_original_total_and_manifest_evidence(
         result = CliRunner().invoke(cli.app, ["run", "--no-live"])
     assert result.exit_code == 0, result.output
     assert captured_forces == [True, True, True]
-    manifests = project.manifests()
+    manifests = project.manifests(completed_runs)
     assert [
         record["composed_workflow"].get("repeat_force_run_count")
         for record in manifests

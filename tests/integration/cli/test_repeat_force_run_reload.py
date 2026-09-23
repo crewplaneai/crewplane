@@ -6,13 +6,17 @@ from unittest.mock import patch
 import pytest
 
 import crewplane.cli.app as cli
+from tests.integration.cli import repeat_force_run_support
 from tests.integration.cli.repeat_force_run_support import (
     create_project,
     write_markdown_workflow,
 )
 from tests.integration.cli.workflow_runner_support import run_directories
 
+run_allocation_clock = repeat_force_run_support.run_allocation_clock
 
+
+@pytest.mark.usefixtures("run_allocation_clock")
 @pytest.mark.parametrize("change", ["workflow", "import", "config", "static_input"])
 def test_every_pass_reloads_execution_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
@@ -33,13 +37,15 @@ def test_every_pass_reloads_execution_inputs(
         (tmp_path / "input.txt").write_text("original", encoding="utf-8")
     project.write()
     original = cli.workflow_runner.execute_workflow_run
-    calls = 0
+    completed_runs: list[Path] = []
 
     async def run_and_edit(**kwargs: Any) -> None:
-        nonlocal calls
+        previous_runs = set(run_directories(tmp_path))
         await original(**kwargs)
-        calls += 1
-        if calls != 1:
+        new_runs = set(run_directories(tmp_path)) - previous_runs
+        assert len(new_runs) == 1
+        completed_runs.append(new_runs.pop())
+        if len(completed_runs) != 1:
             return
         if change == "workflow":
             project.prompts["node0"] = "changed"
@@ -54,14 +60,16 @@ def test_every_pass_reloads_execution_inputs(
     with patch.object(cli.workflow_runner, "execute_workflow_run", new=run_and_edit):
         result = project.run("--no-live")
     assert result.exit_code == 0, (result.output, result.exception)
-    signatures = [record["workflow_signature"] for record in project.manifests()]
+    signatures = [
+        record["workflow_signature"] for record in project.manifests(completed_runs)
+    ]
     assert len(signatures) == 3
     assert signatures[0] != signatures[1] == signatures[2]
     if change in {"workflow", "import", "static_input"}:
         node_id = "child.inspect" if change == "import" else "node0"
         contents = [
             (path / node_id / "alpha_executor_0_round1.md").read_text()
-            for path in run_directories(tmp_path)
+            for path in completed_runs
         ]
         assert "changed" not in contents[0]
         assert all("changed" in value for value in contents[1:])

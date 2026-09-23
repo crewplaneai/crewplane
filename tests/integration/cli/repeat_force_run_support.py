@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from itertools import count
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
+import pytest
 import yaml
 from click.testing import Result
 from typer.testing import CliRunner
@@ -14,6 +19,15 @@ from tests.integration.cli.workflow_runner_support import (
     mock_runner_config,
     run_directories,
 )
+
+
+@pytest.fixture(params=[1, -1], ids=["forward_clock", "backward_clock"])
+def run_allocation_clock(request: pytest.FixtureRequest) -> Iterator[None]:
+    base = datetime(2026, 9, 23, 12)
+    timestamps = (base + timedelta(seconds=request.param * index) for index in count())
+    with patch("crewplane.artifacts.directory_manager.datetime") as allocation_clock:
+        allocation_clock.now.side_effect = timestamps
+        yield
 
 
 @dataclass
@@ -49,10 +63,14 @@ class RepeatProject:
             ],
         )
 
-    def manifests(self) -> list[dict[str, Any]]:
+    def manifests(
+        self, directories: Iterable[Path] | None = None
+    ) -> list[dict[str, Any]]:
+        if directories is None:
+            directories = run_directories(self.root)
         return [
             json.loads((path / "manifests" / "run.json").read_text(encoding="utf-8"))
-            for path in run_directories(self.root)
+            for path in directories
             if (path / "manifests" / "run.json").exists()
         ]
 
