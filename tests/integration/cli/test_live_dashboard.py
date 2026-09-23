@@ -2,7 +2,10 @@ import asyncio
 import io
 import json
 import unittest
+from pathlib import Path
+from typing import Any
 
+import pytest
 import typer
 
 import crewplane.cli.app as cli
@@ -15,6 +18,57 @@ from tests.integration.cli.cli_workflow_helpers import (
     write_basic_config,
     write_basic_workflow,
 )
+from tests.integration.cli.repeat_force_run_support import create_project
+
+
+@pytest.mark.parametrize("no_live", [False, True])
+@pytest.mark.parametrize("tmux_available", [False, True])
+def test_repetition_starts_and_stops_observers_per_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_live: bool, tmux_available: bool
+) -> None:
+    import crewplane.adapters.ui.tmux as tmux_adapter
+
+    monkeypatch.chdir(tmp_path)
+    project = create_project(tmp_path, 3, node_count=1)
+    project.config["settings"]["integrations"]["ui"] = {
+        "implementation": "tmux",
+        "options": {},
+    }
+    project.write()
+    events = []
+
+    class RecordingObserver(_ConformingObserverStub):
+        def __init__(self, **kwargs: Any) -> None:
+            del kwargs
+
+        def start(self, context: object) -> None:
+            del context
+            events.append("start")
+
+        def stop(self, result: object) -> None:
+            del result
+            events.append("stop")
+
+    def which(executable: str) -> str | None:
+        return "/usr/bin/tmux" if executable == "tmux" and tmux_available else None
+
+    stream = io.StringIO()
+    monkeypatch.setattr(
+        cli,
+        "Console",
+        ConsoleFactory(file=stream, force_terminal=True, color_system=None, width=120),
+    )
+    monkeypatch.setattr(cli.shutil, "which", which)
+    monkeypatch.setattr(tmux_adapter, "TmuxCompactRuntime", RecordingObserver)
+    result = project.run(*(["--no-live"] if no_live else []))
+    assert result.exit_code == 0, (result.output, result.exception, stream.getvalue())
+    assert events == (["start", "stop"] * 3 if tmux_available and not no_live else [])
+    assert len(project.manifests()) == 3
+    if not tmux_available and not no_live:
+        assert all(
+            "tmux not found" in output
+            for output in stream.getvalue().split("(fresh)")[1:]
+        )
 
 
 class _ConformingObserverStub:

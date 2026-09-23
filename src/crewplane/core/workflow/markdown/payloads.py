@@ -86,6 +86,8 @@ def build_workflow_payload(
         ],
         "nodes": node_payload,
     }
+    if workflow.repeat_force_run_count is not None:
+        payload["repeat_force_run_count"] = workflow.repeat_force_run_count
     if workflow.worktrees:
         payload["worktrees"] = worktree_declarations_payload(workflow.worktrees)
     return payload, node_source_spans, prompt_segment_spans_by_node

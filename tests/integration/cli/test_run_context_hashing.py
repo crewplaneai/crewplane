@@ -1,6 +1,10 @@
 import io
 import os
 import unittest
+from pathlib import Path
+
+import pytest
+import yaml
 
 import crewplane.cli.app as cli
 from crewplane.version import SCHEMA_VERSION
@@ -11,6 +15,37 @@ from tests.integration.cli.cli_workflow_helpers import (
     write_basic_workflow,
     write_successful_workflow_outputs,
 )
+from tests.integration.cli.repeat_force_run_support import create_project
+
+
+def test_yaml_count_edits_preserve_run_history_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    project = create_project(tmp_path, None, node_count=1)
+    project.workflow_path.unlink()
+    project.workflow_path = tmp_path / "repeat.yaml"
+    project.workflow["nodes"][0]["providers"] = [{"provider": "alpha"}]
+    project.workflow["nodes"][0]["prompt_segments"] = [
+        {"role": "shared", "content": "Scan."}
+    ]
+    for count in [None, 1, 2, None]:
+        if count is None:
+            project.workflow.pop("repeat_force_run_count", None)
+        else:
+            project.workflow["repeat_force_run_count"] = count
+        project.workflow_path.write_text(
+            yaml.safe_dump(project.workflow), encoding="utf-8"
+        )
+        result = project.run("--no-live")
+        assert result.exit_code == 0, result.output
+    records = project.manifests()
+    assert len(records) == 4
+    assert len({record["workflow_signature"] for record in records}) == 1
+    assert [
+        record["composed_workflow"].get("repeat_force_run_count") for record in records
+    ] == [None, 1, 2, 2]
+    assert "Identical context detected" in result.output
 
 
 class CliRunContextHashingTests(unittest.TestCase):

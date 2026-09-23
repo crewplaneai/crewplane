@@ -4,6 +4,11 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added `repeat_force_run_count` for sequential fresh workflow runs in the project
+  directory, stopping on the first unsuccessful pass.
+
 ### Changed
 
 - Standardized terminal workspace status types on the shared `ExecutionStatus` enum.

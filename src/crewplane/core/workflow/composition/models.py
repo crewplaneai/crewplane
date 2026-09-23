@@ -34,6 +34,7 @@ class ParsedWorkflow:
     worktrees: dict[str, WorktreeDeclaration]
     imports: tuple[ImportSpec, ...]
     nodes: tuple[NodeSpec, ...]
+    repeat_force_run_count: int | None = None
 
 
 @dataclass(frozen=True)

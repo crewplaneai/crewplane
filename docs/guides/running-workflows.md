@@ -105,14 +105,9 @@ preflight writes failure artifacts so the run remains inspectable.
 
 ## What Happens On The Second Run
 
-A second run with the same workflow signature may skip provider invocation and
-reuse a previous successful result. This is expected. Use `--force` only when
-you want to bypass duplicate skip and resume.
-
-In practice, `validate`, `run --dry-run`, and `run` compile preflight. Dry-run
-prints an advisory only. Real runs use the compiled `workflow_signature` to
-decide whether to skip, resume, or execute providers. `--force` bypasses
-duplicate skip and resume hydration.
+By default, Crewplane may skip a run when it finds an earlier success with the
+same tracked inputs. After a failed run, it may reuse completed steps. Use
+`crewplane run --force` to run the whole workflow from the beginning once.
 
 ## Default Discovery
 
@@ -308,6 +303,71 @@ Fields and evidence to inspect:
 - `<node-id>/resume-source.json` appears inside resumed node stage directories.
 - The terminal phrase `Identical context detected` means a same-signature
   successful run was reused.
+
+## Run a Workflow More Than Once
+
+Suppose a cleanup workflow should inspect the project again after making
+edits. Without a repeat setting, if it has not run before and the first run
+succeeds, you could run it twice like this:
+
+```bash
+crewplane run          # First run
+crewplane run --force  # Run the whole workflow again
+```
+
+To do both runs with one command, add `repeat_force_run_count: 2` to the
+workflow:
+
+```markdown
+---
+schema_version: "1.0"
+name: "Cleanup Workflow Example"
+repeat_force_run_count: 2
+nodes:
+  - id: cleanup_example
+    mode: sequential
+    providers: ["codex"]
+---
+
+## cleanup_example
+Inspect the current project and fix worthwhile cleanup candidates.
+If nothing needs cleanup, report that result successfully.
+```
+
+Replace `codex` with a provider configured in `.crewplane/config.yml`.
+Repeated runs require `settings.workspace.enabled: false` and no `worktrees`
+declarations in this workflow or its imports, even if unused.
+
+With this setting, one command performs both runs:
+
+```bash
+crewplane run
+```
+
+Crewplane applies `--force` to **both** runs, including the first. It runs even
+if an earlier success could otherwise be reused. Adding `--force` to the
+command does not increase the count.
+
+Each run keeps the behavior of an ordinary `crewplane run --force`:
+
+- Crewplane validates and runs the whole workflow from the beginning, without
+  skipping an earlier success or resuming a failed run.
+- It uses the current project files, including edits left by earlier runs.
+  Before the next run, Crewplane reloads the workflow, its imports, and config.
+- Each successful run has its own run ID and saved results. Crewplane finishes
+  cleanup and releases its run lock before starting the next run.
+- A successful run continues to the next, even if there is nothing to clean.
+  A failed or cancelled run stops the remaining runs. Earlier results and
+  project edits remain.
+
+Crewplane reads the count when the command starts, so editing or removing it
+does not change this command's total or workspace requirement. A new command
+reads the count again. `--dry-run` previews only the first run and reports the
+planned total; validation and dry-run do not start providers or write run
+artifacts.
+
+> [!TIP]
+> This is a convenient way to run a workflow repeatedly, especially for cases like code audits, cleanup, and refactoring.
 
 ## Advanced: Artifact Backend
 

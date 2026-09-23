@@ -75,6 +75,10 @@ class WorkflowComposer:
                 workflow_node_payload_dict(node.payload) for node in composed_nodes
             ],
         }
+        if root_workflow.repeat_force_run_count is not None:
+            workflow_payload["repeat_force_run_count"] = (
+                root_workflow.repeat_force_run_count
+            )
         if composition.worktrees:
             workflow_payload["worktrees"] = worktree_declarations_payload(
                 composition.worktrees

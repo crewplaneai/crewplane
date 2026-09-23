@@ -129,6 +129,8 @@ def semantic_workflow_payload(payload: object) -> JsonValue:
     if not isinstance(semantic_payload, dict):
         return semantic_payload
 
+    semantic_payload = dict(semantic_payload)
+    semantic_payload.pop("repeat_force_run_count", None)
     nodes = semantic_payload.get("nodes")
     if isinstance(nodes, list):
         normalized_nodes: list[JsonValue] = []
