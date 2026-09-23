@@ -126,6 +126,7 @@ class WorkflowPayload(TypedDict):
     schema_version: str
     name: str
     description: str
+    repeat_force_run_count: NotRequired[int]
     inputs: dict[str, str]
     worktrees: NotRequired[dict[str, dict[str, str | bool]]]
     nodes: list[WorkflowNodePayload]
@@ -257,6 +258,8 @@ def workflow_payload_dict(workflow: WorkflowPlan) -> WorkflowPayload:
         "inputs": dict(workflow.inputs),
         "nodes": [workflow_node_payload_dict(node) for node in workflow.nodes],
     }
+    if workflow.repeat_force_run_count is not None:
+        payload["repeat_force_run_count"] = workflow.repeat_force_run_count
     if workflow.worktrees:
         payload["worktrees"] = worktree_declarations_payload(workflow.worktrees)
     return payload
@@ -286,9 +289,17 @@ class WorkflowPlan(BaseModel):
     schema_version: str = SCHEMA_VERSION
     name: str
     description: str = ""
+    repeat_force_run_count: int | None = Field(default=None, strict=True, gt=0)
     inputs: dict[str, str] = Field(default_factory=dict)
     worktrees: dict[str, WorktreeDeclaration] = Field(default_factory=dict)
     nodes: list[WorkflowNode]
+
+    @field_validator("repeat_force_run_count", mode="before")
+    @classmethod
+    def _reject_null_repeat_force_run_count(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("repeat_force_run_count must be a positive integer")
+        return value
 
     @model_validator(mode="before")
     @classmethod

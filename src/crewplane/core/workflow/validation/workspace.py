@@ -7,6 +7,7 @@ from crewplane.core.workflow.diagnostics import WorkflowValidationDiagnostic
 from crewplane.core.workflow.graph import ancestor_map
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.core.workflow.validation.workspace_diagnostics import (
+    repeat_force_run_workspace_diagnostics,
     workspace_policy_diagnostics,
 )
 from crewplane.core.workspace.policy import (
@@ -22,10 +23,23 @@ def collect_workspace_policy_diagnostics(
     workflow: WorkflowPlan,
     config: Config,
 ) -> tuple[WorkflowValidationDiagnostic, ...]:
+    repetition_diagnostics = (
+        repeat_force_run_workspace_diagnostics(workflow, config)
+        if workflow.repeat_force_run_count is not None
+        else ()
+    )
     selections = graph_safe_logical_workspace_selections(workflow, config)
     if selections is None:
-        return ()
-    return workspace_policy_diagnostics(workflow, config, selections)
+        return repetition_diagnostics
+    return repetition_diagnostics + workspace_policy_diagnostics(
+        workflow, config, selections
+    )
+
+
+def validate_repeat_force_run_workspace(workflow: WorkflowPlan, config: Config) -> None:
+    diagnostics = repeat_force_run_workspace_diagnostics(workflow, config)
+    if diagnostics:
+        raise ValueError(diagnostics[0].message)
 
 
 def graph_safe_logical_workspace_selections(

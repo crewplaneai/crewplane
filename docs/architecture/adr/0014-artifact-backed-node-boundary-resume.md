@@ -148,3 +148,8 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   recovery now fails closed while a recorded provider process or process group
   is active, or its identity cannot be verified, without changing node-boundary
   resume semantics.
+- **2026-09-22**: `repeat_force_run_count` applies existing `--force` semantics
+  to every pass, including the first, bypassing duplicate skip and resume
+  hydration. Each pass must finish terminalization, observer shutdown, and lock
+  release before the next starts. A failed or cancelled pass stops repetition;
+  artifacts and recovery remain per run, with no persistent sequence progress.

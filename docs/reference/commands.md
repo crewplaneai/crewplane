@@ -152,6 +152,8 @@ Arguments and options:
 
 `validate` invokes no providers and writes no run artifacts. For the built-in
 `cli` invoker, it checks configured provider CLI availability.
+If `repeat_force_run_count` is set, it also checks that workspace isolation is
+disabled and no worktrees are declared.
 
 ## `crewplane run`
 
@@ -169,16 +171,19 @@ Options:
 | --- | --- |
 | `--tasks`, `-t` | Workflow file. Defaults to a single top-level `.crewplane/workflows/*.task.md`. |
 | `--config`, `-c` | Config file. Defaults to `.crewplane/config.yml`. |
-| `--dry-run`, `-n` | Show the execution plan without invoking providers or writing run artifacts. |
-| `--force` | Run fresh and intentionally bypass both duplicate skip and resume hydration. |
+| `--dry-run`, `-n` | Preview the first run and, if repetition is set, show the total planned runs. Does not run providers or write run artifacts. |
+| `--force` | Run from the beginning, even if results from an earlier run could be reused. |
 | `--no-live` | Disable live topology dashboard output. |
 
 When the mock invoker is active, `run` prints that no provider CLI commands will
 be started. `run --dry-run` skips provider executable availability checks and
 may read existing manifests for an advisory skip/resume message.
 
-Use `--force` when you want a fresh run and intentionally want to bypass both
-duplicate skip and resume hydration.
+If the workflow sets `repeat_force_run_count: 3`, one `crewplane run` command
+runs the whole workflow three times, one after another. Each run starts from
+the beginning. Crewplane stops if a run fails or is cancelled. `--force` does
+not add more runs. See
+[run a workflow more than once](../guides/running-workflows.md#run-a-workflow-more-than-once).
 
 ## `crewplane cleanup workspaces`
 

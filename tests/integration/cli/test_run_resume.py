@@ -5,7 +5,9 @@ import io
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from rich.console import Console
 
 from crewplane.architecture.contracts import (
@@ -35,6 +37,38 @@ from crewplane.runtime.execution.resume import write_successful_node_state
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import make_execution_event
 from tests.helpers.working_directory import temporary_project_cwd
+from tests.integration.cli.repeat_force_run_support import create_project
+
+
+@pytest.mark.parametrize("count", [None, 1, 3])
+@pytest.mark.parametrize("force", [False, True])
+def test_cli_repetition_bypasses_failed_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, count: int | None, force: bool
+) -> None:
+    import crewplane.cli.app as cli
+
+    monkeypatch.chdir(tmp_path)
+    project = create_project(tmp_path, None, node_count=2)
+
+    async def fail_after_first_node(plan, output, **kwargs):  # type: ignore[no-untyped-def]
+        write_successful_node_output(
+            plan, output, kwargs["workflow_identity"], 0, "first node"
+        )
+        raise RuntimeError("second node failed")
+
+    with patch.object(cli, "execute_workflow", new=fail_after_first_node):
+        failed = project.run("--no-live")
+    assert isinstance(failed.exception, RuntimeError)
+    project.set_count(count)
+    result = project.run("--no-live", *(["--force"] if force else []))
+    assert result.exit_code == 0, result.output
+    records = project.manifests()
+    assert len(records) == 1 + (count or 1)
+    assert len({record["workflow_signature"] for record in records}) == 1
+    expected_resumed = ["node0"] if count is None and not force else []
+    assert all(
+        record.get("resumed_nodes", []) == expected_resumed for record in records[1:]
+    )
 
 
 def config() -> Config:

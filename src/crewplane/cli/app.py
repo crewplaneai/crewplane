@@ -5,7 +5,6 @@ import io
 import shutil
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -14,14 +13,9 @@ from rich.console import Console
 from rich.text import Text
 
 from crewplane.artifacts.locks import ResumeLockError
-from crewplane.core.config import Config, load_config
+from crewplane.core.config import Config
 from crewplane.core.platform import is_native_windows
-from crewplane.core.preflight import (
-    PreflightCompilationPreview,
-    load_workflow_source_for_preflight,
-)
 from crewplane.core.preflight.source import PreflightWorkflowSource
-from crewplane.core.state_paths import STATE_DIR_NAME, project_root_from_config_path
 from crewplane.observability import ObservabilityHub
 from crewplane.observability.observer import Observer
 from crewplane.observability.types import WorkflowTopology
@@ -31,14 +25,19 @@ from . import workflow_runner
 from .cleanup import cleanup_app
 from .dry_run import preview_topological_waves, print_dry_run_plan
 from .onboarding import ONBOARDING_COMMAND_HELP, run_onboarding_command
-from .paths import (
-    resolve_state_file,
-    resolve_tasks_file,
-)
 from .project_init import initialize_project_templates
 from .run.observability import ObservabilityHubInstance
 from .run.resume import print_dry_run_resume_advisory
 from .update import UpdateError, installed_package_identity, update_crewplane
+from .workflow_context import (
+    CliWorkflowContext,
+    CliWorkflowPaths,
+    compile_preview_for_context,
+    compile_validate_preview_for_context,
+    load_cli_workflow_context,
+    raise_context_loading_failure,
+    resolve_cli_workflow_paths,
+)
 
 app = typer.Typer(name="crewplane", help="Multi-agent workflow runner")
 app.add_typer(cleanup_app, name="cleanup")
@@ -105,78 +104,6 @@ def main(
     _configure_output_encoding()
 
 
-@dataclass(frozen=True)
-class CliWorkflowPaths:
-    tasks: Path
-    config: Path
-    project_root: Path
-    state_dir: Path
-
-
-@dataclass(frozen=True)
-class CliWorkflowContext:
-    paths: CliWorkflowPaths
-    config: Config
-    source: PreflightWorkflowSource
-
-
-def _resolve_tasks_file(
-    override_path: Path | None,
-    init_hint: str,
-    console: Console,
-    project_root: Path | None = None,
-) -> Path:
-    return resolve_tasks_file(override_path, init_hint, console, project_root)
-
-
-def _resolve_state_file(
-    override_path: Path | None,
-    filename: str,
-    init_hint: str,
-    console: Console,
-) -> Path:
-    return resolve_state_file(override_path, filename, init_hint, console)
-
-
-def _resolve_cli_workflow_paths(
-    tasks_file: Path | None,
-    config_file: Path | None,
-    console: Console,
-) -> CliWorkflowPaths:
-    config = _resolve_state_file(
-        config_file,
-        "config.yml",
-        "Run 'crewplane init' first.",
-        console,
-    )
-    project_root = project_root_from_config_path(config)
-    tasks = _resolve_tasks_file(
-        tasks_file,
-        "Run 'crewplane init' first.",
-        console,
-        project_root,
-    )
-    return CliWorkflowPaths(
-        tasks=tasks,
-        config=config,
-        project_root=project_root,
-        state_dir=project_root / STATE_DIR_NAME,
-    )
-
-
-def _load_cli_workflow_context(paths: CliWorkflowPaths) -> CliWorkflowContext:
-    config = load_config(paths.config)
-    source = load_workflow_source_for_preflight(
-        paths.tasks,
-        project_root=paths.project_root,
-    )
-    return CliWorkflowContext(
-        paths=paths,
-        config=config,
-        source=source,
-    )
-
-
 async def _execute_workflow(
     config: Config,
     source: PreflightWorkflowSource,
@@ -200,6 +127,36 @@ async def _execute_workflow(
     )
 
 
+async def _execute_workflow_passes(
+    context: CliWorkflowContext,
+    force: bool,
+    no_live: bool,
+    console: Console,
+) -> None:
+    paths = context.paths
+    repeat_count = context.source.workflow.repeat_force_run_count
+    effective_force = force or repeat_count is not None
+    for pass_index in range(repeat_count or 1):
+        if repeat_count is not None:
+            console.print(f"Run {pass_index + 1} of {repeat_count} (fresh)")
+        if pass_index:
+            try:
+                context = load_cli_workflow_context(paths, require_project_root=True)
+            except Exception as exc:
+                raise_context_loading_failure(
+                    exc, console, paths=paths, write_diagnostics=True
+                )
+        await _execute_workflow(
+            context.config,
+            context.source,
+            project_root=paths.project_root,
+            state_dir=paths.state_dir,
+            force=effective_force,
+            no_live=no_live,
+            console=console,
+        )
+
+
 def _create_observability_hub(
     workflow_topology: WorkflowTopology,
     run_id: str,
@@ -214,44 +171,6 @@ def _create_observability_hub(
         refresh_per_second=refresh_per_second,
         warning_sink=warning_sink,
     )
-
-
-def _compile_preview_for_context(
-    context: CliWorkflowContext,
-    no_live: bool,
-    console: Console,
-) -> PreflightCompilationPreview:
-    preview = workflow_runner.compile_workflow_preview(
-        config=context.config,
-        source=context.source,
-        console=console,
-        no_live=no_live,
-        fingerprint_key_policy="read_only",
-        project_root=context.paths.project_root,
-        state_dir=context.paths.state_dir,
-    )
-    workflow_runner.raise_for_preflight_preview_errors(preview, console)
-    return preview
-
-
-def _compile_validate_preview_for_context(
-    context: CliWorkflowContext,
-    console: Console,
-) -> PreflightCompilationPreview:
-    preview = workflow_runner.compile_workflow_preview(
-        config=context.config,
-        source=context.source,
-        console=console,
-        no_live=True,
-        fingerprint_key_policy="read_only",
-        project_root=context.paths.project_root,
-        state_dir=context.paths.state_dir,
-        check_cli_availability=True,
-        which_fn=shutil.which,
-        workspace_real_execution=False,
-    )
-    workflow_runner.raise_for_preflight_preview_errors(preview, console)
-    return preview
 
 
 @app.command()
@@ -357,17 +276,21 @@ def run(
 ) -> None:
     """Execute the workflow DAG."""
     console = Console()
-    resolved_tasks_file: Path | None = tasks_file
     paths: CliWorkflowPaths | None = None
     try:
-        paths = _resolve_cli_workflow_paths(tasks_file, config_file, console)
-        resolved_tasks_file = paths.tasks
-        context = _load_cli_workflow_context(paths)
+        paths = resolve_cli_workflow_paths(tasks_file, config_file, console)
+        context = load_cli_workflow_context(paths)
 
         if dry_run:
-            preview = _compile_preview_for_context(
+            preview = compile_preview_for_context(
                 context, no_live=True, console=console
             )
+            repeat_count = context.source.workflow.repeat_force_run_count
+            if repeat_count is not None:
+                console.print(f"Planned fresh passes: {repeat_count}")
+                console.print(
+                    "First pass preview; later edits can change inputs and validation."
+                )
             print_dry_run_plan(preview, console)
             print_dry_run_resume_advisory(
                 config=context.config,
@@ -375,30 +298,21 @@ def run(
                 preview=preview,
                 project_root=context.paths.project_root,
                 state_dir=context.paths.state_dir,
-                force=force,
+                force=force or repeat_count is not None,
                 console=console,
             )
             return
     except typer.Exit:
         raise
     except Exception as exc:
-        if not dry_run:
-            workflow_runner.write_early_preflight_failure_run(
-                resolved_tasks_file,
-                str(exc),
-                project_root=paths.project_root if paths is not None else None,
-                state_dir=(paths.state_dir if paths is not None else None),
-            )
-        console.print(f"[red]✗[/] Invalid: {exc}")
-        raise typer.Exit(code=1) from exc
+        raise_context_loading_failure(
+            exc, console, tasks_file, paths, write_diagnostics=not dry_run
+        )
 
     try:
         asyncio.run(
-            _execute_workflow(
-                context.config,
-                context.source,
-                project_root=context.paths.project_root,
-                state_dir=context.paths.state_dir,
+            _execute_workflow_passes(
+                context,
                 force=force,
                 no_live=no_live,
                 console=console,
@@ -445,11 +359,11 @@ def validate(
 ) -> None:
     """Validate a workflow definition file."""
     console = Console()
-    paths = _resolve_cli_workflow_paths(tasks_file, config_file, console)
+    paths = resolve_cli_workflow_paths(tasks_file, config_file, console)
     console.print(f"Validating {paths.tasks}...")
     try:
-        context = _load_cli_workflow_context(paths)
-        preview = _compile_validate_preview_for_context(context, console)
+        context = load_cli_workflow_context(paths)
+        preview = compile_validate_preview_for_context(context, console)
         waves = preview_topological_waves(preview)
         if paths.tasks.suffix.lower() == ".md":
             console.print("[green]✓[/] Frontmatter: valid YAML")
@@ -469,8 +383,7 @@ def validate(
     except typer.Exit:
         raise
     except Exception as exc:
-        console.print(f"[red]✗[/] Invalid: {exc}")
-        raise typer.Exit(code=1) from exc
+        raise_context_loading_failure(exc, console)
 
     console.print(
         f"[green]✓[/] Valid: {len(preview.nodes)} nodes across {len(waves)} execution wave(s)"

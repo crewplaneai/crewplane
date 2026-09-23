@@ -112,6 +112,24 @@ def test_workflow_without_worktrees_uses_project_root_execution() -> None:
     assert selections["inspect"].materialization == "project_root"
 
 
+@pytest.mark.parametrize("count", [1, 3])
+@pytest.mark.parametrize("workspace_enabled", [False, True])
+@pytest.mark.parametrize("declares_worktree", [False, True])
+def test_repetition_requires_project_root_execution(
+    count: int, workspace_enabled: bool, declares_worktree: bool
+) -> None:
+    workflow = WorkflowPlan(
+        name="repetition",
+        repeat_force_run_count=count,
+        worktrees={"unused": {"kind": "snapshot"}} if declares_worktree else {},
+        nodes=[_executor_node("inspect", worktree="none")],
+    )
+    messages = _messages(workflow, _config(workspace_enabled))
+    assert any("repeat_force_run_count" in message for message in messages) == (
+        workspace_enabled or declares_worktree
+    )
+
+
 def test_single_worktree_is_inherited_and_sources_from_direct_upstream() -> None:
     workflow = WorkflowPlan(
         name="lineage",

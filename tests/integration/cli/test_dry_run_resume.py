@@ -6,6 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+from typer.testing import CliRunner
+
+import crewplane.cli.app as cli
 from crewplane.architecture.contracts import CanonicalIntegrationConfig
 from crewplane.architecture.errors import AdapterContractError
 from crewplane.version import SCHEMA_VERSION
@@ -21,6 +25,69 @@ from tests.integration.cli.dry_run_helpers import (
     write_sensitive_env_workflow,
     write_standard_project,
 )
+from tests.integration.cli.repeat_force_run_support import (
+    create_project,
+    filesystem_snapshot,
+)
+
+
+@pytest.mark.parametrize("command", ["dry-run", "validate"])
+@pytest.mark.parametrize("invalid", [None, "count", "workspace", "worktree"])
+def test_repetition_preview_and_validation_are_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, invalid: str | None
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("API_TOKEN", "preview-secret")
+    project = create_project(tmp_path, 3, node_count=1)
+    project.prompts["node0"] = "Use {{env:API_TOKEN}}."
+    if invalid == "count":
+        project.workflow["repeat_force_run_count"] = None
+    elif invalid == "workspace":
+        project.config["settings"]["workspace"]["enabled"] = True
+    elif invalid == "worktree":
+        project.workflow["worktrees"] = {"unused": {"kind": "snapshot"}}
+    project.write()
+    lock = tmp_path / ".crewplane/locks/stale/owner.json"
+    lock.parent.mkdir(parents=True)
+    lock.write_text("stale lock evidence", encoding="utf-8")
+    before = filesystem_snapshot(tmp_path)
+    with (
+        patch.object(
+            cli.workflow_runner,
+            "compile_workflow_preview",
+            wraps=cli.workflow_runner.compile_workflow_preview,
+        ) as compile_preview_mock,
+        patch.object(cli, "execute_workflow") as provider_execution,
+    ):
+        result = (
+            project.run("--dry-run")
+            if command == "dry-run"
+            else CliRunner().invoke(cli.app, ["validate"])
+        )
+    assert result.exit_code == (1 if invalid else 0), result.output
+    assert compile_preview_mock.call_count == (0 if invalid else 1)
+    provider_execution.assert_not_called()
+    assert filesystem_snapshot(tmp_path) == before
+    if command == "dry-run" and invalid is None:
+        assert "Planned fresh passes: 3" in result.output
+        assert "First pass preview" in result.output
+        assert "Resume advisory: would_execute_full_run" in result.output
+        assert "(fresh)" not in result.output
+
+
+def test_count_one_dry_run_bypasses_success_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    project = create_project(tmp_path, None, node_count=1)
+    assert project.run("--no-live").exit_code == 0
+    project.set_count(1)
+    before = filesystem_snapshot(tmp_path)
+    result = project.run("--dry-run")
+    assert result.exit_code == 0, result.output
+    assert "Planned fresh passes: 1" in result.output
+    assert "Resume advisory: would_execute_full_run" in result.output
+    assert filesystem_snapshot(tmp_path) == before
 
 
 def _write_terminal_history_workflow(path: Path) -> None:

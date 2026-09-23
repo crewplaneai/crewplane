@@ -73,10 +73,31 @@ Review the project and report correctness, security, and regression risks.
 | `schema_version` | Workflow schema version. Must match `SCHEMA_VERSION`. |
 | `name` | Workflow name. |
 | `description` | Optional workflow description. |
+| `repeat_force_run_count` | Optional whole number above zero. Runs the whole workflow this many times, starting from the beginning each time. |
 | `inputs` | Mapping of declared workflow input names to local input node IDs. |
 | `imports` | Markdown workflow imports. |
 | `worktrees` | Logical workspace declarations. |
 | `nodes` | Workflow node list. |
+
+### Repeat a workflow
+
+Add `repeat_force_run_count` to the workflow you run, either in Markdown
+frontmatter or in a YAML workflow file. For example, `repeat_force_run_count: 3`
+runs the whole workflow three times in one command. Each run starts from the
+beginning. Set it to `1` to run once from the beginning; leave it out to keep
+the usual behavior of skipping or resuming work when possible.
+
+Use a whole number above zero, without quotes. `null`, `true`, `"3"`, `1.5`,
+`0`, and negative numbers are invalid. Only the workflow you run controls the
+count. If an imported workflow also sets a count, its value must be valid, but
+it does not add runs.
+
+When you set a count, including `1`, set `settings.workspace.enabled: false`
+and remove all `worktrees` declarations from the workflow and its imports,
+even if they are unused. This rule still applies during later runs if the
+workflow removes the count. See
+[run a workflow more than once](../guides/running-workflows.md#run-a-workflow-more-than-once)
+for what happens between runs and when a run fails.
 
 ## Imports
 

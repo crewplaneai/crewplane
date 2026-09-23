@@ -43,3 +43,6 @@ The architecture review identified "Run Idempotency / State" as a feature requir
   detection. Success-first idempotency remains whole-workflow: any valid
   same-context success skips before failed/cancelled node-boundary resume is
   considered.
+- **2026-09-22**: `repeat_force_run_count` controls the number of fresh runs
+  requested by the CLI and is excluded from each pass's `workflow_signature`.
+  Count-only edits therefore preserve same-context lock identity.

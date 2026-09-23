@@ -358,3 +358,8 @@ Negative consequences:
   Explicitly allowlisted absolute external files remain static preflight
   resources.
 - **2026-08-12**: Added JSON Pointer declarations for nested adapter secrets.
+- **2026-09-22**: `repeat_force_run_count` repeats the complete run lifecycle at
+  the CLI boundary. Each pass compiles a fresh preflight plan from current
+  inputs. Before later passes, the CLI reloads the selected config and entry
+  workflow and resolves imports again. Preview and runtime plans continue to
+  describe one DAG.

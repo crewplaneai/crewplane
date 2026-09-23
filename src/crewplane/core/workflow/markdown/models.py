@@ -162,10 +162,18 @@ class WorkflowFrontmatter(BaseModel):
     schema_version: str = SCHEMA_VERSION
     name: str
     description: str | None = None
+    repeat_force_run_count: int | None = Field(default=None, strict=True, gt=0)
     inputs: dict[str, str] = Field(default_factory=dict)
     worktrees: dict[str, WorktreeDeclaration] = Field(default_factory=dict)
     nodes: list[WorkflowNodeConfig]
     imports: list[WorkflowImportConfig] = Field(default_factory=list)
+
+    @field_validator("repeat_force_run_count", mode="before")
+    @classmethod
+    def _reject_null_repeat_force_run_count(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("repeat_force_run_count must be a positive integer")
+        return value
 
     @model_validator(mode="before")
     @classmethod

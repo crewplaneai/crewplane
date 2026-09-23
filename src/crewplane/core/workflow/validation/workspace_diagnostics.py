@@ -18,6 +18,21 @@ DISABLED_WORKSPACE_MESSAGE = (
 )
 
 
+def repeat_force_run_workspace_diagnostics(
+    workflow: WorkflowPlan,
+    config: Config,
+) -> tuple[WorkflowValidationDiagnostic, ...]:
+    if not config.settings.workspace.enabled and not workflow.worktrees:
+        return ()
+    return (
+        _diagnostic(
+            "repeat_force_run_count requires project-root execution: set "
+            "settings.workspace.enabled: false and remove all worktrees "
+            "declarations, including imported and unused declarations."
+        ),
+    )
+
+
 def workspace_policy_diagnostics(
     workflow: WorkflowPlan,
     config: Config,
