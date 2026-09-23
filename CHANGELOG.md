@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-09-23
+
 ### Added
 
 - Added `repeat_force_run_count` for sequential fresh workflow runs in the project
@@ -15,6 +17,7 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
+- Fixed intermittent repeat-run and resume test failures caused by clock adjustments.
 - Automatically synchronize uv installer metadata after Dependabot PR checks,
   preventing version updates and rebases from waiting for weekly automation.
 
