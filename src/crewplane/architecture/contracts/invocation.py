@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Set
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,7 +10,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast, get_args
 
-from crewplane.core.value_checks import is_strict_int
+from crewplane.core.value_checks import is_strict_int, positive_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .invocation_failures import InvocationFailureSummary
@@ -64,16 +64,23 @@ _LOG_PRESENTATION_PROFILE_PATTERN = re.compile(r"^[a-z0-9_.-]+$")
 _MAX_LOG_PRESENTATION_PROFILE_LENGTH = 64
 
 
+def reduce_cost_confidences(
+    confidences: Set[InvocationCostConfidence],
+) -> AggregateCostConfidence:
+    """Combine distinct invocation confidences without discarding unknown cost."""
+    if not confidences or confidences == {"none"}:
+        return "none"
+    if confidences == {"full"}:
+        return "full"
+    if confidences <= {"full", "partial"} and "partial" in confidences:
+        return "partial"
+    return "mixed"
+
+
 def _add_exact_counter(current: int | None, additional: int | None) -> int | None:
     if current is None or additional is None:
         return None
     return current + additional
-
-
-def _is_positive_integer(value: object) -> bool:
-    if not is_strict_int(value):
-        return False
-    return value > 0
 
 
 TokenBucket = Literal[
@@ -330,12 +337,13 @@ class InvocationProcessEvent:
         self._validate_lifecycle()
 
     def _validate_identity_fields(self) -> None:
-        if not _is_positive_integer(self.attempt):
+        if positive_strict_int(self.attempt) is None:
             raise ValueError("invocation process attempt must be a positive integer")
-        if not _is_positive_integer(self.pid):
+        if positive_strict_int(self.pid) is None:
             raise ValueError("invocation process pid must be a positive integer")
-        if self.process_group_id is not None and not _is_positive_integer(
-            self.process_group_id
+        if (
+            self.process_group_id is not None
+            and positive_strict_int(self.process_group_id) is None
         ):
             raise ValueError(
                 "invocation process group id must be a positive integer or None"
@@ -422,7 +430,7 @@ class InvocationContext:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "role", ProviderRole(self.role))
-        if not _is_positive_integer(self.attempt_num):
+        if positive_strict_int(self.attempt_num) is None:
             raise ValueError("invocation attempt number must be a positive integer")
 
 

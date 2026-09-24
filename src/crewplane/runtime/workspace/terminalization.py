@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Literal
 
 from crewplane.architecture.contracts.execution_status import TerminalWorkspaceStatus
+from crewplane.artifacts.workspace.state.contracts import (
+    has_unresolved_workspace_owner,
+)
 
 from .mutator_fence import workspace_mutator_is_fenced
 from .state import (
@@ -29,14 +32,7 @@ def workspace_mutators_are_drained(state_path: Path) -> bool:
     if workspace_mutator_is_fenced(state_path):
         return False
     payload = read_workspace_state(state_path)
-    process_drain = payload.get("process_drain")
-    workspace_mutator = payload.get("workspace_mutator")
-    return not (
-        isinstance(process_drain, dict) and process_drain.get("status") == "unresolved"
-    ) and not (
-        isinstance(workspace_mutator, dict)
-        and workspace_mutator.get("status") == "unresolved"
-    )
+    return not has_unresolved_workspace_owner(payload)
 
 
 def publish_terminal_workspace_state(

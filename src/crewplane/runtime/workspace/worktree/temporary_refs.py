@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,14 +18,14 @@ from crewplane.core.workspace.naming import (
 )
 
 from ..cleanup_notes import note_cleanup_failure
-from ..git import GitCommand, git
+from ..git import git
 from ..locks import git_metadata_lock
 from ..state import read_workspace_state
 from ..state_evidence import (
     mark_workspace_temporary_ref_removed,
     record_workspace_temporary_ref,
 )
-from .refs import checked_ref
+from .refs import checked_ref, direct_ref_oid
 from .types import WorktreeSourceRef
 
 
@@ -151,7 +150,7 @@ def _create_temporary_import_ref(
     source = imported_ref.source
     command = git(Path(source.git_top_level))
     with git_metadata_lock(Path(source.common_git_dir), cancel_requested):
-        if _direct_ref_oid(command, imported_ref.name) is not None:
+        if direct_ref_oid(command, imported_ref.name, "temporary import") is not None:
             raise RuntimeError(
                 f"Workspace temporary import ref already exists: {imported_ref.name}."
             )
@@ -205,7 +204,7 @@ def _delete_temporary_import_ref(
     source = imported_ref.source
     with git_metadata_lock(Path(source.common_git_dir), cancel_requested):
         command = git(Path(source.git_top_level))
-        current = _direct_ref_oid(command, imported_ref.name)
+        current = direct_ref_oid(command, imported_ref.name, "temporary import")
         if current == imported_ref.target_oid:
             command.run(
                 "update-ref",
@@ -298,7 +297,7 @@ def _reconcile_temporary_import_ref(
         command = git(repo_root)
         if command.text("check-ref-format", "--normalize", ref_name) != ref_name:
             raise RuntimeError("Workspace temporary ref cleanup name is unsafe.")
-        current = _direct_ref_oid(command, ref_name)
+        current = direct_ref_oid(command, ref_name, "temporary import")
         if current == target_oid:
             command.run("update-ref", "--no-deref", "-d", ref_name, target_oid)
             return 1
@@ -330,25 +329,6 @@ def _require_temporary_ref_repository_identity(
         raise RuntimeError(
             "Workspace temporary ref cleanup claim repository identity changed."
         )
-
-
-def _direct_ref_oid(command: GitCommand, ref_name: str) -> str | None:
-    try:
-        target = command.text("symbolic-ref", "-q", ref_name)
-    except subprocess.CalledProcessError as exc:
-        if exc.returncode != 1:
-            raise
-    else:
-        raise RuntimeError(
-            "Workspace temporary import ref is symbolic and was retained: "
-            f"{ref_name} -> {target}."
-        )
-    try:
-        return command.text("rev-parse", "--verify", ref_name)
-    except subprocess.CalledProcessError as exc:
-        if exc.returncode == 128:
-            return None
-        raise
 
 
 def _temporary_ref_owner_prefix(payload: dict[str, object]) -> str:

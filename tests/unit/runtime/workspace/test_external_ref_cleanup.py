@@ -7,12 +7,17 @@ from uuid import UUID
 
 import pytest
 
+from crewplane.artifacts.workspace.state.contracts import (
+    workspace_state_contract_is_valid,
+)
 from crewplane.core.workspace.invocation_identity import invocation_slug
+from crewplane.core.workspace.naming import temporary_import_ref_prefix
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace.state import (
     discard_workspace_lineage,
     read_workspace_state,
 )
+from crewplane.runtime.workspace.state_evidence import record_workspace_temporary_ref
 from crewplane.runtime.workspace.worktree import (
     remove_worktree_workspace,
     temporary_refs,
@@ -30,6 +35,85 @@ from tests.unit.runtime.workspace.ref_publication_support import (
     ref_oid,
     remove_published_workspace,
 )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "accepted"),
+    [
+        (None, None, True),
+        ("owner_run_id", "other", False),
+        ("owner_node_id", "other", False),
+        ("owner_task_id", "other", False),
+        ("owner_role", "other", False),
+        ("owner_round_num", 2, False),
+        ("owner_audit_round_num", 3, False),
+        ("repository_id", "other", False),
+        pytest.param(
+            "owner_audit_round_num", None, True, id="missing-null-audit-round"
+        ),
+        pytest.param("owner_round_num", True, True, id="existing-python-equality"),
+    ],
+)
+def test_workspace_cleanup_validates_writer_produced_ownership(
+    tmp_path: Path, field: str | None, value: object, accepted: bool
+) -> None:
+    repo, prepared, state = published_lineage_workspace(tmp_path)
+    assert prepared.state_path is not None
+    slug = invocation_slug(state["node_id"], state["task_id"], None, state["round_num"])
+    ref_name = (
+        temporary_import_ref_prefix(state["run_key_name"], state["node_id"], slug)
+        + "source"
+    )
+    oid = state["source"]["commit"]
+    record_workspace_temporary_ref(prepared.state_path, ref_name, oid)
+    run_git_text(repo, "update-ref", ref_name, oid)
+    recorded = read_json_object(prepared.state_path)
+    assert workspace_state_contract_is_valid(recorded, "cleanup")
+    if field is not None:
+        claim = recorded["temporary_refs"][0]
+        if value is None:
+            del claim[field]
+        else:
+            claim[field] = value
+        prepared.state_path.write_text(json.dumps(recorded))
+    original_bytes = prepared.state_path.read_bytes()
+    assert workspace_state_contract_is_valid(recorded, "cleanup") is accepted
+    try:
+        if accepted:
+            assert (
+                delete_run_workspace_refs(
+                    repo,
+                    repo / ".git",
+                    repo,
+                    state["run_key_name"],
+                    prepared.state_path.parent.parent,
+                )
+                == 3
+            )
+            assert ref_oid(repo, ref_name) is None
+            assert (
+                read_json_object(prepared.state_path)["temporary_refs"][0]["phase"]
+                == "removed"
+            )
+        else:
+            with pytest.raises(
+                RuntimeError,
+                match="different repository|temporary ref claim is contradictory",
+            ):
+                delete_run_workspace_refs(
+                    repo,
+                    repo / ".git",
+                    repo,
+                    state["run_key_name"],
+                    prepared.state_path.parent.parent,
+                )
+            assert prepared.state_path.read_bytes() == original_bytes
+            assert ref_oid(repo, ref_name) == oid
+            for name in state["refs"].values():
+                assert ref_oid(repo, name) is not None
+    finally:
+        run_git_text(repo, "update-ref", "-d", ref_name)
+        remove_published_workspace(repo, prepared, state)
 
 
 @pytest.mark.parametrize(
@@ -524,3 +608,29 @@ def _write_dedicated_ref_evidence(
         ),
         encoding="utf-8",
     )
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled"])
+def test_external_ref_cleanup_retains_refs_for_unresolved_process(
+    tmp_path, status
+) -> None:
+    repo, prepared, state = published_lineage_workspace(tmp_path)
+    assert prepared.state_path is not None
+    payload = read_json_object(prepared.state_path)
+    payload["status"] = status
+    payload["process_drain"] = {"status": "unresolved"}
+    prepared.state_path.write_text(json.dumps(payload), encoding="utf-8")
+    refs = state["refs"]
+    assert isinstance(refs, dict)
+    with pytest.raises(RuntimeError, match="found unresolved mutator evidence"):
+        delete_run_workspace_refs(
+            repo,
+            repo / ".git",
+            repo,
+            str(payload["run_key_name"]),
+            prepared.state_path.parent.parent,
+        )
+    assert ref_oid(repo, str(refs["candidate"])) is not None
+    assert ref_oid(repo, str(refs["result"])) is not None
+    prepared.state_path.write_text(json.dumps(state), encoding="utf-8")
+    remove_published_workspace(repo, prepared, state)

@@ -5,6 +5,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, TypeIs
 
+from crewplane.artifacts.workspace.state.ref_contracts import temporary_ref_ownership
+
 from .mutator_fence import fence_workspace_mutator, release_workspace_mutator
 from .state import edit_workspace_state, require_workspace_state_payload_identity
 
@@ -123,22 +125,12 @@ def record_workspace_temporary_ref(
             if matching[0].get("target_oid") != target_oid:
                 raise RuntimeError("Workspace temporary ref evidence conflicts.")
             return
-        git_payload = payload.get("git")
-        repository_id = (
-            git_payload.get("repo_id") if isinstance(git_payload, dict) else None
-        )
         claims.append(
             {
                 "phase": "prepared",
                 "name": ref_name,
                 "target_oid": target_oid,
-                "owner_run_id": payload.get("run_id"),
-                "owner_node_id": payload.get("node_id"),
-                "owner_task_id": payload.get("task_id"),
-                "owner_role": payload.get("role"),
-                "owner_round_num": payload.get("round_num"),
-                "owner_audit_round_num": payload.get("audit_round_num"),
-                "repository_id": repository_id,
+                **temporary_ref_ownership(payload),
             }
         )
 

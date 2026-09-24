@@ -9,12 +9,15 @@ from typing import Literal
 
 import pytest
 
+from crewplane.architecture.contracts import InvocationProcessEvent
+from crewplane.architecture.ports import ProviderProcessInvocation
 from crewplane.artifacts.atomic import atomic_write_json, atomic_write_json_if_absent
 from crewplane.artifacts.locks import (
     ResumeLockError,
     acquire_same_context_lock,
 )
 from crewplane.artifacts.locks.process_identity import ProcessIdentity
+from crewplane.artifacts.manager import OutputManager
 from crewplane.artifacts.naming import build_provider_process_state_filename
 from crewplane.core.execution_state import RUN_STATE_SCHEMA_VERSION
 from crewplane.core.provider_process_state import ProviderProcessState
@@ -212,6 +215,60 @@ def test_stale_lock_takeover_blocks_live_provider_process(tmp_path) -> None:
     assert manifest["status"] == "running"
     assert stale.lock_dir.exists()
     stale.release()
+
+
+def test_published_receipt_blocks_takeover_under_injected_state_root(tmp_path) -> None:
+    state_root = tmp_path / "custom-state"
+    output = OutputManager(WORKFLOW_NAME, base_dir=state_root)
+    stale = acquire_same_context_lock(
+        state_root,
+        WORKFLOW_NAME,
+        WORKFLOW_IDENTITY,
+        WORKFLOW_SIGNATURE,
+        process_inspector=FakeProcessInspector(100, "old"),
+    )
+    try:
+        stale.update_run(output.run_id, output.run_key_name)
+        manifest_path = write_run_manifest(
+            state_root,
+            make_run_manifest(output.run_id, output.run_key_name, status="running"),
+        )
+        receipt = output.write_provider_process_event(
+            ProviderProcessInvocation(
+                node_id="build.node",
+                task_id="codex_executor_0",
+                provider="codex",
+                role="executor",
+                audit_round_num=None,
+                round_num=1,
+            ),
+            InvocationProcessEvent(
+                attempt=1, pid=os.getpid(), process_group_id=None, status="started"
+            ),
+        ).path
+        assert receipt.parent == (
+            state_root
+            / "execution-stages"
+            / output.run_key_name
+            / "manifests"
+            / "provider-processes"
+        )
+        receipt_bytes = receipt.read_bytes()
+        with pytest.raises(ResumeLockError, match="provider process.*still active"):
+            acquire_same_context_lock(
+                state_root,
+                WORKFLOW_NAME,
+                WORKFLOW_IDENTITY,
+                WORKFLOW_SIGNATURE,
+                process_inspector=FakeProcessInspector(
+                    200, "new", live_checks=[False, True]
+                ),
+            )
+        assert receipt.read_bytes() == receipt_bytes
+        assert json.loads(manifest_path.read_text())["status"] == "running"
+        assert stale.lock_dir.exists()
+    finally:
+        stale.release()
 
 
 def test_live_provider_check_keeps_lock_visible_to_concurrent_acquirer(

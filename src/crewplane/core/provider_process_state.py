@@ -11,8 +11,8 @@ from pydantic import (
 )
 
 from crewplane.core.execution_state import (
-    RUN_STATE_SCHEMA_VERSION,
     validate_iso_datetime,
+    validate_run_state_schema_version,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -46,9 +46,7 @@ class ProviderProcessState(BaseModel):
     @field_validator("run_state_schema_version")
     @classmethod
     def _validate_state_schema_version(cls, value: int) -> int:
-        if value != RUN_STATE_SCHEMA_VERSION:
-            raise ValueError(f"Unsupported run state schema version '{value}'.")
-        return value
+        return validate_run_state_schema_version(value)
 
     @field_validator(
         "run_id",

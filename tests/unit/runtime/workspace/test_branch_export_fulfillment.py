@@ -585,3 +585,57 @@ def test_history_fulfillment_does_not_create_branch_that_disappears_after_probe(
     record = json.loads(record_path.read_text(encoding="utf-8"))
     assert record["status"] == "failed_verification"
     assert run_git_text(repo, "branch", "--list", "feature/disappeared") == ""
+
+
+@pytest.mark.parametrize(
+    ("relative", "error"),
+    [
+        ("{bundle}", None),
+        (".crewplane/execution-stages/{run}/{bundle}", "source descriptor mismatch"),
+        ("execution-stages/{run}/{bundle}", "source descriptor mismatch"),
+        ("execution-stages/other/{bundle}", "bundle is missing or unsafe"),
+        ("execution-stages/{run}", "bundle is missing or unsafe"),
+        ("execution_results/{run}/{bundle}", "bundle is missing or unsafe"),
+        ("implement/missing.bundle", "bundle is missing or unsafe"),
+    ],
+)
+def test_checkpoint_validation_preserves_bundle_prefix_fallback(
+    tmp_path, relative, error
+) -> None:
+    from crewplane.runtime.workspace.branch_export.checkpoint import (
+        validated_checkpoint,
+    )
+
+    repo = create_git_repo(tmp_path)
+    plan = branch_export_plan(repo, tmp_path, branch_name="feature/checkpoint")
+    output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
+    commit, tree, ref, bundle = write_result_bundle(
+        repo, output.create_node_dir(node_artifact_request("implement")), "result\n"
+    )
+    state_path = write_workspace_state(
+        output.stages_dir, plan, commit, tree, ref, bundle
+    )
+    payload = json.loads(state_path.read_text())
+    payload["bundle"]["path"] = relative.format(
+        run=output.run_key_name, bundle="implement/workspace-bundles/alpha.bundle"
+    )
+    state_path.write_text(json.dumps(payload))
+    node = plan.nodes[0]
+    assert plan.workspace_source is not None
+    assert node.workspace_policy is not None
+    args = (
+        plan,
+        plan.workspace_source,
+        node,
+        node.workspace_policy,
+        output.stages_dir,
+        output,
+        output.run_id,
+        output.run_key_name,
+    )
+    if error is not None:
+        with pytest.raises(RuntimeError, match=error):
+            validated_checkpoint(*args)
+    else:
+        checkpoint = validated_checkpoint(*args)
+        assert checkpoint.bundle_path == bundle

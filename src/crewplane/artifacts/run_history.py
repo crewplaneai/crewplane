@@ -14,6 +14,10 @@ from crewplane.architecture.safe_files import (
     path_is_symlink,
 )
 from crewplane.core.execution_state import RunManifest
+from crewplane.core.state_paths import (
+    EXECUTION_RESULTS_DIR_NAME,
+    EXECUTION_STAGES_DIR_NAME,
+)
 
 from .naming import run_manifest_relative_path, validate_run_key_name
 
@@ -37,8 +41,8 @@ def find_same_context_runs(
     workflow_signature: str,
 ) -> tuple[RunHistoryRecord, ...]:
     records: list[RunHistoryRecord] = []
-    stages_root = state_dir / "execution-stages"
-    results_root = state_dir / "execution-results"
+    stages_root = state_dir / EXECUTION_STAGES_DIR_NAME
+    results_root = state_dir / EXECUTION_RESULTS_DIR_NAME
     if not _history_root_exists(stages_root):
         return ()
     for run_dir in _candidate_run_dirs(stages_root):

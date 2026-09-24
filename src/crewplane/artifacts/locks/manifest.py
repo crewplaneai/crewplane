@@ -30,6 +30,7 @@ from crewplane.core.execution_state import (
     RunManifest,
     TerminalRunStatus,
 )
+from crewplane.core.state_paths import EXECUTION_STAGES_DIR_NAME
 
 from ..atomic import atomic_write_json
 from ..naming import (
@@ -219,7 +220,7 @@ def _terminal_view_file_paths(
     state_dir: Path,
     manifest: RunManifest,
 ) -> tuple[Path | None, Path | None]:
-    stages_root = state_dir / "execution-stages"
+    stages_root = state_dir / EXECUTION_STAGES_DIR_NAME
     return (
         contained_regular_file(
             stages_root,
@@ -332,7 +333,7 @@ def safe_owner_manifest_path(
     state_dir: Path,
     run_key_name: str,
 ) -> Path | None:
-    stages_root = state_dir / "execution-stages"
+    stages_root = state_dir / EXECUTION_STAGES_DIR_NAME
     manifest_path = owner_manifest_path(state_dir, run_key_name)
     if manifest_path is None:
         raise LockManifestError("Lock owner run metadata is not safely contained.")
@@ -365,7 +366,7 @@ def owner_manifest_path(state_dir: Path, run_key_name: str) -> Path | None:
         raise LockManifestError(
             "Lock owner run metadata is not safely contained."
         ) from exc
-    stages_root = state_dir / "execution-stages"
+    stages_root = state_dir / EXECUTION_STAGES_DIR_NAME
     run_dir = stages_root / run_key_name
     try:
         stages_root_resolved = stages_root.resolve(strict=False)

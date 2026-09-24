@@ -12,7 +12,7 @@ from crewplane.artifacts.naming import run_manifest_relative_path
 from crewplane.artifacts.workspace.node_state import refresh_node_workspace_descriptor
 from crewplane.core.execution_state import RunManifest
 from crewplane.core.preflight.models import PreflightExecutionPlan
-from crewplane.core.state_paths import STATE_DIR_NAME
+from crewplane.core.state_paths import EXECUTION_STAGES_DIR_NAME, STATE_DIR_NAME
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ def _validate_cleanup_preflight_plan_identity(
 def _run_manifest_path(state_dir: Path, run_key_name: str) -> Path | None:
     try:
         return contained_regular_file(
-            state_dir / "execution-stages",
+            state_dir / EXECUTION_STAGES_DIR_NAME,
             f"{run_key_name}/{run_manifest_relative_path().as_posix()}",
         )
     except OSError:

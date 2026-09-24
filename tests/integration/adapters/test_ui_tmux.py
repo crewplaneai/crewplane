@@ -1,6 +1,7 @@
 import io
 import unittest
 
+import pytest
 from rich.console import Console
 
 import crewplane.adapters.ui.tmux as tmux_adapter_module
@@ -285,3 +286,60 @@ class TmuxUIAdapterTests(unittest.TestCase):
                 },
                 which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
             )
+
+
+def test_tmux_canonical_defaults_preserve_shape_and_scopes() -> None:
+    config = TmuxUIAdapter().canonicalize_options("tmux", "tmux", {})
+    assert config.options == {
+        "auto_close_session": True,
+        "tmux_executable": "tmux",
+        "quiet_after_seconds": 120.0,
+        "log_tail_lines": None,
+    }
+    assert config.option_scopes == {
+        "auto_close_session": "observer",
+        "tmux_executable": "observer",
+        "quiet_after_seconds": "observer",
+        "log_tail_lines": "observer",
+    }
+
+
+@pytest.mark.parametrize("quiet", [1, 1.5, 120])
+@pytest.mark.parametrize("tail", [None, 1, 200])
+def test_tmux_canonical_options_preserve_explicit_values(quiet, tail) -> None:
+    config = TmuxUIAdapter().canonicalize_options(
+        "tmux",
+        "tmux",
+        {
+            "auto_close_session": False,
+            "quiet_after_seconds": quiet,
+            "log_tail_lines": tail,
+        },
+    )
+    assert config.options["auto_close_session"] is False
+    assert config.options["quiet_after_seconds"] == float(quiet)
+    assert isinstance(config.options["quiet_after_seconds"], float)
+    assert config.options["log_tail_lines"] == tail
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("quiet_after_seconds", value)
+        for value in [
+            None,
+            True,
+            False,
+            0,
+            0.999,
+            "1",
+            float("nan"),
+            float("inf"),
+            -float("inf"),
+        ]
+    ]
+    + [("log_tail_lines", value) for value in [True, False, -1, 0, 201, 1.0, "1"]],
+)
+def test_tmux_canonical_options_reject_invalid_boundaries(field, value) -> None:
+    with pytest.raises(ValueError, match=field):
+        TmuxUIAdapter().canonicalize_options("tmux", "tmux", {field: value})

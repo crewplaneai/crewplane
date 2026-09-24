@@ -3,6 +3,9 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
     get_cli_provider_capability,
@@ -14,10 +17,6 @@ from crewplane.architecture.contracts import (
 )
 from crewplane.core.config import AgentConfig, Config
 from crewplane.core.preflight.models import PreflightExecutionPlan, ProviderRecord
-from crewplane.core.preflight.runtime_config import (
-    RuntimeAgentConfigSnapshot,
-    runtime_agent_signature_payload,
-)
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole
@@ -27,21 +26,7 @@ from crewplane.runtime.execution.common import (
     resolve_provider_model,
 )
 from crewplane.version import SCHEMA_VERSION
-
-
-def _agent_signature(
-    agent_config_key: str,
-    agent_payload: object,
-    resolved_model: str | None,
-) -> str:
-    agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(agent_payload)
-    return signature_for_payload(
-        runtime_agent_signature_payload(
-            agent_config_key,
-            agent_snapshot,
-            resolved_model,
-        )
-    )
+from tests.integration.runtime.signature_support import build_agent_signature
 
 
 class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
@@ -270,7 +255,7 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
                 task_id="alpha_executor_0",
                 agent_config_key="alpha",
                 invoker_alias="mock",
-                agent_config_signature=_agent_signature(
+                agent_config_signature=build_agent_signature(
                     "alpha",
                     agent_payload,
                     "workflow-model",
@@ -449,3 +434,33 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertTrue(quota.is_quota)
                 self.assertEqual(quota.evidence, expected_evidence)
+
+
+@pytest.mark.parametrize(
+    ("payload", "model", "expected"),
+    [
+        (
+            {"cli_cmd": ["echo"]},
+            None,
+            "c7ab15535d04fff6666c7902a949bd14ec36348493d447268ded1846b3e24747",
+        ),
+        (
+            {"cli_cmd": ["echo"], "default_model": "config-model"},
+            "workflow-model",
+            "bf815d4e6ebed65aa11995b8c31a707614678dc9a95f352409babd4e5343f9cb",
+        ),
+    ],
+)
+def test_shared_agent_signature_preserves_fixed_payload_hash(
+    payload, model, expected
+) -> None:
+    assert build_agent_signature("alpha", payload, model) == expected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [None, {}, {"cli_cmd": "echo"}, {"cli_cmd": ["echo"], "unexpected": True}],
+)
+def test_shared_agent_signature_rejects_malformed_payload(payload) -> None:
+    with pytest.raises(ValidationError):
+        build_agent_signature("alpha", payload, None)

@@ -414,3 +414,33 @@ def test_ephemeral_plan_callbacks_do_not_extend_persisted_preflight() -> None:
         "classifier" in name or "callback" in name
         for name in PreflightExecutionPlan.model_fields
     )
+
+
+@pytest.mark.parametrize("field", ["attempt", "pid", "process_group_id"])
+@pytest.mark.parametrize("value", [None, 1, 2])
+def test_process_event_preserves_optional_and_positive_identity(field, value) -> None:
+    values = {"attempt": 1, "pid": 123, "process_group_id": None, "status": "started"}
+    values[field] = value
+    if value is None and field != "process_group_id":
+        with pytest.raises(ValueError, match=f"{field} must be a positive integer"):
+            InvocationProcessEvent(**values)
+    else:
+        assert getattr(InvocationProcessEvent(**values), field) == value
+
+
+@pytest.mark.parametrize("value", [None, True, False, -1, 0, 1.0, "1"])
+def test_invocation_context_rejects_invalid_attempt_number(value) -> None:
+    with pytest.raises(
+        ValueError, match="^invocation attempt number must be a positive integer$"
+    ):
+        InvocationContext(
+            "node", "task", "codex", ProviderRole.EXECUTOR, attempt_num=value
+        )
+
+
+@pytest.mark.parametrize("value", [1, 2])
+def test_invocation_context_preserves_positive_attempt_number(value: int) -> None:
+    context = InvocationContext(
+        "node", "task", "codex", ProviderRole.EXECUTOR, attempt_num=value
+    )
+    assert context.attempt_num == value

@@ -9,6 +9,7 @@ import pytest
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.consensus import EvaluatedReviewResult
 from crewplane.runtime.execution.review_loop.state import (
+    persist_review_evaluation_artifacts,
     persist_review_state,
     persist_reviewer_failure_state,
 )
@@ -135,3 +136,66 @@ def test_reviewer_state_serialization_failure_publishes_nothing(
             )
             persist_reviewer_failure_state(artifact_dir, None, 1, failure)
     assert not artifact_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("kind", "verdict", "original_verdict", "feedback"),
+    [
+        ("structured", "CHANGES_REQUESTED", "CHANGES_REQUESTED", None),
+        ("structured", "CHANGES_REQUESTED", "APPROVED", None),
+        ("unstructured", None, None, "raw feedback é"),
+    ],
+    ids=["structured", "normalized", "unstructured"],
+)
+def test_review_artifacts_preserve_distinct_projections(
+    tmp_path, kind, verdict, original_verdict, feedback
+) -> None:
+    artifact = reviewer_artifact(tmp_path)
+    artifact = replace(
+        artifact,
+        evaluation=replace(
+            artifact.evaluation,
+            evaluation_kind=kind,
+            verdict=verdict,
+            original_verdict=original_verdict,
+            unstructured_feedback=feedback,
+            had_leading_text=True,
+            had_trailing_text=True,
+        ),
+    )
+    persist_review_evaluation_artifacts(artifact.output_file, artifact.evaluation)
+    state_path = persist_review_state(tmp_path, None, 0, artifact)
+    shared = {
+        "approved": False,
+        "evaluation_kind": kind,
+        "original_verdict": original_verdict,
+        "had_leading_text": True,
+        "had_trailing_text": True,
+        "unstructured_feedback": feedback,
+        "unresolved_issue_count": 1,
+        "warnings": ["warning é"],
+    }
+    metadata = {**shared, "normalized_verdict": verdict}
+    state = {
+        **shared,
+        "verdict": verdict,
+        "major_issues": "NONE",
+        "minor_issues": "- Fix é",
+        "nitpicks": "NONE",
+        "unresolved_fingerprints": ["fingerprint"],
+        "reviewer": "reviewer",
+        "task_id": " Review/Task_0 ",
+        "audit_round_num": None,
+        "round_num": 0,
+        "normalized_output_artifact": "review.md",
+        "raw_output_artifact": "review.raw.txt",
+        "metadata_artifact": "review.review.json",
+    }
+    metadata_path = tmp_path / "review.review.json"
+    assert metadata_path.read_bytes() == (
+        json.dumps(metadata, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    ).encode("utf-8")
+    assert state_path.read_bytes() == json.dumps(
+        state, indent=2, sort_keys=True, allow_nan=False
+    ).encode("utf-8")
+    assert (tmp_path / "review.raw.txt").read_text() == "raw review"

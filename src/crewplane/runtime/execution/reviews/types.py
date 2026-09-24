@@ -37,12 +37,24 @@ class EvaluatedReviewResult:
     unstructured_feedback: str | None = None
 
     def to_metadata_dict(self) -> dict[str, object]:
+        return {**self._common_fields(), "normalized_verdict": self.verdict}
+
+    def to_state_dict(self) -> dict[str, object]:
+        return {
+            **self._common_fields(),
+            "verdict": self.verdict,
+            "major_issues": self.major_issues,
+            "minor_issues": self.minor_issues,
+            "nitpicks": self.nitpicks,
+            "unresolved_fingerprints": list(self.unresolved_fingerprints),
+        }
+
+    def _common_fields(self) -> dict[str, object]:
         return {
             "approved": self.approved,
             "evaluation_kind": self.evaluation_kind,
             "had_leading_text": self.had_leading_text,
             "had_trailing_text": self.had_trailing_text,
-            "normalized_verdict": self.verdict,
             "original_verdict": self.original_verdict,
             "unstructured_feedback": self.unstructured_feedback,
             "unresolved_issue_count": self.unresolved_issue_count,

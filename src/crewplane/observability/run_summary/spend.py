@@ -14,6 +14,7 @@ from crewplane.architecture.contracts import (
 from crewplane.architecture.contracts.invocation import (
     TOKEN_BUCKETS,
     ProviderTokenUsage,
+    reduce_cost_confidences,
 )
 from crewplane.core.value_checks import is_nonnegative_int
 from crewplane.observability.events import ExecutionEvent, InvocationEventPayload
@@ -369,12 +370,4 @@ def roll_up_cost_confidence(
 def aggregate_cost_confidence(
     confidences: set[InvocationCostConfidence],
 ) -> AggregateCostConfidence:
-    if not confidences:
-        return "none"
-    if confidences == {"full"}:
-        return "full"
-    if confidences == {"none"}:
-        return "none"
-    if confidences <= {"full", "partial"} and "partial" in confidences:
-        return "partial"
-    return "mixed"
+    return reduce_cost_confidences(confidences)

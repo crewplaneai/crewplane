@@ -7,7 +7,7 @@ from enum import StrEnum
 from threading import Lock
 from time import monotonic, time
 
-from crewplane.architecture.contracts import parse_lifecycle_status
+from crewplane.architecture.contracts import TmuxUiOptions, parse_lifecycle_status
 from crewplane.observability.events import (
     ExecutionEvent,
     RunDashboardState,
@@ -78,8 +78,8 @@ class TmuxCompactRefreshController:
         window: TmuxCompactWindowOptions,
         bindings: TmuxCompactKeyBindings,
         control_state: TmuxCompactControlState,
-        log_tail_lines: int | None = None,
-        quiet_after_seconds: float = 120.0,
+        log_tail_lines: int | None = TmuxUiOptions.log_tail_lines,
+        quiet_after_seconds: float = TmuxUiOptions.quiet_after_seconds,
         monotonic_now: Callable[[], float] = monotonic,
         wall_time_now: Callable[[], float] = time,
     ) -> None:

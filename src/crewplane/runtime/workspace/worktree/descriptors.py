@@ -8,6 +8,7 @@ from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.value_checks import optional_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .types import WorkspaceSourceKind, WorktreeCaptureResult, WorktreeSourceRef
@@ -110,10 +111,6 @@ def _string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _int(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
 def _bundle_descriptor(
     state_path: Path,
     payload: dict[str, object],
@@ -132,7 +129,7 @@ def _bundle_descriptor(
     return (
         state_path.parent.parent / path,
         _string(bundle.get("sha256")),
-        _int(bundle.get("size_bytes")),
+        optional_strict_int(bundle.get("size_bytes")),
     )
 
 
@@ -163,10 +160,10 @@ def _source_ref_from_payload(
         source_node_id=_string(payload.get("node_id")),
         source_commit=source_commit,
         source_tree=source_tree,
-        candidate_sequence=_int(payload.get("candidate_sequence")),
+        candidate_sequence=optional_strict_int(payload.get("candidate_sequence")),
         bundle_path=_source_bundle_path(state_path, payload),
         bundle_sha256=_string(payload.get("bundle_sha256")),
-        bundle_size_bytes=_int(payload.get("bundle_size_bytes")),
+        bundle_size_bytes=optional_strict_int(payload.get("bundle_size_bytes")),
         bundle_ref=_string(payload.get("bundle_ref")),
         upstream_sources=_nested_upstream_sources(state_path, payload),
         state_path=state_path,

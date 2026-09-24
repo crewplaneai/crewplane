@@ -10,6 +10,7 @@ from crewplane.runtime.workspace.git import GitCommand
 from crewplane.runtime.workspace.worktree.checkout_identity import (
     parse_worktree_gitdir_backlink,
     parse_worktree_gitdir_marker,
+    read_worktree_gitdir_marker,
     require_real_capture_directory,
     require_regular_worktree_git_file,
     verify_worktree_git_metadata_identity,
@@ -118,6 +119,72 @@ def test_capture_rejects_invalid_git_marker(tmp_path: Path, content: str) -> Non
     marker.write_text(content, encoding="utf-8")
     with pytest.raises(RuntimeError, match="invalid worktree|empty worktree"):
         parse_worktree_gitdir_marker(marker)
+
+
+@pytest.mark.parametrize("operation", ["capture", "retry reset"])
+@pytest.mark.parametrize("kind", ["missing", "directory", "symlink"])
+def test_git_marker_file_errors_preserve_diagnostics(tmp_path, operation, kind):
+    marker = tmp_path / ".git"
+    if kind == "directory":
+        marker.mkdir()
+    elif kind == "symlink":
+        marker.symlink_to(tmp_path / "elsewhere")
+    with pytest.raises(RuntimeError) as caught:
+        require_regular_worktree_git_file(tmp_path, operation)
+    assert str(caught.value) == (
+        f"Workspace {operation} requires a valid worktree .git file."
+    )
+    if kind == "missing":
+        assert isinstance(caught.value.__cause__, FileNotFoundError)
+    else:
+        assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize("operation", ["capture", "retry reset"])
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("broken", "invalid worktree .git file"),
+        ("gitdir: \n", "empty worktree Git dir"),
+    ],
+)
+def test_git_marker_parse_errors_preserve_diagnostics(
+    tmp_path, operation, content, message
+):
+    marker = tmp_path / ".git"
+    marker.write_text(content)
+    with pytest.raises(RuntimeError) as caught:
+        read_worktree_gitdir_marker(marker, operation)
+    assert str(caught.value) == f"Workspace {operation} found an {message}."
+    assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize("operation", ["capture", "retry reset"])
+def test_git_marker_read_error_propagates(tmp_path, operation):
+    failure = OSError("cannot read marker")
+    with (
+        patch.object(Path, "read_text", side_effect=failure),
+        pytest.raises(OSError) as caught,
+    ):
+        read_worktree_gitdir_marker(tmp_path / ".git", operation)
+    assert caught.value is failure
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_git_marker_preserves_unresolved_path_and_replacement_decoding(
+    tmp_path, absolute
+):
+    marker = tmp_path / ".git"
+    raw_path = str(tmp_path / "linked") if absolute else "linked/../linked"
+    marker.write_bytes(b" \tgitdir:  " + raw_path.encode() + b"/\xff \n")
+    target = tmp_path / "metadata"
+    target.mkdir()
+    (tmp_path / "linked").symlink_to(target, target_is_directory=True)
+    unresolved = Path(raw_path + "/\ufffd")
+    if not absolute:
+        unresolved = tmp_path / unresolved
+    assert read_worktree_gitdir_marker(marker, "retry reset") == unresolved
+    assert parse_worktree_gitdir_marker(marker) == unresolved.resolve(strict=False)
 
 
 @pytest.mark.parametrize("kind", ["missing", "directory", "symlink", "empty"])

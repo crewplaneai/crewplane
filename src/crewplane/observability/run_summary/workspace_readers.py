@@ -7,6 +7,7 @@ from crewplane.artifacts.naming import (
     preflight_manifest_relative_path,
     run_manifest_relative_path,
 )
+from crewplane.core.value_checks import optional_strict_int
 from crewplane.version import SCHEMA_VERSION
 
 from .models import (
@@ -28,7 +29,6 @@ from .workspace_values import (
     bundle_path_label,
     first_available_section_value,
     float_or_none,
-    int_or_none,
     list_count_or_none,
     mapping_or_none,
     read_json_mapping,
@@ -86,17 +86,17 @@ def workspace_plan_summary(stages_dir: Path) -> WorkspacePlanSummary | None:
         rendered_locator_count=section_value(
             rendered_files_section,
             "locator_count",
-            int_or_none,
+            optional_strict_int,
         ),
         rendered_project_initial_count=section_value(
             rendered_files_section,
             "project_initial",
-            int_or_none,
+            optional_strict_int,
         ),
         rendered_runtime_dynamic_count=section_value(
             rendered_files_section,
             "runtime_dynamic",
-            int_or_none,
+            optional_strict_int,
         ),
         cleanup_on_success=section_value(
             cleanup_section,
@@ -166,8 +166,8 @@ def workspace_state_summary(
     return WorkspaceInvocationSummary(
         node_id=string_or_none(payload.get("node_id")),
         task_id=string_or_none(payload.get("task_id")),
-        audit_round_num=int_or_none(payload.get("audit_round_num")),
-        round_num=int_or_none(payload.get("round_num")),
+        audit_round_num=optional_strict_int(payload.get("audit_round_num")),
+        round_num=optional_strict_int(payload.get("round_num")),
         workspace_kind=string_or_none(payload.get("workspace_kind")),
         logical_worktree_name=string_or_none(payload.get("logical_worktree_name")),
         status=string_or_none(payload.get("status")),
@@ -211,10 +211,12 @@ def workspace_state_summary(
         changed_path_count=section_value(
             result_section,
             "changed_path_count",
-            int_or_none,
+            optional_strict_int,
         ),
         bundle_path=section_value(bundle_section, "path", bundle_path_label),
-        bundle_size_bytes=section_value(bundle_section, "size_bytes", int_or_none),
+        bundle_size_bytes=section_value(
+            bundle_section, "size_bytes", optional_strict_int
+        ),
         bundle_verified=section_value(bundle_section, "verified", bool_or_none),
         rendered_file_count=list_count_or_none(rendered_files),
         diagnostic_count=list_count_or_none(diagnostics),
@@ -301,7 +303,7 @@ def workspace_execution_summary(
         checkout_size_bytes=section_value(
             execution_section,
             "checkout_size_bytes",
-            int_or_none,
+            optional_strict_int,
         ),
         provisioning_duration_seconds=section_value(
             execution_section,

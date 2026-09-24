@@ -22,6 +22,7 @@ from tests.helpers.resume import (
     make_node_state,
     make_plan,
     make_run_manifest,
+    make_single_node_plan,
     sha256_hex,
     write_node_state,
     write_result,
@@ -249,7 +250,7 @@ def test_hydrate_resume_frontier_copies_generated_file_from_bounded_node_directo
             update={"generated_files": [generated_descriptor]}
         ),
     )
-    plan = _single_node_plan(node_id)
+    plan = make_single_node_plan(node_id)
     frontier = validate_resume_frontier(source, plan)
     output = hydration_output(tmp_path)
 
@@ -278,18 +279,16 @@ def write_generated_file(
     )
 
 
-def _single_node_plan(node_id: str):
-    plan = make_plan()
-    node = plan.nodes[0].model_copy(
-        update={
-            "id": node_id,
-            "dependencies": [],
-        }
-    )
-    return plan.model_copy(
-        update={
-            "execution_order": [node_id],
-            "nodes": [node],
-            "dependency_graph": [],
-        }
-    )
+def test_single_node_resume_plan_is_fresh_and_preserves_inherited_contracts() -> None:
+    node_id = "build." + "x" * 150
+    first = make_single_node_plan(node_id)
+    second = make_single_node_plan(node_id)
+    baseline = make_plan()
+    assert first.nodes[0].artifact_contract == baseline.nodes[0].artifact_contract
+    assert first.render_plans == baseline.render_plans
+    first.nodes[0].artifact_contract.output_path = "changed.md"
+    first.render_plans.clear()
+    assert second.nodes[0].artifact_contract.output_path == "a-result.md"
+    assert second.render_plans == baseline.render_plans
+    assert second.execution_order == [node_id]
+    assert second.dependency_graph == []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pytest
 
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.naming import temporary_import_ref_prefix
+from crewplane.runtime.workspace.git import GitCommand
 from crewplane.runtime.workspace.state_evidence import record_workspace_temporary_ref
 from crewplane.runtime.workspace.worktree.ref_cleanup import delete_run_workspace_refs
 from crewplane.runtime.workspace.worktree.temporary_refs import (
@@ -118,12 +120,35 @@ def test_ref_cleanup_validates_each_durable_ownership_claim(
     assert isinstance(claims, list)
     claims[0][field] = value
     evidence.write(payload)
+    original_evidence = evidence.owner.state_path.read_bytes()
     with pytest.raises(
         RuntimeError, match="different repository|evidence is contradictory"
     ):
         evidence.cleanup()
     assert run_git_text(evidence.repo, "rev-parse", evidence.ref_name) == evidence.oid
     assert evidence.owner.state_path.exists()
+    assert evidence.owner.state_path.read_bytes() == original_evidence
+
+
+def test_dedicated_cleanup_accepts_writer_produced_claim(evidence: CleanupEvidence):
+    assert evidence.payload()["temporary_refs"] == [
+        {
+            "phase": "prepared",
+            "name": evidence.ref_name,
+            "target_oid": evidence.oid,
+            "owner_run_id": evidence.payload()["run_id"],
+            "owner_node_id": "implement",
+            "owner_task_id": "consumer",
+            "owner_role": "artifact_consumer",
+            "owner_round_num": 0,
+            "owner_audit_round_num": None,
+            "repository_id": evidence.repository_id,
+        }
+    ]
+    assert evidence.cleanup() == 1
+    assert not evidence.owner.state_path.exists()
+    with pytest.raises(subprocess.CalledProcessError):
+        run_git_text(evidence.repo, "rev-parse", "--verify", evidence.ref_name)
 
 
 @pytest.mark.parametrize("kind", ["malformed-json", "directory", "symlink"])
@@ -250,6 +275,45 @@ def test_temporary_ref_cleanup_respects_current_git_identity(
         evidence.cleanup()
     assert run_git_text(evidence.repo, "rev-parse", evidence.ref_name) == current
     assert evidence.owner.state_path.exists()
+
+
+def test_temporary_cleanup_rejects_dangling_symbolic_ref(evidence: CleanupEvidence):
+    target = "refs/heads/missing-target"
+    run_git_text(evidence.repo, "update-ref", "-d", evidence.ref_name)
+    run_git_text(evidence.repo, "symbolic-ref", evidence.ref_name, target)
+    original_evidence = evidence.owner.state_path.read_bytes()
+    with pytest.raises(RuntimeError) as caught:
+        evidence.cleanup()
+    assert str(caught.value) == (
+        "Workspace temporary import ref is symbolic and was retained: "
+        f"{evidence.ref_name} -> {target}."
+    )
+    assert run_git_text(evidence.repo, "symbolic-ref", evidence.ref_name) == target
+    with pytest.raises(subprocess.CalledProcessError):
+        run_git_text(evidence.repo, "rev-parse", "--verify", target)
+    assert evidence.owner.state_path.read_bytes() == original_evidence
+
+
+@pytest.mark.parametrize("failed_command", ["symbolic-ref", "rev-parse"])
+def test_temporary_lookup_error_preserves_refs_and_evidence(
+    evidence: CleanupEvidence, monkeypatch: pytest.MonkeyPatch, failed_command: str
+):
+    original_text = GitCommand.text
+    failure = subprocess.CalledProcessError(42, ["git", failed_command])
+
+    def failing_text(command, *args):
+        if args[0] == failed_command and args[-1] == evidence.ref_name:
+            raise failure
+        return original_text(command, *args)
+
+    original_evidence = evidence.owner.state_path.read_bytes()
+    with monkeypatch.context() as patch:
+        patch.setattr(GitCommand, "text", failing_text)
+        with pytest.raises(subprocess.CalledProcessError) as caught:
+            evidence.cleanup()
+    assert caught.value is failure
+    assert run_git_text(evidence.repo, "rev-parse", evidence.ref_name) == evidence.oid
+    assert evidence.owner.state_path.read_bytes() == original_evidence
 
 
 @pytest.mark.parametrize(

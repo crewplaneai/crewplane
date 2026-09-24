@@ -8,6 +8,7 @@ from typing import TypeGuard, get_args
 
 from crewplane.architecture.contracts import OutputExtractionStatus
 from crewplane.architecture.safe_files import contained_regular_file
+from crewplane.core.value_checks import optional_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
@@ -128,9 +129,9 @@ def _invocation_payload_from_record(
     if raw_report_count is not None and report_count is None:
         return None
     return InvocationEventPayload(
-        duration_ms=_integer(record.get("duration_ms")),
+        duration_ms=optional_strict_int(record.get("duration_ms")),
         error=_string(record.get("error")),
-        attempt_count=_integer(record.get("attempt_count")),
+        attempt_count=optional_strict_int(record.get("attempt_count")),
         cli_captured=_boolean(record.get("cli_captured")),
         output_extraction_status=_output_extraction_status(
             record.get("output_extraction_status")
@@ -138,7 +139,9 @@ def _invocation_payload_from_record(
         provider_usage_status=_string(record.get("provider_usage_status")),
         provider_usage_report_count=report_count,
         provider_tokens=_integer_mapping(record.get("provider_tokens")),
-        visible_estimate_tokens=_integer(record.get("visible_estimate_tokens")),
+        visible_estimate_tokens=optional_strict_int(
+            record.get("visible_estimate_tokens")
+        ),
         visible_estimate_method=_string(record.get("visible_estimate_method")),
         visible_estimate_is_lower_bound=_boolean(
             record.get("visible_estimate_is_lower_bound")
@@ -196,7 +199,7 @@ def _runtime_log_payload_from_record(
         message=message,
         operation=operation,
         attributes=_runtime_log_attributes(record.get("attributes")),
-        duration_ms=_integer(record.get("duration_ms")),
+        duration_ms=optional_strict_int(record.get("duration_ms")),
         error=_string(record.get("error")),
     )
 
@@ -214,8 +217,8 @@ def _context_from_record(
         role=_provider_role(record.get("role")),
         model=_string(record.get("model")),
         task_id=_string(record.get("task_id")),
-        audit_round_num=_integer(record.get("audit_round_num")),
-        round_num=_integer(record.get("round_num")),
+        audit_round_num=optional_strict_int(record.get("audit_round_num")),
+        round_num=optional_strict_int(record.get("round_num")),
         output_file=_string(record.get("output_file")),
         log_file=_string(record.get("log_file")),
         log_presentation_format=_string(record.get("log_presentation_format")),
@@ -260,16 +263,10 @@ def _provider_role(value: object) -> ProviderRole | None:
     return ProviderRole(role) if role is not None else None
 
 
-def _integer(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    return None
-
-
 def _report_count(value: object) -> int | None:
     if value is None:
         return None
-    integer = _integer(value)
+    integer = optional_strict_int(value)
     if integer is None or integer < 0:
         return None
     return integer

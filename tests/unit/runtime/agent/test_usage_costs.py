@@ -228,6 +228,9 @@ def invocation_usage(confidence: str) -> InvocationUsage:
         pytest.param(("none", "none"), "none", id="none"),
         pytest.param(("full", "partial"), "partial", id="partial"),
         pytest.param(("full", "none"), "mixed", id="mixed"),
+        pytest.param(("partial",), "partial", id="partial-only"),
+        pytest.param(("partial", "none"), "mixed", id="partial-none"),
+        pytest.param(("full", "partial", "none"), "mixed", id="all"),
     ],
 )
 def test_roll_up_cost_confidence(
@@ -236,4 +239,7 @@ def test_roll_up_cost_confidence(
 ) -> None:
     usages = tuple(invocation_usage(confidence) for confidence in confidences)
 
-    assert roll_up_cost_confidence(usages) == expected
+    from crewplane.runtime.agent.usage import roll_up_cost_confidence as exported_rollup
+
+    assert exported_rollup is roll_up_cost_confidence
+    assert exported_rollup(usages) == expected

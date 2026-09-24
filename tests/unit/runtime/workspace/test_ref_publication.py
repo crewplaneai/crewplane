@@ -10,6 +10,7 @@ import pytest
 
 import crewplane.runtime.workspace.worktree.orchestration as worktree_orchestration
 import crewplane.runtime.workspace.worktree.ref_publication as ref_publication
+from crewplane.runtime.workspace.git import GitCommand
 from crewplane.runtime.workspace.worktree import (
     remove_worktree_workspace,
 )
@@ -279,6 +280,35 @@ def test_result_ref_cleanup_rejects_symbolic_ref_without_touching_target(
         prepared.workspace_path,
         prepared.worktree_capture.git_dir,
     )
+
+
+@pytest.mark.parametrize("failed_command", ["symbolic-ref", "rev-parse"])
+def test_result_ref_lookup_error_preserves_refs_and_phase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_command: str
+) -> None:
+    repo, prepared, state = published_lineage_workspace(tmp_path)
+    assert prepared.state_path is not None
+    candidate = state["refs"]["candidate"]
+    original_text = GitCommand.text
+    failure = subprocess.CalledProcessError(42, ["git", failed_command])
+
+    def failing_text(command, *args):
+        if args[0] == failed_command and args[-1] == candidate:
+            raise failure
+        return original_text(command, *args)
+
+    original_state = prepared.state_path.read_bytes()
+    with monkeypatch.context() as patch:
+        patch.setattr(GitCommand, "text", failing_text)
+        with pytest.raises(subprocess.CalledProcessError) as caught:
+            ref_publication.reconcile_result_ref_publication(
+                prepared.state_path, repo, repo / ".git"
+            )
+    assert caught.value is failure
+    assert prepared.state_path.read_bytes() == original_state
+    for destination in state["ref_publication"]["destinations"].values():
+        assert ref_oid(repo, destination["name"]) == destination["target_oid"]
+    remove_published_workspace(repo, prepared, state)
 
 
 def test_result_ref_cleanup_transaction_failure_preserves_refs_and_phase(

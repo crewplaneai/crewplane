@@ -7,6 +7,7 @@ from typing import Literal
 import pytest
 
 import crewplane.runtime.workspace.state_evidence as evidence
+from crewplane.artifacts.workspace.state.contracts import has_unresolved_workspace_owner
 from crewplane.runtime.agent.process.drain import (
     ProcessDrainError,
     ProcessDrainEvidence,
@@ -187,6 +188,20 @@ def test_operational_workspace_evidence_mutations(
     }
     assert payload["setup"] == {"status": "succeeded"}
     assert payload["ref_publication"]["phase"] == "removed"
+    assert payload["temporary_refs"] == [
+        {
+            "phase": "removed",
+            "name": "refs/test",
+            "target_oid": "a" * 40,
+            "owner_run_id": "run",
+            "owner_node_id": "node",
+            "owner_task_id": "task",
+            "owner_role": "executor",
+            "owner_round_num": 1,
+            "owner_audit_round_num": None,
+            "repository_id": "repo",
+        }
+    ]
 
 
 def test_operational_workspace_evidence_rejects_contradictions(
@@ -260,3 +275,35 @@ def test_record_workspace_temporary_ref_rejects_duplicate_claims(
         evidence.record_workspace_temporary_ref(state_path, "refs/test", "a" * 40)
 
     assert _read_payload(state_path) == payload
+
+
+_OWNER_EVIDENCE_CASES = [
+    ({}, False),
+    ({"status": "confirmed"}, False),
+    ({"status": "not_started"}, False),
+    ({"status": "unresolved"}, True),
+    ({"status": None}, False),
+    (None, False),
+    ("unresolved", False),
+    ([], False),
+]
+
+
+@pytest.mark.parametrize(("process", "process_unresolved"), _OWNER_EVIDENCE_CASES)
+@pytest.mark.parametrize(("mutator", "mutator_unresolved"), _OWNER_EVIDENCE_CASES)
+def test_persisted_owner_detection_does_not_imply_valid_evidence(
+    tmp_path, process, process_unresolved, mutator, mutator_unresolved
+) -> None:
+    payload = {"process_drain": process, "workspace_mutator": mutator}
+    blocked = process_unresolved or mutator_unresolved
+    assert has_unresolved_workspace_owner(payload) is blocked
+    state_path = tmp_path / "workspace-state.json"
+    _write_payload(state_path, payload)
+    assert workspace_mutators_are_drained(state_path) is not blocked
+
+
+def test_persisted_owner_detection_allows_absent_fields(tmp_path: Path) -> None:
+    assert not has_unresolved_workspace_owner({})
+    state_path = tmp_path / "workspace-state.json"
+    _write_payload(state_path, {})
+    assert workspace_mutators_are_drained(state_path)

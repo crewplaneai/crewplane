@@ -10,8 +10,90 @@ from crewplane.core.execution_state import (
     ResumeOrigin,
     RunManifest,
 )
+from crewplane.core.provider_process_state import ProviderProcessState
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.resume import make_node_state, make_run_manifest, sha256_hex
+
+
+@pytest.mark.parametrize("record", ["node", "run", "process"])
+@pytest.mark.parametrize(
+    ("value", "error_type", "message"),
+    [
+        (1, None, None),
+        ("1", None, None),
+        (1.0, None, None),
+        (True, None, None),
+        (2, "value_error", "Value error, Unsupported run state schema version '2'."),
+        ("2", "value_error", "Value error, Unsupported run state schema version '2'."),
+        (2.0, "value_error", "Value error, Unsupported run state schema version '2'."),
+        (
+            False,
+            "value_error",
+            "Value error, Unsupported run state schema version '0'.",
+        ),
+        (None, "int_type", "Input should be a valid integer"),
+        (
+            1.5,
+            "int_from_float",
+            "Input should be a valid integer, got a number with a fractional part",
+        ),
+        ("missing", "missing", "Field required"),
+    ],
+    ids=[
+        "integer",
+        "numeric-string",
+        "whole-float",
+        "true",
+        "unsupported-integer",
+        "unsupported-string",
+        "unsupported-float",
+        "false",
+        "null",
+        "fractional-float",
+        "missing",
+    ],
+)
+def test_persisted_state_version_conversion_contract(
+    record, value, error_type, message
+):
+    manifest = make_run_manifest("run", "workflow--run")
+    if record == "run":
+        model = RunManifest
+        payload = manifest.model_dump(mode="json")
+    elif record == "node":
+        model = NodeState
+        payload = make_node_state(manifest, "build", []).model_dump(mode="json")
+    else:
+        model = ProviderProcessState
+        payload = {
+            "run_id": "run",
+            "run_key_name": "workflow--run",
+            "node_id": "build",
+            "task_id": "codex",
+            "provider": "codex",
+            "role": "executor",
+            "round_num": 0,
+            "attempt": 1,
+            "pid": 123,
+            "hostname": "host",
+            "status": "started",
+            "started_at": "2026-01-01T00:00:00Z",
+        }
+    if value == "missing":
+        payload.pop("run_state_schema_version", None)
+    else:
+        payload["run_state_schema_version"] = value
+    if error_type is None:
+        validated = model.model_validate(payload)
+        assert type(validated.run_state_schema_version) is int
+        assert validated.model_dump()["run_state_schema_version"] == 1
+    else:
+        with pytest.raises(ValidationError) as caught:
+            model.model_validate(payload)
+        error = caught.value.errors()[0]
+        assert error["loc"] == ("run_state_schema_version",)
+        assert error["type"] == error_type
+        assert error["msg"] == message
 
 
 def test_running_manifest_forbids_completed_at() -> None:

@@ -10,10 +10,12 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from crewplane.core.provider_process_state import ProviderProcessState
+from crewplane.core.state_paths import EXECUTION_STAGES_DIR_NAME
 
 from ..atomic import atomic_temporary_target_name
 from ..naming import (
     build_provider_process_state_filename,
+    provider_process_directory_relative_path,
     validate_run_key_name,
 )
 from .manifest import (
@@ -115,10 +117,9 @@ def _provider_process_dir(
         return None
     return (
         state_dir
-        / "execution-stages"
+        / EXECUTION_STAGES_DIR_NAME
         / run_key_name
-        / "manifests"
-        / "provider-processes"
+        / provider_process_directory_relative_path()
     )
 
 
@@ -140,7 +141,7 @@ def _trusted_process_state_paths(
     state_dir: Path,
     process_dir: Path,
 ) -> tuple[Path, ...]:
-    stages_root = state_dir / "execution-stages"
+    stages_root = state_dir / EXECUTION_STAGES_DIR_NAME
     ensure_no_symlink_manifest_components(stages_root, process_dir)
     ensure_owner_path_contained(stages_root, process_dir)
     if not _inspect_process_state_directory(process_dir):

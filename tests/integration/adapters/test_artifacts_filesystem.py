@@ -116,3 +116,46 @@ class FilesystemArtifactsAdapterTests(unittest.TestCase):
 
             self.assertEqual(manifest_path.name, "run.json")
             self.assertEqual(manifest_path.parent.name, "manifests")
+
+
+def test_injected_state_root_round_trips_writer_history_and_terminal_reader(
+    tmp_path: Path,
+) -> None:
+    from crewplane.artifacts.run_history import find_same_context_runs
+    from tests.helpers.resume import (
+        WORKFLOW_IDENTITY,
+        WORKFLOW_NAME,
+        WORKFLOW_SIGNATURE,
+        make_run_manifest,
+    )
+
+    state_dir = tmp_path / "external-state"
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    adapter = FilesystemArtifactsAdapter()
+    store = adapter.create_store(WORKFLOW_NAME, state_dir, project_root)
+    assert store.stages_dir == state_dir / "execution-stages" / store.run_key_name
+    assert store.results_dir == state_dir / "execution-results" / store.run_key_name
+    assert not store.results_dir.exists()
+    request = node_artifact_request("build.node")
+    stage = store.create_node_dir(request)
+    (stage / "task_round1.md").write_text("node content", encoding="utf-8")
+    store.finalize_node(request)
+    manifest_path = store.write_run_manifest(
+        make_run_manifest(store.run_id, store.run_key_name, status="succeeded")
+    )
+    records = find_same_context_runs(
+        state_dir, WORKFLOW_IDENTITY, WORKFLOW_NAME, WORKFLOW_SIGNATURE
+    )
+    assert len(records) == 1
+    assert records[0].run_dir == store.stages_dir
+    assert records[0].results_dir == store.results_dir
+    assert records[0].manifest_path == manifest_path
+    result_path = records[0].results_dir / build_result_filename("build.node")
+    read = adapter.create_terminal_history_reader(state_dir).read_terminal_result(
+        str(result_path), project_root
+    )
+    assert read.matched and read.error is None
+    assert read.path == result_path
+    assert read.payload == result_path.read_bytes()
+    assert b"node content" in read.payload

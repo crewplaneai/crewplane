@@ -252,8 +252,9 @@ def _valid_temporary_ref(
 ) -> bool:
     return (
         _temporary_ref_phase_is_valid(record)
-        and _temporary_ref_owner_matches(record, context.payload)
-        and _temporary_ref_repository_matches(record, context.payload)
+        and temporary_ref_ownership_matches(
+            record, temporary_ref_ownership(context.payload)
+        )
         and _temporary_ref_is_invocation_scoped(record, context)
         and _temporary_ref_target_is_valid(record)
         and _temporary_ref_target_is_coherent(record, context.coherent_oids)
@@ -264,12 +265,9 @@ def _temporary_ref_phase_is_valid(record: Mapping[str, object]) -> bool:
     return record.get("phase") in {"prepared", "removed"}
 
 
-def _temporary_ref_owner_matches(
-    record: Mapping[str, object],
-    payload: Mapping[str, object],
-) -> bool:
-    return all(
-        record.get(f"owner_{field}") == payload.get(field)
+def temporary_ref_ownership(payload: Mapping[str, object]) -> dict[str, object]:
+    ownership = {
+        f"owner_{field}": payload.get(field)
         for field in (
             "run_id",
             "node_id",
@@ -278,16 +276,15 @@ def _temporary_ref_owner_matches(
             "round_num",
             "audit_round_num",
         )
-    )
+    }
+    ownership["repository_id"] = mapping_value(payload.get("git")).get("repo_id")
+    return ownership
 
 
-def _temporary_ref_repository_matches(
-    record: Mapping[str, object],
-    payload: Mapping[str, object],
+def temporary_ref_ownership_matches(
+    record: Mapping[str, object], ownership: Mapping[str, object]
 ) -> bool:
-    return record.get("repository_id") == mapping_value(payload.get("git")).get(
-        "repo_id"
-    )
+    return all(record.get(field) == value for field, value in ownership.items())
 
 
 def _temporary_ref_is_invocation_scoped(

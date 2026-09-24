@@ -8,6 +8,10 @@ from crewplane.architecture.safe_files import (
     contained_directory,
     ensure_contained_directory,
 )
+from crewplane.core.state_paths import (
+    EXECUTION_RESULTS_DIR_NAME,
+    EXECUTION_STAGES_DIR_NAME,
+)
 from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
 
 from .naming import (
@@ -113,11 +117,13 @@ class DirectoryManager:
 
     def _run_paths(self, run_id: str) -> tuple[Path, Path]:
         run_key = build_run_key_name(self._workflow_name, run_id)
-        stages_root = ensure_contained_directory(self.base_dir, "execution-stages")
-        results_root = self.base_dir / "execution-results"
+        stages_root = ensure_contained_directory(
+            self.base_dir, EXECUTION_STAGES_DIR_NAME
+        )
+        results_root = self.base_dir / EXECUTION_RESULTS_DIR_NAME
         if results_root.exists() or results_root.is_symlink():
             contained_results_root = contained_directory(
-                self.base_dir, "execution-results"
+                self.base_dir, EXECUTION_RESULTS_DIR_NAME
             )
             if contained_results_root is None:
                 raise ValueError(

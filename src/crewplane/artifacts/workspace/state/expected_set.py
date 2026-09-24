@@ -9,6 +9,7 @@ from .invocations import (
     lineage_payload_order,
     resolve_expected_workspace_payload,
 )
+from .source_fields import source_matches_bundle_fields, source_matches_result_fields
 
 
 def workspace_state_payloads_match_expected_set(
@@ -122,9 +123,7 @@ def _payload_result_matches_candidate_source(
     result = _mapping(payload.get("result"))
     return (
         source.get("node_id") == payload.get("node_id")
-        and source.get("commit") == result.get("result_commit")
-        and source.get("tree") == result.get("result_tree")
-        and source.get("candidate_sequence") == 1
+        and source_matches_result_fields(source, result)
         and _payload_bundle_matches_candidate_source(payload, source)
     )
 
@@ -135,10 +134,6 @@ def _payload_bundle_matches_candidate_source(
 ) -> bool:
     bundle = _mapping(payload.get("bundle"))
     refs = _mapping(payload.get("refs"))
-    return (
-        isinstance(source.get("bundle_sha256"), str)
-        and source.get("bundle_path") == bundle.get("path")
-        and source.get("bundle_sha256") == bundle.get("sha256")
-        and source.get("bundle_size_bytes") == bundle.get("size_bytes")
-        and source.get("bundle_ref") == refs.get("result")
-    )
+    return source_matches_bundle_fields(source, bundle) and source.get(
+        "bundle_ref"
+    ) == refs.get("result")

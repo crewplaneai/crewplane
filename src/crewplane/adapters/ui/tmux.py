@@ -24,15 +24,19 @@ from .validation import validate_runtime_request
 def _resolve_tmux_options(options: JsonObject) -> TmuxUiOptions:
     resolved = dict(options)
 
-    auto_close_session_raw = resolved.pop("auto_close_session", True)
+    auto_close_session_raw = resolved.pop(
+        "auto_close_session", TmuxUiOptions.auto_close_session
+    )
     if not isinstance(auto_close_session_raw, bool):
         raise ValueError("tmux ui option 'auto_close_session' must be a boolean")
 
-    tmux_executable_raw = resolved.pop("tmux_executable", "tmux")
+    tmux_executable_raw = resolved.pop("tmux_executable", TmuxUiOptions.tmux_executable)
     if not isinstance(tmux_executable_raw, str) or not tmux_executable_raw.strip():
         raise ValueError("tmux ui option 'tmux_executable' must be a non-empty string")
 
-    quiet_after_seconds_raw = resolved.pop("quiet_after_seconds", 120.0)
+    quiet_after_seconds_raw = resolved.pop(
+        "quiet_after_seconds", TmuxUiOptions.quiet_after_seconds
+    )
     if isinstance(quiet_after_seconds_raw, bool) or not isinstance(
         quiet_after_seconds_raw,
         (int, float),
@@ -42,7 +46,7 @@ def _resolve_tmux_options(options: JsonObject) -> TmuxUiOptions:
     if not math.isfinite(quiet_after_seconds) or quiet_after_seconds < 1.0:
         raise ValueError("tmux ui option 'quiet_after_seconds' must be a number >= 1.0")
 
-    log_tail_lines_raw = resolved.pop("log_tail_lines", None)
+    log_tail_lines_raw = resolved.pop("log_tail_lines", TmuxUiOptions.log_tail_lines)
     if log_tail_lines_raw is not None:
         if isinstance(log_tail_lines_raw, bool) or not isinstance(
             log_tail_lines_raw,

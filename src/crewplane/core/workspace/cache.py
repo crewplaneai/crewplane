@@ -5,6 +5,11 @@ import platform
 from pathlib import Path
 from typing import Literal
 
+from crewplane.core.state_paths import (
+    EXECUTION_RESULTS_DIR_NAME,
+    EXECUTION_STAGES_DIR_NAME,
+)
+
 from .git_policy import portable_path_key
 
 
@@ -26,8 +31,8 @@ def workspace_cache_forbidden_roots(
     roots = (
         project_root,
         state_dir,
-        state_dir / "execution-stages",
-        state_dir / "execution-results",
+        state_dir / EXECUTION_STAGES_DIR_NAME,
+        state_dir / EXECUTION_RESULTS_DIR_NAME,
         state_dir / "locks",
         active_git_dir,
         common_git_dir,

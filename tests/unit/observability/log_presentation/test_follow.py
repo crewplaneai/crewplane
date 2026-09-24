@@ -140,3 +140,26 @@ def test_snapshot_helpers_validate_values(tmp_path: Path) -> None:
     assert require_snapshot_string({"value": "present"}, "value") == "present"
     with pytest.raises(ValueError, match="snapshot missing value"):
         require_snapshot_string({"value": ""}, "value")
+
+
+@pytest.mark.parametrize(
+    ("snapshot", "expected"),
+    [
+        ({}, None),
+        ({"line_budget": None}, None),
+        ({"line_budget": True}, None),
+        ({"line_budget": False}, None),
+        ({"line_budget": -1}, None),
+        ({"line_budget": 0}, None),
+        ({"line_budget": 1}, 1),
+        ({"line_budget": 2}, 2),
+        ({"line_budget": 2.0}, None),
+        ({"line_budget": "2"}, None),
+    ],
+)
+def test_snapshot_line_budget_preserves_positive_integer_or_default(
+    snapshot, expected
+) -> None:
+    assert follow.snapshot_line_budget(snapshot) == (
+        follow.DEFAULT_FORMATTED_INSPECT_LINE_BUDGET if expected is None else expected
+    )

@@ -18,6 +18,7 @@ from crewplane.architecture.contracts import (
     JsonObject,
     PromptTransport,
     ProviderKind,
+    TmuxUiOptions,
 )
 from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
 from crewplane.version import SCHEMA_VERSION
@@ -231,8 +232,8 @@ class IntegrationsConfig(BaseModel):
         default_factory=lambda: IntegrationSpec(
             implementation="tmux",
             options={
-                "auto_close_session": True,
-                "quiet_after_seconds": 120.0,
+                "auto_close_session": TmuxUiOptions.auto_close_session,
+                "quiet_after_seconds": TmuxUiOptions.quiet_after_seconds,
             },
         )
     )
