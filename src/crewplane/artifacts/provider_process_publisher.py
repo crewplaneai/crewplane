@@ -26,7 +26,10 @@ from .atomic import (
 )
 from .directory_manager import DirectoryManager
 from .locks.process_identity import ProcessInspector
-from .naming import build_provider_process_state_filename
+from .naming import (
+    build_provider_process_state_filename,
+    provider_process_directory_relative_path,
+)
 
 
 class ProviderProcessPublisher:
@@ -154,7 +157,7 @@ class ProviderProcessPublisher:
         return (
             ensure_contained_directory(
                 self._directories.stages_dir,
-                "manifests/provider-processes",
+                provider_process_directory_relative_path().as_posix(),
             )
             / filename
         )

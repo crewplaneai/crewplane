@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from crewplane.artifacts.workspace.state.expected_set import (
     workspace_state_payloads_match_expected_set,
 )
@@ -84,3 +86,48 @@ def _candidate_source(payload: dict[str, object]) -> dict[str, object]:
         "bundle_size_bytes": bundle["size_bytes"],
         "bundle_ref": refs["result"],
     }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("commit", "f" * 40),
+        ("tree", "f" * 40),
+        ("candidate_sequence", 2),
+        ("bundle_path", "other.bundle"),
+        ("bundle_sha256", "f" * 64),
+        ("bundle_sha256", None),
+        ("bundle_size_bytes", 2),
+        ("node_id", "other"),
+        ("bundle_ref", "refs/other"),
+    ],
+)
+def test_expected_set_rejects_each_broken_candidate_link(field, value) -> None:
+    first = _lineage_payload(1, "a" * 40, "b" * 40)
+    source = _candidate_source(first)
+    second = _lineage_payload(2, "c" * 40, "d" * 40, source)
+    expected = (ExpectedWorkspaceInvocation("alpha", ProviderRole.EXECUTOR, 2, None),)
+    assert workspace_state_payloads_match_expected_set((first, second), expected)
+    source[field] = value
+    assert not workspace_state_payloads_match_expected_set((first, second), expected)
+
+
+@pytest.mark.parametrize(
+    ("ref", "source_ref", "matches"),
+    [
+        (None, None, True),
+        (17, None, False),
+        (17, 17, True),
+    ],
+)
+def test_expected_set_preserves_raw_ref_comparison(ref, source_ref, matches) -> None:
+    first = _lineage_payload(1, "a" * 40, "b" * 40)
+    first["refs"] = {"result": ref}
+    source = _candidate_source(first)
+    source["bundle_ref"] = source_ref
+    second = _lineage_payload(2, "c" * 40, "d" * 40, source)
+    expected = (ExpectedWorkspaceInvocation("alpha", ProviderRole.EXECUTOR, 2, None),)
+    assert (
+        workspace_state_payloads_match_expected_set((first, second), expected)
+        is matches
+    )

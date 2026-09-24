@@ -523,3 +523,33 @@ def test_workspace_child_environment_applies_config_overlay(tmp_path: Path) -> N
     for index, (key, value) in enumerate(WORKSPACE_GIT_CONFIG_OVERLAY):
         assert environment.set[f"GIT_CONFIG_KEY_{index}"] == key
         assert environment.set[f"GIT_CONFIG_VALUE_{index}"] == value
+
+
+@pytest.mark.parametrize(
+    ("workspace", "expected"),
+    [
+        (None, 1),
+        ({}, 1),
+        ({"max_concurrent_materializations": None}, 1),
+        ({"max_concurrent_materializations": True}, 1),
+        ({"max_concurrent_materializations": False}, 1),
+        ({"max_concurrent_materializations": -1}, 1),
+        ({"max_concurrent_materializations": 0}, 1),
+        ({"max_concurrent_materializations": 1}, 1),
+        ({"max_concurrent_materializations": 2}, 2),
+        ({"max_concurrent_materializations": 2.0}, 1),
+        ({"max_concurrent_materializations": "2"}, 1),
+    ],
+)
+def test_materialization_limiter_preserves_limit_fallback(
+    tmp_path, workspace, expected
+) -> None:
+    plan = disabled_workspace_plan(tmp_path).model_copy(
+        update={"runtime_config_snapshot": {"workspace": workspace}}
+    )
+    limiter = workspace_service.MaterializationLimiter.from_plan(plan)
+    assert limiter.limit == expected
+    for slot in range(expected):
+        assert limiter.semaphore.acquire(blocking=False), f"slot {slot} unavailable"
+    assert not limiter.semaphore.acquire(blocking=False)
+    limiter.semaphore.release(expected)

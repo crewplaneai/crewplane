@@ -7,7 +7,7 @@ from typing import TypedDict, cast
 from crewplane.architecture.contracts import (
     DashboardSnapshot as PublicDashboardSnapshot,
 )
-from crewplane.architecture.contracts import ObserverCapabilities
+from crewplane.architecture.contracts import ObserverCapabilities, TmuxUiOptions
 from crewplane.observability.events import ExecutionEvent
 from crewplane.observability.tmux.bindings import TmuxCompactKeyBindings
 from crewplane.observability.tmux.client import (
@@ -33,7 +33,7 @@ from crewplane.observability.types import (
     RunResult,
 )
 
-DEFAULT_QUIET_AFTER_SECONDS = 120.0
+DEFAULT_QUIET_AFTER_SECONDS = TmuxUiOptions.quiet_after_seconds
 
 __all__ = [
     "DEFAULT_QUIET_AFTER_SECONDS",
@@ -50,11 +50,11 @@ class TmuxCompactRuntime:
 
     def __init__(
         self,
-        auto_close_session: bool = True,
-        tmux_executable: str = "tmux",
+        auto_close_session: bool = TmuxUiOptions.auto_close_session,
+        tmux_executable: str = TmuxUiOptions.tmux_executable,
         warning_sink: Callable[[str], None] | None = None,
         refresh_interval_seconds: float = 0.25,
-        log_tail_lines: int | None = None,
+        log_tail_lines: int | None = TmuxUiOptions.log_tail_lines,
         quiet_after_seconds: float = DEFAULT_QUIET_AFTER_SECONDS,
         tmux_command_timeout_seconds: float = DEFAULT_TMUX_COMMAND_TIMEOUT_SECONDS,
         lifecycle: CompactSessionLifecycle | None = None,

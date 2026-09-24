@@ -13,7 +13,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.value_checks import is_nonnegative_int
+from crewplane.core.value_checks import is_nonnegative_int, positive_strict_int
 from crewplane.core.workspace.checkout_size import (
     estimated_tree_checkout_size_bytes,
     estimated_working_tree_size_bytes,
@@ -105,9 +105,7 @@ def materialization_limit(plan: PreflightExecutionPlan) -> int:
     if not isinstance(workspace, dict):
         return 1
     value = workspace.get("max_concurrent_materializations")
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    return 1
+    return positive_strict_int(value) or 1
 
 
 def _admit_materialization_capacity(

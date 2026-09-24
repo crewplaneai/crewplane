@@ -4,7 +4,7 @@ import json
 import shutil
 import stat
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum, auto
 from os import scandir
@@ -13,6 +13,7 @@ from typing import Never
 
 from crewplane.artifacts.naming import preflight_plan_relative_path
 from crewplane.artifacts.workspace.state.contracts import (
+    has_unresolved_workspace_owner,
     require_workspace_state_contract,
 )
 from crewplane.artifacts.workspace.state.paths import (
@@ -20,7 +21,12 @@ from crewplane.artifacts.workspace.state.paths import (
     is_temporary_ref_evidence_name,
     is_workspace_claim_name,
 )
+from crewplane.artifacts.workspace.state.ref_contracts import (
+    temporary_ref_ownership,
+    temporary_ref_ownership_matches,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.state_paths import EXECUTION_STAGES_DIR_NAME, STATE_DIR_NAME
 from crewplane.core.workflow.keywords import RESERVED_RUN_ROOT_NAMES
 from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.repository_identity import workspace_repository_id
@@ -59,14 +65,7 @@ class _RunDirectoryScan:
 
 @dataclass(frozen=True, slots=True)
 class _TemporaryRefEvidence:
-    run_id: str
-    run_key_name: str
-    node_id: str
-    task_id: str
-    role: str
-    round_num: int
-    audit_round_num: object
-    repository_id: str
+    ownership: Mapping[str, object]
     claims: tuple[object, ...]
 
 
@@ -89,7 +88,7 @@ def workspace_ref_cleanup_for_project(
             common_git_dir,
             project_root,
             run_key_name,
-            project_root / ".crewplane" / "execution-stages" / run_key_name,
+            project_root / STATE_DIR_NAME / EXECUTION_STAGES_DIR_NAME / run_key_name,
         )
 
     return cleanup_run_refs
@@ -403,15 +402,11 @@ def _temporary_ref_evidence(
         or not isinstance(claims, list)
     ):
         _raise_invalid_temporary_ref_evidence(evidence_path)
+    for field in ("run_id", "run_key_name", "node_id", "task_id", "role"):
+        _temporary_ref_string(payload, field, evidence_path)
+    _temporary_ref_string(git_payload, "repo_id", evidence_path)
     return _TemporaryRefEvidence(
-        run_id=_temporary_ref_string(payload, "run_id", evidence_path),
-        run_key_name=_temporary_ref_string(payload, "run_key_name", evidence_path),
-        node_id=_temporary_ref_string(payload, "node_id", evidence_path),
-        task_id=_temporary_ref_string(payload, "task_id", evidence_path),
-        role=_temporary_ref_string(payload, "role", evidence_path),
-        round_num=round_num,
-        audit_round_num=payload.get("audit_round_num"),
-        repository_id=_temporary_ref_string(git_payload, "repo_id", evidence_path),
+        ownership=temporary_ref_ownership(payload),
         claims=tuple(claims),
     )
 
@@ -467,13 +462,7 @@ def _temporary_ref_claim_matches_owner(
         return False
     return (
         claim.get("phase") in {"prepared", "removed"}
-        and claim.get("owner_run_id") == evidence.run_id
-        and claim.get("owner_node_id") == evidence.node_id
-        and claim.get("owner_task_id") == evidence.task_id
-        and claim.get("owner_role") == evidence.role
-        and claim.get("owner_round_num") == evidence.round_num
-        and claim.get("owner_audit_round_num") == evidence.audit_round_num
-        and claim.get("repository_id") == evidence.repository_id
+        and temporary_ref_ownership_matches(claim, evidence.ownership)
         and isinstance(claim.get("name"), str)
         and is_git_object_id(claim.get("target_oid"))
     )
@@ -482,14 +471,7 @@ def _temporary_ref_claim_matches_owner(
 def _require_drained_ref_cleanup_state(
     payload: dict[str, object], state_path: Path
 ) -> None:
-    process_drain = payload.get("process_drain")
-    workspace_mutator = payload.get("workspace_mutator")
-    if (
-        isinstance(process_drain, dict)
-        and process_drain.get("status") == "unresolved"
-        or isinstance(workspace_mutator, dict)
-        and workspace_mutator.get("status") == "unresolved"
-    ):
+    if has_unresolved_workspace_owner(payload):
         raise RuntimeError(
             f"Workspace ref cleanup found unresolved mutator evidence: {state_path}."
         )
@@ -506,7 +488,7 @@ def cleanup_plan_workspace_refs(plan: PreflightExecutionPlan) -> int:
         Path(source.common_git_dir),
         project_root,
         plan.run_key_name,
-        (project_root / ".crewplane" / "execution-stages" / plan.run_key_name),
+        (project_root / STATE_DIR_NAME / EXECUTION_STAGES_DIR_NAME / plan.run_key_name),
     )
 
 

@@ -6,6 +6,8 @@ from crewplane.architecture.contracts import ProviderTokenUsage
 from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
 from crewplane.observability.events import event_from_record
 from crewplane.observability.run_summary.spend import (
+    UsageRollupAccumulator,
+    aggregate_cost_confidence,
     invocation_usage_summaries,
     provider_token_aggregates,
     provider_usage_rollups,
@@ -152,3 +154,43 @@ def test_all_unknown_positive_report_poisoning_survives_zero_report_rows() -> No
     for result in (aggregates.overall, *aggregates.providers):
         assert result.report_count == 3
         assert all(getattr(result, bucket) is None for bucket in TOKEN_BUCKETS)
+
+
+@pytest.mark.parametrize(
+    ("confidences", "expected"),
+    [
+        ((), "none"),
+        (("none",), "none"),
+        (("full",), "full"),
+        (("partial",), "partial"),
+        (("full", "partial"), "partial"),
+        (("full", "none"), "mixed"),
+        (("partial", "none"), "mixed"),
+        (("full", "partial", "none"), "mixed"),
+    ],
+)
+@pytest.mark.parametrize("cost", [None, 0.0, 0.25])
+def test_cost_confidence_subsets_reach_streaming_and_batch_totals(
+    confidences, expected, cost
+) -> None:
+    assert aggregate_cost_confidence(set(confidences)) == expected
+    events = []
+    for confidence in confidences * 2:
+        record = invocation_record()
+        record.update(invocation_cost_confidence=confidence, configured_cost_usd=cost)
+        event = event_from_record(record)
+        assert event is not None
+        events.append(event)
+    summaries = invocation_usage_summaries(events)
+    accumulator = UsageRollupAccumulator()
+    for summary in summaries:
+        accumulator.record(summary)
+    total = spend_totals(summaries)
+    assert accumulator.spend_totals() == total
+    assert accumulator.provider_usage_rollups() == provider_usage_rollups(summaries)
+    if not confidences:
+        assert total is None
+        return
+    assert total is not None
+    assert total.configured_cost_confidence == expected
+    assert total.configured_cost_usd == (None if cost is None else cost * len(events))

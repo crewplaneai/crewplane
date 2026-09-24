@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from crewplane.core.state_paths import STATE_DIR_NAME
+from crewplane.core.state_paths import EXECUTION_STAGES_DIR_NAME, STATE_DIR_NAME
 from crewplane.runtime.workspace.cleanup import (
     AbsentWorkspaceStateProjection,
     WorkspaceCleanupFilter,
@@ -153,7 +153,7 @@ def _workspace_cleanup_evidence(
     git_context = cast(GitSourceContext, context.scope.git_context)
     repository_id = cast(str, context.scope.repository_id)
     return WorkspaceCleanupEvidence(
-        context.project_root / STATE_DIR_NAME / "execution-stages",
+        context.project_root / STATE_DIR_NAME / EXECUTION_STAGES_DIR_NAME,
         context.cache_root,
         repository_id,
         git_context.common_git_dir,

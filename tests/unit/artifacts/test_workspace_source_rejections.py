@@ -6,11 +6,18 @@ from pathlib import Path
 
 import pytest
 
-from crewplane.artifacts.workspace.state.invocations import workspace_state_payloads
+from crewplane.artifacts.workspace.state.expected_set import (
+    workspace_state_payloads_match_expected_set,
+)
+from crewplane.artifacts.workspace.state.invocations import (
+    ExpectedWorkspaceInvocation,
+    workspace_state_payloads,
+)
 from crewplane.artifacts.workspace.state.validation import (
     workspace_invocation_source_matches,
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.resume import make_plan, replace_plan_fields
 from tests.helpers.resume_validation import (
     attach_git_workspace_source,
@@ -267,3 +274,108 @@ def _invocation_source(descriptor: dict[str, object]) -> dict[str, object]:
         (key if key == "candidate_sequence" else f"source_{key}"): value
         for key, value in descriptor.items()
     }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("commit", "f" * 40),
+        ("tree", "f" * 40),
+        ("candidate_sequence", 2),
+        ("bundle_path", "other.bundle"),
+        ("bundle_sha256", "f" * 64),
+        ("bundle_sha256", None),
+        ("bundle_size_bytes", 2),
+    ],
+)
+def test_source_validation_rejects_each_broken_candidate_link(
+    tmp_path, field, value
+) -> None:
+    run = source_record(tmp_path)
+    plan = make_plan()
+    prior = _lineage_payload()
+    current = _candidate_payload(prior)
+    stage = run.run_dir / "a"
+    stage.mkdir(parents=True)
+    (stage / "workspace-state-prior.json").write_text(json.dumps(prior))
+    assert workspace_invocation_source_matches(run, plan, plan.nodes[0], current)
+    current["source"][field] = value
+    current["invocation_source"] = _invocation_source(current["source"])
+    assert not workspace_invocation_source_matches(run, plan, plan.nodes[0], current)
+
+
+@pytest.mark.parametrize(
+    ("ref", "source_ref", "matches"),
+    [
+        (None, None, True),
+        (17, None, True),
+        (17, 17, False),
+    ],
+)
+def test_source_validation_preserves_non_string_ref_normalization(
+    tmp_path, ref, source_ref, matches
+) -> None:
+    run = source_record(tmp_path)
+    plan = make_plan()
+    prior = _lineage_payload()
+    prior["refs"] = {"result": ref}
+    current = _candidate_payload(prior)
+    current["source"]["bundle_ref"] = source_ref
+    current["invocation_source"] = _invocation_source(current["source"])
+    stage = run.run_dir / "a"
+    stage.mkdir(parents=True)
+    (stage / "workspace-state-prior.json").write_text(json.dumps(prior))
+    assert (
+        workspace_invocation_source_matches(run, plan, plan.nodes[0], current)
+        is matches
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_field", "section", "result_field", "matches"),
+    [
+        ("commit", "result", "result_commit", True),
+        ("tree", "result", "result_tree", True),
+        ("bundle_path", "bundle", "path", True),
+        ("bundle_size_bytes", "bundle", "size_bytes", True),
+        ("bundle_sha256", "bundle", "sha256", False),
+    ],
+)
+@pytest.mark.parametrize("omit", [False, True])
+def test_lineage_comparisons_preserve_missing_and_null_semantics(
+    tmp_path, source_field, section, result_field, matches, omit
+) -> None:
+    prior = _lineage_payload()
+    current = _candidate_payload(prior)
+    descriptor = current["source"]
+    descriptor[source_field] = None
+    prior[section][result_field] = None
+    if omit:
+        descriptor.pop(source_field)
+    assert _lineage_comparison_results(tmp_path, prior, current) == (matches, matches)
+
+
+@pytest.mark.parametrize("sequence", [True, 1.0])
+def test_lineage_comparisons_preserve_numeric_equality(tmp_path, sequence) -> None:
+    prior = _lineage_payload()
+    current = _candidate_payload(prior)
+    descriptor = current["source"]
+    descriptor["candidate_sequence"] = sequence
+    descriptor["bundle_size_bytes"] = 1.0
+    assert _lineage_comparison_results(tmp_path, prior, current) == (True, True)
+
+
+def _lineage_comparison_results(
+    tmp_path: Path, prior: dict[str, object], current: dict[str, object]
+) -> tuple[bool, bool]:
+    run = source_record(tmp_path)
+    plan = make_plan()
+    current["invocation_source"] = _invocation_source(current["source"])
+    stage = run.run_dir / "a"
+    stage.mkdir(parents=True)
+    (stage / "workspace-state-prior.json").write_text(json.dumps(prior))
+    expected = (ExpectedWorkspaceInvocation("alpha", ProviderRole.EXECUTOR, 2, None),)
+    return (
+        workspace_invocation_source_matches(run, plan, plan.nodes[0], current),
+        workspace_state_payloads_match_expected_set((prior, current), expected),
+    )

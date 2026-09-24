@@ -195,6 +195,23 @@ def make_plan(
     )
 
 
+def make_single_node_plan(node_id: str) -> PreflightExecutionPlan:
+    plan = make_plan()
+    node = plan.nodes[0].model_copy(
+        update={
+            "id": node_id,
+            "dependencies": [],
+        }
+    )
+    return plan.model_copy(
+        update={
+            "execution_order": [node_id],
+            "nodes": [node],
+            "dependency_graph": [],
+        }
+    )
+
+
 def make_preview_from_plan(
     plan: PreflightExecutionPlan, runtime_snapshot: RuntimeConfigSnapshot
 ) -> PreflightCompilationPreview:

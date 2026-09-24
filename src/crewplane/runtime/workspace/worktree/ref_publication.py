@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +23,7 @@ from ..state_evidence import (
     update_workspace_ref_publication_phase,
 )
 from .protected_refs import ProtectedRefSnapshot
-from .refs import checked_ref
+from .refs import checked_ref, direct_ref_oid
 from .types import WorktreeCaptureRequest
 
 
@@ -166,7 +165,7 @@ def _matching_destinations(
     return tuple(
         destination
         for destination in destinations
-        if _ref_oid(command, destination.name) == destination.target_oid
+        if direct_ref_oid(command, destination.name, "result") == destination.target_oid
     )
 
 
@@ -176,7 +175,7 @@ def _mismatched_destinations(
 ) -> tuple[RefPublicationDestination, ...]:
     mismatched: list[RefPublicationDestination] = []
     for destination in destinations:
-        current = _ref_oid(command, destination.name)
+        current = direct_ref_oid(command, destination.name, "result")
         if current is not None and current != destination.target_oid:
             mismatched.append(destination)
     return tuple(mismatched)
@@ -189,7 +188,7 @@ def _remaining_destinations(
     return tuple(
         destination
         for destination in destinations
-        if _ref_oid(command, destination.name) is not None
+        if direct_ref_oid(command, destination.name, "result") is not None
     )
 
 
@@ -353,7 +352,7 @@ def _require_absent_destinations(
     destinations: _ResultRefDestinations,
 ) -> None:
     for destination in destinations:
-        if _ref_oid(command, destination.name) is not None:
+        if direct_ref_oid(command, destination.name, "result") is not None:
             raise RuntimeError(
                 f"Workspace result ref already exists: {destination.name}."
             )
@@ -400,28 +399,6 @@ def _run_ref_transaction(command: GitCommand, operations: tuple[str, ...]) -> No
         lines.extend(("option no-deref", operation))
     lines.extend(("prepare", "commit", ""))
     command.run_with_input("\n".join(lines).encode(), "update-ref", "--stdin")
-
-
-def _ref_oid(command: GitCommand, ref_name: str) -> str | None:
-    _reject_symbolic_ref(command, ref_name)
-    try:
-        return command.text("rev-parse", "--verify", ref_name)
-    except subprocess.CalledProcessError as exc:
-        if exc.returncode == 128:
-            return None
-        raise
-
-
-def _reject_symbolic_ref(command: GitCommand, ref_name: str) -> None:
-    try:
-        target = command.text("symbolic-ref", "-q", ref_name)
-    except subprocess.CalledProcessError as exc:
-        if exc.returncode == 1:
-            return
-        raise
-    raise RuntimeError(
-        f"Workspace result ref is symbolic and was retained: {ref_name} -> {target}."
-    )
 
 
 def _result_ref_names(request: WorktreeCaptureRequest) -> tuple[str, str]:

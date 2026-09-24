@@ -8,6 +8,7 @@ from pathlib import Path
 from time import time
 from typing import Any
 
+from crewplane.core.value_checks import optional_strict_int
 from crewplane.observability.tmux.runtime_files import (
     RuntimeFiles,
     read_index,
@@ -96,7 +97,7 @@ def _resolved_snapshot_index(
         return None
     if value.get("requested_selected_index") != current.selected_index:
         return None
-    return _optional_int_value(value.get("resolved_selected_index"))
+    return optional_strict_int(value.get("resolved_selected_index"))
 
 
 def _is_valid_index(index: int, count: int) -> bool:
@@ -140,12 +141,6 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 def _int_value(value: object, default: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return default
-    return value
-
-
-def _optional_int_value(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
     return value
 
 

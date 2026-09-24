@@ -67,10 +67,6 @@ def string_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def int_or_none(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
 def float_or_none(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None

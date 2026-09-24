@@ -36,3 +36,24 @@ def source_field_mismatches(
 
 def normalized_source_descriptor(source: Mapping[str, object]) -> dict[str, object]:
     return {field: source.get(field) for field, _, _ in SOURCE_FIELDS}
+
+
+def source_matches_result_fields(
+    source: Mapping[str, object], result: Mapping[str, object]
+) -> bool:
+    return (
+        source.get("commit") == result.get("result_commit")
+        and source.get("tree") == result.get("result_tree")
+        and source.get("candidate_sequence") == 1
+    )
+
+
+def source_matches_bundle_fields(
+    source: Mapping[str, object], bundle: Mapping[str, object]
+) -> bool:
+    return (
+        source.get("bundle_path") == bundle.get("path")
+        and isinstance(source.get("bundle_sha256"), str)
+        and source.get("bundle_sha256") == bundle.get("sha256")
+        and source.get("bundle_size_bytes") == bundle.get("size_bytes")
+    )

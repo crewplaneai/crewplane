@@ -23,6 +23,12 @@ TerminalRunStatus = Literal["succeeded", "failed", "cancelled"]
 ArtifactKind = Literal["output", "findings", "generated_file"]
 
 
+def validate_run_state_schema_version(value: int) -> int:
+    if value != RUN_STATE_SCHEMA_VERSION:
+        raise ValueError(f"Unsupported run state schema version '{value}'.")
+    return value
+
+
 def validate_iso_datetime(value: str) -> str:
     try:
         datetime.fromisoformat(value)
@@ -116,9 +122,7 @@ class NodeState(BaseModel):
     @field_validator("run_state_schema_version")
     @classmethod
     def _validate_state_schema_version(cls, value: int) -> int:
-        if value != RUN_STATE_SCHEMA_VERSION:
-            raise ValueError(f"Unsupported run state schema version '{value}'.")
-        return value
+        return validate_run_state_schema_version(value)
 
     @field_validator("plan_schema_version")
     @classmethod
@@ -229,9 +233,7 @@ class RunManifest(BaseModel):
     @field_validator("run_state_schema_version")
     @classmethod
     def _validate_state_schema_version(cls, value: int) -> int:
-        if value != RUN_STATE_SCHEMA_VERSION:
-            raise ValueError(f"Unsupported run state schema version '{value}'.")
-        return value
+        return validate_run_state_schema_version(value)
 
     @field_validator("plan_schema_version")
     @classmethod

@@ -15,6 +15,10 @@ def is_strict_int(value: object) -> TypeIs[int]:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def optional_strict_int(value: object) -> int | None:
+    return value if is_strict_int(value) else None
+
+
 def is_nonnegative_int(value: object) -> TypeGuard[int]:
     return is_strict_int(value) and value >= 0
 

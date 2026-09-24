@@ -19,6 +19,7 @@ from crewplane.core.preflight.models import (
     WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
+from crewplane.core.state_paths import EXECUTION_STAGES_DIR_NAME
 from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.git_policy import is_git_object_id
@@ -262,7 +263,7 @@ def _contained_bundle_file(stages_dir: Path, relative_path: str) -> Path | None:
     path = Path(relative_path)
     parts = path.parts
     try:
-        index = parts.index("execution-stages")
+        index = parts.index(EXECUTION_STAGES_DIR_NAME)
     except ValueError:
         return None
     if len(parts) <= index + 2 or parts[index + 1] != stages_dir.name:

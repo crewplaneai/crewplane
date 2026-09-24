@@ -247,8 +247,12 @@ def test_reset_rejects_missing_or_symlinked_git_metadata(
     except OSError:
         pytest.skip("symlink creation is unavailable")
     (checkout / ".git").write_text(f"gitdir: {linked.as_posix()}")
+    command = GitCommand()
     with pytest.raises(RuntimeError, match="must not be symlinked"):
-        run_reset(monkeypatch, checkout, common_git_dir, target)
+        run_reset(monkeypatch, checkout, common_git_dir, target, command)
+    assert command.runs == []
+    assert linked.resolve() == target
+    assert (target / "gitdir").read_text() == (checkout / ".git").as_posix()
 
 
 @pytest.mark.parametrize(

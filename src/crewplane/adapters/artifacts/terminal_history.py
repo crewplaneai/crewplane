@@ -10,9 +10,10 @@ from crewplane.architecture.ports import TerminalHistoryRead
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.artifacts.naming import run_manifest_relative_path
 from crewplane.core.execution_state import RUN_STATUS_RUNNING, RunManifest
-
-_EXECUTION_RESULTS_DIR = "execution-results"
-_EXECUTION_STAGES_DIR = "execution-stages"
+from crewplane.core.state_paths import (
+    EXECUTION_RESULTS_DIR_NAME,
+    EXECUTION_STAGES_DIR_NAME,
+)
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ class FilesystemTerminalHistoryReader:
 
     def _resolve_result_file(self, relative_path: Path) -> Path | None:
         return contained_regular_file(
-            self.state_dir / _EXECUTION_RESULTS_DIR,
+            self.state_dir / EXECUTION_RESULTS_DIR_NAME,
             relative_path.as_posix(),
         )
 
@@ -83,7 +84,7 @@ class FilesystemTerminalHistoryReader:
 
     def _terminal_manifest_path(self, run_key_name: str) -> Path | None:
         return contained_regular_file(
-            self.state_dir / _EXECUTION_STAGES_DIR,
+            self.state_dir / EXECUTION_STAGES_DIR_NAME,
             f"{run_key_name}/{run_manifest_relative_path().as_posix()}",
         )
 
@@ -133,7 +134,7 @@ class FilesystemTerminalHistoryReader:
             candidate = source_root / candidate
         normalized_candidate = Path(os.path.abspath(candidate))
         results_root = Path(
-            os.path.abspath(self.state_dir / _EXECUTION_RESULTS_DIR),
+            os.path.abspath(self.state_dir / EXECUTION_RESULTS_DIR_NAME),
         )
         try:
             relative = normalized_candidate.relative_to(results_root)

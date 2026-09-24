@@ -2,8 +2,39 @@ from __future__ import annotations
 
 import pytest
 
-from crewplane.core.value_checks import is_sha256
+from crewplane.core.value_checks import is_sha256, optional_strict_int
 from crewplane.core.workspace.git_policy import is_git_object_id
+
+
+class IntegerSubclass(int):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        (0, True),
+        (-1, True),
+        (1, True),
+        (2**80, True),
+        pytest.param(IntegerSubclass(7), True, id="integer-subclass"),
+        (True, False),
+        (False, False),
+        (None, False),
+        pytest.param("1", False, id="numeric-string"),
+        (1.0, False),
+        (1.5, False),
+        ([], False),
+        ({}, False),
+        (object(), False),
+    ],
+)
+def test_optional_strict_int_preserves_identity(value: object, accepted: bool) -> None:
+    result = optional_strict_int(value)
+    if accepted:
+        assert result is value
+    else:
+        assert result is None
 
 
 @pytest.mark.parametrize(

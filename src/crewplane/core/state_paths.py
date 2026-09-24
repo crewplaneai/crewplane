@@ -1,9 +1,11 @@
 from pathlib import Path
 
 STATE_DIR_NAME = ".crewplane"
+EXECUTION_STAGES_DIR_NAME = "execution-stages"
+EXECUTION_RESULTS_DIR_NAME = "execution-results"
 RUNTIME_ARTIFACT_ROOTS = (
-    f"{STATE_DIR_NAME}/execution-stages",
-    f"{STATE_DIR_NAME}/execution-results",
+    f"{STATE_DIR_NAME}/{EXECUTION_STAGES_DIR_NAME}",
+    f"{STATE_DIR_NAME}/{EXECUTION_RESULTS_DIR_NAME}",
     f"{STATE_DIR_NAME}/locks",
 )
 FILE_TOKEN_EXCLUDED_ROOTS = (*RUNTIME_ARTIFACT_ROOTS, f"{STATE_DIR_NAME}/preflight")

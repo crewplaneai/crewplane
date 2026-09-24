@@ -8,6 +8,10 @@ from pathlib import Path
 
 from ..git import GitCommand, git, git_error
 from ..locks import git_metadata_lock
+from .checkout_identity import (
+    read_worktree_gitdir_marker,
+    require_regular_worktree_git_file,
+)
 from .checkout_placement import worktree_project_cwd
 from .head import prove_detached_head, reject_attached_head_after_safe_detachment
 from .inspection import changed_paths
@@ -219,8 +223,8 @@ def _worktree_git_metadata(
     checkout_root: Path,
     common_git_dir: Path,
 ) -> _WorktreeGitMetadata:
-    git_file = _require_worktree_git_file(checkout_root)
-    raw_git_dir = _read_worktree_git_dir(git_file)
+    git_file = require_regular_worktree_git_file(checkout_root, "retry reset")
+    raw_git_dir = read_worktree_gitdir_marker(git_file, "retry reset")
     git_dir = raw_git_dir.resolve(strict=False)
     _require_git_dir_within_common_dir(git_dir, common_git_dir)
     return _WorktreeGitMetadata(
@@ -228,30 +232,6 @@ def _worktree_git_metadata(
         raw_git_dir=raw_git_dir,
         git_dir=git_dir,
     )
-
-
-def _require_worktree_git_file(checkout_root: Path) -> Path:
-    git_file = checkout_root / ".git"
-    try:
-        mode = git_file.lstat().st_mode
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Workspace retry reset requires a valid worktree .git file."
-        ) from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise RuntimeError("Workspace retry reset requires a valid worktree .git file.")
-    return git_file
-
-
-def _read_worktree_git_dir(git_file: Path) -> Path:
-    marker = "gitdir:"
-    content = git_file.read_text(encoding="utf-8", errors="replace").strip()
-    if not content.startswith(marker):
-        raise RuntimeError("Workspace retry reset found an invalid worktree .git file.")
-    raw_path = content[len(marker) :].strip()
-    if not raw_path:
-        raise RuntimeError("Workspace retry reset found an empty worktree Git dir.")
-    return _path_from_git_metadata(raw_path, git_file.parent)
 
 
 def _require_git_dir_within_common_dir(

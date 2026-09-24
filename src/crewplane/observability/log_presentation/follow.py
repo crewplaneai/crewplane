@@ -14,6 +14,7 @@ from crewplane.architecture.contracts import (
     parse_lifecycle_status,
     validate_log_presentation_descriptor,
 )
+from crewplane.core.value_checks import positive_strict_int
 from crewplane.observability.events.types import InvocationStatus
 from crewplane.observability.log_presentation.formatters import format_log_file
 from crewplane.observability.log_presentation.limits import (
@@ -89,9 +90,7 @@ def descriptor_from_snapshot(
 
 def snapshot_line_budget(snapshot: Mapping[str, object]) -> int:
     value = snapshot.get("line_budget")
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    return DEFAULT_FORMATTED_INSPECT_LINE_BUDGET
+    return positive_strict_int(value) or DEFAULT_FORMATTED_INSPECT_LINE_BUDGET
 
 
 def status_from_snapshot(snapshot: Mapping[str, object]) -> InvocationStatus:

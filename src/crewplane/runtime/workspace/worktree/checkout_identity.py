@@ -33,16 +33,20 @@ def require_real_capture_directory(path: Path, label: str) -> None:
         )
 
 
-def require_regular_worktree_git_file(checkout_root: Path) -> Path:
+def require_regular_worktree_git_file(
+    checkout_root: Path, operation: str = "capture"
+) -> Path:
     git_file = checkout_root / ".git"
     try:
         mode = git_file.lstat().st_mode
     except FileNotFoundError as exc:
         raise RuntimeError(
-            "Workspace capture requires a valid worktree .git file."
+            f"Workspace {operation} requires a valid worktree .git file."
         ) from exc
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise RuntimeError("Workspace capture requires a valid worktree .git file.")
+        raise RuntimeError(
+            f"Workspace {operation} requires a valid worktree .git file."
+        )
     return git_file
 
 
@@ -56,14 +60,22 @@ def verify_worktree_git_metadata_identity(git_file: Path, git_dir: Path) -> None
 
 
 def parse_worktree_gitdir_marker(git_file: Path) -> Path:
+    return read_worktree_gitdir_marker(git_file, "capture").resolve(strict=False)
+
+
+def read_worktree_gitdir_marker(git_file: Path, operation: str) -> Path:
+    """Read the marker without resolving symlinks in its administrative path."""
     marker = "gitdir:"
     content = git_file.read_text(encoding="utf-8", errors="replace").strip()
     if not content.startswith(marker):
-        raise RuntimeError("Workspace capture found an invalid worktree .git file.")
+        raise RuntimeError(
+            f"Workspace {operation} found an invalid worktree .git file."
+        )
     raw_path = content[len(marker) :].strip()
     if not raw_path:
-        raise RuntimeError("Workspace capture found an empty worktree Git dir.")
-    return _resolve_git_metadata_path(raw_path, git_file.parent)
+        raise RuntimeError(f"Workspace {operation} found an empty worktree Git dir.")
+    target = Path(raw_path)
+    return target if target.is_absolute() else git_file.parent / target
 
 
 def parse_worktree_gitdir_backlink(git_dir: Path) -> Path:

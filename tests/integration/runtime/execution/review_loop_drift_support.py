@@ -15,10 +15,6 @@ from crewplane.core.preflight.models import (
     ProviderRecord,
     RenderPlan,
 )
-from crewplane.core.preflight.runtime_config import (
-    RuntimeAgentConfigSnapshot,
-    runtime_agent_signature_payload,
-)
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.core.workflow.keywords import ProviderRole
@@ -35,6 +31,7 @@ from crewplane.runtime.execution.review_loop.types import (
 )
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
+from tests.integration.runtime.signature_support import build_agent_signature
 
 
 def recovery_payload(
@@ -72,7 +69,7 @@ def make_drift_request(
         "options": {},
         "resolved_identity": invoker_alias,
     }
-    agent_signature = drift_agent_signature("exec", agent_payload, None)
+    agent_signature = build_agent_signature("exec", agent_payload, None)
     node = PreflightExecutionNode(
         id="review.node",
         mode="sequential",
@@ -165,18 +162,3 @@ def make_drift_request(
         ),
     )
     return request, output, node_dir
-
-
-def drift_agent_signature(
-    agent_config_key: str,
-    agent_payload: object,
-    resolved_model: str | None,
-) -> str:
-    agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(agent_payload)
-    return signature_for_payload(
-        runtime_agent_signature_payload(
-            agent_config_key,
-            agent_snapshot,
-            resolved_model,
-        )
-    )

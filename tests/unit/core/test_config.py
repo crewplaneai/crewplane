@@ -496,7 +496,16 @@ class ConfigTests(unittest.TestCase):
             settings.integrations.ui.options.get("quiet_after_seconds"),
             120.0,
         )
-        self.assertIsNone(settings.integrations.ui.options.get("log_tail_lines"))
+        self.assertEqual(
+            settings.integrations.ui.model_dump(),
+            {
+                "implementation": "tmux",
+                "options": {
+                    "auto_close_session": True,
+                    "quiet_after_seconds": 120.0,
+                },
+            },
+        )
         self.assertIsNone(settings.max_concurrent_nodes)
         self.assertIsNone(settings.max_parallel_invocations)
         self.assertEqual(settings.max_audit_rounds, 5)

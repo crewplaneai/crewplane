@@ -64,6 +64,10 @@ def run_manifest_relative_path() -> Path:
     return Path("manifests") / "run.json"
 
 
+def provider_process_directory_relative_path() -> Path:
+    return Path("manifests") / "provider-processes"
+
+
 def preflight_plan_relative_path() -> Path:
     return Path("preflight") / "execution-plan.json"
 

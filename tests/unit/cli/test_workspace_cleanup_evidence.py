@@ -339,3 +339,49 @@ def test_cleanup_evidence_rejects_unverifiable_project_placement(
 
     assert not decision.deletable
     assert decision.status == "invalid"
+
+
+def test_cleanup_discovers_evidence_under_project_state_root(tmp_path: Path) -> None:
+    from crewplane.cli.run.workspace.git_source import GitSourceContext
+    from crewplane.cli.workspace_cleanup.context import (
+        CleanupScope,
+        WorkspaceCleanupContext,
+    )
+    from crewplane.cli.workspace_cleanup.execution import execute_workspace_cleanup
+
+    cache_root = tmp_path / "cache"
+    workspace_path = snapshot_cache_path(cache_root)
+    (workspace_path / "checkout").mkdir(parents=True)
+    claim = write_cleanup_claim(
+        tmp_path / ".crewplane" / "execution-stages",
+        RUN_KEY,
+        snapshot_claim_payload(workspace_path),
+    )
+    git_context = GitSourceContext(
+        "a" * 40,
+        "b" * 40,
+        "sha1",
+        Path("/repo"),
+        ".",
+        Path("/repo/.git"),
+        Path("/repo/.git"),
+        "2.34.1",
+    )
+    context = WorkspaceCleanupContext(
+        tmp_path,
+        CleanupScope("repo", git_context),
+        cache_root,
+        frozenset(),
+        None,
+        None,
+        False,
+        False,
+    )
+    result = execute_workspace_cleanup(context, destructive=False)
+    assert result.selected_count == 1
+    assert len(result.entries) == 1
+    assert result.entries[0].status == "succeeded"
+    assert result.entries[0].path == workspace_path
+    assert not result.entries[0].removed
+    assert workspace_path.is_dir()
+    assert claim.is_file()

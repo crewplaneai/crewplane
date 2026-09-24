@@ -29,7 +29,12 @@ from .state.lineage import (
     invocation_round_order,
     review_output_coordinates,
 )
-from .state.source_fields import normalized_source_descriptor, source_field_mismatches
+from .state.source_fields import (
+    normalized_source_descriptor,
+    source_field_mismatches,
+    source_matches_bundle_fields,
+    source_matches_result_fields,
+)
 
 
 def workspace_invocation_source_matches(
@@ -182,12 +187,9 @@ def _descriptor_matches_result(
     payload: dict[str, object],
 ) -> bool:
     result = _mapping(payload.get("result"))
-    return (
-        descriptor.get("commit") == result.get("result_commit")
-        and descriptor.get("tree") == result.get("result_tree")
-        and descriptor.get("candidate_sequence") == 1
-        and _descriptor_bundle_matches_result(descriptor, payload)
-    )
+    return source_matches_result_fields(
+        descriptor, result
+    ) and _descriptor_bundle_matches_result(descriptor, payload)
 
 
 def _descriptor_bundle_matches_result(
@@ -197,13 +199,9 @@ def _descriptor_bundle_matches_result(
     if descriptor.get("kind") not in {"node", "candidate"}:
         return True
     bundle = _mapping(payload.get("bundle"))
-    return (
-        descriptor.get("bundle_path") == bundle.get("path")
-        and isinstance(descriptor.get("bundle_sha256"), str)
-        and descriptor.get("bundle_sha256") == bundle.get("sha256")
-        and descriptor.get("bundle_size_bytes") == bundle.get("size_bytes")
-        and descriptor.get("bundle_ref") == _result_ref(payload)
-    )
+    return source_matches_bundle_fields(descriptor, bundle) and descriptor.get(
+        "bundle_ref"
+    ) == _result_ref(payload)
 
 
 def _result_ref(payload: dict[str, object]) -> str | None:

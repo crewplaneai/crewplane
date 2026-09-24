@@ -425,3 +425,27 @@ def test_cleanup_contract_uses_workspace_terminal_outcomes(status: str | None) -
             "resume requires a succeeded workspace"
             in workspace_state_contract_errors(payload, "resume")
         )
+
+
+@pytest.mark.parametrize(
+    ("value", "valid"),
+    [
+        (DELETE, False),
+        (None, False),
+        (True, False),
+        (False, False),
+        (-1, False),
+        (0, False),
+        (1, True),
+        (2, True),
+        (1.0, False),
+        ("1", False),
+    ],
+)
+def test_workspace_reuse_generation_requires_positive_integer(value, valid) -> None:
+    payload = valid_worktree_payload()
+    _set_path(payload, ("workspace", "reuse_generation"), value)
+    errors = workspace_state_contract_errors(payload, "resume")
+    assert errors == (
+        () if valid else ("materialized worktree lacks reuse generation",)
+    )

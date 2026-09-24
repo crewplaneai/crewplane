@@ -7,7 +7,11 @@ from crewplane.architecture.contracts import (
     InvocationCostConfidence,
     ProviderUsageStatus,
 )
-from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS, TokenBucket
+from crewplane.architecture.contracts.invocation import (
+    TOKEN_BUCKETS,
+    TokenBucket,
+    reduce_cost_confidences,
+)
 from crewplane.core.config import AgentConfig
 
 from .usage_types import (
@@ -159,13 +163,6 @@ def classify_provider_usage_status(
 def roll_up_cost_confidence(
     invocation_usages: tuple[InvocationUsage, ...],
 ) -> AggregateCostConfidence:
-    if not invocation_usages:
-        return "none"
-    confidences = {usage.invocation_cost_confidence for usage in invocation_usages}
-    if confidences == {"full"}:
-        return "full"
-    if confidences == {"none"}:
-        return "none"
-    if confidences <= {"full", "partial"} and "partial" in confidences:
-        return "partial"
-    return "mixed"
+    return reduce_cost_confidences(
+        {usage.invocation_cost_confidence for usage in invocation_usages}
+    )

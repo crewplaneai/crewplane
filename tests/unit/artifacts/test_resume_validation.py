@@ -17,6 +17,7 @@ from tests.helpers.resume import (
     attach_workspace_descriptor,
     make_node_state,
     make_plan,
+    make_single_node_plan,
     sha256_hex,
     write_node_state,
     write_result,
@@ -372,7 +373,7 @@ def test_validate_frontier_accepts_generated_file_for_bounded_node_directory(
         ),
     )
 
-    frontier = validate_resume_frontier(source, _single_node_plan(node_id))
+    frontier = validate_resume_frontier(source, make_single_node_plan(node_id))
 
     assert frontier.resumed_node_ids == (node_id,)
 
@@ -432,23 +433,6 @@ def _runtime_command_runner_snapshot() -> dict[str, object]:
             },
         },
     }
-
-
-def _single_node_plan(node_id: str):
-    plan = make_plan()
-    node = plan.nodes[0].model_copy(
-        update={
-            "id": node_id,
-            "dependencies": [],
-        }
-    )
-    return plan.model_copy(
-        update={
-            "execution_order": [node_id],
-            "nodes": [node],
-            "dependency_graph": [],
-        }
-    )
 
 
 @pytest.mark.parametrize(

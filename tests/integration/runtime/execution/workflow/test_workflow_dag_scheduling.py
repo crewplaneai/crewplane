@@ -21,10 +21,6 @@ from crewplane.core.preflight import (
     signature_for_payload,
 )
 from crewplane.core.preflight.models import ArtifactContract
-from crewplane.core.preflight.runtime_config import (
-    RuntimeAgentConfigSnapshot,
-    runtime_agent_signature_payload,
-)
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
@@ -47,21 +43,7 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
     MockAgentInvoker,
     execute_workflow,
 )
-
-
-def _agent_signature(
-    agent_config_key: str,
-    agent_payload: object,
-    resolved_model: str | None,
-) -> str:
-    agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(agent_payload)
-    return signature_for_payload(
-        runtime_agent_signature_payload(
-            agent_config_key,
-            agent_snapshot,
-            resolved_model,
-        )
-    )
+from tests.integration.runtime.signature_support import build_agent_signature
 
 
 class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
@@ -218,7 +200,9 @@ class WorkflowDagSchedulingTests(unittest.IsolatedAsyncioTestCase):
                 task_id="alpha_executor_0",
                 agent_config_key="alpha",
                 invoker_alias="mock",
-                agent_config_signature=_agent_signature("alpha", agent_payload, None),
+                agent_config_signature=build_agent_signature(
+                    "alpha", agent_payload, None
+                ),
                 invoker_config_signature=signature_for_payload(invoker_payload),
             )
             first = PreflightExecutionNode(

@@ -6,7 +6,11 @@ from typing import Literal
 from crewplane.architecture.contracts.execution_status import (
     TERMINAL_WORKSPACE_STATUSES,
 )
-from crewplane.core.value_checks import is_nonnegative_int, is_sha256
+from crewplane.core.value_checks import (
+    is_nonnegative_int,
+    is_sha256,
+    positive_strict_int,
+)
 from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.version import SCHEMA_VERSION
 
@@ -152,7 +156,7 @@ def _validate_worktree_materialization(
     execution = mapping_value(payload.get("execution"))
     if execution.get("effective_cwd") is None:
         return
-    if not _positive_int(workspace.get("reuse_generation")):
+    if positive_strict_int(workspace.get("reuse_generation")) is None:
         errors.append("materialized worktree lacks reuse generation")
     if not is_nonempty_string(execution.get("worktree_git_dir")):
         errors.append("materialized worktree lacks exact Git directory")
@@ -277,6 +281,15 @@ def _validate_invocation_source(
     invocation = mapping_value(payload.get("invocation_source"))
     for field in source_field_mismatches(source, invocation):
         errors.append(f"invocation source {field} mismatch")
+
+
+def has_unresolved_workspace_owner(payload: Mapping[str, object]) -> bool:
+    """Detect persisted blockers without asserting complete evidence validity."""
+    return any(
+        isinstance(evidence := payload.get(field), dict)
+        and evidence.get("status") == "unresolved"
+        for field in ("process_drain", "workspace_mutator")
+    )
 
 
 def _validate_process_drain(
@@ -422,7 +435,3 @@ def _hydrated_resume_placement(
         and isinstance(origin.get("source_workspace"), dict)
         and isinstance(origin.get("source_execution"), dict)
     )
-
-
-def _positive_int(value: object) -> bool:
-    return is_nonnegative_int(value) and value > 0

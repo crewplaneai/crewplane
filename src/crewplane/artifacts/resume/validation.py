@@ -20,6 +20,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.value_checks import optional_strict_int
 from crewplane.core.workflow.keywords import FINDINGS_ARTIFACT_KEYS
 
 from ..generated_files.paths import generated_file_path_belongs_to_node
@@ -194,18 +195,12 @@ def _workspace_state_artifact_resume_descriptor(
     return {
         "relative_path": _json_string(artifact.get("relative_path")),
         "sha256": _json_string(artifact.get("resume_sha256")),
-        "size_bytes": _json_int(artifact.get("resume_size_bytes")),
+        "size_bytes": optional_strict_int(artifact.get("resume_size_bytes")),
     }
 
 
 def _json_string(value: JsonValue | None) -> str | None:
     return value if isinstance(value, str) else None
-
-
-def _json_int(value: JsonValue | None) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
 
 
 def _node_state_matches_context(
