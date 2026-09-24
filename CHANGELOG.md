@@ -4,6 +4,12 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Made concurrency and shutdown regressions reliable on slow CI runners,
+  rejected unrelated failures in safety tests, and bounded test subprocesses
+  with cleanup on failure.
+
 ## [0.3.4] - 2026-09-23
 
 ### Added

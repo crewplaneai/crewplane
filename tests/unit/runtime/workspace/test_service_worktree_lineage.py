@@ -155,10 +155,20 @@ def test_worktree_reviewer_workspace_rejects_branch_attachment(
     assert not workspace_path.exists()
 
 
-@pytest.mark.parametrize("mutation", ("git_policy", "protected_ref"))
+@pytest.mark.parametrize(
+    ("mutation", "error_message"),
+    [
+        (
+            "git_policy",
+            r"Workspace common Git config contains newly unsupported keys: core\.attributesfile\.",
+        ),
+        ("protected_ref", "Workspace provider modified protected crewplane Git refs"),
+    ],
+)
 def test_reviewer_integrity_mutation_fails_and_retains_evidence(
     tmp_path: Path,
     mutation: str,
+    error_message: str,
 ) -> None:
     if shutil.which("git") is None:
         pytest.skip("git is unavailable")
@@ -182,9 +192,11 @@ def test_reviewer_integrity_mutation_fails_and_retains_evidence(
         protected_ref = prepared.worktree_capture.protected_refs.scopes[0]
         run_git_text(repo, "update-ref", protected_ref, "HEAD")
 
-    with pytest.raises(RuntimeError):
-        prepared.mark_succeeded()
-    prepared.mark_failed("reviewer integrity mutation")
+    try:
+        with pytest.raises(RuntimeError, match=error_message):
+            prepared.mark_succeeded()
+    finally:
+        prepared.mark_failed("reviewer integrity mutation")
 
     state = read_json_object(prepared.state_path)
     assert state["status"] == "failed"

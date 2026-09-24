@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.processes import run_process
+
 ROOT = Path(__file__).resolve().parents[3]
 ACTIONLINT_SCRIPT = ROOT / "scripts" / "actionlint.sh"
 
@@ -23,7 +25,7 @@ def run_script_function(
     arguments: tuple[str, ...],
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_process(
         [
             "/bin/bash",
             "-c",
@@ -34,9 +36,7 @@ def run_script_function(
             *arguments,
         ],
         check=False,
-        capture_output=True,
         env=env,
-        text=True,
     )
 
 

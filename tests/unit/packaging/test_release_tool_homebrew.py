@@ -11,6 +11,7 @@ import pytest
 
 from scripts.release import homebrew, state
 from tests.helpers import isolated_git as _isolated_git_support
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.unit.packaging.release_tool_support import (
     constant,
     matching_pypi,
@@ -128,6 +129,7 @@ def git(root: Path, *arguments: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     ).stdout.strip()
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+
 
 def cache_workspace_path(tmp_path: Path, family: str, run_key: str, name: str) -> Path:
     return tmp_path / family / "repo-1" / run_key / name
@@ -25,5 +27,6 @@ def run_cleanup_git(repo: Path, *args: str) -> str:
         ["git", "-C", repo.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.decode("utf-8", errors="replace")

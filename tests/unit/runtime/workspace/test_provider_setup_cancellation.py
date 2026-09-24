@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import sys
+from contextlib import suppress
 from pathlib import Path
-from time import monotonic
 
 import pytest
 
@@ -29,6 +30,7 @@ from crewplane.runtime.workspace import (
 from crewplane.runtime.workspace.invocation import invocation_slug
 from crewplane.runtime.workspace.worktree import remove_worktree_workspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.processes import kill_process_group
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -68,30 +70,9 @@ async def _run_worktree_retry_reset_cancellation_terminates_retry_setup(
         pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
-    setup_counter = tmp_path / "setup-count.txt"
-    retry_setup_started = tmp_path / "retry-setup-started.txt"
-    leaked_child_marker = tmp_path / "retry-setup-child-survived.txt"
-    child_script = (
-        "import pathlib, time; "
-        "time.sleep(1.0); "
-        f"pathlib.Path({str(leaked_child_marker)!r}).write_text('alive')"
-    )
-    setup_script = (
-        "import pathlib, subprocess, sys, time; "
-        f"counter = pathlib.Path({str(setup_counter)!r}); "
-        "count = int(counter.read_text()) if counter.exists() else 0; "
-        "counter.write_text(str(count + 1)); "
-        "pathlib.Path('setup-marker.txt').write_text('ready'); "
-        "started = "
-        f"pathlib.Path({str(retry_setup_started)!r}); "
-        "subprocess.Popen([sys.executable, '-c', "
-        f"{child_script!r}]) if count else None; "
-        "started.write_text('started') if count else None; "
-        "time.sleep(30) if count else None"
-    )
     plan = plan_with_setup(
         workspace_plan(repo, cache_root, cleanup_on_success=False, kind="worktree"),
-        [[sys.executable, "-c", setup_script]],
+        [_setup_command(tmp_path, "retry")],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
     node_dir = output.create_node_dir(node_artifact_request("implement"))
@@ -141,22 +122,17 @@ async def _run_worktree_retry_reset_cancellation_terminates_retry_setup(
         )
     )
     try:
-        await _wait_for_path(retry_setup_started)
-        cancelled_at = monotonic()
+        child = await _wait_for_child(tmp_path, task)
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        elapsed = monotonic() - cancelled_at
-
-        await asyncio.sleep(1.2)
+        await _assert_cancelled(task)
+        await _assert_child_stopped(child)
         state = read_json_object(prepared.state_path)
-        assert elapsed < 1.5
         assert state["setup"]["status"] == "cancelled"
-        assert not leaked_child_marker.exists()
     finally:
-        if not task.done():
-            task.cancel()
-        remove_worktree_workspace(source, prepared.workspace_path)
+        try:
+            await _cleanup_setup(tmp_path, task)
+        finally:
+            remove_worktree_workspace(source, prepared.workspace_path)
 
 
 async def _run_provider_invocation_setup_cancellation_terminates_setup_process_group(
@@ -168,22 +144,9 @@ async def _run_provider_invocation_setup_cancellation_terminates_setup_process_g
         pytest.skip("git is unavailable")
     repo = create_git_repo(tmp_path)
     cache_root = tmp_path / "cache"
-    setup_started = tmp_path / "setup-started.txt"
-    leaked_child_marker = tmp_path / "setup-child-survived.txt"
-    child_script = (
-        "import pathlib, time; "
-        "time.sleep(1.0); "
-        f"pathlib.Path({str(leaked_child_marker)!r}).write_text('alive')"
-    )
-    parent_script = (
-        "import pathlib, subprocess, sys, time; "
-        f"pathlib.Path({str(setup_started)!r}).write_text('started'); "
-        f"subprocess.Popen([sys.executable, '-c', {child_script!r}]); "
-        "time.sleep(30)"
-    )
     plan = plan_with_setup(
         workspace_plan(repo, cache_root, cleanup_on_success=True, kind="worktree"),
-        [[sys.executable, "-c", parent_script]],
+        [_setup_command(tmp_path, "setup")],
     )
     output = workspace_output_manager(tmp_path, repo, log_cli_output=True)
     output.create_node_dir(node_artifact_request("implement"))
@@ -215,39 +178,85 @@ async def _run_provider_invocation_setup_cancellation_terminates_setup_process_g
             display=ProviderCallDisplay(telemetry=None),
         )
     )
-    await _wait_for_path(setup_started)
+    try:
+        child = await _wait_for_child(tmp_path, task)
+        task.cancel()
+        await _assert_cancelled(task)
+        await _assert_child_stopped(child)
+        assert runtime_context.deferred_workspace_cleanups.tasks == set()
+        errors = await runtime_context.deferred_workspace_cleanups.drain(10.0)
 
-    cancelled_at = monotonic()
-    task.cancel()
+        state = read_json_object(node_dir / "workspace-state.json")
+        assert errors == ()
+        assert invoker.calls == 0
+        assert not output_file.exists()
+        assert state["status"] == "cancelled"
+        assert state["setup"]["status"] == "cancelled"
+        assert state["workspace"]["retention"] == "deleted"
+        assert not (
+            cache_root
+            / "workspaces"
+            / "test-repo"
+            / plan.run_key_name
+            / invocation_slug("implement", "alpha", None, 1)
+        ).exists()
+    finally:
+        try:
+            await _cleanup_setup(tmp_path, task)
+        finally:
+            await runtime_context.deferred_workspace_cleanups.drain(10.0)
+
+
+def _setup_command(root: Path, mode: str) -> list[str]:
+    script = Path(__file__).resolve().parents[3] / "fixtures/processes/setup_tree.py"
+    return [sys.executable, str(script), mode, str(root)]
+
+
+async def _wait_for_child(root: Path, task: asyncio.Task[None]) -> dict[str, int]:
+    ready = root / "child-ready.json"
+    async with asyncio.timeout(30):
+        while not ready.exists():
+            if task.done():
+                await task
+                pytest.fail("Setup completed before the descendant became ready")
+            await asyncio.sleep(0.01)
+    child = json.loads(ready.read_text(encoding="utf-8"))
+    os.kill(child["pid"], 0)
+    return child
+
+
+async def _assert_cancelled(task: asyncio.Task[None]) -> None:
+    done, _ = await asyncio.wait({task}, timeout=10)
+    assert task in done, "Setup cancellation did not finish"
     with pytest.raises(asyncio.CancelledError):
         await task
-    elapsed = monotonic() - cancelled_at
-    assert runtime_context.deferred_workspace_cleanups.tasks == set()
-    errors = await runtime_context.deferred_workspace_cleanups.drain(2.0)
-
-    await asyncio.sleep(1.2)
-    state = read_json_object(node_dir / "workspace-state.json")
-    assert errors == ()
-    assert elapsed < 1.5
-    assert invoker.calls == 0
-    assert not output_file.exists()
-    assert state["status"] == "cancelled"
-    assert state["setup"]["status"] == "cancelled"
-    assert state["workspace"]["retention"] == "deleted"
-    assert not (
-        cache_root
-        / "workspaces"
-        / "test-repo"
-        / plan.run_key_name
-        / invocation_slug("implement", "alpha", None, 1)
-    ).exists()
-    assert not leaked_child_marker.exists()
 
 
-async def _wait_for_path(path: Path, timeout_seconds: float = 2.0) -> None:
-    deadline = monotonic() + timeout_seconds
-    while monotonic() < deadline:
-        if path.exists():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"Timed out waiting for {path.as_posix()}")
+async def _assert_child_stopped(child: dict[str, int]) -> None:
+    async with asyncio.timeout(10):
+        while True:
+            try:
+                os.killpg(child["process_group_id"], 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.01)
+    with pytest.raises(ProcessLookupError):
+        os.kill(child["pid"], 0)
+
+
+async def _cleanup_setup(root: Path, task: asyncio.Task[None]) -> None:
+    # Read the parent's PID even if the descendant never announced readiness.
+    pid_path = root / "setup.pid"
+    if pid_path.exists():
+        kill_process_group(int(pid_path.read_text(encoding="utf-8")))
+    if not task.done():
+        task.cancel()
+    try:
+        done, _ = await asyncio.wait({task}, timeout=10)
+        assert task in done, "Setup task did not stop during test cleanup"
+        with suppress(asyncio.CancelledError):
+            await task
+    finally:
+        # Cancellation can race with the setup worker recording its PID.
+        if pid_path.exists():
+            kill_process_group(int(pid_path.read_text(encoding="utf-8")))

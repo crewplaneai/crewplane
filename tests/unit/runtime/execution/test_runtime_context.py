@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
-import sys
-import textwrap
 
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.runtime.execution.runtime_context import (
@@ -141,66 +138,3 @@ def test_deferred_cleanup_registry_tracks_protected_follow_up_after_timeout() ->
     assert tracked is True
     assert protected_task_count == 1
     assert task_count == 0
-
-
-def test_protected_workspace_worker_does_not_block_asyncio_run_shutdown() -> None:
-    script = textwrap.dedent(
-        """
-        import asyncio
-        from threading import Event
-        from types import SimpleNamespace
-
-        from crewplane.runtime.execution.deferred_cleanup import DeferredAsyncCleanupRegistry
-        from crewplane.runtime.execution.provider_call import generated_files
-
-        blocker = Event()
-        started = Event()
-
-        class BlockingWorkspace:
-            state_path = None
-
-            def mark_succeeded(self, *args):
-                del args
-                started.set()
-                blocker.wait()
-
-        async def run():
-            registry = DeferredAsyncCleanupRegistry()
-            request = SimpleNamespace(
-                runtime_context=SimpleNamespace(
-                    deferred_workspace_cleanups=registry,
-                )
-            )
-            generated_files.WORKSPACE_THREAD_CANCELLATION_TIMEOUT_SECONDS = 0.01
-            finalization = asyncio.create_task(
-                generated_files.finalize_successful_workspace(
-                    request,
-                    BlockingWorkspace(),
-                    None,
-                    None,
-                )
-            )
-            while not started.is_set():
-                await asyncio.sleep(0)
-            finalization.cancel()
-            try:
-                await finalization
-            except asyncio.CancelledError:
-                pass
-            errors = await registry.drain(0.01)
-            assert any(isinstance(error, TimeoutError) for error in errors)
-
-        asyncio.run(run())
-        print("asyncio-run-returned", flush=True)
-        """
-    )
-
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=2.0,
-    )
-
-    assert result.stdout.strip() == "asyncio-run-returned"

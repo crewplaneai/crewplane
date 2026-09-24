@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -101,25 +102,35 @@ def test_pi_subprocess_receives_literal_stdin_and_publishes_only_stdout(
     assert usages[0].visible_estimate_is_lower_bound
 
 
-@pytest.mark.parametrize("exit_code, stdout", [(0, " \n"), (7, "partial answer")])
+@pytest.mark.parametrize(
+    ("exit_code", "stdout", "error_message"),
+    [
+        (0, " \n", r"output extraction failed: missing$"),
+        (7, "partial answer", "Exit code 7"),
+    ],
+    ids=["blank-answer", "failed-exit"],
+)
 def test_pi_never_publishes_blank_or_failed_answers(
-    tmp_path, exit_code, stdout
+    tmp_path: Path, exit_code: int, stdout: str, error_message: str
 ) -> None:
     harness = tmp_path / "pi-double.py"
     harness.write_text(
         "import sys\n"
+        "from pathlib import Path\n"
+        "Path('provider-started').touch()\n"
         f"print({stdout!r})\n"
         "print('permission denied', file=sys.stderr)\n"
         f"sys.exit({exit_code})\n"
     )
     config = AgentConfig(cli_cmd=[sys.executable, str(harness)], provider_kind="pi")
     output = tmp_path / "answer.md"
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match=error_message):
         asyncio.run(
             CliInvokerAdapter()
             .create_invoker(Config(version=SCHEMA_VERSION, agents={"pi": config}))
             .invoke(config, None, "prompt", output, tmp_path)
         )
+    assert (tmp_path / "provider-started").is_file()
     assert not output.exists()
 
 

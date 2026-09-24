@@ -103,6 +103,7 @@ def test_selection_control_module_runs_without_reimport_warning(tmp_path: Path) 
         check=False,
         capture_output=True,
         text=True,
+        timeout=30,
     )
 
     assert result.returncode == 0, result.stderr

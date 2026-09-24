@@ -1,10 +1,10 @@
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
+from tests.helpers.processes import run_process
 from tests.unit.packaging.release_surfaces_support import (
     AUTHORED_VERSION,
     PACKAGE_NAME,
@@ -94,17 +94,11 @@ def test_npm_postinstall_bootstraps_verified_uv_archive(
     )
     env.pop("CREWPLANE_INSTALL_HOME")
 
-    result = subprocess.run(
-        [
-            node,
-            "-e",
-            npm_bootstrap_command(node_platform, node_arch, True, node_libc),
-        ],
+    result = run_process(
+        [node, "-e", npm_bootstrap_command(node_platform, node_arch, True, node_libc)],
         cwd=ROOT,
         env=env,
         check=False,
-        capture_output=True,
-        text=True,
     )
 
     assert result.returncode == 0, result.stderr
@@ -135,13 +129,11 @@ def test_npm_postinstall_rejects_uv_archive_checksum_mismatch(
     )
     env.pop("CREWPLANE_INSTALL_HOME")
 
-    result = subprocess.run(
+    result = run_process(
         [node, "-e", npm_bootstrap_command("linux", "x64", False)],
         cwd=ROOT,
         env=env,
         check=False,
-        capture_output=True,
-        text=True,
     )
 
     assert result.returncode == 1
@@ -187,7 +179,7 @@ def test_npm_postinstall_defaults_to_min_supported_python_without_override(
     env["CREWPLANE_UV_BIN"] = str(fake_uv)
     env["CREWPLANE_FAKE_UV_LOG"] = str(fake_uv_log)
 
-    subprocess.run(
+    run_process(
         [node, str(repo_path("packaging", "npm", "scripts", "postinstall.js"))],
         cwd=ROOT,
         env=env,
@@ -234,20 +226,15 @@ def test_npm_postinstall_rejects_native_windows_before_uv_lookup(
     env["CREWPLANE_UV_BIN"] = str(fake_uv)
     env["CREWPLANE_FAKE_UV_LOG"] = str(fake_uv_log)
 
-    result = subprocess.run(
+    result = run_process(
         [
             node,
             "-e",
-            (
-                "Object.defineProperty(process, 'platform', { value: 'win32' });"
-                "require('./packaging/npm/scripts/postinstall.js');"
-            ),
+            "Object.defineProperty(process, 'platform', { value: 'win32' });require('./packaging/npm/scripts/postinstall.js');",
         ],
         cwd=ROOT,
         env=env,
         check=False,
-        capture_output=True,
-        text=True,
     )
 
     assert result.returncode == 1
@@ -260,19 +247,14 @@ def test_npm_bin_rejects_native_windows_before_venv_lookup() -> None:
     if node is None:
         pytest.skip("node is required to execute the npm bin regression")
 
-    result = subprocess.run(
+    result = run_process(
         [
             node,
             "-e",
-            (
-                "Object.defineProperty(process, 'platform', { value: 'win32' });"
-                "require('./packaging/npm/bin/crewplane.js');"
-            ),
+            "Object.defineProperty(process, 'platform', { value: 'win32' });require('./packaging/npm/bin/crewplane.js');",
         ],
         cwd=ROOT,
         check=False,
-        capture_output=True,
-        text=True,
     )
 
     assert result.returncode == 1

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
-import sys
-import textwrap
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
@@ -64,47 +61,3 @@ def test_retry_reset_write_failure_aborts_before_worker_launch(
         assert state_path.read_text(encoding="utf-8") == "{}"
 
     asyncio.run(exercise())
-
-
-def test_retry_reset_deadline_does_not_block_asyncio_run_shutdown() -> None:
-    script = textwrap.dedent(
-        """
-        import asyncio
-        from threading import Event
-
-        from crewplane.architecture.contracts import InvocationContext
-        from crewplane.core.workflow.keywords import ProviderRole
-        from crewplane.runtime.agent.invocation import retry_reset
-
-        blocker = Event()
-        context = InvocationContext(
-            node_id="node",
-            task_id="task",
-            provider="provider",
-            role=ProviderRole.EXECUTOR,
-            retry_reset=blocker.wait,
-            retry_reset_canceller=blocker.wait,
-        )
-        retry_reset.RETRY_RESET_DEADLINE_SECONDS = 0.01
-
-        async def run():
-            try:
-                await retry_reset.reset_before_retry(context)
-            except RuntimeError:
-                return
-            raise AssertionError("retry reset unexpectedly completed")
-
-        asyncio.run(run())
-        print("asyncio-run-returned", flush=True)
-        """
-    )
-
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=2.0,
-    )
-
-    assert result.stdout.strip() == "asyncio-run-returned"

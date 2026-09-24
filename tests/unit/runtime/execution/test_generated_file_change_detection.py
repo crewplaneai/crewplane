@@ -26,6 +26,7 @@ from crewplane.runtime.execution.provider_call.generated_files import (
 from crewplane.runtime.execution.provider_call.types import ProviderOutputPolicy
 from crewplane.runtime.workspace import PreparedWorkspace
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 
 
 def test_shared_project_root_does_not_capture_unclaimed_changes(
@@ -585,4 +586,5 @@ def _run_git(repo: Path, *args: str) -> None:
         ["git", "-C", repo.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )

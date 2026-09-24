@@ -24,6 +24,7 @@ from crewplane.core.workflow.models import (
 )
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 
 
 def workspace_config(workspace: dict[str, object] | None = None) -> Config:
@@ -76,6 +77,7 @@ def git(root: Path, *args: str) -> str:
         ["git", "-C", root.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.decode("utf-8").strip()
 

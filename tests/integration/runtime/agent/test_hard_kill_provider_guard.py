@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from crewplane.artifacts.locks import ResumeLockError, acquire_same_context_lock
+from tests.helpers.processes import kill_process_group
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -26,13 +27,16 @@ def test_hard_killed_parent_blocks_restart_while_provider_is_alive(
     parent = subprocess.Popen(
         [
             sys.executable,
-            "-c",
-            _PARENT_SCRIPT,
+            "-m",
+            "tests.helpers.provider_guard_scenario",
+            "running",
             str(tmp_path),
             WORKFLOW_NAME,
             WORKFLOW_IDENTITY,
             WORKFLOW_SIGNATURE,
         ],
+        cwd=Path(__file__).resolve().parents[4],
+        start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
@@ -55,16 +59,7 @@ def test_hard_killed_parent_blocks_restart_while_provider_is_alive(
 
         os.kill(provider_pid, 0)
     finally:
-        if parent.poll() is None:
-            os.kill(parent.pid, signal.SIGKILL)
-            parent.wait(timeout=5)
-        if provider_pid is None:
-            provider_pid = _recorded_provider_pid(tmp_path)
-        if provider_pid is not None:
-            with suppress(ProcessLookupError):
-                os.killpg(provider_pid, signal.SIGKILL)
-        if parent.stderr is not None:
-            parent.stderr.close()
+        _cleanup_parent_and_provider(parent, tmp_path)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Crewplane supports POSIX hosts")
@@ -75,24 +70,23 @@ def test_completed_provider_drains_descendant_before_publishing_exit(
     parent = subprocess.Popen(
         [
             sys.executable,
-            "-c",
-            _DESCENDANT_PARENT_SCRIPT,
+            "-m",
+            "tests.helpers.provider_guard_scenario",
+            "descendant",
             str(tmp_path),
             WORKFLOW_NAME,
             WORKFLOW_IDENTITY,
             WORKFLOW_SIGNATURE,
-            str(descendant_pid_path),
         ],
+        cwd=Path(__file__).resolve().parents[4],
+        start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
     )
-    process_group_id: int | None = None
     descendant_pid: int | None = None
     try:
-        state_path = _wait_for_exited_provider_state(tmp_path, parent)
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        process_group_id = state["process_group_id"]
+        _wait_for_exited_provider_state(tmp_path, parent)
         descendant_pid = _wait_for_recorded_pid(descendant_pid_path, parent)
         with pytest.raises(ProcessLookupError):
             os.kill(descendant_pid, 0)
@@ -109,21 +103,11 @@ def test_completed_provider_drains_descendant_before_publishing_exit(
         )
         lock.release()
     finally:
-        if parent.poll() is None:
-            os.kill(parent.pid, signal.SIGKILL)
-            parent.wait(timeout=5)
-        if process_group_id is not None:
-            with suppress(ProcessLookupError):
-                os.killpg(process_group_id, signal.SIGKILL)
-        elif descendant_pid is not None:
-            with suppress(ProcessLookupError):
-                os.kill(descendant_pid, signal.SIGKILL)
-        if parent.stderr is not None:
-            parent.stderr.close()
+        _cleanup_parent_and_provider(parent, tmp_path)
 
 
 def _wait_for_provider_state(tmp_path: Path, parent: subprocess.Popen[str]) -> Path:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         states = tuple(
             (tmp_path / "execution-stages").glob(
@@ -136,7 +120,7 @@ def _wait_for_provider_state(tmp_path: Path, parent: subprocess.Popen[str]) -> P
             if state_path.stat().st_nlink == 1 and not any(temporary_paths):
                 return state_path
         if parent.poll() is not None:
-            stderr = parent.stderr.read() if parent.stderr is not None else ""
+            stderr = parent.communicate(timeout=10)[1]
             raise AssertionError(f"parent exited before provider launch: {stderr}")
         time.sleep(0.02)
     raise TimeoutError("provider process state was not published")
@@ -146,7 +130,7 @@ def _wait_for_exited_provider_state(
     tmp_path: Path,
     parent: subprocess.Popen[str],
 ) -> Path:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         states = tuple(
             (tmp_path / "execution-stages").glob(
@@ -158,7 +142,7 @@ def _wait_for_exited_provider_state(
             if payload["status"] == "exited":
                 return states[0]
         if parent.poll() is not None:
-            stderr = parent.stderr.read() if parent.stderr is not None else ""
+            stderr = parent.communicate(timeout=10)[1]
             raise AssertionError(f"parent exited before provider completion: {stderr}")
         time.sleep(0.02)
     raise TimeoutError("provider process exit state was not published")
@@ -168,14 +152,14 @@ def _wait_for_recorded_pid(
     pid_path: Path,
     parent: subprocess.Popen[str],
 ) -> int:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
             return int(pid_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             pass
         if parent.poll() is not None:
-            stderr = parent.stderr.read() if parent.stderr is not None else ""
+            stderr = parent.communicate(timeout=10)[1]
             raise AssertionError(f"parent exited before descendant launch: {stderr}")
         time.sleep(0.02)
     raise TimeoutError("provider descendant PID was not recorded")
@@ -190,136 +174,20 @@ def _recorded_provider_pid(tmp_path: Path) -> int | None:
     return int(json.loads(states[0].read_text(encoding="utf-8"))["pid"])
 
 
-_PARENT_SCRIPT = r"""
-import asyncio
-import sys
-from pathlib import Path
-
-from crewplane.artifacts.locks import acquire_same_context_lock
-from crewplane.artifacts.manager import OutputManager
-from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.invocation.command import run_command_once
-from crewplane.runtime.execution.activity.events import InvocationMetadata
-from crewplane.runtime.execution.provider_call.display import ProviderCallDisplay
-from crewplane.runtime.execution.provider_call.events import build_invocation_context
-from crewplane.runtime.execution.publication_registry import RuntimePublicationRegistry
-
-state_dir = Path(sys.argv[1])
-workflow_name = sys.argv[2]
-workflow_identity = sys.argv[3]
-workflow_signature = sys.argv[4]
-lock = acquire_same_context_lock(
-    state_dir,
-    workflow_name,
-    workflow_identity,
-    workflow_signature,
-    grace_seconds=0,
-)
-output = OutputManager(workflow_name, base_dir=state_dir)
-lock.update_run(output.run_id, output.run_key_name)
-context, _ = build_invocation_context(
-    telemetry=None,
-    metadata=InvocationMetadata(
-        node_id="build.node",
-        provider="generic",
-        role=ProviderRole.EXECUTOR,
-        model=None,
-        task_id="generic_executor_0",
-        audit_round_num=None,
-        round_num=1,
-        output_file=output.stages_dir / "provider-output.md",
-        log_file=None,
-    ),
-    display=ProviderCallDisplay(telemetry=None),
-    output=output,
-    runtime_publications=RuntimePublicationRegistry(),
-)
-asyncio.run(
-    run_command_once(
-        cmd=[sys.executable, "-c", "import time; time.sleep(60)"],
-        stdin_data=None,
-        log_file=None,
-        append_log=False,
-        log_header=None,
-        cwd=state_dir,
-        invocation_context=context,
-        idle_timeout_seconds=None,
-    )
-)
-"""
-
-
-_DESCENDANT_PARENT_SCRIPT = r"""
-import asyncio
-import subprocess
-import sys
-import time
-from pathlib import Path
-
-from crewplane.artifacts.locks import acquire_same_context_lock
-from crewplane.artifacts.manager import OutputManager
-from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.agent.invocation.command import run_command_once
-from crewplane.runtime.execution.activity.events import InvocationMetadata
-from crewplane.runtime.execution.provider_call.display import ProviderCallDisplay
-from crewplane.runtime.execution.provider_call.events import build_invocation_context
-from crewplane.runtime.execution.publication_registry import RuntimePublicationRegistry
-
-state_dir = Path(sys.argv[1])
-workflow_name = sys.argv[2]
-workflow_identity = sys.argv[3]
-workflow_signature = sys.argv[4]
-descendant_pid_path = Path(sys.argv[5])
-lock = acquire_same_context_lock(
-    state_dir,
-    workflow_name,
-    workflow_identity,
-    workflow_signature,
-    grace_seconds=0,
-)
-output = OutputManager(workflow_name, base_dir=state_dir)
-lock.update_run(output.run_id, output.run_key_name)
-context, _ = build_invocation_context(
-    telemetry=None,
-    metadata=InvocationMetadata(
-        node_id="build.node",
-        provider="generic",
-        role=ProviderRole.EXECUTOR,
-        model=None,
-        task_id="generic_executor_0",
-        audit_round_num=None,
-        round_num=1,
-        output_file=output.stages_dir / "provider-output.md",
-        log_file=None,
-    ),
-    display=ProviderCallDisplay(telemetry=None),
-    output=output,
-    runtime_publications=RuntimePublicationRegistry(),
-)
-provider_script = r'''\
-import subprocess
-import sys
-from pathlib import Path
-
-descendant = subprocess.Popen(
-    [sys.executable, "-c", "import time; time.sleep(60)"],
-    stdin=subprocess.DEVNULL,
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-)
-Path(sys.argv[1]).write_text(str(descendant.pid), encoding="utf-8")
-'''
-asyncio.run(
-    run_command_once(
-        cmd=[sys.executable, "-c", provider_script, str(descendant_pid_path)],
-        stdin_data=None,
-        log_file=None,
-        append_log=False,
-        log_header=None,
-        cwd=state_dir,
-        invocation_context=context,
-        idle_timeout_seconds=None,
-    )
-)
-time.sleep(60)
-"""
+def _cleanup_parent_and_provider(parent: subprocess.Popen[str], root: Path) -> None:
+    try:
+        kill_process_group(parent.pid)
+        parent.wait(timeout=10)
+    finally:
+        try:
+            provider_pid = _recorded_provider_pid(root)
+            if provider_pid is not None:
+                kill_process_group(provider_pid)
+            descendant_path = root / "provider-descendant.pid"
+            if descendant_path.exists():
+                descendant_pid = int(descendant_path.read_text(encoding="utf-8"))
+                with suppress(ProcessLookupError):
+                    kill_process_group(os.getpgid(descendant_pid))
+        finally:
+            if parent.stderr is not None:
+                parent.stderr.close()

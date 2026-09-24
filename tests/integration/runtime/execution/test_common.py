@@ -3,7 +3,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import textwrap
 from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, cast
@@ -206,45 +205,11 @@ def test_large_runtime_recovery_is_disk_backed_and_closed(
 
 
 def test_runtime_recovery_descriptor_count_is_bounded() -> None:
-    script = textwrap.dedent(
-        """
-        import hashlib
-        import resource
-        import tempfile
-        from pathlib import Path
-
-        from crewplane.runtime.execution.publication_registry import (
-            RuntimePublicationRegistry,
-        )
-
-        _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
-        soft_limit = (
-            64
-            if hard_limit == resource.RLIM_INFINITY
-            else min(64, hard_limit)
-        )
-        if soft_limit < 32:
-            raise RuntimeError("Descriptor limit is too low for this regression test.")
-        resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
-        with tempfile.TemporaryDirectory() as root:
-            root_path = Path(root)
-            source = root_path / "source.bin"
-            source.write_bytes(b"x")
-            signature = (1, hashlib.sha256(b"x").hexdigest())
-            registry = RuntimePublicationRegistry()
-            for index in range(128):
-                registry.publish(
-                    root_path / f"publication-{index}.bin",
-                    signature,
-                    recovery_source=source,
-                )
-            registry.close()
-        print(index + 1)
-        """
-    )
 
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-m", "tests.helpers.descriptor_limit"],
+        cwd=Path(__file__).resolve().parents[4],
+        timeout=30,
         check=False,
         capture_output=True,
         text=True,

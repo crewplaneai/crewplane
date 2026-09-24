@@ -28,6 +28,7 @@ from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
 from crewplane.runtime.agent.usage_costs import derive_configured_cost
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.working_directory import temporary_project_cwd
 
 
@@ -119,6 +120,7 @@ def _run_git(root: Path, *args: str) -> None:
         ["git", "-C", root.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
 
 

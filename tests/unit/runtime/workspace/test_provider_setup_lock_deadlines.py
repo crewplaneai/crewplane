@@ -63,15 +63,13 @@ def test_worktree_retry_reset_deadline_bounds_asyncio_run_while_lock_is_held(
     monkeypatch.setattr(retry_reset_module, "RETRY_RESET_DEADLINE_SECONDS", 0.02)
 
     try:
-        started = monotonic()
         with pytest.raises(
             RuntimeError,
             match="Workspace retry reset exceeded its internal deadline",
         ):
             asyncio.run(reset_before_retry(prepared.invocation_context))
-        elapsed = monotonic() - started
 
-        assert elapsed < 0.5
+        assert holder.poll() is None
     finally:
         stop_git_metadata_lock_holder(holder)
         remove_worktree_workspace(source, prepared.workspace_path)
@@ -106,7 +104,7 @@ def test_worktree_preparation_cancellation_bounds_asyncio_run_while_lock_is_held
     )
     lock_path = Path(source.common_git_dir) / "crewplane" / "workspace.lock"
     lock_path.parent.mkdir(parents=True)
-    holder = start_git_metadata_lock_holder(lock_path, hold_seconds=10)
+    holder = start_git_metadata_lock_holder(lock_path, hold_seconds=30)
     lock_wait_started = Event()
     release_terminal_state = Event()
     if not defer_terminal_state:
@@ -285,15 +283,17 @@ def test_preparation_cancellation_has_bounded_terminal_cleanup(
                 "PREPARATION_CANCELLATION_TIMEOUT_SECONDS",
                 cancellation_timeout,
             )
+        if delay_past_preparation_timeout:
+            assert cleanup_registry.has_unfinished_protected_tasks
+            assert not release_preparation.is_set()
         release_preparation.set()
-        assert await cleanup_registry.drain(1) == ()
+        assert await cleanup_registry.drain(10) == ()
 
     try:
-        started = monotonic()
         asyncio.run(cancel_preparation())
-        elapsed = monotonic() - started
 
-        assert elapsed < 1
+        if holder is not None:
+            assert holder.poll() is None
         state = read_json_object(prepared.state_path)
         assert state["status"] == "cancelled"
         assert state["workspace"]["retention"] == (

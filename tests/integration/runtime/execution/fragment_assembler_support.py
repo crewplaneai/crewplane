@@ -22,6 +22,7 @@ from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
 )
@@ -343,5 +344,6 @@ def run_fragment_git(repo: Path, *args: str) -> str:
         ["git", "-C", repo.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.decode("utf-8").strip()

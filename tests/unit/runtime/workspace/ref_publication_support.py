@@ -11,6 +11,7 @@ from crewplane.runtime.workspace.worktree import (
     remove_worktree_workspace,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -76,5 +77,6 @@ def ref_oid(repo: Path, ref_name: str) -> str | None:
         check=False,
         capture_output=True,
         text=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.strip() if result.returncode == 0 else None
