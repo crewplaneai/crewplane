@@ -4,6 +4,10 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added YAML parser fuzzing to CI, with failing inputs saved as artifacts for diagnosis.
+
 ### Fixed
 
 - Made concurrency and shutdown regressions reliable on slow CI runners,
