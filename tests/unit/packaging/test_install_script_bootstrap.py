@@ -1,10 +1,10 @@
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
+from tests.helpers.processes import run_process
 from tests.unit.packaging.release_surfaces_support import (
     AUTHORED_VERSION,
     PACKAGE_NAME,
@@ -78,13 +78,8 @@ def test_install_script_bootstraps_verified_uv_archive(
         libc,
     )
 
-    result = subprocess.run(
-        [shell, str(repo_path("install.sh"))],
-        cwd=ROOT,
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
+    result = run_process(
+        [shell, str(repo_path("install.sh"))], cwd=ROOT, env=env, check=False
     )
 
     assert result.returncode == 0, result.stderr
@@ -111,13 +106,8 @@ def test_install_script_rejects_uv_archive_checksum_mismatch(tmp_path: Path) -> 
         "gnu",
     )
 
-    result = subprocess.run(
-        [shell, str(repo_path("install.sh"))],
-        cwd=ROOT,
-        env=env,
-        check=False,
-        capture_output=True,
-        text=True,
+    result = run_process(
+        [shell, str(repo_path("install.sh"))], cwd=ROOT, env=env, check=False
     )
 
     assert result.returncode == 1
@@ -179,14 +169,7 @@ def test_install_script_only_pins_an_explicit_version_override(
     if version_override is not None:
         env["CREWPLANE_VERSION"] = version_override
 
-    subprocess.run(
-        ["sh", str(repo_path("install.sh"))],
-        cwd=ROOT,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    run_process(["sh", str(repo_path("install.sh"))], cwd=ROOT, env=env, check=True)
 
     calls = [
         line.split("\t")

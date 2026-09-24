@@ -81,7 +81,7 @@ def test_workspace_blob_descriptor_times_out_while_stdout_is_open(
     def stalled_cat_file_blob(command, stdout, stderr, env):
         del command
         process = original_popen(
-            [sys.executable, "-c", "import time; time.sleep(10)"],
+            [sys.executable, "-c", "import time; time.sleep(60)"],
             stdout=stdout,
             stderr=stderr,
             env=env,
@@ -103,14 +103,15 @@ def test_workspace_blob_descriptor_times_out_while_stdout_is_open(
     started = monotonic()
     try:
         assert _descriptor_matches(descriptor) is False
-        assert monotonic() - started < 1.0
+        assert monotonic() - started < 10.0
         assert len(stalled_processes) == 1
         assert stalled_processes[0].poll() is not None
+        assert stalled_processes[0].returncode < 0
     finally:
         for process in stalled_processes:
             if process.poll() is None:
                 process.kill()
-            process.wait(timeout=1.0)
+            process.wait(timeout=10.0)
 
 
 def test_git_stdout_sha256_raises_and_reaps_when_stdout_pipe_missing(

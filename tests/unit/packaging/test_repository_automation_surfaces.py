@@ -4,6 +4,7 @@ import subprocess
 
 import yaml
 
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.unit.packaging.release_surfaces_support import (
     REPOSITORY_URL,
     ROOT,
@@ -39,6 +40,7 @@ def test_large_file_hook_enforces_limit_with_narrow_grandfathering() -> None:
         check=True,
         capture_output=True,
         text=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     ).stdout.split("\0")
     tracked_paths = {path for path in tracked if path}
     oversized = {

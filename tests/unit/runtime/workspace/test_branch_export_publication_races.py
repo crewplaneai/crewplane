@@ -20,6 +20,7 @@ from crewplane.runtime.workspace.worktree import (
     temporary_refs as worktree_temporary_refs,
 )
 from tests.helpers.artifacts import node_artifact_request
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     write_result_bundle,
@@ -368,5 +369,6 @@ def _optional_ref_oid(repo: Path, ref_name: str) -> str | None:
         check=False,
         capture_output=True,
         text=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.strip() if result.returncode == 0 else None

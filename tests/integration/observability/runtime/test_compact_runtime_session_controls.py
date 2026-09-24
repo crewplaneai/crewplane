@@ -575,6 +575,7 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
                     shlex.split(command),
                     check=True,
                     env={**os.environ, "FAKE_TMUX_LOG": str(fake_tmux_log)},
+                    timeout=30,
                 )
 
                 self.assertEqual(

@@ -31,6 +31,7 @@ from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 
 GIT_TEST_CONFIG_ARGS = (
     "-c",
@@ -62,6 +63,7 @@ def run_git_text(repo: Path, *args: str) -> str:
         ["git", *GIT_TEST_CONFIG_ARGS, "-C", repo.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.decode().strip()
 
@@ -79,6 +81,7 @@ def git_commit_exists(repo: Path, object_id: str) -> bool:
         ],
         check=False,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.returncode == 0
 

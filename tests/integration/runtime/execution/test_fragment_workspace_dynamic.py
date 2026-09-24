@@ -18,6 +18,7 @@ from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.errors import NodeExecutionError
 from crewplane.runtime.execution.fragment_assembler import assemble_prompt
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
     workspace_selection_record,
@@ -381,5 +382,6 @@ def _git_commit_exists(repo: Path, object_id: str) -> bool:
         ["git", "-C", repo.as_posix(), "cat-file", "-e", f"{object_id}^{{commit}}"],
         check=False,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.returncode == 0

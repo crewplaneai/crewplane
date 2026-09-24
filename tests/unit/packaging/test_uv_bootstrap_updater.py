@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import urllib.request
 from pathlib import Path
 
 import pytest
 
 from scripts import update_uv_bootstrap as updater
+from tests.helpers.processes import run_process
 
 ROOT = Path(__file__).resolve().parents[3]
 ARCHIVE_TARGETS = tuple(target.archive_target for target in updater.UV_TARGETS)
@@ -152,7 +152,7 @@ ldd() {
     shell = shutil.which("sh")
     assert shell is not None
 
-    result = subprocess.run(
+    result = run_process(
         [shell, "-c", script],
         env={
             **os.environ,
@@ -161,8 +161,6 @@ ldd() {
             "UV_TEST_LIBC_OUTPUT": libc_output,
         },
         check=False,
-        capture_output=True,
-        text=True,
     )
 
     assert result.returncode == 0, result.stderr

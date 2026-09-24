@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -34,35 +33,11 @@ def test_cli_help_imports_without_packaging_runtime_dependency() -> None:
         if pythonpath
         else str(root / "src")
     )
-    script = textwrap.dedent(
-        """
-        import importlib.abc
-        import sys
-
-        class BlockPackaging(importlib.abc.MetaPathFinder):
-            def find_spec(self, fullname, path=None, target=None):
-                if fullname == "packaging" or fullname.startswith("packaging."):
-                    raise ModuleNotFoundError("blocked packaging")
-                return None
-
-        sys.meta_path.insert(0, BlockPackaging())
-
-        from click import unstyle
-        from typer.testing import CliRunner
-        from crewplane.cli import app as cli
-
-        result = CliRunner().invoke(cli.app, ["--help"], catch_exceptions=False)
-        if result.exit_code != 0:
-            print(result.output)
-            raise SystemExit(result.exit_code)
-        if "--update" not in unstyle(result.output):
-            raise SystemExit("missing --update")
-        """
-    )
 
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-m", "tests.helpers.cli_without_packaging"],
         cwd=root,
+        timeout=30,
         env=environment,
         capture_output=True,
         text=True,
@@ -75,21 +50,13 @@ def test_cli_help_imports_without_packaging_runtime_dependency() -> None:
 def test_global_update_supports_restricted_output_encoding(tmp_path: Path) -> None:
     environment = os.environ.copy()
     environment["PYTHONIOENCODING"] = "ascii:strict"
-    script = textwrap.dedent(
-        """
-        from crewplane.cli import app as cli
-
-        def fake_update(console):
-            console.print("\u2713 updated")
-            return 0
-
-        cli.update_crewplane = fake_update
-        cli.app(args=["--update"], standalone_mode=False)
-        """
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures/cli/update_restricted_encoding.py"
     )
 
     result = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, str(script)],
         cwd=tmp_path,
         env=environment,
         capture_output=True,

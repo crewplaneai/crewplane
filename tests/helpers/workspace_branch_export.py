@@ -29,6 +29,7 @@ from crewplane.runtime.workspace.branch_export.fulfillment import (
 )
 from crewplane.runtime.workspace.worktree.types import WorktreeSourceRef
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.workspace_service import run_git_text, workspace_plan
 
 
@@ -138,6 +139,7 @@ def write_result_bundle_from_clone(
         ["git", "clone", repo.as_posix(), producer.as_posix()],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     run_git_text(producer, "config", "user.name", "Crewplane Test")
     run_git_text(producer, "config", "user.email", "crewplane-test@example.invalid")

@@ -87,6 +87,30 @@ jobs:
       - name: CLI smoke test
         run: uv run --locked --python ${{ matrix.python-version }} --extra dev crewplane --help
 
+      - name: Fuzz YAML parser (30 seconds)
+        id: fuzz_yaml
+        if: ${{ matrix.python-version == '3.13' }}
+        timeout-minutes: 3
+        run: |
+          mkdir -p "$RUNNER_TEMP/fuzz-yaml"
+          uv run --locked --python 3.13 --extra dev \
+            --with atheris==3.1.0 \
+            python fuzz/fuzz_yaml.py \
+            -max_total_time=30 \
+            -timeout=5 \
+            -max_len=4096 \
+            -rss_limit_mb=2048 \
+            -artifact_prefix="$RUNNER_TEMP/fuzz-yaml/"
+
+      - name: Upload fuzz failure artifacts
+        if: ${{ failure() && steps.fuzz_yaml.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-yaml-failure
+          path: ${{ runner.temp }}/fuzz-yaml/
+          if-no-files-found: ignore
+          retention-days: 7
+
   package:
     name: package
     runs-on: ubuntu-latest

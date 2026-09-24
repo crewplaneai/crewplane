@@ -11,6 +11,7 @@ from crewplane.cli.workspace_cleanup.context import cleanup_repository_id
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.resume import (
     make_plan,
     make_run_manifest,
@@ -329,5 +330,6 @@ def run_cleanup_git(repo: Path, *args: str) -> str:
         ["git", "-C", repo.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.decode("utf-8", errors="replace")

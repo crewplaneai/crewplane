@@ -245,11 +245,14 @@ def test_generated_file_snapshot_rejects_symlinked_source_parent(
     alpha_output = stage_dir / "alpha_round1.md"
     alpha_output.write_text("Updated `src/app.txt`.\n", encoding="utf-8")
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(
+        RuntimeError,
+        match=r"Generated-file source path is not a directory: .*generated-file-sources$",
+    ):
         snapshot_generated_file_workspace(
             alpha_output,
             workspace,
             changed_paths={"src/app.txt"},
         )
 
-    assert outside.exists()
+    assert list(outside.iterdir()) == []

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.processes import run_process
 from tests.unit.packaging.release_surfaces_support import (
     REPOSITORY_URL,
     ROOT,
@@ -392,7 +394,12 @@ def test_weekly_uv_update_job_propagates_pull_request_query_failures(
     lane_commands = workflow_step_run(update_job, "Select the Dependabot uv PR")
     repository = tmp_path / "repository"
     repository.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=repository,
+        check=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+    )
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     write_executable(fake_bin / "gh", "#!/bin/sh\nexit 42\n")
@@ -408,13 +415,8 @@ def test_weekly_uv_update_job_propagates_pull_request_query_failures(
         }
     )
 
-    failed_selection = subprocess.run(
-        ["bash", "-c", lane_commands],
-        cwd=repository,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
+    failed_selection = run_process(
+        ["bash", "-c", lane_commands], cwd=repository, env=env, check=False
     )
 
     assert failed_selection.returncode == 42

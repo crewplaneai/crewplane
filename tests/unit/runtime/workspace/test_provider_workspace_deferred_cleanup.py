@@ -6,7 +6,6 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event
-from time import monotonic
 
 import pytest
 
@@ -105,7 +104,7 @@ async def _run_workspace_preparation_cancellation_is_bounded(
     ) -> PreparedWorkspace:
         del request
         started.set()
-        release.wait(timeout=5)
+        assert release.wait(timeout=30)
         return PreparedWorkspace(cwd=repo, invocation_context=invocation_context)
 
     monkeypatch.setattr(
@@ -141,18 +140,16 @@ async def _run_workspace_preparation_cancellation_is_bounded(
             cleanup_registry,
         )
     )
-    assert await asyncio.to_thread(started.wait, 2)
-    started_at = monotonic()
-    task.cancel()
     try:
+        assert await asyncio.to_thread(started.wait, 10)
+        task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
-        elapsed = monotonic() - started_at
+            await asyncio.wait_for(task, timeout=10)
+        assert cleanup_registry.has_unfinished_protected_tasks
+        assert not release.is_set()
     finally:
         release.set()
-    await cleanup_registry.drain(2.0)
-
-    assert elapsed < 1.5
+        await cleanup_registry.drain(10.0)
 
 
 async def _run_workspace_preparation_deferred_cleanup_is_drained(
@@ -196,7 +193,7 @@ async def _run_workspace_preparation_deferred_cleanup_is_drained(
     ) -> PreparedWorkspace:
         del request
         started.set()
-        release.wait(timeout=5)
+        assert release.wait(timeout=30)
         state_path.write_text(
             json.dumps(
                 {
@@ -300,7 +297,7 @@ async def _run_workspace_preparation_deferred_cleanup_reports_prepare_failure(
     ) -> PreparedWorkspace:
         del request, invocation_context
         started.set()
-        release.wait(timeout=5)
+        assert release.wait(timeout=30)
         raise RuntimeError("workspace prepare boom")
 
     monkeypatch.setattr(

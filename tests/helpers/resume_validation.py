@@ -27,6 +27,7 @@ from crewplane.core.workspace.invocation_identity import invocation_slug
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.version import SCHEMA_VERSION
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.resume import (
     WORKFLOW_IDENTITY,
     WORKFLOW_NAME,
@@ -205,6 +206,7 @@ def run_git_text_with_input(
         capture_output=True,
         input=stdin.encode("utf-8") if stdin is not None else None,
         env=git_env,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.decode("utf-8").strip()
 

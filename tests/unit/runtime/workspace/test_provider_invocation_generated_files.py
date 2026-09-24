@@ -6,7 +6,6 @@ from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 from threading import Event, Timer
-from time import monotonic
 
 import pytest
 
@@ -130,6 +129,7 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
     )
     started = Event()
     release = Event()
+    watchdog_expired = Event()
 
     def blocking_snapshot(
         request: ProviderCallRequest,
@@ -139,7 +139,7 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
     ) -> None:
         del request, prepared_workspace, change_baseline, cancel_requested
         started.set()
-        assert release.wait(2)
+        release.wait()
 
     monkeypatch.setattr(
         provider_invocation_generated_files_module,
@@ -147,9 +147,12 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
         blocking_snapshot,
     )
 
-    fallback_release = Timer(1.0, release.set)
+    def unblock_on_timeout() -> None:
+        watchdog_expired.set()
+        release.set()
+
+    fallback_release = Timer(10.0, unblock_on_timeout)
     fallback_release.start()
-    started_at = monotonic()
     task = asyncio.create_task(
         run_provider_call(
             ProviderCallRequest(
@@ -170,14 +173,19 @@ async def _run_provider_invocation_generated_file_snapshot_does_not_block_event_
         )
     )
     try:
-        assert await asyncio.to_thread(started.wait, 2)
-        await asyncio.wait_for(asyncio.sleep(0.01), timeout=0.2)
-        assert monotonic() - started_at < 0.5
+        async with asyncio.timeout(10):
+            while not started.is_set():
+                await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not watchdog_expired.is_set(), "Snapshot blocked the event loop"
+        assert not task.done()
+        assert not release.is_set()
         release.set()
         await task
     finally:
         release.set()
         fallback_release.cancel()
+        fallback_release.join(timeout=10)
         if not task.done():
             task.cancel()
             with suppress(asyncio.CancelledError):

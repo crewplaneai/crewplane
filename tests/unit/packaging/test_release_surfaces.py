@@ -1,12 +1,12 @@
 import json
 import re
-import subprocess
 import sys
 import tomllib
 
 from packaging.requirements import Requirement
 from packaging.version import Version
 
+from tests.helpers.processes import run_process
 from tests.unit.packaging.release_surfaces_support import (
     AUTHORED_VERSION,
     PACKAGE_NAME,
@@ -220,11 +220,8 @@ def test_makefile_package_name_lookup_supports_gnu_make_3_81() -> None:
 
 
 def test_release_script_exposes_stateful_commands() -> None:
-    result = subprocess.run(
-        [sys.executable, str(repo_path("scripts", "release.py")), "--help"],
-        check=True,
-        capture_output=True,
-        text=True,
+    result = run_process(
+        [sys.executable, str(repo_path("scripts", "release.py")), "--help"], check=True
     )
     for command in (
         "prepare",

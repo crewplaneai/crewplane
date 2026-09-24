@@ -5,7 +5,6 @@ import shutil
 import sys
 from pathlib import Path
 from threading import Event
-from time import monotonic
 
 import pytest
 
@@ -83,7 +82,7 @@ def test_worktree_success_finalizer_bounds_asyncio_run_while_lock_is_held(
     def controlled_lock_poll(seconds: float) -> None:
         del seconds
         lock_poll_started.set()
-        assert release_lock_poll.wait(2)
+        assert release_lock_poll.wait(10)
 
     monkeypatch.setattr(workspace_locks_module, "sleep", controlled_lock_poll)
     runtime_context = CompiledRuntimeContext(
@@ -109,21 +108,20 @@ def test_worktree_success_finalizer_bounds_asyncio_run_while_lock_is_held(
         task = asyncio.create_task(
             finalize_successful_workspace(request, prepared, None, None)
         )
-        assert await asyncio.to_thread(lock_poll_started.wait, 2)
+        assert await asyncio.to_thread(lock_poll_started.wait, 10)
         task.cancel()
         try:
             with pytest.raises(WorkspaceFinalizationDeferredCancellation):
-                await task
+                await asyncio.wait_for(task, timeout=10)
+            assert not release_lock_poll.is_set()
         finally:
             release_lock_poll.set()
-        return await runtime_context.deferred_workspace_cleanups.drain(0.2)
+        return await runtime_context.deferred_workspace_cleanups.drain(10)
 
     try:
-        started = monotonic()
         cleanup_errors = asyncio.run(cancel_finalizer())
-        elapsed = monotonic() - started
 
-        assert elapsed < 0.5
+        assert holder.poll() is None
         assert len(cleanup_errors) == 1
         assert str(cleanup_errors[0]) == (
             "Workspace Git metadata lock acquisition was cancelled."

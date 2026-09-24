@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
+import selectors
 import subprocess
 import sys
 from pathlib import Path
+from time import monotonic
 
 from crewplane.architecture.contracts import InvocationContext
 from crewplane.core.config import AgentConfig
@@ -15,7 +18,7 @@ from crewplane.core.preflight.models import (
 
 def start_git_metadata_lock_holder(
     lock_path: Path,
-    hold_seconds: float = 1,
+    hold_seconds: float = 30,
 ) -> subprocess.Popen[str]:
     holder = subprocess.Popen(
         [
@@ -32,18 +35,42 @@ def start_git_metadata_lock_holder(
             str(hold_seconds),
         ],
         stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
     )
-    assert holder.stdout is not None
-    assert holder.stdout.readline().strip() == "locked"
-    return holder
+    try:
+        assert holder.stdout is not None
+        with selectors.DefaultSelector() as selector:
+            selector.register(holder.stdout, selectors.EVENT_READ)
+            deadline = monotonic() + 10
+            output = bytearray()
+            while not output.endswith(b"\n"):
+                remaining = deadline - monotonic()
+                if remaining <= 0 or not selector.select(remaining):
+                    raise TimeoutError("Git metadata lock holder did not become ready")
+                chunk = os.read(holder.stdout.fileno(), 1024)
+                if not chunk:
+                    raise AssertionError(f"Git metadata lock holder exited: {output!r}")
+                output.extend(chunk)
+            assert output == b"locked\n", output
+        return holder
+    except BaseException as error:
+        stderr = stop_git_metadata_lock_holder(holder)
+        error.add_note(f"Lock holder stderr: {stderr}")
+        raise
 
 
-def stop_git_metadata_lock_holder(holder: subprocess.Popen[str]) -> None:
-    holder.terminate()
-    holder.wait(timeout=2)
-    if holder.stdout is not None:
-        holder.stdout.close()
+def stop_git_metadata_lock_holder(holder: subprocess.Popen[str]) -> str:
+    if holder.poll() is None:
+        holder.kill()
+    try:
+        _, stderr = holder.communicate(timeout=10)
+        return stderr
+    finally:
+        if holder.stdout is not None:
+            holder.stdout.close()
+        if holder.stderr is not None:
+            holder.stderr.close()
 
 
 class SetupMarkerInvoker:

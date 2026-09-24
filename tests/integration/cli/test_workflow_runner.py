@@ -36,6 +36,7 @@ from crewplane.core.workflow.models import (
     WorkflowNode,
     WorkflowPlan,
 )
+from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.working_directory import temporary_project_cwd
 from tests.integration.cli.workflow_runner_support import (
     mock_runner_config,
@@ -187,6 +188,7 @@ def _git(root: Path, *args: str) -> str:
         ["git", "-C", root.as_posix(), *args],
         check=True,
         capture_output=True,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
     )
     return result.stdout.decode("utf-8").strip()
 
@@ -197,6 +199,7 @@ def _local_git_supports_workspace_policy() -> bool:
             ["git", "--version"],
             check=True,
             capture_output=True,
+            timeout=GIT_COMMAND_TIMEOUT_SECONDS,
         ).stdout.decode("utf-8")
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
