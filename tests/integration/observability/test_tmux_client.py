@@ -12,6 +12,7 @@ from crewplane.observability.tmux.client import (
     TMUX_TIMEOUT_STDERR,
     TmuxCommandClient,
 )
+from tests.integration.observability.tmux_fakes import FakeTmuxClient
 
 
 def test_tmux_command_success_uses_socket_and_returns_output(
@@ -128,3 +129,47 @@ def test_pane_dimension_timeout_returns_default_and_marks_timeout(
     monkeypatch.setattr(subprocess, "run", timeout_run)
 
     assert client.pane_dimension("%1", "#{pane_width}", 80) == (80, True)
+
+
+@pytest.mark.parametrize(
+    "stdout,returncode,expected",
+    [("", 0, 80), ("invalid", 0, 80), ("100", 1, 80), ("0", 0, 1), ("-5", 0, 1)],
+)
+def test_pane_dimension_response_boundaries(
+    monkeypatch: pytest.MonkeyPatch, stdout: str, returncode: int, expected: int
+) -> None:
+    client = FakeTmuxClient()
+    monkeypatch.setattr(
+        client,
+        "run",
+        Mock(return_value=subprocess.CompletedProcess([], returncode, stdout, "")),
+    )
+
+    assert client.pane_dimension("%10", "#{pane_width}", 80) == (expected, False)
+
+
+def test_fake_client_queries_never_launch_subprocesses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = Mock(side_effect=AssertionError("fake transport launched a subprocess"))
+    monkeypatch.setattr(subprocess, "run", run)
+    client = FakeTmuxClient()
+    client.set_socket_name("simulated-socket")
+    client.left_pane_width = 0
+
+    assert client.pane_dimension("%10", "#{pane_width}", 80) == (1, False)
+    assert client.session_exists("simulated")
+    client.has_session_times_out = True
+    client.display_message_times_out = True
+    assert client.pane_dimension("%10", "#{pane_width}", 80) == (80, True)
+    assert client.session_exists("simulated")
+    assert (
+        client.calls
+        == [
+            (["display-message", "-p", "-t", "%10", "#{pane_width}"], True, False),
+            (["has-session", "-t", "simulated"], True, False),
+        ]
+        * 2
+    )
+    assert client.call_sockets == ["simulated-socket"] * 4
+    run.assert_not_called()

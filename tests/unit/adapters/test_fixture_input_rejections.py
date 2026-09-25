@@ -89,3 +89,34 @@ def test_context_free_invocations_do_not_match_failure_selectors() -> None:
     selector = validate_fail_selectors([{"node_id": "draft"}])[0]
 
     assert selector_matches(selector, None) is False
+
+
+class IntegerSubclass(int):
+    pass
+
+
+@pytest.mark.parametrize("field", ["round_num", "audit_round_num"])
+@pytest.mark.parametrize("value", [None, True, False, "1", 1.0])
+def test_selector_integer_errors_preserve_exact_field(field, value):
+    with pytest.raises(ValueError) as caught:
+        validate_fail_selectors([{field: value}])
+    assert str(caught.value) == (
+        f"mock invoker option 'fail_when' selector key '{field}' must be an integer"
+    )
+
+
+@pytest.mark.parametrize("value", [0, -1, 2**80, IntegerSubclass(7)])
+def test_selector_integer_values_are_not_coerced(value):
+    selector = validate_fail_selectors([{"round_num": value}])[0]
+    assert selector.round_num is value
+    assert selector.audit_round_num is None
+
+
+@pytest.mark.parametrize("first", ["audit_round_num", "round_num"])
+def test_selector_errors_follow_authored_field_order(first):
+    second = "round_num" if first == "audit_round_num" else "audit_round_num"
+    with pytest.raises(ValueError) as caught:
+        validate_fail_selectors([{first: True, second: False}])
+    assert str(caught.value) == (
+        f"mock invoker option 'fail_when' selector key '{first}' must be an integer"
+    )

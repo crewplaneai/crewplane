@@ -265,6 +265,27 @@ def _temporary_ref_phase_is_valid(record: Mapping[str, object]) -> bool:
     return record.get("phase") in {"prepared", "removed"}
 
 
+def temporary_ref_repository_matches(
+    payload: Mapping[str, object], expected_repository_id: str
+) -> bool:
+    git_payload = payload.get("git")
+    return (
+        isinstance(git_payload, dict)
+        and git_payload.get("repo_id") == expected_repository_id
+    )
+
+
+def temporary_ref_claim_repositories_match(
+    payload: Mapping[str, object], expected_repository_id: str
+) -> bool:
+    """Check list entries; callers retain validation of the claims container."""
+    claims = payload.get("temporary_refs")
+    return not isinstance(claims, list) or all(
+        isinstance(claim, dict) and claim.get("repository_id") == expected_repository_id
+        for claim in claims
+    )
+
+
 def temporary_ref_ownership(payload: Mapping[str, object]) -> dict[str, object]:
     ownership = {
         f"owner_{field}": payload.get(field)

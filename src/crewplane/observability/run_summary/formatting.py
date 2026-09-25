@@ -62,6 +62,18 @@ def format_visible_estimate(invocation_usage: InvocationUsageSummary) -> str:
     return f"{format_count(invocation_usage.visible_estimate_tokens)} tokens via {method}{suffix}"
 
 
+def format_round_label(
+    audit_round_num: int | None, round_num: int | None
+) -> str | None:
+    if audit_round_num is not None and round_num is not None:
+        return f"audit{audit_round_num}/round{round_num}"
+    if audit_round_num is not None:
+        return f"audit{audit_round_num}"
+    if round_num is not None:
+        return f"round{round_num}"
+    return None
+
+
 def invocation_label(
     node_id: str | None,
     task_id: str | None,
@@ -73,12 +85,9 @@ def invocation_label(
         label_parts.append(f"`{node_id}`")
     if task_id:
         label_parts.append(f"`{task_id}`")
-    if audit_round_num is not None and round_num is not None:
-        label_parts.append(f"`audit{audit_round_num}/round{round_num}`")
-    elif audit_round_num is not None:
-        label_parts.append(f"`audit{audit_round_num}`")
-    elif round_num is not None:
-        label_parts.append(f"`round{round_num}`")
+    round_label = format_round_label(audit_round_num, round_num)
+    if round_label is not None:
+        label_parts.append(f"`{round_label}`")
     return " / ".join(label_parts) if label_parts else "`unknown invocation`"
 
 

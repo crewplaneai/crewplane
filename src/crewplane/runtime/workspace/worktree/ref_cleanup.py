@@ -22,8 +22,10 @@ from crewplane.artifacts.workspace.state.paths import (
     is_workspace_claim_name,
 )
 from crewplane.artifacts.workspace.state.ref_contracts import (
+    temporary_ref_claim_repositories_match,
     temporary_ref_ownership,
     temporary_ref_ownership_matches,
+    temporary_ref_repository_matches,
 )
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.state_paths import EXECUTION_STAGES_DIR_NAME, STATE_DIR_NAME
@@ -433,21 +435,12 @@ def _require_ref_cleanup_repository_identity(
     evidence_path: Path,
     expected_repository_id: str,
 ) -> None:
-    git_payload = payload.get("git")
-    claims = payload.get("temporary_refs")
-    if (
-        not isinstance(git_payload, dict)
-        or git_payload.get("repo_id") != expected_repository_id
-    ):
+    if not temporary_ref_repository_matches(payload, expected_repository_id):
         raise RuntimeError(
             "Workspace ref cleanup evidence belongs to a different repository: "
             f"{evidence_path}."
         )
-    if isinstance(claims, list) and any(
-        not isinstance(claim, dict)
-        or claim.get("repository_id") != expected_repository_id
-        for claim in claims
-    ):
+    if not temporary_ref_claim_repositories_match(payload, expected_repository_id):
         raise RuntimeError(
             "Workspace ref cleanup claim belongs to a different repository: "
             f"{evidence_path}."

@@ -180,3 +180,54 @@ def test_persisted_plan_rejects_duplicate_dependency_edges() -> None:
 
     with pytest.raises(ValidationError, match="duplicate edge"):
         PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    "roles, message",
+    [
+        (
+            [],
+            "Persisted provider preflight node 'a' must define at least one provider record.",
+        ),
+        (["executor"], None),
+        (["reviewer"], "Persisted single-provider node 'a' must use an executor."),
+        (
+            ["executor", "executor"],
+            "Persisted review-loop node 'a' must contain executor and reviewer providers in that order.",
+        ),
+        (
+            ["reviewer", "reviewer"],
+            "Persisted review-loop node 'a' must contain executor and reviewer providers in that order.",
+        ),
+        (["executor", "executor", "reviewer", "reviewer"], None),
+        (
+            ["reviewer", "executor"],
+            "Persisted review-loop node 'a' must group executors before reviewers.",
+        ),
+        (
+            ["executor", "reviewer", "executor"],
+            "Persisted review-loop node 'a' must group executors before reviewers.",
+        ),
+    ],
+)
+def test_persisted_sequential_role_boundary(
+    roles: list[str], message: str | None
+) -> None:
+    payload = make_plan(review_loop=len(roles) > 1).model_dump(mode="json")
+    prototype = payload["nodes"][0]["provider_records"][0]
+    payload["nodes"][0]["provider_records"] = [
+        {**prototype, "role": role, "task_id": f"task-{index}"}
+        for index, role in enumerate(roles)
+    ]
+
+    if message is not None:
+        with pytest.raises(ValidationError) as caught:
+            PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+        assert [error["msg"] for error in caught.value.errors()] == [
+            f"Value error, {message}"
+        ]
+    else:
+        restored = PreflightExecutionPlan.model_validate_json(json.dumps(payload))
+        assert [
+            provider.role for provider in restored.nodes[0].provider_records
+        ] == roles

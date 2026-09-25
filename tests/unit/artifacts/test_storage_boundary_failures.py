@@ -6,6 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts.artifacts import (
+    ArtifactContract,
+    NodeArtifactRequest,
+)
 from crewplane.artifacts.atomic import atomic_write_bytes
 from crewplane.artifacts.directory_manager import DirectoryManager
 from crewplane.artifacts.manager import OutputManager
@@ -78,7 +82,17 @@ def test_run_allocation_removes_only_its_stage_directory_when_results_collide(
 
 @pytest.mark.parametrize(
     "relative_path",
-    ["", "../escape.md", "/absolute.md", "nested//file.md", "./file.md"],
+    [
+        "",
+        ".",
+        "..",
+        "../escape.md",
+        "/absolute.md",
+        "nested//file.md",
+        "./file.md",
+        "nested/../file.md",
+        "nested/file.md/",
+    ],
 )
 def test_preflight_artifact_writes_reject_unsafe_relative_paths(
     tmp_path: Path, relative_path: str
@@ -168,3 +182,72 @@ def test_history_inspection_failures_are_reported_without_changing_metadata(
             )
 
     assert source.manifest_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["output", "findings"])
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "",
+        ".",
+        "..",
+        "../result.md",
+        "/absolute.md",
+        "nested//file.md",
+        "./file.md",
+        "nested/../file.md",
+        "nested/file.md/",
+    ],
+)
+def test_compiled_artifact_locators_reject_raw_unsafe_paths_before_creation(
+    tmp_path: Path, kind: str, relative_path: str
+) -> None:
+    output = OutputManager("flow", base_dir=tmp_path)
+    contract = ArtifactContract(stage_path="node", output_path="output.md").model_copy(
+        update={f"{kind}_path": relative_path}
+    )
+    request = NodeArtifactRequest("node", contract)
+    resolve = (
+        output.get_node_output_path
+        if kind == "output"
+        else output.get_node_findings_path
+    )
+
+    with pytest.raises(ValueError) as caught:
+        resolve(request)
+
+    assert str(caught.value) == f"Invalid compiled {kind} locator '{relative_path}'."
+    assert not output.results_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "relative_path", [" ", " nested /file.md", r"nested\file.md", "nested/file.md"]
+)
+def test_artifact_publication_preserves_raw_safe_path_spelling(
+    tmp_path: Path, relative_path: str
+) -> None:
+    output = OutputManager("flow", base_dir=tmp_path)
+    contract = ArtifactContract(stage_path="node", output_path="output.md").model_copy(
+        update={"output_path": relative_path, "findings_path": relative_path}
+    )
+    request = NodeArtifactRequest("node", contract)
+
+    published = output.write_preflight_text(relative_path, "content")
+
+    assert (
+        published.relative_to(output.stages_dir / "preflight").as_posix()
+        == relative_path
+    )
+    assert published.read_text() == "content"
+    assert output.get_node_output_path(request) == output.results_dir / relative_path
+    assert output.get_node_findings_path(request) == output.results_dir / relative_path
+
+
+def test_absent_findings_locator_does_not_allocate_results(tmp_path: Path) -> None:
+    output = OutputManager("flow", base_dir=tmp_path)
+    request = NodeArtifactRequest(
+        "node", ArtifactContract(stage_path="node", output_path="output.md")
+    )
+
+    assert output.get_node_findings_path(request) is None
+    assert not output.results_dir.exists()

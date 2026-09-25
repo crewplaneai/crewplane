@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import StrEnum
+from itertools import pairwise
 from typing import Literal, get_args
 
 NodeMode = Literal["parallel", "sequential", "input"]
@@ -66,3 +68,11 @@ def validate_exact_keyword(
     if lowered in allowed_value_set:
         raise ValueError(f"{field_name} must be lower-case and one of: {allowed}")
     raise ValueError(f"{field_name} must be one of: {allowed}")
+
+
+def provider_role_segments_are_contiguous(roles: Iterable[ProviderRole]) -> bool:
+    """Return whether no executor follows a reviewer in the role sequence."""
+    return all(
+        left != ProviderRole.REVIEWER or right != ProviderRole.EXECUTOR
+        for left, right in pairwise(roles)
+    )

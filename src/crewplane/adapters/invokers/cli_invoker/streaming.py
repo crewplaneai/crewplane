@@ -13,6 +13,14 @@ from crewplane.core.file_text import (
 )
 
 
+def missing_output() -> OutputExtractionResult:
+    return OutputExtractionResult(output_text="", output_extraction_status="missing")
+
+
+def malformed_output() -> OutputExtractionResult:
+    return OutputExtractionResult(output_text="", output_extraction_status="malformed")
+
+
 def extract_strict_stdout(
     result: CommandResult,
     structured_output_file: Path | None,  # noqa: ARG001 - OutputExtractor contract.

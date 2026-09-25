@@ -8,6 +8,10 @@ from uuid import uuid4
 from crewplane.artifacts.atomic import atomic_write_json
 from crewplane.artifacts.workspace.state.invocation import state_invocation_slug
 from crewplane.artifacts.workspace.state.paths import workspace_temporary_refs_filename
+from crewplane.artifacts.workspace.state.ref_contracts import (
+    temporary_ref_claim_repositories_match,
+    temporary_ref_repository_matches,
+)
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
@@ -312,20 +316,11 @@ def _require_temporary_ref_repository_identity(
     payload: dict[str, object],
     expected_repository_id: str,
 ) -> None:
-    git_payload = payload.get("git")
-    claims = payload.get("temporary_refs")
-    if (
-        not isinstance(git_payload, dict)
-        or git_payload.get("repo_id") != expected_repository_id
-    ):
+    if not temporary_ref_repository_matches(payload, expected_repository_id):
         raise RuntimeError(
             "Workspace temporary ref cleanup repository identity changed."
         )
-    if isinstance(claims, list) and any(
-        not isinstance(claim, dict)
-        or claim.get("repository_id") != expected_repository_id
-        for claim in claims
-    ):
+    if not temporary_ref_claim_repositories_match(payload, expected_repository_id):
         raise RuntimeError(
             "Workspace temporary ref cleanup claim repository identity changed."
         )

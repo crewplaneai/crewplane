@@ -10,6 +10,7 @@ from crewplane.observability.events import (
     WorkflowEventPayload,
 )
 
+from .formatting import format_round_label
 from .models import IssueSummary
 
 
@@ -141,14 +142,9 @@ def event_detail_segments(event: ExecutionEvent) -> list[str]:
         details.append(f"node: {context.node_id}")
     if context.task_id:
         details.append(f"task: {context.task_id}")
-    if context.audit_round_num is not None and context.round_num is not None:
-        details.append(
-            f"round: audit{context.audit_round_num}/round{context.round_num}"
-        )
-    elif context.audit_round_num is not None:
-        details.append(f"round: audit{context.audit_round_num}")
-    elif context.round_num is not None:
-        details.append(f"round: round{context.round_num}")
+    round_label = format_round_label(context.audit_round_num, context.round_num)
+    if round_label is not None:
+        details.append(f"round: {round_label}")
     if context.output_file:
         details.append(f"output: {context.output_file}")
     if context.log_file:

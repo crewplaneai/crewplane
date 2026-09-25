@@ -20,7 +20,6 @@ from crewplane.runtime.workspace.worktree import (
     temporary_refs as worktree_temporary_refs,
 )
 from tests.helpers.artifacts import node_artifact_request
-from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.workspace_branch_export import (
     branch_export_plan,
     write_result_bundle,
@@ -34,6 +33,7 @@ from tests.helpers.workspace_service import (
 from tests.unit.runtime.workspace.branch_export_support import (
     export_record_path,
 )
+from tests.unit.runtime.workspace.ref_publication_support import ref_oid
 
 
 def test_fulfill_branch_exports_preserves_prepared_record_when_import_ref_cleanup_fails(
@@ -358,17 +358,4 @@ def test_create_branch_ref_rejects_symbolic_destination_without_touching_target(
         )
 
     assert run_git_text(repo, "symbolic-ref", branch_ref) == target_ref
-    assert _optional_ref_oid(repo, target_ref) == (
-        result_commit if target_exists else None
-    )
-
-
-def _optional_ref_oid(repo: Path, ref_name: str) -> str | None:
-    result = subprocess.run(
-        ["git", "-C", repo.as_posix(), "rev-parse", "--verify", ref_name],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
-    )
-    return result.stdout.strip() if result.returncode == 0 else None
+    assert ref_oid(repo, target_ref) == (result_commit if target_exists else None)

@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.safe_files import is_safe_relative_path
 from crewplane.core.preflight.plan_contract import (
     validate_supported_plan_schema_version,
 )
@@ -48,12 +49,7 @@ class ArtifactDescriptor(BaseModel):
     @field_validator("relative_path")
     @classmethod
     def _validate_relative_path(cls, value: str) -> str:
-        parts = value.split("/")
-        if (
-            not value
-            or value.startswith("/")
-            or any(part in {"", ".", ".."} for part in parts)
-        ):
+        if not is_safe_relative_path(value):
             raise ValueError("Artifact descriptor paths must be relative POSIX paths.")
         return value
 

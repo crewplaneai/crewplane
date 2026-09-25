@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from crewplane.architecture.contracts import JsonObject
-from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workflow.keywords import (
+    ProviderRole,
+    provider_role_segments_are_contiguous,
+)
 
 from . import plan_contract_records, plan_contract_workspace_lineage
 
@@ -113,16 +116,15 @@ def _validate_review_loop_provider_order(
     node: PreflightExecutionNode,
     provider_roles: list[ProviderRole],
 ) -> None:
-    reviewer_started = False
-    for role in provider_roles:
-        if role == ProviderRole.REVIEWER:
-            reviewer_started = True
-        elif reviewer_started:
-            raise ValueError(
-                f"Persisted review-loop node '{node.id}' must group executors "
-                "before reviewers."
-            )
-    if provider_roles[0] != ProviderRole.EXECUTOR or not reviewer_started:
+    if not provider_role_segments_are_contiguous(provider_roles):
+        raise ValueError(
+            f"Persisted review-loop node '{node.id}' must group executors "
+            "before reviewers."
+        )
+    if (
+        provider_roles[0] != ProviderRole.EXECUTOR
+        or ProviderRole.REVIEWER not in provider_roles
+    ):
         raise ValueError(
             f"Persisted review-loop node '{node.id}' must contain executor and "
             "reviewer providers in that order."

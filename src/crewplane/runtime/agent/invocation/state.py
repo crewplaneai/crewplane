@@ -1,18 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from crewplane.architecture.contracts import (
     CommandResult,
-    FailureClassifier,
     LogLevel,
-    OneShotFailureRetryPolicy,
+    OutputExtractionResult,
     OutputExtractionStatus,
-    OutputExtractor,
-    QuotaClassifier,
     RuntimeLogValue,
-    UsageDecoder,
 )
 
 from ..usage import InvocationUsageAccumulator
@@ -29,25 +24,8 @@ class InvocationDiagnosticNotice:
 
 @dataclass(frozen=True)
 class ExtractedInvocationOutput:
-    output_text: str
-    output_extraction_status: OutputExtractionStatus
+    result: OutputExtractionResult
     notice: InvocationDiagnosticNotice | None = None
-    output_path: Path | None = None
-    output_char_count: int | None = None
-    owns_output_path: bool = False
-
-
-@dataclass(frozen=True)
-class InvocationCommandRuntime:
-    failure_classifier: FailureClassifier
-    output_extractor: OutputExtractor | None
-    usage_decoder: UsageDecoder | None
-    quota_classifier: QuotaClassifier
-    structured_output_file: Path | None
-    cmd: list[str]
-    stdin_data: bytes | None
-    log_header: bytes
-    one_shot_failure_retry: OneShotFailureRetryPolicy | None
 
 
 @dataclass
@@ -66,11 +44,11 @@ class InvocationUsageState:
         self,
         extracted_output: ExtractedInvocationOutput,
     ) -> None:
-        self.output_extraction_status = extracted_output.output_extraction_status
-        if extracted_output.output_char_count is not None:
-            self.record_attempt_output_chars(extracted_output.output_char_count)
+        self.output_extraction_status = extracted_output.result.output_extraction_status
+        if extracted_output.result.output_char_count is not None:
+            self.record_attempt_output_chars(extracted_output.result.output_char_count)
             return
-        self.record_attempt_output(extracted_output.output_text)
+        self.record_attempt_output(extracted_output.result.output_text)
 
 
 @dataclass(frozen=True)

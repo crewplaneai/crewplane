@@ -28,6 +28,23 @@ class WorkflowRunContext:
         return self.source.workflow
 
 
+def build_workflow_run_context(
+    config: Config,
+    source: PreflightWorkflowSource,
+    console: Console,
+    project_root: Path | None = None,
+    state_dir: Path | None = None,
+) -> WorkflowRunContext:
+    resolved_project_root = resolve_project_root(project_root)
+    return WorkflowRunContext(
+        config=config,
+        source=source,
+        console=console,
+        project_root=resolved_project_root,
+        state_dir=resolve_state_dir(resolved_project_root, state_dir),
+    )
+
+
 def print_artifact_locations(
     workflow_name: str,
     output: ArtifactStorePort,

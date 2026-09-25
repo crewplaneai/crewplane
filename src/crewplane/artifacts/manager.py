@@ -18,6 +18,7 @@ from crewplane.architecture.safe_files import (
     contained_directory,
     contained_regular_file,
     ensure_contained_directory,
+    is_safe_relative_path,
 )
 from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
 from crewplane.core.preflight.models import PreflightExecutionPlan
@@ -31,12 +32,12 @@ from .atomic import (
 from .directory_manager import DirectoryManager
 from .naming import (
     build_log_filename,
-    build_workspace_export_filename,
     node_state_relative_path,
     preflight_manifest_relative_path,
     preflight_plan_relative_path,
     run_manifest_relative_path,
     safe_artifact_name,
+    workspace_export_relative_path,
 )
 from .provider_process_publisher import ProviderProcessPublisher
 from .results.writer import ResultWriter
@@ -259,11 +260,7 @@ class OutputManager:
 
     def _preflight_artifact_path(self, relative_path: str) -> Path:
         normalized_ref = Path(relative_path)
-        if (
-            not relative_path
-            or normalized_ref.is_absolute()
-            or any(part in {"", ".", ".."} for part in relative_path.split("/"))
-        ):
+        if not is_safe_relative_path(relative_path):
             raise ValueError(f"Invalid preflight artifact path '{relative_path}'.")
         preflight_dir = ensure_contained_directory(self.stages_dir, "preflight")
         parent = (
@@ -358,9 +355,11 @@ class OutputManager:
     def write_workspace_export(
         self, logical_worktree_name: str, payload: object
     ) -> Path:
-        export_dir = ensure_contained_directory(self.stages_dir, "workspace-exports")
-        export_name = build_workspace_export_filename(logical_worktree_name)
-        return atomic_write_json(export_dir / export_name, payload)
+        relative_path = workspace_export_relative_path(logical_worktree_name)
+        export_dir = ensure_contained_directory(
+            self.stages_dir, relative_path.parent.as_posix()
+        )
+        return atomic_write_json(export_dir / relative_path.name, payload)
 
     def _run_manifest_path(self) -> Path:
         manifest_path = contained_regular_file(
@@ -379,11 +378,7 @@ class OutputManager:
         if locator is None:
             raise ValueError(f"Compiled {label} locator is missing.")
         path = Path(locator)
-        if (
-            not locator
-            or path.is_absolute()
-            or any(part in {"", ".", ".."} for part in locator.split("/"))
-        ):
+        if not is_safe_relative_path(locator):
             raise ValueError(f"Invalid compiled {label} locator '{locator}'.")
         relative_root = root.relative_to(self.base_dir)
         relative_parent = relative_root / path.parent

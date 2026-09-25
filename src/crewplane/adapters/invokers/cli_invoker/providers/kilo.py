@@ -17,7 +17,12 @@ from ..capability import CliProviderCapability
 from ..commands import build_standard_command
 from ..failures.classifier import classify_generic_failure
 from ..quota.classifier import classify_generic_quota
-from ..streaming import iter_stdout_json_objects, iter_stdout_lines
+from ..streaming import (
+    iter_stdout_json_objects,
+    iter_stdout_lines,
+    malformed_output,
+    missing_output,
+)
 from ..usage_decoders import (
     CounterReader,
     MalformedUsageError,
@@ -101,30 +106,19 @@ def extract_kilo_output(
     text_parts: list[str] = []
     for event in iter_stdout_json_objects(result):
         if event is None:
-            return _malformed_output()
+            return malformed_output()
         text = _kilo_text_event(event)
         if text is not None:
             text = text.strip()
             if text:
                 text_parts.append(text)
     if not text_parts:
-        return _missing_output()
+        return missing_output()
     output_text = "\n".join(text_parts) + "\n"
     return OutputExtractionResult(
         output_text=output_text,
         output_extraction_status="success",
         output_char_count=len(output_text),
-    )
-
-
-def _missing_output() -> OutputExtractionResult:
-    return OutputExtractionResult(output_text="", output_extraction_status="missing")
-
-
-def _malformed_output() -> OutputExtractionResult:
-    return OutputExtractionResult(
-        output_text="",
-        output_extraction_status="malformed",
     )
 
 

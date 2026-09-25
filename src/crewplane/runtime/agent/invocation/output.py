@@ -6,6 +6,7 @@ from pathlib import Path
 
 from crewplane.architecture.contracts import (
     CommandResult,
+    InvocationPlan,
     LogLevel,
     OutputExtractionResult,
     OutputExtractor,
@@ -20,26 +21,25 @@ from ..usage import output_text_for_usage
 from .state import (
     ExtractedInvocationOutput,
     InvocationAttemptResult,
-    InvocationCommandRuntime,
     InvocationDiagnosticNotice,
 )
 
 
 def build_invocation_attempt_result(
-    runtime: InvocationCommandRuntime,
+    plan: InvocationPlan,
     result: CommandResult,
 ) -> InvocationAttemptResult:
     extracted_output = _extract_successful_structured_output(
-        output_extractor=runtime.output_extractor,
-        cmd=runtime.cmd,
+        output_extractor=plan.output_extractor,
+        cmd=plan.cmd,
         result=result,
-        structured_output_file=runtime.structured_output_file,
+        structured_output_file=plan.structured_output_file,
     )
     if extracted_output is not None:
         return InvocationAttemptResult(
             result=_retry_result_from_extracted_output(extracted_output, result),
             extracted_output=extracted_output,
-            usage_output=extracted_output.output_text,
+            usage_output=extracted_output.result.output_text,
         )
     return InvocationAttemptResult(
         result=result,
@@ -55,8 +55,8 @@ def extract_invocation_output(
     structured_output_file: Path | None,
 ) -> ExtractedInvocationOutput:
     if output_extractor is not None:
-        return _adapt_output_extraction(
-            output_extractor(result, structured_output_file)
+        return ExtractedInvocationOutput(
+            result=output_extractor(result, structured_output_file)
         )
     return _extract_visible_output(cmd=cmd, result=result)
 
@@ -75,22 +75,10 @@ def _extract_successful_structured_output(
         result=result,
         structured_output_file=structured_output_file,
     )
-    if extracted_output.output_extraction_status != "success":
+    if extracted_output.result.output_extraction_status != "success":
         cleanup_extracted_invocation_output(extracted_output)
         return None
     return extracted_output
-
-
-def _adapt_output_extraction(
-    extracted_output: OutputExtractionResult,
-) -> ExtractedInvocationOutput:
-    return ExtractedInvocationOutput(
-        output_text=extracted_output.output_text,
-        output_extraction_status=extracted_output.output_extraction_status,
-        output_path=extracted_output.output_path,
-        output_char_count=extracted_output.output_char_count,
-        owns_output_path=extracted_output.owns_output_path,
-    )
 
 
 def _retry_result_from_extracted_output(
@@ -99,9 +87,9 @@ def _retry_result_from_extracted_output(
 ) -> CommandResult:
     return CommandResult(
         returncode=0,
-        stdout_text=extracted_output.output_text,
+        stdout_text=extracted_output.result.output_text,
         stderr_text=result.stderr_text,
-        stdout_path=extracted_output.output_path,
+        stdout_path=extracted_output.result.output_path,
         stderr_path=result.stderr_path,
     )
 
@@ -150,16 +138,17 @@ def _extract_visible_output(
             )
     if output_path is None and not output_text.strip():
         return ExtractedInvocationOutput(
-            output_text="",
-            output_extraction_status="missing",
+            result=OutputExtractionResult("", "missing"),
             notice=notice,
         )
     return ExtractedInvocationOutput(
-        output_text=output_text,
-        output_extraction_status="success",
+        result=OutputExtractionResult(
+            output_text=output_text,
+            output_extraction_status="success",
+            output_path=output_path,
+            output_char_count=output_char_count,
+        ),
         notice=notice,
-        output_path=output_path,
-        output_char_count=output_char_count,
     )
 
 
@@ -167,10 +156,10 @@ def write_extracted_invocation_output(
     extracted_output: ExtractedInvocationOutput,
     output_file: Path,
 ) -> None:
-    if extracted_output.output_path is None:
-        output_file.write_text(extracted_output.output_text, encoding="utf-8")
+    if extracted_output.result.output_path is None:
+        output_file.write_text(extracted_output.result.output_text, encoding="utf-8")
         return
-    _write_decoded_stream_file(extracted_output.output_path, output_file)
+    _write_decoded_stream_file(extracted_output.result.output_path, output_file)
 
 
 def cleanup_extracted_invocation_output(
@@ -178,12 +167,12 @@ def cleanup_extracted_invocation_output(
 ) -> None:
     if (
         extracted_output is None
-        or not extracted_output.owns_output_path
-        or extracted_output.output_path is None
+        or not extracted_output.result.owns_output_path
+        or extracted_output.result.output_path is None
     ):
         return
     with contextlib.suppress(OSError):
-        extracted_output.output_path.unlink(missing_ok=True)
+        extracted_output.result.output_path.unlink(missing_ok=True)
 
 
 def _visible_stream_output(

@@ -27,7 +27,6 @@ from ..failures import (
 from ..usage import InvocationUsageAccumulator
 from .attempt_decisions import select_attempt_transition
 from .command import (
-    build_invocation_runtime,
     prepare_runtime_for_attempt,
     run_invocation_attempt,
 )
@@ -44,7 +43,6 @@ from .state import (
     FinalizeSuccessAttemptTransition,
     InvocationAttemptResult,
     InvocationAttemptTransition,
-    InvocationCommandRuntime,
     InvocationRetryCursor,
     InvocationUsageState,
     RaiseFailedExitAttemptTransition,
@@ -64,7 +62,7 @@ from .telemetry import (
 @dataclass(frozen=True)
 class _InvocationLoopContext:
     config: AgentConfig
-    runtime: InvocationCommandRuntime
+    plan: InvocationPlan
     output_file: Path
     log_file: Path | None
     cwd: Path
@@ -101,7 +99,6 @@ async def run_invocation_loop(
     """Run provider attempts through a terminal outcome and release their resources."""
 
     try:
-        runtime = build_invocation_runtime(plan)
         state = _InvocationLoopState(
             usage_state=InvocationUsageState(
                 accumulator=InvocationUsageAccumulator(prompt)
@@ -114,7 +111,7 @@ async def run_invocation_loop(
         )
         context = _InvocationLoopContext(
             config=config,
-            runtime=runtime,
+            plan=plan,
             output_file=output_file,
             log_file=log_file,
             cwd=cwd,
@@ -150,18 +147,18 @@ async def _run_attempt_cycle(
     transition: InvocationAttemptTransition | None = None
     try:
         state.usage_state.accumulator.record_provider_usage(
-            _decode_provider_usage(context.runtime, result)
+            _decode_provider_usage(context.plan, result)
         )
-        attempt_result = build_invocation_attempt_result(context.runtime, result)
+        attempt_result = build_invocation_attempt_result(context.plan, result)
         transition = select_attempt_transition(
             config=context.config,
-            runtime=context.runtime,
+            plan=context.plan,
             attempt_result=attempt_result,
             cursor=state.cursor,
             quota_retry_wait_seconds=state.quota_retry_wait_seconds,
             built_in_retry_used=state.built_in_retry_used,
         )
-        _remember_non_quota_failure(context.runtime, state, attempt_result, transition)
+        _remember_non_quota_failure(context.plan, state, attempt_result, transition)
         return await _execute_transition_action(
             transition, context, attempt_result, state
         )
@@ -177,10 +174,10 @@ async def _run_attempt_command(
     context: _InvocationLoopContext,
     state: _InvocationLoopState,
 ) -> CommandResult:
-    prepare_runtime_for_attempt(context.runtime)
+    prepare_runtime_for_attempt(context.plan)
     state.usage_state.accumulator.record_attempt_start()
     return await run_invocation_attempt(
-        runtime=context.runtime,
+        plan=context.plan,
         command_runner=context.command_runner,
         log_file=context.log_file,
         attempt=state.attempt,
@@ -193,14 +190,14 @@ async def _run_attempt_command(
 
 
 def _remember_non_quota_failure(
-    runtime: InvocationCommandRuntime,
+    plan: InvocationPlan,
     state: _InvocationLoopState,
     attempt_result: InvocationAttemptResult,
     transition: InvocationAttemptTransition,
 ) -> None:
     if not _is_non_quota_retry(transition):
         return
-    failure_summary = runtime.failure_classifier(attempt_result.result)
+    failure_summary = plan.failure_classifier(attempt_result.result)
     if failure_summary.kind != "quota_or_rate_limit":
         state.last_non_quota_failure = failure_summary
 
@@ -249,13 +246,13 @@ def _resolve_output_idle_timeout(
 
 
 def _decode_provider_usage(
-    runtime: InvocationCommandRuntime,
+    plan: InvocationPlan,
     result: CommandResult,
 ) -> UsageDecodeResult:
-    if runtime.usage_decoder is None:
+    if plan.usage_decoder is None:
         return UsageDecodeResult()
     try:
-        return runtime.usage_decoder(result)
+        return plan.usage_decoder(result)
     except Exception as exc:
         message = str(exc).strip() or exc.__class__.__name__
         return UsageDecodeResult(error=f"Provider usage decoding failed: {message}")
@@ -267,7 +264,7 @@ async def _execute_transition_action(
     attempt_result: InvocationAttemptResult,
     state: _InvocationLoopState,
 ) -> SleepAndRetryAttemptTransition | None:
-    runtime = context.runtime
+    plan = context.plan
     invocation_context = context.invocation_context
     if isinstance(transition, ContinueAttemptTransition):
         raise RuntimeError("Invocation loop cannot execute a continue transition.")
@@ -289,20 +286,20 @@ async def _execute_transition_action(
             return None
         case RaiseRetryExhaustedAttemptTransition():
             _raise_retry_exhausted(
-                runtime=runtime,
+                plan=plan,
                 result=attempt_result.result,
                 retry_count=transition.retry_count,
                 log_file=context.log_file,
             )
         case RaiseFailedExitAttemptTransition():
             _raise_failed_exit(
-                runtime=runtime,
+                plan=plan,
                 result=attempt_result.result,
                 log_file=context.log_file,
             )
         case RaiseQuotaFailureAttemptTransition(message=message):
             _raise_quota_failure(
-                runtime=runtime,
+                plan=plan,
                 result=attempt_result.result,
                 message=message,
                 last_non_quota_failure=state.last_non_quota_failure,
@@ -311,8 +308,8 @@ async def _execute_transition_action(
             extracted_output=extracted_output
         ):
             raise build_output_extraction_failure_error(
-                runtime.cmd[0],
-                extracted_output.output_extraction_status,
+                plan.cmd[0],
+                extracted_output.result.output_extraction_status,
             )
         case _:
             assert_never(transition)
@@ -353,41 +350,41 @@ def _finalize_successful_invocation(
 
 
 def _raise_retry_exhausted(
-    runtime: InvocationCommandRuntime,
+    plan: InvocationPlan,
     result: CommandResult,
     retry_count: int,
     log_file: Path | None,
 ) -> Never:
     raise build_invocation_failure_error(
         f"Command output matched retry conditions after {retry_count} retries",
-        runtime.failure_classifier,
+        plan.failure_classifier,
         result,
         log_file,
     )
 
 
 def _raise_failed_exit(
-    runtime: InvocationCommandRuntime,
+    plan: InvocationPlan,
     result: CommandResult,
     log_file: Path | None,
 ) -> Never:
     raise build_invocation_failure_error(
         f"Exit code {result.returncode}",
-        runtime.failure_classifier,
+        plan.failure_classifier,
         result,
         log_file,
     )
 
 
 def _raise_quota_failure(
-    runtime: InvocationCommandRuntime,
+    plan: InvocationPlan,
     result: CommandResult,
     message: str,
     last_non_quota_failure: InvocationFailureSummary | None = None,
 ) -> Never:
     raise build_quota_failure_error(
         message,
-        runtime.failure_classifier,
+        plan.failure_classifier,
         result,
         None,
         last_non_quota_failure,

@@ -130,6 +130,12 @@ def build_workspace_export_filename(logical_worktree_name: str) -> str:
     )
 
 
+def workspace_export_relative_path(logical_worktree_name: str) -> Path:
+    return Path("workspace-exports") / build_workspace_export_filename(
+        logical_worktree_name
+    )
+
+
 def build_generated_file_result_dir_name(name: str) -> str:
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-")
     if not safe_name:

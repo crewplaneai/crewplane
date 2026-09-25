@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from typing import Literal
 
+from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workspace.invocation_identity import invocation_slug
 
 
@@ -32,10 +33,8 @@ def require_state_invocation_slug(payload: Mapping[str, object]) -> str:
         raise InvalidInvocationField("node_id")
     if not isinstance(task_id, str) or not task_id:
         raise InvalidInvocationField("task_id")
-    if not isinstance(round_num, int) or isinstance(round_num, bool):
+    if not is_strict_int(round_num):
         raise InvalidInvocationField("round_num")
-    if audit_round_num is not None and (
-        not isinstance(audit_round_num, int) or isinstance(audit_round_num, bool)
-    ):
+    if audit_round_num is not None and not is_strict_int(audit_round_num):
         raise InvalidInvocationField("audit_round_num")
     return invocation_slug(node_id, task_id, audit_round_num, round_num)

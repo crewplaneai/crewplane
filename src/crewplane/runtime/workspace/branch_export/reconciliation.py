@@ -13,6 +13,7 @@ from crewplane.core.preflight.models import (
 from crewplane.runtime.workspace.branch_export.fulfillment import (
     BranchExportCheckpoint,
 )
+from crewplane.runtime.workspace.branch_export.records import checkpoint_record
 from crewplane.version import SCHEMA_VERSION
 
 BranchExportOrigin = Literal["current_run", "verified_history"]
@@ -293,22 +294,10 @@ def _checkpoint_matches(
     payload: JsonObject,
     checkpoint: BranchExportCheckpoint,
 ) -> bool:
-    return (
-        payload.get("workspace_state_artifact") == checkpoint.state_relative_path
-        and payload.get("task_id") == checkpoint.task_id
-        and payload.get("result_commit") == checkpoint.result_commit
-        and payload.get("result_tree") == checkpoint.result_tree
-        and payload.get("result_ref") == checkpoint.result_ref
-        and payload.get("bundle") == _expected_bundle(checkpoint)
+    return all(
+        payload.get(field) == value
+        for field, value in checkpoint_record(checkpoint).items()
     )
-
-
-def _expected_bundle(checkpoint: BranchExportCheckpoint) -> JsonObject:
-    return {
-        "path": checkpoint.bundle_relative_path,
-        "sha256": checkpoint.bundle_sha256,
-        "size_bytes": checkpoint.bundle_size_bytes,
-    }
 
 
 def _worktree_contract_matches(

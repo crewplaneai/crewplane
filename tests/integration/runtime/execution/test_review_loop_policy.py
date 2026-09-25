@@ -120,3 +120,45 @@ def test_consensus_failure_continuation_policy_uses_compiled_node_policy() -> No
         True,
         "continue_on_failure=true",
     )
+
+
+@pytest.mark.parametrize(
+    "roles, message",
+    [
+        ([], "requires at least one executor and one reviewer."),
+        (["executor"], "requires at least one executor and one reviewer."),
+        (["reviewer"], "requires at least one executor and one reviewer."),
+        (["executor", "executor"], "requires at least one executor and one reviewer."),
+        (["reviewer", "reviewer"], "requires at least one executor and one reviewer."),
+        (["executor", "executor", "reviewer", "reviewer"], None),
+        (
+            ["reviewer", "executor"],
+            "must declare providers as a contiguous executor segment followed by a contiguous reviewer segment.",
+        ),
+        (
+            ["executor", "reviewer", "executor"],
+            "must declare providers as a contiguous executor segment followed by a contiguous reviewer segment.",
+        ),
+    ],
+)
+def test_runtime_sequential_role_boundary(
+    roles: list[str], message: str | None
+) -> None:
+    providers = [
+        provider(f"agent-{index}", ProviderRole(role), f"task-{index}")
+        for index, role in enumerate(roles)
+    ]
+
+    if message is not None:
+        with pytest.raises(ValueError) as caught:
+            split_sequential_review_loop_providers("review.node", providers)
+        assert str(caught.value) == f"Sequential node 'review.node' {message}"
+    else:
+        executors, reviewers = split_sequential_review_loop_providers(
+            "review.node", providers
+        )
+        assert len(executors) == len(reviewers) == 2
+        assert all(
+            actual is expected
+            for actual, expected in zip(executors + reviewers, providers, strict=True)
+        )

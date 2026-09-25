@@ -312,3 +312,137 @@ def _classify(context: _Context) -> BranchExportReconciliation:
 
 def _write_record(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+_CHECKPOINT_KEYS = (
+    "workspace_state_artifact",
+    "task_id",
+    "result_commit",
+    "result_tree",
+    "result_ref",
+    "bundle",
+)
+
+
+def _checkpoint_payload(context: _Context, status: str) -> dict[str, object]:
+    payload = prepared_branch_export_record(
+        context.plan,
+        context.run_id,
+        context.run_key_name,
+        context.repository_id,
+        context.logical_worktree_name,
+        "feature/exported",
+        context.branch_ref,
+        context.checkpoint,
+        context.policy,
+        "current_run",
+        "initial",
+    )
+    if status == "fulfilled":
+        payload.update(
+            status=status,
+            operation="created",
+            branch_exists_before=False,
+            branch_exists_after=True,
+        )
+    elif status == "failed_verification":
+        payload.update(
+            status=status,
+            operation=status,
+            failure_message="failed",
+            branch_exists_before=None,
+            branch_exists_after=None,
+        )
+    elif status == "skipped":
+        payload.update(
+            status=status,
+            operation=status,
+            skip_reason="create_branch_false",
+            branch_name=None,
+            branch_ref=None,
+            branch_exists_before=None,
+            branch_exists_after=None,
+        )
+    return payload
+
+
+@pytest.mark.parametrize("status", ["prepared", "fulfilled", "failed_verification"])
+@pytest.mark.parametrize("field", ["node_id", *_CHECKPOINT_KEYS])
+@pytest.mark.parametrize("remove", [False, True])
+def test_checkpoint_field_removal_or_tampering_is_rejected(
+    tmp_path: Path, status: str, field: str, remove: bool
+) -> None:
+    context = _context(tmp_path)
+    payload = _checkpoint_payload(context, status)
+    if remove:
+        del payload[field]
+    else:
+        payload[field] = "tampered"
+    _write_record(context.record_path, payload)
+
+    error = ConflictingPreparedBranchExport if status == "prepared" else RuntimeError
+    message = (
+        "conflicting prepared"
+        if status == "prepared"
+        else "terminal history contradicts"
+    )
+    with pytest.raises(error, match=message):
+        _classify(context)
+
+
+@pytest.mark.parametrize("status", ["prepared", "fulfilled", "failed_verification"])
+def test_extra_bundle_keys_are_not_accepted_as_matching_checkpoint(
+    tmp_path: Path, status: str
+) -> None:
+    context = _context(tmp_path)
+    payload = _checkpoint_payload(context, status)
+    payload["bundle"]["extra"] = "unexpected"
+    _write_record(context.record_path, payload)
+
+    with pytest.raises(RuntimeError):
+        _classify(context)
+
+
+@pytest.mark.parametrize(
+    "status", ["prepared", "fulfilled", "failed_verification", "skipped"]
+)
+@pytest.mark.parametrize("presence", ["absent", "task_only", "partial", "complete"])
+@pytest.mark.parametrize("recovery_mode", ["initial", "prepared_record"])
+def test_checkpoint_presence_preserves_status_specific_recovery_rules(
+    tmp_path: Path, status: str, presence: str, recovery_mode: str
+) -> None:
+    context = _context(tmp_path)
+    payload = _checkpoint_payload(context, status)
+    payload["recovery_mode"] = recovery_mode
+    if presence != "complete":
+        keep = {"task_id"} if presence == "task_only" else set()
+        if presence == "partial":
+            keep = {"result_commit"}
+        for field in _CHECKPOINT_KEYS:
+            if field not in keep:
+                del payload[field]
+    _write_record(context.record_path, payload)
+    accepted = (
+        (status == "skipped" and recovery_mode == "initial")
+        or (status == "fulfilled" and presence == "complete")
+        or (
+            status == "prepared"
+            and presence == "complete"
+            and recovery_mode == "initial"
+        )
+        or (
+            status == "failed_verification"
+            and (
+                presence == "complete"
+                or (presence == "absent" and recovery_mode == "initial")
+            )
+        )
+    )
+    if accepted:
+        result = _classify(context)
+        assert result.recovery_mode == (
+            "prepared_record" if status == "prepared" else "initial"
+        )
+    else:
+        with pytest.raises(RuntimeError):
+            _classify(context)

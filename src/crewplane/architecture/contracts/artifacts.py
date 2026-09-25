@@ -115,6 +115,25 @@ def build_task_round_filename(task_id: str, round_num: int) -> str:
     return f"{task_id}_round{round_num}.md"
 
 
+def parse_task_round(stem: str) -> tuple[str, int]:
+    if "_round" not in stem:
+        return stem, 0
+    try:
+        task_id, round_str = stem.rsplit("_round", 1)
+        return task_id, int(round_str)
+    except ValueError:
+        return stem, 0
+
+
+def parse_audit_round(dir_name: str) -> int:
+    if not dir_name.startswith(REVIEW_AUDIT_DIRECTORY_PREFIX):
+        return 0
+    try:
+        return int(dir_name[len(REVIEW_AUDIT_DIRECTORY_PREFIX) :])
+    except ValueError:
+        return 0
+
+
 def safe_artifact_name(name: str) -> str:
     stripped = name.strip().lower()
     if not stripped or stripped in {".", ".."}:

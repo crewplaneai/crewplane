@@ -22,6 +22,8 @@ from .claude_json_parser import (
     parse_claude_result,
 )
 from .streaming import (
+    malformed_output,
+    missing_output,
     new_owned_output_file,
     remove_owned_path,
     stdout_source,
@@ -46,12 +48,12 @@ def extract_claude_output(
     """Extract Claude's result string into an owned temporary output file."""
     extraction = _extract_claude_document(result)
     if extraction.error is not None:
-        return _malformed_output()
+        return malformed_output()
     if extraction.result_path is None:
-        return _missing_output()
+        return missing_output()
     if not _path_has_output(extraction.result_path):
         remove_owned_path(extraction.result_path)
-        return _missing_output()
+        return missing_output()
     return OutputExtractionResult(
         output_text="",
         output_extraction_status="success",
@@ -116,14 +118,3 @@ def read_claude_model_usage(
 
 def _malformed_document() -> ClaudeJsonDocument:
     return ClaudeJsonDocument(None, 0, None, "Malformed Claude JSON output.")
-
-
-def _missing_output() -> OutputExtractionResult:
-    return OutputExtractionResult(output_text="", output_extraction_status="missing")
-
-
-def _malformed_output() -> OutputExtractionResult:
-    return OutputExtractionResult(
-        output_text="",
-        output_extraction_status="malformed",
-    )

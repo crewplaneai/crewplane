@@ -8,7 +8,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
 )
-from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workflow.keywords import (
+    ProviderRole,
+    provider_role_segments_are_contiguous,
+)
 
 from .types import (
     DEFAULT_AUDIT_ROUNDS,
@@ -53,21 +56,19 @@ def split_sequential_review_loop_providers(
     node_id: str,
     providers: list[ProviderRecord],
 ) -> tuple[list[ProviderRecord], list[ProviderRecord]]:
-    executors: list[ProviderRecord] = []
-    reviewers: list[ProviderRecord] = []
-    reviewer_segment_started = False
-
-    for provider in providers:
-        if provider.role == ProviderRole.REVIEWER:
-            reviewer_segment_started = True
-            reviewers.append(provider)
-            continue
-        if reviewer_segment_started:
-            raise ValueError(
-                f"Sequential node '{node_id}' must declare providers as a contiguous "
-                "executor segment followed by a contiguous reviewer segment."
-            )
-        executors.append(provider)
+    if not provider_role_segments_are_contiguous(
+        provider.role for provider in providers
+    ):
+        raise ValueError(
+            f"Sequential node '{node_id}' must declare providers as a contiguous "
+            "executor segment followed by a contiguous reviewer segment."
+        )
+    executors = [
+        provider for provider in providers if provider.role == ProviderRole.EXECUTOR
+    ]
+    reviewers = [
+        provider for provider in providers if provider.role == ProviderRole.REVIEWER
+    ]
 
     if not executors or not reviewers:
         raise ValueError(

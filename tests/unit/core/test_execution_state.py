@@ -303,11 +303,25 @@ def test_node_state_requires_schema_marker() -> None:
         NodeState.model_validate(payload)
 
 
-def test_artifact_descriptor_rejects_unsafe_relative_path() -> None:
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "",
+        ".",
+        "..",
+        "../result.md",
+        "/absolute.md",
+        "nested//file.md",
+        "./file.md",
+        "nested/../file.md",
+        "nested/file.md/",
+    ],
+)
+def test_artifact_descriptor_rejects_unsafe_relative_path(relative_path: str) -> None:
     with pytest.raises(ValidationError, match="relative POSIX"):
         ArtifactDescriptor(
             kind="output",
-            relative_path="../result.md",
+            relative_path=relative_path,
             sha256=sha256_hex("result"),
             size_bytes=6,
         )
@@ -378,3 +392,17 @@ def test_durable_state_timestamp_contract(timestamp, record_field) -> None:
     else:
         validated = model.model_validate(payload)
         assert validated.model_dump()[field] == timestamp
+
+
+@pytest.mark.parametrize(
+    "relative_path", [" ", " nested /file.md", r"nested\file.md", "nested/file.md"]
+)
+def test_artifact_descriptor_preserves_raw_path_spelling(relative_path: str) -> None:
+    descriptor = ArtifactDescriptor(
+        kind="output",
+        relative_path=relative_path,
+        sha256=sha256_hex("result"),
+        size_bytes=6,
+    )
+
+    assert descriptor.relative_path == relative_path

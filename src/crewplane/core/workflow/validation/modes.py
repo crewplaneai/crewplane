@@ -5,7 +5,10 @@ from crewplane.core.workflow.diagnostics import (
     WorkflowDiagnosticSeverity,
     WorkflowValidationDiagnostic,
 )
-from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.core.workflow.keywords import (
+    ProviderRole,
+    provider_role_segments_are_contiguous,
+)
 from crewplane.core.workflow.models import (
     INPUT_NODE_CONTRACT_RULES,
     WorkflowNode,
@@ -272,7 +275,9 @@ def _multi_sequential_provider_role_diagnostics(
             )
         )
 
-    if not _provider_role_segments_are_contiguous(node):
+    if not provider_role_segments_are_contiguous(
+        provider.role for provider in node.providers
+    ):
         diagnostics.append(
             _structure_diagnostic(
                 f"Sequential node '{node.id}' must declare providers as a "
@@ -313,18 +318,9 @@ def _has_sequential_review_loop_provider_shape(node: WorkflowNode) -> bool:
         return False
     if node.providers[-1].role != ProviderRole.REVIEWER:
         return False
-    return _provider_role_segments_are_contiguous(node)
-
-
-def _provider_role_segments_are_contiguous(node: WorkflowNode) -> bool:
-    reviewer_segment_started = False
-    for provider in node.providers:
-        if provider.role == ProviderRole.REVIEWER:
-            reviewer_segment_started = True
-            continue
-        if reviewer_segment_started:
-            return False
-    return True
+    return provider_role_segments_are_contiguous(
+        provider.role for provider in node.providers
+    )
 
 
 def _has_static_review_context(prompt: str) -> bool:

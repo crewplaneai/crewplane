@@ -425,7 +425,15 @@ def test_invocation_event_preserves_existing_positional_contract_and_round_trip(
         node_id="node.a",
         provider="codex",
         role=ProviderRole.EXECUTOR,
+        model="model-1",
+        requested_reasoning="xhigh",
         task_id="codex_executor_0",
+        audit_round_num=2,
+        round_num=3,
+        output_file="node.a/output.md",
+        log_file="node.a/invocation.log",
+        log_presentation_format="json_lines",
+        log_presentation_profile="codex",
     )
     event = invocation_event(
         EventType.INVOCATION_FINISHED,
@@ -456,6 +464,7 @@ def test_invocation_event_preserves_existing_positional_contract_and_round_trip(
     restored = event_from_record(execution_event_log_record(event))
 
     assert restored is not None
+    assert restored.context == context
     assert restored.payload.provider_tokens == {"input": 3}
     assert restored.payload.failure_advice == "retry"
     assert restored.payload.provider_usage_report_count is None

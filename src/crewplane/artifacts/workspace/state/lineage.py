@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...results.selection import parse_audit_round, parse_task_round
+from crewplane.architecture.contracts.artifacts import (
+    parse_audit_round,
+    parse_task_round,
+)
+
 from .fields import int_field, nullable_int_field
 
 INVALID_LINEAGE_ORDER = (-1, -1)

@@ -34,7 +34,6 @@ from ..process.runner import (
 from ..process.stream_capture import ProcessOutputCapture
 from ..process.streams import drain_process_pipes
 from ..workspace_environment import record_workspace_child_environment_applied
-from .state import InvocationCommandRuntime
 from .telemetry import emit_invocation_diagnostic
 
 
@@ -282,22 +281,8 @@ def _workspace_state_path(
     return invocation_context.workspace.workspace_state_path
 
 
-def build_invocation_runtime(plan: InvocationPlan) -> InvocationCommandRuntime:
-    return InvocationCommandRuntime(
-        failure_classifier=plan.failure_classifier,
-        output_extractor=plan.output_extractor,
-        usage_decoder=plan.usage_decoder,
-        quota_classifier=plan.quota_classifier,
-        structured_output_file=plan.structured_output_file,
-        cmd=plan.cmd,
-        stdin_data=plan.stdin_data,
-        log_header=plan.log_header,
-        one_shot_failure_retry=plan.one_shot_failure_retry,
-    )
-
-
-def prepare_runtime_for_attempt(runtime: InvocationCommandRuntime) -> None:
-    prepare_structured_output_file(runtime.structured_output_file)
+def prepare_runtime_for_attempt(plan: InvocationPlan) -> None:
+    prepare_structured_output_file(plan.structured_output_file)
 
 
 def prepare_structured_output_file(path: Path | None) -> None:
@@ -307,7 +292,7 @@ def prepare_structured_output_file(path: Path | None) -> None:
 
 
 async def run_invocation_attempt(
-    runtime: InvocationCommandRuntime,
+    plan: InvocationPlan,
     command_runner: CommandRunner,
     log_file: Path | None,
     attempt: int,
@@ -319,11 +304,11 @@ async def run_invocation_attempt(
 ) -> CommandResult:
     attempt_context = _context_for_attempt(invocation_context, attempt)
     attempt_result = command_runner(
-        cmd=runtime.cmd,
-        stdin_data=runtime.stdin_data,
+        cmd=plan.cmd,
+        stdin_data=plan.stdin_data,
         log_file=log_file,
         append_log=attempt > 0,
-        log_header=_retry_log_header(runtime, attempt),
+        log_header=_retry_log_header(plan, attempt),
         cwd=cwd,
         invocation_context=attempt_context,
         idle_timeout_seconds=idle_timeout_seconds,
@@ -397,9 +382,9 @@ def _emit_process_event(
         ) from exc
 
 
-def _retry_log_header(runtime: InvocationCommandRuntime, attempt: int) -> bytes:
+def _retry_log_header(plan: InvocationPlan, attempt: int) -> bytes:
     if attempt == 0:
-        return runtime.log_header
+        return plan.log_header
     return build_retry_log_header(attempt + 1)
 
 

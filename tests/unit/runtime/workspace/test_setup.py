@@ -34,7 +34,7 @@ from crewplane.runtime.workspace.setup import (
     run_workspace_setup,
 )
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.workspace_records import WORKTREE_CONTRACT
+from tests.helpers.workspace_records import WORKTREE_CONTRACT, workspace_setup_policy
 
 
 def test_run_workspace_setup_writes_success_metadata_and_log(tmp_path: Path) -> None:
@@ -42,7 +42,7 @@ def test_run_workspace_setup_writes_success_metadata_and_log(tmp_path: Path) -> 
     cwd.mkdir()
     state_path = tmp_path / "stage" / "workspace-state.json"
     state_path.parent.mkdir()
-    policy = _policy(
+    policy = workspace_setup_policy(
         [
             [
                 sys.executable,
@@ -140,7 +140,7 @@ def test_run_workspace_setup_raises_and_records_failed_command(
     cwd.mkdir()
     state_path = tmp_path / "stage" / "workspace-state-alpha.json"
     state_path.parent.mkdir()
-    policy = _policy([[sys.executable, "-c", "import sys; sys.exit(7)"]])
+    policy = workspace_setup_policy([[sys.executable, "-c", "import sys; sys.exit(7)"]])
 
     with pytest.raises(WorkspaceSetupError) as exc_info:
         run_workspace_setup(_plan(), policy, cwd, state_path)
@@ -177,7 +177,7 @@ def test_run_workspace_setup_timeout_terminates_child_process_group(
         f"subprocess.Popen([sys.executable, '-c', {child_script!r}]); "
         "time.sleep(10)"
     )
-    policy = _policy([[sys.executable, "-c", parent_script]])
+    policy = workspace_setup_policy([[sys.executable, "-c", parent_script]])
     original_popen = subprocess.Popen
     started_processes: list[subprocess.Popen[str]] = []
 
@@ -226,7 +226,7 @@ def test_run_workspace_setup_uses_controlled_git_environment(
     cwd.mkdir()
     state_path = tmp_path / "stage" / "workspace-state.json"
     state_path.parent.mkdir()
-    policy = _policy(
+    policy = workspace_setup_policy(
         [
             [
                 sys.executable,
@@ -298,7 +298,7 @@ def test_run_workspace_setup_uses_process_group_capability(
         lambda: False,
     )
 
-    run_workspace_setup(_plan(), _policy([["setup"]]), cwd, state_path)
+    run_workspace_setup(_plan(), workspace_setup_policy([["setup"]]), cwd, state_path)
     assert not probed_process_groups
 
     monkeypatch.setattr(
@@ -306,7 +306,7 @@ def test_run_workspace_setup_uses_process_group_capability(
         "supports_posix_process_groups",
         lambda: True,
     )
-    run_workspace_setup(_plan(), _policy([["setup"]]), cwd, state_path)
+    run_workspace_setup(_plan(), workspace_setup_policy([["setup"]]), cwd, state_path)
 
     assert captured_start_new_session == [False, True]
     assert probed_process_groups == {SuccessfulSetupProcess.pid}
@@ -488,25 +488,6 @@ class StubbornSetupProcess:
         if timeout is not None and not self.stopped:
             raise subprocess.TimeoutExpired("setup", timeout)
         return -9
-
-
-def _policy(commands: list[list[str]]) -> WorkspaceSelectionRecord:
-    return WorkspaceSelectionRecord(
-        enabled=True,
-        logical_worktree_name="primary",
-        declaration_kind="worktree",
-        materialization="worktree_checkout",
-        worktree_contract=WORKTREE_CONTRACT,
-        setup=WorkspaceSetupRecord(
-            profile_name="bootstrap",
-            commands=[
-                WorkspaceSetupCommandRecord(argv=argv, command_index=index)
-                for index, argv in enumerate(commands)
-            ],
-        ),
-        writable=True,
-        lineage_producer=True,
-    )
 
 
 def _plan(setup_timeout_seconds: float = 30.0) -> PreflightExecutionPlan:

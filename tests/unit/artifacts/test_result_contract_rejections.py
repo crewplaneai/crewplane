@@ -6,6 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts.artifacts import (
+    parse_audit_round,
+    parse_task_round,
+)
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.artifacts.results.findings import (
     FindingsExtractionError,
@@ -20,8 +24,6 @@ from crewplane.artifacts.results.review_loop_status import (
 from crewplane.artifacts.results.selection import (
     latest_round_files,
     ordered_task_ids,
-    parse_audit_round,
-    parse_task_round,
 )
 from crewplane.artifacts.results.writer import ResultWriter
 
