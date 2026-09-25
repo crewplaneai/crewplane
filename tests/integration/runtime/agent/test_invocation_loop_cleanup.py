@@ -196,7 +196,7 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             assert not output_file.exists()
 
 
-@pytest.mark.parametrize("phase", ["environment", "runtime", "idle_timeout"])
+@pytest.mark.parametrize("phase", ["environment", "usage_state", "idle_timeout"])
 def test_plan_output_is_owned_during_runtime_setup(
     tmp_path, monkeypatch, phase
 ) -> None:
@@ -224,8 +224,8 @@ def test_plan_output_is_owned_during_runtime_setup(
 
     if phase == "environment":
         monkeypatch.setattr(invoker, "prepare_workspace_child_environment", fail_setup)
-    elif phase == "runtime":
-        monkeypatch.setattr(loop, "build_invocation_runtime", fail_setup)
+    elif phase == "usage_state":
+        monkeypatch.setattr(loop, "InvocationUsageAccumulator", fail_setup)
     else:
         config.invocation_idle_timeout_seconds = 1
         plan = replace(plan, supports_output_idle_timeout=False)
@@ -247,3 +247,95 @@ def test_plan_output_is_owned_during_runtime_setup(
         )
     runner.assert_not_called()
     assert not owned.exists()
+
+
+@pytest.mark.parametrize("owned", [False, True])
+@pytest.mark.parametrize(
+    "outcome", ["success", "publication_failure", "retry", "cancel"]
+)
+def test_extracted_file_lifetime_across_attempt_and_outer_cleanup(
+    tmp_path, monkeypatch, owned, outcome
+):
+    from dataclasses import replace
+    from unittest.mock import AsyncMock
+
+    from crewplane.architecture.contracts import OutputExtractionResult
+    from crewplane.runtime.agent.invocation import loop
+
+    extracted_path = tmp_path / "extracted.txt"
+    output_file = tmp_path / "final.md"
+    if outcome == "publication_failure":
+        output_file.mkdir()
+    config = AgentConfig(
+        cli_cmd=["provider"],
+        max_retries=1,
+        retry_delay_seconds=0,
+        retry_on_output_contains=["retry marker"],
+    )
+    attempts = 0
+
+    def capture(**kwargs):
+        nonlocal attempts
+        assert kwargs["append_log"] is (attempts > 0)
+        assert not extracted_path.exists()
+        attempts += 1
+        text = (
+            "retry marker"
+            if outcome in {"retry", "cancel"} and attempts == 1
+            else "café 🌍"
+        )
+        extracted_path.write_text(text, encoding="utf-8")
+        return CommandResult(0, "", "")
+
+    def extract(result, structured_file):
+        assert result.returncode == 0
+        assert structured_file == (None if owned else extracted_path)
+        return OutputExtractionResult(
+            "",
+            "success",
+            extracted_path,
+            len(extracted_path.read_text(encoding="utf-8")),
+            owned,
+        )
+
+    async def sleep(delay):
+        assert delay == 0
+        assert extracted_path.read_text(encoding="utf-8") == "retry marker"
+        if outcome == "cancel":
+            raise asyncio.CancelledError
+
+    original_cleanup = loop.cleanup_structured_output_file
+
+    def outer_cleanup(path):
+        assert path == (None if owned else extracted_path)
+        assert extracted_path.exists() is (not owned)
+        original_cleanup(path)
+
+    monkeypatch.setattr(loop.asyncio, "sleep", sleep)
+    monkeypatch.setattr(loop, "cleanup_structured_output_file", outer_cleanup)
+    plan = replace(
+        build_cli_invocation_plan(config, None, "prompt", output_file),
+        output_extractor=extract,
+        structured_output_file=None if owned else extracted_path,
+    )
+    invocation = loop.run_invocation_loop(
+        config,
+        "prompt",
+        output_file,
+        None,
+        tmp_path,
+        None,
+        AsyncMock(side_effect=capture),
+        plan,
+    )
+    if outcome == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(invocation)
+    elif outcome == "publication_failure":
+        with pytest.raises(IsADirectoryError):
+            asyncio.run(invocation)
+    else:
+        asyncio.run(invocation)
+        assert output_file.read_bytes() == "café 🌍".encode()
+    assert attempts == (2 if outcome == "retry" else 1)
+    assert not extracted_path.exists()

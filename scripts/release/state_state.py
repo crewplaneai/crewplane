@@ -90,18 +90,13 @@ def derive_release_state(
         if manifest is not None
     ]
 
-    if pypi_complete and npm.exists and npm.latest == context.version.npm:
-        if formula_issues or tag_issues:
-            reasons.extend(formula_issues)
-            reasons.extend(tag_issues)
-            guidance.extend(
-                guidance_for_missing_side_effects(
-                    pypi_complete, npm.exists, npm.latest, context
-                )
-            )
-            return DerivedReleaseState(
-                ReleaseStatus.PARTIAL, tuple(reasons), tuple(guidance)
-            )
+    if (
+        pypi_complete
+        and npm.exists
+        and npm.latest == context.version.npm
+        and not formula_issues
+        and not tag_issues
+    ):
         return DerivedReleaseState(
             ReleaseStatus.COMPLETE,
             (

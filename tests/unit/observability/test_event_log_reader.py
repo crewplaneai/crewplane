@@ -136,7 +136,15 @@ def test_event_reader_accepts_serialized_event_and_legacy_omitted_field() -> Non
             node_id="node.a",
             provider="codex",
             role=ProviderRole.EXECUTOR,
+            model="model-1",
+            requested_reasoning="xhigh",
             task_id="codex_executor_0",
+            audit_round_num=2,
+            round_num=3,
+            output_file="node.a/output.md",
+            log_file="node.a/invocation.log",
+            log_presentation_format="json_lines",
+            log_presentation_profile="codex",
         ),
         provider_usage_report_count=0,
     )
@@ -144,8 +152,67 @@ def test_event_reader_accepts_serialized_event_and_legacy_omitted_field() -> Non
     legacy_record = invocation_record()
     legacy_record.pop("provider_usage_report_count")
 
+    restored = event_from_line(json.dumps(current_record))
+    assert restored is not None
+    assert restored.context == current_event.context
     assert event_from_record(current_record).payload.provider_usage_report_count == 0
     assert event_from_record(legacy_record).payload.provider_usage_report_count is None
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "node_id",
+        "provider",
+        "role",
+        "model",
+        "requested_reasoning",
+        "task_id",
+        "output_file",
+        "log_file",
+        "log_presentation_format",
+        "log_presentation_profile",
+    ],
+)
+@pytest.mark.parametrize("value", [None, True, 2, {}, []])
+def test_event_reader_ignores_non_string_optional_context(
+    field: str, value: object
+) -> None:
+    event = event_from_record({**invocation_record(), field: value})
+
+    assert event is not None
+    assert getattr(event.context, field) is None
+
+
+@pytest.mark.parametrize("field", ["audit_round_num", "round_num"])
+@pytest.mark.parametrize(
+    "value, expected", [(None, None), (0, 0), (2, 2), (True, None), ("2", None)]
+)
+def test_event_reader_preserves_strict_optional_rounds(
+    field: str, value: object, expected: int | None
+) -> None:
+    event = event_from_record({**invocation_record(), field: value})
+
+    assert event is not None
+    assert getattr(event.context, field) == expected
+
+
+def test_event_round_trip_omits_null_context_fields() -> None:
+    context = ExecutionEventContext(
+        workflow_name="workflow",
+        run_id="run-1",
+        node_id="node.a",
+        provider="codex",
+        role=ProviderRole.EXECUTOR,
+        task_id="task",
+    )
+    event = invocation_event(EventType.INVOCATION_STARTED, "workflow", "run-1", context)
+    record = execution_event_log_record(event)
+
+    assert "requested_reasoning" not in record
+    restored = event_from_record(record)
+    assert restored is not None
+    assert restored.context == context
 
 
 def test_event_reader_keeps_existing_invalid_line_behavior(tmp_path: Path) -> None:

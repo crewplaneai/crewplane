@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from crewplane.architecture.contracts.artifacts import REVIEW_AUDIT_DIRECTORY_PREFIX
+from crewplane.architecture.contracts.artifacts import (
+    REVIEW_AUDIT_DIRECTORY_PREFIX,
+    parse_audit_round,
+    parse_task_round,
+)
 from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.architecture.safe_files import contained_regular_file
 
@@ -81,22 +85,3 @@ def ordered_task_ids(
 
 def is_raw_input_stage(selected_files: dict[str, Path]) -> bool:
     return set(selected_files) == {"input"}
-
-
-def parse_task_round(stem: str) -> tuple[str, int]:
-    if "_round" not in stem:
-        return stem, 0
-    try:
-        task_id, round_str = stem.rsplit("_round", 1)
-        return task_id, int(round_str)
-    except ValueError:
-        return stem, 0
-
-
-def parse_audit_round(dir_name: str) -> int:
-    if not dir_name.startswith(REVIEW_AUDIT_DIRECTORY_PREFIX):
-        return 0
-    try:
-        return int(dir_name[len(REVIEW_AUDIT_DIRECTORY_PREFIX) :])
-    except ValueError:
-        return 0

@@ -16,7 +16,11 @@ from ..capability import CliProviderCapability
 from ..commands import build_standard_command
 from ..failures.classifier import classify_generic_failure
 from ..quota.classifier import classify_generic_quota
-from ..streaming import load_stdout_json
+from ..streaming import (
+    load_stdout_json,
+    malformed_output,
+    missing_output,
+)
 from ..usage_decoders import (
     CounterReader,
     MalformedUsageError,
@@ -116,29 +120,18 @@ def extract_gemini_output(
 ) -> OutputExtractionResult:
     payload, error = load_stdout_json(result)
     if error is not None:
-        return _malformed_output()
+        return malformed_output()
     if payload is None or "response" not in payload:
-        return _missing_output()
+        return missing_output()
     response = payload["response"]
     if not isinstance(response, str):
-        return _malformed_output()
+        return malformed_output()
     if not response.strip():
-        return _missing_output()
+        return missing_output()
     return OutputExtractionResult(
         output_text=response,
         output_extraction_status="success",
         output_char_count=len(response),
-    )
-
-
-def _missing_output() -> OutputExtractionResult:
-    return OutputExtractionResult(output_text="", output_extraction_status="missing")
-
-
-def _malformed_output() -> OutputExtractionResult:
-    return OutputExtractionResult(
-        output_text="",
-        output_extraction_status="malformed",
     )
 
 

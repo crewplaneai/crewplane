@@ -8,9 +8,6 @@ import pytest
 
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
-    WorkspaceSelectionRecord,
-    WorkspaceSetupCommandRecord,
-    WorkspaceSetupRecord,
 )
 from crewplane.runtime.workspace import setup as workspace_setup
 from crewplane.runtime.workspace.setup import (
@@ -21,7 +18,21 @@ from crewplane.runtime.workspace.setup import (
     workspace_setup_artifacts,
 )
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.workspace_records import WORKTREE_CONTRACT
+from tests.helpers.workspace_records import workspace_setup_policy
+
+
+def test_setup_policies_keep_command_collections_independent() -> None:
+    commands = [["first", "argument"], ["second"]]
+    first = workspace_setup_policy(commands)
+    second = workspace_setup_policy(commands)
+    assert first.setup is not None
+    assert second.setup is not None
+    first.setup.commands[0].argv.append("changed")
+    first.setup.commands.pop()
+    assert [record.argv for record in second.setup.commands] == commands
+    assert [record.command_index for record in second.setup.commands] == [0, 1]
+    assert second.logical_worktree_name == "primary"
+    assert second.setup.profile_name == "bootstrap"
 
 
 def test_profile_deadline_limits_later_commands_and_stops_after_expiry(
@@ -54,7 +65,10 @@ def test_profile_deadline_limits_later_commands_and_stops_after_expiry(
 
     with pytest.raises(WorkspaceSetupError, match="profile timed out") as caught:
         run_workspace_setup(
-            _plan(10), _policy([["first"], ["second"], ["third"]]), tmp_path, state_path
+            _plan(10),
+            workspace_setup_policy([["first"], ["second"], ["third"]]),
+            tmp_path,
+            state_path,
         )
 
     assert wait_timeouts == [10.0, 4.0]
@@ -88,7 +102,9 @@ def test_cancellation_after_final_command_is_persisted_before_raising(
     ) as caught:
         run_workspace_setup(
             _plan(),
-            _policy([[sys.executable, "-c", "print('completed command')"]]),
+            workspace_setup_policy(
+                [[sys.executable, "-c", "print('completed command')"]]
+            ),
             tmp_path,
             state_path,
             cancellation=cancellation,
@@ -126,7 +142,9 @@ def test_failed_command_stops_profile_and_preserves_output_before_raising(
     ]
 
     with pytest.raises(WorkspaceSetupError, match="exit code 7") as caught:
-        run_workspace_setup(_plan(), _policy(commands), tmp_path, state_path)
+        run_workspace_setup(
+            _plan(), workspace_setup_policy(commands), tmp_path, state_path
+        )
 
     assert not (tmp_path / "unexpected").exists()
     artifacts = workspace_setup_artifacts(state_path)
@@ -152,7 +170,10 @@ def test_spawn_error_is_recorded_and_stops_profile_before_raising(
 
     with pytest.raises(WorkspaceSetupError, match="exit code None") as caught:
         run_workspace_setup(
-            _plan(), _policy([["unavailable"], ["later"]]), tmp_path, state_path
+            _plan(),
+            workspace_setup_policy([["unavailable"], ["later"]]),
+            tmp_path,
+            state_path,
         )
 
     assert popen.call_count == 1
@@ -169,25 +190,6 @@ def test_spawn_error_is_recorded_and_stops_profile_before_raising(
     assert record["error"] == "setup executable unavailable"
     assert artifacts.log_path.read_text(encoding="utf-8") == (
         "$ unavailable\n[error] setup executable unavailable\n\n"
-    )
-
-
-def _policy(commands: list[list[str]]) -> WorkspaceSelectionRecord:
-    return WorkspaceSelectionRecord(
-        enabled=True,
-        logical_worktree_name="primary",
-        declaration_kind="worktree",
-        materialization="worktree_checkout",
-        worktree_contract=WORKTREE_CONTRACT,
-        setup=WorkspaceSetupRecord(
-            profile_name="bootstrap",
-            commands=[
-                WorkspaceSetupCommandRecord(argv=argv, command_index=index)
-                for index, argv in enumerate(commands)
-            ],
-        ),
-        writable=True,
-        lineage_producer=True,
     )
 
 

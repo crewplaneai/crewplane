@@ -24,7 +24,10 @@ from ..capability import CliCommand, CliInvocationRequest, CliProviderCapability
 from ..commands import build_standard_command
 from ..failures.classifier import classify_generic_failure
 from ..quota.classifier import classify_generic_quota
-from ..streaming import iter_stdout_lines
+from ..streaming import (
+    iter_stdout_lines,
+    missing_output,
+)
 from ..usage_decoders import (
     CounterReader,
     MalformedUsageError,
@@ -118,19 +121,15 @@ def extract_codex_output(
     structured_output_file: Path | None,
 ) -> OutputExtractionResult:
     if structured_output_file is None or not structured_output_file.exists():
-        return _missing_output()
+        return missing_output()
     if not path_has_non_whitespace_text(structured_output_file):
-        return _missing_output()
+        return missing_output()
     return OutputExtractionResult(
         output_text="",
         output_extraction_status="success",
         output_path=structured_output_file,
         output_char_count=path_decoded_character_count(structured_output_file),
     )
-
-
-def _missing_output() -> OutputExtractionResult:
-    return OutputExtractionResult(output_text="", output_extraction_status="missing")
 
 
 def _reject_codex_reasoning_conflict(tokens: Sequence[str]) -> None:

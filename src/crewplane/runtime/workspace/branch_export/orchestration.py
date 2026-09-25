@@ -7,7 +7,7 @@ from pathlib import Path
 from crewplane.architecture.contracts import JsonObject, NodeArtifactRequest
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json
-from crewplane.artifacts.naming import build_workspace_export_filename
+from crewplane.artifacts.naming import workspace_export_relative_path
 from crewplane.artifacts.run_history import RunHistoryRecord
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -94,9 +94,8 @@ def fulfill_branch_exports_from_history(
         return ()
 
     def write_record(logical_worktree_name: str, payload: object) -> Path:
-        export_dir = source.run_dir / "workspace-exports"
-        export_name = build_workspace_export_filename(logical_worktree_name)
-        return atomic_write_json(export_dir / export_name, payload)
+        relative_path = workspace_export_relative_path(logical_worktree_name)
+        return atomic_write_json(source.run_dir / relative_path, payload)
 
     return _fulfill_branch_export_batch(
         _BranchExportBatch(

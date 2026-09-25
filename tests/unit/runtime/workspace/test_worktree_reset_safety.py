@@ -258,8 +258,9 @@ def test_reset_rejects_missing_or_symlinked_git_metadata(
 @pytest.mark.parametrize(
     ("setup", "message"),
     [
-        pytest.param("missing", "missing its checkout pointer", id="missing"),
+        pytest.param("missing", "is missing its checkout pointer", id="missing"),
         pytest.param("directory", "checkout pointer is invalid", id="directory"),
+        pytest.param("symlink", "checkout pointer is invalid", id="symlink"),
         pytest.param("empty", "checkout pointer is empty", id="empty"),
     ],
 )
@@ -274,11 +275,16 @@ def test_reset_rejects_invalid_gitdir_backlink(
     backlink.unlink()
     if setup == "directory":
         backlink.mkdir()
+    elif setup == "symlink":
+        backlink.symlink_to(checkout / ".git")
     elif setup == "empty":
         backlink.write_text(" \n", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match=message):
-        run_reset(monkeypatch, checkout, common_git_dir, git_dir)
+    command = GitCommand()
+    with pytest.raises(RuntimeError) as caught:
+        run_reset(monkeypatch, checkout, common_git_dir, git_dir, command)
+    assert str(caught.value) == f"Workspace retry reset Git dir {message}."
+    assert command.runs == []
 
 
 def test_reset_resolves_relative_gitdir_backlink(

@@ -97,19 +97,6 @@ class ProviderTokenAggregates:
 
 
 @dataclass(frozen=True)
-class UsageRollupValues:
-    terminal_invocations: int
-    total_attempts: int
-    cli_captured_invocations: int
-    provider_usage_full_invocations: int
-    provider_usage_partial_invocations: int
-    provider_usage_malformed_invocations: int
-    visible_estimate_tokens: int
-    configured_cost_usd: float | None
-    configured_cost_confidence: AggregateCostConfidence
-
-
-@dataclass(frozen=True)
 class InvocationUsageSummary:
     """Captured usage, extraction, cost, and failure facts for one invocation."""
 

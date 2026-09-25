@@ -41,6 +41,7 @@ from crewplane.core.workflow.models import WorkflowPlan
 
 from .context import (
     WorkflowRunContext,
+    build_workflow_run_context,
     fallback_workflow_name,
     resolve_project_root,
     resolve_state_dir,
@@ -76,16 +77,8 @@ def compile_workflow_preview(
     which_fn: Callable[[str], str | None] | None = None,
     workspace_real_execution: bool = False,
 ) -> PreflightCompilationPreview:
-    resolved_project_root = resolve_project_root(project_root)
-    context = WorkflowRunContext(
-        config=config,
-        source=source,
-        console=console,
-        project_root=resolved_project_root,
-        state_dir=resolve_state_dir(
-            resolved_project_root,
-            state_dir,
-        ),
+    context = build_workflow_run_context(
+        config, source, console, project_root, state_dir
     )
     snapshot_result = build_runtime_config_snapshot(
         config=config,

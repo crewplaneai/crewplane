@@ -235,3 +235,37 @@ def initialized_runtime_files(root: Path) -> RuntimeFiles:
     for path, content in initial_runtime_file_contents(runtime_files).items():
         write_atomic(path, content)
     return runtime_files
+
+
+class IntegerSubclass(int):
+    pass
+
+
+@pytest.mark.parametrize(
+    "value,index,generation",
+    [
+        (None, -1, 0),
+        (True, -1, 0),
+        (False, -1, 0),
+        ("1", -1, 0),
+        (1.0, -1, 0),
+        (0, 0, 0),
+        (-4, -4, 0),
+        (2**80, 2**80, 2**80),
+        (IntegerSubclass(7), 7, 7),
+    ],
+)
+def test_selection_integer_defaults_and_generation_clamping(value, index, generation):
+    state = selection_control_from_mapping(
+        {"schema_version": 1, "selected_index": value, "selection_generation": value}
+    )
+    assert state == SelectionControlState(index, generation, 0.0)
+    if isinstance(value, IntegerSubclass):
+        assert state.selected_index is value
+        assert state.selection_generation is value
+
+
+def test_selection_missing_integers_use_initial_defaults():
+    assert selection_control_from_mapping({"schema_version": 1}) == (
+        SelectionControlState(-1, 0, 0.0)
+    )

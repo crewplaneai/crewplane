@@ -10,6 +10,7 @@ All notable user-facing changes are recorded here.
 
 ### Fixed
 
+- Preserved requested reasoning metadata when replaying persisted execution events.
 - Made concurrency and shutdown regressions reliable on slow CI runners,
   rejected unrelated failures in safety tests, and bounded test subprocesses
   with cleanup on failure.

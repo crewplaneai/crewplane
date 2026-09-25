@@ -5,6 +5,7 @@ from crewplane.architecture.contracts import (
     JsonObject,
     MockInvokerFailSelector,
 )
+from crewplane.core.value_checks import is_strict_int, optional_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
 _SELECTOR_STRING_KEYS = {"node_id", "task_id", "provider", "role"}
@@ -58,7 +59,7 @@ def _validate_and_build_selector(
                 )
             selector[key] = raw_value
             continue
-        if isinstance(raw_value, bool) or not isinstance(raw_value, int):
+        if not is_strict_int(raw_value):
             raise ValueError(
                 "mock invoker option 'fail_when' selector key "
                 f"'{key}' must be an integer"
@@ -82,8 +83,7 @@ def _string_criterion(criteria: dict[str, str | int], key: str) -> str | None:
 
 
 def _integer_criterion(criteria: dict[str, str | int], key: str) -> int | None:
-    value = criteria.get(key)
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
+    return optional_strict_int(criteria.get(key))
 
 
 def validate_fail_selectors(value: object) -> tuple[MockInvokerFailSelector, ...]:

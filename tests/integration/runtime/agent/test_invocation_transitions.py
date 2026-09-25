@@ -1,4 +1,4 @@
-from crewplane.architecture.contracts import CommandResult
+from crewplane.architecture.contracts import CommandResult, OutputExtractionResult
 from crewplane.runtime.agent.invocation.retry import (
     NoFailureRetry,
     QuotaRetryFailure,
@@ -26,8 +26,7 @@ def test_structured_output_retry_maps_to_sleep_action() -> None:
     attempt_result = InvocationAttemptResult(
         result=CommandResult(returncode=0, stdout_text="retry", stderr_text=""),
         extracted_output=ExtractedInvocationOutput(
-            output_text="retry",
-            output_extraction_status="success",
+            result=OutputExtractionResult("retry", "success"),
         ),
         usage_output="retry",
     )
@@ -61,8 +60,7 @@ def test_structured_output_exhausted_match_maps_to_retry_exhausted() -> None:
     attempt_result = InvocationAttemptResult(
         result=CommandResult(returncode=0, stdout_text="retry", stderr_text=""),
         extracted_output=ExtractedInvocationOutput(
-            output_text="retry",
-            output_extraction_status="success",
+            result=OutputExtractionResult("retry", "success"),
         ),
         usage_output="retry",
     )

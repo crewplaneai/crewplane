@@ -245,3 +245,51 @@ def test_workflow_input_binding_identifies_missing_node() -> None:
     assert diagnostics[0].node_id == "missing"
     assert diagnostics[0].metadata == {"input_name": "request"}
     assert "references unknown node 'missing'" in diagnostics[0].message
+
+
+@pytest.mark.parametrize(
+    "roles, messages",
+    [
+        ([], ["Sequential node 'review' requires at least one provider."]),
+        (["executor"], []),
+        (
+            ["reviewer"],
+            [
+                "Sequential node 'review' has a single provider but role is 'reviewer'. Role must be 'executor' for single-provider nodes."
+            ],
+        ),
+        (
+            ["executor", "executor"],
+            ["Sequential node 'review' must end with a reviewer provider."],
+        ),
+        (
+            ["reviewer", "reviewer"],
+            ["Sequential node 'review' must start with an executor provider."],
+        ),
+        (["executor", "executor", "reviewer", "reviewer"], []),
+        (
+            ["reviewer", "executor"],
+            [
+                "Sequential node 'review' must start with an executor provider.",
+                "Sequential node 'review' must declare providers as a contiguous executor segment followed by a contiguous reviewer segment.",
+                "Sequential node 'review' must end with a reviewer provider.",
+            ],
+        ),
+        (
+            ["executor", "reviewer", "executor"],
+            [
+                "Sequential node 'review' must declare providers as a contiguous executor segment followed by a contiguous reviewer segment.",
+                "Sequential node 'review' must end with a reviewer provider.",
+            ],
+        ),
+    ],
+)
+def test_sequential_role_diagnostics_preserve_messages_and_order(
+    roles: list[str], messages: list[str]
+) -> None:
+    node = node_with(providers=[{"provider": "codex", "role": role} for role in roles])
+
+    diagnostics = collect_node_mode_diagnostics(node)
+
+    assert [diagnostic.message for diagnostic in diagnostics] == messages
+    assert all(diagnostic.severity == "error" for diagnostic in diagnostics)

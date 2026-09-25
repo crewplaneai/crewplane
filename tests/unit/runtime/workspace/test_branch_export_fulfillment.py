@@ -639,3 +639,50 @@ def test_checkpoint_validation_preserves_bundle_prefix_fallback(
     else:
         checkpoint = validated_checkpoint(*args)
         assert checkpoint.bundle_path == bundle
+
+
+@pytest.mark.parametrize(
+    "payload", [{}, {"node_id": "implement"}, {"task_id": "alpha"}]
+)
+def test_checkpoint_decoder_does_not_detect_identity_only_evidence(tmp_path, payload):
+    assert checkpoint_from_record(tmp_path, payload) is None
+
+
+@pytest.mark.parametrize("historical", [False, True])
+@pytest.mark.parametrize("name", ["Build.A", "Build-A", "Ünicode", "a" * 400])
+def test_export_writers_and_lookup_agree_on_complete_record_path(
+    tmp_path, historical, name
+):
+    repo = create_git_repo(tmp_path)
+    plan = branch_export_plan(repo, tmp_path, branch_name=None, create_branch=False)
+    node = plan.nodes[0]
+    policy = node.workspace_policy.model_copy(update={"logical_worktree_name": name})
+    node = node.model_copy(update={"workspace_policy": policy})
+    plan = plan.model_copy(update={"nodes": [node]})
+    output = OutputManager("workspace", base_dir=tmp_path / "artifacts")
+    run = branch_export_attempts.BranchExportRun(
+        plan,
+        output.run_id,
+        output.run_key_name,
+        plan.workspace_source,
+        output.stages_dir,
+        output,
+    )
+    attempt = branch_export_attempts.BranchExportAttempt(
+        run, name, node, policy, "verified_history" if historical else "current_run"
+    )
+    expected = (
+        output.stages_dir / "workspace-exports" / build_workspace_export_filename(name)
+    )
+    assert attempt.record_path == expected
+    assert not expected.parent.exists()
+    if historical:
+        history = history_record_for_output(output)
+        preview = preview_branch_exports_from_history(plan, history)
+        assert preview[0]["dry_run"] is True
+        assert not expected.parent.exists()
+        paths = fulfill_branch_exports_from_history(plan, history)
+    else:
+        paths = fulfill_branch_exports(plan, output)
+    assert paths == (attempt.record_path,)
+    assert json.loads(expected.read_text())["logical_worktree_name"] == name

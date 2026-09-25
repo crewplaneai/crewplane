@@ -7,12 +7,11 @@ from pathlib import Path
 from typing import TypeGuard, get_args
 
 from crewplane.architecture.contracts import OutputExtractionStatus
+from crewplane.architecture.contracts.execution_event import context_from_record
 from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.core.value_checks import optional_strict_int
-from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events.execution_event import (
     ExecutionEvent,
-    ExecutionEventContext,
 )
 from crewplane.observability.events.payloads import (
     EventPayload,
@@ -84,7 +83,7 @@ def event_from_record(record: Mapping[str, object]) -> ExecutionEvent | None:
             event_type=event_type,
             workflow_name=workflow_name,
             run_id=run_id,
-            context=_context_from_record(workflow_name, run_id, record),
+            context=context_from_record(workflow_name, run_id, record),
             payload=payload,
             timestamp=_timestamp_value(timestamp_utc),
             timestamp_utc=timestamp_utc,
@@ -204,28 +203,6 @@ def _runtime_log_payload_from_record(
     )
 
 
-def _context_from_record(
-    workflow_name: str,
-    run_id: str,
-    record: Mapping[str, object],
-) -> ExecutionEventContext:
-    return ExecutionEventContext(
-        workflow_name=workflow_name,
-        run_id=run_id,
-        node_id=_string(record.get("node_id")),
-        provider=_string(record.get("provider")),
-        role=_provider_role(record.get("role")),
-        model=_string(record.get("model")),
-        task_id=_string(record.get("task_id")),
-        audit_round_num=optional_strict_int(record.get("audit_round_num")),
-        round_num=optional_strict_int(record.get("round_num")),
-        output_file=_string(record.get("output_file")),
-        log_file=_string(record.get("log_file")),
-        log_presentation_format=_string(record.get("log_presentation_format")),
-        log_presentation_profile=_string(record.get("log_presentation_profile")),
-    )
-
-
 def _timestamp_value(timestamp_utc: str) -> float:
     try:
         return datetime.fromisoformat(timestamp_utc).timestamp()
@@ -256,11 +233,6 @@ def _is_output_extraction_status(
 
 def _string(value: object) -> str | None:
     return value if isinstance(value, str) else None
-
-
-def _provider_role(value: object) -> ProviderRole | None:
-    role = _string(value)
-    return ProviderRole(role) if role is not None else None
 
 
 def _report_count(value: object) -> int | None:

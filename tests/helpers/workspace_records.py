@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from crewplane.core.preflight.models import WorkspaceSelectionRecord
+from crewplane.core.preflight.models import (
+    WorkspaceSelectionRecord,
+    WorkspaceSetupCommandRecord,
+    WorkspaceSetupRecord,
+)
 from crewplane.core.workspace.policy import WorktreeContract
 
 WORKTREE_CONTRACT = WorktreeContract()
@@ -32,6 +36,25 @@ def workspace_selection_record(
         worktree_contract=WORKTREE_CONTRACT,
         writable=writable,
         lineage_producer=resolved_lineage,
+    )
+
+
+def workspace_setup_policy(commands: list[list[str]]) -> WorkspaceSelectionRecord:
+    return WorkspaceSelectionRecord(
+        enabled=True,
+        logical_worktree_name="primary",
+        declaration_kind="worktree",
+        materialization="worktree_checkout",
+        worktree_contract=WORKTREE_CONTRACT,
+        setup=WorkspaceSetupRecord(
+            profile_name="bootstrap",
+            commands=[
+                WorkspaceSetupCommandRecord(argv=argv, command_index=index)
+                for index, argv in enumerate(commands)
+            ],
+        ),
+        writable=True,
+        lineage_producer=True,
     )
 
 

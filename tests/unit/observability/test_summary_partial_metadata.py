@@ -6,10 +6,19 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts import LogLevel
+from crewplane.core.workflow.keywords import ProviderRole
+from crewplane.observability.events import (
+    EventType,
+    ExecutionEventContext,
+    invocation_event,
+    runtime_log_event,
+)
 from crewplane.observability.run_summary.formatting import (
     format_provider_token_aggregate_lines,
     invocation_label,
 )
+from crewplane.observability.run_summary.issues import issue_summaries
 from crewplane.observability.run_summary.markdown import render_run_summary_markdown
 from crewplane.observability.run_summary.models import (
     InvocationUsageSummary,
@@ -19,11 +28,13 @@ from crewplane.observability.run_summary.models import (
     ProviderUsageRollup,
     RunSummary,
     SpendTotals,
+    WorkspaceInvocationSummary,
     WorkspaceRunSummary,
 )
 from crewplane.observability.run_summary.terminal import (
     render_run_summary_terminal,
     terminal_spend_lines,
+    terminal_workspace_lines,
 )
 from crewplane.observability.run_summary.workspace import workspace_plan_summary
 
@@ -204,3 +215,78 @@ def test_invocation_labels_preserve_available_identity(
     expected: str,
 ) -> None:
     assert invocation_label(node, task, audit, round_num) == expected
+
+
+@pytest.mark.parametrize(
+    "audit, round_num, label",
+    [
+        (None, None, None),
+        (2, None, "audit2"),
+        (None, 3, "round3"),
+        (2, 3, "audit2/round3"),
+        (0, None, "audit0"),
+        (None, 0, "round0"),
+        (0, 0, "audit0/round0"),
+    ],
+)
+def test_round_labels_preserve_exact_rendered_and_issue_strings(
+    tmp_path: Path, audit: int | None, round_num: int | None, label: str | None
+) -> None:
+    invocation = WorkspaceInvocationSummary(
+        node_id="node",
+        task_id="task",
+        audit_round_num=audit,
+        round_num=round_num,
+        workspace_kind="snapshot",
+        logical_worktree_name=None,
+        status="succeeded",
+        state_path=None,
+        writable=None,
+        lineage_producer=None,
+        child_environment_required=None,
+        child_environment_applied=None,
+    )
+    summary = replace(
+        _empty_summary(tmp_path), workspace=WorkspaceRunSummary(None, (invocation,))
+    )
+    invocation_identity = "`node` / `task`" + (
+        f" / `{label}`" if label is not None else ""
+    )
+
+    assert (
+        f"- {invocation_identity}: kind=snapshot; status=succeeded; source=; result=; bundle="
+        in render_run_summary_markdown(summary).splitlines()
+    )
+    assert terminal_workspace_lines(summary) == [
+        "Workspace Observability",
+        "  Invocations:",
+        f"    - {invocation_identity}: kind=snapshot; worktree=None; status=succeeded; source=None:None",
+    ]
+    context = ExecutionEventContext(
+        workflow_name="flow",
+        run_id="run",
+        node_id="node",
+        task_id="task",
+        provider="mock",
+        role=ProviderRole.EXECUTOR,
+        audit_round_num=audit,
+        round_num=round_num,
+        output_file="output.md",
+        log_file="invocation.log",
+    )
+    warning = runtime_log_event(
+        "flow", "run", LogLevel.WARNING, "warning text", "test", context=context
+    )
+    failure = invocation_event(
+        EventType.INVOCATION_FAILED, "flow", "run", context, error="failure text"
+    )
+    details = (
+        "node: node; task: task"
+        + (f"; round: {label}" if label is not None else "")
+        + "; output: output.md; log: invocation.log"
+    )
+
+    assert [issue.message for issue in issue_summaries([warning, failure])] == [
+        f"[error] Invocation failed: failure text ({details})",
+        f"[warning] warning text ({details})",
+    ]

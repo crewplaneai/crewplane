@@ -237,3 +237,44 @@ def test_ensure_single_link_regular_file_fails_after_retries(
         file_creation.setattr(safe_files.os, "open", keep_file_contended)
         with pytest.raises(ValueError, match="could not be created safely"):
             ensure_single_link_regular_file(path)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "/absolute",
+        "..",
+        "../escape",
+        "nested//file",
+        "./file",
+        "nested/../file",
+        "nested/file/",
+    ],
+)
+def test_contained_directory_rejects_raw_unsafe_paths_before_creation(
+    tmp_path: Path, relative_path: str
+) -> None:
+    root = tmp_path / "root"
+
+    with pytest.raises(ValueError) as caught:
+        ensure_contained_directory(root, relative_path)
+
+    assert str(caught.value) == "Contained paths must be safe relative POSIX paths."
+    assert not root.exists()
+    assert safe_files.contained_regular_file(root, relative_path) is None
+
+
+@pytest.mark.parametrize(
+    "relative_path", ["", ".", " ", " nested /file", r"nested\file", "nested/file"]
+)
+def test_contained_directory_preserves_root_aliases_and_safe_raw_paths(
+    tmp_path: Path, relative_path: str
+) -> None:
+    root = tmp_path / "root"
+
+    directory = ensure_contained_directory(root, relative_path)
+
+    assert directory == root / relative_path
+    assert directory.is_dir()
+    assert safe_files.contained_directory(root, relative_path) == directory
+    assert safe_files.contained_regular_file(root, relative_path) is None

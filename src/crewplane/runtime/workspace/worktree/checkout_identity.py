@@ -78,19 +78,21 @@ def read_worktree_gitdir_marker(git_file: Path, operation: str) -> Path:
     return target if target.is_absolute() else git_file.parent / target
 
 
-def parse_worktree_gitdir_backlink(git_dir: Path) -> Path:
+def parse_worktree_gitdir_backlink(git_dir: Path, operation: str = "capture") -> Path:
     gitdir_file = git_dir / "gitdir"
     try:
         mode = gitdir_file.lstat().st_mode
     except FileNotFoundError as exc:
         raise RuntimeError(
-            "Workspace capture Git dir is missing its checkout pointer."
+            f"Workspace {operation} Git dir is missing its checkout pointer."
         ) from exc
     if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise RuntimeError("Workspace capture Git dir checkout pointer is invalid.")
+        raise RuntimeError(
+            f"Workspace {operation} Git dir checkout pointer is invalid."
+        )
     raw_path = gitdir_file.read_text(encoding="utf-8", errors="replace").strip()
     if not raw_path:
-        raise RuntimeError("Workspace capture Git dir checkout pointer is empty.")
+        raise RuntimeError(f"Workspace {operation} Git dir checkout pointer is empty.")
     return _resolve_git_metadata_path(raw_path, git_dir)
 
 

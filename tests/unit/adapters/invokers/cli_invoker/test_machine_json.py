@@ -14,7 +14,7 @@ from crewplane.adapters.invokers.cli_invoker.providers.gemini import (
     extract_gemini_output,
 )
 from crewplane.adapters.invokers.cli_invoker.providers.kilo import extract_kilo_output
-from crewplane.architecture.contracts import CommandResult
+from crewplane.architecture.contracts import CommandResult, OutputExtractionResult
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "provider_usage"
 
@@ -31,19 +31,27 @@ def test_codex_output_extractor_uses_last_message_file(tmp_path: Path) -> None:
     assert extracted.output_extraction_status == "success"
     assert extracted.output_path == output_path
     assert extracted.output_char_count == len("Codex response")
+    assert not extracted.owns_output_path
+    assert output_path.read_bytes() == b"Codex response"
 
 
-@pytest.mark.parametrize("content", ["", "   \n\t"])
+@pytest.mark.parametrize("content", [None, "", "   \n\t"])
 def test_codex_output_extractor_reports_missing_file_content(
     tmp_path: Path,
-    content: str,
+    content: str | None,
 ) -> None:
     output_path = tmp_path / "last-message.txt"
-    output_path.write_text(content, encoding="utf-8")
+    if content is not None:
+        output_path.write_text(content, encoding="utf-8")
 
     extracted = extract_codex_output(CommandResult(0, "ignored", ""), output_path)
 
-    assert extracted.output_extraction_status == "missing"
+    assert extracted == OutputExtractionResult("", "missing", None, None, False)
+    if content is None:
+        assert not output_path.exists()
+        assert extract_codex_output(CommandResult(0, "ignored", ""), None) == extracted
+    else:
+        assert output_path.read_text() == content
 
 
 def test_claude_output_extractor_streams_result_without_loading_whole_document() -> (
@@ -107,13 +115,16 @@ def test_claude_output_extractor_does_not_fall_back_after_selected_stdout_result
         None,
     )
 
-    assert extracted.output_extraction_status == expected_status
+    assert extracted == OutputExtractionResult("", expected_status, None, None, False)
     assert extracted.output_path is None
 
 
 @pytest.mark.parametrize(
     "stdout_text",
     [
+        "",
+        "   ",
+        "{}",
         '{"result":"   "}',
         '{"result":123}',
         '{"result":"bad\\q"}',
@@ -132,11 +143,25 @@ def test_claude_output_extractor_does_not_fall_back_after_selected_stdout_result
 )
 def test_claude_output_extractor_reports_missing_or_malformed_json(
     stdout_text: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    extracted = extract_claude_output(CommandResult(0, stdout_text, ""), None)
+    owned_path = tmp_path / "owned-output"
 
-    expected_status = "missing" if "   " in stdout_text else "malformed"
-    assert extracted.output_extraction_status == expected_status
+    def create_output_file() -> Path:
+        owned_path.touch()
+        return owned_path
+
+    monkeypatch.setattr(claude_json, "new_owned_output_file", create_output_file)
+    extracted = extract_claude_output(CommandResult(0, stdout_text, ""), None)
+    assert not owned_path.exists()
+
+    expected_status = (
+        "missing"
+        if not stdout_text.strip() or stdout_text == "{}" or "   " in stdout_text
+        else "malformed"
+    )
+    assert extracted == OutputExtractionResult("", expected_status, None, None, False)
 
 
 def test_claude_output_extractor_decodes_escaped_and_nested_values() -> None:
@@ -298,7 +323,7 @@ def test_claude_output_extractor_rejects_invalid_ignored_scalars(
         None,
     )
 
-    assert extracted.output_extraction_status == "malformed"
+    assert extracted == OutputExtractionResult("", "malformed", None, None, False)
 
 
 def test_claude_output_extractor_streams_large_ignored_number() -> None:
@@ -431,14 +456,17 @@ def test_machine_output_extractor_reports_malformed_and_missing_payloads() -> No
     malformed = extract_gemini_output(CommandResult(0, "{bad", ""), None)
     missing = extract_gemini_output(CommandResult(0, '{"stats":{}}', ""), None)
 
-    assert malformed.output_extraction_status == "malformed"
-    assert missing.output_extraction_status == "missing"
+    assert malformed == OutputExtractionResult("", "malformed", None, None, False)
+    assert missing == OutputExtractionResult("", "missing", None, None, False)
 
 
 @pytest.mark.parametrize(
     "stdout_text, expected_status",
     [
         ("", "missing"),
+        (" \n\t", "missing"),
+        ("{}", "missing"),
+        ("{broken", "malformed"),
         ("[]", "malformed"),
         ('{"response":123}', "malformed"),
         ('{"response":"   "}', "missing"),
@@ -450,21 +478,23 @@ def test_gemini_output_extractor_validates_response_shape(
 ) -> None:
     extracted = extract_gemini_output(CommandResult(0, stdout_text, ""), None)
 
-    assert extracted.output_extraction_status == expected_status
+    assert extracted == OutputExtractionResult("", expected_status, None, None, False)
 
 
-@pytest.mark.parametrize("stdout_text", ["", "\n", '{"type":"step_finish"}'])
+@pytest.mark.parametrize(
+    "stdout_text", ["", "\n", '{"type":"step_finish"}', '{"type":"text","text":7}']
+)
 def test_kilo_output_extractor_reports_missing_text(stdout_text: str) -> None:
     extracted = extract_kilo_output(CommandResult(0, stdout_text, ""), None)
 
-    assert extracted.output_extraction_status == "missing"
+    assert extracted == OutputExtractionResult("", "missing", None, None, False)
 
 
 @pytest.mark.parametrize("stdout_text", ["not json", "[]"])
 def test_kilo_output_extractor_reports_malformed_json_lines(stdout_text: str) -> None:
     extracted = extract_kilo_output(CommandResult(0, stdout_text, ""), None)
 
-    assert extracted.output_extraction_status == "malformed"
+    assert extracted == OutputExtractionResult("", "malformed", None, None, False)
 
 
 def test_kilo_output_extractor_discards_partial_text_and_stops_on_malformed_event(
@@ -480,7 +510,7 @@ def test_kilo_output_extractor_discards_partial_text_and_stops_on_malformed_even
 
     extracted = extract_kilo_output(CommandResult(0, "", ""), None)
 
-    assert extracted.output_extraction_status == "malformed"
+    assert extracted == OutputExtractionResult("", "malformed", None, None, False)
     assert extracted.output_text == ""
     assert extracted.output_path is None
 

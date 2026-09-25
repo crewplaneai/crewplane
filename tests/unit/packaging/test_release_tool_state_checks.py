@@ -469,3 +469,85 @@ def test_pypi_registry_lookup_reports_highest_published_stable_version(
             continue
         stable_versions.append(parsed)
     assert release.latest_stable == str(max(stable_versions))
+
+
+@pytest.mark.parametrize("missing_wheel", [False, True])
+@pytest.mark.parametrize("stale_latest", [False, True])
+@pytest.mark.parametrize("stale_formula", [False, True])
+@pytest.mark.parametrize(
+    "tag_state", ["complete", "missing", "conflicting", "conflicting-and-missing"]
+)
+def test_published_release_state_preserves_complete_reasons_and_guidance(
+    tmp_path: Path,
+    missing_wheel: bool,
+    stale_latest: bool,
+    stale_formula: bool,
+    tag_state: str,
+) -> None:
+    context, manifest, formula, git = release_state_fixture(tmp_path)
+    pypi = matching_pypi(context, manifest)
+    npm = matching_npm(
+        context, manifest, latest="stale" if stale_latest else context.version.npm
+    )
+    reasons: list[str] = []
+    if missing_wheel:
+        pypi = replace(
+            pypi,
+            files={
+                name: file
+                for name, file in pypi.files.items()
+                if name != context.wheel_filename
+            },
+        )
+        reasons.append(f"PyPI is missing {context.wheel_filename}")
+    if stale_formula:
+        formula = replace(formula, version="stale", sha256="stale")
+        reasons.extend(
+            [
+                "Homebrew formula version is missing or stale",
+                "Homebrew formula sdist SHA is missing or stale",
+            ]
+        )
+    if tag_state == "missing":
+        git = replace(git, tag_commit="", remote_tag_commit="")
+        reasons.append("Git tag is missing locally or on origin")
+    elif tag_state == "conflicting":
+        git = replace(git, tag_commit="other", remote_tag_commit="other")
+        reasons.extend(
+            [
+                "Git tag points at a different commit",
+                "remote Git tag points at a different commit",
+            ]
+        )
+    elif tag_state == "conflicting-and-missing":
+        git = replace(git, tag_commit="other", remote_tag_commit="")
+        reasons.extend(
+            [
+                "Git tag points at a different commit",
+                "Git tag is missing locally or on origin",
+            ]
+        )
+
+    result = state.derive_release_state(context, pypi, npm, formula, git, manifest)
+
+    if not reasons and not stale_latest:
+        assert result == state.DerivedReleaseState(
+            state.ReleaseStatus.COMPLETE,
+            (
+                f"{context.package_name} {context.version.project} is fully published and verified.",
+            ),
+            (),
+        )
+        return
+    guidance: list[str] = []
+    if missing_wheel:
+        guidance.append("Run make release-pypi after fixing the PyPI issue.")
+    if stale_latest:
+        guidance.append("Run make release-npm after fixing the npm issue.")
+    if not missing_wheel and not stale_latest:
+        guidance.append(
+            "Rerun make release after fixing Git tag or Homebrew formula state."
+        )
+    assert result == state.DerivedReleaseState(
+        state.ReleaseStatus.PARTIAL, tuple(reasons), tuple(guidance)
+    )

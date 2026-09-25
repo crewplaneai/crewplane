@@ -2,17 +2,42 @@ from types import MappingProxyType
 
 import pytest
 
-from crewplane.artifacts.workspace.state.invocation import state_invocation_slug
+from crewplane.artifacts.workspace.state.invocation import (
+    InvalidInvocationField,
+    require_state_invocation_slug,
+    state_invocation_slug,
+)
 from crewplane.core.workspace.invocation_identity import invocation_slug
 
 MISSING = object()
+
+
+class IntegerSubclass(int):
+    pass
 
 
 @pytest.mark.parametrize(
     "field", ["node_id", "task_id", "round_num", "audit_round_num"]
 )
 @pytest.mark.parametrize(
-    "value", [MISSING, None, "", " ", "name", 0, -1, 12, True, False, 1.0, [], {}]
+    "value",
+    [
+        MISSING,
+        None,
+        "",
+        " ",
+        "name",
+        0,
+        -1,
+        12,
+        2**80,
+        IntegerSubclass(7),
+        True,
+        False,
+        1.0,
+        [],
+        {},
+    ],
 )
 def test_persisted_invocation_identity_boundary(field: str, value: object) -> None:
     payload: dict[str, object] = {
@@ -60,3 +85,22 @@ def test_persisted_invocation_identity_preserves_exact_slug(
     }
 
     assert state_invocation_slug(payload) == invocation_slug(node_id, task_id, 0, -1)
+
+
+@pytest.mark.parametrize("valid_prefix", range(4))
+def test_required_identity_reports_first_invalid_field(valid_prefix):
+    values = {
+        "node_id": "node",
+        "task_id": "task",
+        "round_num": 0,
+        "audit_round_num": -1,
+    }
+    fields = list(values)
+    payload = {
+        field: values[field] if index < valid_prefix else False
+        for index, field in enumerate(fields)
+    }
+    with pytest.raises(InvalidInvocationField) as caught:
+        require_state_invocation_slug(payload)
+    assert caught.value.field == fields[valid_prefix]
+    assert str(caught.value) == fields[valid_prefix]

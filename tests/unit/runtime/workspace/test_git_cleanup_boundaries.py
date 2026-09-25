@@ -187,8 +187,19 @@ def test_git_marker_preserves_unresolved_path_and_replacement_decoding(
     assert parse_worktree_gitdir_marker(marker) == unresolved.resolve(strict=False)
 
 
-@pytest.mark.parametrize("kind", ["missing", "directory", "symlink", "empty"])
-def test_capture_rejects_invalid_git_backlink(tmp_path: Path, kind: str) -> None:
+@pytest.mark.parametrize("operation", ["capture", "retry reset"])
+@pytest.mark.parametrize(
+    ("kind", "message"),
+    [
+        ("missing", "is missing its checkout pointer"),
+        ("directory", "checkout pointer is invalid"),
+        ("symlink", "checkout pointer is invalid"),
+        ("empty", "checkout pointer is empty"),
+    ],
+)
+def test_git_backlink_rejects_invalid_pointer_with_exact_diagnostics(
+    tmp_path, operation, kind, message
+) -> None:
     backlink = tmp_path / "gitdir"
     if kind == "directory":
         backlink.mkdir()
@@ -196,8 +207,41 @@ def test_capture_rejects_invalid_git_backlink(tmp_path: Path, kind: str) -> None
         backlink.symlink_to(tmp_path / "elsewhere")
     elif kind == "empty":
         backlink.write_text(" \n", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="checkout pointer"):
-        parse_worktree_gitdir_backlink(tmp_path)
+    with pytest.raises(RuntimeError) as caught:
+        parse_worktree_gitdir_backlink(tmp_path, operation)
+    assert str(caught.value) == f"Workspace {operation} Git dir {message}."
+    if kind == "missing":
+        assert isinstance(caught.value.__cause__, FileNotFoundError)
+    else:
+        assert caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize("operation", ["capture", "retry reset"])
+@pytest.mark.parametrize("absolute", [False, True])
+def test_git_backlink_resolves_paths_with_replacement_decoding(
+    tmp_path, operation, absolute
+) -> None:
+    target = tmp_path / "checkout" / "\ufffd" / ".git"
+    raw = str(target if absolute else target.relative_to(tmp_path))
+    (tmp_path / "gitdir").write_bytes(
+        b" \t" + raw.encode().replace(b"\xef\xbf\xbd", b"\xff") + b" \n"
+    )
+    assert parse_worktree_gitdir_backlink(tmp_path, operation) == target.resolve()
+
+
+@pytest.mark.parametrize("operation", ["capture", "retry reset"])
+@pytest.mark.parametrize("method", ["lstat", "read_text", "resolve"])
+def test_git_backlink_propagates_unexpected_filesystem_errors(
+    tmp_path, operation, method
+) -> None:
+    (tmp_path / "gitdir").write_text("checkout/.git")
+    failure = OSError("filesystem unavailable")
+    with (
+        patch.object(Path, method, side_effect=failure),
+        pytest.raises(OSError) as caught,
+    ):
+        parse_worktree_gitdir_backlink(tmp_path, operation)
+    assert caught.value is failure
 
 
 def test_capture_resolves_relative_git_identity_and_rejects_retargeting(

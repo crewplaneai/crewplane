@@ -9,6 +9,7 @@ from pathlib import Path
 from ..git import GitCommand, git, git_error
 from ..locks import git_metadata_lock
 from .checkout_identity import (
+    parse_worktree_gitdir_backlink,
     read_worktree_gitdir_marker,
     require_regular_worktree_git_file,
 )
@@ -213,7 +214,7 @@ def _verified_worktree_git_dir(
     if metadata.git_dir != expected_git_dir.resolve(strict=False):
         raise RuntimeError("Workspace retry reset .git file does not match Git dir.")
     _reject_symlinked_git_dir(metadata.raw_git_dir, common_git_dir)
-    backlink = _gitdir_backlink(metadata.git_dir)
+    backlink = parse_worktree_gitdir_backlink(metadata.git_dir, "retry reset")
     if backlink != metadata.git_file.resolve(strict=False):
         raise RuntimeError("Workspace retry reset Git dir does not belong to checkout.")
     return metadata.git_dir
@@ -242,13 +243,6 @@ def _require_git_dir_within_common_dir(
         raise RuntimeError("Workspace retry reset Git dir escapes the common Git dir.")
 
 
-def _path_from_git_metadata(raw_path: str, relative_to: Path) -> Path:
-    path = Path(raw_path)
-    if path.is_absolute():
-        return path
-    return relative_to / path
-
-
 def _reject_symlinked_git_dir(git_dir: Path, common_git_dir: Path) -> None:
     try:
         relative = git_dir.relative_to(common_git_dir)
@@ -268,29 +262,3 @@ def _reject_symlinked_path(path: Path) -> None:
         raise RuntimeError("Workspace retry reset Git metadata is missing.") from exc
     if stat.S_ISLNK(mode):
         raise RuntimeError("Workspace retry reset Git metadata must not be symlinked.")
-
-
-def _gitdir_backlink(git_dir: Path) -> Path:
-    gitdir_file = _require_gitdir_backlink_file(git_dir)
-    raw_path = _read_gitdir_backlink(gitdir_file)
-    return _path_from_git_metadata(raw_path, git_dir).resolve(strict=False)
-
-
-def _require_gitdir_backlink_file(git_dir: Path) -> Path:
-    gitdir_file = git_dir / "gitdir"
-    try:
-        mode = gitdir_file.lstat().st_mode
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Workspace retry reset Git dir is missing its checkout pointer."
-        ) from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise RuntimeError("Workspace retry reset Git dir checkout pointer is invalid.")
-    return gitdir_file
-
-
-def _read_gitdir_backlink(gitdir_file: Path) -> str:
-    raw_path = gitdir_file.read_text(encoding="utf-8", errors="replace").strip()
-    if not raw_path:
-        raise RuntimeError("Workspace retry reset Git dir checkout pointer is empty.")
-    return raw_path

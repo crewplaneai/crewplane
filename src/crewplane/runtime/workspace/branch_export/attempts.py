@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crewplane.architecture.contracts import JsonObject
-from crewplane.artifacts.naming import build_workspace_export_filename
+from crewplane.artifacts.naming import workspace_export_relative_path
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -69,10 +69,8 @@ class BranchExportAttempt:
 
     @property
     def record_path(self) -> Path:
-        return (
-            self.run.stages_dir
-            / "workspace-exports"
-            / build_workspace_export_filename(self.logical_worktree_name)
+        return self.run.stages_dir / workspace_export_relative_path(
+            self.logical_worktree_name
         )
 
 

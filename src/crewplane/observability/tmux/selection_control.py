@@ -8,7 +8,7 @@ from pathlib import Path
 from time import time
 from typing import Any
 
-from crewplane.core.value_checks import optional_strict_int
+from crewplane.core.value_checks import is_strict_int, optional_strict_int
 from crewplane.observability.tmux.runtime_files import (
     RuntimeFiles,
     read_index,
@@ -139,7 +139,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def _int_value(value: object, default: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
+    if not is_strict_int(value):
         return default
     return value
 

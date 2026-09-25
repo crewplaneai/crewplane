@@ -282,15 +282,6 @@ def _snapshot_result_matches(payload: dict[str, object]) -> bool:
         return (
             result.get("lineage_produced") is False
             and isinstance(result.get("drift_scan_limit_reason"), str)
-            and not any(
-                field in result
-                for field in (
-                    "snapshot_drift_discarded",
-                    "changed_path_count",
-                    "changed_paths",
-                    "changed_paths_truncated",
-                )
-            )
             and "bundle" not in payload
         )
     if result.get("drift_scan_complete") is not True:

@@ -1,9 +1,11 @@
+import pytest
+
 from crewplane.adapters.invokers.cli_invoker.claude_json import extract_claude_output
 from crewplane.adapters.invokers.cli_invoker.providers.codex import (
     decode_codex_usage,
     extract_codex_output,
 )
-from crewplane.architecture.contracts import CommandResult
+from crewplane.architecture.contracts import CommandResult, OutputExtractionResult
 from crewplane.core.config import AgentConfig
 from crewplane.runtime.agent.invocation.output import (
     cleanup_extracted_invocation_output,
@@ -19,7 +21,7 @@ from crewplane.runtime.agent.usage import (
 
 def test_extract_codex_output_reads_structured_file_and_usage(tmp_path) -> None:
     output_path = tmp_path / "structured-output.txt"
-    output_path.write_text("final answer", encoding="utf-8")
+    output_path.write_text("final café 🌍", encoding="utf-8")
     result = CommandResult(
         returncode=0,
         stdout_text=(
@@ -35,17 +37,20 @@ def test_extract_codex_output_reads_structured_file_and_usage(tmp_path) -> None:
         structured_output_file=output_path,
     )
 
-    assert extracted.output_text == ""
-    assert extracted.output_path == output_path
-    assert extracted.output_char_count == len("final answer")
-    assert extracted.output_extraction_status == "success"
+    assert extracted.result.output_text == ""
+    assert extracted.result.output_path == output_path
+    assert extracted.result.output_char_count == len("final café 🌍")
+    assert extracted.result.output_extraction_status == "success"
+    assert not extracted.result.owns_output_path
+    cleanup_extracted_invocation_output(extracted)
+    assert output_path.read_bytes() == "final café 🌍".encode()
 
 
 def test_extract_codex_output_keeps_usage_parse_failure_telemetry_only(
     tmp_path,
 ) -> None:
     output_path = tmp_path / "last-message.txt"
-    output_path.write_text("final answer", encoding="utf-8")
+    output_path.write_text("final café 🌍", encoding="utf-8")
     result = CommandResult(
         returncode=0,
         stdout_text='{"type":"turn.completed","usage":{"input_tokens":"bad"}}',
@@ -59,10 +64,10 @@ def test_extract_codex_output_keeps_usage_parse_failure_telemetry_only(
         structured_output_file=output_path,
     )
 
-    assert extracted.output_text == ""
-    assert extracted.output_path == output_path
-    assert extracted.output_char_count == len("final answer")
-    assert extracted.output_extraction_status == "success"
+    assert extracted.result.output_text == ""
+    assert extracted.result.output_path == output_path
+    assert extracted.result.output_char_count == len("final café 🌍")
+    assert extracted.result.output_extraction_status == "success"
     usage = decode_codex_usage(result)
     assert usage.tokens is None
     assert usage.error is not None
@@ -71,7 +76,7 @@ def test_extract_codex_output_keeps_usage_parse_failure_telemetry_only(
 def test_extract_claude_output_streams_result_to_owned_file(tmp_path) -> None:
     stream_path = tmp_path / "claude-stdout.json"
     stream_path.write_text(
-        '{"result":"final answer","modelUsage":{"model":{"inputTokens":12,"outputTokens":4}}}',
+        '{"result":"final café 🌍","modelUsage":{"model":{"inputTokens":12,"outputTokens":4}}}',
         encoding="utf-8",
     )
     result = CommandResult(
@@ -88,19 +93,19 @@ def test_extract_claude_output_streams_result_to_owned_file(tmp_path) -> None:
         structured_output_file=None,
     )
 
-    assert extracted.output_text == ""
-    assert extracted.output_path is not None
-    assert extracted.output_path != stream_path
-    assert extracted.owns_output_path
-    assert extracted.output_char_count == len("final answer")
-    assert extracted.output_path.read_text(encoding="utf-8") == "final answer"
-    assert extracted.output_extraction_status == "success"
+    assert extracted.result.output_text == ""
+    assert extracted.result.output_path is not None
+    assert extracted.result.output_path != stream_path
+    assert extracted.result.owns_output_path
+    assert extracted.result.output_char_count == len("final café 🌍")
+    assert extracted.result.output_path.read_text(encoding="utf-8") == "final café 🌍"
+    assert extracted.result.output_extraction_status == "success"
 
     output_file = tmp_path / "final.md"
     write_extracted_invocation_output(extracted, output_file)
-    assert output_file.read_text(encoding="utf-8") == "final answer"
+    assert output_file.read_text(encoding="utf-8") == "final café 🌍"
     cleanup_extracted_invocation_output(extracted)
-    assert not extracted.output_path.exists()
+    assert not extracted.result.output_path.exists()
 
 
 def test_extract_visible_output_returns_stderr_fallback_notice() -> None:
@@ -115,8 +120,8 @@ def test_extract_visible_output_returns_stderr_fallback_notice() -> None:
         structured_output_file=None,
     )
 
-    assert extracted.output_text == "payload"
-    assert extracted.output_extraction_status == "success"
+    assert extracted.result.output_text == "payload"
+    assert extracted.result.output_extraction_status == "success"
     assert extracted.notice is not None
     assert extracted.notice.operation == "stderr_fallback"
 
@@ -139,9 +144,9 @@ def test_extract_visible_output_uses_persisted_stdout_without_materializing(
         structured_output_file=None,
     )
 
-    assert extracted.output_text == ""
-    assert extracted.output_path == stream_path
-    assert extracted.output_char_count == len("line 1\nline 2")
+    assert extracted.result.output_text == ""
+    assert extracted.result.output_path == stream_path
+    assert extracted.result.output_char_count == len("line 1\nline 2")
 
     output_file = tmp_path / "final.md"
     write_extracted_invocation_output(extracted, output_file)
@@ -156,8 +161,12 @@ def test_extract_claude_output_reports_malformed_json() -> None:
         structured_output_file=None,
     )
 
-    assert extracted.output_text == ""
-    assert extracted.output_extraction_status == "malformed"
+    assert extracted.result.output_text == ""
+    assert extracted.result.output_extraction_status == "malformed"
+    assert extracted.result.output_path is None
+    assert extracted.result.output_char_count is None
+    assert extracted.result.owns_output_path is False
+    assert extracted.notice is None
 
 
 def test_extract_claude_output_reports_missing_result_for_empty_object() -> None:
@@ -168,8 +177,12 @@ def test_extract_claude_output_reports_missing_result_for_empty_object() -> None
         structured_output_file=None,
     )
 
-    assert extracted.output_text == ""
-    assert extracted.output_extraction_status == "missing"
+    assert extracted.result.output_text == ""
+    assert extracted.result.output_extraction_status == "missing"
+    assert extracted.result.output_path is None
+    assert extracted.result.output_char_count is None
+    assert extracted.result.owns_output_path is False
+    assert extracted.notice is None
 
 
 def test_decode_codex_usage_reads_persisted_stdout_tail(tmp_path) -> None:
@@ -245,3 +258,26 @@ def test_build_fallback_usage_from_output_file_streams_visible_estimate(
 
 def _agent_config():
     return AgentConfig(cli_cmd=["tool"], default_model="test")
+
+
+@pytest.mark.parametrize("char_count", [None, 0, 3])
+def test_extraction_preserves_adapter_result_and_nullable_character_count(char_count):
+    from unittest.mock import Mock
+
+    from crewplane.runtime.agent.invocation.state import InvocationUsageState
+    from crewplane.runtime.agent.usage import InvocationUsageAccumulator
+
+    result = OutputExtractionResult("é🌍!", "success", output_char_count=char_count)
+    extractor = Mock(return_value=result)
+    extracted = extract_invocation_output(
+        extractor, ["provider"], CommandResult(0, "", ""), None
+    )
+    assert extracted.result is result
+    state = InvocationUsageState(InvocationUsageAccumulator(prompt=""))
+    state.record_extracted_output(extracted)
+    usage = state.accumulator.build_usage(
+        _agent_config(), output_extraction_status=state.output_extraction_status
+    )
+    assert usage.visible_estimate_tokens == estimate_token_count(
+        len(result.output_text) if char_count is None else char_count
+    )

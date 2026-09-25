@@ -142,16 +142,19 @@ def replace_contained_file(root: Path, relative_path: str, source: Path) -> Path
     return result
 
 
+def is_safe_relative_path(relative_path: str) -> bool:
+    """Check raw relative POSIX syntax without normalizing or inspecting the path."""
+    return not Path(relative_path).is_absolute() and all(
+        part not in {"", ".", ".."} for part in relative_path.split("/")
+    )
+
+
 def _relative_path_parts(relative_path: str) -> tuple[str, ...]:
     if relative_path in {"", "."}:
         return ()
-    raw_parts = relative_path.split("/")
-    if (
-        any(part in {"", ".", ".."} for part in raw_parts)
-        or Path(relative_path).is_absolute()
-    ):
+    if not is_safe_relative_path(relative_path):
         raise ValueError("Contained paths must be safe relative POSIX paths.")
-    return tuple(raw_parts)
+    return tuple(relative_path.split("/"))
 
 
 def _relative_path_parts_optional(relative_path: str) -> tuple[str, ...] | None:

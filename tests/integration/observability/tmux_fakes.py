@@ -5,7 +5,7 @@ from collections.abc import Callable
 from time import monotonic, time
 
 from crewplane.architecture.contracts import ObserverCapabilities
-from crewplane.observability.tmux.client import tmux_result_timed_out
+from crewplane.observability.tmux.client import TmuxCommandClient
 from crewplane.observability.tmux.compact import TmuxCompactRuntime
 from crewplane.observability.tmux.refresh import RefreshOutcome
 from crewplane.observability.tmux.runtime_files import (
@@ -23,9 +23,9 @@ from crewplane.observability.types import (
 )
 
 
-class FakeTmuxClient:
+class FakeTmuxClient(TmuxCommandClient):
     def __init__(self) -> None:
-        self._socket_name: str | None = None
+        super().__init__()
         self.calls: list[tuple[list[str], bool, bool]] = []
         self.call_sockets: list[str | None] = []
         self.left_pane_width = 72
@@ -40,10 +40,6 @@ class FakeTmuxClient:
         self.fail_kill_session = False
         self.fail_status_option = False
         self.fail_pane_title = False
-
-    @property
-    def socket_name(self) -> str | None:
-        return self._socket_name
 
     def set_socket_name(self, socket_name: str | None) -> None:
         self._socket_name = socket_name
@@ -105,36 +101,6 @@ class FakeTmuxClient:
                 stderr="",
             )
         return subprocess.CompletedProcess(["tmux", *args], 0, stdout="", stderr="")
-
-    def pane_dimension(
-        self,
-        pane_id: str,
-        format_string: str,
-        default: int,
-    ) -> tuple[int, bool]:
-        result = self.run(
-            ["display-message", "-p", "-t", pane_id, format_string],
-            capture_output=True,
-            check=False,
-        )
-        if tmux_result_timed_out(result):
-            return default, True
-        if result.returncode != 0:
-            return default, False
-        try:
-            return max(1, int(result.stdout.strip())), False
-        except ValueError:
-            return default, False
-
-    def session_exists(self, session_name: str) -> bool:
-        result = self.run(
-            ["has-session", "-t", session_name],
-            capture_output=True,
-            check=False,
-        )
-        if tmux_result_timed_out(result):
-            return True
-        return result.returncode == 0
 
     def _fails_key_table_restore(self, args: list[str]) -> bool:
         return (

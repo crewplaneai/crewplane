@@ -78,6 +78,65 @@ def test_validate_frontier_accepts_clean_snapshot_provider_state(
     assert frontier.resumed_node_ids == ("a",)
 
 
+@pytest.mark.parametrize(
+    "extra_result, valid",
+    [({}, True)]
+    + [
+        ({field: value}, False)
+        for field, values in [
+            ("snapshot_drift_discarded", [False, None]),
+            ("changed_path_count", [0, None]),
+            ("changed_paths", [[], None]),
+            ("changed_paths_truncated", [False, None]),
+        ]
+        for value in values
+    ],
+)
+def test_validate_frontier_validates_limited_snapshot_exact_claims(
+    tmp_path: Path,
+    extra_result: dict[str, object],
+    valid: bool,
+) -> None:
+    source = source_record(tmp_path)
+    plan = make_plan()
+    policy = workspace_selection_record(
+        enabled=True,
+        kind="snapshot",
+        clean_start="strict",
+        materialization="snapshot_checkout",
+    )
+    node = plan.nodes[0].model_copy(update={"workspace_policy": policy})
+    plan = plan.model_copy(
+        update={
+            "nodes": [node, plan.nodes[1]],
+        }
+    )
+    plan, _repo = attach_git_workspace_source(tmp_path, plan)
+    descriptor = write_result(source.results_dir, "a-result.md", "a output")
+    write_node_state(
+        source.run_dir,
+        make_node_state(source.manifest, "a", [descriptor]),
+    )
+    payload = snapshot_workspace_state_payload(source, plan, "alpha")
+    payload["result"] = {
+        "lineage_produced": False,
+        "drift_scan_complete": False,
+        "drift_scan_limit_reason": "max_entries",
+        **extra_result,
+    }
+    state_path = source.run_dir / "a" / "workspace-state.json"
+    state_path.parent.mkdir(exist_ok=True)
+    state_path.write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+    attach_workspace_descriptor(source.run_dir, plan, "a")
+
+    frontier = validate_resume_frontier(source, plan)
+
+    assert frontier.resumed_node_ids == (("a",) if valid else ())
+
+
 def test_validate_frontier_rejects_wrong_workspace_state_artifact_digest(
     tmp_path,
 ) -> None:

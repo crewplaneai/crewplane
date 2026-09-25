@@ -36,7 +36,7 @@ from crewplane.runtime.workspace.branch_export import (
 
 from .branch_export_output import print_branch_export_fulfillments
 from .components import allocate_run_output, build_components_for_run
-from .context import WorkflowRunContext, resolve_project_root, resolve_state_dir
+from .context import WorkflowRunContext, build_workflow_run_context
 from .execution_helpers import (
     fulfill_historical_branch_exports,
     handle_duplicate_skip,
@@ -194,16 +194,8 @@ async def execute_workflow_run(
 ) -> None:
     """Compile preflight, execute the plan, and finalize the run manifest."""
 
-    resolved_project_root = resolve_project_root(project_root)
-    context = WorkflowRunContext(
-        config=config,
-        source=source,
-        console=console,
-        project_root=resolved_project_root,
-        state_dir=resolve_state_dir(
-            resolved_project_root,
-            state_dir,
-        ),
+    context = build_workflow_run_context(
+        config, source, console, project_root, state_dir
     )
     workflow = source.workflow
     warning_recorder = WorkflowWarningRecorder(workflow=workflow, console=console)

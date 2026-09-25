@@ -151,6 +151,83 @@ def test_dedicated_cleanup_accepts_writer_produced_claim(evidence: CleanupEviden
         run_git_text(evidence.repo, "rev-parse", "--verify", evidence.ref_name)
 
 
+@pytest.mark.parametrize("external", [False, True])
+@pytest.mark.parametrize(
+    ("damage", "failure_kind"),
+    [
+        ("missing", "container"),
+        ("null", "container"),
+        ("malformed", "container"),
+        ("non-dict-claim", "claim"),
+        ("foreign-envelope", "envelope"),
+        ("non-dict-envelope", "envelope"),
+        ("foreign-claim", "claim"),
+        ("foreign-second-claim", "claim"),
+        ("foreign-envelope-and-claim", "envelope"),
+    ],
+)
+def test_repository_identity_rejection_preserves_all_refs_and_evidence(
+    evidence, external, damage, failure_kind
+) -> None:
+    second_ref = evidence.ref_name + "-second"
+    record_workspace_temporary_ref(evidence.owner.state_path, second_ref, evidence.oid)
+    run_git_text(evidence.repo, "update-ref", second_ref, evidence.oid)
+    payload = evidence.payload()
+    if damage == "missing":
+        del payload["temporary_refs"]
+    elif damage == "null":
+        payload["temporary_refs"] = None
+    elif damage == "malformed":
+        payload["temporary_refs"] = False
+    elif damage == "non-dict-claim":
+        payload["temporary_refs"][1] = None
+    elif damage == "non-dict-envelope":
+        payload["git"] = []
+    else:
+        if "envelope" in damage:
+            payload["git"]["repo_id"] = "foreign"
+        if "claim" in damage:
+            index = 1 if "second" in damage else 0
+            payload["temporary_refs"][index]["repository_id"] = "foreign"
+    evidence.write(payload)
+    original = evidence.owner.state_path.read_bytes()
+
+    def cleanup():
+        if external:
+            return evidence.cleanup()
+        return reconcile_temporary_import_refs(
+            evidence.owner.state_path,
+            evidence.repo,
+            evidence.repo / ".git",
+            evidence.repository_id,
+        )
+
+    if not external and damage in {"missing", "null"}:
+        assert cleanup() == 0
+    else:
+        if external:
+            messages = {
+                "container": "Workspace temporary ref cleanup evidence is invalid",
+                "envelope": "Workspace ref cleanup evidence belongs to a different repository",
+                "claim": "Workspace ref cleanup claim belongs to a different repository",
+            }
+            expected = f"{messages[failure_kind]}: {evidence.owner.state_path}."
+        else:
+            messages = {
+                "container": "Workspace temporary ref cleanup evidence is invalid.",
+                "envelope": "Workspace temporary ref cleanup repository identity changed.",
+                "claim": "Workspace temporary ref cleanup claim repository identity changed.",
+            }
+            expected = messages[failure_kind]
+        with pytest.raises(RuntimeError) as caught:
+            cleanup()
+        assert str(caught.value) == expected
+        assert caught.value.__cause__ is None
+    assert evidence.owner.state_path.read_bytes() == original
+    for name in (evidence.ref_name, second_ref):
+        assert run_git_text(evidence.repo, "rev-parse", name) == evidence.oid
+
+
 @pytest.mark.parametrize("kind", ["malformed-json", "directory", "symlink"])
 def test_ref_cleanup_refuses_unreadable_or_unsafe_claim_file(
     evidence: CleanupEvidence, kind: str

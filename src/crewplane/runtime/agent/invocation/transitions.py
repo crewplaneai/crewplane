@@ -192,7 +192,7 @@ def transition_from_final_extraction(
     cursor: InvocationRetryCursor,
     extracted_output: ExtractedInvocationOutput,
 ) -> RaiseOutputExtractionFailureAttemptTransition | FinalizeSuccessAttemptTransition:
-    if extracted_output.output_extraction_status != "success":
+    if extracted_output.result.output_extraction_status != "success":
         return RaiseOutputExtractionFailureAttemptTransition(
             retry_count=cursor.retry_count,
             quota_retry_count=cursor.quota_retry_count,

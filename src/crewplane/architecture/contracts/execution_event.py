@@ -12,6 +12,7 @@ from crewplane.architecture.contracts.invocation import (
     OutputExtractionStatus,
     RuntimeLogValue,
 )
+from crewplane.core.value_checks import optional_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .json import JsonObject
@@ -304,6 +305,38 @@ class ExecutionEventContext:
             "log_presentation_format": self.log_presentation_format,
             "log_presentation_profile": self.log_presentation_profile,
         }
+
+
+def context_from_record(
+    workflow_name: str,
+    run_id: str,
+    record: Mapping[str, object],
+) -> ExecutionEventContext:
+    return ExecutionEventContext(
+        workflow_name=workflow_name,
+        run_id=run_id,
+        node_id=_string(record.get("node_id")),
+        provider=_string(record.get("provider")),
+        role=_provider_role(record.get("role")),
+        model=_string(record.get("model")),
+        requested_reasoning=_string(record.get("requested_reasoning")),
+        task_id=_string(record.get("task_id")),
+        audit_round_num=optional_strict_int(record.get("audit_round_num")),
+        round_num=optional_strict_int(record.get("round_num")),
+        output_file=_string(record.get("output_file")),
+        log_file=_string(record.get("log_file")),
+        log_presentation_format=_string(record.get("log_presentation_format")),
+        log_presentation_profile=_string(record.get("log_presentation_profile")),
+    )
+
+
+def _string(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _provider_role(value: object) -> ProviderRole | None:
+    role = _string(value)
+    return ProviderRole(role) if role is not None else None
 
 
 @dataclass(frozen=True)

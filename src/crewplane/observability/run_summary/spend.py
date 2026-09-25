@@ -27,7 +27,6 @@ from .models import (
     ProviderUsageRollup,
     SpendOverviewRow,
     SpendTotals,
-    UsageRollupValues,
 )
 
 _TERMINAL_INVOCATION_EVENT_TYPES: frozenset[InvocationEventType] = frozenset(
@@ -114,8 +113,8 @@ class _MutableUsageRollup:
             self.configured_cost_usd += invocation_usage.configured_cost_usd
         self.cost_confidences.add(invocation_usage.invocation_cost_confidence)
 
-    def values(self) -> UsageRollupValues:
-        return UsageRollupValues(
+    def values(self) -> SpendTotals:
+        return SpendTotals(
             terminal_invocations=self.terminal_invocations,
             total_attempts=self.total_attempts,
             cli_captured_invocations=self.cli_captured_invocations,
@@ -147,7 +146,7 @@ class UsageRollupAccumulator:
     def spend_totals(self) -> SpendTotals | None:
         if self._overall.terminal_invocations == 0:
             return None
-        return spend_totals_from_values(self._overall.values())
+        return self._overall.values()
 
     def provider_usage_rollups(self) -> tuple[ProviderUsageRollup, ...]:
         return tuple(
@@ -158,7 +157,7 @@ class UsageRollupAccumulator:
 
 def _provider_usage_rollup(
     provider: str,
-    values: UsageRollupValues,
+    values: SpendTotals,
 ) -> ProviderUsageRollup:
     return ProviderUsageRollup(provider=provider, **_usage_rollup_fields(values))
 
@@ -279,15 +278,10 @@ def spend_totals(
 ) -> SpendTotals | None:
     if not invocation_usages:
         return None
-    values = usage_rollup_values(invocation_usages)
-    return spend_totals_from_values(values)
+    return usage_rollup_values(invocation_usages)
 
 
-def spend_totals_from_values(values: UsageRollupValues) -> SpendTotals:
-    return SpendTotals(**_usage_rollup_fields(values))
-
-
-def _usage_rollup_fields(values: UsageRollupValues) -> _UsageRollupFields:
+def _usage_rollup_fields(values: SpendTotals) -> _UsageRollupFields:
     return _UsageRollupFields(
         terminal_invocations=values.terminal_invocations,
         total_attempts=values.total_attempts,
@@ -303,7 +297,7 @@ def _usage_rollup_fields(values: UsageRollupValues) -> _UsageRollupFields:
 
 def usage_rollup_values(
     invocation_usages: tuple[InvocationUsageSummary, ...],
-) -> UsageRollupValues:
+) -> SpendTotals:
     rollup = _MutableUsageRollup()
     for invocation_usage in invocation_usages:
         rollup.record(invocation_usage)

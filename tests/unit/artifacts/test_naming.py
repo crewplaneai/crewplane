@@ -20,6 +20,7 @@ from crewplane.artifacts.naming import (
     run_summary_relative_path,
     safe_stage_name,
     validate_run_key_name,
+    workspace_export_relative_path,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 
@@ -222,3 +223,18 @@ def test_result_findings_and_log_keep_distinct_normalization(name, stage, log):
     assert build_result_filename(name) == f"{stage}-result.md"
     assert build_findings_filename(name) == f"{stage}-findings.md"
     assert build_log_filename(name) == f"{log}.log"
+
+
+@pytest.mark.parametrize("name", ["Build.A", "Build-A", "Ünicode", "a" * 400])
+def test_workspace_export_locator_is_pure_and_preserves_filename(
+    tmp_path, monkeypatch, name
+):
+    monkeypatch.chdir(tmp_path)
+
+    relative_path = workspace_export_relative_path(name)
+
+    assert relative_path.as_posix() == (
+        "workspace-exports/" + build_workspace_export_filename(name)
+    )
+    assert not relative_path.is_absolute()
+    assert list(tmp_path.iterdir()) == []

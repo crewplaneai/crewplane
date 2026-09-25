@@ -151,8 +151,8 @@ def _record_extracted_transition_output(
     emit_notice(invocation_context, extracted_output.notice)
     if (
         attempt_output_for_usage
-        and extracted_output.output_path is None
-        and not extracted_output.output_text
+        and extracted_output.result.output_path is None
+        and not extracted_output.result.output_text
     ):
         usage_state.record_attempt_output(attempt_output_for_usage)
 
