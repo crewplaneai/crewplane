@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-09-25
+
 ### Added
 
 - Added YAML parser fuzzing to CI, with failing inputs saved as artifacts for diagnosis.
