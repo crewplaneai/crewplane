@@ -4,20 +4,19 @@ name: Refactoring Example
 description: Audit, plan, execute, review, and hand off maintainability improvements.
 nodes:
   - id: refactor.audit
-    mode: sequential
+    mode: parallel
     findings: true
     providers: [gemini]
   - id: refactor.plan
-    mode: sequential
+    mode: parallel
     needs: [refactor.audit]
+    token_budget:
+      warn_threshold_chars: 20000
+      fail_threshold_chars: 60000
     providers: [claude]
   - id: refactor.execute
-    mode: sequential
+    mode: parallel
     needs: [refactor.plan]
-    depth: 2
-    token_budget:
-      warn_threshold_chars: 25000
-      fail_threshold_chars: 70000
     providers: [codex]
   - id: refactor.review
     mode: parallel
@@ -35,14 +34,15 @@ nodes:
       - provider: claude
         role: reviewer
   - id: refactor.handoff
-    mode: sequential
+    mode: parallel
     needs: [refactor.fixes]
     providers: [claude]
 ---
 
 ## refactor.audit
 
-Audit current code for refactoring opportunities and risk areas.
+Audit current code for refactoring opportunities and risk areas without changing
+files. Keep each recommendation tied to a concrete behavior or maintenance cost.
 Use these standards as the refactoring guardrail:
 {{file:.crewplane/workflows/example-templates/sample-inputs/coding-standards.md}}
 
@@ -56,38 +56,49 @@ End with exactly one findings block:
 Create a refactoring plan using:
 {{refactor.audit.findings}}
 
-Prioritize low-risk, high-value slices.
+Prioritize low-risk, high-value slices. Return the full plan with affected files,
+behavior to preserve, and checks for each slice. Do not change files.
 
 ## refactor.execute
 
-Execute the refactoring slices from:
-{{refactor.plan.output}}
+Open the complete plan at `{{refactor.plan.output_path}}`. Apply the agreed
+slices once, preserving behavior, and run their focused checks. Return changed
+files, behavior-impact notes, commands and results, and remaining risks.
 
-Return changed files and behavior-impact notes.
+Include an exact `## Generated Files` section with one project-relative path or
+link per line for files created or changed during this invocation.
 
 ## refactor.review
 
-Review refactoring output for regressions and maintainability gains:
-
-Refactoring result artifact:
-- Path: {{refactor.execute.output_path}}
-- Size: {{refactor.execute.output_size}}
-- SHA-256: {{refactor.execute.output_sha256}}
-
-Call out rollback points if risk remains.
+Open the implementation report at `{{refactor.execute.output_path}}` and the
+plan at `{{refactor.plan.output_path}}`. Inspect the named changes for regressions
+and whether they achieve the intended maintenance benefit. Do not change files.
+Return concrete issues with file references and call out rollback points if risk
+remains. Report missing validation separately from confirmed defects.
 
 ## refactor.fixes
 
-Apply fixes based on review output:
-{{refactor.review.output}}
+Open the review report at `{{refactor.review.output_path}}` and the original plan
+at `{{refactor.plan.output_path}}`.
 
-Confirm if tests pass and risk is mitigated.
-Reviewer approval should happen only when no major or minor issues remain; optional nitpicks may remain.
+<!-- crewplane:executor -->
+Fix confirmed issues within the planned scope and run the relevant checks.
+Return a complete current implementation report, commands and results, rejected
+claims with reasons, and any remaining concerns.
+Include an exact `## Generated Files` section with one project-relative path or
+link per line for files created or changed during this invocation.
+<!-- /crewplane:executor -->
+
+<!-- crewplane:reviewer -->
+Check behavior preservation, correctness of the fixes, and evidence from tests.
+Flag any remaining regressions or scope expansion with concrete file references.
+<!-- /crewplane:reviewer -->
 
 ## refactor.handoff
 
-Prepare a final refactoring handoff summary from:
-{{refactor.plan.output}}
-{{refactor.fixes.output}}
+Open the plan at `{{refactor.plan.output_path}}`, the original implementation
+report at `{{refactor.execute.output_path}}`, and the reviewed fixes at
+`{{refactor.fixes.output_path}}`. Prepare a handoff without changing files.
 
-Include validation checklist and remaining debt.
+Include the complete changed-file list, captured file links, actual validation
+results, reviewer approval or unresolved objections, and remaining debt.

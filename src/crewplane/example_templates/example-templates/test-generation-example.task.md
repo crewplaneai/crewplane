@@ -4,10 +4,10 @@ name: Test Generation Example
 description: Scope, generate, review, remediate, and summarize tests for a change.
 nodes:
   - id: tests.scope
-    mode: sequential
+    mode: parallel
     providers: [claude]
   - id: tests.generate
-    mode: sequential
+    mode: parallel
     needs: [tests.scope]
     providers: [codex]
   - id: tests.review
@@ -27,7 +27,7 @@ nodes:
       - provider: claude
         role: reviewer
   - id: tests.summary
-    mode: sequential
+    mode: parallel
     needs: [tests.fixes]
     providers: [claude]
 ---
@@ -40,25 +40,27 @@ Use this feature brief and coding standard:
 {{file:.crewplane/workflows/example-templates/sample-inputs/feature-brief.md}}
 {{file:.crewplane/workflows/example-templates/sample-inputs/coding-standards.md}}
 
-Focus on high-risk paths, edge cases, and deterministic filesystem-local tests.
+Inspect the implementation named by the brief and identify the existing test
+tools. Do not change files. If the target implementation does not exist, report
+that gap instead of inventing an API. Return its paths, behavior to verify, and
+specific test cases. Focus on high-risk paths and deterministic local tests.
 
 ## tests.generate
 
-Generate tests using this scope:
-{{tests.scope.output}}
+Open the complete test scope at `{{tests.scope.output_path}}`. Add the planned
+tests using the project's existing tools, without changing production behavior
+to make tests pass. If the required implementation is missing, explain the
+blocker rather than inventing it. Run the relevant tests and report the commands,
+results, and any checks that could not run.
 
-Include unit tests and integration coverage where appropriate.
+Include an exact `## Generated Files` section with one project-relative path or
+link per line for files created or changed during this invocation.
 
 ## tests.review
 
-Review generated tests using:
-
-Generated test artifact:
-- Path: {{tests.generate.output_path}}
-- Size: {{tests.generate.output_size}}
-- SHA-256: {{tests.generate.output_sha256}}
-
-Check for missing assertions, flaky patterns, and untested edge cases.
+Open the test report at `{{tests.generate.output_path}}` and the scope at
+`{{tests.scope.output_path}}`. Inspect the named tests and implementation for
+missing assertions, flaky patterns, and untested edge cases. Do not change files.
 
 End with exactly one findings block:
 <!-- findings -->
@@ -67,21 +69,26 @@ End with exactly one findings block:
 
 ## tests.fixes
 
-Apply fixes based on review output:
+Use these findings and open the test scope at `{{tests.scope.output_path}}`:
 {{tests.review.findings}}
 
-Ensure all tests pass and assertions are comprehensive.
-Reviewer approval should happen only when no major or minor issues remain; optional nitpicks may remain.
+<!-- crewplane:executor -->
+Fix confirmed test issues without changing production behavior. Run the focused
+tests and return the complete current test report, commands, results, and any
+remaining gaps. Do not claim passing tests when a check was not run.
+Include an exact `## Generated Files` section with one project-relative path or
+link per line for files created or changed during this invocation.
+<!-- /crewplane:executor -->
+
+<!-- crewplane:reviewer -->
+Check that the tests cover the intended behavior and that the fixes address
+reported gaps without hiding failures or adding flaky assertions.
+<!-- /crewplane:reviewer -->
 
 ## tests.summary
 
-Summarize the final test plan from:
-{{tests.generate.output}}
-{{tests.fixes.output}}
-
-Review findings metadata:
-- Path: {{tests.review.findings_path}}
-- Size: {{tests.review.findings_size}}
-- SHA-256: {{tests.review.findings_sha256}}
-
-Include remaining gaps and next actions.
+Open the original test report at `{{tests.generate.output_path}}`, the findings
+at `{{tests.review.findings_path}}`, and the reviewed fixes at
+`{{tests.fixes.output_path}}`. Summarize test coverage, actual check results,
+captured file links, reviewer approval or unresolved objections, and next actions.
+Do not change files or equate workflow completion with passing tests.

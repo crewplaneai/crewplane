@@ -147,9 +147,8 @@ more reviewers, use `mode: sequential`.
 
 ## Run One Provider In Rounds
 
-A sequential node with one provider runs one executor through ordered rounds.
-Use it when later rounds should build on the previous candidate instead of
-running independent providers in parallel:
+A sequential node with one provider runs the same executor through a fixed
+number of ordered rounds:
 
 ```yaml
 nodes:
@@ -160,12 +159,15 @@ nodes:
 ```
 
 The provider must be an executor. `depth` is the total number of executor
-rounds, so `depth: 2` runs the provider twice in sequence. The node result comes
-from the last completed round.
+rounds, so `depth: 2` runs the provider twice in sequence even if the first round
+succeeds. The node result comes from the last completed round.
 
-Use this shape when the node needs ordered executor retries or when later rounds
-should operate on the previous candidate workspace state. It does not add review
-feedback; for review feedback, use a multi-provider sequential node.
+Crewplane does not automatically insert the previous response into the next
+round's prompt. Later rounds can inspect earlier edits in the continued working
+files, but this is not a retry-on-failure setting or a plan-to-implementation
+handoff. Use separate nodes with `needs` and an explicit artifact reference for
+distinct steps. The refactoring example uses one execution pass, then separate
+review and fix nodes. For reviewer feedback within one node, use a review loop.
 
 ## Executor + Reviewer Loop
 

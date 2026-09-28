@@ -1,37 +1,41 @@
-# Composition Examples
+# Composed Review and Fix
 
-Composition is useful after you have run a basic workflow and written one normal
-workflow of your own. Use these examples when the same workflow pieces should be
-shared across multiple root workflows.
+Use this recipe after running a basic workflow, when you want to reuse review
+and fix steps in other workflows.
 
-These templates teach Markdown imports, alias-namespaced node IDs, parameters,
-and input binding. They are not mock-safe with the default generated config:
-the templates name real-provider agents such as `claude`, `codex`, and `gemini`.
-To keep using mock output, adapt those provider names first. To run real CLIs,
-enable the matching agents and switch the invoker to `cli`.
+This recipe reviews a project, passes the report to a fix workflow, and writes
+a final handoff. It demonstrates Markdown imports, named parameters, and input
+binding. It names the `claude`, `codex`, and `gemini` agent profiles, which are
+commented out in the generated config. Uncomment those profiles and
+keep the invoker set to `mock` to try the composition without starting provider
+CLIs. Switch the invoker to `cli` only when you want real provider work. See
+[Provider setup](../getting-started/provider-setup.md#turn-mock-mode-onoff).
 
-```text
-producer module
-      |
-      v
-consumer module
-      |
-      v
-composed workflow
-```
-
-The example is split into three generated files:
+Run [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)
+as the recipe. It uses two supporting modules:
 
 - [review-findings-producer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-findings-producer-example.task.md)
+  inspects the project and returns a report with findings.
 - [review-fix-consumer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
-- [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)
+  checks the findings against the project and applies supported fixes.
 
-After `crewplane init`, adapt the provider names or enable the real providers,
-then run the composed workflow:
+The composed workflow connects them as review → verify findings and fix →
+handoff. It does not add an executor/reviewer approval gate.
+
+After `crewplane init`, configure the matching agent names, then validate and run
+the composed workflow:
 
 ```bash
+crewplane validate .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md
 crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md
 ```
+
+When the consumer runs alone, its fallback input is the generated sample
+findings file. Those findings are synthetic, so the executor must verify each
+issue before changing files. In the composed workflow, the producer's full
+report, including its findings block, replaces that fallback input. Input
+binding passes the producer's full output; it does not select the separate
+findings artifact automatically.
 
 Adapt the examples by changing:
 

@@ -135,6 +135,13 @@ settings:
 With `implementation: "mock"`, Crewplane generates sample output without
 starting provider CLIs. The `options` keys here control that sample output.
 
+This also works with advanced examples that name `claude`, `codex`, or `gemini`.
+Uncomment their agent profiles in the generated config, but keep the invoker
+block above unchanged. You do not need to replace those workflow names with
+`mock`, install their CLIs, or authenticate them for this trial. Onboarding
+prepares the starter workflow only; it does not rewrite the provider selections
+in the example library. See the [examples guide](../examples/index.md).
+
 The generated agent named `mock` is used by the quickstart and onboarding demo.
 You can remove it once no workflow references `providers: ["mock"]`; the
 invoker setting still controls whether other agents use mock output.

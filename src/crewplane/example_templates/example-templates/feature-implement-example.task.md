@@ -9,15 +9,12 @@ nodes:
     mode: input
     source: "{{file:.crewplane/workflows/example-templates/sample-inputs/feature-brief.md}}"
   - id: implement.plan
-    mode: sequential
+    mode: parallel
     needs: [feature.brief]
     providers: [claude]
   - id: implement.build
-    mode: sequential
+    mode: parallel
     needs: [implement.plan]
-    token_budget:
-      warn_threshold_chars: 25000
-      fail_threshold_chars: 75000
     providers: [codex]
   - id: implement.iterate
     mode: sequential
@@ -34,62 +31,58 @@ nodes:
       - provider: gemini
         role: reviewer
   - id: implement.handoff
-    mode: sequential
+    mode: parallel
     needs: [implement.iterate]
     providers: [claude]
 ---
 
 ## implement.plan
 
-Create a concrete implementation plan for this feature request:
-{{feature.brief.output}}
+Open the complete feature request at `{{feature.brief.output_path}}`.
+Inspect only the project files needed to choose the implementation and tests.
+Create a concrete implementation plan without changing files.
 
 Return scope, touched components, implementation steps, and validation strategy.
 
 ## implement.build
 
-Implement the feature based on this plan:
-{{implement.plan.output}}
+Open the complete plan at `{{implement.plan.output_path}}` and the acceptance
+criteria at `{{feature.brief.output_path}}`. Implement the agreed scope and run
+the relevant checks. Report any check you could not run.
 
 Return changed files, key implementation decisions, and commands run.
 
-If files are created or changed, include a link-only section:
+For files created or changed during this invocation, include a link-only section
+with one actual project-relative path per line:
 
 ## Generated Files
 - path/to/file.ext
 
 ## implement.iterate
 
-Review and remediate the implementation candidate.
-
-Implementation artifact:
-{{implement.build.output}}
-
-Implementation metadata:
-- Path: {{implement.build.output_path}}
-- Size: {{implement.build.output_size}}
-- SHA-256: {{implement.build.output_sha256}}
+Open the original implementation report at `{{implement.build.output_path}}`
+and the acceptance criteria at `{{feature.brief.output_path}}`. Use those files
+for the initial review, then assess this node's current candidate and its code.
 
 <!-- crewplane:executor -->
 Apply required fixes or explain why no fix is needed. Return the complete
-current candidate, commands run, and a link-only `Generated Files` section when
-the workspace changes.
+current implementation report, commands and results, and remaining concerns.
+Include an exact `## Generated Files` section with one project-relative path or
+link per line for files created or changed during this invocation.
 <!-- /crewplane:executor -->
 
 <!-- crewplane:reviewer -->
-Review the current candidate for correctness, regressions, and missing
-validation. Do not edit files.
-
-End with `Major Issues`, `Minor Issues`, `Nitpicks`, and a final
-`VERDICT: CHANGES_REQUESTED`, `VERDICT: NITS_ONLY`, or
-`VERDICT: NO_FINDINGS`.
+Check the implementation against the acceptance criteria, with attention to
+correctness, regressions, and missing validation. Cite concrete evidence for
+any requested changes.
 <!-- /crewplane:reviewer -->
 
 ## implement.handoff
 
-Create a final handoff summary from:
-{{implement.plan.output}}
-{{implement.iterate.output}}
+Open the plan at `{{implement.plan.output_path}}`, the original implementation
+report at `{{implement.build.output_path}}`, and the final reviewed result at
+`{{implement.iterate.output_path}}`. Create a final handoff without changing files.
 
-Include rollout notes, validation commands, generated-file paths, and follow-up
-tasks.
+Include rollout notes, validation commands and results, captured file links,
+reviewer approval or unresolved objections, and follow-up tasks. A completed run
+does not itself prove approval when the config allows review exhaustion.

@@ -38,8 +38,9 @@ nodes:
 
 Review `{{var:project_name}}` for public-release readiness.
 
-Use the generated configuration as the provider and runtime contract:
-{{file:.crewplane/config.yml}}
+Read the project's README, contribution instructions, and relevant source and
+tests. Do not change files. Report which areas you inspected and which checks
+you could not complete.
 
 Return:
 1. top correctness and regression risks
@@ -53,28 +54,34 @@ End with exactly one concise findings block:
 
 ## review.iterate
 
-Run iterative review rounds from this compact findings artifact:
+Check and refine the review report using these findings:
 {{review.context.findings}}
 
-Findings artifact metadata:
-- Path: {{review.context.findings_path}}
-- Size: {{review.context.findings_size}}
-- SHA-256: {{review.context.findings_sha256}}
+<!-- crewplane:executor -->
+Verify the reported issues against the named files. Return a complete review
+report with confirmed issues, rejected claims, evidence, and recommended fixes.
+Do not implement fixes or change files. Treat failed provider calls as missing
+review coverage, not approval.
+<!-- /crewplane:executor -->
+
+<!-- crewplane:reviewer -->
+Check that each reported issue has concrete evidence and that the proposed fixes
+address it. Flag unsupported conclusions and missing review coverage.
+<!-- /crewplane:reviewer -->
 
 ## review.summary
 
 Create one concise final report for the run.
 
-Use:
-{{review.context.findings}}
-
-The review-loop output is available at:
-- Path: {{review.iterate.output_path}}
-- Size: {{review.iterate.output_size}}
-- SHA-256: {{review.iterate.output_sha256}}
+Open the original findings at `{{review.context.findings_path}}` and the complete
+review-loop result at `{{review.iterate.output_path}}`. Do not change files.
 
 Include:
 1. Severity-ranked findings
 2. Review consensus status
 3. Recommended fixes or explicit approval rationale
 4. Merge readiness verdict
+
+This workflow allows continuation when a provider fails or review attempts run
+out. Distinguish reviewer approval, unresolved objections, and unavailable checks.
+Do not treat a completed workflow as proof that the project is ready to merge.

@@ -4,6 +4,15 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+### Added
+
+- Added workflows to investigate and fix reported bugs and to review existing local changes.
+
+### Changed
+
+- Updated workflow examples with explicit requests, clearer review policies,
+  reliable file handoffs, and plain-language setup guidance.
+
 ## [0.3.5] - 2026-09-25
 
 ### Added

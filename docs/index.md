@@ -12,6 +12,8 @@ local run records on disk.
 | Understand what Crewplane is | [Why Crewplane?](getting-started/why-crewplane.md) |
 | Try it safely without real agent calls | [Installation](getting-started/installation.md), then [Quickstart](getting-started/quickstart.md) |
 | Prepare a real provider | [Quickstart](getting-started/quickstart.md), then [Provider setup](getting-started/provider-setup.md) |
+| Investigate and fix a reported bug | [Bug-fix recipe](examples/bug-fix.md) |
+| Review changes already in your working tree | [Existing-change review recipe](examples/review-existing-change.md) |
 | Follow the guided tutorial track | [Running workflows](guides/running-workflows.md) |
 | Look up exact syntax and config | [Workflow syntax](reference/workflow-syntax.md), [Configuration](reference/configuration.md), [Commands](reference/commands.md) |
 
@@ -69,7 +71,9 @@ Feel free to jump around based on what you need right now:
 ## Examples
 
 - [Example templates](examples/index.md)
-- [Composition examples](examples/composition.md)
+- [Fix a reported bug](examples/bug-fix.md)
+- [Review an existing change](examples/review-existing-change.md)
+- [Composed review and fix](examples/composition.md)
 - [Workspace examples](examples/workspace.md)
 
 ## Reference

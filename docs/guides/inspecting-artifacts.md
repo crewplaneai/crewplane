@@ -22,7 +22,7 @@ Example output:
 The directory name is the run key. In this example, the run key is
 `single-agent-review--5e34bc54c79a-20260629-202539`. Use the full value
 anywhere these docs show `<run-key>`. See
-[Run Keys And Run IDs](running-workflows.md#run-keys-and-run-ids) for the full
+[Workflow IDs, Run IDs, and Run Keys](running-workflows.md#workflow-ids-run-ids-and-run-keys) for the full
 breakdown.
 
 ## Open These First
@@ -67,6 +67,37 @@ Use:
 
 Result section headings are human-readable. Inspect stage artifacts, logs,
 manifests, or review-loop state when you need stable provider task IDs.
+
+## Keep Copies Of Changed Files
+
+Keeping extra copies in the run results is optional. For Git-based projects,
+you can review changes with Git without asking executors for a file list on
+every run.
+
+When you want Crewplane to retain copies of files changed in the project root,
+ask the executor to finish its response with an exact `## Generated Files`
+heading and a list of paths relative to that root. List only files created or
+changed during that invocation. For example, if the executor changed these two
+files:
+
+```markdown
+## Generated Files
+
+- examples/text-cleanup/normalize_spacing.py
+- examples/text-cleanup/test_normalize_spacing.py
+```
+
+If no files changed, omit the section. Put explanations in the rest of the
+response, rather than beside the listed paths. A later summary should refer to
+earlier work without listing those files as its own changes.
+
+Crewplane checks the list against Git changes since that invocation began.
+Without a usable Git starting state, it cannot retain these files through
+project-root capture. Managed workspaces can also capture changes within their
+own working directories. After the run, check `generated-files/` and the run
+logs: a successful text result does not guarantee that every requested file copy
+was saved. See the [artifact reference](../reference/artifacts.md#results)
+for the full capture rules.
 
 ## Read The Timeline And Logs
 

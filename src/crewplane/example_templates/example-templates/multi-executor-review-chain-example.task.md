@@ -1,10 +1,10 @@
 ---
 schema_version: "__SCHEMA_VERSION__"
-name: Multi Executor Review Chain Example
-description: Show how multiple executors can hand off work before a reviewer cycle.
+name: Multi Executor Review Example
+description: Run two proposal passes in order, then review their complete outputs together.
 nodes:
   - id: chain.context
-    mode: sequential
+    mode: parallel
     providers: [claude]
   - id: chain.iterate
     mode: sequential
@@ -20,7 +20,7 @@ nodes:
       - provider: gemini
         role: reviewer
   - id: chain.summary
-    mode: sequential
+    mode: parallel
     needs: [chain.iterate]
     providers: [claude]
 ---
@@ -37,38 +37,39 @@ Return:
 2. Constraints
 3. Files likely to change
 
+Preserve the request's acceptance criteria. Inspect relevant files but do not
+change them.
+
 ## chain.iterate
 
-Work through this handoff chain using the context below:
-{{chain.context.output}}
+Open the change brief at `{{chain.context.output_path}}`.
+
+Both executors receive the same instructions and produce proposals for review
+together. They run in order, but one executor's current response is not passed
+to the next executor. Keep project files unchanged throughout this node.
 
 <!-- crewplane:executor -->
-Executor semantics:
-- The first executor should make an initial implementation pass.
-- The second executor should inspect the same workspace, refine or complete the result,
-  and explain any disagreements with the first pass.
-Return the full revised candidate, commands run, and generated-file paths when
-files change.
+Write a self-contained implementation proposal covering the requested behavior,
+files to change, tradeoffs, risks, and validation. On a fix attempt, address the
+review feedback and return your complete revised proposal. Do not implement it
+or assume another executor's response is available.
 <!-- /crewplane:executor -->
 
 <!-- crewplane:reviewer -->
-Reviewer semantics:
-- Evaluate the latest workspace state plus both executor artifacts for correctness,
-  regressions, and missing validation.
-- Do not edit files.
-
-End with the structured review sections and a final verdict token.
+Evaluate both proposals against the change brief. Check feasibility, acceptance
+criteria, regressions, and validation. Cite which proposal each issue affects;
+identify conflicting assumptions that need resolution before implementation.
 <!-- /crewplane:reviewer -->
-
-Stop only when no major or minor issues remain; optional nitpicks may remain.
 
 ## chain.summary
 
-Summarize the multi-executor review chain from:
-{{chain.context.output}}
-{{chain.iterate.output}}
+Open the change brief at `{{chain.context.output_path}}` and the complete proposal
+and review results at `{{chain.iterate.output_path}}`. Do not change files.
 
 Include:
-1. What the first executor did
-2. What the second executor refined
-3. Reviewer verdict and follow-up work
+1. Where the proposals agree and differ
+2. A recommended approach and its rationale, preserving relevant constraints
+3. Reviewer approval or unresolved objections, and follow-up work
+
+The workflow does not merge proposals or select a winner automatically. Do not
+claim implementation happened or infer approval from workflow completion.
