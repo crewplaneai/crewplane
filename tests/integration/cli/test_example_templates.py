@@ -1,6 +1,5 @@
 import asyncio
 import io
-import subprocess
 import tempfile
 import unittest
 from collections import deque
@@ -9,6 +8,7 @@ from unittest.mock import patch
 
 from rich.console import Console
 
+import crewplane.cli.app as cli
 import crewplane.cli.templates as templates
 import crewplane.cli.workflow_runner as workflow_runner
 from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
@@ -28,7 +28,7 @@ from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
 from crewplane.runtime.agent.usage_costs import derive_configured_cost
-from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.isolated_git import run_git
 from tests.helpers.working_directory import temporary_project_cwd
 
 
@@ -72,56 +72,6 @@ def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: 
                 redundant_dependencies.append((node.id, dependency_id))
 
     return redundant_dependencies
-
-
-def _render_initialized_template_tree(rendered_root: Path) -> Path:
-    state_dir = rendered_root / ".crewplane"
-    workflows_dir = state_dir / "workflows"
-    workflow_library_dir = workflows_dir / "example-templates"
-    workflows_dir.mkdir(parents=True, exist_ok=True)
-    workflow_library_dir.mkdir(parents=True, exist_ok=True)
-
-    (state_dir / "config.yml").write_text(
-        templates.render_template_content(
-            templates.CONFIG_TEMPLATE.read_text(encoding="utf-8")
-        ),
-        encoding="utf-8",
-    )
-    (workflows_dir / "single-agent-review.task.md").write_text(
-        templates.render_template_content(
-            templates.DEFAULT_WORKFLOW_TEMPLATE.read_text(encoding="utf-8")
-        ),
-        encoding="utf-8",
-    )
-    for relative_path in templates.discover_workflow_library_assets():
-        target_path = workflow_library_dir / relative_path
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(
-            templates.render_template_content(
-                (templates.WORKFLOW_LIBRARY_TEMPLATE_DIR / relative_path).read_text(
-                    encoding="utf-8"
-                )
-            ),
-            encoding="utf-8",
-        )
-    return state_dir
-
-
-def _initialize_git_repository(root: Path) -> None:
-    _run_git(root, "init")
-    _run_git(root, "config", "user.name", "Crewplane Test")
-    _run_git(root, "config", "user.email", "crewplane-test@example.invalid")
-    _run_git(root, "add", ".")
-    _run_git(root, "commit", "-m", "initial")
-
-
-def _run_git(root: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", "-C", root.as_posix(), *args],
-        check=True,
-        capture_output=True,
-        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
-    )
 
 
 class ExampleTemplateTests(unittest.TestCase):
@@ -566,10 +516,25 @@ class ExampleTemplateTests(unittest.TestCase):
         )
 
     def test_initialized_workflow_templates_compile_preflight(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
-            state_dir = _render_initialized_template_tree(rendered_root)
-            _initialize_git_repository(rendered_root)
+        with temporary_project_cwd() as rendered_root:
+            cli.init()
+            state_dir = rendered_root / ".crewplane"
+            change_request = rendered_root / "docs" / "crewplane-change-request.md"
+            change_request.parent.mkdir()
+            change_request.write_text(
+                (
+                    state_dir
+                    / "workflows/example-templates/sample-inputs/feature-brief.md"
+                ).read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            run_git(rendered_root, "init")
+            run_git(rendered_root, "config", "user.name", "Crewplane Test")
+            run_git(
+                rendered_root, "config", "user.email", "crewplane-test@example.invalid"
+            )
+            run_git(rendered_root, "add", ".")
+            run_git(rendered_root, "commit", "-m", "initial")
             config = load_config(state_dir / "config.yml")
             assert config.settings is not None
             config.settings.workspace.enabled = True

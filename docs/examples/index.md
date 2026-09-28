@@ -1,90 +1,75 @@
 # Examples
 
-After `crewplane init`, you have one mock-safe workflow at
-`.crewplane/workflows/single-agent-review.task.md` and additional examples under
+After `crewplane init`, the starter workflow is at
+`.crewplane/workflows/single-agent-review.task.md` and the library is under
 `.crewplane/workflows/example-templates/`.
 
-Start with the mock-safe workflow. For the other examples, either change their
-provider names to match configured mock-safe agents or enable the real provider
-agents in `.crewplane/config.yml` and switch the invoker to `cli`.
-
-## Suggested Path
-
-1. Run `single-agent-review.task.md` first. It uses the generated `mock` agent
-   and leaves result and findings files you can inspect immediately.
-2. Move to `code-review-example.task.md` after you have provider names that
-   match your config.
-3. Use the implementation, refactoring, design-review, and test-generation
-   examples when you are ready to run real provider CLIs.
-4. Use composition and workspace examples only after the basic workflow shape is
-   familiar.
-
-Once `crewplane init` has generated the workflow copies, these commands run the
-most common examples:
-
-```bash
-crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
-crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md
-crewplane run --tasks .crewplane/workflows/example-templates/feature-implement-example.task.md
-```
-
-Only `single-agent-review.task.md` is generated at the top level. The other
-examples live under `example-templates/`, so they need an explicit `--tasks`
-path. Add `--no-live` only when you want a plain terminal run without the live
-dashboard.
-
-The source-backed public examples are the packaged templates under
-`src/crewplane/example_templates/`.
+Start with the [quickstart](../getting-started/quickstart.md), then choose an
+example below. The generated
+[example README](../../src/crewplane/example_templates/example-templates/README.md)
+lists required agent profiles, inputs, and expected outcomes.
 
 ## Default Example
 
-- [single-agent-review.task.md](../../src/crewplane/example_templates/single-agent-review.task.md)
-
-```bash
-crewplane run --tasks .crewplane/workflows/single-agent-review.task.md
-```
+[Single-agent review](../../src/crewplane/example_templates/single-agent-review.task.md)
+uses the generated mock config and produces a report and findings.
 
 ## Workflow Library
 
-- [code-review-example.task.md](../../src/crewplane/example_templates/example-templates/code-review-example.task.md)
-- [feature-implement-example.task.md](../../src/crewplane/example_templates/example-templates/feature-implement-example.task.md)
-- [test-generation-example.task.md](../../src/crewplane/example_templates/example-templates/test-generation-example.task.md)
-- [refactoring-example.task.md](../../src/crewplane/example_templates/example-templates/refactoring-example.task.md)
-- [design-review-example.task.md](../../src/crewplane/example_templates/example-templates/design-review-example.task.md)
-- [multi-executor-review-chain-example.task.md](../../src/crewplane/example_templates/example-templates/multi-executor-review-chain-example.task.md)
+- [Code review](../../src/crewplane/example_templates/example-templates/code-review-example.task.md)
+- [Feature implementation](../../src/crewplane/example_templates/example-templates/feature-implement-example.task.md)
+- [Fix a reported bug](bug-fix.md)
+- [Review an existing change](review-existing-change.md)
+- [Test generation](../../src/crewplane/example_templates/example-templates/test-generation-example.task.md)
+- [Refactoring](../../src/crewplane/example_templates/example-templates/refactoring-example.task.md)
+- [Design review](../../src/crewplane/example_templates/example-templates/design-review-example.task.md)
+
+Enable the profiles named by your chosen workflow using
+[Provider setup](../getting-started/provider-setup.md#turn-mock-mode-onoff).
+Keep the invoker set to `mock` for a trial with sample responses. Library examples
+need an explicit `--tasks` path; run these commands from your project directory:
 
 ```bash
-crewplane run --tasks .crewplane/workflows/example-templates/code-review-example.task.md
+crewplane validate .crewplane/workflows/example-templates/code-review-example.task.md
+crewplane run --no-live --tasks .crewplane/workflows/example-templates/code-review-example.task.md
 ```
+
+Before relying on reviewer approval, choose a
+[review exhaustion policy](../guides/review-loops.md#continue-or-fail-on-exhaustion).
+For reports and captured files, see
+[Inspecting run records](../guides/inspecting-artifacts.md).
 
 ## Composition
 
-- [review-findings-producer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-findings-producer-example.task.md)
-- [review-fix-consumer-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-consumer-example.task.md)
-- [review-fix-composed-example.task.md](../../src/crewplane/example_templates/example-templates/composition/review-fix-composed-example.task.md)
-
-See [composition examples](composition.md).
-
-```bash
-crewplane run --tasks .crewplane/workflows/example-templates/composition/review-fix-composed-example.task.md
-```
+[Composed review and fix](composition.md) connects a reusable findings producer
+to a fix consumer. The walkthrough covers the recipe, standalone modules, and
+input bindings.
 
 ## Workspace
 
-- [workspace-alternatives-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md)
-- [workspace-inherited-worktree-example.task.md](../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md)
+Follow [Workspace examples](workspace.md) to prepare the repository and committed
+change request before running either template:
 
-See [Workspace examples](workspace.md).
+- [Workspace alternatives](../../src/crewplane/example_templates/example-templates/worktree/workspace-alternatives-example.task.md): implement the request separately and compare the reports.
+- [Inherited worktree](../../src/crewplane/example_templates/example-templates/worktree/workspace-inherited-worktree-example.task.md): implement, test, and fix on one source line.
 
-```bash
-crewplane run --tasks .crewplane/workflows/example-templates/worktree/workspace-alternatives-example.task.md
-```
+## Advanced Patterns
+
+[Multiple executors](../../src/crewplane/example_templates/example-templates/multi-executor-review-chain-example.task.md)
+produces two design proposals for review together. See
+[provider order](../guides/review-loops.md#provider-order) for how
+executor outputs reach reviewers.
 
 ## Sample Inputs
 
-- [coding-standards.md](../../src/crewplane/example_templates/example-templates/sample-inputs/coding-standards.md)
-- [feature-brief.md](../../src/crewplane/example_templates/example-templates/sample-inputs/feature-brief.md)
-- [review-findings.md](../../src/crewplane/example_templates/example-templates/sample-inputs/review-findings.md)
+- [Coding standards](../../src/crewplane/example_templates/example-templates/sample-inputs/coding-standards.md)
+- [Feature brief](../../src/crewplane/example_templates/example-templates/sample-inputs/feature-brief.md)
+- [Bug report](../../src/crewplane/example_templates/example-templates/sample-inputs/bug-report.md)
+- [Change review brief](../../src/crewplane/example_templates/example-templates/sample-inputs/change-review-brief.md)
+- [Review findings](../../src/crewplane/example_templates/example-templates/sample-inputs/review-findings.md)
 
-Copy sample inputs into your own project or update generated workflow paths to
-point at your real project files.
+Replace sample inputs with your project's scope and acceptance criteria.
+The feature brief defines a `normalize_spacing(text)` exercise; test generation
+requires an existing implementation. The sample bug report and review findings
+are hypothetical, and existing-change review requires an actual patch. Each
+recipe describes its prerequisites.

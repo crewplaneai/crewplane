@@ -4,7 +4,7 @@ name: Design Review Example
 description: Compare design options, iterate with reviewer feedback, and record a decision.
 nodes:
   - id: design.discovery
-    mode: sequential
+    mode: parallel
     providers: [claude]
   - id: design.iteration
     mode: sequential
@@ -12,16 +12,12 @@ nodes:
     depth: 2
     providers:
       - provider: codex
-        model: gpt-5.5
         role: executor
       - provider: gemini
         role: reviewer
   - id: design.decision
-    mode: sequential
+    mode: parallel
     needs: [design.iteration]
-    token_budget:
-      warn_threshold_chars: 25000
-      fail_threshold_chars: 70000
     providers: [claude]
 ---
 
@@ -32,39 +28,36 @@ Draft a design options brief for `{{var:project_name}}`.
 Use this feature brief as the concrete target:
 {{file:.crewplane/workflows/example-templates/sample-inputs/feature-brief.md}}
 
-Return 2-3 design options with tradeoffs.
+Return 2-3 design options with tradeoffs and a recommended starting point.
+Include the feature brief's acceptance criteria and relevant project constraints
+so later reviews can check them. Inspect relevant project files, but do not
+change them.
 
 ## design.iteration
 
-Iterate on the preferred design using this discovery output:
-{{design.discovery.output}}
+Open the complete discovery brief at `{{design.discovery.output_path}}`.
+Preserve its acceptance criteria and relevant constraints when assessing the
+current design.
 
 <!-- crewplane:executor -->
 Revise the design for correctness, risk reduction, and maintainability.
-Return the full updated design in each response.
+Return the full updated design in each response. Do not change project files.
 <!-- /crewplane:executor -->
 
 <!-- crewplane:reviewer -->
 Review the current design for correctness, risks, maintainability, and test
-strategy. Do not edit files.
-
-End with the structured review sections and a final verdict token.
+strategy. Identify any acceptance criteria or concrete interface details that
+were lost during revision.
 <!-- /crewplane:reviewer -->
 
 ## design.decision
 
-Produce a final design decision record from:
-{{design.discovery.output}}
-
-Reviewed design artifact:
-- Path: {{design.iteration.output_path}}
-- Size: {{design.iteration.output_size}}
-- SHA-256: {{design.iteration.output_sha256}}
+Open the discovery brief at `{{design.discovery.output_path}}` and the complete
+reviewed design at `{{design.iteration.output_path}}`. Produce a final decision
+record without changing project files.
 
 Return the full decision record in this response; do not only summarize or point to
 a file. Include selected option, rationale, and implementation milestones, and
 preserve accepted concrete interface, data-shape, and test details from the
-reviewed iteration output.
-
-If you create or update a repository file for the decision record, include a
-`Generated Files` section that lists the workspace-relative path.
+reviewed iteration output. State whether reviewers approved and list unresolved
+objections; do not label an unapproved proposal as an accepted decision.

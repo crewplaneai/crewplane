@@ -106,6 +106,14 @@ Most review loops should start with one executor. Add more reviewers when the
 same candidate needs independent checks. Add more executors only when multiple
 outputs need to be reviewed together.
 
+Every executor receives the same authored executor instructions. Running in
+order does not automatically give the second executor the first one's output
+or assign it a different task. For a plan-to-implementation handoff, use separate
+nodes with `needs` and an explicit output reference. The generated
+[multi-executor example](../../src/crewplane/example_templates/example-templates/multi-executor-review-chain-example.task.md)
+uses separate, read-only design proposals to demonstrate reviewing a set of
+outputs together.
+
 - **Multiple executors, one reviewer**: executors run in declaration order and
   produce one candidate set. One reviewer checks the whole set and must approve
   it.
@@ -145,22 +153,22 @@ when providers in the two roles need different instructions:
 
 ```markdown
 ## implement
-Implement the requested change and keep the patch focused.
+Use the supplied change request as the scope for implementation and review.
 
 <!-- crewplane:executor -->
 Make the smallest correct change and include validation steps.
 <!-- /crewplane:executor -->
 
 <!-- crewplane:reviewer -->
-Review for correctness, regressions, and missing tests.
-End with the structured review verdict.
+Review for correctness, regressions, and missing tests. Do not edit files.
 <!-- /crewplane:reviewer -->
 ```
 
 Use `executor` and `reviewer` as role markers; unmarked text is shared.
 Crewplane also adds the current executor outputs, unresolved feedback,
 instructions to review without changing the candidate, and the required review
-format to each reviewer prompt.
+format to each reviewer prompt. You do not need to copy the verdict format into
+every authored reviewer block.
 
 ![Prompt role routing diagram showing the authored Markdown prompt on the left, with unmarked shared content sent to both roles, the executor block sent only to executor-role providers, and the reviewer block sent only to reviewer-role providers.](../images/review-loops/review-loop-prompt-roles.png)
 
@@ -287,6 +295,13 @@ For example, use reviewer-first when there is **already something to inspect**:
 Reviewers can triage that context first and hand only unresolved feedback to the
 executor.
 
+For a complete recipe, use
+[Review an existing change](../examples/review-existing-change.md). It records
+the comparison baseline and selected files before a reviewer-first node checks
+your local changes. The executor fixes confirmed issues within that scope, and
+a final step verifies the result. It uses the project root so staged, unstaged,
+and selected untracked changes remain available for review.
+
 ```yaml
 nodes:
   - id: review.fix
@@ -361,6 +376,26 @@ When attempts run out without approval, `continue_on_failure` and
 `settings.sequential_consensus_on_exhaustion` determine whether the node fails or
 the workflow continues with a valid candidate. `continue_on_failure` also applies
 when a reviewer command fails. Failed dependencies still block later nodes.
+
+The default exhaustion policy is `continue`. With that policy, a successful
+workflow can still contain work that reviewers did not approve. To make review
+an approval gate, change this value in your existing `.crewplane/config.yml`:
+
+```yaml
+settings:
+  sequential_consensus_on_exhaustion: fatal
+```
+
+Also leave `continue_on_failure` unset or false on each review node that must
+block later work. A node with `continue_on_failure: true` can continue even when
+the global policy is `fatal`.
+
+The generated code-review example intentionally uses best-effort review so it
+can summarize unresolved concerns. Use the strict settings above for feature,
+bug-fix, existing-change review, design, refactoring, or test workflows when later
+work requires approval.
+Inspect the saved reviewer verdicts instead of treating a successful run as
+proof of consensus.
 
 Crewplane also stops a node with `no_progress` after two consecutive fix attempts
 leave the work unchanged and the same feedback unresolved. After the first such

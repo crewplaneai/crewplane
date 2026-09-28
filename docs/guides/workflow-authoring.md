@@ -182,6 +182,18 @@ Supported runtime template forms are:
 - `{{node.output_sha256}}`
 - `{{node.findings_sha256}}`
 
+`{{node.output}}` inserts the saved output into the prompt.
+`{{node.output_path}}` inserts only its path. When using a path to keep a prompt
+short, explicitly tell the provider to open that file and which sections or
+questions to inspect. A path, size, or digest alone does not ask the provider
+to read the contents.
+
+Optional `token_budget` thresholds measure characters in each checked artifact
+or review-context insertion, not the total prompt or model token usage. Several
+small insertions can still create a large prompt. Files a provider opens later
+through its own tools are not limited by those thresholds. See the
+[token budget reference](../reference/workflow-syntax.md#token-budget-override).
+
 `{{file:path}}` references read UTF-8 text and are bounded to the project root by
 default. External files must be explicitly allowlisted through
 `settings.file_access.allowed_template_paths`. Symlinks are

@@ -187,7 +187,8 @@ Onboarding prepares the generated project for one or more real providers:
 - Validates that the project is ready for a real CLI-backed run.
 
 It still does not start provider CLIs, authenticate providers, or check provider
-account/model readiness.
+account/model readiness. Onboarding updates the starter workflow; library
+examples keep their own provider selections.
 
 When onboarding finishes, you choose when to start the first real provider run:
 
@@ -219,7 +220,15 @@ To see the same flow with a real provider, watch the Codex walkthrough:
 The quickstart used the one workflow created directly in
 `.crewplane/workflows/`. The extra templates stay under
 `.crewplane/workflows/example-templates/`, so Crewplane will not select them
-automatically.
+automatically. Those examples may name providers you did not select during
+onboarding. Enable their matching agent profiles before validation.
+
+You can try them without real provider calls: enable the required named profiles
+and keep or restore the `mock` invoker. The invoker setting determines whether
+commands run, regardless of the agent names. Follow the
+[examples guide](../examples/index.md) for provider requirements, sample inputs,
+and review policy. `crewplane init` leaves existing copies unchanged when you
+run it again.
 
 To validate or run one of those templates, pass its path:
 
@@ -231,6 +240,11 @@ crewplane run --tasks .crewplane/workflows/example-templates/code-review-example
 If you later keep multiple `.task.md` files directly under
 `.crewplane/workflows/`, use the same pattern and pass the workflow path you
 want.
+
+For your next real task, try [fixing a reported bug](../examples/bug-fix.md) or
+[reviewing an existing change](../examples/review-existing-change.md). Both need
+existing code and an edited task brief; their sample inputs do not establish
+that your project has a bug or a change to review.
 
 ## Next
 

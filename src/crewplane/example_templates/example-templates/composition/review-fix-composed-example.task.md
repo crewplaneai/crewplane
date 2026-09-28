@@ -17,22 +17,23 @@ nodes:
     mode: input
     source: "{{file:.crewplane/workflows/example-templates/sample-inputs/coding-standards.md}}"
   - id: handoff.final
-    mode: sequential
+    mode: parallel
     needs: [fix.implement.summary]
     providers: [claude]
 ---
 
 ## handoff.final
 
-Create a final handoff from:
+Create a final handoff without editing project files. Open these artifacts:
 
-Imported findings:
-- Path: {{quality.review.findings.findings_path}}
-- Size: {{quality.review.findings.findings_size}}
-- SHA-256: {{quality.review.findings.findings_sha256}}
+- Concise review findings: `{{quality.review.findings.findings_path}}`
+- Implementation summary: `{{fix.implement.summary.output_path}}`
 
-Implementation summary:
-{{fix.implement.summary.output}}
+Report confirmed fixes, rejected findings, validation evidence, and follow-up
+work. Use captured result-tree links when citing generated files.
 
-Call out which inputs were bound through `imports[].inputs`, how
-`imports[].with` scoped the producer, and what follow-up work remains.
+Explain that `imports[].inputs` bound the producer node and the standards input
+to the consumer. The consumer received the producer's full output, not an
+automatic selection of its findings artifact; this handoff opens the separate
+findings artifact explicitly. Note the project label supplied by
+`imports[].with`.
