@@ -41,7 +41,7 @@ Issues = "https://github.com/crewplaneai/crewplane/issues"
 Documentation = "https://github.com/crewplaneai/crewplane/blob/master/docs/index.md"
 
 [build-system]
-requires = ["hatchling==1.32.3"]
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
