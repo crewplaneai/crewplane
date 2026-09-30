@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -13,7 +12,9 @@ from crewplane.artifacts.results.review_loop_status import (
     task_specs_for_producers,
 )
 from crewplane.artifacts.workspace.state.lineage import (
+    ReviewOutputCoordinates,
     invocation_round_order,
+    is_seeded_audit_round,
     review_output_coordinates,
 )
 from crewplane.artifacts.workspace.state.paths import (
@@ -22,13 +23,6 @@ from crewplane.artifacts.workspace.state.paths import (
 )
 from crewplane.core.preflight.models import PreflightExecutionNode
 from crewplane.core.workflow.keywords import ProviderRole
-
-
-@dataclass(frozen=True)
-class WorkspaceStateInvocation:
-    task_id: str
-    round_num: int
-    audit_round_num: int | None
 
 
 class NodeArtifactLookup(Protocol):
@@ -77,7 +71,7 @@ def same_node_executor_state_path(
         for provider in node.provider_records
         if provider.role == ProviderRole.EXECUTOR
     }
-    match = WorkspaceStateInvocation(
+    match = ReviewOutputCoordinates(
         task_id=next(iter(task_ids)) if len(task_ids) == 1 else "",
         round_num=round_num,
         audit_round_num=audit_round_num,
@@ -85,7 +79,7 @@ def same_node_executor_state_path(
     exact = find_lineage_state_path(stage_dir, match, task_ids)
     if exact is not None:
         return exact
-    if is_seeded_audit_round(match) or allow_prior_fallback:
+    if is_seeded_audit_round(round_num, audit_round_num) or allow_prior_fallback:
         return latest_executor_lineage_state_path(
             stage_dir,
             task_ids,
@@ -115,7 +109,7 @@ def latest_executor_lineage_state_path(
 
 def find_lineage_state_path(
     stage_dir: Path,
-    match: WorkspaceStateInvocation,
+    match: ReviewOutputCoordinates,
     task_ids: set[str] | None = None,
 ) -> Path | None:
     matches = [
@@ -150,7 +144,7 @@ def review_loop_canonical_lineage_state_path(
     exact = find_lineage_state_path(stage_dir, invocation, {invocation.task_id})
     if exact is not None:
         return exact
-    if is_seeded_audit_round(invocation):
+    if is_seeded_audit_round(invocation.round_num, invocation.audit_round_num):
         seeded_source = latest_executor_lineage_state_path(
             stage_dir,
             {invocation.task_id},
@@ -166,18 +160,14 @@ def review_loop_canonical_lineage_state_path(
 
 def invocation_from_review_status(
     entry: ReviewLoopStatusEntry,
-) -> WorkspaceStateInvocation:
+) -> ReviewOutputCoordinates:
     coordinates = review_output_coordinates(entry.relative_path, entry.task_id)
     if coordinates is None:
         raise RuntimeError(
             "Workspace review-loop status points to an executor output that does "
             f"not match its task id: {entry.relative_path}."
         )
-    return WorkspaceStateInvocation(
-        task_id=coordinates.task_id,
-        round_num=coordinates.round_num,
-        audit_round_num=coordinates.audit_round_num,
-    )
+    return coordinates
 
 
 def iter_lineage_states(
@@ -248,7 +238,7 @@ def read_workspace_state(path: Path) -> dict[str, object]:
 
 def payload_matches_invocation(
     payload: dict[str, object],
-    invocation: WorkspaceStateInvocation,
+    invocation: ReviewOutputCoordinates,
 ) -> bool:
     return (
         payload.get("task_id") == invocation.task_id
@@ -257,14 +247,6 @@ def payload_matches_invocation(
     )
 
 
-def state_invocation_order(invocation: WorkspaceStateInvocation) -> tuple[int, int]:
+def state_invocation_order(invocation: ReviewOutputCoordinates) -> tuple[int, int]:
     audit_round_num = invocation.audit_round_num or 0
     return (audit_round_num, invocation.round_num)
-
-
-def is_seeded_audit_round(invocation: WorkspaceStateInvocation) -> bool:
-    return (
-        invocation.audit_round_num is not None
-        and invocation.audit_round_num > 1
-        and invocation.round_num == 1
-    )

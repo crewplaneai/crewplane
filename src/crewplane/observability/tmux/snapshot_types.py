@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Literal, NotRequired, TypedDict, TypeGuard
 
+from crewplane.architecture.contracts.execution_status import LIFECYCLE_STATUSES
 from crewplane.core.value_checks import is_strict_int
 from crewplane.observability.events.types import InvocationStatus
 
@@ -61,9 +62,6 @@ _OPTIONAL_STRING_FIELDS = (
 )
 _OPTIONAL_NULLABLE_STRING_FIELDS = ("model", "output_file", "log_file")
 _OPTIONAL_NULLABLE_INTEGER_FIELDS = ("audit_round_num", "round_num")
-_INVOCATION_STATUSES = frozenset(
-    {"pending", "running", "succeeded", "failed", "cancelled"}
-)
 _INSPECT_VIEWS = frozenset({"raw", "formatted"})
 
 
@@ -163,7 +161,7 @@ def _is_nullable_integer(value: object) -> bool:
 
 
 def _is_invocation_status(value: object) -> bool:
-    return isinstance(value, str) and value in _INVOCATION_STATUSES
+    return isinstance(value, str) and value in LIFECYCLE_STATUSES
 
 
 def _is_inspect_view(value: object) -> bool:

@@ -25,7 +25,7 @@ from crewplane.runtime.execution.runtime_context import (
 )
 from crewplane.runtime.workspace import PreparedWorkspace, prepare_invocation_workspace
 from crewplane.runtime.workspace.setup import WorkspaceSetupCancellation
-from crewplane.runtime.workspace.snapshot import WorkspaceSnapshotCancelled
+from crewplane.runtime.workspace.snapshot_scan import WorkspaceSnapshotCancelled
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (
     create_git_repo,

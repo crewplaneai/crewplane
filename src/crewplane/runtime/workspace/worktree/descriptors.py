@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TypeIs
+from typing import TypeIs, get_args
 
+from crewplane.architecture.contracts.invocation import InvocationSourceKind
 from crewplane.artifacts.workspace.state.contracts import (
     require_workspace_state_contract,
 )
@@ -11,7 +12,9 @@ from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.value_checks import optional_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
 
-from .types import WorkspaceSourceKind, WorktreeCaptureResult, WorktreeSourceRef
+from .types import WorktreeCaptureResult, WorktreeSourceRef
+
+_INVOCATION_SOURCE_KINDS = frozenset(get_args(InvocationSourceKind))
 
 
 def load_source_ref_from_state(path: Path) -> WorktreeSourceRef:
@@ -170,8 +173,8 @@ def _source_ref_from_payload(
     )
 
 
-def _is_workspace_source_kind(value: str | None) -> TypeIs[WorkspaceSourceKind]:
-    return value in {"project", "node", "candidate"}
+def _is_workspace_source_kind(value: str | None) -> TypeIs[InvocationSourceKind]:
+    return value in _INVOCATION_SOURCE_KINDS
 
 
 def _nested_upstream_sources(

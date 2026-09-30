@@ -12,12 +12,14 @@ from crewplane.runtime.workspace.filesystem import (
     remove_workspace_path,
 )
 from crewplane.runtime.workspace.snapshot import (
+    workspace_directory_identity,
+)
+from crewplane.runtime.workspace.snapshot_scan import (
     WorkspaceSnapshotEntryError,
     WorkspaceSnapshotPolicy,
     WorkspaceSnapshotRaceError,
     snapshot_digest,
     snapshot_entries,
-    workspace_directory_identity,
 )
 
 

@@ -27,6 +27,7 @@ from .state.invocations import workspace_state_payloads
 from .state.lineage import (
     INVALID_LINEAGE_ORDER,
     invocation_round_order,
+    is_seeded_audit_round,
     review_output_coordinates,
 )
 from .state.source_fields import (
@@ -260,7 +261,11 @@ def _seeded_audit_source_payload(
     round_num: int | None,
     audit_round_num: int | None,
 ) -> dict[str, object] | None:
-    if round_num != 1 or audit_round_num is None or audit_round_num <= 1:
+    if (
+        round_num is None
+        or audit_round_num is None
+        or not is_seeded_audit_round(round_num, audit_round_num)
+    ):
         return None
     return _latest_lineage_payload(payloads, before=(audit_round_num, round_num))
 
@@ -316,10 +321,8 @@ def _review_loop_canonical_payload(
     )
     if exact is not None:
         return exact
-    if (
-        coordinates.audit_round_num is not None
-        and coordinates.audit_round_num > 1
-        and coordinates.round_num == 1
+    if coordinates.audit_round_num is not None and is_seeded_audit_round(
+        coordinates.round_num, coordinates.audit_round_num
     ):
         return _latest_lineage_payload(
             payloads,

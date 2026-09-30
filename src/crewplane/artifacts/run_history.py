@@ -11,7 +11,8 @@ from pydantic import ValidationError
 from crewplane.architecture.safe_files import (
     is_single_link_regular_file,
     path_has_symlink_component,
-    path_is_symlink,
+    relative_path_has_symlink,
+    resolved_path_is_contained,
 )
 from crewplane.core.execution_state import RunManifest
 from crewplane.core.state_paths import (
@@ -165,13 +166,12 @@ def _contained_run_path(root: Path, run_key_name: str) -> Path:
 
 def _ensure_contained_run_path(root: Path, candidate: Path) -> None:
     try:
-        root_resolved = root.resolve(strict=False)
-        candidate_resolved = candidate.resolve(strict=False)
+        contained = resolved_path_is_contained(root, candidate)
     except PermissionError:
         raise
     except OSError as exc:
         raise RunHistoryError("Cannot inspect run history path safely.") from exc
-    if not candidate_resolved.is_relative_to(root_resolved):
+    if not contained:
         raise RunHistoryError("Run history path escapes its expected root.")
 
 
@@ -184,11 +184,8 @@ def _ensure_no_symlink_metadata_components(root: Path, candidate: Path) -> None:
         raise RunHistoryError(
             "Run history metadata path escapes its expected root."
         ) from exc
-    current = root
-    for part in relative.parts:
-        current = current / part
-        if path_is_symlink(current):
-            raise RunHistoryError("Run history metadata path contains a symlink.")
+    if relative_path_has_symlink(root, relative):
+        raise RunHistoryError("Run history metadata path contains a symlink.")
 
 
 def _started_at(record: RunHistoryRecord) -> datetime:

@@ -14,7 +14,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.execution.fragment_assembler import assemble_prompt
+from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
 from crewplane.runtime.execution.workspace_files import (
     resolve_project_initial_workspace_file,
     resolve_workspace_file,
@@ -88,7 +88,9 @@ def test_assemble_prompt_reads_project_initial_workspace_file_locator(
     store = FragmentArtifactStore(tmp_path)
     secrets = SecretContext()
 
-    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
+    prompt = assemble_prompt_details(
+        plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets
+    ).text
 
     assert prompt == "workspace file"
 

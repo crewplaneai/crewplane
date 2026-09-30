@@ -1,10 +1,13 @@
 import subprocess
+from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from crewplane.runtime.workspace.worktree import reset
+from crewplane.runtime.workspace.worktree.protected_refs import ProtectedRefSnapshot
 
 
 class GitCommand:
@@ -50,6 +53,8 @@ def run_reset(
     git_dir: Path,
     command: GitCommand | None = None,
     changed_paths: tuple[str, ...] = (),
+    retry: bool = False,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> GitCommand:
     selected_command = command or GitCommand()
     monkeypatch.setattr(reset, "git", Mock(return_value=selected_command))
@@ -64,19 +69,32 @@ def run_reset(
         Mock(return_value=None),
     )
     monkeypatch.setattr(reset, "changed_paths", Mock(return_value=changed_paths))
-    reset.reset_reusable_worktree_checkout(
-        checkout,
-        "expected",
-        common_git_dir.parent,
-        common_git_dir,
-        git_dir,
-    )
+    if retry:
+        reset.reset_worktree_attempt(
+            checkout,
+            "expected",
+            common_git_dir.parent,
+            common_git_dir,
+            git_dir,
+            ProtectedRefSnapshot(scopes=(), refs=()),
+            cancel_requested,
+        )
+    else:
+        reset.reset_reusable_worktree_checkout(
+            checkout,
+            "expected",
+            common_git_dir.parent,
+            common_git_dir,
+            git_dir,
+        )
     return selected_command
 
 
+@pytest.mark.parametrize("retry", [False, True])
 def test_reset_removes_policy_files_and_runs_full_git_sequence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    retry: bool,
 ) -> None:
     checkout, common_git_dir, git_dir = worktree_layout(tmp_path)
     info_dir = git_dir / "info"
@@ -88,7 +106,7 @@ def test_reset_removes_policy_files_and_runs_full_git_sequence(
     ):
         path.write_text("policy", encoding="utf-8")
 
-    command = run_reset(monkeypatch, checkout, common_git_dir, git_dir)
+    command = run_reset(monkeypatch, checkout, common_git_dir, git_dir, retry=retry)
 
     assert list(info_dir.iterdir()) == []
     assert not (git_dir / "config.worktree").exists()
@@ -97,6 +115,62 @@ def test_reset_removes_policy_files_and_runs_full_git_sequence(
         ("reset", "--hard", "expected"),
         ("clean", "-dffx"),
     ]
+
+
+@pytest.mark.parametrize("checkpoint", range(1, 11))
+def test_retry_reset_preserves_cancellation_checkpoints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, checkpoint: int
+) -> None:
+    checkout, common_git_dir, git_dir = worktree_layout(tmp_path)
+    command = GitCommand()
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls == checkpoint
+
+    monkeypatch.setattr(reset, "git_metadata_lock", Mock(return_value=nullcontext()))
+    with pytest.raises(RuntimeError, match="Workspace retry reset was cancelled"):
+        run_reset(
+            monkeypatch,
+            checkout,
+            common_git_dir,
+            git_dir,
+            command,
+            retry=True,
+            cancel_requested=cancelled,
+        )
+
+    expected_commands = [
+        ("read-tree", "--empty"),
+        ("reset", "--hard", "expected"),
+        ("clean", "-dffx"),
+    ]
+    assert calls == checkpoint
+    assert (
+        command.runs
+        == expected_commands[: 0 if checkpoint <= 3 else 2 if checkpoint == 4 else 3]
+    )
+
+
+@pytest.mark.parametrize("retry", [False, True])
+def test_reset_stops_and_translates_git_sequence_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retry: bool
+) -> None:
+    checkout, common_git_dir, git_dir = worktree_layout(tmp_path)
+    command = GitCommand()
+    failure = subprocess.CalledProcessError(1, ["git", "read-tree"], stderr=b"failed")
+    command.run = Mock(side_effect=failure)
+    message = (
+        "Workspace retry reset failed" if retry else "Reusable workspace reset failed"
+    )
+
+    with pytest.raises(RuntimeError, match=message) as caught:
+        run_reset(monkeypatch, checkout, common_git_dir, git_dir, command, retry=retry)
+
+    assert caught.value.__cause__ is failure
+    command.run.assert_called_once_with("read-tree", "--empty")
 
 
 def test_reset_allows_missing_optional_info_directory(

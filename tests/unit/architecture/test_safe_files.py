@@ -10,8 +10,44 @@ from crewplane.architecture.safe_files import (
     ensure_single_link_regular_file,
     is_single_link_regular_file,
     path_is_absent,
+    relative_path_has_symlink,
     replace_contained_file,
+    resolved_path_is_contained,
 )
+
+
+def test_resolved_containment_accepts_missing_paths_and_rejects_escapes(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+
+    assert resolved_path_is_contained(root, root / "missing" / "run.json")
+    assert not resolved_path_is_contained(root, outside / "run.json")
+    assert not resolved_path_is_contained(root, root / "link" / "run.json")
+
+
+@pytest.mark.parametrize(
+    "entry_kind", ["missing", "directory", "symlink", "dangling_symlink"]
+)
+def test_relative_symlink_inspection_checks_existing_descendants(
+    tmp_path: Path, entry_kind: str
+) -> None:
+    parent = tmp_path / "nested"
+    if entry_kind == "directory":
+        parent.mkdir()
+    elif entry_kind in {"symlink", "dangling_symlink"}:
+        target = tmp_path / "target"
+        if entry_kind == "symlink":
+            target.mkdir()
+        parent.symlink_to(target, target_is_directory=True)
+
+    assert relative_path_has_symlink(tmp_path, Path("nested/run.json")) is (
+        entry_kind in {"symlink", "dangling_symlink"}
+    )
 
 
 @pytest.mark.parametrize(

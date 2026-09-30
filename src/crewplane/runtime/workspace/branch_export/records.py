@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import cast, get_args
 
 from crewplane.architecture.contracts import JsonObject
 from crewplane.core.preflight.models import (
@@ -16,6 +16,8 @@ from crewplane.runtime.workspace.branch_export.fulfillment import (
 )
 from crewplane.runtime.workspace.branch_export.git import BranchExportOperation
 from crewplane.version import SCHEMA_VERSION
+
+_BRANCH_EXPORT_OPERATIONS = frozenset(get_args(BranchExportOperation))
 
 
 def branch_export_record(
@@ -241,12 +243,7 @@ def checkpoint_from_record(
 
 def branch_export_operation(payload: JsonObject) -> BranchExportOperation:
     operation = payload.get("operation")
-    if operation in {
-        "created",
-        "verified_existing",
-        "skipped",
-        "failed_verification",
-    }:
+    if operation in _BRANCH_EXPORT_OPERATIONS:
         return cast(BranchExportOperation, operation)
     raise RuntimeError(f"Invalid branch export operation: {operation!r}")
 

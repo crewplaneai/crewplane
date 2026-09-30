@@ -6,9 +6,10 @@ import signal
 import subprocess
 import sys
 import time
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 
@@ -515,3 +516,49 @@ def _plan(setup_timeout_seconds: float = 30.0) -> PreflightExecutionPlan:
         effective_runtime_config_signature="runtime-signature",
         fingerprint_metadata={"payload_version": "1"},
     )
+
+
+@pytest.mark.parametrize(
+    ("snapshot", "expected"),
+    [
+        ({}, 600.0),
+        ({"workspace": None}, 600.0),
+        ({"workspace": []}, 600.0),
+        ({"workspace": "invalid"}, 600.0),
+        ({"workspace": {}}, 600.0),
+        *[
+            ({"workspace": {"setup_timeout_seconds": value}}, 600.0)
+            for value in (None, True, False, "30", 0, -1, float("nan"))
+        ],
+        ({"workspace": {"setup_timeout_seconds": 0.25}}, 0.25),
+        ({"workspace": {"setup_timeout_seconds": float("inf")}}, float("inf")),
+    ],
+)
+def test_setup_timeout_fallback_preserves_acceptance_contract(
+    tmp_path, snapshot, expected
+):
+    plan = _plan().model_copy(update={"runtime_config_snapshot": snapshot})
+    expectation = (
+        pytest.raises(ValueError, match="Out of range float values")
+        if expected == float("inf")
+        else nullcontext()
+    )
+    with (
+        patch("crewplane.runtime.workspace.setup.subprocess.Popen") as popen,
+        patch(
+            "crewplane.runtime.workspace.setup.supports_posix_process_groups",
+            return_value=False,
+        ),
+        patch("crewplane.runtime.workspace.setup.time.monotonic", return_value=100.0),
+    ):
+        popen.return_value.wait.return_value = 0
+        popen.return_value.poll.return_value = 0
+        with expectation:
+            result = run_workspace_setup(
+                plan,
+                workspace_setup_policy([["setup"]]),
+                tmp_path,
+                tmp_path / "workspace-state.json",
+            )
+            assert result["status"] == "succeeded"
+    assert popen.return_value.wait.call_args_list[0].kwargs == {"timeout": expected}

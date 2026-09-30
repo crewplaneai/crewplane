@@ -32,26 +32,6 @@ class PromptBudgetInspection:
     warning_attributes: dict[str, RuntimeLogValue]
 
 
-def resolve_prompt_with_output_budget(
-    runtime_context: CompiledRuntimeContext,
-    node: PreflightExecutionNode,
-    output: ArtifactStorePort,
-    role: ProviderRole,
-    telemetry: ExecutionTelemetry | None,
-    workspace_candidate_source: bool = False,
-    workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
-) -> str:
-    return resolve_prompt_with_output_budget_details(
-        runtime_context,
-        node,
-        output,
-        role,
-        telemetry,
-        workspace_candidate_source=workspace_candidate_source,
-        workspace_candidate_context=workspace_candidate_context,
-    ).text
-
-
 def resolve_prompt_with_output_budget_details(
     runtime_context: CompiledRuntimeContext,
     node: PreflightExecutionNode,

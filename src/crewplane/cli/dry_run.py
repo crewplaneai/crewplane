@@ -12,6 +12,10 @@ from crewplane.core.preflight import (
 from crewplane.core.preflight.workspace.observability import (
     workspace_observability_descriptor,
 )
+from crewplane.core.workflow.graph import (
+    build_graph_dependency_maps,
+    ordered_graph_waves,
+)
 
 __all__ = [
     "print_dry_run_plan",
@@ -46,25 +50,18 @@ def preview_topological_waves(
     node_order = {
         node_id: index for index, node_id in enumerate(preview.execution_order)
     }
-    remaining = {node.id: set(node.dependencies) for node in preview.nodes}
-    waves: list[list[str]] = []
-    while remaining:
-        ready = sorted(
-            (
-                node_id
-                for node_id, dependencies in remaining.items()
-                if not dependencies
-            ),
-            key=lambda node_id: node_order.get(node_id, len(node_order)),
-        )
-        if not ready:
-            raise ValueError("Compiled preview dependency graph contains a cycle.")
-        waves.append(ready)
-        for node_id in ready:
-            del remaining[node_id]
-        for dependencies in remaining.values():
-            dependencies.difference_update(ready)
-    return waves
+    nodes = {node.id: node.dependencies for node in preview.nodes}
+    ordered_ids = sorted(
+        nodes, key=lambda node_id: node_order.get(node_id, len(node_order))
+    )
+    try:
+        dependencies, dependents = build_graph_dependency_maps(list(nodes.items()))
+        waves = ordered_graph_waves(ordered_ids, dependencies, dependents)
+    except ValueError:
+        raise ValueError(
+            "Compiled preview dependency graph contains a cycle."
+        ) from None
+    return [list(wave) for wave in waves]
 
 
 def _format_provider_dry_run_line(provider: ProviderRecord) -> str:

@@ -11,7 +11,10 @@ from crewplane.core.value_checks import (
     is_sha256,
     positive_strict_int,
 )
-from crewplane.core.workspace.git_policy import is_git_object_id
+from crewplane.core.workspace.git_policy import (
+    GIT_OBJECT_FORMAT_DIGEST_SIZES,
+    is_git_object_id,
+)
 from crewplane.version import SCHEMA_VERSION
 
 from .fields import is_nonempty_string, mapping_value
@@ -93,7 +96,7 @@ def _validate_identity(payload: Mapping[str, object], errors: list[str]) -> None
 
 
 def _validate_repository(git: Mapping[str, object], errors: list[str]) -> None:
-    if git.get("object_format") not in {"sha1", "sha256"}:
+    if git.get("object_format") not in GIT_OBJECT_FORMAT_DIGEST_SIZES:
         errors.append("invalid object format")
     for field in (
         "repo_id",

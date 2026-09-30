@@ -13,6 +13,8 @@ from crewplane.architecture.contracts import (
     ProviderKind,
 )
 from crewplane.core.config import (
+    DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS,
+    DEFAULT_INVOCATION_TIMEOUT_SECONDS,
     Config,
     FileAccessSettings,
     TokenPricing,
@@ -22,6 +24,7 @@ from crewplane.core.workflow.keywords import ProviderRole, SequentialConsensusPo
 from crewplane.core.workspace.cache import workspace_cache_root
 from crewplane.core.workspace.policy import WorkspaceCleanStart, WorktreeContract
 from crewplane.core.workspace.settings import (
+    DEFAULT_WORKSPACE_SETUP_TIMEOUT_SECONDS,
     WorkspaceDiskGuardrails,
     WorkspaceIdentitySettings,
     WorkspaceSettings,
@@ -73,7 +76,7 @@ class RuntimeWorkspaceSettingsSnapshot(BaseModel):
     worktree_contract: WorktreeContract = Field(default_factory=WorktreeContract)
     clean_start: WorkspaceCleanStart = "strict"
     setup_profiles: JsonObject = Field(default_factory=dict)
-    setup_timeout_seconds: FiniteFloat = 600.0
+    setup_timeout_seconds: FiniteFloat = DEFAULT_WORKSPACE_SETUP_TIMEOUT_SECONDS
     identity: WorkspaceIdentitySettings = Field(
         default_factory=WorkspaceIdentitySettings
     )
@@ -101,8 +104,10 @@ class RuntimeAgentConfigSnapshot(BaseModel):
     quota_reset_sleep_floor_seconds: FiniteFloat = 5.0
     quota_retry_max_wait_seconds: FiniteFloat | None = Field(default=None, gt=0)
     quota_retry_max_attempts: int | None = Field(default=None, ge=1)
-    invocation_timeout_seconds: FiniteFloat | None = None
-    invocation_idle_timeout_seconds: FiniteFloat | None = 1800.0
+    invocation_timeout_seconds: FiniteFloat | None = DEFAULT_INVOCATION_TIMEOUT_SECONDS
+    invocation_idle_timeout_seconds: FiniteFloat | None = (
+        DEFAULT_INVOCATION_IDLE_TIMEOUT_SECONDS
+    )
     pricing: TokenPricing = Field(default_factory=TokenPricing)
 
 

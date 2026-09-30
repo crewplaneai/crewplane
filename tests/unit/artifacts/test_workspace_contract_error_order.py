@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from crewplane.artifacts.workspace.state.contracts import (
     workspace_state_contract_errors,
 )
@@ -169,13 +171,14 @@ def test_workspace_contract_continues_after_malformed_destination() -> None:
     )
 
 
-def test_workspace_contract_preserves_invalid_publication_early_return() -> None:
+@pytest.mark.parametrize("phase", ["unknown", None, 42])
+def test_workspace_contract_preserves_invalid_publication_early_return(phase) -> None:
     payload = valid_worktree_payload()
     publication = payload["ref_publication"]
     assert isinstance(publication, dict)
     publication.update(
         {
-            "phase": "unknown",
+            "phase": phase,
             "repository_id": "other-repo",
             "run_id": "other-run",
         }

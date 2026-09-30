@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,12 +112,9 @@ class GeneratedFileReferenceDetector:
         generated_files: list[Path],
         seen_generated_files: set[Path],
     ) -> None:
-        for candidate in self._extract_candidates(line):
-            resolved_path = self._resolve_candidate(candidate)
-            if resolved_path is None or resolved_path in seen_generated_files:
-                continue
-            seen_generated_files.add(resolved_path)
-            generated_files.append(resolved_path)
+        self._add_candidates(
+            self._extract_candidates(line), generated_files, seen_generated_files
+        )
 
     def _add_claimed_line_references(
         self,
@@ -124,9 +122,20 @@ class GeneratedFileReferenceDetector:
         generated_files: list[Path],
         seen_generated_files: set[Path],
     ) -> None:
-        for candidate, start_index in self._extract_candidate_locations(line):
-            if not candidate_claims_generated_file(line, start_index):
-                continue
+        candidates = (
+            candidate
+            for candidate, start_index in self._extract_candidate_locations(line)
+            if candidate_claims_generated_file(line, start_index)
+        )
+        self._add_candidates(candidates, generated_files, seen_generated_files)
+
+    def _add_candidates(
+        self,
+        candidates: Iterable[str],
+        generated_files: list[Path],
+        seen_generated_files: set[Path],
+    ) -> None:
+        for candidate in candidates:
             resolved_path = self._resolve_candidate(candidate)
             if resolved_path is None or resolved_path in seen_generated_files:
                 continue

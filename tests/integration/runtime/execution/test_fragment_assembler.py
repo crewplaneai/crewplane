@@ -16,7 +16,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.execution.fragment_assembler import assemble_prompt
+from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
 from tests.helpers.resume import (
     make_node_state,
     make_run_manifest,
@@ -44,7 +44,9 @@ def test_assemble_prompt_preserves_fragment_order(tmp_path: Path) -> None:
     secrets.put("env:API_TOKEN", "secret")
 
     plan = make_fragment_plan(context_root)
-    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
+    prompt = assemble_prompt_details(
+        plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets
+    ).text
 
     assert prompt == "A file B node C secret"
 
@@ -71,7 +73,9 @@ def test_assemble_prompt_does_not_call_legacy_template_parsers(
     secrets.put("env:API_TOKEN", "secret")
     plan = make_fragment_plan(context_root)
 
-    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
+    prompt = assemble_prompt_details(
+        plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets
+    ).text
 
     assert prompt == "A file B node C secret"
 
@@ -107,7 +111,9 @@ def test_assemble_prompt_reads_static_bundle_not_original_source_path(
     secrets = SecretContext()
     secrets.put("env:API_TOKEN", "secret")
 
-    prompt = assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
+    prompt = assemble_prompt_details(
+        plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets
+    ).text
 
     assert prompt == "A bundled B node C secret"
 
@@ -131,7 +137,7 @@ def test_assemble_prompt_rejects_symlinked_static_bundle(
     secrets.put("env:API_TOKEN", "secret")
 
     with pytest.raises(ValueError, match="missing or unsafe"):
-        assemble_prompt(
+        assemble_prompt_details(
             make_fragment_plan(context_root, content_ref),
             make_fragment_plan(context_root, content_ref).nodes[1],
             ProviderRole.EXECUTOR,
@@ -194,32 +200,32 @@ def test_runtime_token_verifies_backing_artifact(
     }.get(artifact_name.partition("_")[2], original.decode())
 
     assert (
-        assemble_prompt(
+        assemble_prompt_details(
             plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
-        )
+        ).text
         == expected
     )
     path.write_bytes(b"x" * len(original))
     with pytest.raises(ValueError, match="artifact bytes do not match state"):
-        assemble_prompt(
+        assemble_prompt_details(
             plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
         )
     path.unlink()
     with pytest.raises(ValueError, match="artifact is unavailable"):
-        assemble_prompt(
+        assemble_prompt_details(
             plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
         )
     path.write_bytes(original)
     state_path.unlink()
     with pytest.raises(ValueError, match="no valid successful state descriptor"):
-        assemble_prompt(
+        assemble_prompt_details(
             plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
         )
 
     if artifact_name.startswith("findings"):
         plan.nodes[0].artifact_contract.findings_path = None
         with pytest.raises(ValueError, match="has no findings artifact locator"):
-            assemble_prompt(
+            assemble_prompt_details(
                 plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
             )
 
@@ -240,7 +246,7 @@ def test_runtime_rejects_unsupported_artifact_tokens(
         )
     ]
     with pytest.raises(ValueError, match="Unsupported artifact locator"):
-        assemble_prompt(
+        assemble_prompt_details(
             plan,
             plan.nodes[1],
             ProviderRole.EXECUTOR,

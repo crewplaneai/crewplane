@@ -11,10 +11,10 @@ from .filesystem import (
     remove_workspace_path,
 )
 from .locks import git_metadata_lock
-from .snapshot import (
+from .snapshot_reporting import snapshot_success_outcome
+from .snapshot_scan import (
     WorkspaceSnapshotPolicy,
 )
-from .snapshot_reporting import snapshot_success_outcome
 from .state import read_workspace_state, require_workspace_state_identity
 from .terminalization import (
     WorkspaceDiagnosticLevel,

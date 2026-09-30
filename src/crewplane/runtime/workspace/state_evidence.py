@@ -5,7 +5,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, TypeIs
 
-from crewplane.artifacts.workspace.state.ref_contracts import temporary_ref_ownership
+from crewplane.artifacts.workspace.state.ref_contracts import (
+    REF_PUBLICATION_PHASES,
+    RefPublicationPhase,
+    temporary_ref_ownership,
+)
 
 from .mutator_fence import fence_workspace_mutator, release_workspace_mutator
 from .state import edit_workspace_state, require_workspace_state_payload_identity
@@ -14,12 +18,11 @@ if TYPE_CHECKING:
     from crewplane.runtime.agent.process.drain import ProcessDrainError
 
 
-type _RefPublicationPhase = Literal["prepared", "published", "removed"]
 type _RefPublicationTargetPhase = Literal["published", "removed"]
 type _TemporaryRefClaim = dict[str, object]
 
 _REF_PUBLICATION_TRANSITIONS: Final[
-    dict[_RefPublicationPhase, frozenset[_RefPublicationTargetPhase]]
+    dict[RefPublicationPhase, frozenset[_RefPublicationTargetPhase]]
 ] = {
     "prepared": frozenset({"published", "removed"}),
     "published": frozenset({"removed"}),
@@ -158,12 +161,8 @@ def update_workspace_setup(
         payload["setup"] = deepcopy(dict(setup))
 
 
-def _is_ref_publication_phase(value: object) -> TypeIs[_RefPublicationPhase]:
-    return isinstance(value, str) and value in {
-        "prepared",
-        "published",
-        "removed",
-    }
+def _is_ref_publication_phase(value: object) -> TypeIs[RefPublicationPhase]:
+    return isinstance(value, str) and value in REF_PUBLICATION_PHASES
 
 
 def _is_temporary_ref_claim_list(

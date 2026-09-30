@@ -15,6 +15,7 @@ from crewplane.artifacts.workspace.node_state import (
     build_node_workspace_descriptor,
     refresh_node_workspace_descriptor,
 )
+from crewplane.core.preflight.workspace.observability import node_workspace_descriptor
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.resume import (
@@ -29,6 +30,49 @@ from tests.helpers.workspace_branch_export import record_node_branch_export
 from tests.helpers.workspace_records import workspace_selection_record
 
 
+@pytest.mark.parametrize("kind", ["snapshot", "worktree"])
+@pytest.mark.parametrize("source_kind", ["project", "node"])
+def test_policy_fields_preserve_serialized_descriptors(
+    tmp_path: Path, kind: str, source_kind: str
+) -> None:
+    plan = _workspace_plan()
+    source_node_id = "upstream" if source_kind == "node" else None
+    policy = workspace_selection_record(
+        kind=kind, source_kind=source_kind, source_node_id=source_node_id
+    )
+    node = plan.nodes[0].model_copy(update={"workspace_policy": policy})
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    stage_dir = output.create_node_dir(node_artifact_request(node.id))
+    (stage_dir / "workspace-state.json").write_text("{}", encoding="utf-8")
+    expected = {
+        "logical_worktree_name": "primary",
+        "kind": kind,
+        "source_kind": source_kind,
+        "source_node_id": source_node_id,
+        "clean_start": "strict",
+        "materialization": f"{kind}_checkout",
+        "lineage_producer": kind == "worktree",
+        "writable": True,
+    }
+
+    persisted = build_node_workspace_descriptor(node, plan, output)
+    visible = node_workspace_descriptor(node, plan.workspace_file_locators)
+
+    for descriptor in (persisted, visible):
+        assert descriptor is not None
+        serialized = json.loads(json.dumps(descriptor))
+        assert {key: serialized[key] for key in expected} == expected
+        keys = list(serialized)
+        first = keys.index("logical_worktree_name")
+        assert keys[first : first + len(expected)] == list(expected)
+    assert persisted is not None
+    assert persisted["policy"] == policy.model_dump(mode="json", exclude_none=True)
+    assert len(persisted["states"]) == 1
+    assert visible["setup_profile"] is None
+    lookup = WorkspaceDescriptorLookup(output.stages_dir, node.id, stage_dir)
+    assert build_node_workspace_descriptor(node, plan, lookup) == persisted
+
+
 def test_build_node_workspace_descriptor_records_state_and_bundle_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -39,9 +83,14 @@ def test_build_node_workspace_descriptor_records_state_and_bundle_artifacts(
     bundle_path = stage_dir / "workspace-bundles" / "a.bundle"
     bundle_path.parent.mkdir(parents=True)
     bundle_path.write_bytes(bundle_payload)
+    setup_path = stage_dir / "workspace-setup" / "setup.json"
+    setup_path.parent.mkdir()
+    setup_path.write_bytes(b"{}\n")
+    payload = _workspace_state_payload(plan, bundle_payload)
+    payload["setup"] = {"metadata_path": "workspace-setup/setup.json"}
     state_path = stage_dir / "workspace-state.json"
     state_path.write_text(
-        json.dumps(_workspace_state_payload(plan, bundle_payload), sort_keys=True),
+        json.dumps(payload, sort_keys=True),
         encoding="utf-8",
     )
 
@@ -73,7 +122,64 @@ def test_build_node_workspace_descriptor_records_state_and_bundle_artifacts(
     assert state["rendered_workspace_files"][0]["invocation_id"] == "a.alpha"
     bundle = state["bundle"]
     assert bundle["sha256"] == hashlib.sha256(bundle_payload).hexdigest()
-    assert bundle["artifact"]["relative_path"] == "a/workspace-bundles/a.bundle"
+    assert bundle["artifact"] == {
+        "relative_path": "a/workspace-bundles/a.bundle",
+        "sha256": hashlib.sha256(bundle_payload).hexdigest(),
+        "size_bytes": len(bundle_payload),
+    }
+    assert state["setup"] == {
+        "metadata_path": "workspace-setup/setup.json",
+        "metadata_artifact": {
+            "relative_path": "a/workspace-setup/setup.json",
+            "sha256": hashlib.sha256(b"{}\n").hexdigest(),
+            "size_bytes": 3,
+        },
+    }
+
+
+@pytest.mark.parametrize("kind", ["bundle", "setup"])
+@pytest.mark.parametrize("failure", ["missing", "permission"])
+def test_workspace_descriptor_artifact_failure_contract(
+    tmp_path, monkeypatch, kind, failure
+):
+    output = OutputManager("Workflow", base_dir=tmp_path)
+    plan = _workspace_plan()
+    stage_dir = output.create_node_dir(node_artifact_request("a"))
+    payload = _workspace_state_payload(plan, b"bundle")
+    if kind == "bundle":
+        relative_path = "a/workspace-bundles/a.bundle"
+        artifact_path = output.stages_dir / relative_path
+    else:
+        payload.pop("bundle")
+        relative_path = "workspace-setup/setup.json"
+        payload["setup"] = {"metadata_path": relative_path}
+        artifact_path = stage_dir / relative_path
+    state_path = stage_dir / "workspace-state.json"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+    before = state_path.read_bytes()
+    denied = PermissionError("artifact denied")
+    original_lstat = Path.lstat
+
+    def lstat(path):
+        if path == artifact_path:
+            raise denied
+        return original_lstat(path)
+
+    if failure == "permission":
+        artifact_path.parent.mkdir(parents=True)
+        artifact_path.write_bytes(b"artifact")
+        monkeypatch.setattr(Path, "lstat", lstat)
+        with pytest.raises(PermissionError) as caught:
+            build_node_workspace_descriptor(plan.nodes[0], plan, output)
+        assert caught.value is denied
+    else:
+        with pytest.raises(RuntimeError) as caught:
+            build_node_workspace_descriptor(plan.nodes[0], plan, output)
+        assert (
+            str(caught.value)
+            == f"Workspace {kind} artifact is missing: {relative_path}"
+        )
+    assert state_path.read_bytes() == before
 
 
 def test_build_node_workspace_descriptor_requires_workspace_state(

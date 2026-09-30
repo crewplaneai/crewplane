@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from crewplane.core.workspace.git_policy import GIT_OBJECT_FORMAT_DIGEST_SIZES
+
 from .git_source import GitSourceContext
 from .source_types import WorkspacePolicyBuilder
 
-INDEX_CHECKSUM_LENGTHS = {"sha1": 20, "sha256": 32}
 ALLOWED_INDEX_EXTENSIONS = {"TREE", "REUC", "EOIE", "IEOT"}
 UNSUPPORTED_INDEX_EXTENSIONS = {
     "link": "split-index",
@@ -89,7 +90,7 @@ def git_index_extensions(payload: bytes, object_format: str) -> tuple[str, ...]:
 
 def index_checksum_length(object_format: str) -> int:
     try:
-        return INDEX_CHECKSUM_LENGTHS[object_format]
+        return GIT_OBJECT_FORMAT_DIGEST_SIZES[object_format]
     except KeyError as exc:
         raise ValueError(f"object format {object_format!r} is unsupported") from exc
 

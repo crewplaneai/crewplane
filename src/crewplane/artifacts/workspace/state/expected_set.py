@@ -9,6 +9,7 @@ from .invocations import (
     lineage_payload_order,
     resolve_expected_workspace_payload,
 )
+from .lineage import is_seeded_audit_round
 from .source_fields import source_matches_bundle_fields, source_matches_result_fields
 
 
@@ -74,8 +75,8 @@ def _candidate_source_payload(
     source_order = _candidate_source_order(payload)
     if source_order is None:
         return None
-    allow_prior = payload.get("role") == ProviderRole.EXECUTOR or (
-        source_order[0] > 1 and source_order[1] == 1
+    allow_prior = payload.get("role") == ProviderRole.EXECUTOR or is_seeded_audit_round(
+        source_order[1], source_order[0]
     )
     candidates = [
         candidate

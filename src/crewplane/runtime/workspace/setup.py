@@ -25,6 +25,7 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.serialization import to_json_safe
+from crewplane.core.workspace.settings import DEFAULT_WORKSPACE_SETUP_TIMEOUT_SECONDS
 from crewplane.runtime.agent.process.drain import ProcessDrainError, drain_popen_process
 from crewplane.runtime.agent.workspace_environment import (
     workspace_child_environment,
@@ -461,11 +462,11 @@ def _setup_command_record(
 def _setup_timeout_seconds(plan: PreflightExecutionPlan) -> float:
     workspace = plan.runtime_config_snapshot.get("workspace")
     if not isinstance(workspace, dict):
-        return 600.0
+        return DEFAULT_WORKSPACE_SETUP_TIMEOUT_SECONDS
     value = workspace.get("setup_timeout_seconds")
     if isinstance(value, int | float) and not isinstance(value, bool) and value > 0:
         return float(value)
-    return 600.0
+    return DEFAULT_WORKSPACE_SETUP_TIMEOUT_SECONDS
 
 
 def _setup_child_env(child_environment: ChildProcessEnvironment) -> dict[str, str]:

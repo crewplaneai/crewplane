@@ -17,7 +17,7 @@ from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.execution.errors import NodeExecutionError
-from crewplane.runtime.execution.fragment_assembler import assemble_prompt
+from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
 from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.helpers.workspace_records import (
     WORKTREE_CONTRACT,
@@ -82,7 +82,9 @@ def test_assemble_prompt_rejects_runtime_dynamic_workspace_file_locator(
     secrets = SecretContext()
 
     with pytest.raises(RuntimeError, match="Runtime-dynamic workspace file locator"):
-        assemble_prompt(plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets)
+        assemble_prompt_details(
+            plan, plan.nodes[1], ProviderRole.EXECUTOR, store, secrets
+        )
 
 
 def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
@@ -190,9 +192,9 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
         }
     )
 
-    prompt = assemble_prompt(
+    prompt = assemble_prompt_details(
         plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
-    )
+    ).text
 
     assert prompt == "dynamic\n"
 
@@ -221,7 +223,7 @@ def test_assemble_prompt_reads_runtime_dynamic_workspace_file_locator(
         NodeExecutionError,
         match="Runtime-dynamic workspace file locator does not resolve exactly",
     ):
-        assemble_prompt(
+        assemble_prompt_details(
             plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
         )
 
@@ -367,9 +369,9 @@ def test_assemble_prompt_imports_bundle_for_runtime_dynamic_workspace_file(
         collect_after_prune,
     )
 
-    prompt = assemble_prompt(
+    prompt = assemble_prompt_details(
         plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
-    )
+    ).text
 
     assert prompt == "bundled dynamic\n"
     assert _git_commit_exists(repo, result_commit)

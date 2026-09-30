@@ -24,8 +24,10 @@ from crewplane.runtime.workspace.filesystem import (
 )
 from crewplane.runtime.workspace.git import git
 from crewplane.runtime.workspace.snapshot import (
-    WorkspaceSnapshotPolicy,
     runtime_git_env,
+)
+from crewplane.runtime.workspace.snapshot_scan import (
+    WorkspaceSnapshotPolicy,
 )
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_service import (

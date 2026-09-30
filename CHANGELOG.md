@@ -13,6 +13,10 @@ All notable user-facing changes are recorded here.
 - Updated workflow examples with explicit requests, clearer review policies,
   reliable file handoffs, and plain-language setup guidance.
 
+### Fixed
+
+- Fixed test failures in architecture checks and macOS snapshot validation.
+
 ## [0.3.5] - 2026-09-25
 
 ### Added

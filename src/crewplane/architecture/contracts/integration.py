@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Literal, cast
 
@@ -62,18 +63,14 @@ class CanonicalIntegrationConfig(BaseModel):
         return self
 
     def scoped_payload(self, scopes: set[SignatureScope]) -> JsonObject:
-        scoped_options: JsonObject = {
-            key: value
-            for key, value in self.options.items()
-            if self.option_scopes.get(key) in scopes
-        }
-        payload: JsonObject = {
-            "capabilities": self.capabilities,
-            "implementation": self.implementation,
-            "options": scoped_options,
-            "resolved_identity": self.resolved_identity,
-        }
-        return payload
+        return scoped_integration_payload(
+            self.implementation,
+            self.resolved_identity,
+            self.capabilities,
+            self.options,
+            self.option_scopes,
+            scopes,
+        )
 
     def redacted_payload(self) -> JsonObject:
         option_fingerprints: list[JsonValue] = []
@@ -118,6 +115,27 @@ class CanonicalIntegrationConfig(BaseModel):
         )
         redacted._options_are_generated_redacted = True
         return redacted
+
+
+def scoped_integration_payload(
+    implementation: JsonValue,
+    resolved_identity: JsonValue,
+    capabilities: JsonValue,
+    options: JsonObject,
+    option_scopes: Mapping[str, JsonValue],
+    scopes: set[SignatureScope],
+) -> JsonObject:
+    """Project signature fields after the caller's boundary validation."""
+    return {
+        "capabilities": capabilities,
+        "implementation": implementation,
+        "options": {
+            key: value
+            for key, value in options.items()
+            if option_scopes.get(key) in scopes
+        },
+        "resolved_identity": resolved_identity,
+    }
 
 
 def sensitive_integration_option_pointers(

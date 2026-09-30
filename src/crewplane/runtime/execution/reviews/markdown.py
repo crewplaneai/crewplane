@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from markdown_it import MarkdownIt
 
+from crewplane.core.review_contract import REVIEW_SECTIONS
+
 
 @dataclass(frozen=True)
 class ReviewHeading:
@@ -14,9 +16,7 @@ class ReviewHeading:
 
 _COMMONMARK_PARSER = MarkdownIt("commonmark")
 _SECTION_BY_HEADING = {
-    "major issues": "major_issues",
-    "minor issues": "minor_issues",
-    "nitpicks": "nitpicks",
+    display_name.casefold(): field_name for field_name, display_name in REVIEW_SECTIONS
 }
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import get_args
 from unittest.mock import Mock
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from crewplane.artifacts import OutputManager
 from crewplane.runtime.workspace.branch_export import records
 from crewplane.runtime.workspace.branch_export.fulfillment import BranchExportCheckpoint
+from crewplane.runtime.workspace.branch_export.git import BranchExportOperation
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.workspace_branch_export import branch_export_plan
 from tests.helpers.workspace_service import create_git_repo
@@ -170,3 +172,37 @@ def test_branch_export_records_preserve_complete_durable_mapping(
         record_path.read_bytes()
         == (json.dumps(expected, indent=2, sort_keys=True) + "\n").encode()
     )
+
+
+@pytest.mark.parametrize("operation", get_args(BranchExportOperation))
+def test_branch_export_decoder_accepts_every_terminal_operation(operation: str) -> None:
+    assert records.branch_export_operation({"operation": operation}) == operation
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        *(
+            {"operation": value}
+            for value in (None, "prepared", "unknown", True, 1, 1.5)
+        ),
+    ],
+)
+def test_branch_export_decoder_rejects_missing_and_unsupported_operations(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(RuntimeError) as error:
+        records.branch_export_operation(payload)
+    assert (
+        str(error.value)
+        == f"Invalid branch export operation: {payload.get('operation')!r}"
+    )
+
+
+@pytest.mark.parametrize("operation", [[], {}])
+def test_branch_export_decoder_preserves_unhashable_input_error(
+    operation: object,
+) -> None:
+    with pytest.raises(TypeError, match="unhashable type"):
+        records.branch_export_operation({"operation": operation})

@@ -22,6 +22,7 @@ from crewplane.runtime.agent.invoker import PlannedAgentInvoker
 from .cli_invoker import build_cli_invocation_plan, build_cli_log_presentation
 from .cli_invoker.capabilities import get_cli_provider_capability
 from .cli_invoker.capability import CliInvocationRequest
+from .cli_invoker.commands import contains_path_separator
 from .cli_invoker.env_command import EnvCommandContext, parse_env_command_context
 
 _PLATFORM_ENV_EXECUTABLES = (Path("/bin/env"), Path("/usr/bin/env"))
@@ -161,7 +162,7 @@ def _format_missing_cli_errors(
         availability_message = (
             "not found or not executable"
             if Path(cli_executable).is_absolute()
-            or _contains_path_separator(cli_executable)
+            or contains_path_separator(cli_executable)
             else "not found in PATH"
         )
         errors.append(
@@ -199,7 +200,7 @@ def _is_platform_env_wrapper(
     resolved_wrapper = (
         str(requirement.base_dir / wrapper_path)
         if not wrapper_path.is_absolute()
-        and _contains_path_separator(requirement.executable)
+        and contains_path_separator(requirement.executable)
         else executable_lookup(requirement.executable)
     )
     return _is_platform_env_executable(resolved_wrapper)
@@ -276,7 +277,7 @@ def _cli_executable_available(
     executable_path = Path(requirement.executable)
     if executable_path.is_absolute():
         return _is_executable_file(executable_path)
-    if _contains_path_separator(requirement.executable):
+    if contains_path_separator(requirement.executable):
         return _is_executable_file(requirement.base_dir / executable_path)
     if requirement.search_path is None:
         return executable_lookup(requirement.executable) is not None
@@ -304,10 +305,6 @@ def _search_path_executable_available(
 def _is_executable_file(path: Path) -> bool:
     resolved = path.resolve(strict=False)
     return resolved.is_file() and os.access(resolved, os.X_OK)
-
-
-def _contains_path_separator(value: str) -> bool:
-    return "/" in value or "\\" in value
 
 
 class CliInvokerAdapter:

@@ -250,6 +250,32 @@ def test_ref_publication_phase_rejects_unknown_idempotent_transition(
     assert _read_payload(state_path) == payload
 
 
+@pytest.mark.parametrize(
+    "current", ["prepared", "published", "removed", "unknown", None, 42, []]
+)
+@pytest.mark.parametrize(
+    "target", ["prepared", "published", "removed", "unknown", None, 42, []]
+)
+def test_ref_publication_transition_contract(tmp_path: Path, current, target) -> None:
+    state_path = tmp_path / "workspace-state.json"
+    payload = {"ref_publication": {"phase": current}}
+    _write_payload(state_path, payload)
+    before = state_path.read_bytes()
+    accepted = (
+        (current == "prepared" and target in ("published", "removed"))
+        or (current == "published" and target in ("published", "removed"))
+        or (current == "removed" and target == "removed")
+    )
+
+    if accepted:
+        evidence.update_workspace_ref_publication_phase(state_path, target)
+        assert _read_payload(state_path)["ref_publication"] == {"phase": target}
+    else:
+        with pytest.raises(RuntimeError, match="Invalid ref publication phase"):
+            evidence.update_workspace_ref_publication_phase(state_path, target)
+        assert state_path.read_bytes() == before
+
+
 def test_record_workspace_temporary_ref_rejects_malformed_claims(
     tmp_path: Path,
 ) -> None:

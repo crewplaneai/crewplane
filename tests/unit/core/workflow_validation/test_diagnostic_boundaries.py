@@ -129,6 +129,49 @@ def test_reviewer_first_environment_variable_is_not_static_review_material() -> 
 
 
 @pytest.mark.parametrize(
+    "artifact",
+    [
+        "output",
+        "findings",
+        "output_path",
+        "findings_path",
+        "output_size",
+        "findings_size",
+        "output_sha256",
+        "findings_sha256",
+    ],
+)
+def test_reviewer_context_warning_accepts_all_artifacts_without_hiding_errors(
+    artifact: str,
+) -> None:
+    node = node_with(
+        providers=[{"provider": "codex"}, {"provider": "claude", "role": "reviewer"}],
+        review_starts_with="reviewer",
+        prompt_segments=[{"role": "shared", "content": "{{missing." + artifact + "}}"}],
+    )
+    workflow = WorkflowPlan(name="Invalid context dependency", nodes=[node])
+
+    diagnostics = collect_workflow_validation_diagnostics(workflow)
+
+    assert diagnostics
+    assert all(diagnostic.severity == "error" for diagnostic in diagnostics)
+    assert collect_node_mode_diagnostics(node) == ()
+
+
+def test_reviewer_context_warning_rejects_unknown_artifact_suffix() -> None:
+    node = node_with(
+        providers=[{"provider": "codex"}, {"provider": "claude", "role": "reviewer"}],
+        review_starts_with="reviewer",
+        prompt_segments=[{"role": "shared", "content": "{{context.unknown}}"}],
+    )
+
+    diagnostics = collect_node_mode_diagnostics(node)
+
+    assert len(diagnostics) == 1
+    assert diagnostics[0].severity == "warning"
+
+
+@pytest.mark.parametrize(
     ("template", "message"),
     [
         ("{{file: }}", "Template values must be non-empty"),

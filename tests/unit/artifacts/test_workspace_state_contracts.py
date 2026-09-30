@@ -449,3 +449,13 @@ def test_workspace_reuse_generation_requires_positive_integer(value, valid) -> N
     assert errors == (
         () if valid else ("materialized worktree lacks reuse generation",)
     )
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256", "unknown", None])
+def test_workspace_state_object_format_contract(object_format):
+    payload = valid_worktree_payload()
+    payload["git"]["object_format"] = object_format
+    errors = workspace_state_contract_errors(payload, "resume")
+    assert errors == (
+        () if object_format in {"sha1", "sha256"} else ("invalid object format",)
+    )

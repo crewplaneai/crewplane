@@ -5,6 +5,9 @@ import json
 from dataclasses import dataclass, field
 
 from crewplane.architecture.contracts import EventType
+from crewplane.architecture.contracts.execution_status import (
+    TERMINAL_WORKSPACE_STATUSES,
+)
 from crewplane.core.config import AgentConfig
 from crewplane.observability.timing import ElapsedTimer
 from crewplane.runtime.workspace import PreparedWorkspace
@@ -173,4 +176,4 @@ def _workspace_state_is_terminal(prepared_workspace: PreparedWorkspace) -> bool:
         return False
     if not isinstance(payload, dict):
         return False
-    return payload.get("status") in {"succeeded", "failed", "cancelled"}
+    return payload.get("status") in TERMINAL_WORKSPACE_STATUSES

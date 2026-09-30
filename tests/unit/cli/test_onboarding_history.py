@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from rich.console import Console
 
+from crewplane.architecture.loader import resolve_implementation_path
 from crewplane.artifacts.naming import build_run_key_name
+from crewplane.bootstrap.runtime_config import build_runtime_config_snapshot
 from crewplane.cli.onboarding.history import (
-    MOCK_INVOKER_RESOLVED_IDENTITY,
     find_successful_mock_run_evidence,
+    record_is_successful_mock_run,
 )
 from crewplane.cli.project_init import initialize_project_templates
 from crewplane.cli.run.preflight import (
@@ -25,7 +29,7 @@ def test_successful_mock_manifest_is_authoritative_evidence(tmp_path: Path) -> N
     config, source, console = initialize_default_project(tmp_path)
     preview = compile_default_preview(tmp_path, config, source, console)
     write_history_manifest(
-        tmp_path, preview, "succeeded", MOCK_INVOKER_RESOLVED_IDENTITY
+        tmp_path, preview, "succeeded", resolve_implementation_path("invoker", "mock")
     )
 
     evidence = find_successful_mock_run_evidence(
@@ -38,6 +42,54 @@ def test_successful_mock_manifest_is_authoritative_evidence(tmp_path: Path) -> N
 
     assert evidence.found is True
     assert evidence.warning is None
+
+
+def test_runtime_snapshot_producer_matches_onboarding_evidence(tmp_path: Path) -> None:
+    config, _, console = initialize_default_project(tmp_path)
+    config.settings.integrations.invoker.implementation = "mock"
+    snapshot = build_runtime_config_snapshot(config, console, no_live=True).snapshot
+    manifest = make_run_manifest(
+        run_id="snapshot-run", run_key_name="workflow--snapshot-run", status="succeeded"
+    ).model_copy(update={"runtime_config_snapshot": snapshot.redacted_payload()})
+
+    assert record_is_successful_mock_run(SimpleNamespace(manifest=manifest))
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        None,
+        [],
+        {},
+        {"invoker": None},
+        {"invoker": []},
+        {"invoker": {"implementation": "mock"}},
+        {"invoker": {"resolved_identity": "mock"}},
+        {
+            "invoker": {
+                "resolved_identity": "crewplane.adapters.invokers.mock.MockInvokerAdapter"
+            }
+        },
+        {"invoker": {"resolved_identity": 42}},
+    ],
+)
+def test_mock_history_rejects_inexact_or_malformed_evidence(snapshot: object) -> None:
+    manifest = SimpleNamespace(status="succeeded", runtime_config_snapshot=snapshot)
+
+    assert not record_is_successful_mock_run(SimpleNamespace(manifest=manifest))
+
+
+def test_failed_mock_history_is_not_successful_evidence() -> None:
+    manifest = SimpleNamespace(
+        status="failed",
+        runtime_config_snapshot={
+            "invoker": {
+                "resolved_identity": resolve_implementation_path("invoker", "mock")
+            }
+        },
+    )
+
+    assert not record_is_successful_mock_run(SimpleNamespace(manifest=manifest))
 
 
 def test_successful_non_mock_manifest_is_rejected(tmp_path: Path) -> None:

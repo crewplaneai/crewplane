@@ -9,7 +9,10 @@ from typing import Protocol, Self
 
 from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import WorkspaceSourceSnapshot
-from crewplane.core.workspace.git_policy import workspace_git_config_args
+from crewplane.core.workspace.git_policy import (
+    GIT_OBJECT_FORMAT_DIGEST_SIZES,
+    workspace_git_config_args,
+)
 
 from .bundle_validation import (
     GIT_BUNDLE_VALIDATION_TIMEOUT_SECONDS,
@@ -291,7 +294,7 @@ def _bundle_has_prerequisites(bundle_path: Path) -> bool:
 
 
 def _init_bare_repository(git_dir: Path, object_format: str) -> None:
-    if object_format not in {"sha1", "sha256"}:
+    if object_format not in GIT_OBJECT_FORMAT_DIGEST_SIZES:
         raise RuntimeError(f"Unsupported workspace object format: {object_format}.")
     template_dir = git_dir.parent / "empty-template"
     template_dir.mkdir()

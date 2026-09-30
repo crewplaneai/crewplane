@@ -278,3 +278,15 @@ def test_invocation_plan_preserves_relative_path_cli_executable() -> None:
         )
 
     assert plan.cmd[0] == relative_executable
+
+
+@pytest.mark.parametrize("executable", ["tools/provider", r"tools\provider"])
+def test_invocation_plan_preserves_both_relative_path_separators(executable):
+    with patch(
+        "crewplane.adapters.invokers.cli_invoker.commands.shutil.which"
+    ) as which:
+        plan = build_cli_invocation_plan(
+            AgentConfig(cli_cmd=[executable]), None, "prompt", Path("output.md")
+        )
+    assert plan.cmd[0] == executable
+    which.assert_not_called()

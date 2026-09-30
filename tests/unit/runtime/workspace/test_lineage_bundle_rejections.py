@@ -5,9 +5,11 @@ import shutil
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 
+from crewplane.architecture.contracts.invocation import InvocationSourceKind
 from crewplane.artifacts.workspace.chain_validation import (
     verify_persisted_workspace_result_chain,
     verify_workspace_source_chain,
@@ -18,9 +20,6 @@ from crewplane.runtime.workspace.worktree import (
 )
 from crewplane.runtime.workspace.worktree.lineage import (
     verify_source_commit_available,
-)
-from crewplane.runtime.workspace.worktree.types import (
-    WorkspaceSourceKind,
 )
 from tests.helpers.workspace_lineage_bundles import (
     create_full_bundle_chain,
@@ -391,7 +390,7 @@ def test_isolated_chain_verifier_rejects_descriptor_shape_and_bundle_claims(
     with pytest.raises(RuntimeError, match="bundle kind is invalid"):
         verify_workspace_source_chain(
             source,
-            replace(valid, source_kind=cast(WorkspaceSourceKind, "invalid")),
+            replace(valid, source_kind=cast(InvocationSourceKind, "invalid")),
         )
     with pytest.raises(RuntimeError, match="lacks a source node"):
         verify_workspace_source_chain(source, replace(valid, source_node_id=None))
@@ -558,3 +557,41 @@ def test_persisted_chain_verifier_rejects_unsafe_descriptor_fields(
     bundle["size_bytes"] = True
     with pytest.raises(RuntimeError, match="lacks a required size"):
         verify_persisted_workspace_result_chain(source, run_dir, payload)
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+def test_isolated_chain_verifier_accepts_supported_object_formats(
+    tmp_path, object_format
+):
+    repo = create_git_repo(tmp_path, object_format=object_format)
+    source = workspace_plan(
+        repo, tmp_path / "cache", True, kind="worktree"
+    ).workspace_source
+    assert source is not None
+    result_commit, tree, result_ref, bundle_path, digest = create_result_bundle(
+        tmp_path, repo, "result"
+    )
+    descriptor = WorktreeSourceRef(
+        source_kind="node",
+        source_node_id="upstream",
+        source_commit=result_commit,
+        source_tree=tree,
+        bundle_path=bundle_path,
+        bundle_sha256=digest,
+        bundle_size_bytes=bundle_path.stat().st_size,
+        bundle_ref=result_ref,
+        upstream_sources=(project_source_ref(source),),
+    )
+    refs_before = run_git_text(repo, "show-ref")
+    verify_workspace_source_chain(source, descriptor)
+    assert run_git_text(repo, "show-ref") == refs_before
+
+    invalid_source = source.model_copy(update={"object_format": "unknown"})
+    with (
+        patch("crewplane.artifacts.workspace.chain_validation.subprocess.run") as run,
+        pytest.raises(
+            RuntimeError, match="Unsupported workspace object format: unknown"
+        ),
+    ):
+        verify_workspace_source_chain(invalid_source, descriptor)
+    run.assert_not_called()

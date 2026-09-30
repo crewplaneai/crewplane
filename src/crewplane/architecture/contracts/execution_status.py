@@ -33,6 +33,9 @@ type LifecycleStatus = Literal[
     ExecutionStatus.FAILED,
     ExecutionStatus.CANCELLED,
 ]
+LIFECYCLE_STATUSES: frozenset[LifecycleStatus] = frozenset(
+    get_args(LifecycleStatus.__value__)
+)
 type WorkflowStatus = LifecycleStatus
 type InvocationStatus = LifecycleStatus
 type NodeStatus = ExecutionStatus

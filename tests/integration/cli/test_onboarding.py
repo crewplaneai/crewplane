@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 import crewplane.cli.app as cli
 from crewplane.adapters.invokers.cli import CliInvokerAdapter
+from crewplane.architecture.loader import resolve_implementation_path
 from crewplane.artifacts.naming import build_run_key_name
 from crewplane.cli.onboarding import (
     CONFIG_RELATIVE_PATH,
@@ -21,7 +22,6 @@ from crewplane.cli.onboarding import (
     run_onboarding,
     write_text_file,
 )
-from crewplane.cli.onboarding.history import MOCK_INVOKER_RESOLVED_IDENTITY
 from crewplane.cli.onboarding.rendering import (
     render_provider_ready_config,
     render_provider_ready_workflow,
@@ -711,7 +711,7 @@ def write_successful_mock_history(root: Path) -> None:
         "schema_version": SCHEMA_VERSION,
         "invoker": {
             "implementation": "mock",
-            "resolved_identity": MOCK_INVOKER_RESOLVED_IDENTITY,
+            "resolved_identity": resolve_implementation_path("invoker", "mock"),
             "options": {},
         },
     }

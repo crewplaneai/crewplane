@@ -7,6 +7,10 @@ import pytest
 from markdown_it import MarkdownIt
 
 from crewplane.artifacts import OutputManager
+from crewplane.artifacts.generated_files.catalog import (
+    build_generated_file_links_section,
+    generated_file_links_for_content,
+)
 from crewplane.artifacts.generated_files.detection import GeneratedFileReferenceDetector
 from tests.helpers.artifacts import node_artifact_request
 
@@ -94,3 +98,58 @@ def test_generated_file_section_ends_at_the_next_heading(
 
     assert detector.detect(content) == (generated_file,)
     assert detector.detect_explicit_section(content) == (generated_file,)
+
+
+def test_references_preserve_format_order_deduplication_and_section_traversal(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "docs").mkdir(parents=True)
+    names = [
+        "linked.md",
+        "coded.md",
+        "bare.md",
+        "later.md",
+        "claimed.md",
+        "unchanged.md",
+    ]
+    for name in names:
+        (workspace / "docs" / name).write_bytes(f"{name}\n".encode())
+    content = (
+        "## Generated Files\n"
+        "docs/bare.md `docs/coded.md` [linked](docs/linked.md)\n"
+        "[again](docs/coded.md) `docs/linked.md` docs/bare.md\n"
+        "## References\n`docs/unchanged.md`\n"
+        "## Generated Files\n`docs/later.md`\n"
+        "## Outcome\nCreated `docs/claimed.md`; never updated `docs/unchanged.md`.\n"
+    )
+    detector = GeneratedFileReferenceDetector(workspace)
+    expected_names = names[:5]
+    expected = tuple(workspace / "docs" / name for name in expected_names)
+    assert detector.detect(content) == expected
+    assert detector.detect(content) == expected
+    assert detector.detect_explicit_section(content) == expected[:3]
+
+    result_file = tmp_path / "results" / "build-result.md"
+    publication = generated_file_links_for_content(
+        content, workspace, result_file, "build", materialize=True
+    )
+    assert publication.warnings == ()
+    assert [link.label for link in publication.links] == [
+        f"docs/{name}" for name in expected_names
+    ]
+    assert [
+        link.target_path.relative_to(result_file.parent).as_posix()
+        for link in publication.links
+    ] == [f"generated-files/build/docs/{name}" for name in expected_names]
+    assert [link.target_path.read_bytes() for link in publication.links] == [
+        path.read_bytes() for path in expected
+    ]
+    assert build_generated_file_links_section(result_file, publication.links) == (
+        "## Generated Files\n\n"
+        + "\n".join(
+            f"- [docs/{name}](generated-files/build/docs/{name})"
+            for name in expected_names
+        )
+        + "\n"
+    )

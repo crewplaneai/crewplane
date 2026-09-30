@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal, get_args
 
 from crewplane.core.workspace.git_policy import is_git_object_id
 from crewplane.core.workspace.naming import (
@@ -11,6 +12,9 @@ from crewplane.core.workspace.naming import (
 
 from .fields import is_nonempty_string, mapping_value
 from .invocation import state_invocation_slug
+
+RefPublicationPhase = Literal["prepared", "published", "removed"]
+REF_PUBLICATION_PHASES = frozenset(get_args(RefPublicationPhase))
 
 
 @dataclass(frozen=True)
@@ -53,7 +57,7 @@ def _validate_ref_publication(
         errors.append("non-lineage workspace has ref publication evidence")
         return
     publication = mapping_value(payload.get("ref_publication"))
-    if publication.get("phase") not in {"prepared", "published", "removed"}:
+    if publication.get("phase") not in REF_PUBLICATION_PHASES:
         errors.append("lineage result lacks ref publication phase")
         return
     canonical_success = lineage_producer and payload.get("status") == "succeeded"

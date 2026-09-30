@@ -5,14 +5,13 @@ from pathlib import Path
 
 from rich.console import Console
 
+from crewplane.architecture.loader import resolve_implementation_path
 from crewplane.artifacts.run_history import RunHistoryError, find_same_context_runs
 from crewplane.core.config import Config
 from crewplane.core.preflight.source import PreflightWorkflowSource
 
 from .. import workflow_runner
 from ..run.resume import workflow_identity_for_source
-
-MOCK_INVOKER_RESOLVED_IDENTITY = "crewplane.adapters.invokers.mock:MockInvokerAdapter"
 
 
 @dataclass(frozen=True)
@@ -67,14 +66,12 @@ def record_is_successful_mock_run(record: object) -> bool:
     if not isinstance(snapshot, dict):
         return False
     invoker = snapshot.get("invoker")
-    return (
-        isinstance(invoker, dict)
-        and invoker.get("resolved_identity") == MOCK_INVOKER_RESOLVED_IDENTITY
-    )
+    return isinstance(invoker, dict) and invoker.get(
+        "resolved_identity"
+    ) == resolve_implementation_path("invoker", "mock")
 
 
 __all__ = [
-    "MOCK_INVOKER_RESOLVED_IDENTITY",
     "MockRunEvidence",
     "find_successful_mock_run_evidence",
     "record_is_successful_mock_run",
