@@ -334,6 +334,25 @@ def _ensure_directory_component(path: Path) -> None:
         raise ValueError(f"Directory component must be a real directory: {path}")
 
 
+def resolved_path_is_contained(root: Path, candidate: Path) -> bool:
+    """Check containment, resolving the root first and propagating failures."""
+
+    root_resolved = root.resolve(strict=False)
+    candidate_resolved = candidate.resolve(strict=False)
+    return candidate_resolved.is_relative_to(root_resolved)
+
+
+def relative_path_has_symlink(root: Path, relative: Path) -> bool:
+    """Inspect relative components below a root already checked by the caller."""
+
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if path_is_symlink(current):
+            return True
+    return False
+
+
 def path_has_symlink_component(path: Path) -> bool:
     """Return whether any existing component in ``path`` is a symlink."""
 

@@ -23,6 +23,11 @@ from crewplane.runtime.execution.review_loop.validation import (
     build_executor_output_fingerprint,
 )
 from crewplane.runtime.workspace.invocation import invocation_slug, workspace_state_path
+from crewplane.runtime.workspace.snapshot_scan import (
+    WorkspaceSnapshotLimitError,
+    WorkspaceSnapshotPolicy,
+    WorkspaceSnapshotRaceError,
+)
 from tests.helpers.artifacts import node_artifact_request
 from tests.helpers.workspace_preflight import init_git_repo
 from tests.helpers.workspace_records import workspace_selection_record
@@ -273,3 +278,65 @@ def test_generated_file_capture_distinguishes_empty_from_missing_metadata(
     assert identity is not None
     assert identity.kind == ("document" if metadata_available else "unverified")
     assert (identity.fingerprint is not None) == metadata_available
+
+
+@pytest.mark.parametrize(
+    "captured_files", [[], [{"path": "valid.txt", "size_bytes": 4}]]
+)
+def test_rejected_generated_file_capture_cannot_prove_no_progress(
+    tmp_path: Path, captured_files: list[dict[str, object]]
+) -> None:
+    request = request_for(tmp_path)
+    artifact = artifact_for(request, "Candidate body")
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    (generated / "valid.txt").write_text("data", encoding="utf-8")
+    (generated / GENERATED_FILE_SNAPSHOT_METADATA_NAME).write_text(
+        json.dumps({"files": captured_files, "rejected_file_count": 1}),
+        encoding="utf-8",
+    )
+    request.runtime_context.generated_file_workspaces.record(
+        request.node.id, artifact.output_file, generated
+    )
+
+    outputs = asyncio.run(
+        bind_candidate_identities(request, [artifact], ProjectObservation(None, None))
+    )
+
+    identity = outputs[0].candidate_identity
+    assert identity is not None
+    assert identity.kind == "unverified"
+    assert identity.reason == "generated_files_unavailable"
+    assert identity.fingerprint is None
+    assert build_executor_output_fingerprint(outputs) is None
+
+
+@pytest.mark.parametrize(
+    "error_type", [OSError, WorkspaceSnapshotLimitError, WorkspaceSnapshotRaceError]
+)
+def test_project_scan_failure_preserves_review_limits_and_unavailable_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[Exception],
+) -> None:
+    request = request_for(tmp_path, managed=False)
+    policies = []
+
+    def unavailable_scan(root: Path, policy: WorkspaceSnapshotPolicy) -> dict[str, str]:
+        assert root == tmp_path
+        policies.append(policy)
+        raise error_type("scan unavailable")
+
+    monkeypatch.setattr(
+        "crewplane.runtime.execution.review_loop.candidate_identity.snapshot_entries",
+        unavailable_scan,
+    )
+    assert asyncio.run(observe_project(request)).fingerprint is None
+    assert len(policies) == 1
+    policy = policies[0]
+    assert (policy.max_entries, policy.max_file_bytes, policy.max_elapsed_seconds) == (
+        25_000,
+        128 * 1024 * 1024,
+        5.0,
+    )
+    assert {".git", ".venv"} <= policy.excluded_roots

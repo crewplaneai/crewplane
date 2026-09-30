@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from crewplane.architecture.contracts import JsonObject
+from crewplane.architecture.contracts.integration import scoped_integration_payload
 from crewplane.core.config import AgentConfig
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
@@ -182,16 +183,13 @@ def invoker_config_signature_from_plan(plan: PreflightExecutionPlan) -> str | No
     option_scopes = invoker.get("option_scopes")
     if not isinstance(options, dict) or not isinstance(option_scopes, dict):
         return None
-    scoped_options = {
-        key: value
-        for key, value in options.items()
-        if option_scopes.get(key) in {"execution", "artifact"}
-    }
     return signature_for_payload(
-        {
-            "capabilities": invoker.get("capabilities", {}),
-            "implementation": invoker.get("implementation"),
-            "options": scoped_options,
-            "resolved_identity": invoker.get("resolved_identity"),
-        }
+        scoped_integration_payload(
+            invoker.get("implementation"),
+            invoker.get("resolved_identity"),
+            invoker.get("capabilities", {}),
+            options,
+            option_scopes,
+            {"execution", "artifact"},
+        )
     )

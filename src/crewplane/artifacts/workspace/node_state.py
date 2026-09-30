@@ -18,7 +18,10 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
 )
-from crewplane.core.preflight.workspace.observability import node_result_descriptor
+from crewplane.core.preflight.workspace.observability import (
+    node_result_descriptor,
+    workspace_policy_descriptor,
+)
 
 from ..atomic import atomic_write_json
 from ..naming import node_state_relative_path
@@ -76,14 +79,7 @@ def build_node_workspace_descriptor(
         "node_id": node.id,
         "mode": node.mode,
         "worktree_contract": policy.worktree_contract.model_dump(mode="json"),
-        "logical_worktree_name": policy.logical_worktree_name,
-        "kind": policy.declaration_kind,
-        "source_kind": policy.source_kind,
-        "source_node_id": policy.source_node_id,
-        "clean_start": policy.clean_start,
-        "materialization": policy.materialization,
-        "lineage_producer": policy.lineage_producer,
-        "writable": policy.writable,
+        **workspace_policy_descriptor(policy),
         "result": node_result_descriptor(node),
         "policy": policy.model_dump(mode="json", exclude_none=True),
         "workspace_file_locator_count": sum(
@@ -270,7 +266,7 @@ def _bundle_descriptor(
     descriptor = _mapping_json_value(bundle)
     relative_path = bundle.get("path")
     if isinstance(relative_path, str):
-        bundle_path = _safe_run_artifact_path(stages_dir, relative_path)
+        bundle_path = contained_regular_file(stages_dir, relative_path)
         if bundle_path is None:
             raise RuntimeError(f"Workspace bundle artifact is missing: {relative_path}")
         descriptor["artifact"] = _artifact_descriptor(stages_dir, bundle_path)
@@ -316,18 +312,10 @@ def _attach_setup_artifact_descriptor(
     relative_path = setup.get(path_key)
     if not isinstance(relative_path, str):
         return
-    artifact_path = _safe_stage_artifact_path(state_path.parent, relative_path)
+    artifact_path = contained_regular_file(state_path.parent, relative_path)
     if artifact_path is None:
         raise RuntimeError(f"Workspace setup artifact is missing: {relative_path}")
     descriptor[artifact_key] = _artifact_descriptor(stages_dir, artifact_path)
-
-
-def _safe_run_artifact_path(stages_dir: Path, relative_path: str) -> Path | None:
-    return contained_regular_file(stages_dir, relative_path)
-
-
-def _safe_stage_artifact_path(stage_dir: Path, relative_path: str) -> Path | None:
-    return contained_regular_file(stage_dir, relative_path)
 
 
 def _invocation_source(payload: Mapping[str, object]) -> JsonValue:

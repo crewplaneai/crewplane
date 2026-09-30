@@ -4,6 +4,7 @@ import re
 
 from crewplane.core.review_contract import (
     REQUIRED_EMPTY_SENTINEL,
+    REVIEW_SECTIONS,
     VALID_REVIEW_VERDICTS,
     VERDICT_CHANGES_REQUESTED,
     VERDICT_NITS_ONLY,
@@ -23,13 +24,10 @@ _VERDICT_LINE_PATTERN = re.compile(
     rf"^\s*VERDICT:\s*(?P<verdict>{_VERDICT_PATTERN})\s*$",
     re.IGNORECASE,
 )
-_SECTION_ORDER = ("major_issues", "minor_issues", "nitpicks")
+_SECTION_ORDER = tuple(field_name for field_name, _ in REVIEW_SECTIONS)
 _SECTION_INDEX = {section: index for index, section in enumerate(_SECTION_ORDER)}
-_SECTION_DISPLAY_NAME = {
-    "major_issues": "Major Issues",
-    "minor_issues": "Minor Issues",
-    "nitpicks": "Nitpicks",
-}
+_SECTION_DISPLAY_NAME = dict(REVIEW_SECTIONS)
+_REVIEW_HEADING_NAMES = frozenset(name.lower() for _, name in REVIEW_SECTIONS)
 _APPROVED_REPAIRABLE_MISSING_SECTIONS = {
     VERDICT_NITS_ONLY: frozenset({"major_issues", "minor_issues"}),
     VERDICT_NO_FINDINGS: frozenset(_SECTION_ORDER),
@@ -231,9 +229,15 @@ def repair_missing_sections(
 
 
 def normalize_review_result(result: ParsedReviewResult) -> ParsedReviewResult:
-    major_issues = normalize_review_section("Major Issues", result.major_issues)
-    minor_issues = normalize_review_section("Minor Issues", result.minor_issues)
-    nitpicks = normalize_review_section("Nitpicks", result.nitpicks)
+    major_issues = normalize_review_section(
+        _SECTION_DISPLAY_NAME["major_issues"], result.major_issues
+    )
+    minor_issues = normalize_review_section(
+        _SECTION_DISPLAY_NAME["minor_issues"], result.minor_issues
+    )
+    nitpicks = normalize_review_section(
+        _SECTION_DISPLAY_NAME["nitpicks"], result.nitpicks
+    )
     normalized = ParsedReviewResult(
         verdict=result.verdict.strip().upper(),
         major_issues=major_issues,
@@ -311,11 +315,7 @@ def validate_review_section_content(name: str, content: str) -> None:
 def is_review_heading(line: str) -> bool:
     if not line.startswith("##"):
         return False
-    return normalize_text_token(line[2:]) in {
-        "major issues",
-        "minor issues",
-        "nitpicks",
-    }
+    return normalize_text_token(line[2:]) in _REVIEW_HEADING_NAMES
 
 
 def canonical_review_verdict(result: ParsedReviewResult) -> str:

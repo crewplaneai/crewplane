@@ -7,10 +7,10 @@ from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
 )
-from crewplane.core.workspace.naming import safe_file_component
 
 from ..filesystem import (
     ensure_owner_private_dir,
+    workspace_invocation_path,
     workspace_run_root,
 )
 
@@ -23,10 +23,9 @@ def allocate_worktree_workspace(
     parent_slug: str | None,
 ) -> tuple[Path, Path]:
     run_root = workspace_run_root(plan, source, workspace_family)
+    workspace_path = workspace_invocation_path(run_root, slug, parent_slug)
     if parent_slug is not None:
-        run_root = run_root / safe_file_component(parent_slug)
-        ensure_owner_private_dir(run_root)
-    workspace_path = run_root / slug
+        ensure_owner_private_dir(workspace_path.parent)
     if workspace_path.exists() or workspace_path.is_symlink():
         raise RuntimeError(
             f"Workspace path already exists: {workspace_path.as_posix()}"

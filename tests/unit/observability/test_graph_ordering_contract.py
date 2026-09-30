@@ -4,7 +4,13 @@ from copy import deepcopy
 
 import pytest
 
-from crewplane.architecture.contracts import TopologyNode, WorkflowTopology
+from crewplane.architecture.contracts import (
+    ArtifactContract,
+    TopologyNode,
+    WorkflowTopology,
+)
+from crewplane.cli.dry_run import preview_topological_waves
+from crewplane.core.preflight import PreflightCompilationPreview, PreflightExecutionNode
 from crewplane.core.workflow.graph import ancestor_map, topological_waves
 from crewplane.core.workflow.models import WorkflowNode, WorkflowPlan
 from crewplane.observability.layout import compute_topology_layout
@@ -30,6 +36,7 @@ from crewplane.observability.layout import compute_topology_layout
 def test_authored_and_observer_graph_order_and_ancestors(nodes, waves, ancestors):
     workflow, topology = _graph_inputs(nodes)
     assert topological_waves(workflow) == waves
+    assert preview_topological_waves(_preview(nodes)) == waves
     assert ancestor_map(workflow) == ancestors
     layout = compute_topology_layout(topology)
     assert layout.waves == tuple(tuple(wave) for wave in waves)
@@ -69,6 +76,57 @@ def test_authored_and_observer_graph_errors_preserve_precedence(nodes, message):
     with pytest.raises(ValueError) as observer:
         compute_topology_layout(topology)
     assert str(authored.value) == str(observer.value) == message
+
+
+@pytest.mark.parametrize(
+    ("nodes", "order", "waves"),
+    [
+        ([], ["extra"], []),
+        ([("c", ["b"]), ("b", ["a"]), ("a", [])], [], [["a"], ["b"], ["c"]]),
+        ([("z", []), ("a", []), ("b", [])], ["a"], [["a", "z", "b"]]),
+        ([("z", []), ("a", [])], ["extra", "a"], [["a", "z"]]),
+        ([("z", []), ("a", [])], ["a", "a", "a"], [["z", "a"]]),
+        (
+            [("z", []), ("a", ["z", "z"]), ("b", ["z"]), ("c", ["a", "b"])],
+            ["c", "b", "a", "z"],
+            [["z"], ["b", "a"], ["c"]],
+        ),
+        ([("a", ["missing"]), ("b", []), ("a", [])], [], [["a", "b"]]),
+        ([("a", []), ("b", []), ("a", ["b"])], [], [["b"], ["a"]]),
+    ],
+)
+def test_preview_preserves_ordering_and_duplicate_node_collapse(nodes, order, waves):
+    assert preview_topological_waves(_preview(nodes, order)) == waves
+
+
+@pytest.mark.parametrize(
+    "nodes",
+    [
+        [("a", ["a"])],
+        [("a", ["b"]), ("b", ["a"])],
+        [("a", ["missing"])],
+        [("a", []), ("a", ["missing"])],
+    ],
+)
+def test_preview_preserves_cycle_diagnostic_for_invalid_graphs(nodes):
+    with pytest.raises(ValueError) as error:
+        preview_topological_waves(_preview(nodes))
+    assert str(error.value) == "Compiled preview dependency graph contains a cycle."
+
+
+def _preview(nodes, order=None):
+    return PreflightCompilationPreview(
+        execution_order=[] if order is None else order,
+        nodes=[
+            PreflightExecutionNode(
+                id=node_id,
+                mode="parallel",
+                dependencies=needs,
+                artifact_contract=ArtifactContract(output_path=f"{node_id}-result.md"),
+            )
+            for node_id, needs in nodes
+        ],
+    )
 
 
 def _graph_inputs(nodes):

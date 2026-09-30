@@ -141,3 +141,26 @@ def test_snapshot_integer_contract(tmp_path, field, value) -> None:
     assert read_snapshot(write_snapshot(tmp_path, snapshot)) == (
         snapshot if expected_valid else None
     )
+
+
+@pytest.mark.parametrize(
+    "status", ["pending", "running", "succeeded", "failed", "cancelled"]
+)
+@pytest.mark.parametrize("inspect", [False, True])
+def test_snapshot_round_trip_accepts_lifecycle_status(tmp_path, status, inspect):
+    snapshot = inspect_snapshot() if inspect else selected_snapshot()
+    snapshot["invocation_status"] = status
+    path = write_snapshot(tmp_path, snapshot)
+    assert read_snapshot(path) == snapshot
+    if inspect:
+        assert read_inspect_snapshot(path) == snapshot
+
+
+@pytest.mark.parametrize("status", ["blocked", "unknown", None, 1, [], {}])
+@pytest.mark.parametrize("inspect", [False, True])
+def test_snapshot_round_trip_rejects_non_lifecycle_status(tmp_path, status, inspect):
+    snapshot = inspect_snapshot() if inspect else selected_snapshot()
+    snapshot["invocation_status"] = status
+    path = write_snapshot(tmp_path, snapshot)
+    assert read_snapshot(path) is None
+    assert read_inspect_snapshot(path) is None

@@ -19,6 +19,8 @@ from crewplane.cli.onboarding.rendering_config_validation import (
 from crewplane.cli.onboarding.rendering_workflow import validate_provider_ready_workflow
 from crewplane.cli.onboarding.rendering_yaml_blocks import (
     comment_yaml_block,
+    frontmatter_mapping_key_line_index,
+    mapping_key_line_index,
     replace_once,
     uncomment_yaml_comment_block,
     yaml_child_block_end,
@@ -168,3 +170,54 @@ def test_yaml_block_rejects_changed_indentation() -> None:
 def test_template_replacement_rejects_missing_or_ambiguous_anchor(text: str) -> None:
     with pytest.raises(OnboardingRenderingError, match="Expected one provider anchor"):
         replace_once(text, "anchor", "codex", "provider")
+
+
+@pytest.mark.parametrize("indent", [0, 2])
+@pytest.mark.parametrize(
+    "lines, start, end, expected",
+    [
+        (["nodes:", "other:", "nodes:"], 0, 1, 0),
+        (["nodes:", "other:", "nodes:"], 1, 3, 2),
+        (["nodes:", "other:", "nodes:"], 1, 2, "found 0"),
+        (["nodes:", "nodes:"], 0, 2, "found 2"),
+        (["nodes:"], 0, 0, "found 0"),
+        (["nodes:"], 1, 0, "found 0"),
+        (["nodes: []", "nodes: ", " nodes:", "nodes:"], 0, 4, 3),
+    ],
+)
+def test_exact_mapping_lookup_preserves_bounds_indices_and_errors(
+    indent: int, lines: list[str], start: int, end: int, expected: int | str
+) -> None:
+    lines = [" " * indent + line for line in lines]
+    calls = [
+        lambda: mapping_key_line_index(
+            lines, "nodes", indent, "nodes", range(start, end)
+        ),
+        lambda: frontmatter_mapping_key_line_index(
+            lines, start, end, "nodes", indent, "nodes"
+        ),
+    ]
+    if start == 0 and end == len(lines):
+        calls.append(lambda: mapping_key_line_index(lines, "nodes", indent, "nodes"))
+    for lookup in calls:
+        if isinstance(expected, int):
+            assert lookup() == expected
+        else:
+            with pytest.raises(OnboardingRenderingError) as error:
+                lookup()
+            assert str(error.value) == f"Expected one nodes block, {expected}."
+
+
+@pytest.mark.parametrize("final_newline", ["", "\n"])
+def test_workflow_snippet_ignores_body_mapping_and_preserves_rendered_bytes(
+    final_newline: str,
+) -> None:
+    template = (
+        "---\n# keep this comment\nnodes:\n  - id: review\n"
+        "    providers: [mock]\n---\n## review\nnodes:\nBody text" + final_newline
+    )
+    rendered = render_provider_ready_workflow(template, ("codex",))
+    assert rendered.encode() == template.replace("[mock]", "[codex]").encode()
+    assert manual_workflow_snippet(template, ("codex",)) == (
+        "nodes:\n  - id: review\n    providers: [codex]"
+    )

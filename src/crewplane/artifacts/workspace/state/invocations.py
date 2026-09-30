@@ -20,6 +20,7 @@ from .fields import mapping_value as _mapping
 from .lineage import (
     INVALID_LINEAGE_ORDER,
     invocation_round_order,
+    is_seeded_audit_round,
     review_output_coordinates,
 )
 from .paths import WORKSPACE_STATE_FILENAME, workspace_state_candidates
@@ -296,9 +297,7 @@ def expected_seeded_lineage_invocation(
     return (
         expected.lineage_source_required
         and expected.role == ProviderRole.EXECUTOR
-        and expected.audit_round_num is not None
-        and expected.audit_round_num > 1
-        and expected.round_num == 1
+        and is_seeded_audit_round(expected.round_num, expected.audit_round_num)
     )
 
 

@@ -5,8 +5,11 @@ import inspect
 
 import pytest
 
+from crewplane.architecture.contracts.integration import CanonicalIntegrationConfig
 from crewplane.core.preflight.models import PreflightExecutionPlan, ProviderRecord
 from crewplane.core.preflight.secrets import SecretContext
+from crewplane.core.preflight.serialization import canonical_json_bytes
+from crewplane.core.preflight.signatures import signature_for_payload
 from crewplane.runtime.execution.deferred_cleanup import DeferredAsyncCleanupRegistry
 from crewplane.runtime.execution.runtime_context import (
     CompiledRuntimeContext,
@@ -139,3 +142,84 @@ def test_closed_cleanup_registry_closes_new_cancellable_coroutine() -> None:
         assert registry.tasks == set()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("scope_mask", range(16))
+def test_integration_projection_preserves_scope_selection_and_runtime_signature(
+    scope_mask: int,
+) -> None:
+
+    scopes = ("execution", "artifact", "observer", "validation")
+    options = {
+        scope: {"nested": [None, True, {"redacted": True, "fingerprint": "abc"}]}
+        for scope in scopes
+    }
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        capabilities={"cwd": True},
+        options=options,
+        option_scopes={scope: scope for scope in scopes},
+    )
+    selected = {
+        scope for index, scope in enumerate(scopes) if scope_mask & (1 << index)
+    }
+    expected = {
+        "capabilities": {"cwd": True},
+        "implementation": "custom",
+        "options": {scope: options[scope] for scope in scopes if scope in selected},
+        "resolved_identity": "example.Adapter",
+    }
+    assert config.scoped_payload(selected) == expected
+    plan = plan_with_runtime_metadata({"invoker": config.redacted_payload()})
+    assert invoker_config_signature_from_plan(plan) == signature_for_payload(
+        config.scoped_payload({"execution", "artifact"})
+    )
+
+
+@pytest.mark.parametrize("scope", ["execution", "artifact", "observer", "validation"])
+def test_runtime_integration_signature_changes_only_for_execution_and_artifact(
+    scope: str,
+) -> None:
+
+    config = CanonicalIntegrationConfig(
+        implementation="custom",
+        resolved_identity="example.Adapter",
+        options={"option": {"nested": [1]}},
+        option_scopes={"option": scope},
+    )
+    original = signature_for_payload(config.scoped_payload({"execution", "artifact"}))
+    payload = config.redacted_payload()
+    payload["options"]["option"]["nested"] = [2]
+    changed = invoker_config_signature_from_plan(
+        plan_with_runtime_metadata({"invoker": payload})
+    )
+    assert (changed != original) is (scope in {"execution", "artifact"})
+
+
+@pytest.mark.parametrize("capability_metadata", [{}, {"capabilities": None}])
+def test_runtime_projection_preserves_missing_identity_and_null_capabilities(
+    capability_metadata: dict[str, object],
+) -> None:
+
+    invoker = {
+        "options": {"unscoped": "ignored", "nested": {"redacted": True}},
+        "option_scopes": {"nested": "execution", "absent": "artifact"},
+        **capability_metadata,
+    }
+    expected = {
+        "capabilities": capability_metadata.get("capabilities", {}),
+        "implementation": None,
+        "options": {"nested": {"redacted": True}},
+        "resolved_identity": None,
+    }
+    capability_bytes = b"null" if capability_metadata else b"{}"
+    assert canonical_json_bytes(expected) == (
+        b'{"capabilities":'
+        + capability_bytes
+        + b',"implementation":null,"options":{"nested":{"redacted":true}},'
+        b'"resolved_identity":null}'
+    )
+    assert invoker_config_signature_from_plan(
+        plan_with_runtime_metadata({"invoker": invoker})
+    ) == signature_for_payload(expected)

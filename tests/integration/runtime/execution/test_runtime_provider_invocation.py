@@ -13,7 +13,9 @@ from crewplane.core.preflight.models import (
 )
 from crewplane.core.preflight.runtime_config import (
     RuntimeAgentConfigSnapshot,
+    agent_config_input_payload,
     runtime_agent_signature_payload,
+    runtime_agent_snapshot_payload,
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
@@ -75,7 +77,7 @@ def _runtime_context(
             dependency_graph=[],
             runtime_config_snapshot={
                 "agents": {
-                    key: config.model_dump(mode="json", exclude_none=True)
+                    key: agent_config_input_payload(config)
                     for key, config in agent_configs.items()
                 },
                 "execution": {},
@@ -95,7 +97,7 @@ def _agent_signature(
     resolved_model: str | None,
 ) -> str:
     agent_snapshot = RuntimeAgentConfigSnapshot.model_validate(
-        agent_config.model_dump(mode="json", exclude_none=True)
+        agent_config_input_payload(agent_config)
     )
     return signature_for_payload(
         runtime_agent_signature_payload(
@@ -369,3 +371,49 @@ def test_provider_invocation_rejects_unsigned_agent_config_drift(
 
     with pytest.raises(ValueError, match="agent config signature"):
         asyncio.run(run_provider_call(request))
+
+
+@pytest.mark.parametrize(
+    "wall_clock",
+    [{}, {"invocation_timeout_seconds": None}, {"invocation_timeout_seconds": 2.5}],
+)
+@pytest.mark.parametrize(
+    "idle",
+    [
+        {},
+        {"invocation_idle_timeout_seconds": None},
+        {"invocation_idle_timeout_seconds": 0.25},
+    ],
+)
+def test_timeout_snapshot_round_trip_preserves_nulls_keys_and_signature(
+    wall_clock, idle
+):
+    config = AgentConfig(cli_cmd=["echo"], **wall_clock, **idle)
+    expected_wall_clock = wall_clock.get("invocation_timeout_seconds")
+    expected_idle = idle.get("invocation_idle_timeout_seconds", 1800.0)
+    snapshot = RuntimeAgentConfigSnapshot.model_validate(
+        agent_config_input_payload(config)
+    )
+    payload = runtime_agent_snapshot_payload(snapshot)
+    assert ("invocation_timeout_seconds" in payload) == (
+        expected_wall_clock is not None
+    )
+    assert payload.get("invocation_timeout_seconds") == expected_wall_clock
+    assert "invocation_idle_timeout_seconds" in payload
+    assert payload["invocation_idle_timeout_seconds"] == expected_idle
+
+    restored = RuntimeAgentConfigSnapshot.model_validate_json(
+        snapshot.model_dump_json()
+    )
+    assert runtime_agent_snapshot_payload(restored) == payload
+    context = _runtime_context({"alpha": config})
+    provider = _provider_record("alpha", agent_config=config)
+    resolved = context.agent_config_for_provider(provider)
+    assert resolved.invocation_timeout_seconds == expected_wall_clock
+    assert resolved.invocation_idle_timeout_seconds == expected_idle
+    explicit = AgentConfig(
+        cli_cmd=["echo"],
+        invocation_timeout_seconds=expected_wall_clock,
+        invocation_idle_timeout_seconds=expected_idle,
+    )
+    assert _agent_signature("alpha", explicit, None) == provider.agent_config_signature

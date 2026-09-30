@@ -5,7 +5,9 @@ import unicodedata
 from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import TypeGuard
+from typing import Final, TypeGuard
+
+GIT_OBJECT_FORMAT_DIGEST_SIZES: Final = {"sha1": 20, "sha256": 32}
 
 
 class GitTreeMode(StrEnum):

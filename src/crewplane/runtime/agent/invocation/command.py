@@ -32,7 +32,7 @@ from ..process.runner import (
     write_stdin_and_collect_output,
 )
 from ..process.stream_capture import ProcessOutputCapture
-from ..process.streams import drain_process_pipes
+from ..process.streams import drain_process_pipes, format_timeout_seconds
 from ..workspace_environment import record_workspace_child_environment_applied
 from .telemetry import emit_invocation_diagnostic
 
@@ -388,10 +388,6 @@ def _retry_log_header(plan: InvocationPlan, attempt: int) -> bytes:
     return build_retry_log_header(attempt + 1)
 
 
-def _format_timeout_seconds(timeout_seconds: float) -> str:
-    return f"{timeout_seconds:g}s"
-
-
 async def _await_invocation_attempt(
     attempt_result: Awaitable[CommandResult],
     timeout_seconds: float | None,
@@ -403,7 +399,7 @@ async def _await_invocation_attempt(
     try:
         return await asyncio.wait_for(attempt_result, timeout=timeout_seconds)
     except TimeoutError as exc:
-        formatted_timeout = _format_timeout_seconds(timeout_seconds)
+        formatted_timeout = format_timeout_seconds(timeout_seconds)
         message = (
             "Configured invocation wall-clock timeout reached after "
             f"{formatted_timeout}."

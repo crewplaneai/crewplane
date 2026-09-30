@@ -189,3 +189,29 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             "invocation_timeout"
         ]
         assert diagnostics[0].attributes["timeout_scope"] == "wall_clock"
+
+
+@pytest.mark.parametrize(
+    ("timeout", "formatted"), [(2.0, "2s"), (0.01, "0.01s"), (1e-7, "1e-07s")]
+)
+def test_wall_clock_timeout_preserves_duration_format(timeout, formatted):
+    plan = build_cli_invocation_plan(
+        AgentConfig(cli_cmd=[sys.executable]), None, "prompt", Path("output.md")
+    )
+    diagnostics = []
+    context = InvocationContext(
+        "node", "task", "generic", "executor", diagnostics=diagnostics.append
+    )
+    runner = AsyncMock(side_effect=TimeoutError)
+    with pytest.raises(RuntimeError) as error:
+        asyncio.run(
+            run_invocation_attempt(
+                plan, runner, None, 0, Path.cwd(), context, timeout, None, None
+            )
+        )
+    assert (
+        str(error.value)
+        == f"Configured invocation wall-clock timeout reached after {formatted}."
+    )
+    assert diagnostics[0].operation == "invocation_timeout"
+    assert diagnostics[0].attributes["timeout_scope"] == "wall_clock"

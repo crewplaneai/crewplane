@@ -5,9 +5,11 @@ from pathlib import Path
 
 from .snapshot import (
     SnapshotDriftSummary,
+    snapshot_drift_summary,
+)
+from .snapshot_scan import (
     WorkspaceSnapshotLimitError,
     WorkspaceSnapshotPolicy,
-    snapshot_drift_summary,
     snapshot_entries,
 )
 from .terminalization import workspace_diagnostic

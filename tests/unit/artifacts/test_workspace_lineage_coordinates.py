@@ -1,10 +1,36 @@
 import pytest
 
-from crewplane.artifacts.workspace.state.invocations import lineage_payload_order
+from crewplane.artifacts.workspace.state.invocations import (
+    ExpectedWorkspaceInvocation,
+    expected_seeded_lineage_invocation,
+    lineage_payload_order,
+)
 from crewplane.artifacts.workspace.state.lineage import (
     invocation_round_order,
+    is_seeded_audit_round,
     review_output_coordinates,
 )
+from crewplane.core.workflow.keywords import ProviderRole
+
+
+@pytest.mark.parametrize("audit_round_num", [None, 0, 1, 2])
+@pytest.mark.parametrize("round_num", [0, 1, 2])
+def test_seeded_round_requires_first_local_round_of_later_audit(
+    round_num, audit_round_num
+):
+    seeded = (round_num, audit_round_num) == (1, 2)
+    assert is_seeded_audit_round(round_num, audit_round_num) is seeded
+    for role, required in [
+        (ProviderRole.EXECUTOR, True),
+        (ProviderRole.EXECUTOR, False),
+        (ProviderRole.REVIEWER, True),
+    ]:
+        invocation = ExpectedWorkspaceInvocation(
+            "task", role, round_num, audit_round_num, required
+        )
+        assert expected_seeded_lineage_invocation(invocation) is (
+            seeded and role == ProviderRole.EXECUTOR and required
+        )
 
 
 @pytest.mark.parametrize(

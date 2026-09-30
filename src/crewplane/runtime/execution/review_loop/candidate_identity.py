@@ -8,18 +8,18 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from crewplane.architecture.safe_files import contained_regular_file
 from crewplane.artifacts.atomic import atomic_write_json
+from crewplane.artifacts.generated_files.evidence import (
+    verified_generated_file_descriptors,
+)
 from crewplane.artifacts.generated_files.paths import (
-    GENERATED_FILE_SNAPSHOT_METADATA_NAME,
     RESERVED_WORKSPACE_PATH_ROOTS,
 )
-from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
 from crewplane.runtime.execution.activity.telemetry import ActivityTrackerSnapshot
 from crewplane.runtime.workspace.git import git
 from crewplane.runtime.workspace.invocation import invocation_slug, workspace_state_path
-from crewplane.runtime.workspace.snapshot import (
+from crewplane.runtime.workspace.snapshot_scan import (
     WorkspaceSnapshotError,
     WorkspaceSnapshotPolicy,
     snapshot_entries,
@@ -245,47 +245,4 @@ def _generated_file_descriptors(
     root = roots[key]
     if root is None:
         return None
-    entries = _read_generated_file_entries(root)
-    if entries is None:
-        return None
-    descriptors = []
-    for entry in entries:
-        descriptor = _verified_generated_file_descriptor(root, entry)
-        if descriptor is None:
-            return None
-        descriptors.append(descriptor)
-    return sorted(descriptors)
-
-
-def _read_generated_file_entries(root: Path) -> list[object] | None:
-    metadata = contained_regular_file(root, GENERATED_FILE_SNAPSHOT_METADATA_NAME)
-    if metadata is None:
-        return None
-    try:
-        payload: object = json.loads(metadata.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(payload, dict) or payload.get("rejected_file_count", 0):
-        return None
-    files = payload.get("files")
-    return files if isinstance(files, list) else None
-
-
-def _verified_generated_file_descriptor(
-    root: Path, entry: object
-) -> tuple[str, int, str] | None:
-    if not isinstance(entry, dict):
-        return None
-    relative_path = entry.get("path")
-    if not isinstance(relative_path, str):
-        return None
-    try:
-        path = contained_regular_file(root, relative_path)
-        if path is None:
-            return None
-        size, digest = file_size_and_sha256(path)
-    except (OSError, ValueError):
-        return None
-    if size != entry.get("size_bytes"):
-        return None
-    return relative_path, size, digest
+    return verified_generated_file_descriptors(root)

@@ -16,7 +16,7 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.runtime.execution.fragment_assembler import assemble_prompt
+from crewplane.runtime.execution.fragment_assembler import assemble_prompt_details
 from crewplane.runtime.execution.workspace_files import (
     WorkspaceCandidateSourceContext,
     resolve_workspace_file,
@@ -64,14 +64,14 @@ def test_initial_pre_review_reads_project_initial_runtime_dynamic_workspace_file
         phase="initial_pre_review",
     )
 
-    prompt = assemble_prompt(
+    prompt = assemble_prompt_details(
         plan,
         plan.nodes[1],
         ProviderRole.REVIEWER,
         store,
         SecretContext(),
         workspace_candidate_context=context,
-    )
+    ).text
     resolved = resolve_workspace_file(
         plan,
         store,
@@ -126,7 +126,7 @@ def test_initial_pre_review_reads_upstream_runtime_dynamic_workspace_file(
         source_node_id="input",
     )
 
-    prompt = assemble_prompt(
+    prompt = assemble_prompt_details(
         plan,
         plan.nodes[1],
         ProviderRole.REVIEWER,
@@ -138,7 +138,7 @@ def test_initial_pre_review_reads_upstream_runtime_dynamic_workspace_file(
             audit_round_num=None,
             phase="initial_pre_review",
         ),
-    )
+    ).text
 
     assert prompt == "upstream lineage\n"
 
@@ -169,7 +169,7 @@ def test_normal_candidate_review_rejects_missing_runtime_dynamic_candidate(
     )
 
     with pytest.raises(RuntimeError, match="no matching executor state"):
-        assemble_prompt(
+        assemble_prompt_details(
             plan,
             plan.nodes[1],
             ProviderRole.REVIEWER,
@@ -303,20 +303,20 @@ def test_assemble_prompt_reads_after_candidate_workspace_locator_from_candidate(
     )
 
     assert (
-        assemble_prompt(
+        assemble_prompt_details(
             plan, plan.nodes[1], ProviderRole.EXECUTOR, store, SecretContext()
-        )
+        ).text
         == "base\n"
     )
     assert (
-        assemble_prompt(
+        assemble_prompt_details(
             plan,
             plan.nodes[1],
             ProviderRole.EXECUTOR,
             store,
             SecretContext(),
             workspace_candidate_source=True,
-        )
+        ).text
         == "candidate\n"
     )
 

@@ -11,10 +11,10 @@ from crewplane.core.preflight.models import (
 from crewplane.core.preflight.runtime_config.workspace import (
     invoker_workspace_descriptor,
 )
-from crewplane.core.workspace.naming import safe_file_component
 from crewplane.runtime.workspace.cleanup_notes import note_cleanup_failure
 from crewplane.runtime.workspace.filesystem import (
     remove_workspace_path,
+    workspace_invocation_path,
     workspace_run_hierarchy,
 )
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
@@ -169,9 +169,7 @@ def planned_workspace_path(
     parent_slug: str | None = None,
 ) -> Path:
     run_root = workspace_run_hierarchy(plan, source, family)[-1]
-    if parent_slug is not None:
-        run_root = run_root / safe_file_component(parent_slug)
-    return run_root / slug
+    return workspace_invocation_path(run_root, slug, parent_slug)
 
 
 def workspace_cwd(checkout_root: Path, source: WorkspaceSourceSnapshot) -> Path:

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
 from crewplane.architecture.contracts import ProviderTokenUsage
-from crewplane.architecture.contracts.invocation import TOKEN_BUCKETS
+from crewplane.architecture.contracts.invocation import (
+    TOKEN_BUCKETS,
+    InvocationCostConfidence,
+    ProviderUsageStatus,
+)
 from crewplane.observability.events import event_from_record
 from crewplane.observability.run_summary.spend import (
     UsageRollupAccumulator,
@@ -194,3 +200,41 @@ def test_cost_confidence_subsets_reach_streaming_and_batch_totals(
     assert total is not None
     assert total.configured_cost_confidence == expected
     assert total.configured_cost_usd == (None if cost is None else cost * len(events))
+
+
+@pytest.mark.parametrize(
+    "field, vocabulary",
+    [
+        ("provider_usage_status", ProviderUsageStatus),
+        ("invocation_cost_confidence", InvocationCostConfidence),
+    ],
+)
+@pytest.mark.parametrize("invalid", ["unknown", "mixed", None, True, 4, 2.5, [], {}])
+def test_usage_vocabulary_survives_event_decoding_with_summary_fallbacks(
+    field: str, vocabulary: object, invalid: object
+) -> None:
+    values = get_args(vocabulary)
+    events = []
+    for value in (*values, invalid):
+        record = invocation_record()
+        record[field] = value
+        event = event_from_record(record)
+        assert event is not None
+        assert getattr(event.payload, field) == (
+            value if isinstance(value, str) else None
+        )
+        events.append(event)
+    missing = event_from_record(invocation_record())
+    assert missing is not None
+    events.append(missing)
+    summaries = invocation_usage_summaries(events)
+    assert [getattr(summary, field) for summary in summaries] == [
+        *values,
+        "none",
+        "none",
+    ]
+    accumulator = UsageRollupAccumulator()
+    for summary in summaries:
+        accumulator.record(summary)
+    assert accumulator.spend_totals() == spend_totals(summaries)
+    assert accumulator.provider_usage_rollups() == provider_usage_rollups(summaries)

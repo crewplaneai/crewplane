@@ -23,7 +23,8 @@ from crewplane.architecture.safe_files import (
     contained_regular_file,
     is_single_link_regular_file,
     path_has_symlink_component,
-    path_is_symlink,
+    relative_path_has_symlink,
+    resolved_path_is_contained,
 )
 from crewplane.core.execution_state import (
     RUN_STATUS_RUNNING,
@@ -369,26 +370,24 @@ def owner_manifest_path(state_dir: Path, run_key_name: str) -> Path | None:
     stages_root = state_dir / EXECUTION_STAGES_DIR_NAME
     run_dir = stages_root / run_key_name
     try:
-        stages_root_resolved = stages_root.resolve(strict=False)
-        run_dir_resolved = run_dir.resolve(strict=False)
+        contained = resolved_path_is_contained(stages_root, run_dir)
     except PermissionError:
         raise
     except OSError:
         return None
-    if not run_dir_resolved.is_relative_to(stages_root_resolved):
+    if not contained:
         return None
     return run_dir / run_manifest_relative_path()
 
 
 def ensure_owner_path_contained(root: Path, candidate: Path) -> None:
     try:
-        root_resolved = root.resolve(strict=False)
-        candidate_resolved = candidate.resolve(strict=False)
+        contained = resolved_path_is_contained(root, candidate)
     except PermissionError:
         raise
     except OSError as exc:
         raise LockManifestError("Cannot inspect stale run manifest safely.") from exc
-    if not candidate_resolved.is_relative_to(root_resolved):
+    if not contained:
         raise LockManifestError("Lock owner run metadata is not safely contained.")
 
 
@@ -401,8 +400,5 @@ def ensure_no_symlink_manifest_components(root: Path, candidate: Path) -> None:
         raise LockManifestError(
             "Lock owner run metadata is not safely contained."
         ) from exc
-    current = root
-    for part in relative.parts:
-        current = current / part
-        if path_is_symlink(current):
-            raise LockManifestError("Stale run manifest path contains a symlink.")
+    if relative_path_has_symlink(root, relative):
+        raise LockManifestError("Stale run manifest path contains a symlink.")

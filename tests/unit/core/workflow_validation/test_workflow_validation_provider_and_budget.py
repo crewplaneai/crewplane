@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from crewplane.adapters.invokers.cli import collect_cli_availability_errors
 from crewplane.core.config import AgentConfig, Config, Settings
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -595,3 +597,20 @@ def _collect_wrapped_cli_errors(
         which_fn=which_fn,
         project_root=project_root,
     )
+
+
+@pytest.mark.parametrize("executable", ["tools/provider", r"tools\provider"])
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("executable_file", [False, True])
+def test_availability_classifies_both_path_separators(
+    tmp_path, executable, wrapped, executable_file
+):
+    path = tmp_path / executable
+    _write_executable(path)
+    if not executable_file:
+        path.chmod(0o600)
+    command = ["env", executable] if wrapped else [executable]
+    errors = _collect_wrapped_cli_errors(command, tmp_path, _platform_env_executable)
+    assert len(errors) == (0 if executable_file else 1)
+    if errors:
+        assert "not found or not executable" in errors[0]

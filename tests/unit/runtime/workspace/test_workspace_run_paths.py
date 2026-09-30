@@ -11,6 +11,7 @@ from crewplane.runtime.workspace.filesystem import (
     workspace_run_root,
 )
 from crewplane.runtime.workspace.service.common import planned_workspace_path
+from crewplane.runtime.workspace.snapshot import create_snapshot_workspace
 from crewplane.runtime.workspace.worktree.checkout_placement import (
     allocate_worktree_workspace,
 )
@@ -114,3 +115,68 @@ def test_reviewer_parent_sanitization_matches_allocation(tmp_path: Path) -> None
     )
     assert allocated == planned
     assert checkout == planned / "checkout"
+
+
+@pytest.mark.parametrize("entry_kind", ["file", "symlink"])
+def test_reviewer_allocation_rejects_unsafe_parent(
+    tmp_path: Path, entry_kind: str
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(
+        repo, tmp_path / "cache", cleanup_on_success=True, kind="worktree"
+    )
+    source = plan.workspace_source
+    assert source is not None
+    planned = planned_workspace_path(
+        plan, source, "review-workspaces", "invocation", "import/build"
+    )
+    planned.parent.parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if entry_kind == "file":
+        planned.parent.write_text("keep")
+    else:
+        planned.parent.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(RuntimeError) as caught:
+        allocate_worktree_workspace(
+            plan, "invocation", source, "review-workspaces", "import/build"
+        )
+
+    assert str(caught.value).endswith(planned.parent.as_posix())
+    assert not planned.exists()
+    assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize("kind", ["snapshot", "worktree"])
+@pytest.mark.parametrize("entry_kind", ["file", "directory", "dangling_symlink"])
+def test_allocation_preserves_existing_invocation_paths(
+    tmp_path: Path, kind: str, entry_kind: str
+) -> None:
+    repo = create_git_repo(tmp_path)
+    plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=True, kind=kind)
+    source = plan.workspace_source
+    assert source is not None
+    family = "snapshots" if kind == "snapshot" else "workspaces"
+    planned = planned_workspace_path(plan, source, family, "invocation")
+    planned.parent.mkdir(parents=True)
+    if entry_kind == "file":
+        planned.write_text("keep")
+    elif entry_kind == "directory":
+        planned.mkdir()
+        (planned / "keep").write_text("keep")
+    else:
+        planned.symlink_to(tmp_path / "missing")
+
+    with pytest.raises(RuntimeError, match="Workspace path already exists"):
+        if kind == "snapshot":
+            create_snapshot_workspace(plan, "invocation", source)
+        else:
+            allocate_worktree_workspace(plan, "invocation", source, "workspaces", None)
+
+    if entry_kind == "file":
+        assert planned.read_text() == "keep"
+    elif entry_kind == "directory":
+        assert (planned / "keep").read_text() == "keep"
+    else:
+        assert planned.is_symlink()

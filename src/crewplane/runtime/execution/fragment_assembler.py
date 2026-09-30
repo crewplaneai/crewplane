@@ -44,26 +44,6 @@ class ResolvedPrompt:
     workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
 
 
-def assemble_prompt(
-    plan: PreflightExecutionPlan,
-    node: PreflightExecutionNode,
-    target_role: ProviderRole,
-    output: ArtifactStorePort,
-    secret_context: SecretContext,
-    workspace_candidate_source: bool = False,
-    workspace_candidate_context: WorkspaceCandidateSourceContext | None = None,
-) -> str:
-    return assemble_prompt_details(
-        plan,
-        node,
-        target_role,
-        output,
-        secret_context,
-        workspace_candidate_source=workspace_candidate_source,
-        workspace_candidate_context=workspace_candidate_context,
-    ).text
-
-
 def assemble_prompt_details(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,

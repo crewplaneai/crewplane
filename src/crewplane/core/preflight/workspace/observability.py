@@ -12,6 +12,7 @@ from ..models import (
     WorkspaceFileLocator,
     WorkspaceFileSourceClass,
     WorkspaceFileTarget,
+    WorkspaceSelectionRecord,
     WorkspaceSourceSnapshot,
 )
 from ..runtime_config.workspace import (
@@ -95,14 +96,7 @@ def node_workspace_descriptor(
     return {
         "node_id": node.id,
         "mode": node.mode,
-        "logical_worktree_name": policy.logical_worktree_name,
-        "kind": policy.declaration_kind,
-        "source_kind": policy.source_kind,
-        "source_node_id": policy.source_node_id,
-        "clean_start": policy.clean_start,
-        "materialization": policy.materialization,
-        "lineage_producer": policy.lineage_producer,
-        "writable": policy.writable,
+        **workspace_policy_descriptor(policy),
         "setup_profile": policy.setup.profile_name
         if policy.setup is not None
         else None,
@@ -117,6 +111,19 @@ def node_workspace_descriptor(
             }
             for locator in node_locators
         ),
+    }
+
+
+def workspace_policy_descriptor(policy: WorkspaceSelectionRecord) -> JsonObject:
+    return {
+        "logical_worktree_name": policy.logical_worktree_name,
+        "kind": policy.declaration_kind,
+        "source_kind": policy.source_kind,
+        "source_node_id": policy.source_node_id,
+        "clean_start": policy.clean_start,
+        "materialization": policy.materialization,
+        "lineage_producer": policy.lineage_producer,
+        "writable": policy.writable,
     }
 
 

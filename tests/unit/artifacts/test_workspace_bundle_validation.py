@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
 
@@ -217,11 +217,12 @@ def _blob_descriptor(
     tmp_path: Path,
     isolated_git: IsolatedGit,
     git_path: str = "file.txt",
+    object_format: str = "sha1",
 ) -> BlobDescriptor:
     repo = tmp_path / "repo"
     payload = b"workspace-payload"
     repo.mkdir()
-    isolated_git.run_text(repo, "init")
+    isolated_git.run_text(repo, "init", f"--object-format={object_format}")
     isolated_git.run_text(repo, "config", "user.name", "Crewplane Test")
     isolated_git.run_text(
         repo, "config", "user.email", "crewplane-test@example.invalid"
@@ -280,3 +281,55 @@ def _tree_blob_entry(
     ).splitlines()[0]
     parts = header.split()
     return parts[0], parts[2]
+
+
+@pytest.mark.parametrize("object_format", ["sha1", "sha256"])
+def test_bundle_verification_accepts_supported_object_formats(
+    tmp_path, isolated_git, object_format
+):
+    descriptor = _blob_descriptor(tmp_path, isolated_git, object_format=object_format)
+    bundle = tmp_path / "result.bundle"
+    isolated_git.run_text(descriptor.repo, "bundle", "create", str(bundle), "HEAD")
+    assert len(descriptor.source_commit) == (40 if object_format == "sha1" else 64)
+    assert workspace_bundle_validation.workspace_bundle_contains_result(
+        str(descriptor.repo), bundle, "HEAD", descriptor.source_commit, object_format
+    )
+    assert workspace_bundle_validation.workspace_bundle_contains_result_tree(
+        str(descriptor.repo),
+        bundle,
+        "HEAD",
+        descriptor.source_commit,
+        descriptor.source_tree,
+        object_format,
+    )
+    assert _descriptor_matches(descriptor, bundle)
+
+
+def test_bundle_verification_rejects_unknown_format_before_init(
+    tmp_path, isolated_git, monkeypatch
+):
+    descriptor = _blob_descriptor(tmp_path, isolated_git)
+    bundle = tmp_path / "result.bundle"
+    isolated_git.run_text(descriptor.repo, "bundle", "create", str(bundle), "HEAD")
+    original_run = subprocess.run
+    commands = []
+
+    def record_run(command, **kwargs):
+        commands.append(command)
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(workspace_bundle_validation.subprocess, "run", record_run)
+    assert not workspace_bundle_validation.workspace_bundle_contains_result(
+        str(descriptor.repo), bundle, "HEAD", descriptor.source_commit, "unknown"
+    )
+    assert not workspace_bundle_validation.workspace_bundle_contains_result_tree(
+        str(descriptor.repo),
+        bundle,
+        "HEAD",
+        descriptor.source_commit,
+        descriptor.source_tree,
+        "unknown",
+    )
+    assert not _descriptor_matches(replace(descriptor, object_format="unknown"), bundle)
+    assert commands
+    assert all("init" not in command for command in commands)

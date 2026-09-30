@@ -6,6 +6,7 @@ from crewplane.core.workflow.diagnostics import (
     WorkflowValidationDiagnostic,
 )
 from crewplane.core.workflow.keywords import (
+    ALLOWED_NODE_ARTIFACT_NAME_SET,
     ProviderRole,
     provider_role_segments_are_contiguous,
 )
@@ -19,18 +20,6 @@ from crewplane.core.workflow.validation.templates import extract_template_tokens
 
 WORKFLOW_STRUCTURE_CODE = "WORKFLOW-STRUCTURE"
 REFERENCE_PHASE = "reference"
-STATIC_REVIEW_CONTEXT_ARTIFACTS = frozenset(
-    {
-        "output",
-        "findings",
-        "output_path",
-        "findings_path",
-        "output_size",
-        "findings_size",
-        "output_sha256",
-        "findings_sha256",
-    }
-)
 
 
 def collect_node_mode_diagnostics(
@@ -330,7 +319,7 @@ def _has_static_review_context(prompt: str) -> bool:
             return True
         if "." not in token_body:
             continue
-        if token_body.rsplit(".", 1)[1] in STATIC_REVIEW_CONTEXT_ARTIFACTS:
+        if token_body.rsplit(".", 1)[1] in ALLOWED_NODE_ARTIFACT_NAME_SET:
             return True
     return False
 

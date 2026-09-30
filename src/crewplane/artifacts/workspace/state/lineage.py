@@ -20,6 +20,10 @@ class ReviewOutputCoordinates:
     audit_round_num: int | None
 
 
+def is_seeded_audit_round(round_num: int, audit_round_num: int | None) -> bool:
+    return audit_round_num is not None and audit_round_num > 1 and round_num == 1
+
+
 def review_output_coordinates(
     relative_path: str,
     expected_task_id: str,

@@ -12,7 +12,7 @@ from crewplane.core.workspace.git_policy import (
     sanitized_workspace_git_environment,
     workspace_git_config_args,
 )
-from crewplane.runtime.workspace.snapshot import (
+from crewplane.runtime.workspace.snapshot_scan import (
     WorkspaceSnapshotPolicy,
     snapshot_entries,
 )

@@ -51,9 +51,11 @@ def mapping_key_line_index(
     key: str,
     indent: int,
     description: str,
+    index_range: range | None = None,
 ) -> int:
     marker = f"{' ' * indent}{key}:"
-    indices = [index for index, line in enumerate(lines) if line == marker]
+    search_indices = range(len(lines)) if index_range is None else index_range
+    indices = [index for index in search_indices if lines[index] == marker]
     if len(indices) != 1:
         raise OnboardingRenderingError(
             f"Expected one {description} block, found {len(indices)}."
@@ -69,17 +71,9 @@ def frontmatter_mapping_key_line_index(
     indent: int,
     description: str,
 ) -> int:
-    marker = f"{' ' * indent}{key}:"
-    indices = [
-        index
-        for index in range(frontmatter_start, frontmatter_end)
-        if lines[index] == marker
-    ]
-    if len(indices) != 1:
-        raise OnboardingRenderingError(
-            f"Expected one {description} block, found {len(indices)}."
-        )
-    return indices[0]
+    return mapping_key_line_index(
+        lines, key, indent, description, range(frontmatter_start, frontmatter_end)
+    )
 
 
 def active_mapping_key_line_index(

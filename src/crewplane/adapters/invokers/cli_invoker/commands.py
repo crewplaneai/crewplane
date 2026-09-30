@@ -44,7 +44,7 @@ def resolved_cli_executable(executable: str) -> str:
     executable_path = Path(executable)
     if executable_path.is_absolute():
         return _resolved_existing_executable(executable_path)
-    if _contains_path_separator(executable):
+    if contains_path_separator(executable):
         return executable
     resolved = shutil.which(executable)
     if resolved is None:
@@ -66,5 +66,5 @@ def _resolved_existing_executable(executable: Path) -> str:
     return resolved.as_posix()
 
 
-def _contains_path_separator(value: str) -> bool:
+def contains_path_separator(value: str) -> bool:
     return "/" in value or "\\" in value

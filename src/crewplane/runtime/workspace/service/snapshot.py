@@ -32,11 +32,13 @@ from crewplane.runtime.workspace.materialization import (
 )
 from crewplane.runtime.workspace.prepared_workspace import PreparedWorkspace
 from crewplane.runtime.workspace.snapshot import (
-    WorkspaceSnapshotPolicy,
     create_snapshot_workspace,
     materialize_snapshot,
-    snapshot_entries,
     snapshot_retry_reset,
+)
+from crewplane.runtime.workspace.snapshot_scan import (
+    WorkspaceSnapshotPolicy,
+    snapshot_entries,
 )
 from crewplane.runtime.workspace.state import (
     WorkspaceProvisioningMetadata,

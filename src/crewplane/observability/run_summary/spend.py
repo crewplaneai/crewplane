@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import TypedDict, TypeGuard
+from typing import TypedDict, TypeGuard, get_args
 
 from crewplane.architecture.contracts import (
     AggregateCostConfidence,
@@ -28,6 +28,9 @@ from .models import (
     SpendOverviewRow,
     SpendTotals,
 )
+
+_PROVIDER_USAGE_STATUSES = frozenset(get_args(ProviderUsageStatus))
+_INVOCATION_COST_CONFIDENCES = frozenset(get_args(InvocationCostConfidence))
 
 _TERMINAL_INVOCATION_EVENT_TYPES: frozenset[InvocationEventType] = frozenset(
     {
@@ -245,12 +248,7 @@ def _provider_usage_status(value: object) -> ProviderUsageStatus:
 
 
 def _is_provider_usage_status(value: object) -> TypeGuard[ProviderUsageStatus]:
-    return isinstance(value, str) and value in {
-        "full",
-        "partial",
-        "none",
-        "malformed",
-    }
+    return isinstance(value, str) and value in _PROVIDER_USAGE_STATUSES
 
 
 def _invocation_cost_confidence(value: object) -> InvocationCostConfidence:
@@ -262,7 +260,7 @@ def _invocation_cost_confidence(value: object) -> InvocationCostConfidence:
 def _is_invocation_cost_confidence(
     value: object,
 ) -> TypeGuard[InvocationCostConfidence]:
-    return isinstance(value, str) and value in {"full", "partial", "none"}
+    return isinstance(value, str) and value in _INVOCATION_COST_CONFIDENCES
 
 
 def invocation_payload(event: ExecutionEvent) -> InvocationEventPayload:

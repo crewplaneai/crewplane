@@ -65,24 +65,14 @@ def reset_worktree_attempt(
                 expected_git_dir,
             )
             reject_protected_ref_drift(checkout_root, protected_refs)
-            command = git(
+            _reset_verified_checkout(
                 checkout_root,
-                timeout_seconds=RETRY_RESET_GIT_TIMEOUT_SECONDS,
+                source_commit,
+                repo_root,
+                common_git_dir,
+                git_dir,
+                cancel_requested,
             )
-            reject_attached_head_after_safe_detachment(checkout_root, command)
-            prove_detached_head(checkout_root, source_commit, command)
-            _clear_worktree_policy_files(git_dir)
-            _raise_if_cancelled(cancel_requested)
-            # A hard reset preserves skip-worktree flags in the existing index.
-            command.run("read-tree", "--empty")
-            command.run("reset", "--hard", source_commit)
-            _raise_if_cancelled(cancel_requested)
-            command.run("clean", "-dffx")
-            _raise_if_cancelled(cancel_requested)
-            _clear_worktree_policy_files(git_dir)
-            reject_common_git_policy_drift(repo_root, common_git_dir)
-            _raise_if_cancelled(cancel_requested)
-            _verify_reset_state(checkout_root, source_commit, cancel_requested)
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"Workspace retry reset failed: {git_error(exc)}") from exc
 
@@ -101,23 +91,41 @@ def reset_reusable_worktree_checkout(
             common_git_dir,
             expected_git_dir,
         )
-        command = git(
-            checkout_root,
-            timeout_seconds=RETRY_RESET_GIT_TIMEOUT_SECONDS,
+        _reset_verified_checkout(
+            checkout_root, source_commit, repo_root, common_git_dir, git_dir
         )
-        reject_attached_head_after_safe_detachment(checkout_root, command)
-        prove_detached_head(checkout_root, source_commit, command)
-        _clear_worktree_policy_files(git_dir)
-        command.run("read-tree", "--empty")
-        command.run("reset", "--hard", source_commit)
-        command.run("clean", "-dffx")
-        _clear_worktree_policy_files(git_dir)
-        reject_common_git_policy_drift(repo_root, common_git_dir)
-        _verify_reset_state(checkout_root, source_commit)
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
             f"Reusable workspace reset failed: {git_error(exc)}"
         ) from exc
+
+
+def _reset_verified_checkout(
+    checkout_root: Path,
+    source_commit: str,
+    repo_root: Path,
+    common_git_dir: Path,
+    git_dir: Path,
+    cancel_requested: Callable[[], bool] | None = None,
+) -> None:
+    command = git(
+        checkout_root,
+        timeout_seconds=RETRY_RESET_GIT_TIMEOUT_SECONDS,
+    )
+    reject_attached_head_after_safe_detachment(checkout_root, command)
+    prove_detached_head(checkout_root, source_commit, command)
+    _clear_worktree_policy_files(git_dir)
+    _raise_if_cancelled(cancel_requested)
+    # A hard reset preserves skip-worktree flags in the existing index.
+    command.run("read-tree", "--empty")
+    command.run("reset", "--hard", source_commit)
+    _raise_if_cancelled(cancel_requested)
+    command.run("clean", "-dffx")
+    _raise_if_cancelled(cancel_requested)
+    _clear_worktree_policy_files(git_dir)
+    reject_common_git_policy_drift(repo_root, common_git_dir)
+    _raise_if_cancelled(cancel_requested)
+    _verify_reset_state(checkout_root, source_commit, cancel_requested)
 
 
 def _verify_reset_state(

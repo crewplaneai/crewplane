@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
 
+from crewplane.architecture.contracts.invocation import InvocationSourceKind
 from crewplane.core.preflight.models import (
     PreflightExecutionPlan,
     WorkspaceSourceSnapshot,
@@ -11,12 +11,10 @@ from crewplane.core.preflight.models import (
 
 from .protected_refs import ProtectedRefSnapshot
 
-WorkspaceSourceKind = Literal["project", "node", "candidate"]
-
 
 @dataclass(frozen=True)
 class WorktreeSourceRef:
-    source_kind: WorkspaceSourceKind
+    source_kind: InvocationSourceKind
     source_node_id: str | None
     source_commit: str
     source_tree: str

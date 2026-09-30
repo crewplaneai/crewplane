@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from crewplane.core.workspace.git_policy import (
+    GIT_OBJECT_FORMAT_DIGEST_SIZES,
     sanitized_workspace_git_environment,
     workspace_git_config_args,
 )
@@ -15,7 +16,6 @@ from crewplane.core.workspace.git_policy import (
 from .git_blob_hash import git_stdout_sha256
 
 GIT_BUNDLE_VALIDATION_TIMEOUT_SECONDS = 30.0
-_SUPPORTED_OBJECT_FORMATS = frozenset({"sha1", "sha256"})
 
 
 @dataclass(frozen=True)
@@ -392,7 +392,7 @@ def _init_isolated_bare_repo(
     env: dict[str, str],
     object_format: str = "sha1",
 ) -> None:
-    if object_format not in _SUPPORTED_OBJECT_FORMATS:
+    if object_format not in GIT_OBJECT_FORMAT_DIGEST_SIZES:
         raise ValueError(f"Unsupported Git object format: {object_format}")
     empty_template_dir = git_dir.parent / "empty-template"
     empty_template_dir.mkdir()
