@@ -4,7 +4,18 @@ Architecture docs are decision records and maintainer-facing design references.
 User task guidance lives in the public docs sections linked from
 [docs/index.md](../index.md).
 
-Start here:
+## Architecture diagrams
+
+![Crewplane architecture overview](../images/architecture/crewplane-architecture-overview.png)
+
+<details>
+<summary>Detailed workflow execution</summary>
+
+![Crewplane workflow execution and artifact flow](../images/architecture/crewplane-architecture.png)
+
+</details>
+
+## Start here
 
 - [Modular orchestration architecture](modular-orchestration-architecture.md)
 - [Workspace isolation architecture](workspace-isolation.md)
