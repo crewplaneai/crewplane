@@ -30,6 +30,8 @@ PersistedWorkspaceOperation = Literal[
     "cleanup",
     "ref_cleanup",
     "failed_invocation",
+    "checkpoint",
+    "checkpoint_failed",
 ]
 
 
@@ -69,8 +71,20 @@ def workspace_state_contract_errors(
     _validate_process_drain(payload, operation, errors)
     _validate_workspace_mutator(payload, operation, errors)
     _validate_result(payload, workspace, operation, errors)
+    checkpoint = operation in {"checkpoint", "checkpoint_failed"}
+    if checkpoint:
+        if (
+            workspace.get("retention") != "not_applicable"
+            or workspace.get("retained_reason") != "checkpoint"
+        ):
+            errors.append("checkpoint metadata contains placement claims")
+        if any(
+            key in payload
+            for key in ("temporary_refs", "ref_publication", "branch_export")
+        ):
+            errors.append("checkpoint metadata contains live ref claims")
     validate_ref_contracts(
-        payload, errors, _hydrated_resume_placement(payload, workspace)
+        payload, errors, checkpoint or _hydrated_resume_placement(payload, workspace)
     )
     return tuple(errors)
 
@@ -118,7 +132,8 @@ def _validate_workspace(
 ) -> None:
     _validate_workspace_materialization(payload, workspace, errors)
     _validate_workspace_operation_eligibility(payload, operation, errors)
-    _validate_workspace_retention(payload, workspace, errors)
+    if operation not in {"checkpoint", "checkpoint_failed"}:
+        _validate_workspace_retention(payload, workspace, errors)
 
 
 def _validate_workspace_materialization(
@@ -182,13 +197,13 @@ def _validate_workspace_operation_eligibility(
     ):
         errors.append(f"{operation} workspace lacks its physical path")
     if (
-        operation in {"resume", "duplicate_skip", "rendering", "export"}
+        operation in {"resume", "duplicate_skip", "rendering", "export", "checkpoint"}
         and status != "succeeded"
     ):
         errors.append(f"{operation} requires a succeeded workspace")
     if operation == "cleanup" and status not in TERMINAL_WORKSPACE_STATUSES:
         errors.append("cleanup requires a terminal outcome")
-    if operation == "failed_invocation" and status != "failed":
+    if operation in {"failed_invocation", "checkpoint_failed"} and status != "failed":
         errors.append("failed_invocation requires a failed workspace")
 
 
@@ -310,7 +325,10 @@ def _validate_process_drain(
         errors.append("missing process drain evidence")
     if payload.get("status") == "succeeded" and drain_status == "unresolved":
         errors.append("successful workspace has unresolved process liveness")
-    if operation in {"cleanup", "failed_invocation"} and drain_status == "unresolved":
+    if (
+        operation in {"cleanup", "failed_invocation", "checkpoint", "checkpoint_failed"}
+        and drain_status == "unresolved"
+    ):
         errors.append(f"{operation} workspace has unresolved process liveness")
 
 
@@ -335,7 +353,14 @@ def _validate_workspace_mutator(
     if payload.get("status") == "succeeded" and status == "unresolved":
         errors.append("successful workspace has unresolved workspace mutator")
     if (
-        operation in {"cleanup", "ref_cleanup", "failed_invocation"}
+        operation
+        in {
+            "cleanup",
+            "ref_cleanup",
+            "failed_invocation",
+            "checkpoint",
+            "checkpoint_failed",
+        }
         and status == "unresolved"
     ):
         errors.append(f"{operation} workspace has unresolved workspace mutator")

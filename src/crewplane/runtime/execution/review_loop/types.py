@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from threading import Lock
@@ -14,6 +14,10 @@ from crewplane.core.file_hashing import ContentSignature
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     ProviderRecord,
+)
+from crewplane.core.review_checkpoint_state import (
+    CheckpointPhase,
+    CheckpointReviewerFailure,
 )
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.observability.events import (
@@ -213,6 +217,8 @@ class ExecutorRoundArtifact:
     round_num: int
     output_signature: ContentSignature | None = None
     candidate_identity: CandidateIdentity | None = None
+    producer_audit: int | None = None
+    producer_round: int | None = None
 
 
 @dataclass(frozen=True)
@@ -237,6 +243,7 @@ class ReviewerRoundRunResult:
     outputs: list[ReviewerRoundArtifact]
     drift_warning_count: int
     reviewer_failure_count: int = 0
+    failures: list[CheckpointReviewerFailure] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -280,6 +287,7 @@ class AuditRoundResult:
     last_round_num: int
     selected_round_num: int = 0
     stop_reason: ReviewLoopStopReason | None = None
+    reviewer_failures: list[CheckpointReviewerFailure] = field(default_factory=list)
 
 
 @dataclass
@@ -298,6 +306,7 @@ class AuditRoundProgress:
     selected_round_num: int = 0
     stop_reason: ReviewLoopStopReason | None = None
     stall: ReviewStallState = field(default_factory=ReviewStallState)
+    reviewer_failures: list[CheckpointReviewerFailure] = field(default_factory=list)
 
     def add_artifact_drift_warnings(self, count: int) -> None:
         self.artifact_drift_warning_count += count
@@ -318,6 +327,7 @@ class AuditRoundProgress:
         self.selected_round_num = round_num
         self.add_artifact_drift_warnings(reviewer_run.drift_warning_count)
         self.latest_reviewer_outputs = reviewer_run.outputs
+        self.reviewer_failures = reviewer_run.failures
 
     def advance_review_state(
         self,
@@ -349,6 +359,7 @@ class AuditRoundProgress:
             last_round_num=self.last_round_num,
             selected_round_num=self.selected_round_num,
             stop_reason=self.stop_reason,
+            reviewer_failures=self.reviewer_failures,
         )
 
 
@@ -368,6 +379,13 @@ class ReviewLoopProgress:
     continued_after_stop: bool = False
     stall: ReviewStallState = field(default_factory=ReviewStallState)
     active_audit: AuditRoundProgress | None = None
+    reviewer_failures: list[CheckpointReviewerFailure] = field(default_factory=list)
+    initial_review_completed: bool = False
+    initial_reviews: list[ReviewerRoundArtifact] = field(default_factory=list)
+    initial_failures: list[CheckpointReviewerFailure] = field(default_factory=list)
+    cursor_audit: int = 1
+    cursor_round: int = 1
+    next_phase: CheckpointPhase = "executors"
 
     def snapshot(self) -> ReviewLoopProgress:
         snapshot = replace(self, active_audit=None)
@@ -389,6 +407,9 @@ class ReviewLoopProgress:
 
     def record_initial_reviewer_run(self, reviewer_run: ReviewerRoundRunResult) -> None:
         self.artifact_drift_warning_count += reviewer_run.drift_warning_count
+        self.initial_review_completed = True
+        self.initial_reviews = reviewer_run.outputs
+        self.initial_failures = reviewer_run.failures
 
     def record_audit_result(self, audit_result: AuditRoundResult) -> None:
         self.active_audit = None
@@ -409,6 +430,7 @@ class ReviewLoopProgress:
                     0
                 ].round_num
         self.latest_reviewer_outputs = audit_result.latest_reviewer_outputs
+        self.reviewer_failures = audit_result.reviewer_failures
 
     def mark_consensus_exhausted(self, continued: bool) -> None:
         self.consensus_reached = False
@@ -487,7 +509,13 @@ class AuditRoundRequest:
     executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
     reviewer_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
     progress: AuditRoundProgress | None = None
-    checkpoint: Callable[[], object] | None = None
+    publish_status: Callable[[], object] | None = None
+    commit_transition: Callable[[CheckpointPhase, int], Awaitable[None]] | None = None
+    start_round: int = 1
+    start_phase: CheckpointPhase = "executors"
+    rejected_invocations: list[tuple[int | None, int, set[str], str]] = field(
+        default_factory=list
+    )
 
 
 @dataclass
@@ -506,6 +534,9 @@ class ReviewLoopRunContext:
     audit_rounds: int
     executor_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
     reviewer_prompt_workspace_files: tuple[ResolvedWorkspaceFile, ...] = ()
+    rejected_invocations: list[tuple[int | None, int, set[str], str]] = field(
+        default_factory=list
+    )
 
 
 @dataclass

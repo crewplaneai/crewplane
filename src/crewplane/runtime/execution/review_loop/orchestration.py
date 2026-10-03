@@ -10,8 +10,11 @@ from crewplane.architecture.contracts import AgentInvoker, LogLevel
 from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
+from crewplane.artifacts.results.findings import FindingsExtractionError
 from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
+from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import (
@@ -32,6 +35,13 @@ from ..provider_call import publish_invocation_output
 from ..reviews.consensus import check_consensus
 from ..workspace_files import ResolvedWorkspaceFile
 from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
+from .checkpoint import (
+    close_checkpoint,
+    commit_checkpoint,
+    restore_diagnostics,
+    validate_final_findings,
+)
+from .checkpoint_progress import ProgressRestorer
 from .policy import (
     audit_round_context,
     audit_round_dir,
@@ -66,6 +76,7 @@ from .types import (
     ReviewLoopRunContext,
 )
 from .validation import validate_executor_outputs
+from .workspace_state_paths import discard_executor_workspace_lineage
 
 # Failure-policy case map:
 # 1. Executor invocation failure: normal invocation failure path.
@@ -88,6 +99,10 @@ from .validation import validate_executor_outputs
 # 18. No valid canonical candidate across all audits: hard failure.
 # In attributable windows, the event log may only gain records emitted by this
 # runtime invocation; concurrent node windows only reject destructive event-log drift.
+
+
+class ReviewPolicyError(NodeExecutionError):
+    """A settled review policy decision that closes partial reuse."""
 
 
 def _emit_consensus_exhaustion(
@@ -141,6 +156,20 @@ async def execute_review_loop_stage(
         stage.id,
         stage.provider_records,
     )
+    checkpoint = runtime_context.review_checkpoints.get(stage.id)
+    progress = (
+        ReviewLoopProgress()
+        if checkpoint is None
+        else ProgressRestorer(
+            checkpoint,
+            output.stages_dir,
+            stage.provider_records,
+            resolve_audit_rounds(stage),
+        ).restore()
+    )
+    if progress.next_phase == "finalize":
+        restore_diagnostics(node_dir, stage.id, progress)
+        return
     executor_prompt = resolve_prompt_with_output_budget_details(
         runtime_context,
         stage,
@@ -170,9 +199,18 @@ async def execute_review_loop_stage(
         remediation_depth=resolve_remediation_depth(stage),
         audit_rounds=resolve_audit_rounds(stage),
     )
-    progress = ReviewLoopProgress()
     try:
         await execute_review_loop_audits(context, progress)
+        try:
+            validate_final_findings(context, progress)
+        except FindingsExtractionError as exc:
+            close_checkpoint(context, str(exc))
+            raise NodeExecutionError(str(exc)) from exc
+        await _commit_transition(context, progress, "finalize", progress.last_round_num)
+    except ReviewPolicyError as exc:
+        close_checkpoint(context, str(exc))
+        _discard_rejected_invocations(context)
+        raise
     except asyncio.CancelledError:
         progress.stop_reason = ReviewLoopStopReason.CANCELLED
         progress.consensus_reached = False
@@ -190,7 +228,8 @@ async def execute_review_loop_audits(
     progress: ReviewLoopProgress,
 ) -> None:
 
-    for audit_round_num in range(1, context.audit_rounds + 1):
+    for audit_round_num in range(progress.cursor_audit, context.audit_rounds + 1):
+        progress.cursor_audit = audit_round_num
         progress.executed_audit_rounds = audit_round_num
         audit_result = await _execute_review_loop_audit_round(
             context,
@@ -200,6 +239,8 @@ async def execute_review_loop_audits(
         if audit_result.stop_reason == ReviewLoopStopReason.NO_PROGRESS:
             finish_stalled_review_loop(context, progress)
             return
+        progress.cursor_round = 1
+        progress.next_phase = "executors"
         if review_loop_can_finish(
             context,
             audit_result,
@@ -214,7 +255,7 @@ async def execute_review_loop_audits(
         progress.stop_reason = ReviewLoopStopReason.NO_VALID_CANDIDATE
         _persist_review_loop_status(context, progress)
         _emit_no_canonical_candidate(context.telemetry, context.stage.id)
-        raise NodeExecutionError(
+        raise ReviewPolicyError(
             f"Sequential node '{context.stage.id}' did not produce a valid canonical candidate."
         )
 
@@ -230,7 +271,7 @@ async def execute_review_loop_audits(
             executed_audit_rounds=progress.executed_audit_rounds,
             continuation_reason=None,
         )
-        raise NodeExecutionError(
+        raise ReviewPolicyError(
             f"Sequential node '{context.stage.id}' failed to reach consensus after "
             f"{progress.executed_audit_rounds} audit rounds."
         )
@@ -275,7 +316,7 @@ def finish_stalled_review_loop(
         attributes={"stop_reason": "no_progress", "continued": continued},
     )
     if not continued:
-        raise NodeExecutionError(message)
+        raise ReviewPolicyError(message)
 
 
 async def _execute_review_loop_audit_round(
@@ -293,30 +334,33 @@ async def _execute_review_loop_audit_round(
         audit_round_num,
     )
     _print_audit_round_header(context, audit_round_num)
-    initial_review_handoff = await _initial_pre_review_handoff(
-        context,
-        progress,
-        audit_dir,
-        audit_context,
-        audit_round_num,
-    )
-    progress.last_round_num = 1
-    initial_executor_outputs = await _initial_audit_executor_outputs(
-        context,
-        progress,
-        audit_dir,
-        audit_context,
-        initial_review_handoff,
-    )
-    progress.active_audit = AuditRoundProgress(
-        executor_outputs=initial_executor_outputs,
-        latest_valid_executor_outputs=(
-            initial_executor_outputs
-            if validate_executor_outputs(initial_executor_outputs).valid
-            else None
-        ),
-        stall=progress.stall,
-    )
+    if progress.active_audit is None:
+        if audit_round_num > 1 and progress.latest_executor_outputs is None:
+            await _commit_transition(context, progress, "executors", 1)
+        initial_review_handoff = await _initial_pre_review_handoff(
+            context,
+            progress,
+            audit_dir,
+            audit_context,
+            audit_round_num,
+        )
+        progress.last_round_num = 1
+        initial_executor_outputs = await _initial_audit_executor_outputs(
+            context,
+            progress,
+            audit_dir,
+            audit_context,
+            initial_review_handoff,
+        )
+        progress.active_audit = AuditRoundProgress(
+            executor_outputs=initial_executor_outputs,
+            latest_valid_executor_outputs=(
+                initial_executor_outputs
+                if validate_executor_outputs(initial_executor_outputs).valid
+                else None
+            ),
+            stall=progress.stall,
+        )
     audit_result = await execute_single_audit_round(
         AuditRoundRequest(
             runtime_context=context.runtime_context,
@@ -333,10 +377,14 @@ async def _execute_review_loop_audit_round(
             reviewer_prompt_workspace_files=context.reviewer_prompt_workspace_files,
             audit_dir=audit_dir,
             remediation_depth=context.remediation_depth,
-            initial_executor_outputs=initial_executor_outputs,
+            initial_executor_outputs=progress.active_audit.executor_outputs,
             audit_round_num=audit_context,
             progress=progress.active_audit,
-            checkpoint=partial(_persist_review_loop_status, context, progress),
+            publish_status=partial(_persist_review_loop_status, context, progress),
+            commit_transition=partial(_commit_transition, context, progress),
+            start_round=progress.cursor_round,
+            start_phase=progress.next_phase,
+            rejected_invocations=context.rejected_invocations,
         )
     )
     progress.record_audit_result(audit_result)
@@ -428,6 +476,15 @@ async def _initial_pre_review_handoff(
     audit_context: int | None,
     audit_round_num: int,
 ) -> str | None:
+    if audit_round_num == 1 and progress.initial_review_completed:
+        return _initial_review_handoff_from_result(
+            ReviewerRoundRunResult(
+                progress.initial_reviews,
+                0,
+                len(progress.initial_failures),
+                progress.initial_failures,
+            )
+        )
     if not _should_run_initial_pre_review(context, progress, audit_round_num):
         return None
 
@@ -460,6 +517,7 @@ async def _initial_pre_review_handoff(
         )
     )
     progress.record_initial_reviewer_run(reviewer_run)
+    await _commit_transition(context, progress, "executors", 1)
     return _initial_review_handoff_from_result(reviewer_run)
 
 
@@ -563,6 +621,8 @@ def seed_executor_outputs(
                 round_num=round_num,
                 output_signature=output_signature,
                 candidate_identity=artifact.candidate_identity,
+                producer_audit=artifact.producer_audit or artifact.audit_round_num or 1,
+                producer_round=artifact.producer_round or artifact.round_num,
             )
         )
     return seeded_outputs
@@ -577,4 +637,26 @@ def _persist_review_loop_status(
         node_dir=context.node_dir,
         progress=progress,
     )
-    return persist_review_loop_status(context.node_dir, payload)
+    publications = context.runtime_context.runtime_publications
+    with publications.transaction():
+        path = persist_review_loop_status(context.node_dir, payload)
+        publications.publish(path, file_size_and_sha256(path), recovery_source=path)
+        return path
+
+
+async def _commit_transition(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+    phase: CheckpointPhase,
+    local_round: int,
+) -> None:
+    await commit_checkpoint(context, progress, phase, local_round)
+    _discard_rejected_invocations(context)
+
+
+def _discard_rejected_invocations(context: ReviewLoopRunContext) -> None:
+    for audit, local_round, task_ids, reason in context.rejected_invocations:
+        discard_executor_workspace_lineage(
+            context.output, context.stage, task_ids, audit, local_round, reason
+        )
+    context.rejected_invocations.clear()

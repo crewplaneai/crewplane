@@ -616,10 +616,12 @@ project source if there is no verified boundary. Runtime may reset a retained
 checkout back to the verified source commit; if reset verification fails, it
 falls back to a fresh managed checkout and records the fallback.
 
-[ADR 0014](0014-artifact-backed-node-boundary-resume.md) owns resume artifact
-eligibility. Workspace-enabled resume adds only descriptor-named,
-integrity-checked lineage artifacts; it never reuses live workspaces or cached
-refs as truth.
+[ADR 0014](0014-artifact-backed-node-boundary-resume.md) defines which artifacts
+resume can reuse. For workspaces, this includes only verified files listed in
+saved artifact records. Review checkpoints retain the workspace records and Git
+bundles needed to restore completed phases after temporary workspaces are
+removed. Live workspaces and cached Git references are never treated as the
+source of truth.
 
 Large repository behavior:
 
@@ -1182,7 +1184,7 @@ are reserved by the design:
 - [ADR 0011: Review Execution Workflow Optimization](0011-review-execution-workflow-optimization.md)
 - [ADR 0012: Preflight-Compiled Runtime Execution Plan](0012-preflight-compiled-runtime-execution-plan.md)
 - [ADR 0013: Version Source of Truth and Documentation Drift Reduction](0013-version-source-of-truth-and-documentation-drift-reduction.md)
-- [ADR 0014: Artifact-Backed Node-Boundary Resume](0014-artifact-backed-node-boundary-resume.md)
+- [ADR 0014: Artifact-Backed Resume](0014-artifact-backed-node-boundary-resume.md)
 - [Git Worktree Documentation](https://git-scm.com/docs/git-worktree)
 - [Git Bundle Documentation](https://git-scm.com/docs/git-bundle)
 - [Git Check Ref Format Documentation](https://git-scm.com/docs/git-check-ref-format)

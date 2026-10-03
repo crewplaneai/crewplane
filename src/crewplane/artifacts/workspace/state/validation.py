@@ -29,6 +29,7 @@ from ..rendered_file_validation import (
 from ..source_validation import workspace_invocation_source_matches
 from .contracts import workspace_state_contract_is_valid
 from .expected_set import workspace_state_payloads_match_expected_set
+from .fields import WorkspaceArtifactRoot
 from .fields import (
     bool_field_matches as _bool_field_matches,
 )
@@ -177,6 +178,59 @@ def _provider_workspace_state_is_valid(
     )
 
 
+def checkpoint_invocation_is_valid(
+    source: WorkspaceArtifactRoot,
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    payload: dict[str, object],
+    source_matches: bool,
+    run_id: str,
+    run_key_name: str,
+) -> bool:
+    """Validate semantic invocation evidence without consulting live placement."""
+    policy = node.workspace_policy
+    failed = payload.get("status") == "failed"
+    if policy is None or not workspace_state_contract_is_valid(
+        payload, "checkpoint_failed" if failed else "checkpoint"
+    ):
+        return False
+    workspace = _mapping(payload.get("workspace"))
+    if not (
+        payload.get("version") == SCHEMA_VERSION
+        and payload.get("run_id") == run_id
+        and payload.get("run_key_name") == run_key_name
+        and payload.get("workflow_name") == plan.workflow_name
+        and payload.get("workflow_signature") == plan.workflow_signature
+        and payload.get("node_id") == node.id
+        and _workspace_state_policy_matches(policy.model_dump(mode="json"), payload)
+        and (
+            _failed_workspace_state_invoker_matches(plan, payload)
+            if failed
+            else _workspace_state_invoker_matches(plan, payload)
+        )
+        and _workspace_state_git_matches(plan, payload)
+        and source_matches
+        and provider_rendered_workspace_files_match(plan, node, payload, source)
+        and workspace.get("materialization") == policy.materialization
+        and workspace.get("path") is None
+        and workspace.get("effective_cwd") is None
+        and all(
+            _mapping(payload.get("execution")).get(key) is None
+            for key in (
+                "workspace_path",
+                "effective_cwd",
+                "cache_root",
+                "checkout_root",
+                "worktree_git_dir",
+            )
+        )
+    ):
+        return False
+    return failed or _workspace_materialization_result_matches(
+        policy.materialization, source, plan, payload
+    )
+
+
 def _workspace_invocation_context_matches(
     source: RunHistoryRecord,
     plan: PreflightExecutionPlan,
@@ -193,7 +247,7 @@ def _workspace_invocation_context_matches(
 
 def _workspace_materialization_result_matches(
     materialization: WorkspaceMaterialization,
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     plan: PreflightExecutionPlan,
     payload: dict[str, object],
 ) -> bool:
@@ -321,7 +375,7 @@ def _disposable_worktree_result_matches(payload: dict[str, object]) -> bool:
 
 
 def _workspace_bundle_matches(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     plan: PreflightExecutionPlan,
     payload: dict[str, object],
 ) -> bool:

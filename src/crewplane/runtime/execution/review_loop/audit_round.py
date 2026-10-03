@@ -75,8 +75,8 @@ async def execute_single_audit_round(
     try:
         return await execute_audit_round_iterations(request, progress)
     finally:
-        if request.checkpoint is not None:
-            request.checkpoint()
+        if request.publish_status is not None:
+            request.publish_status()
 
 
 async def execute_audit_round_iterations(
@@ -84,10 +84,10 @@ async def execute_audit_round_iterations(
     progress: AuditRoundProgress,
 ) -> AuditRoundResult:
     """Run audit iterations until consensus, a stop decision, or depth exhaustion."""
-    for round_num in range(1, request.remediation_depth + 2):
+    for round_num in range(request.start_round, request.remediation_depth + 2):
         progress.last_round_num = round_num
-        if request.checkpoint is not None:
-            request.checkpoint()
+        if request.publish_status is not None:
+            request.publish_status()
         outcome = await _execute_audit_iteration(request, progress, round_num)
         if outcome is AuditIterationOutcome.STOP:
             break
@@ -96,6 +96,11 @@ async def execute_audit_round_iterations(
                 consensus_reached=True,
                 clean_fresh_approval=round_num == 1,
             )
+        if (
+            round_num < request.remediation_depth + 1
+            and request.commit_transition is not None
+        ):
+            await request.commit_transition("executors", round_num + 1)
     return progress.to_result(
         consensus_reached=False,
         clean_fresh_approval=False,
@@ -107,18 +112,31 @@ async def _execute_audit_iteration(
     progress: AuditRoundProgress,
     round_num: int,
 ) -> AuditIterationOutcome:
-    try:
-        await run_remediation_executor_round(request, progress, round_num)
-    except InvocationFailureError as exc:
-        if recover_after_remediation_context_exhaustion(
-            request, progress, round_num, exc
-        ):
-            return AuditIterationOutcome.STOP
-        raise
-
-    candidate = _prepare_review_candidate(request, progress, round_num)
-    if isinstance(candidate, AuditIterationOutcome):
-        return candidate
+    resumed_review = (
+        round_num == request.start_round and request.start_phase == "reviewers"
+    )
+    candidate: (
+        ReviewCandidate
+        | Literal[AuditIterationOutcome.CONTINUE, AuditIterationOutcome.STOP]
+    )
+    if resumed_review:
+        candidate = ReviewCandidate(
+            build_executor_output_fingerprint(progress.executor_outputs)
+        )
+    else:
+        try:
+            await run_remediation_executor_round(request, progress, round_num)
+        except InvocationFailureError as exc:
+            if recover_after_remediation_context_exhaustion(
+                request, progress, round_num, exc
+            ):
+                return AuditIterationOutcome.STOP
+            raise
+        candidate = _prepare_review_candidate(request, progress, round_num)
+        if isinstance(candidate, AuditIterationOutcome):
+            return candidate
+        if request.commit_transition is not None:
+            await request.commit_transition("reviewers", round_num)
     round_state = await run_review_phase(
         request, progress, candidate.fingerprint, round_num
     )
@@ -275,11 +293,9 @@ def recover_after_remediation_context_exhaustion(
         or exc.kind != "provider_session_context_exhausted"
     ):
         return False
-    discard_executor_workspace_lineage(
-        request.output,
-        request.stage,
+    _reject_executor_lineage(
+        request,
         {provider.task_id for provider in request.executors},
-        request.audit_round_num,
         round_num,
         "remediation_context_exhausted",
     )
@@ -323,11 +339,9 @@ def record_invalid_candidate_and_should_stop(
 ) -> bool:
     progress.record_invalid_candidate()
     progress.stall.consecutive_round_count = 0
-    discard_executor_workspace_lineage(
-        request.output,
-        request.stage,
+    _reject_executor_lineage(
+        request,
         {artifact.task_id for artifact in progress.executor_outputs},
-        request.audit_round_num,
         round_num,
         validation.reason or "invalid_candidate",
     )
@@ -352,14 +366,13 @@ def record_no_progress_candidate(
     round_num: int,
 ) -> None:
     progress.record_no_progress()
-    discard_executor_workspace_lineage(
-        request.output,
-        request.stage,
+    _reject_executor_lineage(
+        request,
         {artifact.task_id for artifact in progress.executor_outputs},
-        request.audit_round_num,
         round_num,
         "no_progress_candidate",
     )
+    progress.executor_outputs = progress.latest_valid_executor_outputs or []
     emit_no_progress_warning(
         telemetry=request.telemetry,
         node_id=request.stage.id,
@@ -384,6 +397,24 @@ def persist_round_review_inbox(
     )
     if inbox_markdown is not None:
         persist_review_inbox(request.audit_dir, round_num, inbox_markdown)
+
+
+def _reject_executor_lineage(
+    request: AuditRoundRequest, task_ids: set[str], round_num: int, reason: str
+) -> None:
+    if request.commit_transition is None:
+        discard_executor_workspace_lineage(
+            request.output,
+            request.stage,
+            task_ids,
+            request.audit_round_num,
+            round_num,
+            reason,
+        )
+        return
+    request.rejected_invocations.append(
+        (request.audit_round_num, round_num, task_ids, reason)
+    )
 
 
 def emit_review_stall_warning_if_needed(

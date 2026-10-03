@@ -84,6 +84,22 @@ class ResumeOrigin(BaseModel):
         return validate_iso_datetime(value)
 
 
+class ReviewCheckpointResumeSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    node_id: str = Field(min_length=1)
+    source_audit: int = Field(ge=1)
+    source_local_round: int = Field(ge=0)
+    source_phase: Literal["executors", "reviewers", "finalize"]
+    resume_origin: ResumeOrigin
+
+    @model_validator(mode="after")
+    def validate_node(self) -> ReviewCheckpointResumeSummary:
+        if self.node_id != self.resume_origin.source_node_id:
+            raise ValueError("Checkpoint provenance must identify the resumed node.")
+        return self
+
+
 class NodeState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -184,6 +200,9 @@ class RunManifest(BaseModel):
     referenced_workflows: list[dict[str, str]] = Field(default_factory=list)
     workspace: JsonObject | None = None
     resumed_nodes: list[str] = Field(default_factory=list)
+    resumed_review_checkpoints: list[ReviewCheckpointResumeSummary] = Field(
+        default_factory=list
+    )
     resume_source_run_id: str | None = None
     resume_source_run_key_name: str | None = None
     failure_message: str | None = None
@@ -285,9 +304,28 @@ class RunManifest(BaseModel):
         has_source_run_key = self.resume_source_run_key_name is not None
         if has_source_run_id != has_source_run_key:
             raise ValueError("Resume source provenance must be all-or-none.")
-        if bool(self.resumed_nodes) != has_source_run_id:
+        if (
+            bool(self.resumed_nodes or self.resumed_review_checkpoints)
+            != has_source_run_id
+        ):
             raise ValueError(
-                "Resume source provenance is required exactly when nodes were hydrated."
+                "Resume source provenance is required exactly when nodes or checkpoints were hydrated."
             )
         if len(self.resumed_nodes) != len(set(self.resumed_nodes)):
             raise ValueError("resumed_nodes cannot contain duplicates.")
+        checkpoint_ids = [item.node_id for item in self.resumed_review_checkpoints]
+        if len(checkpoint_ids) != len(set(checkpoint_ids)) or set(checkpoint_ids) & set(
+            self.resumed_nodes
+        ):
+            raise ValueError(
+                "Hydrated checkpoint and successful node IDs must be distinct."
+            )
+        for checkpoint in self.resumed_review_checkpoints:
+            origin = checkpoint.resume_origin
+            if (origin.source_run_id, origin.source_run_key_name) != (
+                self.resume_source_run_id,
+                self.resume_source_run_key_name,
+            ):
+                raise ValueError(
+                    "Checkpoint provenance must match the manifest source run."
+                )

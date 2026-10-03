@@ -11,6 +11,7 @@ from crewplane.architecture.contracts.artifacts import build_task_round_filename
 from crewplane.architecture.contracts.invocation_failures import InvocationFailureError
 from crewplane.artifacts.atomic import atomic_write_text
 from crewplane.core.preflight.models import ProviderRecord
+from crewplane.core.review_checkpoint_state import CheckpointReviewerFailure
 from crewplane.core.workflow.keywords import ProviderRole
 from crewplane.runtime.workspace.setup import WorkspaceSetupError
 
@@ -114,6 +115,17 @@ async def run_reviewer_round(
         outputs=ordered_outputs,
         drift_warning_count=drift_warning_count,
         reviewer_failure_count=len(ordered_failures),
+        failures=[
+            CheckpointReviewerFailure(
+                task_id=failure.task_id,
+                role=failure.provider.role,
+                audit=request.audit_round_num or 1,
+                local_round=request.round_num,
+                failure_kind=failure.failure_kind,
+                warning=failure.warning,
+            )
+            for failure in ordered_failures
+        ],
     )
 
 

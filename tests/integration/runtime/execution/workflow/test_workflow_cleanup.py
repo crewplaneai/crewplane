@@ -112,6 +112,7 @@ def test_stage_publications_retain_all_recovery_payloads(
         ),
     )
     runtime_context = SimpleNamespace(
+        review_checkpoints={},
         plan=single_node_cleanup_plan(output),
         generated_file_workspaces=GeneratedFileWorkspaceRegistry(),
         runtime_publications=publications,
@@ -245,6 +246,7 @@ def test_workflow_postcondition_errors_preserve_phase_order_before_registry_clos
     )
     output = OutputManager("Workflow", base_dir=tmp_path)
     runtime_context = SimpleNamespace(
+        review_checkpoints={},
         plan=single_node_cleanup_plan(output),
         deferred_workspace_cleanups=DeferredWorkspaceCleanups(),
         generated_file_workspaces=GeneratedFileRegistry(),

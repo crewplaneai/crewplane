@@ -17,12 +17,12 @@ from crewplane.core.workspace.invocation_identity import (
     rendered_workspace_file_invocation_id,
 )
 
-from ..run_history import RunHistoryRecord
 from .bundle_validation import (
     WorkspaceBlobDescriptor,
     workspace_blob_descriptor_matches,
 )
 from .state.fields import (
+    WorkspaceArtifactRoot,
     int_field,
     nullable_int_field,
 )
@@ -35,7 +35,7 @@ def provider_rendered_workspace_files_match(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
-    source: RunHistoryRecord | None = None,
+    source: WorkspaceArtifactRoot | None = None,
 ) -> bool:
     expected = _expected_rendered_locators(plan, node, payload)
     rendered = payload.get("rendered_workspace_files")
@@ -85,7 +85,7 @@ def _rendered_descriptor_matches_locator(
     descriptors_by_occurrence: dict[str, dict[str, object]],
     locator: WorkspaceFileLocator,
     plan: PreflightExecutionPlan,
-    source: RunHistoryRecord | None,
+    source: WorkspaceArtifactRoot | None,
 ) -> bool:
     descriptor = descriptors_by_occurrence.get(locator.occurrence_id)
     if descriptor is None:
@@ -173,7 +173,7 @@ def _rendered_descriptor_blob_matches(
     descriptor: dict[str, object],
     locator: WorkspaceFileLocator,
     plan: PreflightExecutionPlan,
-    source: RunHistoryRecord | None,
+    source: WorkspaceArtifactRoot | None,
 ) -> bool:
     byte_size = descriptor.get("byte_size")
     if not is_nonnegative_int(byte_size):
@@ -201,7 +201,7 @@ def _dynamic_rendered_descriptor_matches(
     descriptor: dict[str, object],
     locator: WorkspaceFileLocator,
     plan: PreflightExecutionPlan,
-    source: RunHistoryRecord | None,
+    source: WorkspaceArtifactRoot | None,
 ) -> bool:
     workspace_source = plan.workspace_source
     if source is None or workspace_source is None:
@@ -243,7 +243,7 @@ def _dynamic_rendered_descriptor_matches(
 
 
 def _source_bundle(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     descriptor: dict[str, object],
 ) -> tuple[Path | None, str | None]:
     bundle_relative_path = descriptor.get("source_bundle_path")

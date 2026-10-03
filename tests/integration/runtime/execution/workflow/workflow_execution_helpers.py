@@ -146,7 +146,7 @@ class GraphDependencyOrderInvoker(NoPresentationInvoker):
         output_file.write_text("second done", encoding="utf-8")
 
 
-def _compile_test_plan(
+def compile_test_plan(
     config: Config,
     workflow: WorkflowPlan,
     output: OutputManager,
@@ -210,7 +210,7 @@ async def execute_workflow(
     workflow_identity: str | None = None,
     resumed_node_ids: tuple[str, ...] = (),
 ) -> None:
-    plan, runtime_context = _compile_test_plan(config, workflow, output)
+    plan, runtime_context = compile_test_plan(config, workflow, output)
     await _execute_compiled_workflow(
         plan=plan,
         output=output,
@@ -232,7 +232,7 @@ async def execute_sequential_stage(
     telemetry: ExecutionTelemetry | None = None,
 ) -> None:
     workflow = WorkflowPlan(name=output.task_name, nodes=[node])
-    plan, runtime_context = _compile_test_plan(config, workflow, output)
+    plan, runtime_context = compile_test_plan(config, workflow, output)
     await _execute_compiled_sequential_stage(
         stage=plan.nodes[0],
         output=output,
@@ -250,7 +250,7 @@ async def execute_parallel_stage(
     telemetry: ExecutionTelemetry | None = None,
 ) -> None:
     workflow = WorkflowPlan(name=output.task_name, nodes=[node])
-    plan, runtime_context = _compile_test_plan(config, workflow, output)
+    plan, runtime_context = compile_test_plan(config, workflow, output)
     await _execute_compiled_parallel_stage(
         stage=plan.nodes[0],
         output=output,

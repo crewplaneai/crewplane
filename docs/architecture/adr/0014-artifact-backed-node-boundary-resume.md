@@ -1,16 +1,25 @@
-# ADR 0014: Artifact-Backed Node-Boundary Resume
+# ADR 0014: Artifact-Backed Resume
 
 ## Status
+
 Accepted
 
+Extended on 2026-10-02 with [review-loop checkpoints](#review-loop-checkpoints).
+
 ## Date
+
 2026-06-09
 
 ## Decision
+
 Implement filesystem-backed same-context resume for failed or cancelled workflow
-runs by reusing only validated successful node-boundary artifacts. Preserve ADR
-0009 whole-workflow idempotency first: any valid same-context successful
-`run.json` skips the workflow before failed or cancelled resume is considered.
+runs by reusing validated artifacts. The first implementation reused only
+completed nodes to keep development scope manageable. Resume within an unfinished
+node was deferred to a later iteration.
+
+Preserve ADR 0009 whole-workflow idempotency first: any valid same-context
+successful `run.json` skips the workflow before failed or cancelled resume is
+considered.
 
 Each execution attempt that proceeds receives a fresh `run_id` and fresh run
 directories. Current run state is written under:
@@ -39,13 +48,13 @@ cancellation, and stale-lock recovery.
 
 Run manifests validate fields by status. Failed and cancelled manifests require
 nonblank reasons; successful manifests reject failure and cancellation reasons.
-Resume source and hydrated-node provenance appear together. Hydration is
-recorded only after every required node boundary is copied and verified.
+A resumed run records its source and the work restored from it. Crewplane
+records reuse only after the required files are copied and verified.
 
-Resume hydration copies validated consolidated result, required findings, and
-generated-file artifacts. Workspace-enabled resume may also copy only lineage
-artifacts named by validated node-state descriptors, including the selected
-canonical review output and `review-state/review-loop-status.json` when needed
+For completed nodes, resume copies validated consolidated result, required
+findings, and generated-file artifacts. Workspace-enabled resume may also copy
+only lineage artifacts named by validated node-state descriptors, including the
+selected canonical review output and `review-state/review-loop-status.json` when needed
 to reconstruct lineage. Each copied file must be contained, regular, safely
 mapped into the fresh run, and match its recorded hash and size; hydrated
 workspace state is rewritten through the resume schema to preserve provenance
@@ -53,17 +62,20 @@ and fresh-run identity. Arbitrary or unselected stage output, logs, scratch
 state, live workspaces, cached refs, symlinks, and hardlinks remain ineligible.
 
 ## Rationale
-Filesystem artifacts are the product's audit boundary. Reusing only validated
-completed node boundaries preserves that boundary while avoiding hidden
-cross-node state or provider-native replay. Fresh-run semantics keep resumed
-runs auditable and leave failed or cancelled runs intact for postmortems.
+
+Files on disk let maintainers inspect and verify the work being reused. Each
+resumed attempt gets fresh run directories, leaving the failed or cancelled run
+available for investigation. Recovery uses these files without hidden cross-node
+state or provider-specific replay.
 
 ## Design Tradeoffs
+
 - Fresh-run resume preserves a complete audit trail for both the failed source
   run and the resumed run, but it duplicates consolidated artifacts and creates
   more directories than mutating the failed run in place.
-- Node-boundary resume avoids provider-specific replay and hidden in-memory
-  state, but any partially completed node must run again.
+- The initial implementation required less saved state, but restarted every
+  unfinished node. Review-loop checkpoints now allow reuse between completed
+  phases.
 - Restricting hydration to stable result artifacts and descriptor-named
   workspace lineage keeps downstream templates and source reconstruction
   equivalent to a fresh upstream completion. Unlisted stage output, logs, and
@@ -86,6 +98,7 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   stale owners, so its answer can differ from a later real run.
 
 ## Rejected Alternatives
+
 - Mutate the failed or cancelled run directory in place. Rejected because it
   would blur postmortem state, make terminal manifests harder to trust, and hide
   which artifacts came from the original attempt versus the resumed attempt.
@@ -96,9 +109,8 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   Rejected because those files are not the stable downstream contract and may
   contain provider-specific or partial execution state. Workspace lineage is
   limited to descriptor-named, integrity-checked files.
-- Implement provider-native replay or intra-node resume. Rejected because it
-  crosses the invoker adapter boundary and would require provider-specific
-  semantics inside runtime scheduling.
+- Use provider-native replay. Rejected because it would require the runtime
+  scheduler to understand provider-specific behavior that belongs in adapters.
 - Generalize resume to every artifact backend immediately. Rejected because the
   current design depends on local filesystem containment checks, atomic writes,
   hardlink/symlink rejection, and process-owned locks that do not yet have a
@@ -109,7 +121,9 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   location.
 
 ## Consequences
+
 ### Positive
+
 - Failed or cancelled same-context runs can continue from trusted completed
   upstream nodes.
 - Successful same-context runs still skip as a whole workflow.
@@ -119,9 +133,11 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   same-context lock protection.
 
 ### Negative
+
 - V1 resume is limited to the built-in filesystem artifact backend.
-- It does not support intra-node resume, provider replay, best-frontier scoring,
-  or reconstruction of arbitrary workspace side effects.
+- Resume within an unfinished node is limited to completed review-loop phases.
+  It does not support provider replay, ranking source runs by partial progress,
+  or restoring arbitrary changes to project files.
 - It does not automatically terminate a provider that outlives Crewplane. The
   process guard prevents a same-context replacement from starting after stale
   lock recovery, but a hard kill can still occur between child creation and
@@ -131,6 +147,7 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   owners.
 
 ## Updates
+
 - Updates ADR 0008 and ADR 0009 so current-layout per-run `run.json` state is
   the only supported duplicate/resume history source.
 - **2026-06-12**: ADR 0016 workspace implementation preserves existing
@@ -153,3 +170,54 @@ runs auditable and leave failed or cancelled runs intact for postmortems.
   hydration. Each pass must finish terminalization, observer shutdown, and lock
   release before the next starts. A failed or cancelled pass stops repetition;
   artifacts and recovery remain per run, with no persistent sequence progress.
+
+## Review-Loop Checkpoints
+
+**Added 2026-10-02.**
+
+The initial scope required a failed review loop to restart even when most of its
+work had finished. Repeating completed provider calls adds cost and can repeat
+file changes.
+
+Allow sequential review loops to resume between completed phases. An executor
+phase produces or revises the work; a reviewer phase evaluates it. A checkpoint
+records the loop's progress, the files it needs, and the next phase to run.
+
+Apply these safety rules:
+
+- Save progress at phase boundaries. If a phase is interrupted, run that whole
+  phase again. Keep saved reviews and attempt counts so resume does not reset
+  review limits.
+- Verify required files before publishing a checkpoint. Replace its record in
+  one operation so readers cannot see a partly written record.
+- Copy only verified files into a fresh run, using one source run. Reuse a
+  checkpoint only when its upstream nodes also have reusable successful results.
+- If review policy or findings validation ends the loop in failure, close its
+  checkpoint. This blocks older checkpoints from bypassing that decision.
+- Keep saved workspace records separate from temporary checkout cleanup. When
+  providers work directly in the project, require project files to match the
+  saved state before continuing.
+- Start downstream nodes only after the resumed node finishes successfully.
+  A `finalize` checkpoint can retry saving results and cleaning up without
+  calling providers again.
+
+The artifact layer verifies and copies files. The runtime restores loop progress
+and chooses the next phase.
+
+### Tradeoffs
+
+Completed phases can survive an interrupted run and the removal of temporary
+workspaces. Incomplete phases may repeat provider calls and their file changes.
+
+Checkpoints require extra storage and validation. Missing or changed files
+prevent reuse. If restoring a selected checkpoint fails, the new run fails
+instead of silently starting provider calls from scratch.
+
+### Alternatives Considered
+
+- Restart every unfinished node: simpler, but repeats completed review work.
+- Resume individual provider calls: requires tracking partial work within a
+  phase. Complete phases give a clear point to restart.
+- Restore from review status or entire run directories: status reports lack
+  some execution state, and run directories can contain incomplete or unrelated
+  files. Explicit checkpoint records identify the work that is safe to reuse.
