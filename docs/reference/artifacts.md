@@ -69,8 +69,10 @@ preflight/summary.md
 preflight/token-catalog.json
 manifests/run.json
 manifests/nodes/*.json
+manifests/review-checkpoints/*.json
 <node-id>/logs/<provider>/*.log
 <node-id>/review-state/review-loop-status.json
+<node-id>/review-state/checkpoints/workspaces/*.json
 <node-id>/workspace-state*.json
 <node-id>/workspace-setup/*.log
 <node-id>/workspace-setup/*.json
@@ -151,14 +153,17 @@ handles. It does not re-read original `{{file:...}}` source paths.
 ## Manifests
 
 Run and node manifests record status, artifact descriptors, workflow identity,
-`workflow_signature`, resumed nodes, and Workspace descriptors
-when applicable.
+`workflow_signature`, resumed nodes, the source of reused review checkpoints,
+and Workspace descriptors when applicable.
 
 Terminal fields in `manifests/run.json` depend on the run status. Failed and
 cancelled runs include a nonblank reason, while successful runs include neither
 a failure nor cancellation reason. For resumed runs, the manifest records the
-source run together with the nodes restored from it. A node is added to this
-list only after Crewplane restores its artifacts.
+source run together with the work restored from it. `resumed_nodes` lists only
+successful nodes. `resumed_review_checkpoints` separately records each node's
+`source_audit`, `source_local_round`, `source_phase`, and immediate `resume_origin`.
+A node appears in only one collection. Source-run fields are present when either
+collection has entries. Crewplane adds entries after restoring their files.
 
 At the end of a run, Crewplane finishes required post-run work and updates the
 event log and summary before recording the terminal status in
@@ -179,8 +184,8 @@ Duplicate skip decisions reuse a previous successful run only when the recorded
 `workflow_signature`, node states, results, findings, retained generated files,
 sizes, digests, containment, and dependency closure are usable. Crewplane
 searches older matching successes if the newest success is incomplete or
-corrupt. Resume decisions use the same artifact validation before hydrating
-completed node boundaries from a failed or cancelled run into a new run.
+corrupt. Resume uses the same checks before copying successful node results and
+review checkpoint files from one failed or cancelled run into a new run.
 `crewplane run --force` bypasses both behaviors and records a new run.
 
 Atomic artifact publication propagates file-data, replacement, and supported

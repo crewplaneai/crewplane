@@ -96,6 +96,10 @@ def node_state_relative_path(node_id: str) -> Path:
     )
 
 
+def review_checkpoint_relative_path(node_id: str) -> Path:
+    return Path("manifests") / "review-checkpoints" / build_node_state_filename(node_id)
+
+
 def build_provider_process_state_filename(
     node_id: str,
     task_id: str,

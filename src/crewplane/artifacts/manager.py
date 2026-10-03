@@ -20,9 +20,15 @@ from crewplane.architecture.safe_files import (
     ensure_contained_directory,
     is_safe_relative_path,
 )
-from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
+from crewplane.core.execution_state import (
+    NodeState,
+    ReviewCheckpointResumeSummary,
+    RunManifest,
+    RunStatus,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
 from crewplane.core.preflight.serialization import pretty_sorted_json
+from crewplane.core.review_checkpoint import ReviewLoopCheckpoint
 
 from .atomic import (
     atomic_write_bytes,
@@ -41,6 +47,7 @@ from .naming import (
 )
 from .provider_process_publisher import ProviderProcessPublisher
 from .results.writer import ResultWriter
+from .resume import checkpoint_store
 from .verification import read_verified_node_artifact
 
 
@@ -360,6 +367,20 @@ class OutputManager:
             self.stages_dir, relative_path.parent.as_posix()
         )
         return atomic_write_json(export_dir / relative_path.name, payload)
+
+    def read_review_checkpoint(self, node_id: str) -> ReviewLoopCheckpoint | None:
+        return checkpoint_store.read_review_checkpoint(self.stages_dir, node_id)
+
+    def write_review_checkpoint(self, checkpoint: ReviewLoopCheckpoint) -> Path:
+        return checkpoint_store.publish_review_checkpoint(self.stages_dir, checkpoint)
+
+    def read_hydrated_review_checkpoints(self) -> list[ReviewCheckpointResumeSummary]:
+        return checkpoint_store.read_checkpoint_provenance(self.stages_dir)
+
+    def record_hydrated_review_checkpoint(
+        self, summary: ReviewCheckpointResumeSummary
+    ) -> Path:
+        return checkpoint_store.record_checkpoint_provenance(self.stages_dir, summary)
 
     def _run_manifest_path(self) -> Path:
         manifest_path = contained_regular_file(

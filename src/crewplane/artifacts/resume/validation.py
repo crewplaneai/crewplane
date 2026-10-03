@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -20,6 +20,12 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
+from crewplane.core.review_checkpoint import (
+    ClosedReviewCheckpoint,
+    OpenReviewCheckpoint,
+    validate_checkpoint_node,
+)
+from crewplane.core.review_checkpoint_state import CheckpointProjectObservation
 from crewplane.core.value_checks import optional_strict_int
 from crewplane.core.workflow.keywords import FINDINGS_ARTIFACT_KEYS
 
@@ -31,21 +37,35 @@ from ..workspace.node_state import (
     build_node_workspace_descriptor,
 )
 from ..workspace.state.validation import workspace_node_state_is_valid
+from .checkpoint_store import read_review_checkpoint
+from .checkpoint_validation import (
+    checkpoint_matches_source,
+    require_checkpoint_dependencies,
+    require_checkpoint_project,
+)
 
 
 @dataclass(frozen=True)
 class ValidatedResumeFrontier:
     source: RunHistoryRecord
     node_states: dict[str, NodeState]
+    checkpoints: dict[str, OpenReviewCheckpoint] = field(default_factory=dict)
+    closed_checkpoint_ids: frozenset[str] = frozenset()
 
     @property
     def resumed_node_ids(self) -> tuple[str, ...]:
         return tuple(self.node_states)
 
+    @property
+    def checkpoint_node_ids(self) -> tuple[str, ...]:
+        return tuple(self.checkpoints)
+
 
 def validate_resume_frontier(
     source: RunHistoryRecord,
     plan: PreflightExecutionPlan,
+    project_observation: CheckpointProjectObservation | None = None,
+    fenced_checkpoint_ids: frozenset[str] = frozenset(),
 ) -> ValidatedResumeFrontier:
     nodes_by_id = {node.id: node for node in plan.nodes}
     dependencies = _dependencies_by_node(plan)
@@ -66,10 +86,51 @@ def validate_resume_frontier(
     for node_id in invalid_nodes:
         valid_states.pop(node_id, None)
 
+    closed_states = _dependency_closed_states(valid_states, dependencies, nodes_by_id)
+    checkpoints: dict[str, OpenReviewCheckpoint] = {}
+    closed_ids = set[str]()
+    for node in plan.nodes:
+        try:
+            checkpoint = read_review_checkpoint(source.run_dir, node.id)
+            if checkpoint is None or not checkpoint_matches_source(
+                checkpoint, source, plan
+            ):
+                continue
+            validate_checkpoint_node(checkpoint, node)
+            if isinstance(checkpoint, ClosedReviewCheckpoint):
+                closed_ids.add(node.id)
+                continue
+            if (
+                node.id in closed_states
+                or node.id in fenced_checkpoint_ids
+                or not dependencies[node.id].issubset(closed_states)
+            ):
+                continue
+            _require_checkpoint_provenance(source, checkpoint)
+            require_checkpoint_dependencies(source.run_dir, plan, node, checkpoint)
+            require_checkpoint_project(checkpoint, node, project_observation)
+        except (ValueError, OSError, RuntimeError):
+            continue
+        checkpoints[node.id] = checkpoint
     return ValidatedResumeFrontier(
-        source=source,
-        node_states=_dependency_closed_states(valid_states, dependencies, nodes_by_id),
+        source, closed_states, checkpoints, frozenset(closed_ids)
     )
+
+
+def _require_checkpoint_provenance(
+    source: RunHistoryRecord, checkpoint: OpenReviewCheckpoint
+) -> None:
+    summary = next(
+        (
+            item
+            for item in source.manifest.resumed_review_checkpoints
+            if item.node_id == checkpoint.node_id
+        ),
+        None,
+    )
+    origin = None if summary is None else summary.resume_origin
+    if checkpoint.resume_origin != origin:
+        raise ValueError("Checkpoint marker and manifest hydration origin disagree.")
 
 
 def _read_node_state(source: RunHistoryRecord, node_id: str) -> NodeState | None:

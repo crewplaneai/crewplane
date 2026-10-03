@@ -74,12 +74,11 @@ The lifecycle is:
 - Compute the `workflow_signature`.
 - For real runs, check filesystem history for a matching success or resumable
   partial run.
-- Run providers, skip duplicate work, or hydrate completed node outputs for
-  resume.
+- Run providers, skip duplicate work, or restore saved work from an earlier run.
 - Write manifests and results so the decision is inspectable later.
 
 Use `--force` when you want Crewplane to create a new run with a new run ID and
-rerun selected nodes instead of using duplicate skip or resume hydration.
+rerun selected nodes instead of using duplicate skip or resume.
 
 ## What Preflight Compiles
 
@@ -170,8 +169,10 @@ Expected advisory phrases include:
 - `Resume advisory: would_execute_full_run`
 - `Resume advisory: would_skip`
 - `Resume advisory: would_resume <n> node(s) from <run-id> (nodes: <ids>)`,
-  which reports the exact dependency-closed node identifiers selected for
-  hydration
+  which lists successful nodes whose saved results can be reused
+- `Review checkpoints: <n> checkpoint(s) from <run-id> (nodes: <ids>)`,
+  which separately lists unfinished review loops that can continue; the
+  successful-node count may be zero
 
 ## Run The Workflow
 
@@ -202,7 +203,7 @@ summary, event timeline, manifests, stage outputs, and results.
 | `crewplane run` | Runs the selected workflow, writes run artifacts, and opens the live dashboard when tmux is available. |
 | `crewplane run --no-live` | Runs the selected workflow with plain terminal output instead of the live dashboard. |
 | `crewplane run --tasks <file>` | Runs the workflow file you name instead of relying on default discovery. |
-| `crewplane run --force` | Creates a new run with a new run ID, reruns selected nodes, and bypasses duplicate-skip and resume hydration. |
+| `crewplane run --force` | Creates a new run with a new run ID, reruns selected nodes, and bypasses duplicate skip and resume. |
 
 ## Workflow IDs, Run IDs, And Run Keys
 
@@ -254,34 +255,68 @@ suggests `--force` when you want Crewplane to create a new run with a new run ID
 and rerun the workflow.
 
 Use `crewplane run --dry-run` to preview the advisory decision. Use `--force`
-when you intentionally want to bypass both duplicate skip and resume hydration.
+when you intentionally want to bypass both duplicate skip and resume.
 Crewplane creates a new run ID and reruns the selected nodes.
 
 ## Resume
 
-When no valid same-context success exists, a failed or cancelled
-filesystem-backed run can resume at completed node boundaries. Validated
-completed nodes are reused, while incomplete nodes restart from the beginning.
+After a failure or cancellation, rerun `crewplane run` with the same workflow
+and config, leaving out `--force`. Resume uses Crewplane's built-in filesystem
+storage for run records and outputs.
 
-`run --dry-run` only prints a resume advisory. It does not write run artifacts or
-bind future execution to that advisory.
+Crewplane first checks for a reusable successful run with matching inputs and
+settings. Otherwise, it can copy saved work from one matching failed or cancelled
+run into a new run. It reuses verified results from completed nodes. Unfinished
+nodes start again, except for review loops with a usable checkpoint.
 
-Look for:
+### Review-loop checkpoints
 
-- `resumed_nodes` in `.crewplane/execution-stages/<run-key>/manifests/run.json`
-- `resume_source_run_id` and `resume_source_run_key_name` in the run manifest
-  when resume hydration happened
-- `<node-id>/resume-source.json` in resumed node stage directories
-- hydrated result files under `.crewplane/execution-results/<run-key>/`
+Sequential review loops save progress in **checkpoints** after completed phases.
+An executor phase produces or revises work; a reviewer phase checks it. If a
+phase is interrupted or a provider error stops it, the entire phase runs again.
+For example, when executors finish and save a checkpoint but reviewers are
+interrupted, the next run reuses the executor outputs and calls all reviewers
+again, including any that had already finished.
 
-Use `--force` to bypass resume hydration and rerun every selected node.
+Resume keeps review results, feedback, attempt counts, and audit progress.
+Rejected attempts still count toward the configured limits. If review rules or
+required findings checks ended the loop in failure, Crewplane cannot reuse an
+older checkpoint to bypass that failure.
+
+If reviewing finished and only saving the results or cleaning up failed, a
+checkpoint can retry those steps without calling providers again. Nodes that
+depend on this result wait until the resumed node finishes successfully.
+
+### When saved progress can be reused
+
+The checkpoint's saved files must still be intact. For managed workspaces, this
+includes workspace records and Git bundles containing the saved file history.
+These can remain usable after temporary workspace folders are cleaned up. See
+the [checkpoint artifact reference](../reference/artifacts.md#review-checkpoints)
+for their locations.
+
+If providers worked directly in the project, its contents must match the state
+recorded by the checkpoint. Concurrent work that makes this comparison unreliable
+also prevents reuse. Resume does not undo changes in that project directory.
+
+An unfinished loop with no usable checkpoint starts from the beginning. If
+Crewplane selects a checkpoint but fails while restoring it, it reports an error
+without automatically restarting that loop.
+
+Use `crewplane run --dry-run` to preview which completed nodes and review
+checkpoints can be reused. It writes no run files. Crewplane checks again when
+the real run starts, so the decision can change. Use `--force` to bypass resume
+and rerun every selected node.
+
+Afterward, see [How to tell what happened](#how-to-tell-what-happened) to check
+which work was restored.
 
 ## Decision Table
 
 | When | What happens | What to run instead |
 | --- | --- | --- |
 | The same workflow already finished successfully with the same inputs and settings. | Crewplane reuses the saved result and does not invoke providers. | Run `crewplane run --force` to create a new run with a new run ID and rerun selected nodes. |
-| A previous run failed or was cancelled after some nodes finished. | Crewplane creates a new run, reuses validated completed node outputs, and reruns incomplete nodes from the beginning. | Run `crewplane run --force` to create a new run with a new run ID and rerun every selected node. |
+| A previous run failed or was cancelled. | Crewplane creates a new run, reuses validated successful nodes and review checkpoints, and restarts other incomplete nodes. | Run `crewplane run --force` to create a new run with a new run ID and rerun every selected node. |
 | You run `crewplane run --dry-run`. | Crewplane prints the plan and skip/resume advisory only. It does not invoke providers or write run artifacts. | Run `crewplane run` to execute. |
 | Provider settings, workflow files, templates, or referenced inputs changed. | Crewplane computes a different workflow signature, so older results for different inputs or settings are not reused as duplicates. | Usually no override is needed. Run `crewplane run --dry-run` to preview the decision; use `crewplane run --force` only to bypass matching history for the new signature. |
 
@@ -297,9 +332,11 @@ Use these files first:
 Fields and evidence to inspect:
 
 - `workflow_signature` identifies the compiled context used for skip/resume.
-- `resumed_nodes` records nodes hydrated from a prior failed or cancelled run.
+- `resumed_nodes` records successful nodes restored from a prior failed or cancelled run.
+- `resumed_review_checkpoints` records unfinished review loops restored from that
+  run, including the audit, round, and phase they continued from.
 - `resume_source_run_id` and `resume_source_run_key_name` point at the prior run
-  when resume hydration happened.
+  when saved work was restored.
 - `<node-id>/resume-source.json` appears inside resumed node stage directories.
 - The terminal phrase `Identical context detected` means a same-signature
   successful run was reused.

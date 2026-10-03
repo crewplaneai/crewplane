@@ -15,8 +15,8 @@ from ..results.review_loop_status import (
     review_loop_status_path,
     task_specs_for_producers,
 )
-from ..run_history import RunHistoryRecord
 from .state.fields import (
+    WorkspaceArtifactRoot,
     int_field,
     nullable_int_field,
 )
@@ -39,7 +39,7 @@ from .state.source_fields import (
 
 
 def workspace_invocation_source_matches(
-    run: RunHistoryRecord,
+    run: WorkspaceArtifactRoot,
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
@@ -55,6 +55,33 @@ def workspace_invocation_source_matches(
     if kind == "candidate":
         return _candidate_source_matches(run, plan, node, payload, descriptor)
     return False
+
+
+def checkpoint_invocation_source_matches(
+    run: WorkspaceArtifactRoot,
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    payload: dict[str, object],
+    carried: tuple[dict[str, object], ...],
+) -> bool:
+    """Resolve same-node source claims only against explicitly carried invocations."""
+    descriptor = _normalized_source_descriptor(payload)
+    if descriptor is None:
+        return False
+    if descriptor.get("kind") != "candidate":
+        return workspace_invocation_source_matches(run, plan, node, payload)
+    if descriptor.get("node_id") != node.id:
+        return False
+    order = invocation_round_order(payload)
+    if order is None:
+        return False
+    before = (
+        order
+        if payload.get("role") == ProviderRole.EXECUTOR
+        else (order[0], order[1] + 1)
+    )
+    candidate = _latest_lineage_payload(carried, before=before)
+    return candidate is not None and _descriptor_matches_result(descriptor, candidate)
 
 
 def _normalized_source_descriptor(
@@ -88,7 +115,7 @@ def _project_source_matches(
 
 
 def _node_source_matches(
-    run: RunHistoryRecord,
+    run: WorkspaceArtifactRoot,
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
@@ -113,7 +140,7 @@ def _node_source_matches(
 
 
 def _candidate_source_matches(
-    run: RunHistoryRecord,
+    run: WorkspaceArtifactRoot,
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
@@ -150,7 +177,7 @@ def _candidate_source_matches(
 
 
 def _descriptor_matches_lineage_result(
-    run: RunHistoryRecord,
+    run: WorkspaceArtifactRoot,
     plan: PreflightExecutionPlan,
     node_id: str,
     descriptor: dict[str, object],
@@ -271,7 +298,7 @@ def _seeded_audit_source_payload(
 
 
 def _canonical_lineage_payload(
-    run: RunHistoryRecord,
+    run: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
     payloads: tuple[dict[str, object], ...],
 ) -> dict[str, object] | None:

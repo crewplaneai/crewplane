@@ -54,7 +54,11 @@ async def observe_project(request: ExecutorRoundRequest) -> ProjectObservation:
     policy = request.node.workspace_policy
     if policy is not None and policy.enabled:
         return ProjectObservation(None, activity)
-    fingerprint = await asyncio.to_thread(_project_fingerprint, request)
+    fingerprint = await asyncio.to_thread(
+        project_fingerprint,
+        Path(request.runtime_context.plan.project_root),
+        (request.output.stages_dir, request.output.results_dir),
+    )
     if activity != _activity_snapshot(request):
         fingerprint = None
     return ProjectObservation(fingerprint, activity)
@@ -78,10 +82,11 @@ async def bind_candidate_identities(
     return bound_outputs
 
 
-def _project_fingerprint(request: ExecutorRoundRequest) -> str | None:
-    root = Path(request.runtime_context.plan.project_root).resolve()
+def project_fingerprint(root: Path, artifact_roots: tuple[Path, ...]) -> str | None:
+    """Observe bounded project contents without using invocation-local state."""
+    root = root.resolve()
     excluded = set(RESERVED_WORKSPACE_PATH_ROOTS) | {".venv"}
-    for artifact_root in (request.output.stages_dir, request.output.results_dir):
+    for artifact_root in artifact_roots:
         if artifact_root.is_relative_to(root):
             excluded.add(artifact_root.relative_to(root).as_posix())
     try:

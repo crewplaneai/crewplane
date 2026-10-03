@@ -45,8 +45,8 @@ def test_discarded_review_round_preserves_skip_and_resume(
     project = workspace_project(tmp_path, isolated_git)
     fixtures = tmp_path / "fixtures"
     config = workspace_config(tmp_path / "cache", fixtures)
-    workflow = _review_workflow()
-    _write_review_fixtures(fixtures)
+    workflow = review_workflow()
+    write_review_fixtures(fixtures)
     monkeypatch.chdir(project)
 
     if resume_after_failure:
@@ -90,11 +90,11 @@ def test_cleanup_removes_workspaces_after_discarded_remediation(
     project = workspace_project(tmp_path, isolated_git)
     fixtures = tmp_path / "fixtures"
     config = workspace_config(tmp_path / "cache", fixtures)
-    _write_review_fixtures(fixtures)
+    write_review_fixtures(fixtures)
     write_fixture(fixtures, "consume", "executor-round-1.md", "Consumed candidate.\n")
     monkeypatch.chdir(project)
     asyncio.run(
-        run_workspace_workflow(_review_workflow(), config, Console(file=io.StringIO()))
+        run_workspace_workflow(review_workflow(), config, Console(file=io.StringIO()))
     )
     run_dir = run_dirs(project)[0]
     _assert_review_gap(run_dir)
@@ -137,7 +137,7 @@ def _assert_review_gap(run_dir: Path) -> None:
     ]
 
 
-def _review_workflow() -> WorkflowPlan:
+def review_workflow() -> WorkflowPlan:
     return WorkflowPlan(
         name="WorkspaceReviewGap",
         worktrees={"implementation": {"kind": "worktree"}},
@@ -172,7 +172,7 @@ def _review_workflow() -> WorkflowPlan:
     )
 
 
-def _write_review_fixtures(fixtures: Path) -> None:
+def write_review_fixtures(fixtures: Path) -> None:
     for round_num in (1, 2):
         write_fixture(
             fixtures,

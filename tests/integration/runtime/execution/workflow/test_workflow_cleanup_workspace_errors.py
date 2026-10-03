@@ -142,6 +142,7 @@ def test_successful_node_cleanup_retains_failed_generated_file_callbacks(
     )
     registry = GeneratedFileRegistry()
     runtime_context = SimpleNamespace(
+        review_checkpoints={},
         plan=empty_cleanup_plan(OutputManager("Workflow", base_dir=tmp_path)),
         generated_file_workspaces=registry,
         runtime_publications=RuntimePublicationRegistry(),
@@ -346,6 +347,7 @@ async def _run_execute_node_generated_file_cleanup_does_not_block_event_loop(
         ),
     )
     runtime_context = SimpleNamespace(
+        review_checkpoints={},
         plan=single_node_cleanup_plan(output),
         generated_file_workspaces=registry,
         runtime_publications=RuntimePublicationRegistry(),

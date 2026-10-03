@@ -15,6 +15,8 @@ from crewplane.architecture.ports import (
 )
 from crewplane.architecture.ports.artifacts import StageFinalizeResult
 from crewplane.artifacts import FindingsExtractionError, OutputManager
+from crewplane.core.execution_state import ReviewCheckpointResumeSummary
+from crewplane.core.review_checkpoint import ReviewLoopCheckpoint
 
 output = OutputManager("workflow")
 assert_type(output, OutputManager)
@@ -47,6 +49,19 @@ def construct_with_store(
     )
     assert_type(components.artifact_store, ArtifactStorePort)
     return components
+
+
+def consume_checkpoints(
+    store: ArtifactStorePort,
+    checkpoint: ReviewLoopCheckpoint,
+    summary: ReviewCheckpointResumeSummary,
+) -> None:
+    assert_type(store.read_review_checkpoint("build"), ReviewLoopCheckpoint | None)
+    assert_type(store.write_review_checkpoint(checkpoint), Path)
+    assert_type(
+        store.read_hydrated_review_checkpoints(), list[ReviewCheckpointResumeSummary]
+    )
+    assert_type(store.record_hydrated_review_checkpoint(summary), Path)
 
 
 def consume_summary_reader(store: RunSummaryArtifactReaderPort) -> None:

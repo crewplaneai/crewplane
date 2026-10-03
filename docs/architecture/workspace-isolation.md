@@ -472,6 +472,13 @@ lineage into the new run layout, but it never treats an old live checkout or
 cached ref as source truth. Invalid lineage moves the resume boundary back to
 the earliest safe node.
 
+Review loops can also restore progress from a completed executor or reviewer
+phase. Their checkpoints keep workspace records and Git bundles so recovery
+can work after a temporary checkout is removed. See
+[ADR 0014](adr/0014-artifact-backed-node-boundary-resume.md#review-loop-checkpoints)
+for the design. The [artifact reference](../reference/artifacts.md#review-checkpoints)
+describes the saved files.
+
 `--force` bypasses successful duplicate skip and failed or cancelled resume. It
 creates new execution evidence, refs, and fresh fallback paths. It does not use
 an earlier result as an implicit source.
@@ -657,7 +664,7 @@ boundary, artifact compatibility, or adapter boundary requires a new ADR.
 - [Modular orchestration architecture](modular-orchestration-architecture.md)
 - [ADR 0001: Ports and adapters](adr/0001-ports-adapters-runtime-integrations.md)
 - [ADR 0012: Preflight-compiled runtime plan](adr/0012-preflight-compiled-runtime-execution-plan.md)
-- [ADR 0014: Artifact-backed node-boundary resume](adr/0014-artifact-backed-node-boundary-resume.md)
+- [ADR 0014: Artifact-backed resume](adr/0014-artifact-backed-node-boundary-resume.md)
 - [ADR 0016: Node-scoped Git workspace isolation](adr/0016-node-scoped-git-workspace-isolation.md)
 - [Workspace isolation user guide](../guides/workspace-isolation.md)
 - [Configuration reference](../reference/configuration.md)

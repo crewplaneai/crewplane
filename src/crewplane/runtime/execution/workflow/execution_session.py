@@ -26,6 +26,7 @@ from ..common import (
     should_print_console,
 )
 from ..publication_registry import RuntimePublicationRegistry
+from ..review_loop.checkpoint import restore_selected_checkpoints
 from .state import initialize_workflow_execution_state
 
 
@@ -127,6 +128,8 @@ def initialize_workflow_execution(
 
     nodes_by_id = {node.id: node for node in plan.nodes}
     resolved_workflow_identity = workflow_identity or plan.workflow_name
+    runtime_context.workflow_identity = resolved_workflow_identity
+    restore_selected_checkpoints(runtime_context, output)
     state = initialize_workflow_execution_state(plan, resumed_node_ids)
 
     return WorkflowExecutionSession(

@@ -25,6 +25,11 @@ from crewplane.core.preflight import (
     PreflightExecutionPlan,
 )
 from crewplane.core.preflight.source import PreflightWorkflowSource
+from crewplane.core.review_checkpoint import checkpoint_node_is_eligible
+from crewplane.core.review_checkpoint_state import CheckpointProjectObservation
+from crewplane.runtime.execution.review_loop.candidate_identity import (
+    project_fingerprint,
+)
 from crewplane.runtime.workspace.branch_export import (
     preview_branch_exports_from_history,
 )
@@ -43,6 +48,10 @@ class ResumePlan:
         if self.frontier is None:
             return ()
         return self.frontier.resumed_node_ids
+
+    @property
+    def checkpoint_node_ids(self) -> tuple[str, ...]:
+        return () if self.frontier is None else self.frontier.checkpoint_node_ids
 
 
 def require_filesystem_artifacts_backend(config: Config) -> None:
@@ -99,10 +108,11 @@ def build_resume_plan(
         workflow_signature=preview.workflow_signature,
     )
     validation_plan = _preview_plan_for_validation(preview, project_root)
-    return _artifact_valid_history_plan(
+    return artifact_valid_history_plan(
         workflow_identity,
         records,
         validation_plan,
+        state_dir,
     )
 
 
@@ -172,6 +182,11 @@ def print_dry_run_resume_advisory(
                 f"{len(resume_plan.resumed_node_ids)} node(s) from {source_run_id} "
                 f"(nodes: {resumed_nodes})"
             )
+            if resume_plan.checkpoint_node_ids:
+                console.print(
+                    f"Review checkpoints: {len(resume_plan.checkpoint_node_ids)} checkpoint(s) "
+                    f"from {source_run_id} (nodes: {', '.join(resume_plan.checkpoint_node_ids)})"
+                )
         case "execute_full":
             console.print("Resume advisory: would_execute_full_run")
     if _uses_ephemeral_sensitive_fingerprints(preview):
@@ -219,10 +234,11 @@ def _preview_plan_for_run(
     )
 
 
-def _artifact_valid_history_plan(
+def artifact_valid_history_plan(
     workflow_identity: str,
     records: tuple[RunHistoryRecord, ...],
     validation_plan: PreflightExecutionPlan,
+    state_dir: Path,
 ) -> ResumePlan:
     for record in records:
         if record.manifest.status != "succeeded":
@@ -233,11 +249,29 @@ def _artifact_valid_history_plan(
                 workflow_identity=workflow_identity,
                 decision=ResumeDecision(kind="skip", successful_run=record),
             )
+    observation = None
+    if any(
+        record.manifest.status in {"failed", "cancelled"} for record in records
+    ) and any(
+        checkpoint_node_is_eligible(node)
+        and (node.workspace_policy is None or not node.workspace_policy.enabled)
+        for node in validation_plan.nodes
+    ):
+        fingerprint = project_fingerprint(
+            Path(validation_plan.project_root), (state_dir,)
+        )
+        observation = CheckpointProjectObservation(
+            fingerprint=fingerprint, reliable=fingerprint is not None
+        )
+    fences: frozenset[str] = frozenset()
     for record in records:
         if record.manifest.status not in {"failed", "cancelled"}:
             continue
-        frontier = validate_resume_frontier(record, validation_plan)
-        if frontier.resumed_node_ids:
+        frontier = validate_resume_frontier(
+            record, validation_plan, observation, fences
+        )
+        fences |= frontier.closed_checkpoint_ids
+        if frontier.resumed_node_ids or frontier.checkpoint_node_ids:
             return ResumePlan(
                 workflow_identity=workflow_identity,
                 decision=ResumeDecision(kind="resume", resume_source=record),

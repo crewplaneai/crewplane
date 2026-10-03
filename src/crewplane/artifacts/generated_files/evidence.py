@@ -11,9 +11,13 @@ from .paths import GENERATED_FILE_SNAPSHOT_METADATA_NAME
 
 def verified_generated_file_descriptors(
     root: Path,
+    require_complete_capture: bool = True,
 ) -> list[tuple[str, int, str]] | None:
-    """Return verified captured-file evidence, or None when it is unavailable."""
-    entries = _read_generated_file_entries(root)
+    """Verify captured bytes, requiring a complete capture for candidate identity.
+
+    Checkpoints may retain partial captures without changing candidate identity.
+    """
+    entries = _read_generated_file_entries(root, require_complete_capture)
     if entries is None:
         return None
     descriptors = []
@@ -25,7 +29,9 @@ def verified_generated_file_descriptors(
     return sorted(descriptors)
 
 
-def _read_generated_file_entries(root: Path) -> list[object] | None:
+def _read_generated_file_entries(
+    root: Path, require_complete_capture: bool
+) -> list[object] | None:
     metadata = contained_regular_file(root, GENERATED_FILE_SNAPSHOT_METADATA_NAME)
     if metadata is None:
         return None
@@ -33,7 +39,9 @@ def _read_generated_file_entries(root: Path) -> list[object] | None:
         payload: object = json.loads(metadata.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(payload, dict) or payload.get("rejected_file_count", 0):
+    if not isinstance(payload, dict) or (
+        require_complete_capture and payload.get("rejected_file_count", 0)
+    ):
         return None
     files = payload.get("files")
     return files if isinstance(files, list) else None

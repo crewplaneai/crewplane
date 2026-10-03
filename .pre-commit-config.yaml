@@ -7,7 +7,7 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=1024", "--enforce-all"]
-        exclude: ^(?:\.github/crewplane-splash\.png|docs/images/concepts/(?:control-plane|different-design|why-crewplane)\.png)$
+        exclude: ^(?:\.github/crewplane-splash\.png|docs/images/architecture/crewplane-architecture\.png|docs/images/concepts/(?:control-plane|different-design|why-crewplane)\.png)$
       - id: check-case-conflict
       - id: check-json
       - id: check-merge-conflict
