@@ -1,3 +1,5 @@
+"""Select dependency-closed resume states and eligible review checkpoints."""
+
 from __future__ import annotations
 
 import json
@@ -47,6 +49,18 @@ from .checkpoint_validation import (
 
 @dataclass(frozen=True)
 class ValidatedResumeFrontier:
+    """Reusable state and checkpoint fences from one source run.
+
+    ``node_states`` contains dependency-closed successful states. Its insertion
+    order and that of the open ``checkpoints`` mapping follow ``plan.nodes``;
+    the ID properties expose those orders. Checkpoints require all upstream
+    states to be reusable and do not make their own node's results reusable.
+
+    ``closed_checkpoint_ids`` contains identity- and topology-valid closed
+    markers, including fenced or completed nodes. History selection uses these
+    IDs to fence older open checkpoints without blocking successful-state reuse.
+    """
+
     source: RunHistoryRecord
     node_states: dict[str, NodeState]
     checkpoints: dict[str, OpenReviewCheckpoint] = field(default_factory=dict)
@@ -54,10 +68,12 @@ class ValidatedResumeFrontier:
 
     @property
     def resumed_node_ids(self) -> tuple[str, ...]:
+        """Return reusable node IDs in ``node_states`` insertion order."""
         return tuple(self.node_states)
 
     @property
     def checkpoint_node_ids(self) -> tuple[str, ...]:
+        """Return open checkpoint node IDs in ``checkpoints`` insertion order."""
         return tuple(self.checkpoints)
 
 
@@ -67,8 +83,43 @@ def validate_resume_frontier(
     project_observation: CheckpointProjectObservation | None = None,
     fenced_checkpoint_ids: frozenset[str] = frozenset(),
 ) -> ValidatedResumeFrontier:
+    """Select reusable artifacts synchronously without writing or hydrating them.
+
+    Scan states in ``plan.nodes`` order, invalidate rejected states' descendants,
+    and enforce dependency closure before scanning checkpoints in the same order.
+    Returned state and open-checkpoint mappings retain that order.
+
+    Checkpoint source identity and node validity precede closed-marker collection
+    and the open-marker gates: completed node, ``fenced_checkpoint_ids``, and
+    missing reusable prerequisites. Eligible open markers are checked for
+    provenance, file dependencies, then project observation. ``project_observation``
+    supplies the current unmanaged-project fingerprint; managed nodes ignore it.
+
+    Missing or malformed states are unavailable. State/artifact inspection keeps
+    its validators' error handling: uncaught filesystem errors propagate, while
+    workspace validators may reject state. Checkpoint ValueError, OSError, and
+    RuntimeError failures reject only that marker; other exceptions propagate.
+    """
     nodes_by_id = {node.id: node for node in plan.nodes}
     dependencies = _dependencies_by_node(plan)
+    closed_states = _select_resume_states(source, plan, dependencies, nodes_by_id)
+    checkpoints, closed_ids = _select_resume_checkpoints(
+        source,
+        plan,
+        dependencies,
+        closed_states,
+        project_observation,
+        fenced_checkpoint_ids,
+    )
+    return ValidatedResumeFrontier(source, closed_states, checkpoints, closed_ids)
+
+
+def _select_resume_states(
+    source: RunHistoryRecord,
+    plan: PreflightExecutionPlan,
+    dependencies: dict[str, set[str]],
+    nodes_by_id: dict[str, PreflightExecutionNode],
+) -> dict[str, NodeState]:
     dependents = _dependents_by_node(dependencies)
     invalid_nodes: set[str] = set()
     valid_states: dict[str, NodeState] = {}
@@ -86,7 +137,17 @@ def validate_resume_frontier(
     for node_id in invalid_nodes:
         valid_states.pop(node_id, None)
 
-    closed_states = _dependency_closed_states(valid_states, dependencies, nodes_by_id)
+    return _dependency_closed_states(valid_states, dependencies, nodes_by_id)
+
+
+def _select_resume_checkpoints(
+    source: RunHistoryRecord,
+    plan: PreflightExecutionPlan,
+    dependencies: dict[str, set[str]],
+    closed_states: dict[str, NodeState],
+    project_observation: CheckpointProjectObservation | None,
+    fenced_checkpoint_ids: frozenset[str],
+) -> tuple[dict[str, OpenReviewCheckpoint], frozenset[str]]:
     checkpoints: dict[str, OpenReviewCheckpoint] = {}
     closed_ids = set[str]()
     for node in plan.nodes:
@@ -112,9 +173,7 @@ def validate_resume_frontier(
         except (ValueError, OSError, RuntimeError):
             continue
         checkpoints[node.id] = checkpoint
-    return ValidatedResumeFrontier(
-        source, closed_states, checkpoints, frozenset(closed_ids)
-    )
+    return checkpoints, frozenset(closed_ids)
 
 
 def _require_checkpoint_provenance(
@@ -286,6 +345,13 @@ def required_resume_artifact_paths(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
 ) -> dict[ArtifactKind, str]:
+    """Return required result paths in copy order: output, then findings.
+
+    Findings are required by ``node.findings`` or an outgoing dependency using a
+    findings artifact key. Return an empty mapping when findings are required
+    but the contract has no findings path; this sentinel makes state ineligible
+    for reuse. This function performs no filesystem checks or mutations.
+    """
     required: dict[ArtifactKind, str] = {"output": node.artifact_contract.output_path}
     findings_required = node.findings or any(
         edge.source_node == node.id and edge.artifact_name in FINDINGS_ARTIFACT_KEYS
@@ -374,4 +440,9 @@ def _dependency_closed_states(
 
 
 def plan_order(nodes_by_id: dict[str, PreflightExecutionNode], node_id: str) -> int:
+    """Return a node's zero-based position in the mapping's insertion order.
+
+    Raise ValueError for an absent ID. The caller builds this mapping from
+    ``plan.nodes``; ``plan.execution_order`` is not consulted.
+    """
     return list(nodes_by_id).index(node_id)

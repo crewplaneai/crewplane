@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, TypeAdapter, field_validator, model_validator
 
@@ -10,6 +10,7 @@ from crewplane.architecture.contracts.artifacts import (
     build_review_audit_directory_name,
     build_task_round_filename,
 )
+from crewplane.core import review_checkpoint_progress
 from crewplane.core.execution_state import (
     ResumeOrigin,
     validate_run_state_schema_version,
@@ -39,6 +40,8 @@ from crewplane.core.workflow.keywords import (
 
 
 class CheckpointIdentity(CheckpointRecord):
+    """Versioned workflow, run, and ordered provider identity shared by markers."""
+
     run_state_schema_version: int
     plan_schema_version: str
     workflow_identity: str = Field(min_length=1)
@@ -52,15 +55,23 @@ class CheckpointIdentity(CheckpointRecord):
     @field_validator("run_state_schema_version")
     @classmethod
     def validate_state_version(cls, value: int) -> int:
+        """Return the supported version or raise ValueError, without I/O."""
         return validate_run_state_schema_version(value)
 
     @field_validator("plan_schema_version")
     @classmethod
     def validate_plan_version(cls, value: str) -> str:
+        """Return the supported version or raise ValueError, without I/O."""
         return validate_supported_plan_schema_version(value)
 
 
 class OpenReviewCheckpoint(CheckpointIdentity):
+    """Resumable phase progress with descriptor-backed outputs and workspaces.
+
+    Construction validates references in memory; compiled-node policy and
+    filesystem evidence require separate validation.
+    """
+
     kind: Literal["open"] = "open"
     audit: int = Field(ge=1, strict=True)
     local_round: int = Field(ge=0, strict=True)
@@ -73,10 +84,22 @@ class OpenReviewCheckpoint(CheckpointIdentity):
     resume_origin: ResumeOrigin | None = None
 
     @model_validator(mode="after")
-    def validate_references(self) -> OpenReviewCheckpoint:
+    def validate_references(self) -> Self:
+        """Return self after checking evidence, mappings, workspaces, then phase.
+
+        Raise ValueError at the first mismatch without mutation or I/O.
+        """
         by_path = {item.relative_path: item for item in self.files}
         if len(by_path) != len(self.files):
             raise ValueError("Checkpoint file paths must be unique.")
+        self._validate_candidate_evidence(by_path)
+        self._validate_review_evidence(by_path)
+        self._validate_generated_mappings()
+        self._validate_workspace_evidence(by_path)
+        self._validate_phase_requirements()
+        return self
+
+    def _validate_candidate_evidence(self, by_path: dict[str, CheckpointFile]) -> None:
         for candidate in self.progress.candidates():
             descriptor = by_path.get(candidate.output_path)
             if descriptor is None or (
@@ -90,6 +113,8 @@ class OpenReviewCheckpoint(CheckpointIdentity):
                 > (candidate.audit, candidate.local_round)
             ):
                 raise ValueError("Candidate lacks matching producer evidence.")
+
+    def _validate_review_evidence(self, by_path: dict[str, CheckpointFile]) -> None:
         for review in self.progress.reviews():
             descriptor = by_path.get(review.output_path)
             if descriptor is None or (
@@ -101,6 +126,8 @@ class OpenReviewCheckpoint(CheckpointIdentity):
                 or review.role != ProviderRole.REVIEWER
             ):
                 raise ValueError("Review lacks matching invocation evidence.")
+
+    def _validate_generated_mappings(self) -> None:
         outputs = {item.output_path for item in self.progress.candidates()}
         outputs.update(item.output_path for item in self.progress.reviews())
         mappings = [item.output_path for item in self.generated_mappings]
@@ -108,6 +135,8 @@ class OpenReviewCheckpoint(CheckpointIdentity):
             raise ValueError(
                 "Generated mappings must uniquely reference carried outputs."
             )
+
+    def _validate_workspace_evidence(self, by_path: dict[str, CheckpointFile]) -> None:
         destinations = [item.destination_path for item in self.workspaces]
         if len(destinations) != len(set(destinations)):
             raise ValueError("Workspace destinations must be unique.")
@@ -132,6 +161,8 @@ class OpenReviewCheckpoint(CheckpointIdentity):
                 raise ValueError(
                     "Workspace snapshot lacks matching invocation evidence."
                 )
+
+    def _validate_phase_requirements(self) -> None:
         if self.next_phase == "finalize" and (
             self.progress.active_audit is not None
             or not self.progress.latest_executor_outputs
@@ -153,10 +184,11 @@ class OpenReviewCheckpoint(CheckpointIdentity):
             and self.progress.active_audit is None
         ):
             raise ValueError("Remediation executors require active audit progress.")
-        return self
 
 
 class ClosedReviewCheckpoint(CheckpointIdentity):
+    """Terminal marker carrying identity and a reason, with no resumable progress."""
+
     kind: Literal["closed"] = "closed"
     terminal_reason: str = Field(min_length=1)
 
@@ -171,6 +203,10 @@ REVIEW_CHECKPOINT_ADAPTER: TypeAdapter[ReviewLoopCheckpoint] = TypeAdapter(
 
 
 def checkpoint_node_is_eligible(node: PreflightExecutionNode) -> bool:
+    """Return whether a sequential node has executors followed by reviewers.
+
+    Require both roles; perform no mutation or I/O.
+    """
     roles = [provider.role for provider in node.provider_records]
     return (
         node.mode == "sequential"
@@ -183,6 +219,16 @@ def checkpoint_node_is_eligible(node: PreflightExecutionNode) -> bool:
 def validate_checkpoint_node(
     checkpoint: ReviewLoopCheckpoint, node: PreflightExecutionNode
 ) -> None:
+    """Validate node identity and, for open markers, progress, cursor, and paths.
+
+    Closed markers return after identity and ordered provider topology checks.
+    Open markers also check policy, invocation coordinates, stage membership,
+    and output naming. This does not revalidate model references or read files.
+    Neither input is mutated, and no I/O is performed.
+
+    Raises:
+        ValueError: The first violated checkpoint/node constraint.
+    """
     tasks = [
         CheckpointTask(task_id=p.task_id, role=p.role) for p in node.provider_records
     ]
@@ -194,7 +240,15 @@ def validate_checkpoint_node(
         raise ValueError("Checkpoint node identity or provider topology mismatch.")
     if isinstance(checkpoint, ClosedReviewCheckpoint):
         return
-    _validate_progress(checkpoint, node)
+    review_checkpoint_progress.validate_checkpoint_progress(checkpoint, node)
+    _validate_node_cursor(checkpoint, node)
+    _validate_invocation_coordinates(checkpoint, node)
+    _validate_artifact_paths(checkpoint, node)
+
+
+def _validate_node_cursor(
+    checkpoint: OpenReviewCheckpoint, node: PreflightExecutionNode
+) -> None:
     audit_rounds = node.execution_policy.audit_rounds or 1
     max_round = (node.execution_policy.depth or 1) + 1
     if checkpoint.audit > audit_rounds or checkpoint.local_round > max_round:
@@ -205,8 +259,20 @@ def validate_checkpoint_node(
         and node.execution_policy.review_starts_with == "reviewer"
     ):
         raise ValueError("Round zero is only valid for initial pre-review.")
-    identities = {item.task_id: item.role for item in tasks}
-    records = [
+
+
+def _validate_invocation_coordinates(
+    checkpoint: OpenReviewCheckpoint, node: PreflightExecutionNode
+) -> None:
+    identities = {item.task_id: item.role for item in checkpoint.tasks}
+    max_round = (node.execution_policy.depth or 1) + 1
+    records: list[
+        CheckpointFile
+        | CheckpointCandidate
+        | CheckpointReview
+        | CheckpointReviewerFailure
+        | CheckpointWorkspace
+    ] = [
         *checkpoint.files,
         *checkpoint.progress.candidates(),
         *checkpoint.progress.reviews(),
@@ -228,6 +294,11 @@ def validate_checkpoint_node(
             and node.execution_policy.review_starts_with == "reviewer"
         ):
             raise ValueError("Invalid round-zero invocation.")
+
+
+def _validate_artifact_paths(
+    checkpoint: OpenReviewCheckpoint, node: PreflightExecutionNode
+) -> None:
     stage = node.artifact_contract.stage_path
     if stage is None or any(
         not item.relative_path.startswith(stage + "/") for item in checkpoint.files
@@ -239,6 +310,7 @@ def validate_checkpoint_node(
         *checkpoint.progress.candidates(),
         *checkpoint.progress.reviews(),
     ]
+    audit_rounds = node.execution_policy.audit_rounds or 1
     for output in outputs:
         prefix = stage + "/"
         if audit_rounds > 1:
@@ -250,209 +322,3 @@ def validate_checkpoint_node(
             raise ValueError(
                 "Checkpoint output path does not match its selected coordinates."
             )
-
-
-def _validate_progress(
-    checkpoint: OpenReviewCheckpoint, node: PreflightExecutionNode
-) -> None:
-    progress = checkpoint.progress
-    active = progress.active_audit
-    executors = [
-        task.task_id for task in checkpoint.tasks if task.role == ProviderRole.EXECUTOR
-    ]
-    groups = [progress.latest_executor_outputs]
-    if active is not None:
-        groups.extend(
-            [
-                active.executor_outputs,
-                active.previous_executor_outputs,
-                active.latest_valid_executor_outputs,
-            ]
-        )
-    by_path: dict[str, CheckpointCandidate] = {}
-    for group in groups:
-        if group is None:
-            continue
-        if [item.task_id for item in group] != executors or len(
-            {(item.audit, item.local_round) for item in group}
-        ) != 1:
-            raise ValueError(
-                "Checkpoint candidates require the complete ordered executor phase."
-            )
-        for candidate in group:
-            if (
-                candidate.output_path in by_path
-                and by_path[candidate.output_path] != candidate
-            ):
-                raise ValueError(
-                    "Checkpoint contains conflicting candidate identities."
-                )
-            by_path[candidate.output_path] = candidate
-            if (candidate.producer_audit, candidate.producer_round) != (
-                candidate.audit,
-                candidate.local_round,
-            ) and not (
-                candidate.audit > candidate.producer_audit
-                and candidate.local_round == 1
-            ):
-                raise ValueError(
-                    "Only fresh audits may seed an earlier producer candidate."
-                )
-    if progress.executed_audit_rounds != checkpoint.audit:
-        raise ValueError("Checkpoint progress and audit cursor disagree.")
-    if checkpoint.next_phase == "executors":
-        _validate_executor_cursor(checkpoint)
-    for counters in [progress, *([] if active is None else [active])]:
-        if (
-            max(counters.selected_round_num, counters.last_round_num)
-            > (node.execution_policy.depth or 1) + 1
-        ):
-            raise ValueError("Checkpoint progress exceeds configured round bounds.")
-    if (
-        checkpoint.next_phase == "reviewers"
-        and active is not None
-        and any(
-            (item.audit, item.local_round) != (checkpoint.audit, checkpoint.local_round)
-            for item in active.executor_outputs
-        )
-    ):
-        raise ValueError("Reviewer cursor does not match the active candidate.")
-    _validate_selected_batch(
-        checkpoint,
-        progress.latest_executor_outputs,
-        progress.latest_reviewer_outputs,
-        progress.reviewer_failures,
-        progress.selected_round_num,
-    )
-    if active is not None:
-        _validate_selected_batch(
-            checkpoint,
-            active.latest_valid_executor_outputs,
-            active.latest_reviewer_outputs,
-            active.reviewer_failures,
-            active.selected_round_num,
-        )
-    if progress.initial_review_completed:
-        if node.execution_policy.review_starts_with != "reviewer":
-            raise ValueError("Initial review is not configured for this node.")
-        _validate_batch(
-            checkpoint, progress.initial_reviews, progress.initial_failures, (1, 0)
-        )
-    elif progress.initial_reviews or progress.initial_failures:
-        raise ValueError("Unsettled initial reviews cannot be checkpointed.")
-    if progress.failures() and not node.execution_policy.continue_on_failure:
-        raise ValueError("Reviewer failures require continuation policy.")
-    if progress.consensus_reached and progress.reviewer_failures:
-        raise ValueError("Reviewer failures prevent consensus.")
-    if checkpoint.next_phase == "finalize":
-        _validate_finalization(checkpoint, node)
-
-
-def _validate_executor_cursor(checkpoint: OpenReviewCheckpoint) -> None:
-    active = checkpoint.progress.active_audit
-    if checkpoint.local_round == 1:
-        if active is not None:
-            raise ValueError("Initial executors cannot carry active audit progress.")
-        return
-    if (
-        active is None
-        or active.last_round_num != checkpoint.local_round - 1
-        or not 1 <= active.selected_round_num < checkpoint.local_round
-        or not active.previous_executor_outputs
-        or active.previous_executor_outputs != active.latest_valid_executor_outputs
-        or active.executor_outputs != active.latest_valid_executor_outputs
-        or any(
-            item.audit != checkpoint.audit for item in active.previous_executor_outputs
-        )
-        or active.previous_unresolved_fingerprints
-        != tuple(
-            sorted(
-                {
-                    fingerprint
-                    for review in active.latest_reviewer_outputs
-                    for fingerprint in review.evaluation.unresolved_fingerprints
-                }
-            )
-        )
-    ):
-        raise ValueError("Remediation cursor disagrees with settled active progress.")
-
-
-def _validate_finalization(
-    checkpoint: OpenReviewCheckpoint, node: PreflightExecutionNode
-) -> None:
-    progress = checkpoint.progress
-    if checkpoint.local_round != progress.last_round_num:
-        raise ValueError("Finalization cursor and attempted round disagree.")
-    if progress.stop_reason == "consensus":
-        permitted = (
-            progress.consensus_reached
-            and all(
-                item.evaluation.approved for item in progress.latest_reviewer_outputs
-            )
-            and not (
-                progress.continued_after_stop or progress.continued_after_exhaustion
-            )
-        )
-    elif progress.stop_reason == "no_progress":
-        permitted = (
-            node.execution_policy.continue_on_failure
-            and progress.continued_after_stop
-            and not (progress.consensus_reached or progress.continued_after_exhaustion)
-        )
-    elif progress.stop_reason == "consensus_exhausted":
-        permitted = (
-            (
-                node.execution_policy.continue_on_failure
-                or node.execution_policy.consensus_on_exhaustion == "continue"
-            )
-            and progress.continued_after_exhaustion
-            and progress.continued_after_stop
-            and not progress.consensus_reached
-        )
-    else:
-        permitted = False
-    if not permitted:
-        raise ValueError(
-            "Checkpoint finalization is not permitted by the settled review policy."
-        )
-
-
-def _validate_selected_batch(
-    checkpoint: OpenReviewCheckpoint,
-    candidates: list[CheckpointCandidate] | None,
-    reviews: list[CheckpointReview],
-    failures: list[CheckpointReviewerFailure],
-    selected_round: int,
-) -> None:
-    if selected_round == 0:
-        if reviews or failures:
-            raise ValueError("Unselected progress cannot carry a settled review batch.")
-        return
-    if not candidates or any(item.local_round != selected_round for item in candidates):
-        raise ValueError("Selected candidate and round disagree.")
-    _validate_batch(
-        checkpoint, reviews, failures, (candidates[0].audit, selected_round)
-    )
-
-
-def _validate_batch(
-    checkpoint: OpenReviewCheckpoint,
-    reviews: list[CheckpointReview],
-    failures: list[CheckpointReviewerFailure],
-    coordinates: tuple[int, int],
-) -> None:
-    expected = [
-        task.task_id for task in checkpoint.tasks if task.role == ProviderRole.REVIEWER
-    ]
-    observed = [item.task_id for item in [*reviews, *failures]]
-    if sorted(observed) != sorted(expected) or any(
-        (item.audit, item.local_round) != coordinates
-        or item.role != ProviderRole.REVIEWER
-        for item in [*reviews, *failures]
-    ):
-        raise ValueError("Checkpoint requires a complete settled reviewer batch.")
-    if [item.task_id for item in reviews] != [
-        task for task in expected if task not in {item.task_id for item in failures}
-    ]:
-        raise ValueError("Checkpoint reviewer order does not match the compiled node.")

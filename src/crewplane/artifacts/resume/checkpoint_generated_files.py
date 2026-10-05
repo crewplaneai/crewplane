@@ -26,11 +26,51 @@ def describe_generated_mapping(
     snapshot_root: Path | None,
     invocation: CheckpointInvocation,
 ) -> tuple[CheckpointGeneratedMapping, list[CheckpointFile]]:
+    """Describe a generated-file capture without modifying its evidence.
+
+    A None snapshot records an explicit failed capture and needs no filesystem
+    access. Existing snapshots may be partial, including captures with no files;
+    their source metadata must name an absolute root, which need not still exist.
+    The output itself is not read or described.
+
+    Args:
+        root: Run stage root containing the snapshot.
+        output_path: Normalized relative POSIX path of the associated output.
+        snapshot_root: Captured workspace below root, or None for a failed capture.
+        invocation: Task, role, audit, and local round for snapshot descriptors.
+
+    Returns:
+        The mapping and its dependency descriptors, or an empty list for a failed
+        capture. Descriptors name source metadata, snapshot metadata, then captured
+        files in sorted path order. Captured file signatures are rechecked during
+        descriptor construction; reads acquire no snapshot-wide lock.
+
+    Raises:
+        ValueError: The snapshot is outside root, evidence is unavailable, source
+            metadata lacks an absolute source_root, or a captured file changes.
+            Containment and evidence availability precede source JSON validation;
+            descriptor checks follow in return order.
+        pydantic.ValidationError: Mapping paths or descriptor metadata are invalid.
+        json.JSONDecodeError: Source metadata is malformed JSON.
+        UnicodeDecodeError: Source metadata has an invalid JSON encoding.
+        OSError: File inspection, source reading, or descriptor hashing fails
+            outside the snapshot evidence verifier's handled failures.
+    """
     if snapshot_root is None:
         return CheckpointGeneratedMapping(
             output_path=output_path, snapshot_path=None
         ), []
     relative = snapshot_root.relative_to(root).as_posix()
+    entries = _verify_generated_snapshot_evidence(snapshot_root)
+    files = _describe_generated_snapshot_files(root, relative, invocation, entries)
+    return CheckpointGeneratedMapping(
+        output_path=output_path, snapshot_path=relative
+    ), files
+
+
+def _verify_generated_snapshot_evidence(
+    snapshot_root: Path,
+) -> list[tuple[str, int, str]]:
     entries = verified_generated_file_descriptors(
         snapshot_root, require_complete_capture=False
     )
@@ -44,6 +84,15 @@ def describe_generated_mapping(
         or not Path(metadata["source_root"]).is_absolute()
     ):
         raise ValueError("Checkpoint generated-file source metadata is invalid.")
+    return entries
+
+
+def _describe_generated_snapshot_files(
+    root: Path,
+    relative: str,
+    invocation: CheckpointInvocation,
+    entries: list[tuple[str, int, str]],
+) -> list[CheckpointFile]:
     files = [
         describe_checkpoint_file(
             root, f"{relative}/{name}", invocation, "generated_metadata"
@@ -59,14 +108,37 @@ def describe_generated_mapping(
         )
         for name, size, digest in entries
     )
-    return CheckpointGeneratedMapping(
-        output_path=output_path, snapshot_path=relative
-    ), files
+    return files
 
 
 def validate_generated_mappings(
     root: Path, mappings: list[CheckpointGeneratedMapping], files: list[CheckpointFile]
 ) -> set[str]:
+    """Match snapshot dependencies to carried descriptors in mapping order.
+
+    The caller must validate checkpoint metadata and verify carried file bytes
+    first. Each snapshot-backed mapping requires a carried output descriptor,
+    whose invocation identifies the expected snapshot descriptors. Failed captures
+    are skipped without requiring an output descriptor. Partial snapshots are
+    accepted under describe_generated_mapping's evidence rules.
+
+    Returns:
+        The set of snapshot metadata and captured file paths, excluding output
+        paths; empty when no mapping carries a snapshot. Files and descriptors
+        remain unchanged. Output bytes, unrelated dependencies, and completeness
+        of the checkpoint's dependency list are not checked here.
+
+    Raises:
+        ValueError: A snapshot-backed output is not carried, expected descriptors
+            differ from carried descriptors, or snapshot evidence is invalid.
+            Missing outputs fail before snapshot inspection; the first failing
+            mapping stops validation.
+        pydantic.ValidationError: Invocation, mapping, or descriptor metadata is
+            invalid.
+        json.JSONDecodeError: Snapshot source metadata is malformed JSON.
+        UnicodeDecodeError: Snapshot source metadata has an invalid JSON encoding.
+        OSError: An underlying snapshot inspection, read, or hash error propagates.
+    """
     paths: set[str] = set()
     descriptors = {item.relative_path: item for item in files}
     for mapping in mappings:

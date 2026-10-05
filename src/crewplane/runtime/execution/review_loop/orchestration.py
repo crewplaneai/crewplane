@@ -1,40 +1,30 @@
 from __future__ import annotations
 
 import asyncio
-import tempfile
-from dataclasses import asdict
 from functools import partial
 from pathlib import Path
+from typing import NoReturn
 
-from crewplane.architecture.contracts import AgentInvoker, LogLevel
-from crewplane.architecture.contracts.artifacts import build_task_round_filename
+from crewplane.architecture.contracts import AgentInvoker
 from crewplane.architecture.ports import ArtifactStorePort
-from crewplane.artifacts.atomic import atomic_write_json, atomic_write_text
 from crewplane.artifacts.results.findings import FindingsExtractionError
 from crewplane.artifacts.results.review_loop_status import ReviewLoopStopReason
 from crewplane.core.file_hashing import file_size_and_sha256
-from crewplane.core.preflight.models import PreflightExecutionNode
+from crewplane.core.preflight.models import PreflightExecutionNode, ProviderRecord
 from crewplane.core.review_checkpoint_state import CheckpointPhase
 from crewplane.core.workflow.keywords import ProviderRole
 
 from ..common import (
     CompiledRuntimeContext,
     ExecutionTelemetry,
-    RuntimeEventContext,
-    emit_runtime_log,
     execution_console,
     resolve_prompt_with_output_budget_details,
     should_print_console,
 )
 from ..errors import NodeExecutionError
-from ..fragment_assembler import (
-    ResolvedPrompt,
-    stream_has_runtime_dynamic_workspace_locator,
-)
-from ..provider_call import publish_invocation_output
-from ..reviews.consensus import check_consensus
-from ..workspace_files import ResolvedWorkspaceFile
-from ..workspace_files.source_resolution import WorkspaceCandidateSourceContext
+from . import completion_policy as _completion_policy
+from . import initial_candidate as _initial_candidate
+from .audit_io import complete_audit_io
 from .checkpoint import (
     close_checkpoint,
     commit_checkpoint,
@@ -51,32 +41,24 @@ from .policy import (
     review_loop_can_finish,
     split_sequential_review_loop_providers,
 )
-from .prompts import (
-    INITIAL_REVIEW_APPROVED_HANDOFF,
-    INITIAL_REVIEW_BLOCKED_HANDOFF,
-    INITIAL_REVIEW_FAILURE_HANDOFF,
-    INITIAL_REVIEW_TASK_CONTEXT,
-    INITIAL_REVIEWER_ONLY_INSTRUCTION,
-)
-from .rounds import execute_single_audit_round, run_executor_round, run_reviewer_round
+from .rounds import execute_single_audit_round
 from .state import (
     build_review_loop_status_payload,
     persist_review_loop_status,
-    render_unresolved_review_packet,
 )
 from .types import (
     AuditRoundProgress,
     AuditRoundRequest,
     AuditRoundResult,
-    ExecutorRoundArtifact,
-    ExecutorRoundRequest,
-    ReviewerRoundRequest,
-    ReviewerRoundRunResult,
     ReviewLoopProgress,
     ReviewLoopRunContext,
 )
 from .validation import validate_executor_outputs
 from .workspace_state_paths import discard_executor_workspace_lineage
+
+resolve_reviewer_prompt_context = _initial_candidate.resolve_reviewer_prompt_context
+seed_executor_outputs = _initial_candidate.seed_executor_outputs
+ReviewPolicyError = _completion_policy.ReviewPolicyError
 
 # Failure-policy case map:
 # 1. Executor invocation failure: normal invocation failure path.
@@ -101,48 +83,6 @@ from .workspace_state_paths import discard_executor_workspace_lineage
 # runtime invocation; concurrent node windows only reject destructive event-log drift.
 
 
-class ReviewPolicyError(NodeExecutionError):
-    """A settled review policy decision that closes partial reuse."""
-
-
-def _emit_consensus_exhaustion(
-    telemetry: ExecutionTelemetry | None,
-    node_id: str,
-    executed_audit_rounds: int,
-    continuation_reason: str | None,
-) -> None:
-    message = (
-        f"Sequential node '{node_id}' failed to reach consensus after "
-        f"{executed_audit_rounds} audit rounds."
-    )
-    if continuation_reason is not None:
-        message = f"{message} Continuing due to {continuation_reason}."
-    emit_runtime_log(
-        telemetry,
-        level=LogLevel.WARNING,
-        message=message,
-        operation="review_loop_consensus_exhausted",
-        context=RuntimeEventContext(node_id=node_id),
-        attributes={"continued": continuation_reason is not None},
-    )
-
-
-def _emit_no_canonical_candidate(
-    telemetry: ExecutionTelemetry | None,
-    node_id: str,
-) -> None:
-    emit_runtime_log(
-        telemetry,
-        level=LogLevel.ERROR,
-        message=(
-            f"Sequential node '{node_id}' did not produce any valid canonical "
-            "candidate across all audit rounds."
-        ),
-        operation="review_loop_no_canonical_candidate",
-        context=RuntimeEventContext(node_id=node_id),
-    )
-
-
 async def execute_review_loop_stage(
     stage: PreflightExecutionNode,
     output: ArtifactStorePort,
@@ -151,25 +91,83 @@ async def execute_review_loop_stage(
     invoker: AgentInvoker,
     telemetry: ExecutionTelemetry | None,
 ) -> None:
-    """Run the full sequential review loop, including exhaustion handling."""
-    executors, reviewers = split_sequential_review_loop_providers(
+    """Resume or run a sequential review loop and commit its final checkpoint.
+
+    Preparation errors propagate before failure status handling begins. Settled
+    policy errors close partial reuse; other failures preserve the checkpoint and
+    publish failure status. Cancellation publishes cancelled status only after
+    outstanding publication work drains. The caller owns runtime resources.
+    """
+    providers = split_sequential_review_loop_providers(
         stage.id,
         stage.provider_records,
     )
-    checkpoint = runtime_context.review_checkpoints.get(stage.id)
-    progress = (
-        ReviewLoopProgress()
-        if checkpoint is None
-        else ProgressRestorer(
-            checkpoint,
-            output.stages_dir,
-            stage.provider_records,
-            resolve_audit_rounds(stage),
-        ).restore()
+    progress = await complete_audit_io(
+        partial(_restore_review_loop_progress, stage, output, runtime_context)
     )
     if progress.next_phase == "finalize":
-        restore_diagnostics(node_dir, stage.id, progress)
+        await complete_audit_io(
+            partial(restore_diagnostics, node_dir, stage.id, progress)
+        )
         return
+    context = await complete_audit_io(
+        partial(
+            _build_review_loop_context,
+            stage,
+            output,
+            node_dir,
+            runtime_context,
+            invoker,
+            telemetry,
+            providers,
+        )
+    )
+    try:
+        await execute_review_loop_audits(context, progress)
+        await complete_audit_io(partial(_validate_final_findings, context, progress))
+        await _commit_transition(context, progress, "finalize", progress.last_round_num)
+    except ReviewPolicyError as exc:
+        await complete_audit_io(partial(_reject_review_loop, context, exc))
+    except asyncio.CancelledError as exc:
+        progress.stop_reason = ReviewLoopStopReason.CANCELLED
+        progress.consensus_reached = False
+        await complete_audit_io(
+            partial(_publish_review_loop_failure, context, progress, exc)
+        )
+    except Exception as exc:
+        if progress.stop_reason is None:
+            progress.stop_reason = ReviewLoopStopReason.FAILED
+        await complete_audit_io(
+            partial(_publish_review_loop_failure, context, progress, exc)
+        )
+
+
+def _restore_review_loop_progress(
+    stage: PreflightExecutionNode,
+    output: ArtifactStorePort,
+    runtime_context: CompiledRuntimeContext,
+) -> ReviewLoopProgress:
+    checkpoint = runtime_context.review_checkpoints.get(stage.id)
+    if checkpoint is None:
+        return ReviewLoopProgress()
+    return ProgressRestorer(
+        checkpoint,
+        output.stages_dir,
+        stage.provider_records,
+        resolve_audit_rounds(stage),
+    ).restore()
+
+
+def _build_review_loop_context(
+    stage: PreflightExecutionNode,
+    output: ArtifactStorePort,
+    node_dir: Path,
+    runtime_context: CompiledRuntimeContext,
+    invoker: AgentInvoker,
+    telemetry: ExecutionTelemetry | None,
+    providers: tuple[list[ProviderRecord], list[ProviderRecord]],
+) -> ReviewLoopRunContext:
+    executors, reviewers = providers
     executor_prompt = resolve_prompt_with_output_budget_details(
         runtime_context,
         stage,
@@ -183,7 +181,7 @@ async def execute_review_loop_stage(
         output,
         telemetry,
     )
-    context = ReviewLoopRunContext(
+    return ReviewLoopRunContext(
         runtime_context=runtime_context,
         stage=stage,
         output=output,
@@ -199,35 +197,19 @@ async def execute_review_loop_stage(
         remediation_depth=resolve_remediation_depth(stage),
         audit_rounds=resolve_audit_rounds(stage),
     )
-    try:
-        await execute_review_loop_audits(context, progress)
-        try:
-            validate_final_findings(context, progress)
-        except FindingsExtractionError as exc:
-            close_checkpoint(context, str(exc))
-            raise NodeExecutionError(str(exc)) from exc
-        await _commit_transition(context, progress, "finalize", progress.last_round_num)
-    except ReviewPolicyError as exc:
-        close_checkpoint(context, str(exc))
-        _discard_rejected_invocations(context)
-        raise
-    except asyncio.CancelledError:
-        progress.stop_reason = ReviewLoopStopReason.CANCELLED
-        progress.consensus_reached = False
-        _persist_review_loop_status(context, progress)
-        raise
-    except Exception:
-        if progress.stop_reason is None:
-            progress.stop_reason = ReviewLoopStopReason.FAILED
-        _persist_review_loop_status(context, progress)
-        raise
 
 
 async def execute_review_loop_audits(
     context: ReviewLoopRunContext,
     progress: ReviewLoopProgress,
 ) -> None:
+    """Run audits in cursor order and publish status before terminal policy actions.
 
+    Preserve fresh-audit candidate reuse and stop the entire loop on no progress.
+    A valid exhausted candidate may continue under policy; missing candidates and
+    fatal exhaustion raise ReviewPolicyError after status publication and logging.
+    Invocation and storage errors propagate to the stage's failure handling.
+    """
     for audit_round_num in range(progress.cursor_audit, context.audit_rounds + 1):
         progress.cursor_audit = audit_round_num
         progress.executed_audit_rounds = audit_round_num
@@ -237,86 +219,115 @@ async def execute_review_loop_audits(
             audit_round_num,
         )
         if audit_result.stop_reason == ReviewLoopStopReason.NO_PROGRESS:
-            finish_stalled_review_loop(context, progress)
+            await _finish_stalled_audit(context, progress)
             return
+        can_finish = review_loop_can_finish(context, audit_result, audit_round_num)
+        if (
+            audit_round_num == context.audit_rounds
+            and not can_finish
+            and (
+                progress.latest_executor_outputs is None
+                or not consensus_failure_allows_continuation(context.stage)[0]
+            )
+        ):
+            await complete_audit_io(
+                partial(_publish_final_audit_rejection, context, progress)
+            )
+            return
+        await _publish_review_loop_status(context, progress)
         progress.cursor_round = 1
         progress.next_phase = "executors"
-        if review_loop_can_finish(
-            context,
-            audit_result,
-            audit_round_num,
-        ):
+        if can_finish:
             progress.stop_reason = ReviewLoopStopReason.CONSENSUS
-            _persist_review_loop_status(context, progress)
+            await _publish_review_loop_status(context, progress)
             return
 
-    if progress.latest_executor_outputs is None:
-        progress.mark_consensus_exhausted(continued=False)
-        progress.stop_reason = ReviewLoopStopReason.NO_VALID_CANDIDATE
-        _persist_review_loop_status(context, progress)
-        _emit_no_canonical_candidate(context.telemetry, context.stage.id)
-        raise ReviewPolicyError(
-            f"Sequential node '{context.stage.id}' did not produce a valid canonical candidate."
-        )
+    await _finish_exhausted_review_loop(context, progress)
 
-    should_continue, continuation_reason = consensus_failure_allows_continuation(
-        context.stage,
-    )
-    if not should_continue:
-        progress.mark_consensus_exhausted(continued=False)
-        _persist_review_loop_status(context, progress)
-        _emit_consensus_exhaustion(
-            telemetry=context.telemetry,
-            node_id=context.stage.id,
-            executed_audit_rounds=progress.executed_audit_rounds,
-            continuation_reason=None,
-        )
-        raise ReviewPolicyError(
-            f"Sequential node '{context.stage.id}' failed to reach consensus after "
-            f"{progress.executed_audit_rounds} audit rounds."
-        )
 
+async def _finish_exhausted_review_loop(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
+    should_continue, reason = consensus_failure_allows_continuation(context.stage)
+    if progress.latest_executor_outputs is None or not should_continue:
+        await complete_audit_io(
+            partial(_publish_exhausted_rejection, context, progress)
+        )
+        return
     progress.mark_consensus_exhausted(continued=True)
-    _persist_review_loop_status(context, progress)
-    _emit_consensus_exhaustion(
-        telemetry=context.telemetry,
-        node_id=context.stage.id,
-        executed_audit_rounds=progress.executed_audit_rounds,
-        continuation_reason=continuation_reason,
-    )
-    if should_print_console(context.telemetry):
-        execution_console(context.telemetry).print(
-            "[yellow]WARN[/] "
-            f"Sequential node '{context.stage.id}' failed to reach consensus after "
-            f"{progress.executed_audit_rounds} audit rounds. Continuing due to "
-            f"{continuation_reason}."
+    await _publish_review_loop_status(context, progress)
+    await complete_audit_io(
+        partial(
+            _completion_policy.apply_exhausted_review_loop_policy,
+            context,
+            progress,
+            reason,
         )
+    )
+
+
+def _publish_final_audit_rejection(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
+    """Drain the final round publication through its settled policy rejection."""
+    _persist_review_loop_status(context, progress)
+    progress.cursor_round = 1
+    progress.next_phase = "executors"
+    _publish_exhausted_rejection(context, progress)
+
+
+def _publish_exhausted_rejection(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
+    """Keep publication and settled policy rejection in one draining operation."""
+    progress.mark_consensus_exhausted(continued=False)
+    if progress.latest_executor_outputs is None:
+        progress.stop_reason = ReviewLoopStopReason.NO_VALID_CANDIDATE
+    _persist_review_loop_status(context, progress)
+    _completion_policy.apply_exhausted_review_loop_policy(context, progress, None)
+
+
+async def _finish_stalled_audit(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
+    if not context.stage.execution_policy.continue_on_failure:
+        await complete_audit_io(partial(_publish_stalled_rejection, context, progress))
+        return
+    await _publish_review_loop_status(context, progress)
+    progress.continued_after_stop = True
+    await _publish_review_loop_status(context, progress)
+    await complete_audit_io(
+        partial(_completion_policy.apply_stalled_review_loop_policy, context, progress)
+    )
+
+
+def _publish_stalled_rejection(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
+    """Publish round and policy status before propagating settled rejection."""
+    _persist_review_loop_status(context, progress)
+    finish_stalled_review_loop(context, progress)
 
 
 def finish_stalled_review_loop(
     context: ReviewLoopRunContext,
     progress: ReviewLoopProgress,
 ) -> None:
+    """Synchronously publish a stalled loop's continuation decision and log it.
+
+    Only continue_on_failure permits continuation. Otherwise raise ReviewPolicyError
+    after publication and logging; storage and logging errors take precedence.
+    Leave checkpoint closure and runtime resource cleanup to the caller.
+    """
     continued = context.stage.execution_policy.continue_on_failure
     progress.continued_after_stop = continued
     _persist_review_loop_status(context, progress)
-    message = (
-        f"Sequential node '{context.stage.id}' stopped with no_progress after "
-        f"{progress.stall.consecutive_round_count} consecutive unchanged "
-        "remediation attempts. Review feedback remains unresolved."
-    )
-    if continued:
-        message += " Continuing due to continue_on_failure=true."
-    emit_runtime_log(
-        context.telemetry,
-        level=LogLevel.WARNING if continued else LogLevel.ERROR,
-        message=message,
-        operation="review_loop_stopped",
-        context=RuntimeEventContext(node_id=context.stage.id),
-        attributes={"stop_reason": "no_progress", "continued": continued},
-    )
-    if not continued:
-        raise ReviewPolicyError(message)
+    _completion_policy.apply_stalled_review_loop_policy(context, progress)
 
 
 async def _execute_review_loop_audit_round(
@@ -324,33 +335,38 @@ async def _execute_review_loop_audit_round(
     progress: ReviewLoopProgress,
     audit_round_num: int,
 ) -> AuditRoundResult:
-    audit_dir = audit_round_dir(
-        context.node_dir,
-        context.audit_rounds,
-        audit_round_num,
+    audit_dir = await complete_audit_io(
+        partial(
+            audit_round_dir, context.node_dir, context.audit_rounds, audit_round_num
+        )
     )
     audit_context = audit_round_context(
         context.audit_rounds,
         audit_round_num,
     )
-    _print_audit_round_header(context, audit_round_num)
+    await complete_audit_io(
+        partial(_print_audit_round_header, context, audit_round_num)
+    )
     if progress.active_audit is None:
         if audit_round_num > 1 and progress.latest_executor_outputs is None:
             await _commit_transition(context, progress, "executors", 1)
-        initial_review_handoff = await _initial_pre_review_handoff(
+        initial_review_handoff = await _initial_candidate.initial_pre_review_handoff(
             context,
             progress,
             audit_dir,
             audit_context,
             audit_round_num,
+            partial(_commit_transition, context, progress),
         )
         progress.last_round_num = 1
-        initial_executor_outputs = await _initial_audit_executor_outputs(
-            context,
-            progress,
-            audit_dir,
-            audit_context,
-            initial_review_handoff,
+        initial_executor_outputs = (
+            await _initial_candidate.initial_audit_executor_outputs(
+                context,
+                progress,
+                audit_dir,
+                audit_context,
+                initial_review_handoff,
+            )
         )
         progress.active_audit = AuditRoundProgress(
             executor_outputs=initial_executor_outputs,
@@ -388,29 +404,7 @@ async def _execute_review_loop_audit_round(
         )
     )
     progress.record_audit_result(audit_result)
-    _persist_review_loop_status(context, progress)
     return audit_result
-
-
-def resolve_reviewer_prompt_context(
-    runtime_context: CompiledRuntimeContext,
-    stage: PreflightExecutionNode,
-    output: ArtifactStorePort,
-    telemetry: ExecutionTelemetry | None,
-) -> ResolvedPrompt:
-    if stream_has_runtime_dynamic_workspace_locator(
-        runtime_context.plan,
-        stage,
-        ProviderRole.REVIEWER,
-    ):
-        return ResolvedPrompt("")
-    return resolve_prompt_with_output_budget_details(
-        runtime_context,
-        stage,
-        output,
-        role=ProviderRole.REVIEWER,
-        telemetry=telemetry,
-    )
 
 
 def _print_audit_round_header(
@@ -429,205 +423,6 @@ def _print_audit_round_header(
     )
 
 
-async def _initial_audit_executor_outputs(
-    context: ReviewLoopRunContext,
-    progress: ReviewLoopProgress,
-    audit_dir: Path,
-    audit_context: int | None,
-    initial_review_handoff: str | None = None,
-) -> list[ExecutorRoundArtifact]:
-    if progress.latest_executor_outputs is not None:
-        return seed_executor_outputs(
-            runtime_context=context.runtime_context,
-            node_id=context.stage.id,
-            artifact_dir=audit_dir,
-            executor_outputs=progress.latest_executor_outputs,
-            audit_round_num=audit_context,
-            round_num=1,
-        )
-
-    executor_run = await run_executor_round(
-        ExecutorRoundRequest(
-            runtime_context=context.runtime_context,
-            node=context.stage,
-            output=context.output,
-            node_dir=context.node_dir,
-            invoker=context.invoker,
-            telemetry=context.telemetry,
-            executors=context.executors,
-            audit_round_num=audit_context,
-            round_num=1,
-            artifact_dir=audit_dir,
-            executor_prompt=context.executor_prompt,
-            executor_prompt_workspace_files=context.executor_prompt_workspace_files,
-            previous_review_packet=None,
-            previous_executor_outputs=None,
-            initial_review_handoff=initial_review_handoff,
-        )
-    )
-    progress.record_initial_executor_run(executor_run)
-    return executor_run.outputs
-
-
-async def _initial_pre_review_handoff(
-    context: ReviewLoopRunContext,
-    progress: ReviewLoopProgress,
-    audit_dir: Path,
-    audit_context: int | None,
-    audit_round_num: int,
-) -> str | None:
-    if audit_round_num == 1 and progress.initial_review_completed:
-        return _initial_review_handoff_from_result(
-            ReviewerRoundRunResult(
-                progress.initial_reviews,
-                0,
-                len(progress.initial_failures),
-                progress.initial_failures,
-            )
-        )
-    if not _should_run_initial_pre_review(context, progress, audit_round_num):
-        return None
-
-    reviewer_prompt_context, reviewer_prompt_workspace_files = (
-        _initial_pre_review_prompt(context, audit_context)
-    )
-    reviewer_run = await run_reviewer_round(
-        ReviewerRoundRequest(
-            runtime_context=context.runtime_context,
-            node=context.stage,
-            output=context.output,
-            node_dir=context.node_dir,
-            invoker=context.invoker,
-            telemetry=context.telemetry,
-            reviewers=context.reviewers,
-            audit_round_num=audit_context,
-            round_num=0,
-            artifact_dir=audit_dir,
-            reviewer_prompt_context=INITIAL_REVIEW_TASK_CONTEXT,
-            reviewer_prompt_workspace_files=reviewer_prompt_workspace_files,
-            review_context=reviewer_prompt_context,
-            previous_review_packet=None,
-            review_context_heading="Existing review context",
-            review_context_note=(
-                "No same-node executor candidate exists yet. Review the existing "
-                "context before the local round 1 executor writes a canonical "
-                "candidate."
-            ),
-            reviewer_instruction=INITIAL_REVIEWER_ONLY_INSTRUCTION,
-        )
-    )
-    progress.record_initial_reviewer_run(reviewer_run)
-    await _commit_transition(context, progress, "executors", 1)
-    return _initial_review_handoff_from_result(reviewer_run)
-
-
-def _should_run_initial_pre_review(
-    context: ReviewLoopRunContext,
-    progress: ReviewLoopProgress,
-    audit_round_num: int,
-) -> bool:
-    return (
-        context.stage.execution_policy.review_starts_with == "reviewer"
-        and audit_round_num == 1
-        and progress.latest_executor_outputs is None
-    )
-
-
-def _initial_pre_review_prompt(
-    context: ReviewLoopRunContext,
-    audit_context: int | None,
-) -> tuple[str, tuple[ResolvedWorkspaceFile, ...]]:
-    if context.reviewer_prompt_context:
-        return (
-            context.reviewer_prompt_context,
-            context.reviewer_prompt_workspace_files,
-        )
-    resolved_prompt = resolve_prompt_with_output_budget_details(
-        context.runtime_context,
-        context.stage,
-        context.output,
-        role=ProviderRole.REVIEWER,
-        telemetry=context.telemetry,
-        workspace_candidate_context=WorkspaceCandidateSourceContext(
-            role_label=ProviderRole.REVIEWER,
-            round_num=0,
-            audit_round_num=audit_context,
-            phase="initial_pre_review",
-        ),
-    )
-    return resolved_prompt.text, resolved_prompt.workspace_files
-
-
-def _initial_review_handoff_from_result(
-    reviewer_run: ReviewerRoundRunResult,
-) -> str:
-    if reviewer_run.reviewer_failure_count > 0:
-        return INITIAL_REVIEW_FAILURE_HANDOFF
-
-    unresolved_packet = render_unresolved_review_packet(reviewer_run.outputs)
-    if unresolved_packet is not None:
-        return unresolved_packet
-
-    if check_consensus([artifact.evaluation for artifact in reviewer_run.outputs]):
-        return INITIAL_REVIEW_APPROVED_HANDOFF
-
-    return INITIAL_REVIEW_BLOCKED_HANDOFF
-
-
-def seed_executor_outputs(
-    runtime_context: CompiledRuntimeContext,
-    node_id: str,
-    artifact_dir: Path,
-    executor_outputs: list[ExecutorRoundArtifact],
-    audit_round_num: int | None,
-    round_num: int,
-) -> list[ExecutorRoundArtifact]:
-    seeded_outputs: list[ExecutorRoundArtifact] = []
-    for artifact in executor_outputs:
-        output_file = artifact_dir / build_task_round_filename(
-            artifact.task_id, round_num
-        )
-        if artifact.output_signature is None:
-            raise RuntimeError(
-                "Cannot seed an executor output without a bound runtime publication: "
-                f"{artifact.output_file.as_posix()}"
-            )
-        with tempfile.TemporaryDirectory(prefix="crewplane-review-seed-") as temp_dir:
-            invocation_output = Path(temp_dir) / "provider-output.md"
-            atomic_write_text(invocation_output, artifact.content)
-            output_signature = publish_invocation_output(
-                invocation_output,
-                output_file,
-                runtime_context.runtime_publications,
-                artifact.output_signature,
-            )
-        runtime_context.generated_file_workspaces.alias_output_file(
-            node_id,
-            artifact.output_file,
-            output_file,
-        )
-        if artifact.candidate_identity is not None:
-            atomic_write_json(
-                output_file.with_suffix(".candidate.json"),
-                asdict(artifact.candidate_identity),
-            )
-        seeded_outputs.append(
-            ExecutorRoundArtifact(
-                provider=artifact.provider,
-                task_id=artifact.task_id,
-                content=artifact.content,
-                output_file=output_file,
-                audit_round_num=audit_round_num,
-                round_num=round_num,
-                output_signature=output_signature,
-                candidate_identity=artifact.candidate_identity,
-                producer_audit=artifact.producer_audit or artifact.audit_round_num or 1,
-                producer_round=artifact.producer_round or artifact.round_num,
-            )
-        )
-    return seeded_outputs
-
-
 def _persist_review_loop_status(
     context: ReviewLoopRunContext,
     progress: ReviewLoopProgress,
@@ -644,6 +439,23 @@ def _persist_review_loop_status(
         return path
 
 
+async def _publish_review_loop_status(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+) -> None:
+    await complete_audit_io(partial(_persist_review_loop_status, context, progress))
+
+
+def _publish_review_loop_failure(
+    context: ReviewLoopRunContext,
+    progress: ReviewLoopProgress,
+    error: BaseException,
+) -> NoReturn:
+    """Publish status before re-raising the original failure ahead of cancellation."""
+    _persist_review_loop_status(context, progress)
+    raise error
+
+
 async def _commit_transition(
     context: ReviewLoopRunContext,
     progress: ReviewLoopProgress,
@@ -651,7 +463,7 @@ async def _commit_transition(
     local_round: int,
 ) -> None:
     await commit_checkpoint(context, progress, phase, local_round)
-    _discard_rejected_invocations(context)
+    await complete_audit_io(partial(_discard_rejected_invocations, context))
 
 
 def _discard_rejected_invocations(context: ReviewLoopRunContext) -> None:
@@ -660,3 +472,23 @@ def _discard_rejected_invocations(context: ReviewLoopRunContext) -> None:
             context.output, context.stage, task_ids, audit, local_round, reason
         )
     context.rejected_invocations.clear()
+
+
+def _validate_final_findings(
+    context: ReviewLoopRunContext, progress: ReviewLoopProgress
+) -> None:
+    """Close invalid findings and raise their execution error before cancellation."""
+    try:
+        validate_final_findings(context, progress)
+    except FindingsExtractionError as exc:
+        close_checkpoint(context, str(exc))
+        raise NodeExecutionError(str(exc)) from exc
+
+
+def _reject_review_loop(
+    context: ReviewLoopRunContext, error: ReviewPolicyError
+) -> NoReturn:
+    """Close and discard in order, keeping settled policy errors ahead of cancellation."""
+    close_checkpoint(context, str(error))
+    _discard_rejected_invocations(context)
+    raise error

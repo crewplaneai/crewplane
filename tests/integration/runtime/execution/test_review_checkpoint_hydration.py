@@ -447,6 +447,40 @@ def test_project_change_after_selection_fails_before_provider_calls(
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("point", ["before", "during_copy"])
+def test_source_marker_change_blocks_hydration_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, point: str
+) -> None:
+    async def run():
+        output, runtime = await finalized_checkpoint(tmp_path)
+        frontier, fresh, restored = prepare_checkpoint_hydration(output, runtime)
+        selected = frontier.checkpoints["review"]
+        changed = selected.model_copy(update={"project_observation": None})
+        copy = checkpoint_hydration.copy_checkpoint_file
+
+        def change_marker(source, destination, descriptor):
+            copy(source, destination, descriptor)
+            output.write_review_checkpoint(changed)
+
+        if point == "before":
+            output.write_review_checkpoint(changed)
+            message = "^Selected review checkpoint changed for node 'review'\\.$"
+        else:
+            monkeypatch.setattr(
+                checkpoint_hydration, "copy_checkpoint_file", change_marker
+            )
+            message = "^Selected review checkpoint changed while copying 'review'\\.$"
+        with pytest.raises(ValueError, match=message):
+            hydrate_review_checkpoints(frontier, restored.plan, fresh)
+        assert fresh.read_review_checkpoint("review") is None
+        assert not fresh.read_hydrated_review_checkpoints()
+        assert [
+            (fresh.stages_dir / item.relative_path).exists() for item in selected.files
+        ] == [point == "during_copy"] * len(selected.files)
+
+    asyncio.run(run())
+
+
 def test_repeated_hydration_advances_immediate_origin_and_ignores_orphans(
     tmp_path: Path,
 ) -> None:

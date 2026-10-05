@@ -92,30 +92,44 @@ def _review(root: Path, artifact: ReviewerRoundArtifact) -> CheckpointReview:
     )
 
 
-def encode_progress(root: Path, progress: ReviewLoopProgress) -> CheckpointProgress:
-    active = progress.active_audit
-    audit = (
-        None
-        if active is None
-        else CheckpointAuditProgress.model_validate(
-            {
-                **_counters(active),
-                "executor_outputs": _candidates(root, active.executor_outputs),
-                "previous_executor_outputs": _candidates(
-                    root, active.previous_executor_outputs
-                ),
-                "previous_unresolved_fingerprints": active.previous_unresolved_fingerprints,
-                "previous_executor_fingerprint": active.previous_executor_fingerprint,
-                "latest_valid_executor_outputs": _candidates(
-                    root, active.latest_valid_executor_outputs
-                ),
-                "latest_reviewer_outputs": [
-                    _review(root, item) for item in active.latest_reviewer_outputs
-                ],
-                "reviewer_failures": active.reviewer_failures,
-            }
-        )
+def _encode_audit(
+    root: Path, active: AuditRoundProgress | None
+) -> CheckpointAuditProgress | None:
+    if active is None:
+        return None
+    return CheckpointAuditProgress.model_validate(
+        {
+            **_counters(active),
+            "executor_outputs": _candidates(root, active.executor_outputs),
+            "previous_executor_outputs": _candidates(
+                root, active.previous_executor_outputs
+            ),
+            "previous_unresolved_fingerprints": active.previous_unresolved_fingerprints,
+            "previous_executor_fingerprint": active.previous_executor_fingerprint,
+            "latest_valid_executor_outputs": _candidates(
+                root, active.latest_valid_executor_outputs
+            ),
+            "latest_reviewer_outputs": [
+                _review(root, item) for item in active.latest_reviewer_outputs
+            ],
+            "reviewer_failures": active.reviewer_failures,
+        }
     )
+
+
+def encode_progress(root: Path, progress: ReviewLoopProgress) -> CheckpointProgress:
+    """Encode bound runtime outputs relative to the run stage root.
+
+    Candidates must have identities, and all output paths must be under root.
+    Encode the active audit before loop and initial-review state, preserving
+    list order and absent candidate lists as None. Perform no I/O or mutation;
+    checkpoint failure records retain their existing object identities.
+
+    Raises:
+        ValueError: A candidate lacks an identity or an output is outside root.
+        pydantic.ValidationError: Encoded fields violate the checkpoint schema.
+    """
+    audit = _encode_audit(root, progress.active_audit)
     return CheckpointProgress.model_validate(
         {
             **_counters(progress),
@@ -159,6 +173,15 @@ def _restore_counters(
 
 
 class ProgressRestorer:
+    """Restore caller-validated checkpoint state without writing artifacts.
+
+    Callers validate compiled-node policy and checkpoint dependencies first.
+    Candidate content is reread with containment and signature checks; reviewer
+    evaluations come from stored records without reading reviewer files.
+    Restored lists and stall state are new, while providers and failure records
+    are reused. The active audit shares its restored loop's stall state.
+    """
+
     def __init__(
         self,
         checkpoint: OpenReviewCheckpoint,
@@ -166,6 +189,18 @@ class ProgressRestorer:
         providers: list[ProviderRecord],
         audit_rounds: int,
     ) -> None:
+        """Index descriptors and the current node's providers without I/O.
+
+        Args:
+            checkpoint: Validated open checkpoint for the current compiled node.
+            root: Run stage root containing the checkpoint's dependencies.
+            providers: Current node providers, indexed by task ID.
+            audit_rounds: Configured audit count; counts above one restore audit
+                numbers, otherwise runtime artifacts use None.
+
+        Retain checkpoint, provider, and descriptor objects by reference; own
+        the lookup dictionaries.
+        """
         self.checkpoint = checkpoint
         self.root = root
         self.providers = {provider.task_id: provider for provider in providers}
@@ -175,9 +210,25 @@ class ProgressRestorer:
     def candidates(
         self, items: list[CheckpointCandidate] | None
     ) -> list[ExecutorRoundArtifact] | None:
+        """Restore candidates in list order, preserving None and empty lists.
+
+        Return a new list when present. Propagate the first candidate error
+        without reading later candidates or changing the supplied records.
+        """
         return None if items is None else [self.candidate(item) for item in items]
 
     def candidate(self, item: CheckpointCandidate) -> ExecutorRoundArtifact:
+        """Read verified UTF-8 content into a new artifact with its saved identity.
+
+        Reuse the indexed provider and signature without modifying the file or
+        descriptor. Preserve producer coordinates and configured audit numbering.
+
+        Raises:
+            KeyError: The output descriptor or task provider is not indexed.
+            ValueError: The file is missing, unsafe, or differs from its signature.
+            UnicodeDecodeError: Verified content is not UTF-8.
+            OSError: Inspecting or reading the file fails.
+        """
         descriptor = self.files[item.output_path]
         identity = item.identity
         return ExecutorRoundArtifact(
@@ -199,6 +250,14 @@ class ProgressRestorer:
         )
 
     def reviews(self, items: list[CheckpointReview]) -> list[ReviewerRoundArtifact]:
+        """Restore ordered review artifacts from saved evaluations without I/O.
+
+        Return a new list and artifacts, reusing indexed providers and descriptor
+        signatures. File verification belongs to the caller's dependency check.
+
+        Raises:
+            KeyError: A task provider or output descriptor is not indexed.
+        """
         return [
             ReviewerRoundArtifact(
                 provider=self.providers[item.task_id],
@@ -214,6 +273,7 @@ class ProgressRestorer:
 
     @staticmethod
     def evaluation(item: CheckpointEvaluation) -> EvaluatedReviewResult:
+        """Copy saved evaluation fields into an immutable runtime result without I/O."""
         return EvaluatedReviewResult(
             verdict=item.verdict,
             approved=item.approved,
@@ -233,6 +293,16 @@ class ProgressRestorer:
         )
 
     def restore(self) -> ReviewLoopProgress:
+        """Return fresh loop progress and an optional audit sharing its stall state.
+
+        Restore loop outputs and initial reviews before the active audit. Rebuild
+        audit feedback from saved reviews only when previous outputs are present,
+        including an empty list. Preserve optional candidate lists and restore
+        counters, stop reasons, and the checkpoint cursor without mutation.
+
+        Propagate candidate read and lookup errors, and review lookup errors,
+        stopping before later conversions. No partial progress is returned.
+        """
         stored = self.checkpoint.progress
         progress = ReviewLoopProgress(
             latest_executor_outputs=self.candidates(stored.latest_executor_outputs),
@@ -256,24 +326,29 @@ class ProgressRestorer:
         )
         _restore_counters(stored, progress)
         if stored.active_audit is not None:
-            active = stored.active_audit
-            reviews = self.reviews(active.latest_reviewer_outputs)
-            progress.active_audit = AuditRoundProgress(
-                executor_outputs=self.candidates(active.executor_outputs) or [],
-                previous_executor_outputs=self.candidates(
-                    active.previous_executor_outputs
-                ),
-                previous_review_packet=render_unresolved_review_packet(reviews)
-                if active.previous_executor_outputs is not None
-                else None,
-                previous_unresolved_fingerprints=active.previous_unresolved_fingerprints,
-                previous_executor_fingerprint=active.previous_executor_fingerprint,
-                latest_valid_executor_outputs=self.candidates(
-                    active.latest_valid_executor_outputs
-                ),
-                latest_reviewer_outputs=reviews,
-                reviewer_failures=list(active.reviewer_failures),
-                stall=progress.stall,
+            progress.active_audit = self._restore_audit(
+                stored.active_audit, progress.stall
             )
-            _restore_counters(active, progress.active_audit)
         return progress
+
+    def _restore_audit(
+        self, active: CheckpointAuditProgress, stall: ReviewStallState
+    ) -> AuditRoundProgress:
+        reviews = self.reviews(active.latest_reviewer_outputs)
+        audit = AuditRoundProgress(
+            executor_outputs=self.candidates(active.executor_outputs) or [],
+            previous_executor_outputs=self.candidates(active.previous_executor_outputs),
+            previous_review_packet=render_unresolved_review_packet(reviews)
+            if active.previous_executor_outputs is not None
+            else None,
+            previous_unresolved_fingerprints=active.previous_unresolved_fingerprints,
+            previous_executor_fingerprint=active.previous_executor_fingerprint,
+            latest_valid_executor_outputs=self.candidates(
+                active.latest_valid_executor_outputs
+            ),
+            latest_reviewer_outputs=reviews,
+            reviewer_failures=list(active.reviewer_failures),
+            stall=stall,
+        )
+        _restore_counters(active, audit)
+        return audit

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
+from unittest.mock import Mock, patch
 
 import pytest
 
 from crewplane.artifacts.naming import build_generated_file_result_dir_name
-from crewplane.artifacts.resume.validation import validate_resume_frontier
+from crewplane.artifacts.resume import validation
+from crewplane.artifacts.resume.validation import (
+    plan_order,
+    required_resume_artifact_paths,
+    validate_resume_frontier,
+)
 from crewplane.artifacts.workspace.node_state import (
     WorkspaceDescriptorLookup,
     refresh_node_workspace_descriptor,
@@ -477,3 +484,91 @@ def test_resume_token_requires_verified_backing_evidence(
         ),
     )
     assert validate_resume_frontier(source, plan).resumed_node_ids == ()
+
+
+def test_frontier_scans_states_before_checkpoints_in_plan_node_order(tmp_path) -> None:
+    source = source_record(tmp_path)
+    plan = make_plan()
+    plan = plan.model_copy(update={"nodes": list(reversed(plan.nodes))})
+    states = {}
+    for node in plan.nodes:
+        descriptor = write_result(
+            source.results_dir, node.artifact_contract.output_path, node.id
+        )
+        states[node.id] = make_node_state(source.manifest, node.id, [descriptor])
+        write_node_state(source.run_dir, states[node.id])
+    contents = {
+        path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()
+    }
+    plan_before = plan.model_dump()
+    manifest_before = source.manifest.model_dump()
+    calls = Mock()
+    with ExitStack() as stack:
+        for name in (
+            "_read_node_state",
+            "_node_state_is_valid",
+            "read_review_checkpoint",
+        ):
+            spy = stack.enter_context(
+                patch.object(validation, name, wraps=getattr(validation, name))
+            )
+            calls.attach_mock(spy, name)
+        frontier = validate_resume_frontier(source, plan)
+
+    assert frontier.source is source
+    assert frontier.node_states == states
+    assert frontier.resumed_node_ids == ("b", "a")
+    assert frontier.checkpoint_node_ids == ()
+    assert [call[0] for call in calls.mock_calls] == [
+        "_read_node_state",
+        "_node_state_is_valid",
+        "_read_node_state",
+        "_node_state_is_valid",
+        "read_review_checkpoint",
+        "read_review_checkpoint",
+    ]
+    assert [call.args[1] for call in calls._read_node_state.call_args_list] == [
+        "b",
+        "a",
+    ]
+    assert [call.args[1] for call in calls.read_review_checkpoint.call_args_list] == [
+        "b",
+        "a",
+    ]
+    assert plan.model_dump() == plan_before
+    assert source.manifest.model_dump() == manifest_before
+    assert {
+        path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()
+    } == contents
+
+
+@pytest.mark.parametrize("findings_source", ["none", "node", "edge", "missing_path"])
+def test_required_resume_artifacts_preserve_order_and_empty_sentinel(
+    findings_source: str,
+) -> None:
+    plan = make_plan(findings_edge=findings_source != "none")
+    node = plan.nodes[0]
+    node.findings = findings_source in {"node", "missing_path"}
+    if findings_source == "node":
+        plan.dependency_graph = []
+    elif findings_source == "missing_path":
+        node.artifact_contract.findings_path = None
+
+    required = required_resume_artifact_paths(plan, node)
+
+    if findings_source == "missing_path":
+        assert required == {}
+    else:
+        expected = [("output", "a-result.md")]
+        if findings_source != "none":
+            expected.append(("findings", "a-findings.md"))
+        assert list(required.items()) == expected
+
+
+def test_plan_order_uses_mapping_insertion_order_and_rejects_unknown_ids() -> None:
+    nodes_by_id = {node.id: node for node in reversed(make_plan().nodes)}
+
+    assert plan_order(nodes_by_id, "b") == 0
+    assert plan_order(nodes_by_id, "a") == 1
+    with pytest.raises(ValueError, match="'unknown' is not in list"):
+        plan_order(nodes_by_id, "unknown")

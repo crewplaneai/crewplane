@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
+from crewplane.artifacts.resume import validation
 from crewplane.artifacts.resume.checkpoint_store import publish_review_checkpoint
 from crewplane.artifacts.resume.validation import validate_resume_frontier
 from crewplane.cli.run.resume import artifact_valid_history_plan
@@ -391,3 +393,125 @@ def test_checkpoint_requires_successful_dependency_closure(tmp_path: Path) -> No
     frontier = validate_resume_frontier(source, plan, observation)
     assert frontier.resumed_node_ids == ("b",)
     assert frontier.checkpoint_node_ids == ("a",)
+
+
+@pytest.mark.parametrize(
+    ("failed_check", "error_type"),
+    [
+        (None, None),
+        ("read_review_checkpoint", PermissionError),
+        ("checkpoint_matches_source", ValueError),
+        ("validate_checkpoint_node", ValueError),
+        ("_require_checkpoint_provenance", ValueError),
+        ("require_checkpoint_dependencies", OSError),
+        ("require_checkpoint_project", RuntimeError),
+        ("require_checkpoint_dependencies", TypeError),
+    ],
+)
+def test_checkpoint_selection_preserves_validation_order_and_error_handling(
+    tmp_path: Path, failed_check: str | None, error_type: type[Exception] | None
+) -> None:
+    source, plan, checkpoint, observation = checkpoint_history(tmp_path)
+    checks = [
+        "read_review_checkpoint",
+        "checkpoint_matches_source",
+        "validate_checkpoint_node",
+        "_require_checkpoint_provenance",
+        "require_checkpoint_dependencies",
+        "require_checkpoint_project",
+    ]
+    error = None if error_type is None else error_type("checkpoint check failed")
+    contents = {
+        path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()
+    }
+    calls = Mock()
+    with ExitStack() as stack:
+        for name in checks:
+            spy = stack.enter_context(
+                patch.object(
+                    validation,
+                    name,
+                    wraps=getattr(validation, name),
+                    side_effect=error if name == failed_check else None,
+                )
+            )
+            calls.attach_mock(spy, name)
+        if error_type is TypeError:
+            with pytest.raises(TypeError, match="checkpoint check failed") as caught:
+                validate_resume_frontier(source, plan, observation)
+            assert caught.value is error
+        else:
+            frontier = validate_resume_frontier(source, plan, observation)
+            assert frontier.source is source
+            assert frontier.resumed_node_ids == ()
+            assert frontier.checkpoints == ({"a": checkpoint} if error is None else {})
+            assert frontier.closed_checkpoint_ids == frozenset()
+
+    expected = (
+        checks if failed_check is None else checks[: checks.index(failed_check) + 1]
+    )
+    if error_type is not TypeError:
+        expected = [*expected, "read_review_checkpoint"]
+    assert [call[0] for call in calls.mock_calls] == expected
+    assert {
+        path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()
+    } == contents
+
+
+@pytest.mark.parametrize("gate", ["fenced", "completed", "dependencies", "closed"])
+def test_checkpoint_gates_follow_identity_checks_and_skip_detailed_validation(
+    tmp_path: Path, gate: str
+) -> None:
+    source, plan, checkpoint, observation = checkpoint_history(tmp_path)
+    fences = frozenset({"a"}) if gate in {"fenced", "closed"} else frozenset()
+    if gate in {"completed", "closed"}:
+        descriptor = write_result(source.results_dir, "a-result.md", "complete")
+        write_node_state(
+            source.run_dir, make_node_state(source.manifest, "a", [descriptor])
+        )
+    if gate == "dependencies":
+        edge = plan.dependency_graph[0].model_copy(
+            update={"source_node": "b", "target_node": "a"}
+        )
+        plan = plan.model_copy(update={"dependency_graph": [edge]})
+    elif gate == "closed":
+        identity = {
+            key: value
+            for key, value in checkpoint.model_dump().items()
+            if key in ClosedReviewCheckpoint.model_fields and key != "kind"
+        }
+        publish_review_checkpoint(
+            source.run_dir,
+            ClosedReviewCheckpoint(**identity, terminal_reason="no_progress"),
+        )
+        (source.run_dir / checkpoint.files[0].relative_path).unlink()
+
+    calls = Mock()
+    with ExitStack() as stack:
+        for name in (
+            "read_review_checkpoint",
+            "checkpoint_matches_source",
+            "validate_checkpoint_node",
+            "_require_checkpoint_provenance",
+            "require_checkpoint_dependencies",
+            "require_checkpoint_project",
+        ):
+            spy = stack.enter_context(
+                patch.object(validation, name, wraps=getattr(validation, name))
+            )
+            calls.attach_mock(spy, name)
+        frontier = validate_resume_frontier(source, plan, observation, fences)
+
+    assert frontier.checkpoint_node_ids == ()
+    assert frontier.resumed_node_ids == (
+        ("a",) if gate in {"completed", "closed"} else ()
+    )
+    assert frontier.closed_checkpoint_ids == (
+        frozenset({"a"}) if gate == "closed" else frozenset()
+    )
+    assert [call[0] for call in calls.mock_calls] == [
+        "read_review_checkpoint",
+        "checkpoint_matches_source",
+        "validate_checkpoint_node",
+        "read_review_checkpoint",
+    ]

@@ -595,7 +595,7 @@ def test_validate_frontier_verifies_each_lineage_payload_once(tmp_path) -> None:
     attach_workspace_descriptor(source.run_dir, plan, "a")
 
     with patch(
-        "crewplane.artifacts.workspace.state.validation.verify_persisted_workspace_result_chain",
+        "crewplane.artifacts.workspace.state.materialization_results.verify_persisted_workspace_result_chain",
         wraps=verify_persisted_workspace_result_chain,
     ) as verify_chain:
         frontier = validate_resume_frontier(source, plan)

@@ -17,7 +17,7 @@ from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
 )
-from crewplane.core.review_checkpoint import OpenReviewCheckpoint
+from crewplane.core.review_checkpoint import OpenReviewCheckpoint, ReviewLoopCheckpoint
 from crewplane.core.review_checkpoint_state import (
     CheckpointFile,
     CheckpointInvocation,
@@ -37,13 +37,25 @@ from .state.validation import checkpoint_invocation_is_valid
 
 @dataclass(frozen=True)
 class PreparedCheckpointWorkspaces:
+    """Workspace references, dependency descriptors, and unpublished snapshot bytes.
+
+    Preparation orders workspaces and snapshots by destination, and files by
+    first-seen path with the last descriptor winning. Fields cannot be rebound;
+    their collections remain mutable and are independently allocated by default.
+    """
+
     workspaces: list[CheckpointWorkspace] = field(default_factory=list)
     files: list[CheckpointFile] = field(default_factory=list)
     snapshots: dict[str, bytes] = field(default_factory=dict)
 
 
 def semantic_workspace_state(payload: dict[str, object]) -> dict[str, object]:
-    """Remove physical ownership while retaining semantic invocation evidence."""
+    """Validate evidence and return a deep copy stripped of physical/ref ownership.
+
+    Require the failed-invocation contract for failed state, otherwise the resume
+    contract. Clear execution placement and mark checkpoint retention without
+    mutating the input or writing files. Contract errors propagate as RuntimeError.
+    """
     require_workspace_state_contract(
         payload, "failed_invocation" if payload.get("status") == "failed" else "resume"
     )
@@ -73,6 +85,12 @@ def semantic_workspace_state(payload: dict[str, object]) -> dict[str, object]:
 
 
 def checkpoint_invocations(progress: CheckpointProgress) -> list[CheckpointInvocation]:
+    """Collect candidate producers, then reviews and failures, without mutation.
+
+    Use producer coordinates for candidates and invocation coordinates otherwise.
+    Deduplicate by task, audit, and round in first-seen order; the last record wins.
+    Invalid invocation coordinates propagate as pydantic.ValidationError.
+    """
     invocations = [
         CheckpointInvocation(
             task_id=item.task_id,
@@ -101,6 +119,11 @@ def checkpoint_invocations(progress: CheckpointProgress) -> list[CheckpointInvoc
 def invocation_destination(
     node: PreflightExecutionNode, invocation: CheckpointInvocation
 ) -> str:
+    """Return the invocation's workspace-state path relative to the stage root.
+
+    Include the audit in the slug only when the node has multiple audit rounds.
+    This performs no I/O and does not modify the node or invocation.
+    """
     audit = invocation.audit if (node.execution_policy.audit_rounds or 1) > 1 else None
     slug = invocation_slug(node.id, invocation.task_id, audit, invocation.local_round)
     return f"{node.artifact_contract.stage_path}/{workspace_state_filename(slug)}"
@@ -167,11 +190,34 @@ def prepare_checkpoint_workspaces(
     node: PreflightExecutionNode,
     progress: CheckpointProgress,
 ) -> PreparedCheckpointWorkspaces:
+    """Prepare descriptor-backed semantic snapshots without publishing them.
+
+    Disabled workspaces return empty collections without I/O. Otherwise load
+    invocations and their same-node ancestors in stack order, preferring snapshots
+    in the previous open checkpoint over live state. Validate all loaded payloads
+    before assembling snapshots in destination order, with each state's descriptor
+    followed by its bundle and setup metadata/log descriptors. Deduplicate files
+    in first-seen path order, retaining the last descriptor. Inputs stay unchanged.
+
+    Read, JSON decoding, contract, invocation, and dependency errors propagate at
+    the first failure. Semantic validation owns any temporary Git resources.
+    """
     policy = node.workspace_policy
     if policy is None or not policy.enabled:
         return PreparedCheckpointWorkspaces()
     root = output.stages_dir
     previous = output.read_review_checkpoint(node.id)
+    payloads = _load_workspace_payloads(root, node, progress, previous)
+    _validate_payloads(root, plan, node, payloads, output.run_id, output.run_key_name)
+    return _prepare_workspace_snapshots(root, node, payloads)
+
+
+def _load_workspace_payloads(
+    root: Path,
+    node: PreflightExecutionNode,
+    progress: CheckpointProgress,
+    previous: ReviewLoopCheckpoint | None,
+) -> dict[str, dict[str, object]]:
     carried = (
         {item.destination_path: item for item in previous.workspaces}
         if isinstance(previous, OpenReviewCheckpoint)
@@ -206,7 +252,14 @@ def prepare_checkpoint_workspaces(
             raise ValueError("Checkpoint workspace metadata must be an object.")
         payloads[destination] = payload
         pending.extend(_ancestor_destinations(payload, node))
-    _validate_payloads(root, plan, node, payloads, output.run_id, output.run_key_name)
+    return payloads
+
+
+def _prepare_workspace_snapshots(
+    root: Path,
+    node: PreflightExecutionNode,
+    payloads: dict[str, dict[str, object]],
+) -> PreparedCheckpointWorkspaces:
     workspaces, files = [], []
     snapshots = {}
     for destination, payload in sorted(payloads.items()):
@@ -244,6 +297,14 @@ def prepare_checkpoint_workspaces(
 def publish_checkpoint_workspaces(
     root: Path, prepared: PreparedCheckpointWorkspaces
 ) -> None:
+    """Publish snapshots in mapping order and verify each against its descriptor.
+
+    Create contained directories and atomically write absent snapshots; verify
+    existing files without replacing them. Stop on the first containment,
+    signature, descriptor lookup, or I/O error. Earlier files and directories
+    remain published on failure; the atomic writer owns temporary-file cleanup.
+    Concurrent creation errors propagate. Prepared collections stay unchanged.
+    """
     descriptors = {item.relative_path: item for item in prepared.files}
     for relative, encoded in prepared.snapshots.items():
         destination = Path(relative)
@@ -292,6 +353,8 @@ def _validate_payloads(
     run_id: str,
     run_key_name: str,
 ) -> None:
+    # source_validation imports state, whose __init__ loads validation back into
+    # source_validation; defer until both modules have finished initializing.
     from .source_validation import checkpoint_invocation_source_matches
 
     source = WorkspaceEvidenceRoot(root)
@@ -322,6 +385,17 @@ def validate_checkpoint_workspaces(
     node: PreflightExecutionNode,
     checkpoint: OpenReviewCheckpoint,
 ) -> set[str]:
+    """Validate carried workspace closure and return its bound dependency paths.
+
+    Disabled workspaces reject carried state or return an empty set without I/O.
+    For managed workspaces, read snapshots in checkpoint order, check coordinates,
+    then describe and match bundle/setup dependencies. Check invocation closure
+    before semantic validation in payload insertion order. Inputs stay unchanged;
+    semantic validation owns any temporary Git resources.
+
+    ValueError reports invalid evidence, dependencies, or closure. Descriptor
+    lookup, decoding, model validation, and I/O errors propagate unchanged.
+    """
     policy = node.workspace_policy
     if policy is None or not policy.enabled:
         if checkpoint.workspaces:
@@ -333,24 +407,10 @@ def validate_checkpoint_workspaces(
     files = {item.relative_path: item for item in checkpoint.files}
     payloads: dict[str, dict[str, object]] = {}
     for workspace in checkpoint.workspaces:
-        payload = json.loads(read_checkpoint_file(root, files[workspace.snapshot_path]))
-        if not isinstance(payload, dict):
-            raise ValueError("Invalid checkpoint workspace metadata.")
-        if _invocation_from_payload(payload) != CheckpointInvocation(
-            task_id=workspace.task_id,
-            role=workspace.role,
-            audit=workspace.audit,
-            local_round=workspace.local_round,
-        ):
-            raise ValueError("Checkpoint workspace coordinates mismatch.")
+        payload, expected = _validate_workspace_entry(root, node, workspace, files)
         payloads[workspace.destination_path] = payload
-        expected = _workspace_dependencies(
-            root, workspace.destination_path, payload, workspace, node
-        )
         paths.add(workspace.snapshot_path)
         paths.update(item.relative_path for item in expected)
-        if any(files.get(item.relative_path) != item for item in expected):
-            raise ValueError("Workspace dependency is not descriptor-backed.")
     expected_destinations = {
         invocation_destination(node, item)
         for item in checkpoint_invocations(checkpoint.progress)
@@ -363,3 +423,27 @@ def validate_checkpoint_workspaces(
         root, plan, node, payloads, checkpoint.run_id, checkpoint.run_key_name
     )
     return paths
+
+
+def _validate_workspace_entry(
+    root: Path,
+    node: PreflightExecutionNode,
+    workspace: CheckpointWorkspace,
+    files: dict[str, CheckpointFile],
+) -> tuple[dict[str, object], list[CheckpointFile]]:
+    payload = json.loads(read_checkpoint_file(root, files[workspace.snapshot_path]))
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid checkpoint workspace metadata.")
+    if _invocation_from_payload(payload) != CheckpointInvocation(
+        task_id=workspace.task_id,
+        role=workspace.role,
+        audit=workspace.audit,
+        local_round=workspace.local_round,
+    ):
+        raise ValueError("Checkpoint workspace coordinates mismatch.")
+    expected = _workspace_dependencies(
+        root, workspace.destination_path, payload, workspace, node
+    )
+    if any(files.get(item.relative_path) != item for item in expected):
+        raise ValueError("Workspace dependency is not descriptor-backed.")
+    return payload, expected
