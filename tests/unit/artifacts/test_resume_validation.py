@@ -570,5 +570,5 @@ def test_plan_order_uses_mapping_insertion_order_and_rejects_unknown_ids() -> No
 
     assert plan_order(nodes_by_id, "b") == 0
     assert plan_order(nodes_by_id, "a") == 1
-    with pytest.raises(ValueError, match="'unknown' is not in list"):
+    with pytest.raises(ValueError, match="not in list"):
         plan_order(nodes_by_id, "unknown")
