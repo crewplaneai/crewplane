@@ -49,8 +49,12 @@ def test_yaml_count_edits_preserve_run_history_identity(
 
 
 class CliRunContextHashingTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_failed_run_writes_failure_manifest_and_does_not_trigger_skip(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -113,7 +117,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             self.assertNotIn("Identical context detected", stream.getvalue())
 
     def test_run_skips_duplicate_context_across_previous_run_folders(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -170,7 +174,7 @@ class CliRunContextHashingTests(unittest.TestCase):
             self.assertGreaterEqual(len(stage_runs), 2)
 
     def test_run_reexecutes_when_env_template_value_changes(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)

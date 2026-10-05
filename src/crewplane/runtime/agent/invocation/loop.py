@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+from asyncio import CancelledError, sleep
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Never, assert_never
@@ -129,7 +129,7 @@ async def run_invocation_loop(
                 if retry is None:
                     return
                 _advance_retry_state(state, retry)
-        except asyncio.CancelledError:
+        except CancelledError:
             raise
         except Exception:
             record_usage_from_state_once(invocation_context, config, state.usage_state)
@@ -273,7 +273,7 @@ async def _execute_transition_action(
         case SleepAndRetryAttemptTransition(retry_delay_seconds=retry_delay_seconds):
             emit_notice(invocation_context, transition.notice)
             await reset_before_retry(invocation_context)
-            await asyncio.sleep(retry_delay_seconds)
+            await sleep(retry_delay_seconds)
             return transition
         case FinalizeSuccessAttemptTransition(extracted_output=extracted_output):
             _finalize_successful_invocation(

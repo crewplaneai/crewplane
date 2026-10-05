@@ -1,5 +1,5 @@
-import tempfile
 from pathlib import Path
+from tempfile import mkdtemp
 
 from crewplane.core.config import Config
 from crewplane.core.workflow.loading import load_tasks_with_sources
@@ -40,51 +40,51 @@ def _workspace_policy_messages(
     )
 
 
-def test_imported_nodes_inherit_root_single_worktree() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        module = root / "module.task.md"
-        workflow = root / "root.task.md"
+def test_imported_nodes_inherit_root_single_worktree(tmp_path: Path) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    module = root / "module.task.md"
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            module,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Module",
-                "nodes:",
-                "  - id: plan",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## plan",
-                "",
-                "Plan.",
-            ],
-        )
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "worktrees:",
-                "  primary:",
-                "    kind: worktree",
-                "imports:",
-                "  - path: module.task.md",
-                "    as: module",
-                "nodes: []",
-                "---",
-                "",
-            ],
-        )
+    write_import_workflow(
+        module,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Module",
+            "nodes:",
+            "  - id: plan",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## plan",
+            "",
+            "Plan.",
+        ],
+    )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "worktrees:",
+            "  primary:",
+            "    kind: worktree",
+            "imports:",
+            "  - path: module.task.md",
+            "    as: module",
+            "nodes: []",
+            "---",
+            "",
+        ],
+    )
 
-        workflow_plan = load_tasks_with_sources(
-            workflow,
-            project_root=root,
-        ).workflow
+    workflow_plan = load_tasks_with_sources(
+        workflow,
+        project_root=root,
+    ).workflow
 
     assert workflow_plan.nodes[0].id == "module.plan"
     assert workflow_plan.nodes[0].worktree is None
@@ -95,59 +95,59 @@ def test_imported_nodes_inherit_root_single_worktree() -> None:
     assert selections["module.plan"].logical_worktree_name == "primary"
 
 
-def test_imported_worktree_selector_is_namespace_rewritten() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        module = root / "module.task.md"
-        workflow = root / "root.task.md"
+def test_imported_worktree_selector_is_namespace_rewritten(tmp_path: Path) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    module = root / "module.task.md"
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            module,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Module",
-                "worktrees:",
-                "  implementation:",
-                "    kind: worktree",
-                "nodes:",
-                "  - id: implement",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "    worktree: implementation",
-                "  - id: fix",
-                "    mode: sequential",
-                "    needs: [implement]",
-                "    providers: [alpha]",
-                "    worktree: implementation",
-                "---",
-                "",
-                "## implement",
-                "",
-                "Implement",
-                "",
-                "## fix",
-                "",
-                "Fix {{implement.output}}",
-            ],
-        )
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "imports:",
-                "  - path: module.task.md",
-                "    as: auth",
-                "nodes: []",
-                "---",
-            ],
-        )
+    write_import_workflow(
+        module,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Module",
+            "worktrees:",
+            "  implementation:",
+            "    kind: worktree",
+            "nodes:",
+            "  - id: implement",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "    worktree: implementation",
+            "  - id: fix",
+            "    mode: sequential",
+            "    needs: [implement]",
+            "    providers: [alpha]",
+            "    worktree: implementation",
+            "---",
+            "",
+            "## implement",
+            "",
+            "Implement",
+            "",
+            "## fix",
+            "",
+            "Fix {{implement.output}}",
+        ],
+    )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "imports:",
+            "  - path: module.task.md",
+            "    as: auth",
+            "nodes: []",
+            "---",
+        ],
+    )
 
-        validated = validate_workflow_plan(
-            load_tasks_with_sources(workflow, project_root=root).workflow
-        )
+    validated = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=root).workflow
+    )
 
     assert [node.id for node in validated.nodes] == ["auth.implement", "auth.fix"]
     assert list(validated.worktrees) == ["auth.implementation"]
@@ -159,50 +159,50 @@ def test_imported_worktree_selector_is_namespace_rewritten() -> None:
     assert selections["auth.fix"].source_node_id == "auth.implement"
 
 
-def test_imported_worktree_none_selector_stays_project_root() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        module = root / "module.task.md"
-        workflow = root / "root.task.md"
+def test_imported_worktree_none_selector_stays_project_root(tmp_path: Path) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    module = root / "module.task.md"
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            module,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Module",
-                "worktrees:",
-                "  implementation:",
-                "    kind: worktree",
-                "nodes:",
-                "  - id: inspect",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "    worktree: none",
-                "---",
-                "",
-                "## inspect",
-                "",
-                "Inspect project root",
-            ],
-        )
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "imports:",
-                "  - path: module.task.md",
-                "    as: auth",
-                "nodes: []",
-                "---",
-            ],
-        )
+    write_import_workflow(
+        module,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Module",
+            "worktrees:",
+            "  implementation:",
+            "    kind: worktree",
+            "nodes:",
+            "  - id: inspect",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "    worktree: none",
+            "---",
+            "",
+            "## inspect",
+            "",
+            "Inspect project root",
+        ],
+    )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "imports:",
+            "  - path: module.task.md",
+            "    as: auth",
+            "nodes: []",
+            "---",
+        ],
+    )
 
-        validated = validate_workflow_plan(
-            load_tasks_with_sources(workflow, project_root=root).workflow
-        )
+    validated = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=root).workflow
+    )
 
     assert list(validated.worktrees) == ["auth.implementation"]
     assert validated.nodes[0].id == "auth.inspect"
@@ -215,57 +215,59 @@ def test_imported_worktree_none_selector_stays_project_root() -> None:
     assert selection.logical_worktree_name is None
 
 
-def test_imported_implicit_worktree_selector_uses_namespaced_declaration() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        module = root / "module.task.md"
-        workflow = root / "root.task.md"
+def test_imported_implicit_worktree_selector_uses_namespaced_declaration(
+    tmp_path: Path,
+) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    module = root / "module.task.md"
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            module,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Module",
-                "worktrees:",
-                "  implementation:",
-                "    kind: worktree",
-                "nodes:",
-                "  - id: implement",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "  - id: fix",
-                "    mode: sequential",
-                "    needs: [implement]",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## implement",
-                "",
-                "Implement",
-                "",
-                "## fix",
-                "",
-                "Fix {{implement.output}}",
-            ],
-        )
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "imports:",
-                "  - path: module.task.md",
-                "    as: auth",
-                "nodes: []",
-                "---",
-            ],
-        )
+    write_import_workflow(
+        module,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Module",
+            "worktrees:",
+            "  implementation:",
+            "    kind: worktree",
+            "nodes:",
+            "  - id: implement",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "  - id: fix",
+            "    mode: sequential",
+            "    needs: [implement]",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## implement",
+            "",
+            "Implement",
+            "",
+            "## fix",
+            "",
+            "Fix {{implement.output}}",
+        ],
+    )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "imports:",
+            "  - path: module.task.md",
+            "    as: auth",
+            "nodes: []",
+            "---",
+        ],
+    )
 
-        validated = validate_workflow_plan(
-            load_tasks_with_sources(workflow, project_root=root).workflow
-        )
+    validated = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=root).workflow
+    )
 
     assert list(validated.worktrees) == ["auth.implementation"]
     assert validated.nodes[0].worktree is None
@@ -281,63 +283,63 @@ def test_imported_implicit_worktree_selector_uses_namespaced_declaration() -> No
     assert _workspace_policy_messages(validated, clean_start="tracked_only") == ()
 
 
-def test_nested_import_inherits_nearest_parent_single_worktree() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        child = root / "child.task.md"
-        parent = root / "parent.task.md"
-        workflow = root / "root.task.md"
+def test_nested_import_inherits_nearest_parent_single_worktree(tmp_path: Path) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    child = root / "child.task.md"
+    parent = root / "parent.task.md"
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            child,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Child",
-                "nodes:",
-                "  - id: inspect",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## inspect",
-                "",
-                "Inspect inherited worktree",
-            ],
-        )
-        write_import_workflow(
-            parent,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Parent",
-                "worktrees:",
-                "  implementation:",
-                "    kind: worktree",
-                "imports:",
-                "  - path: child.task.md",
-                "    as: child",
-                "nodes: []",
-                "---",
-            ],
-        )
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "imports:",
-                "  - path: parent.task.md",
-                "    as: auth",
-                "nodes: []",
-                "---",
-            ],
-        )
+    write_import_workflow(
+        child,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Child",
+            "nodes:",
+            "  - id: inspect",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## inspect",
+            "",
+            "Inspect inherited worktree",
+        ],
+    )
+    write_import_workflow(
+        parent,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Parent",
+            "worktrees:",
+            "  implementation:",
+            "    kind: worktree",
+            "imports:",
+            "  - path: child.task.md",
+            "    as: child",
+            "nodes: []",
+            "---",
+        ],
+    )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "imports:",
+            "  - path: parent.task.md",
+            "    as: auth",
+            "nodes: []",
+            "---",
+        ],
+    )
 
-        validated = validate_workflow_plan(
-            load_tasks_with_sources(workflow, project_root=root).workflow
-        )
+    validated = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=root).workflow
+    )
 
     assert list(validated.worktrees) == ["auth.implementation"]
     assert [node.id for node in validated.nodes] == ["auth.child.inspect"]
@@ -350,60 +352,60 @@ def test_nested_import_inherits_nearest_parent_single_worktree() -> None:
     assert _workspace_policy_messages(validated) == ()
 
 
-def test_root_node_does_not_inherit_only_imported_worktree() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        module = root / "module.task.md"
-        workflow = root / "root.task.md"
+def test_root_node_does_not_inherit_only_imported_worktree(tmp_path: Path) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    module = root / "module.task.md"
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            module,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Module",
-                "worktrees:",
-                "  implementation:",
-                "    kind: worktree",
-                "nodes:",
-                "  - id: implement",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## implement",
-                "",
-                "Implement",
-            ],
-        )
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "imports:",
-                "  - path: module.task.md",
-                "    as: auth",
-                "nodes:",
-                "  - id: requirements",
-                "    mode: input",
-                '    source: "{{file:.crewplane/inputs/requirements.md}}"',
-                "  - id: inspect",
-                "    mode: sequential",
-                "    needs: [requirements]",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## inspect",
-                "",
-                "Inspect without managed workspace",
-            ],
-        )
+    write_import_workflow(
+        module,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Module",
+            "worktrees:",
+            "  implementation:",
+            "    kind: worktree",
+            "nodes:",
+            "  - id: implement",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## implement",
+            "",
+            "Implement",
+        ],
+    )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "imports:",
+            "  - path: module.task.md",
+            "    as: auth",
+            "nodes:",
+            "  - id: requirements",
+            "    mode: input",
+            '    source: "{{file:.crewplane/inputs/requirements.md}}"',
+            "  - id: inspect",
+            "    mode: sequential",
+            "    needs: [requirements]",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## inspect",
+            "",
+            "Inspect without managed workspace",
+        ],
+    )
 
-        validated = validate_workflow_plan(
-            load_tasks_with_sources(workflow, project_root=root).workflow
-        )
+    validated = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=root).workflow
+    )
 
     assert [node.id for node in validated.nodes] == [
         "auth.implement",
@@ -420,56 +422,58 @@ def test_root_node_does_not_inherit_only_imported_worktree() -> None:
     assert _workspace_policy_messages(validated) == ()
 
 
-def test_imported_modules_keep_local_single_worktree_inheritance() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        auth_module = root / "auth.task.md"
-        billing_module = root / "billing.task.md"
-        workflow = root / "root.task.md"
+def test_imported_modules_keep_local_single_worktree_inheritance(
+    tmp_path: Path,
+) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    auth_module = root / "auth.task.md"
+    billing_module = root / "billing.task.md"
+    workflow = root / "root.task.md"
 
-        for path, node_id in (
-            (auth_module, "implement-auth"),
-            (billing_module, "implement-billing"),
-        ):
-            write_import_workflow(
-                path,
-                [
-                    "---",
-                    f'schema_version: "{SCHEMA_VERSION}"',
-                    f"name: {node_id}",
-                    "worktrees:",
-                    "  implementation:",
-                    "    kind: worktree",
-                    "nodes:",
-                    f"  - id: {node_id}",
-                    "    mode: sequential",
-                    "    providers: [alpha]",
-                    "---",
-                    "",
-                    f"## {node_id}",
-                    "",
-                    "Implement",
-                ],
-            )
+    for path, node_id in (
+        (auth_module, "implement-auth"),
+        (billing_module, "implement-billing"),
+    ):
         write_import_workflow(
-            workflow,
+            path,
             [
                 "---",
                 f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "imports:",
-                "  - path: auth.task.md",
-                "    as: auth",
-                "  - path: billing.task.md",
-                "    as: billing",
-                "nodes: []",
+                f"name: {node_id}",
+                "worktrees:",
+                "  implementation:",
+                "    kind: worktree",
+                "nodes:",
+                f"  - id: {node_id}",
+                "    mode: sequential",
+                "    providers: [alpha]",
                 "---",
+                "",
+                f"## {node_id}",
+                "",
+                "Implement",
             ],
         )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "imports:",
+            "  - path: auth.task.md",
+            "    as: auth",
+            "  - path: billing.task.md",
+            "    as: billing",
+            "nodes: []",
+            "---",
+        ],
+    )
 
-        validated = validate_workflow_plan(
-            load_tasks_with_sources(workflow, project_root=root).workflow
-        )
+    validated = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=root).workflow
+    )
 
     assert list(validated.worktrees) == [
         "auth.implementation",
@@ -482,59 +486,61 @@ def test_imported_modules_keep_local_single_worktree_inheritance() -> None:
     assert _workspace_policy_messages(validated) == ()
 
 
-def test_root_node_keeps_local_single_worktree_inheritance_with_imports() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        module = root / "module.task.md"
-        workflow = root / "root.task.md"
+def test_root_node_keeps_local_single_worktree_inheritance_with_imports(
+    tmp_path: Path,
+) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    module = root / "module.task.md"
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            module,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Module",
-                "worktrees:",
-                "  implementation:",
-                "    kind: worktree",
-                "nodes:",
-                "  - id: implement",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## implement",
-                "",
-                "Implement",
-            ],
-        )
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "worktrees:",
-                "  scratch:",
-                "    kind: snapshot",
-                "imports:",
-                "  - path: module.task.md",
-                "    as: auth",
-                "nodes:",
-                "  - id: inspect",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## inspect",
-                "",
-                "Inspect",
-            ],
-        )
+    write_import_workflow(
+        module,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Module",
+            "worktrees:",
+            "  implementation:",
+            "    kind: worktree",
+            "nodes:",
+            "  - id: implement",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## implement",
+            "",
+            "Implement",
+        ],
+    )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "worktrees:",
+            "  scratch:",
+            "    kind: snapshot",
+            "imports:",
+            "  - path: module.task.md",
+            "    as: auth",
+            "nodes:",
+            "  - id: inspect",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## inspect",
+            "",
+            "Inspect",
+        ],
+    )
 
-        validated = validate_workflow_plan(
-            load_tasks_with_sources(workflow, project_root=root).workflow
-        )
+    validated = validate_workflow_plan(
+        load_tasks_with_sources(workflow, project_root=root).workflow
+    )
 
     assert list(validated.worktrees) == ["auth.implementation", "scratch"]
     assert validated.nodes[0].worktree == "auth.implementation"
@@ -542,33 +548,33 @@ def test_root_node_keeps_local_single_worktree_inheritance_with_imports() -> Non
     assert _workspace_policy_messages(validated) == ()
 
 
-def test_root_worktree_declaration_remains_workflow_scoped() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        workflow = root / "root.task.md"
+def test_root_worktree_declaration_remains_workflow_scoped(tmp_path: Path) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    root = Path(tmp_dir)
+    workflow = root / "root.task.md"
 
-        write_import_workflow(
-            workflow,
-            [
-                "---",
-                f'schema_version: "{SCHEMA_VERSION}"',
-                "name: Root",
-                "worktrees:",
-                "  scratch:",
-                "    kind: snapshot",
-                "nodes:",
-                "  - id: inspect",
-                "    mode: sequential",
-                "    providers: [alpha]",
-                "---",
-                "",
-                "## inspect",
-                "",
-                "Inspect",
-            ],
-        )
+    write_import_workflow(
+        workflow,
+        [
+            "---",
+            f'schema_version: "{SCHEMA_VERSION}"',
+            "name: Root",
+            "worktrees:",
+            "  scratch:",
+            "    kind: snapshot",
+            "nodes:",
+            "  - id: inspect",
+            "    mode: sequential",
+            "    providers: [alpha]",
+            "---",
+            "",
+            "## inspect",
+            "",
+            "Inspect",
+        ],
+    )
 
-        loaded = load_tasks_with_sources(workflow, project_root=root).workflow
+    loaded = load_tasks_with_sources(workflow, project_root=root).workflow
 
     assert list(loaded.worktrees) == ["scratch"]
     assert loaded.nodes[0].worktree is None

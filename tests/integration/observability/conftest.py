@@ -4,9 +4,8 @@ import asyncio
 import io
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pytest
 import yaml
@@ -27,6 +26,7 @@ from crewplane.observability.types import (
 from crewplane.runtime.execution.workflow import execute_workflow
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
+from tests.integration.observability.cases import VisualizationCase
 
 CONFIG_TEMPLATE_PATH = Path(__file__).with_name("fixtures") / "config.yml"
 
@@ -67,21 +67,6 @@ class SnapshotRecorder:
 
 
 @dataclass(frozen=True)
-class VisualizationCase:
-    case_id: str
-    build_workflow: Callable[[Path], WorkflowPlan]
-    snapshot_event_type: EventType
-    snapshot_node_id: str | None = None
-    selected_node_id: str | None = None
-    expected_fragments: tuple[str, ...] = ()
-    unexpected_fragments: tuple[str, ...] = ()
-    mock_options: Mapping[str, object] = field(default_factory=dict)
-    expect_error: str | None = None
-    expect_error_type: type[Exception] = RuntimeError
-    render_width: int = 120
-
-
-@dataclass(frozen=True)
 class ObservabilityRunResult:
     case: VisualizationCase
     workflow: WorkflowPlan
@@ -93,14 +78,6 @@ class ObservabilityRunResult:
     event_log_path: Path
     summary_path: Path
     stages_dir: Path
-
-
-ALLOWED_CASE_METADATA_KEYS = frozenset(
-    {
-        "expected_left_fragments",
-        "expected_right_fragments",
-    }
-)
 
 
 def _load_case_config(
@@ -171,28 +148,9 @@ def _select_snapshot(
 
 @pytest.fixture
 def run_visualization_case() -> Callable[
-    [Path, Mapping[str, Any]], ObservabilityRunResult
+    [Path, VisualizationCase], ObservabilityRunResult
 ]:
-    case_field_names = frozenset(VisualizationCase.__dataclass_fields__)
-
-    def _run(
-        tmp_path: Path,
-        case_data: Mapping[str, Any],
-    ) -> ObservabilityRunResult:
-        unknown_case_keys = (
-            set(case_data) - case_field_names - ALLOWED_CASE_METADATA_KEYS
-        )
-        if unknown_case_keys:
-            raise AssertionError(
-                f"Unexpected visualization case fields: {sorted(unknown_case_keys)!r}"
-            )
-        case_kwargs = {
-            key: value for key, value in case_data.items() if key in case_field_names
-        }
-        case_kwargs["snapshot_event_type"] = EventType(
-            case_kwargs["snapshot_event_type"]
-        )
-        case = VisualizationCase(**case_kwargs)
+    def _run(tmp_path: Path, case: VisualizationCase) -> ObservabilityRunResult:
         workflow = case.build_workflow(tmp_path)
         config = _load_case_config(tmp_path, workflow, case.mock_options)
         components = build_runtime_components(

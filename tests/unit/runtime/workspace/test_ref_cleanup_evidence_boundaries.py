@@ -17,7 +17,7 @@ from crewplane.runtime.workspace.worktree.temporary_refs import (
     reconcile_temporary_import_refs,
 )
 from tests.helpers import isolated_git as isolated_git_support
-from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.isolated_git import IsolatedGit, run_git
 from tests.helpers.workspace_service import (
     create_git_repo,
     read_json_object,
@@ -147,8 +147,17 @@ def test_dedicated_cleanup_accepts_writer_produced_claim(evidence: CleanupEviden
     ]
     assert evidence.cleanup() == 1
     assert not evidence.owner.state_path.exists()
-    with pytest.raises(subprocess.CalledProcessError):
-        run_git_text(evidence.repo, "rev-parse", "--verify", evidence.ref_name)
+    assert (
+        run_git(
+            evidence.repo,
+            "show-ref",
+            "--verify",
+            "--quiet",
+            evidence.ref_name,
+            check=False,
+        ).returncode
+        == 1
+    )
 
 
 @pytest.mark.parametrize("external", [False, True])
@@ -366,8 +375,12 @@ def test_temporary_cleanup_rejects_dangling_symbolic_ref(evidence: CleanupEviden
         f"{evidence.ref_name} -> {target}."
     )
     assert run_git_text(evidence.repo, "symbolic-ref", evidence.ref_name) == target
-    with pytest.raises(subprocess.CalledProcessError):
-        run_git_text(evidence.repo, "rev-parse", "--verify", target)
+    assert (
+        run_git(
+            evidence.repo, "show-ref", "--verify", "--quiet", target, check=False
+        ).returncode
+        == 1
+    )
     assert evidence.owner.state_path.read_bytes() == original_evidence
 
 

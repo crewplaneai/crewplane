@@ -118,7 +118,7 @@ async def _run_provider_invocation_uses_snapshot_workspace_cwd(
             version=SCHEMA_VERSION,
             agents={"alpha": AgentConfig(cli_cmd=["mock"])},
         ),
-        options={"output_mode": "echo"},
+        options={"output_mode": "echo", "observation_delay_seconds": 0},
     )
     node_dir = output.get_node_dir(node_artifact_request("implement"))
     assert node_dir is not None

@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 from crewplane.version import SCHEMA_VERSION
-from tests.integration.mock_invoker.test_resume_integration import (
+from tests.helpers.mock_resume import (
     write_executor_fixture,
     write_mock_config,
     write_review_loop_fixtures,

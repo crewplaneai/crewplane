@@ -1,6 +1,8 @@
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.architecture.contracts import EventType
 from crewplane.core.workflow.keywords import ProviderRole
@@ -25,6 +27,10 @@ from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
 
 
 class CompactRuntimeControlRestoreTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_compact_runtime_auto_tail_tracks_pane_resize(self) -> None:
         workflow = single_node_workflow()
         runtime = SimulatedTmuxRuntime(
@@ -43,63 +49,59 @@ class CompactRuntimeControlRestoreTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-auto-resize"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            log_path = Path(tmp_dir) / "node.log"
-            log_path.write_text(
-                "\n".join(
-                    [
-                        "started_at: 2026-04-10T00:00:00+00:00",
-                        "cli_executable: alpha",
-                        "model: m",
-                        "output_file: out.md",
-                        "---",
-                        "line-1",
-                        "line-2",
-                        "line-3",
-                        "line-4",
-                        "line-5",
-                        "line-6",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        log_path = Path(tmp_dir) / "node.log"
+        log_path.write_text(
+            "\n".join(
+                [
+                    "started_at: 2026-04-10T00:00:00+00:00",
+                    "cli_executable: alpha",
+                    "model: m",
+                    "output_file: out.md",
+                    "---",
+                    "line-1",
+                    "line-2",
+                    "line-3",
+                    "line-4",
+                    "line-5",
+                    "line-6",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-auto-resize",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(log_path),
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-auto-resize",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(log_path),
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
-            initial_text = runtime.runtime_files.right_content.read_text(
-                encoding="utf-8"
-            )  # type: ignore[union-attr]
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
+        initial_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
 
-            runtime.right_pane_height = 10
-            runtime.refresh_once()
-            resized_text = runtime.runtime_files.right_content.read_text(
-                encoding="utf-8"
-            )  # type: ignore[union-attr]
+        runtime.right_pane_height = 10
+        runtime.refresh_once()
+        resized_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
 
-            self.assertNotIn("line-2", initial_text)
-            self.assertIn("line-2", resized_text)
-            self.assertIn("line-6", resized_text)
+        self.assertNotIn("line-2", initial_text)
+        self.assertIn("line-2", resized_text)
+        self.assertIn("line-6", resized_text)
 
         runtime.stop(RunResult(status="succeeded"))
 

@@ -1,8 +1,10 @@
 import os
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
@@ -20,127 +22,131 @@ from crewplane.runtime.agent.invoker import (
 
 
 class InvokerFacadeTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_invoke_agent_delegates_to_runner_facade(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "output.txt"
-            delegated = AsyncMock()
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "output.txt"
+        delegated = AsyncMock()
 
-            with patch(
-                "crewplane.runtime.agent.invoker.invoke_agent_with_runner",
-                delegated,
-            ):
-                await invoke_agent(
-                    config=AgentConfig(cli_cmd=["echo"], default_model="test"),
-                    model="test",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=Path(tmp_dir),
-                    plan_builder=build_cli_invocation_plan,
-                )
+        with patch(
+            "crewplane.runtime.agent.invoker.invoke_agent_with_runner",
+            delegated,
+        ):
+            await invoke_agent(
+                config=AgentConfig(cli_cmd=["echo"], default_model="test"),
+                model="test",
+                prompt="prompt",
+                output_file=output_file,
+                cwd=Path(tmp_dir),
+                plan_builder=build_cli_invocation_plan,
+            )
 
-            delegated.assert_awaited_once()
-            assert delegated.await_args.kwargs["cwd"] == Path(tmp_dir)
-            assert delegated.await_args.kwargs["command_runner"] is run_command_once
+        delegated.assert_awaited_once()
+        assert delegated.await_args.kwargs["cwd"] == Path(tmp_dir)
+        assert delegated.await_args.kwargs["command_runner"] is run_command_once
 
     async def test_invoke_agent_with_runner_delegates_to_invocation_loop(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "output.txt"
-            runner = AsyncMock()
-            delegated = AsyncMock()
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "output.txt"
+        runner = AsyncMock()
+        delegated = AsyncMock()
 
-            with patch(
-                "crewplane.runtime.agent.invocation.loop.run_invocation_loop",
-                delegated,
-            ):
-                await invoke_agent_with_runner(
-                    config=AgentConfig(cli_cmd=["echo"], default_model="test"),
-                    model="test",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=Path(tmp_dir),
-                    log_file=None,
-                    invocation_context=None,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
+        with patch(
+            "crewplane.runtime.agent.invocation.loop.run_invocation_loop",
+            delegated,
+        ):
+            await invoke_agent_with_runner(
+                config=AgentConfig(cli_cmd=["echo"], default_model="test"),
+                model="test",
+                prompt="prompt",
+                output_file=output_file,
+                cwd=Path(tmp_dir),
+                log_file=None,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
 
-            delegated.assert_awaited_once()
-            assert delegated.await_args.kwargs["cwd"] == Path(tmp_dir)
-            assert delegated.await_args.kwargs["command_runner"] is runner
+        delegated.assert_awaited_once()
+        assert delegated.await_args.kwargs["cwd"] == Path(tmp_dir)
+        assert delegated.await_args.kwargs["command_runner"] is runner
 
     async def test_planned_agent_invoker_delegates_to_invoke_agent(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "output.txt"
-            delegated = AsyncMock()
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="generic_executor_0",
-                provider="generic",
-                role=ProviderRole.EXECUTOR,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "output.txt"
+        delegated = AsyncMock()
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="generic_executor_0",
+            provider="generic",
+            role=ProviderRole.EXECUTOR,
+        )
+
+        with patch(
+            "crewplane.runtime.agent.invoker.invoke_agent",
+            delegated,
+        ):
+            await PlannedAgentInvoker(
+                plan_builder=build_cli_invocation_plan,
+                log_presentation_builder=build_cli_log_presentation,
+            ).invoke(
+                config=AgentConfig(cli_cmd=["echo"], default_model="test"),
+                model="test",
+                prompt="prompt",
+                output_file=output_file,
+                cwd=Path(tmp_dir),
+                invocation_context=context,
             )
 
-            with patch(
-                "crewplane.runtime.agent.invoker.invoke_agent",
-                delegated,
-            ):
-                await PlannedAgentInvoker(
-                    plan_builder=build_cli_invocation_plan,
-                    log_presentation_builder=build_cli_log_presentation,
-                ).invoke(
-                    config=AgentConfig(cli_cmd=["echo"], default_model="test"),
-                    model="test",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=Path(tmp_dir),
-                    invocation_context=context,
-                )
-
-            delegated.assert_awaited_once()
-            assert delegated.await_args.args[4] == Path(tmp_dir)
-            assert delegated.await_args.kwargs["invocation_context"] is context
+        delegated.assert_awaited_once()
+        assert delegated.await_args.args[4] == Path(tmp_dir)
+        assert delegated.await_args.kwargs["invocation_context"] is context
 
     async def test_planned_invoker_validates_settings_from_runtime_cwd(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            working_directory = Path(tmp_dir)
-            output_file = working_directory / "output.txt"
-            (working_directory / "claude-settings.json").write_text(
-                '{"effortLevel": "low"}',
-                encoding="utf-8",
-            )
-            config = AgentConfig(
-                cli_cmd=["claude", "--settings", "claude-settings.json"],
-                provider_kind="claude",
-            )
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="claude_executor_0",
-                provider="claude",
-                role=ProviderRole.EXECUTOR,
-                requested_reasoning="high",
-            )
-            delegated = AsyncMock()
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        working_directory = Path(tmp_dir)
+        output_file = working_directory / "output.txt"
+        (working_directory / "claude-settings.json").write_text(
+            '{"effortLevel": "low"}',
+            encoding="utf-8",
+        )
+        config = AgentConfig(
+            cli_cmd=["claude", "--settings", "claude-settings.json"],
+            provider_kind="claude",
+        )
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="claude_executor_0",
+            provider="claude",
+            role=ProviderRole.EXECUTOR,
+            requested_reasoning="high",
+        )
+        delegated = AsyncMock()
 
-            with patch(
-                "crewplane.runtime.agent.invoker.invoke_agent",
-                delegated,
-            ):
-                await PlannedAgentInvoker(
-                    plan_builder=build_cli_invocation_plan,
-                    log_presentation_builder=build_cli_log_presentation,
-                ).invoke(
-                    config=config,
-                    model=None,
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=working_directory,
-                    invocation_context=context,
-                )
+        with patch(
+            "crewplane.runtime.agent.invoker.invoke_agent",
+            delegated,
+        ):
+            await PlannedAgentInvoker(
+                plan_builder=build_cli_invocation_plan,
+                log_presentation_builder=build_cli_log_presentation,
+            ).invoke(
+                config=config,
+                model=None,
+                prompt="prompt",
+                output_file=output_file,
+                cwd=working_directory,
+                invocation_context=context,
+            )
 
-            plan_builder = delegated.await_args.kwargs["plan_builder"]
-            with (
-                patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
-                self.assertRaisesRegex(ValueError, "--settings effortLevel"),
-            ):
-                plan_builder(
-                    config, None, "prompt", output_file, context, working_directory
-                )
+        plan_builder = delegated.await_args.kwargs["plan_builder"]
+        with (
+            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+            self.assertRaisesRegex(ValueError, "--settings effortLevel"),
+        ):
+            plan_builder(
+                config, None, "prompt", output_file, context, working_directory
+            )

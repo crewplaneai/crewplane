@@ -1,10 +1,12 @@
 import os
 import sys
-import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
 from crewplane.adapters.invokers.cli_invoker.quota.waits import (
@@ -17,11 +19,112 @@ from crewplane.runtime.agent.retry_units import normalize_retry_wait_units_in_te
 
 
 class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_provider_specific_codex_duration_parsing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            state_file = tmp_path / "state.txt"
-            script_path = tmp_path / "codex_quota_once.py"
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        state_file = tmp_path / "state.txt"
+        script_path = tmp_path / "codex_quota_once.py"
+        script_path.write_text(
+            "\n".join(
+                [
+                    "import os",
+                    "import sys",
+                    "from pathlib import Path",
+                    "",
+                    "state_path = Path(os.environ['STATE_FILE'])",
+                    "count = int(state_path.read_text()) if state_path.exists() else 0",
+                    "count += 1",
+                    "state_path.write_text(str(count))",
+                    "if count < 2:",
+                    "    print('usage limit exceeded. Please try again in 45.622s')",
+                    "    sys.exit(0)",
+                    "output_path = Path(sys.argv[sys.argv.index('--output-last-message') + 1])",
+                    "output_path.write_text('ok', encoding='utf-8')",
+                    'print(\'{"type":"response.completed","response":{}}\')',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        original_state = os.environ.get("STATE_FILE")
+        os.environ["STATE_FILE"] = str(state_file)
+        try:
+            config = AgentConfig(
+                cli_cmd=[sys.executable, str(script_path)],
+                default_model="test",
+                model_arg=None,
+                provider_kind="codex",
+                quota_reached_retry_delay_seconds=0,
+            )
+            output_file = tmp_path / "output.txt"
+            sleep_mock = AsyncMock()
+            with patch(
+                "crewplane.runtime.agent.invocation.loop.sleep",
+                sleep_mock,
+            ):
+                await invoke_agent(
+                    config,
+                    "test-model",
+                    "prompt",
+                    output_file,
+                    output_file.parent,
+                    plan_builder=build_cli_invocation_plan,
+                )
+        finally:
+            if original_state is None:
+                os.environ.pop("STATE_FILE", None)
+            else:
+                os.environ["STATE_FILE"] = original_state
+
+        self.assertEqual(output_file.read_text(encoding="utf-8").strip(), "ok")
+        self.assertEqual(sleep_mock.await_count, 1)
+        sleep_seconds = float(sleep_mock.await_args.args[0])
+        self.assertAlmostEqual(sleep_seconds, 50.622, delta=0.2)
+
+    async def test_provider_specific_codex_long_worded_duration_fails_fast(
+        self,
+    ) -> None:
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        script_path = tmp_path / "codex_long_quota.py"
+        script_path.write_text(
+            "print('usage limit exceeded. Your quota will reset after 4 days 2 hours 46 minutes.')\n",
+            encoding="utf-8",
+        )
+
+        config = AgentConfig(
+            cli_cmd=[sys.executable, str(script_path)],
+            default_model="test",
+            model_arg=None,
+            provider_kind="codex",
+        )
+        output_file = tmp_path / "output.txt"
+        with self.assertRaisesRegex(RuntimeError, "exceeds 5 hours") as caught:
+            await invoke_agent(
+                config,
+                "test-model",
+                "prompt",
+                output_file,
+                output_file.parent,
+                plan_builder=build_cli_invocation_plan,
+            )
+        self.assertIsInstance(caught.exception, InvocationFailureError)
+        failure = caught.exception
+        assert isinstance(failure, InvocationFailureError)
+        self.assertEqual(failure.kind, "quota_or_rate_limit")
+        self.assertEqual(failure.phase, "provider_transport")
+        self.assertFalse(output_file.exists())
+
+    async def test_provider_specific_copilot_and_kilo_duration_parsing(self) -> None:
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        for parser_name in ("copilot", "kilo"):
+            state_file = tmp_path / f"{parser_name}_state.txt"
+            script_path = tmp_path / f"{parser_name}_quota_once.py"
             script_path.write_text(
                 "\n".join(
                     [
@@ -34,11 +137,13 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                         "count += 1",
                         "state_path.write_text(str(count))",
                         "if count < 2:",
-                        "    print('usage limit exceeded. Please try again in 45.622s')",
+                        "    print('rate limit reached, retry after 3s')",
                         "    sys.exit(0)",
-                        "output_path = Path(sys.argv[sys.argv.index('--output-last-message') + 1])",
-                        "output_path.write_text('ok', encoding='utf-8')",
-                        'print(\'{"type":"response.completed","response":{}}\')',
+                        (
+                            'print(\'{"type":"text","part":{"text":"ok"}}\')'
+                            if parser_name == "kilo"
+                            else "print('ok')"
+                        ),
                     ]
                 ),
                 encoding="utf-8",
@@ -51,13 +156,13 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
                     cli_cmd=[sys.executable, str(script_path)],
                     default_model="test",
                     model_arg=None,
-                    provider_kind="codex",
+                    provider_kind=parser_name,
                     quota_reached_retry_delay_seconds=0,
                 )
-                output_file = tmp_path / "output.txt"
+                output_file = tmp_path / f"{parser_name}_output.txt"
                 sleep_mock = AsyncMock()
                 with patch(
-                    "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
+                    "crewplane.runtime.agent.invocation.loop.sleep",
                     sleep_mock,
                 ):
                     await invoke_agent(
@@ -77,106 +182,7 @@ class QuotaParsingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(output_file.read_text(encoding="utf-8").strip(), "ok")
             self.assertEqual(sleep_mock.await_count, 1)
             sleep_seconds = float(sleep_mock.await_args.args[0])
-            self.assertAlmostEqual(sleep_seconds, 50.622, delta=0.2)
-
-    async def test_provider_specific_codex_long_worded_duration_fails_fast(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            script_path = tmp_path / "codex_long_quota.py"
-            script_path.write_text(
-                "print('usage limit exceeded. Your quota will reset after 4 days 2 hours 46 minutes.')\n",
-                encoding="utf-8",
-            )
-
-            config = AgentConfig(
-                cli_cmd=[sys.executable, str(script_path)],
-                default_model="test",
-                model_arg=None,
-                provider_kind="codex",
-            )
-            output_file = tmp_path / "output.txt"
-            with self.assertRaisesRegex(RuntimeError, "exceeds 5 hours") as caught:
-                await invoke_agent(
-                    config,
-                    "test-model",
-                    "prompt",
-                    output_file,
-                    output_file.parent,
-                    plan_builder=build_cli_invocation_plan,
-                )
-            self.assertIsInstance(caught.exception, InvocationFailureError)
-            failure = caught.exception
-            assert isinstance(failure, InvocationFailureError)
-            self.assertEqual(failure.kind, "quota_or_rate_limit")
-            self.assertEqual(failure.phase, "provider_transport")
-            self.assertFalse(output_file.exists())
-
-    async def test_provider_specific_copilot_and_kilo_duration_parsing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            for parser_name in ("copilot", "kilo"):
-                state_file = tmp_path / f"{parser_name}_state.txt"
-                script_path = tmp_path / f"{parser_name}_quota_once.py"
-                script_path.write_text(
-                    "\n".join(
-                        [
-                            "import os",
-                            "import sys",
-                            "from pathlib import Path",
-                            "",
-                            "state_path = Path(os.environ['STATE_FILE'])",
-                            "count = int(state_path.read_text()) if state_path.exists() else 0",
-                            "count += 1",
-                            "state_path.write_text(str(count))",
-                            "if count < 2:",
-                            "    print('rate limit reached, retry after 3s')",
-                            "    sys.exit(0)",
-                            (
-                                'print(\'{"type":"text","part":{"text":"ok"}}\')'
-                                if parser_name == "kilo"
-                                else "print('ok')"
-                            ),
-                        ]
-                    ),
-                    encoding="utf-8",
-                )
-
-                original_state = os.environ.get("STATE_FILE")
-                os.environ["STATE_FILE"] = str(state_file)
-                try:
-                    config = AgentConfig(
-                        cli_cmd=[sys.executable, str(script_path)],
-                        default_model="test",
-                        model_arg=None,
-                        provider_kind=parser_name,
-                        quota_reached_retry_delay_seconds=0,
-                    )
-                    output_file = tmp_path / f"{parser_name}_output.txt"
-                    sleep_mock = AsyncMock()
-                    with patch(
-                        "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
-                        sleep_mock,
-                    ):
-                        await invoke_agent(
-                            config,
-                            "test-model",
-                            "prompt",
-                            output_file,
-                            output_file.parent,
-                            plan_builder=build_cli_invocation_plan,
-                        )
-                finally:
-                    if original_state is None:
-                        os.environ.pop("STATE_FILE", None)
-                    else:
-                        os.environ["STATE_FILE"] = original_state
-
-                self.assertEqual(output_file.read_text(encoding="utf-8").strip(), "ok")
-                self.assertEqual(sleep_mock.await_count, 1)
-                sleep_seconds = float(sleep_mock.await_args.args[0])
-                self.assertAlmostEqual(sleep_seconds, 8.0, delta=0.2)
+            self.assertAlmostEqual(sleep_seconds, 8.0, delta=0.2)
 
     def test_parses_claude_reset_at_local_time_with_timezone(self) -> None:
         now_utc = datetime(2026, 4, 10, 17, 0, 0, tzinfo=UTC)

@@ -3,11 +3,11 @@ import io
 import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from tempfile import mkdtemp
 
 import pytest
 
@@ -42,6 +42,10 @@ ExternalFilesystemArtifactsAlias = FilesystemArtifactsAdapter
 
 
 class CliDryRunTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     @pytest.fixture(autouse=True)
     def _repository_root(self, pytestconfig: pytest.Config) -> None:
         self.repository_root = pytestconfig.rootpath
@@ -107,96 +111,96 @@ class CliDryRunTests(unittest.TestCase):
         self.assertIn("Typer", result.stdout)
 
     def test_dry_run_shows_provider_roles_and_waves(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path, workflow_path = write_standard_project(
-                tmp_path,
-                workflow_writer=write_review_workflow,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path, workflow_path = write_standard_project(
+            tmp_path,
+            workflow_writer=write_review_workflow,
+        )
 
-            output_text = run_dry_run(tmp_path, config_path, workflow_path)
+        output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
-            self.assertIn("Wave 1", output_text)
-            self.assertIn("[executor]", output_text)
-            self.assertIn("[reviewer]", output_text)
-            self.assertNotIn("Run Summary", output_text)
+        self.assertIn("Wave 1", output_text)
+        self.assertIn("[executor]", output_text)
+        self.assertIn("[reviewer]", output_text)
+        self.assertNotIn("Run Summary", output_text)
 
     def test_dry_run_shows_provider_default_when_default_model_is_omitted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path, workflow_path = write_standard_project(
-                tmp_path,
-                config_writer=write_basic_config_without_default_model,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path, workflow_path = write_standard_project(
+            tmp_path,
+            config_writer=write_basic_config_without_default_model,
+        )
 
-            output_text = run_dry_run(tmp_path, config_path, workflow_path)
+        output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
-            self.assertIn("provider default", output_text)
+        self.assertIn("provider default", output_text)
 
     def test_dry_run_prefers_workflow_provider_model_over_default_model(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path, workflow_path = write_standard_project(
-                tmp_path,
-                workflow_writer=_write_workflow_provider_model,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path, workflow_path = write_standard_project(
+            tmp_path,
+            workflow_writer=_write_workflow_provider_model,
+        )
 
-            output_text = run_dry_run(tmp_path, config_path, workflow_path)
+        output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
-            self.assertIn("(workflow-model)", output_text)
-            self.assertNotIn("(model-a)", output_text)
+        self.assertIn("(workflow-model)", output_text)
+        self.assertNotIn("(model-a)", output_text)
 
     def test_dry_run_shows_input_node_source(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path, workflow_path = write_standard_project(
-                tmp_path,
-                workflow_writer=_write_input_node_workflow,
-            )
-            input_file = tmp_path / ".crewplane" / "inputs" / "review-findings.md"
-            input_file.parent.mkdir(parents=True, exist_ok=True)
-            input_file.write_text("review findings", encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path, workflow_path = write_standard_project(
+            tmp_path,
+            workflow_writer=_write_input_node_workflow,
+        )
+        input_file = tmp_path / ".crewplane" / "inputs" / "review-findings.md"
+        input_file.parent.mkdir(parents=True, exist_ok=True)
+        input_file.write_text("review findings", encoding="utf-8")
 
-            output_text = run_dry_run(tmp_path, config_path, workflow_path)
+        output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
-            self.assertIn("Node: review-input (input)", output_text)
-            self.assertIn(
-                "source: {{file:.crewplane/inputs/review-findings.md}}",
-                output_text,
-            )
+        self.assertIn("Node: review-input (input)", output_text)
+        self.assertIn(
+            "source: {{file:.crewplane/inputs/review-findings.md}}",
+            output_text,
+        )
 
     def test_workspace_enabled_dry_run_succeeds_without_artifacts(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            with _isolated_workspace_git() as workspace_git:
-                config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
-                _commit_workspace_project(tmp_path, workspace_git)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        with _isolated_workspace_git(self.tmp_path) as workspace_git:
+            config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
+            _commit_workspace_project(tmp_path, workspace_git)
 
-                output_text = run_dry_run(tmp_path, config_path, workflow_path)
+            output_text = run_dry_run(tmp_path, config_path, workflow_path)
 
-            self.assertIn("Dry run mode", output_text)
-            self.assertIn("Workspace: enabled", output_text)
-            self.assertIn("contract: blob_exact", output_text)
-            self.assertIn("source: commit=", output_text)
-            self.assertIn("invoker: mock launch=mock_no_child_process", output_text)
-            self.assertIn("rendered workspace files:", output_text)
-            self.assertIn("project_initial=", output_text)
-            self.assertIn("cleanup: cleanup_on_success=True", output_text)
-            self.assertIn(
-                "workspace: snapshot name=scratch source=project",
-                output_text,
-            )
-            self.assertIn("result=discarded_snapshot_drift", output_text)
-            self.assertIn("review.node", output_text)
-            self.assertEqual(artifact_tree(tmp_path / ".crewplane"), ())
+        self.assertIn("Dry run mode", output_text)
+        self.assertIn("Workspace: enabled", output_text)
+        self.assertIn("contract: blob_exact", output_text)
+        self.assertIn("source: commit=", output_text)
+        self.assertIn("invoker: mock launch=mock_no_child_process", output_text)
+        self.assertIn("rendered workspace files:", output_text)
+        self.assertIn("project_initial=", output_text)
+        self.assertIn("cleanup: cleanup_on_success=True", output_text)
+        self.assertIn(
+            "workspace: snapshot name=scratch source=project",
+            output_text,
+        )
+        self.assertIn("result=discarded_snapshot_drift", output_text)
+        self.assertIn("review.node", output_text)
+        self.assertEqual(artifact_tree(tmp_path / ".crewplane"), ())
 
     def test_workspace_enabled_validate_succeeds_without_artifacts(
         self,
     ) -> None:
-        with temporary_project_cwd() as tmp_path:
-            with _isolated_workspace_git() as workspace_git:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
+            with _isolated_workspace_git(self.tmp_path) as workspace_git:
                 config_path, workflow_path = _write_workspace_enabled_project(tmp_path)
                 _commit_workspace_project(tmp_path, workspace_git)
                 stream = io.StringIO()
@@ -377,11 +381,9 @@ def _write_workspace_file_workflow(path: Path) -> None:
 
 
 @contextmanager
-def _isolated_workspace_git() -> Iterator[IsolatedGit]:
-    with (
-        tempfile.TemporaryDirectory(prefix="crewplane-dry-run-git-") as tmp_dir,
-        pytest.MonkeyPatch.context() as process_state,
-    ):
+def _isolated_workspace_git(tmp_path: Path) -> Iterator[IsolatedGit]:
+    tmp_dir = mkdtemp(prefix="crewplane-dry-run-git-", dir=tmp_path)
+    with pytest.MonkeyPatch.context() as process_state:
         environment = configure_isolated_git_environment(process_state, Path(tmp_dir))
         yield require_git(environment, required=False)
 

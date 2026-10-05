@@ -1,12 +1,9 @@
-import tempfile
 import unittest
 from pathlib import Path
 
 from crewplane.architecture.contracts import EventType
-from crewplane.cli.templates import render_template_content
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.core.workflow.loading import load_tasks
 from crewplane.core.workflow.models import (
     PromptSegment,
     ProviderSpec,
@@ -41,21 +38,36 @@ class DagRenderTopologyBasicTests(unittest.TestCase):
     def test_code_review_example_renders_parallel_provider_list_and_linear_chain(
         self,
     ) -> None:
-        template_path = (
-            PROJECT_ROOT
-            / "src"
-            / "crewplane"
-            / "example_templates"
-            / "example-templates"
-            / "code-review-example.task.md"
+        workflow = WorkflowPlan(
+            name="renderer topology",
+            nodes=[
+                WorkflowNode(
+                    id="review.context",
+                    mode="parallel",
+                    providers=[
+                        provider(name) for name in ("codex", "claude", "gemini")
+                    ],
+                ),
+                WorkflowNode(
+                    id="review.iterate",
+                    mode="sequential",
+                    needs=["review.context"],
+                    audit_rounds=2,
+                    depth=2,
+                    providers=[
+                        provider("codex"),
+                        ProviderSpec(provider="claude", role=ProviderRole.REVIEWER),
+                        ProviderSpec(provider="gemini", role=ProviderRole.REVIEWER),
+                    ],
+                ),
+                WorkflowNode(
+                    id="review.summary",
+                    mode="sequential",
+                    needs=["review.iterate"],
+                    providers=[provider("claude")],
+                ),
+            ],
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            workflow_path = Path(tmp_dir) / "code-review-example.task.md"
-            workflow_path.write_text(
-                render_template_content(template_path.read_text(encoding="utf-8")),
-                encoding="utf-8",
-            )
-            workflow = load_tasks(workflow_path)
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="run-code-review"
         )

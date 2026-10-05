@@ -1,7 +1,8 @@
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
 
+import pytest
 from pydantic import ValidationError
 
 from crewplane.architecture.contracts import SUPPORTED_PROVIDER_KIND_VALUES
@@ -20,6 +21,10 @@ from tests.helpers.working_directory import temporary_project_cwd
 
 
 class ConfigTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_agent_config_rejects_empty_command(self):
         with self.assertRaisesRegex(
             ValueError, "cli_cmd must contain at least one token"
@@ -178,26 +183,26 @@ class ConfigTests(unittest.TestCase):
             )
 
     def test_load_config_accepts_pricing_buckets(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    default_model: "x"',
-                        "    pricing:",
-                        "      input: 1.25",
-                        "      output: 5.5",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    default_model: "x"',
+                    "    pricing:",
+                    "      input: 1.25",
+                    "      output: 5.5",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            config = load_config(path)
+        config = load_config(path)
 
         self.assertEqual(
             config.agents["alpha"].pricing.input,
@@ -338,57 +343,57 @@ class ConfigTests(unittest.TestCase):
             Settings.model_validate({"default_workspace": ".crewplane/workspaces"})
 
     def test_load_config_rejects_unknown_settings_keys(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        "",
-                        "settings:",
-                        '  default_workspace: ".crewplane/workspaces"',
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    "",
+                    "settings:",
+                    '  default_workspace: ".crewplane/workspaces"',
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            with self.assertRaisesRegex(
-                ValidationError,
-                "Extra inputs are not permitted",
-            ):
-                load_config(path)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "Extra inputs are not permitted",
+        ):
+            load_config(path)
 
     def test_load_config_preserves_mock_observation_delay_option(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    default_model: "x"',
-                        "settings:",
-                        "  integrations:",
-                        "    invoker:",
-                        '      implementation: "mock"',
-                        "      options:",
-                        (
-                            "        observation_delay_seconds: "
-                            f"{DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS}"
-                        ),
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    default_model: "x"',
+                    "settings:",
+                    "  integrations:",
+                    "    invoker:",
+                    '      implementation: "mock"',
+                    "      options:",
+                    (
+                        "        observation_delay_seconds: "
+                        f"{DEFAULT_MOCK_INVOKER_OBSERVATION_DELAY_SECONDS}"
+                    ),
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            config = load_config(path)
+        config = load_config(path)
 
         assert config.settings is not None
         self.assertEqual(
@@ -397,88 +402,88 @@ class ConfigTests(unittest.TestCase):
         )
 
     def test_load_config_rejects_non_object_yaml(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text("- not-an-object", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "YAML object"):
-                load_config(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text("- not-an-object", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "YAML object"):
+            load_config(path)
 
     def test_load_config_rejects_duplicate_top_level_keys(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        'version: "{SCHEMA_VERSION}"',
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "duplicate YAML key 'version'"):
-                load_config(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    'version: "{SCHEMA_VERSION}"',
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate YAML key 'version'"):
+            load_config(path)
 
     def test_load_config_rejects_nested_duplicate_keys(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    cli_cmd: ["python3"]',
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "duplicate YAML key 'cli_cmd'"):
-                load_config(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    cli_cmd: ["python3"]',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate YAML key 'cli_cmd'"):
+            load_config(path)
 
     def test_load_config_rejects_unknown_top_level_keys(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        "settngs:",
-                        "  log_level: debug",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ValueError, "settngs"):
-                load_config(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    "settngs:",
+                    "  log_level: debug",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "settngs"):
+            load_config(path)
 
     def test_load_config_rejects_unsupported_version(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        'version: "9.9"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    default_model: "x"',
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            with self.assertRaises(ValueError) as exc_info:
-                load_config(path)
-            message = str(exc_info.exception)
-            self.assertIn(f"Expected '{SCHEMA_VERSION}'", message)
-            self.assertIn("crewplane init", message)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    'version: "9.9"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    default_model: "x"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(ValueError) as exc_info:
+            load_config(path)
+        message = str(exc_info.exception)
+        self.assertIn(f"Expected '{SCHEMA_VERSION}'", message)
+        self.assertIn("crewplane init", message)
 
     def test_settings_default_integrations(self) -> None:
         settings = Settings()
@@ -650,7 +655,7 @@ class ConfigTests(unittest.TestCase):
         )
 
     def test_settings_resolves_relative_core_template_allowlist_from_cwd(self) -> None:
-        with temporary_project_cwd() as project_root:
+        with temporary_project_cwd(self.tmp_path) as project_root:
             settings = Settings.model_validate(
                 {"file_access": {"allowed_template_paths": ["../shared"]}}
             )
@@ -661,29 +666,29 @@ class ConfigTests(unittest.TestCase):
         )
 
     def test_load_config_preserves_null_tmux_log_tail_lines(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    default_model: "x"',
-                        "settings:",
-                        "  integrations:",
-                        "    ui:",
-                        '      implementation: "tmux"',
-                        "      options:",
-                        "        log_tail_lines: null",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    default_model: "x"',
+                    "settings:",
+                    "  integrations:",
+                    "    ui:",
+                    '      implementation: "tmux"',
+                    "      options:",
+                    "        log_tail_lines: null",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            config = load_config(path)
+        config = load_config(path)
 
         self.assertIsNotNone(config.settings)
         self.assertIsNone(config.settings.integrations.ui.options["log_tail_lines"])
@@ -713,20 +718,20 @@ class ConfigTests(unittest.TestCase):
                     Settings(workspace={"setup_timeout_seconds": value})
 
     def test_load_config_rejects_yaml_nonfinite_runtime_control(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "config.yml"
-            path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        "    retry_delay_seconds: .inf",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp) / "config.yml"
+        path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    "    retry_delay_seconds: .inf",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            with self.assertRaises(ValidationError):
-                load_config(path)
+        with self.assertRaises(ValidationError):
+            load_config(path)

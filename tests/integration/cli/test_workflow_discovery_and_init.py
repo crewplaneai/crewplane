@@ -1,5 +1,7 @@
 import unittest
+from pathlib import Path
 
+import pytest
 import typer
 
 import crewplane.cli.app as cli
@@ -12,8 +14,12 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 
 class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_init_creates_crewplane_state(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             cli.init()
 
             self.assertTrue((tmp_path / ".crewplane" / "config.yml").is_file())
@@ -43,7 +49,7 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
                     )
 
     def test_init_preserves_existing_example_assets(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             cli.init()
             library_dir = tmp_path / ".crewplane" / "workflows" / "example-templates"
             assets = [path for path in library_dir.rglob("*") if path.is_file()]
@@ -60,7 +66,7 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
                     )
 
     def test_run_discovers_single_workflow_markdown_by_default(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -91,7 +97,7 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
     def test_run_fails_when_multiple_workflow_files_exist_without_tasks_flag(
         self,
     ) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -104,7 +110,7 @@ class CliWorkflowDiscoveryAndInitTests(unittest.TestCase):
                 cli.run(tasks_file=None, config_file=None, dry_run=False, force=False)
 
     def test_run_requires_workflow_file_by_default(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             state_dir.mkdir(parents=True)
             config_path = state_dir / "config.yml"

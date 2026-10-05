@@ -1,6 +1,9 @@
 import io
 import re
 import unittest
+from pathlib import Path
+
+import pytest
 
 import crewplane.cli.app as cli
 from tests.helpers.working_directory import temporary_project_cwd
@@ -14,8 +17,12 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 
 class CliRunManifestDedupeTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_run_skips_duplicate_context_without_force(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -70,7 +77,7 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             self.assertEqual(len(result_runs), 1)
 
     def test_run_force_executes_duplicate_context(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -102,7 +109,7 @@ class CliRunManifestDedupeTests(unittest.TestCase):
             self.assertEqual(calls["count"], 2)
 
     def test_run_prints_artifact_paths_with_sanitized_workflow_key(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)

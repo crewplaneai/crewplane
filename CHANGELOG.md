@@ -17,6 +17,7 @@ All notable user-facing changes are recorded here.
 ### Fixed
 
 - Fixed test failures in architecture checks and macOS snapshot validation.
+- Upgraded the locked `urllib3` development dependency to fix three reported security vulnerabilities.
 
 ## [0.3.5] - 2026-09-25
 

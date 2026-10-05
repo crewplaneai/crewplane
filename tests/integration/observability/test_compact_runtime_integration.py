@@ -10,6 +10,7 @@ import pytest
 import yaml
 from rich.console import Console
 
+from crewplane.architecture.contracts import EventType
 from crewplane.bootstrap.container import build_runtime_components
 from crewplane.core.config import Config, load_config
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -36,6 +37,7 @@ from crewplane.runtime.execution.workflow import execute_workflow
 from crewplane.version import SCHEMA_VERSION
 from tests.helpers.observability import topology_from_workflow
 from tests.integration.compiled_plan_helpers import compile_plan_for_components
+from tests.integration.observability.cases import VisualizationCase
 from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
 
 CONFIG_TEMPLATE_PATH = Path(__file__).with_name("fixtures") / "config.yml"
@@ -333,44 +335,40 @@ def read_fake_tmux_commands(log_path: Path) -> list[list[str]]:
 
 COMPACT_RUNTIME_CASES = [
     pytest.param(
-        {
-            "case_id": "compact-linear-dashboard",
-            "build_workflow": build_compact_linear_workflow,
-            "snapshot_event_type": "workflow_finished",
-            "selected_node_id": "design.iteration",
-            "expected_left_fragments": (
+        VisualizationCase(
+            case_id="compact-linear-dashboard",
+            build_workflow=build_compact_linear_workflow,
+            snapshot_event_type=EventType.WORKFLOW_FINISHED,
+            selected_node_id="design.iteration",
+            expected_left_fragments=(
                 "DAG Summary",
                 "▸● design.iteration",
                 "design.discovery",
                 "│",
             ),
-            "expected_right_fragments": (
+            expected_right_fragments=(
                 "Node Output: design.iteration",
                 "codex/executor/codex_executor_0 (round1) [succeeded]",
                 "mock: source=echo output_mode=echo",
                 "node_id=design.iteration task_id=codex_executor_0",
             ),
-        },
+        ),
         id="compact-linear-dashboard",
     ),
     pytest.param(
-        {
-            "case_id": "compact-namespaced-dashboard",
-            "build_workflow": build_compact_namespaced_workflow,
-            "snapshot_event_type": "workflow_finished",
-            "selected_node_id": "auth.plan",
-            "expected_left_fragments": (
-                "DAG Summary",
-                "▸● auth.plan",
-                "summary.final",
-            ),
-            "expected_right_fragments": (
+        VisualizationCase(
+            case_id="compact-namespaced-dashboard",
+            build_workflow=build_compact_namespaced_workflow,
+            snapshot_event_type=EventType.WORKFLOW_FINISHED,
+            selected_node_id="auth.plan",
+            expected_left_fragments=("DAG Summary", "▸● auth.plan", "summary.final"),
+            expected_right_fragments=(
                 "Node Output: auth.plan",
                 "alpha/executor/alpha_executor_0 (round1) [succeeded]",
                 "mock: source=echo output_mode=echo",
                 "node_id=auth.plan task_id=alpha_executor_0",
             ),
-        },
+        ),
         id="compact-namespaced-dashboard",
     ),
 ]
@@ -380,14 +378,14 @@ COMPACT_RUNTIME_CASES = [
 def test_compact_runtime_renders_real_execution_snapshots(
     tmp_path: Path,
     run_visualization_case,
-    case_data: dict[str, object],
+    case_data: VisualizationCase,
 ) -> None:
     run_result = run_visualization_case(tmp_path, case_data)
     left_text, right_text = render_compact_runtime_dashboard(run_result)
 
-    for fragment in case_data["expected_left_fragments"]:
+    for fragment in case_data.expected_left_fragments:
         assert fragment in left_text
-    for fragment in case_data["expected_right_fragments"]:
+    for fragment in case_data.expected_right_fragments:
         assert fragment in right_text
 
 
@@ -395,14 +393,14 @@ def test_compact_runtime_dashboard_help_mentions_log_inspect_mode(
     tmp_path: Path,
     run_visualization_case,
 ) -> None:
-    case_data = {
-        "case_id": "compact-linear-help-text",
-        "build_workflow": build_compact_linear_workflow,
-        "snapshot_event_type": "workflow_finished",
-        "selected_node_id": "design.iteration",
-        "expected_left_fragments": (),
-        "expected_right_fragments": (),
-    }
+    case_data = VisualizationCase(
+        case_id="compact-linear-help-text",
+        build_workflow=build_compact_linear_workflow,
+        snapshot_event_type=EventType.WORKFLOW_FINISHED,
+        selected_node_id="design.iteration",
+        expected_left_fragments=(),
+        expected_right_fragments=(),
+    )
 
     run_result = run_visualization_case(tmp_path, case_data)
     left_text, _ = render_compact_runtime_dashboard(run_result)
@@ -415,14 +413,14 @@ def test_compact_runtime_inspect_mode_preserves_right_pane_and_updates_title(
     tmp_path: Path,
     run_visualization_case,
 ) -> None:
-    case_data = {
-        "case_id": "compact-linear-inspect-mode",
-        "build_workflow": build_compact_linear_workflow,
-        "snapshot_event_type": "workflow_finished",
-        "selected_node_id": "design.iteration",
-        "expected_left_fragments": (),
-        "expected_right_fragments": (),
-    }
+    case_data = VisualizationCase(
+        case_id="compact-linear-inspect-mode",
+        build_workflow=build_compact_linear_workflow,
+        snapshot_event_type=EventType.WORKFLOW_FINISHED,
+        selected_node_id="design.iteration",
+        expected_left_fragments=(),
+        expected_right_fragments=(),
+    )
 
     run_result = run_visualization_case(tmp_path, case_data)
     runtime = SimulatedTmuxRuntime()

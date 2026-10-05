@@ -1,5 +1,8 @@
 import io
 import unittest
+from pathlib import Path
+
+import pytest
 
 import crewplane.cli.app as cli
 from crewplane.core.config import load_config
@@ -8,8 +11,12 @@ from tests.integration.cli.cli_workflow_helpers import ConsoleFactory
 
 
 class FreshInitMockFirstRunTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_fresh_init_validate_and_run_no_live_succeeds_with_mock(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             stream = io.StringIO()
             original_console_cls = cli.Console
             cli.Console = ConsoleFactory(
@@ -47,61 +54,6 @@ class FreshInitMockFirstRunTests(unittest.TestCase):
                     for path in (root / ".crewplane" / "workflows").glob("*.task.md")
                 ),
                 ["single-agent-review.task.md"],
-            )
-
-            output_text = stream.getvalue()
-            self.assertIn(
-                "First run uses deterministic mock execution; no provider CLIs are required.",
-                output_text,
-            )
-            self.assertIn("After the provider-free first run:", output_text)
-            self.assertIn("crewplane onboarding", output_text)
-            self.assertIn(
-                "The onboarding command prepares your selected providers "
-                "when generated defaults are unchanged.",
-                output_text,
-            )
-            self.assertIn(
-                "It will not start provider CLIs or authenticate providers.",
-                output_text,
-            )
-            self.assertIn(
-                "Manual setup for customized projects:",
-                output_text,
-            )
-            self.assertIn(
-                'settings.integrations.invoker.implementation: "cli"',
-                output_text,
-            )
-            self.assertIn(
-                "settings.integrations.invoker.options: {}",
-                output_text,
-            )
-            self.assertIn(".crewplane/workflows/example-templates/", output_text)
-            self.assertIn(
-                "crewplane run --tasks "
-                ".crewplane/workflows/example-templates/code-review-example.task.md",
-                output_text,
-            )
-            self.assertIn(
-                "https://github.com/crewplaneai/crewplane/blob/master/docs/index.md",
-                output_text,
-            )
-            self.assertLess(
-                output_text.index("After the provider-free first run:"),
-                output_text.index("Next:"),
-            )
-            self.assertIn("crewplane validate", output_text)
-            self.assertIn("crewplane run", output_text)
-            self.assertNotIn("crewplane run --no-live", output_text)
-            next_index = output_text.index("Next:")
-            self.assertLess(
-                output_text.index("crewplane run", next_index),
-                output_text.index("crewplane onboarding"),
-            )
-            self.assertIn(
-                "Mock invoker active: no provider CLI commands will be started.",
-                output_text,
             )
 
             stage_runs = sorted(

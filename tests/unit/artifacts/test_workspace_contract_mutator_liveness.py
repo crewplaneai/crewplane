@@ -89,7 +89,7 @@ def test_materialization_contract_accepts_running_workspace_mutator() -> None:
 
     errors = workspace_state_contract_errors(payload, "materialization")
 
-    assert "unresolved workspace mutator" not in "; ".join(errors)
+    assert errors == ()
 
 
 @pytest.mark.parametrize(

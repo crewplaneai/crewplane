@@ -17,21 +17,21 @@ def test_temporary_project_cwd_resolves_alias_and_restores_cwd(
     monkeypatch.setattr(tempfile, "tempdir", alias_temp_dir.as_posix())
     original_cwd = Path.cwd()
 
-    with temporary_project_cwd() as project_root:
+    with temporary_project_cwd(alias_temp_dir) as project_root:
         assert project_root == project_root.resolve()
         assert project_root.parent == real_temp_dir
         assert Path.cwd() == project_root
 
     assert Path.cwd() == original_cwd
-    assert not project_root.exists()
+    assert project_root.is_dir()
 
 
-def test_temporary_project_cwd_restores_cwd_after_error() -> None:
+def test_temporary_project_cwd_restores_cwd_after_error(tmp_path: Path) -> None:
     original_cwd = Path.cwd()
 
     with (
         pytest.raises(RuntimeError, match="expected failure"),
-        temporary_project_cwd(),
+        temporary_project_cwd(tmp_path),
     ):
         raise RuntimeError("expected failure")
 

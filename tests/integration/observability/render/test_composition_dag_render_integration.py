@@ -4,10 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from crewplane.architecture.contracts import EventType
 from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.models import WorkflowPlan
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.version import SCHEMA_VERSION
+from tests.integration.observability.cases import VisualizationCase
 
 
 def write_workflow(path: Path, lines: list[str]) -> None:
@@ -207,32 +209,32 @@ def build_bound_input_rewrite_workflow(tmp_path: Path) -> WorkflowPlan:
 
 COMPOSITION_CASES = [
     pytest.param(
-        {
-            "case_id": "imported-namespaced-nodes",
-            "build_workflow": build_namespaced_import_workflow,
-            "snapshot_event_type": "workflow_finished",
-            "selected_node_id": "summary.final",
-            "expected_fragments": ("auth.plan", "summary.final", "✅"),
-        },
+        VisualizationCase(
+            case_id="imported-namespaced-nodes",
+            build_workflow=build_namespaced_import_workflow,
+            snapshot_event_type=EventType.WORKFLOW_FINISHED,
+            selected_node_id="summary.final",
+            expected_fragments=("auth.plan", "summary.final", "✅"),
+        ),
         id="imported-namespaced-nodes",
     ),
     pytest.param(
-        {
-            "case_id": "imported-input-node-label",
-            "build_workflow": build_imported_input_workflow,
-            "snapshot_event_type": "workflow_finished",
-            "selected_node_id": "fix.review-input",
-            "expected_fragments": ("fix.review-input", "fix.implement", "input", "✅"),
-        },
+        VisualizationCase(
+            case_id="imported-input-node-label",
+            build_workflow=build_imported_input_workflow,
+            snapshot_event_type=EventType.WORKFLOW_FINISHED,
+            selected_node_id="fix.review-input",
+            expected_fragments=("fix.review-input", "fix.implement", "input", "✅"),
+        ),
         id="imported-input-node-label",
     ),
     pytest.param(
-        {
-            "case_id": "bound-import-input-rewrite",
-            "build_workflow": build_bound_input_rewrite_workflow,
-            "snapshot_event_type": "workflow_finished",
-            "selected_node_id": "fix.implement",
-            "expected_fragments": (
+        VisualizationCase(
+            case_id="bound-import-input-rewrite",
+            build_workflow=build_bound_input_rewrite_workflow,
+            snapshot_event_type=EventType.WORKFLOW_FINISHED,
+            selected_node_id="fix.implement",
+            expected_fragments=(
                 "quality.review.findings",
                 "fix.standards-input",
                 "fix.implement",
@@ -240,8 +242,8 @@ COMPOSITION_CASES = [
                 "input",
                 "✅",
             ),
-            "unexpected_fragments": ("fix.review-input",),
-        },
+            unexpected_fragments=("fix.review-input",),
+        ),
         id="bound-import-input-rewrite",
     ),
 ]
@@ -251,16 +253,16 @@ COMPOSITION_CASES = [
 def test_render_dag_summary_matches_composed_workflows(
     tmp_path: Path,
     run_visualization_case,
-    case_data: dict[str, object],
+    case_data: VisualizationCase,
 ) -> None:
     run_result = run_visualization_case(tmp_path, case_data)
 
-    for fragment in case_data.get("expected_fragments", ()):
+    for fragment in case_data.expected_fragments:
         assert fragment in run_result.rendered
-    for fragment in case_data.get("unexpected_fragments", ()):
+    for fragment in case_data.unexpected_fragments:
         assert fragment not in run_result.rendered
 
-    if case_data["case_id"] == "bound-import-input-rewrite":
+    if case_data.case_id == "bound-import-input-rewrite":
         standards_input_file = (
             run_result.stages_dir / "fix.standards-input" / "input_round1.md"
         )

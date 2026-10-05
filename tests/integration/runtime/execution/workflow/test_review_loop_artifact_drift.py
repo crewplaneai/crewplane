@@ -1,7 +1,9 @@
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import patch
+
+import pytest
 
 from crewplane.architecture.contracts import build_result_filename
 from crewplane.artifacts import OutputManager
@@ -36,354 +38,354 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 
 
 class ExecutorReviewLoopArtifactDriftTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_multi_provider_sequential_raises_on_result_artifact_drift(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.drift.fatal",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            stage_result_path = output.results_dir / build_result_filename(node.id)
-            invoker = ArtifactDriftInvoker(
-                outputs=["executor output round 1"],
-                mutations_by_call={
-                    0: [(stage_result_path, "tampered result artifact")]
-                },
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.drift.fatal",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        stage_result_path = output.results_dir / build_result_filename(node.id)
+        invoker = ArtifactDriftInvoker(
+            outputs=["executor output round 1"],
+            mutations_by_call={0: [(stage_result_path, "tampered result artifact")]},
+        )
 
-            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
-                await execute_sequential_stage(config, node, output, invoker=invoker)
+        with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
+            await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_workflow_preserves_provider_defect_when_fatal_drift_also_occurs(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.mixed.fatal",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        workflow = WorkflowPlan(name="Mixed Fatal Drift", nodes=[node])
+        output = OutputManager(workflow.name, base_dir=tmp_path)
+        stage_result_path = output.results_dir / build_result_filename(node.id)
+
+        class FatalDriftDefectInvoker:
+            def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
+                return None
+
+            async def invoke(  # type: ignore[no-untyped-def]
+                self,
+                config,  # noqa: ARG002 - Required by protocol.
+                model,  # noqa: ARG002 - Required by protocol.
+                prompt,  # noqa: ARG002 - Required by protocol.
+                output_file,
+                cwd,  # noqa: ARG002 - Required by protocol.
+                log_file=None,  # noqa: ARG002 - Required by protocol.
+                invocation_context=None,  # noqa: ARG002 - Required by protocol.
+            ) -> None:
+                output_file.write_text("partial output", encoding="utf-8")
+                stage_result_path.parent.mkdir(parents=True, exist_ok=True)
+                stage_result_path.write_text("tampered result", encoding="utf-8")
+                raise TypeError("simulated provider defect")
+
+        with self.assertRaisesRegex(TypeError, "simulated provider defect") as raised:
+            await execute_workflow(
+                config,
+                workflow,
+                output,
+                invoker=FatalDriftDefectInvoker(),
             )
-            node = WorkflowNode(
-                id="review.loop.mixed.fatal",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            workflow = WorkflowPlan(name="Mixed Fatal Drift", nodes=[node])
-            output = OutputManager(workflow.name, base_dir=tmp_path)
-            stage_result_path = output.results_dir / build_result_filename(node.id)
 
-            class FatalDriftDefectInvoker:
-                def log_presentation_for(self, config):  # type: ignore[no-untyped-def]  # noqa: ARG002 - Required by protocol.
-                    return None
-
-                async def invoke(  # type: ignore[no-untyped-def]
-                    self,
-                    config,  # noqa: ARG002 - Required by protocol.
-                    model,  # noqa: ARG002 - Required by protocol.
-                    prompt,  # noqa: ARG002 - Required by protocol.
-                    output_file,
-                    cwd,  # noqa: ARG002 - Required by protocol.
-                    log_file=None,  # noqa: ARG002 - Required by protocol.
-                    invocation_context=None,  # noqa: ARG002 - Required by protocol.
-                ) -> None:
-                    output_file.write_text("partial output", encoding="utf-8")
-                    stage_result_path.parent.mkdir(parents=True, exist_ok=True)
-                    stage_result_path.write_text("tampered result", encoding="utf-8")
-                    raise TypeError("simulated provider defect")
-
-            with self.assertRaisesRegex(
-                TypeError, "simulated provider defect"
-            ) as raised:
-                await execute_workflow(
-                    config,
-                    workflow,
-                    output,
-                    invoker=FatalDriftDefectInvoker(),
-                )
-
-            self.assertIs(type(raised.exception), TypeError)
-            notes = getattr(raised.exception, "__notes__", [])
-            self.assertTrue(any("1 fatal path" in note for note in notes))
+        self.assertIs(type(raised.exception), TypeError)
+        notes = getattr(raised.exception, "__notes__", [])
+        self.assertTrue(any("1 fatal path" in note for note in notes))
 
     async def test_workflow_preserves_drift_detection_defect_after_provider_failure(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.mixed.detector",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            workflow = WorkflowPlan(name="Mixed Drift Detector", nodes=[node])
-            output = OutputManager(workflow.name, base_dir=tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.mixed.detector",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        workflow = WorkflowPlan(name="Mixed Drift Detector", nodes=[node])
+        output = OutputManager(workflow.name, base_dir=tmp_path)
 
-            with (
-                patch.object(
-                    review_loop_drift_guard,
-                    "detect_provider_call_drift",
-                    side_effect=TypeError("simulated drift detector defect"),
-                ),
-                self.assertRaisesRegex(
-                    TypeError,
-                    "simulated drift detector defect",
-                ) as raised,
-            ):
-                await execute_workflow(
-                    config,
-                    workflow,
-                    output,
-                    invoker=SelectiveFailInvoker({"m1"}),
-                )
+        with (
+            patch.object(
+                review_loop_drift_guard,
+                "detect_provider_call_drift",
+                side_effect=TypeError("simulated drift detector defect"),
+            ),
+            self.assertRaisesRegex(
+                TypeError,
+                "simulated drift detector defect",
+            ) as raised,
+        ):
+            await execute_workflow(
+                config,
+                workflow,
+                output,
+                invoker=SelectiveFailInvoker({"m1"}),
+            )
 
-            self.assertIs(type(raised.exception), TypeError)
-            notes = getattr(raised.exception, "__notes__", [])
-            self.assertTrue(any("simulated failure for m1" in note for note in notes))
+        self.assertIs(type(raised.exception), TypeError)
+        notes = getattr(raised.exception, "__notes__", [])
+        self.assertTrue(any("simulated failure for m1" in note for note in notes))
 
     async def test_multi_provider_sequential_raises_on_summary_artifact_drift(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.summary.drift",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            summary_path = output.get_run_summary_path()
-            summary_path.parent.mkdir(parents=True, exist_ok=True)
-            summary_path.write_text("baseline summary", encoding="utf-8")
-            invoker = ArtifactDriftInvoker(
-                outputs=["executor output round 1"],
-                mutations_by_call={0: [(summary_path, "tampered summary")]},
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.summary.drift",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        summary_path = output.get_run_summary_path()
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text("baseline summary", encoding="utf-8")
+        invoker = ArtifactDriftInvoker(
+            outputs=["executor output round 1"],
+            mutations_by_call={0: [(summary_path, "tampered summary")]},
+        )
 
-            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
-                await execute_sequential_stage(config, node, output, invoker=invoker)
+        with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
+            await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_multi_provider_sequential_raises_on_destructive_event_log_drift(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.event.log.drift",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            event_log_path = output.get_run_event_log_path()
-            event_log_path.parent.mkdir(parents=True, exist_ok=True)
-            event_log_path.write_text('{"event":"baseline"}\n', encoding="utf-8")
-            invoker = ArtifactDriftInvoker(
-                outputs=["executor output round 1"],
-                mutations_by_call={0: [(event_log_path, "tampered event log")]},
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.event.log.drift",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        event_log_path = output.get_run_event_log_path()
+        event_log_path.parent.mkdir(parents=True, exist_ok=True)
+        event_log_path.write_text('{"event":"baseline"}\n', encoding="utf-8")
+        invoker = ArtifactDriftInvoker(
+            outputs=["executor output round 1"],
+            mutations_by_call={0: [(event_log_path, "tampered event log")]},
+        )
 
-            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
-                await execute_sequential_stage(config, node, output, invoker=invoker)
+        with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
+            await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_multi_provider_sequential_raises_on_event_log_append_drift(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.event.log.append.drift",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            event_log_path = output.get_run_event_log_path()
-            event_log_path.parent.mkdir(parents=True, exist_ok=True)
-            event_log_path.write_text('{"event":"baseline"}\n', encoding="utf-8")
-            invoker = ArtifactDriftInvoker(
-                outputs=["executor output round 1"],
-                append_mutations_by_call={0: [(event_log_path, "tampered append\n")]},
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.event.log.append.drift",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        event_log_path = output.get_run_event_log_path()
+        event_log_path.parent.mkdir(parents=True, exist_ok=True)
+        event_log_path.write_text('{"event":"baseline"}\n', encoding="utf-8")
+        invoker = ArtifactDriftInvoker(
+            outputs=["executor output round 1"],
+            append_mutations_by_call={0: [(event_log_path, "tampered append\n")]},
+        )
 
-            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
-                await execute_sequential_stage(config, node, output, invoker=invoker)
+        with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
+            await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_parallel_reviewer_event_log_creation_drift_is_fatal(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review-a": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                    "review-b": AgentConfig(cli_cmd=["mock"], default_model="m3"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.parallel.event.log.creation",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review-a", role=ProviderRole.REVIEWER),
-                    ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
-                ],
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            event_log_path = output.get_run_event_log_path()
-            invoker = ArtifactDriftInvoker(
-                outputs=[
-                    "executor output round 1",
-                    review_output(verdict="NO_FINDINGS"),
-                    review_output(verdict="NO_FINDINGS"),
-                ],
-                append_mutations_by_call={1: [(event_log_path, "tampered append\n")]},
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review-a": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                "review-b": AgentConfig(cli_cmd=["mock"], default_model="m3"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.parallel.event.log.creation",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review-a", role=ProviderRole.REVIEWER),
+                ProviderSpec(provider="review-b", role=ProviderRole.REVIEWER),
+            ],
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        event_log_path = output.get_run_event_log_path()
+        invoker = ArtifactDriftInvoker(
+            outputs=[
+                "executor output round 1",
+                review_output(verdict="NO_FINDINGS"),
+                review_output(verdict="NO_FINDINGS"),
+            ],
+            append_mutations_by_call={1: [(event_log_path, "tampered append\n")]},
+        )
 
-            with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
-                await execute_sequential_stage(config, node, output, invoker=invoker)
+        with self.assertRaisesRegex(NodeExecutionError, "fatal artifacts"):
+            await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_multi_provider_sequential_allows_runtime_event_log_appends(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.runtime.event.log",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            persistent_logger = PersistentRunLogger(output)
-            persistent_logger.start(
-                RunContext(
-                    workflow_topology=topology_from_workflow(
-                        WorkflowPlan(name="workflow", nodes=[node])
-                    ),
-                    run_id=output.run_id,
-                    refresh_per_second=0,
-                )
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output round 1",
-                    review_output(verdict="NO_FINDINGS"),
-                ]
-            )
-
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id=output.run_id,
-                    event_sink=persistent_logger.record_event,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.runtime.event.log",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        persistent_logger = PersistentRunLogger(output)
+        persistent_logger.start(
+            RunContext(
+                workflow_topology=topology_from_workflow(
+                    WorkflowPlan(name="workflow", nodes=[node])
                 ),
+                run_id=output.run_id,
+                refresh_per_second=0,
             )
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output round 1",
+                review_output(verdict="NO_FINDINGS"),
+            ]
+        )
 
-            event_log = output.get_run_event_log_path().read_text(encoding="utf-8")
-            self.assertIn('"event_type": "invocation_started"', event_log)
-            self.assertIn('"event_type": "invocation_finished"', event_log)
+        await execute_sequential_stage(
+            config,
+            node,
+            output,
+            invoker=invoker,
+            telemetry=ExecutionTelemetry(
+                workflow_name="workflow",
+                run_id=output.run_id,
+                event_sink=persistent_logger.record_event,
+            ),
+        )
+
+        event_log = output.get_run_event_log_path().read_text(encoding="utf-8")
+        self.assertIn('"event_type": "invocation_started"', event_log)
+        self.assertIn('"event_type": "invocation_finished"', event_log)

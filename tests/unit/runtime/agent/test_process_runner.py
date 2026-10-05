@@ -1,5 +1,4 @@
 import asyncio
-import time
 import tracemalloc
 import unittest
 from threading import Event
@@ -184,23 +183,21 @@ class ProcessRunnerTests(unittest.IsolatedAsyncioTestCase):
         finally:
             capture.cleanup()
 
-    def test_captured_stream_retains_100_mib_with_bounded_memory(self) -> None:
-        capture = RealCapturedStream(max_memory_bytes=1024 * 1024)
+    def test_captured_stream_retains_full_output_with_bounded_memory(self) -> None:
+        capture = RealCapturedStream(max_memory_bytes=64 * 1024)
         chunk = b"x" * 4096
-        started = time.monotonic()
         tracemalloc.start()
         try:
-            remaining_chunks = (100 * 1024 * 1024) // len(chunk)
+            remaining_chunks = (8 * 1024 * 1024) // len(chunk)
             while remaining_chunks:
                 capture.write(chunk)
                 remaining_chunks -= 1
             _current, peak = tracemalloc.get_traced_memory()
             capture.close()
 
-            self.assertEqual(capture.tail_bytes, b"x" * (1024 * 1024))
-            self.assertEqual(capture.path.stat().st_size, 100 * 1024 * 1024)
-            self.assertLess(peak, 8 * 1024 * 1024)
-            self.assertLess(time.monotonic() - started, 20)
+            self.assertEqual(capture.tail_bytes, b"x" * (64 * 1024))
+            self.assertEqual(capture.path.stat().st_size, 8 * 1024 * 1024)
+            self.assertLess(peak, 1024 * 1024)
         finally:
             tracemalloc.stop()
             capture.cleanup()

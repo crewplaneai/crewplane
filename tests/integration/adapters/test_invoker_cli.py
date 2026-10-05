@@ -1,7 +1,7 @@
 import os
 import stat
-import tempfile
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import patch
 
 import pytest
@@ -220,28 +220,30 @@ def test_codex_capability_owns_one_shot_capacity_retry() -> None:
     assert CAPABILITIES[ProviderKind.GENERIC].one_shot_failure_retry is None
 
 
-def test_invocation_plan_resolves_cli_executable_before_workspace_cwd() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tool_dir = Path(tmp_dir) / "tools"
-        tool_dir.mkdir()
-        executable = tool_dir / "provider"
-        executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
-        expected_executable = executable.resolve(strict=True).as_posix()
-        workspace_dir = Path(tmp_dir) / "workspace"
-        workspace_dir.mkdir()
-        (workspace_dir / "provider").write_text(
-            "#!/bin/sh\nexit 99\n",
-            encoding="utf-8",
-        )
+def test_invocation_plan_resolves_cli_executable_before_workspace_cwd(
+    tmp_path: Path,
+) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    tool_dir = Path(tmp_dir) / "tools"
+    tool_dir.mkdir()
+    executable = tool_dir / "provider"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    expected_executable = executable.resolve(strict=True).as_posix()
+    workspace_dir = Path(tmp_dir) / "workspace"
+    workspace_dir.mkdir()
+    (workspace_dir / "provider").write_text(
+        "#!/bin/sh\nexit 99\n",
+        encoding="utf-8",
+    )
 
-        with patch.dict(os.environ, {"PATH": tool_dir.as_posix()}):
-            plan = build_cli_invocation_plan(
-                AgentConfig(cli_cmd=["provider"]),
-                model=None,
-                prompt="prompt",
-                output_file=workspace_dir / "output.md",
-            )
+    with patch.dict(os.environ, {"PATH": tool_dir.as_posix()}):
+        plan = build_cli_invocation_plan(
+            AgentConfig(cli_cmd=["provider"]),
+            model=None,
+            prompt="prompt",
+            output_file=workspace_dir / "output.md",
+        )
 
     assert plan.cmd[0] == expected_executable
 
@@ -258,24 +260,24 @@ def test_invocation_plan_preserves_missing_bare_cli_executable() -> None:
     assert plan.cmd[0] == "missing-provider"
 
 
-def test_invocation_plan_preserves_relative_path_cli_executable() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tool_dir = Path(tmp_dir) / "tools"
-        tool_dir.mkdir()
-        executable = tool_dir / "provider"
-        executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
-        relative_executable = os.path.relpath(executable, Path.cwd())
-        config = AgentConfig(cli_cmd=["echo"]).model_copy(
-            update={"cli_cmd": [relative_executable]}
-        )
+def test_invocation_plan_preserves_relative_path_cli_executable(tmp_path: Path) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    tool_dir = Path(tmp_dir) / "tools"
+    tool_dir.mkdir()
+    executable = tool_dir / "provider"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    relative_executable = os.path.relpath(executable, Path.cwd())
+    config = AgentConfig(cli_cmd=["echo"]).model_copy(
+        update={"cli_cmd": [relative_executable]}
+    )
 
-        plan = build_cli_invocation_plan(
-            config,
-            model=None,
-            prompt="prompt",
-            output_file=Path("output.md"),
-        )
+    plan = build_cli_invocation_plan(
+        config,
+        model=None,
+        prompt="prompt",
+        output_file=Path("output.md"),
+    )
 
     assert plan.cmd[0] == relative_executable
 

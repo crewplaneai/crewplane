@@ -1,9 +1,10 @@
 import io
 import os
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
 
+import pytest
 import typer
 
 import crewplane.cli.app as cli
@@ -17,532 +18,534 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 
 class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_validate_fails_fast_for_missing_provider_cli(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["definitely-not-installed-cli"]',
-                        '    default_model: "model-a"',
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            workflow_path.write_text(
-                "\n".join(
-                    [
-                        "---",
-                        f'schema_version: "{SCHEMA_VERSION}"',
-                        "name: Task",
-                        "nodes:",
-                        "  - id: review.node",
-                        "    mode: parallel",
-                        "    providers: [alpha]",
-                        "---",
-                        "",
-                        "## review.node",
-                        "",
-                        "run",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        config_path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["definitely-not-installed-cli"]',
+                    '    default_model: "model-a"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Task",
+                    "nodes:",
+                    "  - id: review.node",
+                    "    mode: parallel",
+                    "    providers: [alpha]",
+                    "---",
+                    "",
+                    "## review.node",
+                    "",
+                    "run",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            with self.assertRaises(typer.Exit):
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Provider validation failed", output_text)
-            self.assertIn("definitely-not-installed-cli", output_text)
-            self.assertIn(
-                "Provider setup: docs/getting-started/provider-setup.md",
-                output_text,
-            )
+        output_text = stream.getvalue()
+        self.assertIn("Provider validation failed", output_text)
+        self.assertIn("definitely-not-installed-cli", output_text)
+        self.assertIn(
+            "Provider setup: docs/getting-started/provider-setup.md",
+            output_text,
+        )
 
     def test_validate_compiles_without_real_workspace_execution(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            write_basic_config(config_path)
-            write_basic_workflow(workflow_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        write_basic_config(config_path)
+        write_basic_workflow(workflow_path)
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_compile = cli.workflow_runner.compile_workflow_preview
-            workspace_real_execution_values: list[bool | None] = []
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        original_compile = cli.workflow_runner.compile_workflow_preview
+        workspace_real_execution_values: list[bool | None] = []
 
-            def recording_compile_workflow_preview(*args: object, **kwargs: object):
-                workspace_real_execution_values.append(
-                    kwargs.get("workspace_real_execution")
-                )
-                return original_compile(*args, **kwargs)
-
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
+        def recording_compile_workflow_preview(*args: object, **kwargs: object):
+            workspace_real_execution_values.append(
+                kwargs.get("workspace_real_execution")
             )
-            cli.workflow_runner.compile_workflow_preview = (
-                recording_compile_workflow_preview
-            )
-            try:
-                cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.workflow_runner.compile_workflow_preview = original_compile
-                cli.Console = original_console_cls
+            return original_compile(*args, **kwargs)
 
-            self.assertEqual(workspace_real_execution_values, [False])
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        cli.workflow_runner.compile_workflow_preview = (
+            recording_compile_workflow_preview
+        )
+        try:
+            cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.workflow_runner.compile_workflow_preview = original_compile
+            cli.Console = original_console_cls
+
+        self.assertEqual(workspace_real_execution_values, [False])
 
     def test_validate_skips_real_workspace_relative_executable_check(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["./bin/provider"]',
-                        "",
-                        "settings:",
-                        "  workspace:",
-                        "    enabled: true",
-                        "  integrations:",
-                        "    invoker:",
-                        '      implementation: "cli"',
-                        "      options: {}",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            workflow_path.write_text(
-                "\n".join(
-                    [
-                        "---",
-                        f'schema_version: "{SCHEMA_VERSION}"',
-                        "name: Workspace Task",
-                        "worktrees:",
-                        "  primary:",
-                        "    kind: worktree",
-                        "nodes:",
-                        "  - id: implement",
-                        "    mode: sequential",
-                        "    providers: [alpha]",
-                        "---",
-                        "",
-                        "## implement",
-                        "",
-                        "run",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        config_path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["./bin/provider"]',
+                    "",
+                    "settings:",
+                    "  workspace:",
+                    "    enabled: true",
+                    "  integrations:",
+                    "    invoker:",
+                    '      implementation: "cli"',
+                    "      options: {}",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Workspace Task",
+                    "worktrees:",
+                    "  primary:",
+                    "    kind: worktree",
+                    "nodes:",
+                    "  - id: implement",
+                    "    mode: sequential",
+                    "    providers: [alpha]",
+                    "---",
+                    "",
+                    "## implement",
+                    "",
+                    "run",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            with self.assertRaises(typer.Exit):
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Workspace validation failed", output_text)
-            self.assertIn("requires a Git repository", output_text)
-            self.assertNotIn("relative path executable", output_text)
-            self.assertIn("./bin/provider", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Workspace validation failed", output_text)
+        self.assertIn("requires a Git repository", output_text)
+        self.assertNotIn("relative path executable", output_text)
+        self.assertIn("./bin/provider", output_text)
 
     def test_validate_shows_warning_for_argv_prompt_transport(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    default_model: "model-a"',
-                        '    prompt_transport: "argv"',
-                        '    prompt_transport_arg: "--prompt"',
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            write_basic_workflow(workflow_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        config_path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    default_model: "model-a"',
+                    '    prompt_transport: "argv"',
+                    '    prompt_transport_arg: "--prompt"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        write_basic_workflow(workflow_path)
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Preflight warnings:", output_text)
-            self.assertIn("uses argv prompt transport", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Preflight warnings:", output_text)
+        self.assertIn("uses argv prompt transport", output_text)
 
     def test_validate_warns_when_built_in_provider_sets_model_arg(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    provider_kind: "codex"',
-                        '    default_model: "model-a"',
-                        '    model_arg: "--custom-model"',
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            write_basic_workflow(workflow_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        config_path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    provider_kind: "codex"',
+                    '    default_model: "model-a"',
+                    '    model_arg: "--custom-model"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        write_basic_workflow(workflow_path)
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Preflight warnings:", output_text)
-            self.assertIn("Agent 'alpha': remove model_arg", output_text)
-            self.assertIn(
-                "applies only when provider_kind is 'generic'",
-                " ".join(output_text.split()),
-            )
-            self.assertIn("provider_kind is 'generic'", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Preflight warnings:", output_text)
+        self.assertIn("Agent 'alpha': remove model_arg", output_text)
+        self.assertIn(
+            "applies only when provider_kind is 'generic'",
+            " ".join(output_text.split()),
+        )
+        self.assertIn("provider_kind is 'generic'", output_text)
 
     def test_validate_keeps_provider_warning_out_of_missing_env_failure(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    provider_kind: "codex"',
-                        '    default_model: "model-a"',
-                        '    model_arg: "--custom-model"',
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            workflow_path.write_text(
-                "\n".join(
-                    [
-                        "---",
-                        f'schema_version: "{SCHEMA_VERSION}"',
-                        "name: Task",
-                        "nodes:",
-                        "  - id: review.node",
-                        "    mode: parallel",
-                        "    providers: [alpha]",
-                        "---",
-                        "",
-                        "## review.node",
-                        "",
-                        "branch={{env:ORCH_VALIDATE_REQUIRED_ENV}}",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        config_path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    provider_kind: "codex"',
+                    '    default_model: "model-a"',
+                    '    model_arg: "--custom-model"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Task",
+                    "nodes:",
+                    "  - id: review.node",
+                    "    mode: parallel",
+                    "    providers: [alpha]",
+                    "---",
+                    "",
+                    "## review.node",
+                    "",
+                    "branch={{env:ORCH_VALIDATE_REQUIRED_ENV}}",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            original_env = os.environ.get("ORCH_VALIDATE_REQUIRED_ENV")
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        original_env = os.environ.get("ORCH_VALIDATE_REQUIRED_ENV")
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            os.environ.pop("ORCH_VALIDATE_REQUIRED_ENV", None)
+            with self.assertRaises(typer.Exit):
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            if original_env is None:
                 os.environ.pop("ORCH_VALIDATE_REQUIRED_ENV", None)
-                with self.assertRaises(typer.Exit):
-                    cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                if original_env is None:
-                    os.environ.pop("ORCH_VALIDATE_REQUIRED_ENV", None)
-                else:
-                    os.environ["ORCH_VALIDATE_REQUIRED_ENV"] = original_env
-                cli.Console = original_console_cls
+            else:
+                os.environ["ORCH_VALIDATE_REQUIRED_ENV"] = original_env
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Preflight warnings:", output_text)
-            self.assertEqual(output_text.count("Agent 'alpha': remove model_arg"), 1)
-            self.assertIn("Preflight compilation failed", output_text)
-            self.assertNotIn("Provider validation failed", output_text)
-            self.assertIn(
-                "Environment variable not set: ORCH_VALIDATE_REQUIRED_ENV",
-                output_text,
-            )
-            self.assertNotIn("Invalid:", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Preflight warnings:", output_text)
+        self.assertEqual(output_text.count("Agent 'alpha': remove model_arg"), 1)
+        self.assertIn("Preflight compilation failed", output_text)
+        self.assertNotIn("Provider validation failed", output_text)
+        self.assertIn(
+            "Environment variable not set: ORCH_VALIDATE_REQUIRED_ENV",
+            output_text,
+        )
+        self.assertNotIn("Invalid:", output_text)
 
     def test_validate_fails_fast_for_missing_var_template_reference(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            write_basic_config(config_path)
-            workflow_path.write_text(
-                "\n".join(
-                    [
-                        "---",
-                        f'schema_version: "{SCHEMA_VERSION}"',
-                        "name: Task",
-                        "nodes:",
-                        "  - id: review.node",
-                        "    mode: parallel",
-                        "    providers: [alpha]",
-                        "---",
-                        "",
-                        "## review.node",
-                        "",
-                        "branch={{var:ORCH_VALIDATE_REQUIRED_VAR}}",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        write_basic_config(config_path)
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Task",
+                    "nodes:",
+                    "  - id: review.node",
+                    "    mode: parallel",
+                    "    providers: [alpha]",
+                    "---",
+                    "",
+                    "## review.node",
+                    "",
+                    "branch={{var:ORCH_VALIDATE_REQUIRED_VAR}}",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            with self.assertRaises(typer.Exit):
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Preflight compilation failed", output_text)
-            self.assertIn(
-                "Template variable not set: ORCH_VALIDATE_REQUIRED_VAR", output_text
-            )
-            self.assertNotIn("Invalid:", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Preflight compilation failed", output_text)
+        self.assertIn(
+            "Template variable not set: ORCH_VALIDATE_REQUIRED_VAR", output_text
+        )
+        self.assertNotIn("Invalid:", output_text)
 
     def test_validate_fails_fast_for_blocked_file_template_reference(self) -> None:
-        with (
-            tempfile.TemporaryDirectory() as tmp_dir,
-            tempfile.TemporaryDirectory() as external_dir,
-        ):
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            external_file = Path(external_dir) / "external.txt"
-            external_file.write_text("secret", encoding="utf-8")
-            write_basic_config(config_path)
-            workflow_path.write_text(
-                "\n".join(
-                    [
-                        "---",
-                        f'schema_version: "{SCHEMA_VERSION}"',
-                        "name: Task",
-                        "nodes:",
-                        "  - id: review.node",
-                        "    mode: parallel",
-                        "    providers: [alpha]",
-                        "---",
-                        "",
-                        "## review.node",
-                        "",
-                        f"load={{{{file:{external_file}}}}}",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        external_dir = mkdtemp(dir=self.tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        external_file = Path(external_dir) / "external.txt"
+        external_file.write_text("secret", encoding="utf-8")
+        write_basic_config(config_path)
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Task",
+                    "nodes:",
+                    "  - id: review.node",
+                    "    mode: parallel",
+                    "    providers: [alpha]",
+                    "---",
+                    "",
+                    "## review.node",
+                    "",
+                    f"load={{{{file:{external_file}}}}}",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            with self.assertRaises(typer.Exit):
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Preflight compilation failed", output_text)
-            self.assertIn("Template access denied", output_text)
-            self.assertNotIn("Invalid:", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Preflight compilation failed", output_text)
+        self.assertIn("Template access denied", output_text)
+        self.assertNotIn("Invalid:", output_text)
 
     def test_validate_fails_fast_for_invalid_token_budget(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        f'version: "{SCHEMA_VERSION}"',
-                        "",
-                        "agents:",
-                        "  alpha:",
-                        '    cli_cmd: ["echo"]',
-                        '    default_model: "model-a"',
-                        "settings:",
-                        "  token_budget:",
-                        "    warn_threshold_chars: 1000",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            workflow_path.write_text(
-                "\n".join(
-                    [
-                        "---",
-                        f'schema_version: "{SCHEMA_VERSION}"',
-                        "name: Task",
-                        "nodes:",
-                        "  - id: review.node",
-                        "    mode: sequential",
-                        "    token_budget:",
-                        "      fail_threshold_chars: 900",
-                        "    providers:",
-                        "      - provider: alpha",
-                        "        role: executor",
-                        "---",
-                        "",
-                        "## review.node",
-                        "",
-                        "Review this.",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        config_path.write_text(
+            "\n".join(
+                [
+                    f'version: "{SCHEMA_VERSION}"',
+                    "",
+                    "agents:",
+                    "  alpha:",
+                    '    cli_cmd: ["echo"]',
+                    '    default_model: "model-a"',
+                    "settings:",
+                    "  token_budget:",
+                    "    warn_threshold_chars: 1000",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Task",
+                    "nodes:",
+                    "  - id: review.node",
+                    "    mode: sequential",
+                    "    token_budget:",
+                    "      fail_threshold_chars: 900",
+                    "    providers:",
+                    "      - provider: alpha",
+                    "        role: executor",
+                    "---",
+                    "",
+                    "## review.node",
+                    "",
+                    "Review this.",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            with self.assertRaises(typer.Exit):
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Token budget validation failed", output_text)
-            self.assertIn("review.node", output_text)
-            self.assertNotIn("Valid:", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Token budget validation failed", output_text)
+        self.assertIn("review.node", output_text)
+        self.assertNotIn("Valid:", output_text)
 
     def test_validate_fails_fast_for_missing_file_template_reference(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config_path = tmp_path / "config.yml"
-            workflow_path = tmp_path / "workflow.task.md"
-            write_basic_config(config_path)
-            workflow_path.write_text(
-                "\n".join(
-                    [
-                        "---",
-                        f'schema_version: "{SCHEMA_VERSION}"',
-                        "name: Task",
-                        "nodes:",
-                        "  - id: review.node",
-                        "    mode: parallel",
-                        "    providers: [alpha]",
-                        "---",
-                        "",
-                        "## review.node",
-                        "",
-                        "load={{file:missing-template.md}}",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config_path = tmp_path / "config.yml"
+        workflow_path = tmp_path / "workflow.task.md"
+        write_basic_config(config_path)
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f'schema_version: "{SCHEMA_VERSION}"',
+                    "name: Task",
+                    "nodes:",
+                    "  - id: review.node",
+                    "    mode: parallel",
+                    "    providers: [alpha]",
+                    "---",
+                    "",
+                    "## review.node",
+                    "",
+                    "load={{file:missing-template.md}}",
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            stream = io.StringIO()
-            original_console_cls = cli.Console
-            cli.Console = ConsoleFactory(
-                file=stream,
-                force_terminal=False,
-                color_system=None,
-                width=120,
-            )
-            try:
-                with self.assertRaises(typer.Exit):
-                    cli.validate(tasks_file=workflow_path, config_file=config_path)
-            finally:
-                cli.Console = original_console_cls
+        stream = io.StringIO()
+        original_console_cls = cli.Console
+        cli.Console = ConsoleFactory(
+            file=stream,
+            force_terminal=False,
+            color_system=None,
+            width=120,
+        )
+        try:
+            with self.assertRaises(typer.Exit):
+                cli.validate(tasks_file=workflow_path, config_file=config_path)
+        finally:
+            cli.Console = original_console_cls
 
-            output_text = stream.getvalue()
-            self.assertIn("Preflight compilation failed", output_text)
-            self.assertIn("File not found: missing-template.md", output_text)
-            self.assertNotIn("Invalid:", output_text)
+        output_text = stream.getvalue()
+        self.assertIn("Preflight compilation failed", output_text)
+        self.assertIn("File not found: missing-template.md", output_text)
+        self.assertNotIn("Invalid:", output_text)
 
     def test_validate_uses_default_config_and_writes_no_run_artifacts(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -557,7 +560,7 @@ class CliValidateTemplateAndConfigFailureTests(unittest.TestCase):
             self.assertFalse((state_dir / "execution-results").exists())
 
     def test_validate_requires_default_config_when_omitted(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)

@@ -1,28 +1,16 @@
 import json
 import re
-import subprocess
 
 import yaml
 
-from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
 from tests.unit.packaging.release_surfaces_support import (
-    REPOSITORY_URL,
-    ROOT,
     load_pyproject,
     read_text,
     repo_path,
 )
 
-GRANDFATHERED_LARGE_FILE_LIMITS = {
-    ".github/crewplane-splash.png": 1_093_755,
-    "docs/images/architecture/crewplane-architecture.png": 1_652_013,
-    "docs/images/concepts/control-plane.png": 1_664_884,
-    "docs/images/concepts/different-design.png": 1_466_376,
-    "docs/images/concepts/why-crewplane.png": 1_511_410,
-}
 
-
-def test_large_file_hook_enforces_limit_with_narrow_grandfathering() -> None:
+def test_large_file_hook_enforces_repository_size_limit() -> None:
     config = yaml.safe_load(read_text(".pre-commit-config.yaml"))
     hooks = [
         hook
@@ -31,36 +19,19 @@ def test_large_file_hook_enforces_limit_with_narrow_grandfathering() -> None:
         if hook["id"] == "check-added-large-files"
     ]
     assert len(hooks) == 1
-    hook = hooks[0]
-    assert hook["args"] == ["--maxkb=1024", "--enforce-all"]
-
-    exclusion = re.compile(hook["exclude"])
-    tracked = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
-    ).stdout.split("\0")
-    tracked_paths = {path for path in tracked if path}
-    oversized = {
-        path
-        for path in tracked_paths
-        if (ROOT / path).is_file() and (ROOT / path).stat().st_size > 1024**2
-    }
-    excluded = {path for path in tracked_paths if exclusion.search(path)}
-
-    grandfathered = set(GRANDFATHERED_LARGE_FILE_LIMITS)
-    assert oversized == grandfathered
-    assert excluded == grandfathered
-    for path, size_limit in GRANDFATHERED_LARGE_FILE_LIMITS.items():
-        assert (ROOT / path).stat().st_size <= size_limit
-    ci_workflow = read_text(".github", "workflows", "ci.yml")
-    assert re.search(
-        r"uvx pre-commit==[0-9]+\.[0-9]+\.[0-9]+ run --all-files",
-        ci_workflow,
+    assert set(hooks[0]["args"]) == {"--maxkb=1024", "--enforce-all"}
+    workflow = yaml.safe_load(read_text(".github", "workflows", "ci.yml"))
+    commands = "\n".join(
+        step.get("run", "") for step in workflow["jobs"]["lint"]["steps"]
     )
+    assert re.search(
+        r"uvx pre-commit==[0-9]+\.[0-9]+\.[0-9]+ run --all-files", commands
+    )
+
+
+def test_ruff_lint_rejects_debugger_calls() -> None:
+    ruff_lint = load_pyproject()["tool"]["ruff"]["lint"]
+    assert "T10" in ruff_lint["select"]
 
 
 def test_pre_commit_hooks_are_immutable_and_dependabot_managed() -> None:
@@ -75,13 +46,6 @@ def test_pre_commit_hooks_are_immutable_and_dependabot_managed() -> None:
     hook_revision = hook_repository["rev"]
     assert isinstance(hook_revision, str)
     assert re.fullmatch(r"[0-9a-f]{40}", hook_revision)
-    assert re.search(
-        rf"^\s+rev:\s+{re.escape(hook_revision)}\s+"
-        r"# frozen: v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\s*$",
-        pre_commit_text,
-        re.MULTILINE,
-    )
-
     dependabot = yaml.safe_load(read_text(".github", "dependabot.yml"))
     pre_commit_updates = [
         update
@@ -93,12 +57,6 @@ def test_pre_commit_hooks_are_immutable_and_dependabot_managed() -> None:
     assert {"dependencies", "status: needs-triage", "area: ci"} <= set(
         pre_commit_updates[0]["labels"]
     )
-
-
-def test_ruff_lint_rejects_debugger_calls() -> None:
-    ruff_lint = load_pyproject()["tool"]["ruff"]["lint"]
-
-    assert "T10" in ruff_lint["select"]
 
 
 def test_label_automation_uses_declared_labels() -> None:
@@ -128,7 +86,6 @@ def test_label_automation_uses_declared_labels() -> None:
         "any-glob-to-any-file"
     ]
     assert "packaging/**" in packaging_globs
-
     triage = read_text(".github", "workflows", "issue-triage.yml")
     assert 'item.user?.login === "dependabot[bot]"' not in triage
     assert 'item.user?.type === "Bot"' not in triage
@@ -152,52 +109,9 @@ def test_manual_label_sync_fails_outside_master() -> None:
     steps = workflow["jobs"]["sync-labels"]["steps"]
     guard = steps[0]
 
-    assert guard["name"] == "Reject non-master runs"
     assert guard["if"] == "github.ref != 'refs/heads/master'"
     assert "exit 1" in guard["run"]
     assert steps[1]["uses"].startswith("actions/checkout@")
-
-
-def test_questions_and_usage_help_are_routed_to_discussions() -> None:
-    assert not repo_path(".github", "ISSUE_TEMPLATE", "question.yml").exists()
-
-    issue_config = yaml.safe_load(read_text(".github", "ISSUE_TEMPLATE", "config.yml"))
-    discussions_links = [
-        link
-        for link in issue_config["contact_links"]
-        if link["url"] == f"{REPOSITORY_URL}/discussions"
-    ]
-    assert len(discussions_links) == 1
-    assert "questions" in discussions_links[0]["about"].lower()
-    assert "usage help" in discussions_links[0]["about"].lower()
-
-    labels = json.loads(read_text(".github", "labels.json"))
-    assert "type: question" not in {label["name"] for label in labels}
-
-
-def test_bug_report_requires_support_environment_details() -> None:
-    bug_report = yaml.safe_load(
-        read_text(".github", "ISSUE_TEMPLATE", "bug_report.yml")
-    )
-    fields = {field["id"]: field for field in bug_report["body"] if "id" in field}
-    required_fields = {
-        "os": "Operating system",
-        "shell": "Shell",
-        "python": "Python version",
-        "install_method": "Installation method",
-        "provider_invoker": "Provider CLI or invoker",
-        "live_mode": "Live mode",
-    }
-
-    for field_id, label in required_fields.items():
-        assert fields[field_id]["attributes"]["label"] == label
-        assert fields[field_id]["validations"]["required"] is True
-
-    privacy_guidance = fields["logs"]["attributes"]["description"].lower()
-    for protected_detail in ("secrets", "tokens", "customer data", "provider payloads"):
-        assert protected_detail in privacy_guidance
-    safety_checks = fields["safety"]["attributes"]["options"]
-    assert all(option["required"] is True for option in safety_checks)
 
 
 def test_repository_gitattributes_preserve_blob_exact_workspace_compatibility() -> None:

@@ -5,6 +5,7 @@ import json
 import unittest
 from pathlib import Path
 
+import pytest
 import typer
 
 import crewplane.cli.app as cli
@@ -220,8 +221,12 @@ def _write_findings_failure_workflow(path: Path) -> None:
 
 
 class CliRunWorkflowFailureTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_expected_workflow_failure_is_concise_and_finalized(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -291,7 +296,7 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
             self.assertIn(f"Logs: {run_dirs[0] / 'logs'}", output_text)
 
     def test_reviewer_workflow_failure_is_concise_and_finalized(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)
@@ -349,7 +354,7 @@ class CliRunWorkflowFailureTests(unittest.TestCase):
             self.assertIn("summarize.review", manifest["failure_message"])
 
     def test_findings_extraction_failure_is_concise_and_finalized(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             state_dir = tmp_path / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True)

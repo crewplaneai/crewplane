@@ -1,6 +1,8 @@
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.architecture.contracts import EventType
 from crewplane.core.prompt_segments import PromptSegmentRole
@@ -35,6 +37,10 @@ from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
 
 
 class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_compact_runtime_left_pane_uses_configured_provider_labels(self) -> None:
         workflow = provider_label_workflow()
         runtime = SimulatedTmuxRuntime(auto_close_session=True)
@@ -192,69 +198,69 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-running-preferred"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            first_log = Path(tmp_dir) / "round1.log"
-            second_log = Path(tmp_dir) / "round2.log"
-            first_log.write_text("header\\n---\\nround1-line\\n", encoding="utf-8")
-            second_log.write_text("header\\n---\\nround2-line\\n", encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        first_log = Path(tmp_dir) / "round1.log"
+        second_log = Path(tmp_dir) / "round2.log"
+        first_log.write_text("header\\n---\\nround1-line\\n", encoding="utf-8")
+        second_log.write_text("header\\n---\\nround2-line\\n", encoding="utf-8")
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-running-preferred",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(first_log),
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_FINISHED,
-                    workflow_name=workflow.name,
-                    run_id="compact-running-preferred",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-running-preferred",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=2,
-                    log_file=str(second_log),
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-running-preferred",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(first_log),
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_FINISHED,
+                workflow_name=workflow.name,
+                run_id="compact-running-preferred",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-running-preferred",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=2,
+                log_file=str(second_log),
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertIn("round2", right_text)
-            self.assertIn("round2-line", right_text)
-            self.assertNotIn("round1-line", right_text)
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertIn("round2", right_text)
+        self.assertIn("round2-line", right_text)
+        self.assertNotIn("round1-line", right_text)
 
         runtime.stop(RunResult(status="succeeded"))
 
@@ -274,65 +280,65 @@ class CompactRuntimeSelectionAndCachingTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-newest-running"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            alpha_log = Path(tmp_dir) / "alpha.log"
-            beta_log = Path(tmp_dir) / "beta.log"
-            alpha_log.write_text("header\n---\nalpha-line\n", encoding="utf-8")
-            beta_log.write_text("header\n---\nbeta-line\n", encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        alpha_log = Path(tmp_dir) / "alpha.log"
+        beta_log = Path(tmp_dir) / "beta.log"
+        alpha_log.write_text("header\n---\nalpha-line\n", encoding="utf-8")
+        beta_log.write_text("header\n---\nbeta-line\n", encoding="utf-8")
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.NODE_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-newest-running",
-                    node_id="node.a",
-                    timestamp=9.0,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-newest-running",
-                    node_id="node.a",
-                    provider="beta",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="beta_executor_0",
-                    round_num=1,
-                    log_file=str(beta_log),
-                    timestamp=10.0,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-newest-running",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(alpha_log),
-                    timestamp=20.0,
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.NODE_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-newest-running",
+                node_id="node.a",
+                timestamp=9.0,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-newest-running",
+                node_id="node.a",
+                provider="beta",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="beta_executor_0",
+                round_num=1,
+                log_file=str(beta_log),
+                timestamp=10.0,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-newest-running",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(alpha_log),
+                timestamp=20.0,
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertIn("alpha-line", right_text)
-            self.assertNotIn("beta-line", right_text)
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertIn("alpha-line", right_text)
+        self.assertNotIn("beta-line", right_text)
 
         runtime.stop(RunResult(status="succeeded"))

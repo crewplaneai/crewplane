@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.unit.packaging.ci_workflow_support import workflow_step_run
 from tests.unit.packaging.release_surfaces_support import read_text, write_executable
-from tests.unit.packaging.test_release_ci_workflows import workflow_step_run
 
 
 def test_uv_update_follows_pull_request_ci_without_requiring_success() -> None:
@@ -39,9 +39,7 @@ def test_uv_update_follows_pull_request_ci_without_requiring_success() -> None:
         "${{ github.event.workflow_run.head_branch }}"
     )
     dispatch = next(
-        step
-        for step in job["steps"]
-        if step.get("name") == "Dispatch CI for the bot-authored push"
+        step for step in job["steps"] if "gh workflow run ci.yml" in step.get("run", "")
     )
     assert dispatch["if"] == "steps.publish.outputs.published == 'true'"
 
@@ -79,7 +77,7 @@ def test_uv_update_selects_only_the_triggering_branch(
     output = tmp_path / "output"
     git_log = tmp_path / "git-log"
     result = subprocess.run(
-        ["bash", "-c", workflow_step_run(job, "Select the Dependabot uv PR")],
+        ["bash", "-c", workflow_step_run(job, "lane")],
         cwd=tmp_path,
         env={
             **os.environ,

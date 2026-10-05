@@ -3,23 +3,22 @@ from __future__ import annotations
 import io
 import json
 import unittest
-from typing import Any
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from rich.console import Console
 
-from crewplane.architecture.contracts import (
-    ObserverCapabilities,
-)
 from crewplane.artifacts.locks import (
     LOCK_OWNER_FILENAME,
     acquire_same_context_lock,
 )
 from crewplane.artifacts.manager import OutputManager
-from crewplane.observability import ObservabilityHub
 from tests.helpers.resume_locks import FakeProcessInspector
 from tests.helpers.working_directory import temporary_project_cwd
+from tests.integration.cli.terminal_recovery_support import (
+    RequiredStopFailureHub,
+)
 from tests.integration.cli.workflow_runner_support import (
     mock_runner_config,
     run_directories,
@@ -28,39 +27,15 @@ from tests.integration.cli.workflow_runner_support import (
 )
 
 
-class RequiredStopFailureObserver:
-    capabilities = ObserverCapabilities(required=True)
-
-    @property
-    def stop_requested(self) -> bool:
-        return False
-
-    def start(self, context: object) -> None:
-        del context
-
-    def on_snapshot(self, event: object, snapshot: object) -> None:
-        del event, snapshot
-
-    def stop(self, result: object) -> None:
-        del result
-        raise RuntimeError("required observer stop failed")
-
-
-class RequiredStopFailureHub(ObservabilityHub):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        observers = list(kwargs.pop("observers"))
-        super().__init__(
-            *args,
-            observers=[*observers, RequiredStopFailureObserver()],
-            **kwargs,
-        )
-
-
 class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_terminal_manifest_publication_failure_recovers_exact_outcome(
         self,
     ) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             with (
                 patch.object(
@@ -126,7 +101,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
                 replacement.release()
 
     async def test_required_observer_stop_failure_retains_run_lock(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             with pytest.raises(RuntimeError, match="required observer stop failed"):
                 await run_workflow(

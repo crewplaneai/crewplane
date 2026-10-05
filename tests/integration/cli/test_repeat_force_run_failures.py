@@ -14,7 +14,7 @@ from crewplane.artifacts.manager import OutputManager
 from crewplane.observability import ObservabilityHub
 from tests.integration.cli import repeat_force_run_support
 from tests.integration.cli.repeat_force_run_support import create_project
-from tests.integration.cli.test_workflow_runner_terminal_recovery import (
+from tests.integration.cli.terminal_recovery_support import (
     RequiredStopFailureHub,
 )
 from tests.integration.cli.workflow_runner_support import run_directories

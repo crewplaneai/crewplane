@@ -9,7 +9,6 @@ from tests.integration.architecture.static_checks import (
     offender,
     parse_python,
     python_files,
-    walk_ast,
 )
 
 
@@ -35,7 +34,7 @@ def test_runtime_and_cli_do_not_own_module_level_console_singletons() -> None:
 def test_runtime_code_uses_event_builders_instead_of_direct_construction() -> None:
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "crewplane" / "runtime"):
-        for node in walk_ast(parse_python(path)):
+        for node in ast.walk(parse_python(path)):
             if isinstance(node, ast.Call) and call_name(node.func) == "ExecutionEvent":
                 offenders.append(offender(path, node.lineno))
     assert offenders == []
@@ -45,7 +44,7 @@ def test_runtime_execution_does_not_consume_top_level_config() -> None:
     offenders = [
         offender(path, node.lineno, alias.name)
         for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "execution")
-        for node in walk_ast(parse_python(path))
+        for node in ast.walk(parse_python(path))
         if isinstance(node, ast.ImportFrom) and node.module == "crewplane.core.config"
         for alias in node.names
         if alias.name == "Config"
@@ -73,7 +72,7 @@ def test_runtime_does_not_infer_provider_behavior_from_executable_names() -> Non
     offenders: list[str] = []
     for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "agent"):
         module = parse_python(path)
-        for node in walk_ast(module):
+        for node in ast.walk(module):
             referenced_name: str | None = None
             if isinstance(node, ast.Name):
                 referenced_name = node.id
@@ -103,7 +102,7 @@ def test_runtime_does_not_own_provider_retry_literals() -> None:
     offenders = [
         offender(path, node.lineno, retry_literal)
         for path in python_files(SRC_ROOT / "crewplane" / "runtime" / "agent")
-        for node in walk_ast(parse_python(path))
+        for node in ast.walk(parse_python(path))
         if isinstance(node, ast.Constant) and node.value == retry_literal
     ]
     assert offenders == []
@@ -118,7 +117,7 @@ def test_runtime_and_tmux_do_not_infer_presentation_from_provider_names() -> Non
     offenders: list[str] = []
     for root in checked_roots:
         for path in python_files(root):
-            for node in walk_ast(parse_python(path)):
+            for node in ast.walk(parse_python(path)):
                 if (
                     isinstance(node, ast.Constant)
                     and isinstance(node.value, str)
@@ -146,7 +145,7 @@ def test_provider_usage_fallback_does_not_materialize_output_artifacts() -> None
     fallback_calls = 0
     offenders: list[str] = []
     for path in checked_paths:
-        for node in walk_ast(parse_python(path)):
+        for node in ast.walk(parse_python(path)):
             if not isinstance(node, ast.Call):
                 continue
             name = call_name(node.func)

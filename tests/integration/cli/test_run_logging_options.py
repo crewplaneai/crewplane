@@ -1,5 +1,8 @@
 import io
 import unittest
+from pathlib import Path
+
+import pytest
 
 import crewplane.cli.app as cli
 from tests.helpers.working_directory import temporary_project_cwd
@@ -12,8 +15,12 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 
 class CliRunLoggingOptionTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_run_logs_enabled_when_settings_missing(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -48,7 +55,7 @@ class CliRunLoggingOptionTests(unittest.TestCase):
             self.assertIn("Logs:", output_text)
 
     def test_run_respects_explicit_log_disable(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config_with_settings(config_path, log_cli_output=False)

@@ -262,7 +262,7 @@ def test_executor_failure_survives_recovery_cancellation(
                 ):
                     raise failure
 
-        invoker = FailingExecutor(["candidate", blocked])
+        invoker = FailingExecutor(["candidate", blocked, "partial executor output"])
         recover = audit_round.recover_after_remediation_context_exhaustion
         loop = asyncio.get_running_loop()
         recovery_checked = False
@@ -361,7 +361,7 @@ def test_cancellation_after_context_recovery_preserves_terminal_policy(
                 ):
                     raise failure
 
-        invoker = ExhaustingExecutor(["candidate", blocked])
+        invoker = ExhaustingExecutor(["candidate", blocked, "partial executor output"])
         recover = audit_round.recover_after_remediation_context_exhaustion
         loop = asyncio.get_running_loop()
         recovery_completed = False
@@ -574,7 +574,7 @@ def test_review_failure_survives_status_publication_cancellation(
                     runtime.plan.nodes[0],
                     output,
                     runtime,
-                    FailingReviewer(["candidate"]),
+                    FailingReviewer(["candidate", "partial reviewer output"]),
                 )
             )
             with pytest.raises(type(expected)) as caught:
