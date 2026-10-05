@@ -4,6 +4,8 @@ All notable user-facing changes are recorded here.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-10-05
+
 ### Added
 
 - Resume interrupted review loops from completed phases, including finalization retries without provider calls.
