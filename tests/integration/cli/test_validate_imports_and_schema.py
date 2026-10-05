@@ -1,6 +1,8 @@
 import io
 import unittest
+from pathlib import Path
 
+import pytest
 import typer
 
 import crewplane.cli.app as cli
@@ -14,8 +16,12 @@ from tests.integration.cli.cli_workflow_helpers import (
 
 
 class CliValidateImportsAndSchemaTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_validate_accepts_workflow_markdown(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "example.task.md"
             write_basic_config(config_path)
@@ -44,7 +50,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertIn("Valid:", output_text)
 
     def test_validate_accepts_workflow_with_imports(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             module_path = tmp_path / "module.task.md"
             workflow_path = tmp_path / "workflow.task.md"
@@ -117,7 +123,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertIn("Valid:", output_text)
 
     def test_validate_rejects_unused_import_parameter(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             module_path = tmp_path / "module.task.md"
             workflow_path = tmp_path / "workflow.task.md"
@@ -191,7 +197,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertIn("unused parameter", " ".join(output_text.split()))
 
     def test_validate_fails_fast_for_unknown_provider(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -235,7 +241,7 @@ class CliValidateImportsAndSchemaTests(unittest.TestCase):
             self.assertNotIn("Invalid:", output_text)
 
     def test_validate_surfaces_strict_workflow_schema_errors(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)

@@ -1,6 +1,6 @@
 import os
-import tempfile
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import patch
 
 import pytest
@@ -170,7 +170,7 @@ def test_reasoning_request_allows_unrelated_claude_settings() -> None:
     assert "--effort" in plan.cmd
 
 
-def test_reasoning_request_checks_relative_claude_settings_file() -> None:
+def test_reasoning_request_checks_relative_claude_settings_file(tmp_path: Path) -> None:
     context = InvocationContext(
         node_id="node",
         task_id="task",
@@ -178,29 +178,29 @@ def test_reasoning_request_checks_relative_claude_settings_file() -> None:
         role="executor",
         requested_reasoning="high",
     )
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        working_directory = Path(tmp_dir)
-        (working_directory / "claude-settings.json").write_text(
-            '{"effortLevel": "low"}',
-            encoding="utf-8",
-        )
-        config = AgentConfig(
-            cli_cmd=["claude", "--settings", "claude-settings.json"],
-            provider_kind="claude",
-        )
+    tmp_dir = mkdtemp(dir=tmp_path)
+    working_directory = Path(tmp_dir)
+    (working_directory / "claude-settings.json").write_text(
+        '{"effortLevel": "low"}',
+        encoding="utf-8",
+    )
+    config = AgentConfig(
+        cli_cmd=["claude", "--settings", "claude-settings.json"],
+        provider_kind="claude",
+    )
 
-        with (
-            patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
-            pytest.raises(ValueError, match="--settings effortLevel"),
-        ):
-            build_cli_invocation_plan(
-                config,
-                model=None,
-                prompt="prompt",
-                output_file=working_directory / "output.md",
-                invocation_context=context,
-                working_directory=working_directory,
-            )
+    with (
+        patch.dict(os.environ, {"CLAUDE_CODE_EFFORT_LEVEL": ""}),
+        pytest.raises(ValueError, match="--settings effortLevel"),
+    ):
+        build_cli_invocation_plan(
+            config,
+            model=None,
+            prompt="prompt",
+            output_file=working_directory / "output.md",
+            invocation_context=context,
+            working_directory=working_directory,
+        )
 
 
 def test_reasoning_request_fails_closed_for_unreadable_claude_settings() -> None:

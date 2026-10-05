@@ -167,6 +167,10 @@ def write_successful_node_output(
 
 
 class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def setUp(self) -> None:
         allocation_clock = self.enterContext(
             patch("crewplane.artifacts.directory_manager.datetime")
@@ -179,7 +183,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_run_resumes_validated_node_boundary_into_fresh_run(
         self,
     ) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             calls: list[tuple[str, ...]] = []
             run_dirs: list[Path] = []
@@ -247,7 +251,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancelled_run_resumes_validated_node_boundary_into_fresh_run(
         self,
     ) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             calls: list[tuple[str, ...]] = []
             run_dirs: list[Path] = []
@@ -348,7 +352,7 @@ class CliRunResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_live_dashboard_cancelled_run_resumes_validated_node_boundary(
         self,
     ) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             calls: list[tuple[str, ...]] = []
             run_dirs: list[Path] = []

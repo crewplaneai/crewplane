@@ -1,10 +1,11 @@
 import io
-import tempfile
 import unittest
 from dataclasses import FrozenInstanceError
 from datetime import datetime
 from pathlib import Path
+from tempfile import mkdtemp
 
+import pytest
 from rich.console import Console
 
 import crewplane.adapters.ui.tmux as tmux_adapter_module
@@ -138,6 +139,10 @@ class _ConformingObserverRuntime:
 
 
 class ContainerTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def _build_config(self, settings: Settings | None = None) -> Config:
         config: dict[str, object] = {
             "version": SCHEMA_VERSION,
@@ -169,16 +174,16 @@ class ContainerTests(unittest.TestCase):
     def test_container_builds_default_components_without_live_ui(self) -> None:
         workflow = self._build_workflow()
         config = self._build_config()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            components = build_runtime_components(
-                config=config,
-                workflow_topology=topology_from_workflow(workflow),
-                state_dir=tmp_path,
-                project_root=tmp_path,
-                console=Console(file=io.StringIO(), force_terminal=False),
-                no_live=False,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        components = build_runtime_components(
+            config=config,
+            workflow_topology=topology_from_workflow(workflow),
+            state_dir=tmp_path,
+            project_root=tmp_path,
+            console=Console(file=io.StringIO(), force_terminal=False),
+            no_live=False,
+        )
 
         self.assertEqual(components.observers, ())
         self.assertEqual(components.artifact_store.task_name, "workflow")
@@ -211,16 +216,16 @@ class ContainerTests(unittest.TestCase):
                 }
             )
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            components = build_runtime_components(
-                config=config,
-                workflow_topology=topology_from_workflow(workflow),
-                state_dir=tmp_path,
-                project_root=tmp_path,
-                console=Console(file=io.StringIO(), force_terminal=True),
-                no_live=False,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        components = build_runtime_components(
+            config=config,
+            workflow_topology=topology_from_workflow(workflow),
+            state_dir=tmp_path,
+            project_root=tmp_path,
+            console=Console(file=io.StringIO(), force_terminal=True),
+            no_live=False,
+        )
 
         self.assertEqual(components.observers, ())
         self.assertFalse(hasattr(components, "invoker_override"))
@@ -242,17 +247,17 @@ class ContainerTests(unittest.TestCase):
                 }
             )
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            with self.assertRaisesRegex(TypeError, "log_presentation_for"):
-                build_runtime_components(
-                    config=config,
-                    workflow_topology=topology_from_workflow(workflow),
-                    state_dir=tmp_path,
-                    project_root=tmp_path,
-                    console=Console(file=io.StringIO(), force_terminal=False),
-                    no_live=True,
-                )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        with self.assertRaisesRegex(TypeError, "log_presentation_for"):
+            build_runtime_components(
+                config=config,
+                workflow_topology=topology_from_workflow(workflow),
+                state_dir=tmp_path,
+                project_root=tmp_path,
+                console=Console(file=io.StringIO(), force_terminal=False),
+                no_live=True,
+            )
 
     def test_container_accepts_dotted_override_for_ui(self) -> None:
         workflow = self._build_workflow()
@@ -273,16 +278,16 @@ class ContainerTests(unittest.TestCase):
                 }
             )
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            components = build_runtime_components(
-                config=config,
-                workflow_topology=topology_from_workflow(workflow),
-                state_dir=tmp_path,
-                project_root=tmp_path,
-                console=Console(file=io.StringIO(), force_terminal=True),
-                no_live=False,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        components = build_runtime_components(
+            config=config,
+            workflow_topology=topology_from_workflow(workflow),
+            state_dir=tmp_path,
+            project_root=tmp_path,
+            console=Console(file=io.StringIO(), force_terminal=True),
+            no_live=False,
+        )
 
         self.assertEqual(components.observers, ())
 
@@ -319,7 +324,8 @@ class ContainerTests(unittest.TestCase):
             ),
         ]
         for name, console, no_live in scenarios:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_dir = mkdtemp(dir=self.tmp_path)
+            with self.subTest(name=name):
                 tmp_path = Path(tmp_dir)
                 components = build_runtime_components(
                     config=config,
@@ -353,17 +359,17 @@ class ContainerTests(unittest.TestCase):
             )
         )
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            with self.assertRaisesRegex(AdapterLoadError, "missing.module"):
-                build_runtime_components(
-                    config=config,
-                    workflow_topology=topology_from_workflow(workflow),
-                    state_dir=tmp_path,
-                    project_root=tmp_path,
-                    console=Console(file=io.StringIO(), force_terminal=True),
-                    no_live=False,
-                )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        with self.assertRaisesRegex(AdapterLoadError, "missing.module"):
+            build_runtime_components(
+                config=config,
+                workflow_topology=topology_from_workflow(workflow),
+                state_dir=tmp_path,
+                project_root=tmp_path,
+                console=Console(file=io.StringIO(), force_terminal=True),
+                no_live=False,
+            )
 
     def test_container_validates_invoker_before_allocating_run_directories(
         self,
@@ -384,20 +390,20 @@ class ContainerTests(unittest.TestCase):
             )
         )
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            with self.assertRaisesRegex(AdapterLoadError, "missing.module"):
-                build_runtime_components(
-                    config=config,
-                    workflow_topology=topology_from_workflow(workflow),
-                    state_dir=tmp_path,
-                    project_root=tmp_path,
-                    console=Console(file=io.StringIO(), force_terminal=False),
-                    no_live=False,
-                )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        with self.assertRaisesRegex(AdapterLoadError, "missing.module"):
+            build_runtime_components(
+                config=config,
+                workflow_topology=topology_from_workflow(workflow),
+                state_dir=tmp_path,
+                project_root=tmp_path,
+                console=Console(file=io.StringIO(), force_terminal=False),
+                no_live=False,
+            )
 
-            self.assertFalse((tmp_path / "execution-stages").exists())
-            self.assertFalse((tmp_path / "execution-results").exists())
+        self.assertFalse((tmp_path / "execution-stages").exists())
+        self.assertFalse((tmp_path / "execution-results").exists())
 
     def test_container_passes_default_tmux_liveness_options_to_runtime(self) -> None:
         workflow = self._build_workflow()
@@ -422,17 +428,17 @@ class ContainerTests(unittest.TestCase):
 
         tmux_adapter_module.TmuxCompactRuntime = StubRuntime  # type: ignore[assignment]
         try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                tmp_path = Path(tmp_dir)
-                components = build_runtime_components(
-                    config=config,
-                    workflow_topology=topology_from_workflow(workflow),
-                    state_dir=tmp_path,
-                    project_root=tmp_path,
-                    console=Console(file=io.StringIO(), force_terminal=True),
-                    no_live=False,
-                    which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
-                )
+            tmp_dir = mkdtemp(dir=self.tmp_path)
+            tmp_path = Path(tmp_dir)
+            components = build_runtime_components(
+                config=config,
+                workflow_topology=topology_from_workflow(workflow),
+                state_dir=tmp_path,
+                project_root=tmp_path,
+                console=Console(file=io.StringIO(), force_terminal=True),
+                no_live=False,
+                which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
+            )
         finally:
             tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
 
@@ -460,18 +466,18 @@ class ContainerTests(unittest.TestCase):
             )
         )
         warnings: list[str] = []
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            components = build_runtime_components(
-                config=config,
-                workflow_topology=topology_from_workflow(workflow),
-                state_dir=tmp_path,
-                project_root=tmp_path,
-                console=Console(file=io.StringIO(), force_terminal=True),
-                no_live=False,
-                warning_sink=warnings.append,
-                which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        components = build_runtime_components(
+            config=config,
+            workflow_topology=topology_from_workflow(workflow),
+            state_dir=tmp_path,
+            project_root=tmp_path,
+            console=Console(file=io.StringIO(), force_terminal=True),
+            no_live=False,
+            warning_sink=warnings.append,
+            which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
+        )
 
         self.assertEqual(components.observers, ())
         self.assertIsNotNone(components.base_invoker)
@@ -519,17 +525,17 @@ class ContainerTests(unittest.TestCase):
 
         tmux_adapter_module.TmuxCompactRuntime = StubRuntime  # type: ignore[assignment]
         try:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                tmp_path = Path(tmp_dir)
-                components = build_runtime_components(
-                    config=config,
-                    workflow_topology=topology_from_workflow(workflow),
-                    state_dir=tmp_path,
-                    project_root=tmp_path,
-                    console=Console(file=io.StringIO(), force_terminal=True),
-                    no_live=False,
-                    which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
-                )
+            tmp_dir = mkdtemp(dir=self.tmp_path)
+            tmp_path = Path(tmp_dir)
+            components = build_runtime_components(
+                config=config,
+                workflow_topology=topology_from_workflow(workflow),
+                state_dir=tmp_path,
+                project_root=tmp_path,
+                console=Console(file=io.StringIO(), force_terminal=True),
+                no_live=False,
+                which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
+            )
         finally:
             tmux_adapter_module.TmuxCompactRuntime = original_runtime_class  # type: ignore[assignment]
 
@@ -562,26 +568,30 @@ class ContainerTests(unittest.TestCase):
             )
         )
         warnings: list[str] = []
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            components = build_runtime_components(
-                config=config,
-                workflow_topology=topology_from_workflow(workflow),
-                state_dir=tmp_path,
-                project_root=tmp_path,
-                console=Console(file=io.StringIO(), force_terminal=True),
-                no_live=False,
-                warning_sink=warnings.append,
-                which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        components = build_runtime_components(
+            config=config,
+            workflow_topology=topology_from_workflow(workflow),
+            state_dir=tmp_path,
+            project_root=tmp_path,
+            console=Console(file=io.StringIO(), force_terminal=True),
+            no_live=False,
+            warning_sink=warnings.append,
+            which_fn=lambda executable: "/usr/bin/tmux",  # noqa: ARG005 - Required by callback or protocol signature.
+        )
 
-            self.assertEqual(components.observers, ())
+        self.assertEqual(components.observers, ())
         self.assertIsNotNone(components.base_invoker)
         self.assertTrue(warnings)
         self.assertIn("log_cli_output=true", warnings[-1])
 
 
 class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_mock_invoker_runs_workflow_without_provider_cli(self) -> None:
         workflow = WorkflowPlan(
             name="mock-runtime",
@@ -623,34 +633,34 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 }
             ),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            components = build_runtime_components(
-                config=config,
-                workflow_topology=topology_from_workflow(workflow),
-                state_dir=tmp_path,
-                project_root=tmp_path,
-                console=Console(file=io.StringIO(), force_terminal=False),
-                no_live=True,
-            )
-            plan, secret_context = _compiled_test_plan(config, workflow, components)
-            await execute_workflow(
-                plan=plan,
-                output=components.artifact_store,
-                invoker=components.base_invoker,
-                secret_context=secret_context,
-                suppress_progress_output=True,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        components = build_runtime_components(
+            config=config,
+            workflow_topology=topology_from_workflow(workflow),
+            state_dir=tmp_path,
+            project_root=tmp_path,
+            console=Console(file=io.StringIO(), force_terminal=False),
+            no_live=True,
+        )
+        plan, secret_context = _compiled_test_plan(config, workflow, components)
+        await execute_workflow(
+            plan=plan,
+            output=components.artifact_store,
+            invoker=components.base_invoker,
+            secret_context=secret_context,
+            suppress_progress_output=True,
+        )
 
-            result_file = components.artifact_store.results_dir / build_result_filename(
-                "node.mock"
-            )
-            self.assertTrue(result_file.exists())
-            output_text = result_file.read_text(encoding="utf-8")
-            self.assertIn("# Mock Invocation Output", output_text)
-            self.assertIn("- Node: node.mock", output_text)
-            self.assertEqual(components.artifact_store.task_name, "mock-runtime")
-            self.assertIsNotNone(components.base_invoker)
+        result_file = components.artifact_store.results_dir / build_result_filename(
+            "node.mock"
+        )
+        self.assertTrue(result_file.exists())
+        output_text = result_file.read_text(encoding="utf-8")
+        self.assertIn("# Mock Invocation Output", output_text)
+        self.assertIn("- Node: node.mock", output_text)
+        self.assertEqual(components.artifact_store.task_name, "mock-runtime")
+        self.assertIsNotNone(components.base_invoker)
         self.assertFalse(hasattr(components, "invoker_override"))
 
     async def test_mock_invoker_writes_findings_artifact_for_lorem_output(
@@ -698,35 +708,34 @@ class ContainerRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 }
             ),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            components = build_runtime_components(
-                config=config,
-                workflow_topology=topology_from_workflow(workflow),
-                state_dir=tmp_path,
-                project_root=tmp_path,
-                console=Console(file=io.StringIO(), force_terminal=False),
-                no_live=True,
-            )
-            plan, secret_context = _compiled_test_plan(config, workflow, components)
-            await execute_workflow(
-                plan=plan,
-                output=components.artifact_store,
-                invoker=components.base_invoker,
-                secret_context=secret_context,
-                suppress_progress_output=True,
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        components = build_runtime_components(
+            config=config,
+            workflow_topology=topology_from_workflow(workflow),
+            state_dir=tmp_path,
+            project_root=tmp_path,
+            console=Console(file=io.StringIO(), force_terminal=False),
+            no_live=True,
+        )
+        plan, secret_context = _compiled_test_plan(config, workflow, components)
+        await execute_workflow(
+            plan=plan,
+            output=components.artifact_store,
+            invoker=components.base_invoker,
+            secret_context=secret_context,
+            suppress_progress_output=True,
+        )
 
-            result_file = components.artifact_store.results_dir / build_result_filename(
-                "review.context"
-            )
-            findings_file = (
-                components.artifact_store.results_dir
-                / build_findings_filename("review.context")
-            )
-            self.assertTrue(result_file.exists())
-            self.assertTrue(findings_file.exists())
-            self.assertIn(
-                "Synthetic finding for review.context",
-                findings_file.read_text(encoding="utf-8"),
-            )
+        result_file = components.artifact_store.results_dir / build_result_filename(
+            "review.context"
+        )
+        findings_file = components.artifact_store.results_dir / build_findings_filename(
+            "review.context"
+        )
+        self.assertTrue(result_file.exists())
+        self.assertTrue(findings_file.exists())
+        self.assertIn(
+            "Synthetic finding for review.context",
+            findings_file.read_text(encoding="utf-8"),
+        )

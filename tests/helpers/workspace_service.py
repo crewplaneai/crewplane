@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,14 +30,7 @@ from crewplane.core.workspace.repository_identity import workspace_repository_id
 from crewplane.runtime.workspace import WorkspaceInvocationRequest
 from crewplane.runtime.workspace.service import MaterializationLimiter
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
-
-GIT_TEST_CONFIG_ARGS = (
-    "-c",
-    "maintenance.auto=false",
-    "-c",
-    "gc.auto=0",
-)
+from tests.helpers.isolated_git import run_git, run_git_text
 
 
 def create_git_repo(tmp_path: Path, object_format: str = "sha1") -> Path:
@@ -58,32 +50,13 @@ def create_git_repo(tmp_path: Path, object_format: str = "sha1") -> Path:
     return repo
 
 
-def run_git_text(repo: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", *GIT_TEST_CONFIG_ARGS, "-C", repo.as_posix(), *args],
-        check=True,
-        capture_output=True,
-        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
-    )
-    return result.stdout.decode().strip()
-
-
 def git_commit_exists(repo: Path, object_id: str) -> bool:
-    result = subprocess.run(
-        [
-            "git",
-            *GIT_TEST_CONFIG_ARGS,
-            "-C",
-            repo.as_posix(),
-            "cat-file",
-            "-e",
-            f"{object_id}^{{commit}}",
-        ],
-        check=False,
-        capture_output=True,
-        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+    return (
+        run_git(
+            repo, "cat-file", "-e", f"{object_id}^{{commit}}", check=False
+        ).returncode
+        == 0
     )
-    return result.returncode == 0
 
 
 def file_sha256(path: Path) -> str:

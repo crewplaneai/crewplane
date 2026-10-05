@@ -1,6 +1,8 @@
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.core.prompt_segments import PromptSegmentRole
 from crewplane.core.workflow.loading import load_tasks
@@ -18,6 +20,10 @@ def _executor_prompt(node: WorkflowNode) -> str:
 
 
 class WorkflowMarkdownLoadingTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_load_workflow_markdown(self) -> None:
         workflow_content = "\n".join(
             [
@@ -44,10 +50,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Summarize {{backend.auth.output}}.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = validate_workflow_plan(load_tasks(path))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = validate_workflow_plan(load_tasks(path))
 
         self.assertEqual(workflow.schema_version, SCHEMA_VERSION)
         self.assertEqual(workflow.name, "Full Feature Workflow")
@@ -84,10 +90,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Use {{review-input.output}}.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = validate_workflow_plan(load_tasks(path))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = validate_workflow_plan(load_tasks(path))
 
         self.assertEqual(workflow.inputs, {"review_input": "review-input"})
         self.assertEqual(workflow.nodes[0].mode, "input")
@@ -124,13 +130,11 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Use {{review-input.output}}.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            with self.assertRaisesRegex(
-                ValueError, "must not define a markdown section"
-            ):
-                load_tasks(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "must not define a markdown section"):
+            load_tasks(path)
 
     def test_workflow_markdown_rejects_source_on_non_input_node(self) -> None:
         workflow_content = "\n".join(
@@ -150,11 +154,11 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Use the source.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "source is only valid"):
-                load_tasks(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "source is only valid"):
+            load_tasks(path)
 
     def test_workflow_markdown_loads_node_token_budget(self) -> None:
         workflow_content = "\n".join(
@@ -176,10 +180,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Use {{upstream.output}}.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = load_tasks(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = load_tasks(path)
 
         self.assertIsNotNone(workflow.nodes[0].token_budget)
         assert workflow.nodes[0].token_budget is not None
@@ -215,10 +219,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "<!-- /crewplane:reviewer -->",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = validate_workflow_plan(load_tasks(path))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = validate_workflow_plan(load_tasks(path))
 
         node = workflow.nodes[0]
         roles = [segment.role for segment in node.prompt_segments]
@@ -256,11 +260,11 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "<!-- /crewplane:executor -->",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "nested crewplane role markers"):
-                load_tasks(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "nested crewplane role markers"):
+            load_tasks(path)
 
     def test_workflow_markdown_treats_marker_text_in_code_block_as_literal(
         self,
@@ -283,10 +287,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "```",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = validate_workflow_plan(load_tasks(path))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = validate_workflow_plan(load_tasks(path))
 
         self.assertIn(
             "<!-- crewplane:reviewer -->", _executor_prompt(workflow.nodes[0])
@@ -325,10 +329,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 ]
             )
             with self.subTest(case_name=case_name):
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    path = Path(tmp_dir) / "workflow.task.md"
-                    path.write_text(workflow_content, encoding="utf-8")
-                    workflow = validate_workflow_plan(load_tasks(path))
+                tmp_dir = mkdtemp(dir=self.tmp_path)
+                path = Path(tmp_dir) / "workflow.task.md"
+                path.write_text(workflow_content, encoding="utf-8")
+                workflow = validate_workflow_plan(load_tasks(path))
 
                 self.assertIn(
                     "<!-- crewplane:reviewer -->",
@@ -353,10 +357,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Keep this literal.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = validate_workflow_plan(load_tasks(path))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = validate_workflow_plan(load_tasks(path))
 
         rendered = _executor_prompt(workflow.nodes[0])
         self.assertIn("<!-- crewplane runtime note -->", rendered)
@@ -378,10 +382,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
             "Line one with spaces.   \r\n"
             "Line two.\r\n"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = validate_workflow_plan(load_tasks(path))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = validate_workflow_plan(load_tasks(path))
 
         rendered = _executor_prompt(workflow.nodes[0])
         self.assertIn("Line one with spaces.   \r\n", rendered)
@@ -413,10 +417,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Use {{review.findings}}.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = validate_workflow_plan(load_tasks(path))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = validate_workflow_plan(load_tasks(path))
 
         self.assertTrue(workflow.nodes[0].findings)
         self.assertEqual(
@@ -446,10 +450,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Review this implementation.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = load_tasks(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = load_tasks(path)
 
         self.assertEqual(workflow.nodes[0].audit_rounds, 3)
         self.assertEqual(
@@ -499,10 +503,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Review this implementation.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            workflow = load_tasks(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        workflow = load_tasks(path)
 
         default_node, executor_node, reviewer_node = workflow.nodes
         self.assertEqual(default_node.review_starts_with, "executor")
@@ -570,10 +574,10 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                     section_body,
                 ]
             )
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                path = Path(tmp_dir) / "workflow.task.md"
-                path.write_text(workflow_content, encoding="utf-8")
-                workflow = load_tasks(path)
+            tmp_dir = mkdtemp(dir=self.tmp_path)
+            path = Path(tmp_dir) / "workflow.task.md"
+            path.write_text(workflow_content, encoding="utf-8")
+            workflow = load_tasks(path)
 
             with self.assertRaisesRegex(ValueError, expected_error):
                 validate_workflow_plan(workflow)
@@ -595,8 +599,8 @@ class WorkflowMarkdownLoadingTests(unittest.TestCase):
                 "Prompt text.",
             ]
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "workflow.task.md"
-            path.write_text(workflow_content, encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "Missing node section"):
-                load_tasks(path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "workflow.task.md"
+        path.write_text(workflow_content, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Missing node section"):
+            load_tasks(path)

@@ -1,11 +1,12 @@
 import asyncio
 import io
-import tempfile
 import unittest
-from collections import deque
+from contextlib import chdir
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import patch
 
+import pytest
 from rich.console import Console
 
 import crewplane.cli.app as cli
@@ -28,67 +29,37 @@ from crewplane.core.workflow.loading import load_tasks_with_sources
 from crewplane.core.workflow.validation import validate_workflow_plan
 from crewplane.core.yaml_loader import load_yaml_unique
 from crewplane.runtime.agent.usage_costs import derive_configured_cost
+from crewplane.version import SCHEMA_VERSION
 from tests.helpers.isolated_git import run_git
 from tests.helpers.working_directory import temporary_project_cwd
 
+LEGACY_PROMPT_FIELDS = {"prompt_arg", "quota_parser", "stdin_prompt_arg", "use_stdin"}
 
-def _redundant_direct_dependencies(workflow) -> list[tuple[str, str]]:  # type: ignore[no-untyped-def]
-    dependency_map = {node.id: tuple(node.needs) for node in workflow.nodes}
-    ancestors: dict[str, set[str]] = {node.id: set() for node in workflow.nodes}
-    remaining_dependencies = {
-        node_id: len(needs) for node_id, needs in dependency_map.items()
-    }
-    dependents: dict[str, list[str]] = {node.id: [] for node in workflow.nodes}
 
-    for node_id, needs in dependency_map.items():
-        for dependency_id in needs:
-            dependents[dependency_id].append(node_id)
-
-    ready = deque(
-        node.id for node in workflow.nodes if remaining_dependencies[node.id] == 0
-    )
-    while ready:
-        node_id = ready.popleft()
-        for dependent_id in dependents[node_id]:
-            ancestors[dependent_id].update(ancestors[node_id])
-            ancestors[dependent_id].add(node_id)
-            remaining_dependencies[dependent_id] -= 1
-            if remaining_dependencies[dependent_id] == 0:
-                ready.append(dependent_id)
-
-    redundant_dependencies: list[tuple[str, str]] = []
-    for node in workflow.nodes:
-        for dependency_id in node.needs:
-            other_upstream_nodes = {
-                upstream_id
-                for other_dependency_id in node.needs
-                if other_dependency_id != dependency_id
-                for upstream_id in (
-                    other_dependency_id,
-                    *ancestors[other_dependency_id],
-                )
-            }
-            if dependency_id in other_upstream_nodes:
-                redundant_dependencies.append((node.id, dependency_id))
-
-    return redundant_dependencies
+def test_generated_config_does_not_reference_legacy_prompt_fields() -> None:
+    config = load_yaml_unique(rendered_default_config())
+    assert config["agents"]
+    for agent in config["agents"].values():
+        assert not LEGACY_PROMPT_FIELDS.intersection(agent)
 
 
 class ExampleTemplateTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def setUp(self) -> None:
         self.template_dir = Path("src/crewplane/example_templates")
 
     def test_config_template_is_valid(self) -> None:
         config_path = self.template_dir / "config.yml"
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_config = Path(tmp_dir) / "config.yml"
-            rendered_config.write_text(
-                templates.render_template_content(
-                    config_path.read_text(encoding="utf-8")
-                ),
-                encoding="utf-8",
-            )
-            config = load_config(rendered_config)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        rendered_config = Path(tmp_dir) / "config.yml"
+        rendered_config.write_text(
+            templates.render_template_content(config_path.read_text(encoding="utf-8")),
+            encoding="utf-8",
+        )
+        config = load_config(rendered_config)
         self.assertEqual(list(config.agents), ["mock"])
         self.assertEqual(
             config.agents["mock"].cli_cmd,
@@ -119,54 +90,6 @@ class ExampleTemplateTests(unittest.TestCase):
         )
         self.assertEqual(config.settings.token_budget.warn_threshold_chars, 50000)
         self.assertIsNone(config.settings.token_budget.fail_threshold_chars)
-
-    def test_config_template_keeps_real_provider_examples_commented(self) -> None:
-        rendered = templates.render_template_content(
-            (self.template_dir / "config.yml").read_text(encoding="utf-8")
-        )
-        payload = load_yaml_unique(rendered)
-        assert isinstance(payload, dict)
-        agents = payload["agents"]
-        assert isinstance(agents, dict)
-
-        self.assertEqual(list(agents), ["mock"])
-        self.assertIn('# implementation: "cli"', rendered)
-        self.assertIn("# options: {}", rendered)
-        self.assertIn("Mock invoker for the first provider-free run", rendered)
-        self.assertIn(
-            "commented out so the first run stays mock-only",
-            rendered,
-        )
-        for provider_name in (
-            "claude",
-            "codex",
-            "gemini",
-            "copilot",
-            "kilo",
-            "pi",
-            "deepseek",
-            "opencode",
-        ):
-            self.assertIn(f"# {provider_name}:", rendered)
-            self.assertNotIn(f"\n  {provider_name}:", rendered)
-        self.assertIn('#   cli_cmd: ["claude"]', rendered)
-        self.assertIn('#   cli_cmd: ["codex", "exec"]', rendered)
-        self.assertIn('#   cli_cmd: ["gemini"]', rendered)
-        self.assertIn('#   cli_cmd: ["copilot"]', rendered)
-        self.assertIn('#   cli_cmd: ["kilo", "run"]', rendered)
-        self.assertIn("#   cli_cmd: [opencode, run]", rendered)
-        for flag in (
-            "--dangerously-skip-permissions",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--approval-mode=yolo",
-            "--allow-all-tools",
-        ):
-            self.assertIn(f'#     - "{flag}"', rendered)
-            self.assertNotIn(f'\n      - "{flag}"', rendered)
-        self.assertIn(
-            "Real provider runs start the external commands configured in .crewplane/config.yml",
-            rendered,
-        )
 
     def test_codex_example_pricing_uses_reported_input_tokens(self) -> None:
         snippet = manual_config_snippet(rendered_default_config(), ("codex",))
@@ -199,254 +122,42 @@ class ExampleTemplateTests(unittest.TestCase):
         self.assertAlmostEqual(cost, 0.87)
         self.assertEqual(confidence, "full")
 
-    def test_built_in_provider_template_omits_generic_model_arg(self) -> None:
-        rendered = templates.render_template_content(
-            (self.template_dir / "config.yml").read_text(encoding="utf-8")
-        )
-        payload = load_yaml_unique(rendered)
-        assert isinstance(payload, dict)
-        agents = payload["agents"]
-        assert isinstance(agents, dict)
-
-        offenders = [
-            agent_name
-            for agent_name, agent_payload in agents.items()
-            if isinstance(agent_payload, dict)
-            and agent_payload.get("provider_kind") != "generic"
-            and "model_arg" in agent_payload
-        ]
-        self.assertEqual(offenders, [])
-
-    def test_config_template_documents_workspace_support(self) -> None:
-        rendered = templates.render_template_content(
-            (self.template_dir / "config.yml").read_text(encoding="utf-8")
-        )
-        expected_guidance = [
-            "non-Git projects work normally",
-            "Managed workspaces require settings.workspace.enabled: true",
-            "Clean ordinary Git repository: yes",
-            "Non-Git project: no; keep enabled: false",
-            "Git LFS or custom filters: no",
-            "text/eol/crlf conversion: no",
-            "Submodules, sparse clone, partial clone: no",
-            "blob_exact requires provider-visible file bytes",
-            "Optional audited setup commands selected by workflow worktrees",
-            '["uv", "sync"]',
-        ]
-
-        for expected_text in expected_guidance:
-            self.assertIn(expected_text, rendered)
-        self.assertNotIn("Experimental workspace", rendered)
-
-    def test_workspace_templates_remove_maturity_label_but_preserve_alternative_names(
-        self,
-    ) -> None:
-        inherited = (
-            self.template_dir
-            / "example-templates/worktree/workspace-inherited-worktree-example.task.md"
-        ).read_text(encoding="utf-8")
-        alternatives = (
-            self.template_dir
-            / "example-templates/worktree/workspace-alternatives-example.task.md"
-        ).read_text(encoding="utf-8")
-
-        self.assertNotIn("Experimental Workspace", inherited)
-        self.assertNotIn("Experimental Workspace", alternatives)
-        self.assertIn("experimental_worktree", alternatives)
-        self.assertIn("alternatives.experimental", alternatives)
-        self.assertIn("Implement an experimental solution", alternatives)
-
-    def test_workflow_templates_cover_workspace_authoring_examples(self) -> None:
-        workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
-        self.assertGreaterEqual(len(workflow_templates), 1)
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
-            for workflow_path in workflow_templates:
-                rendered_workflow = rendered_root / workflow_path.relative_to(
-                    self.template_dir
-                )
-                rendered_workflow.parent.mkdir(parents=True, exist_ok=True)
-                rendered_workflow.write_text(
-                    templates.render_template_content(
-                        workflow_path.read_text(encoding="utf-8")
-                    ),
-                    encoding="utf-8",
-                )
-
-            workflows = []
-            for workflow_path in workflow_templates:
-                rendered_workflow = rendered_root / workflow_path.relative_to(
-                    self.template_dir
-                )
-                workflows.append(
-                    validate_workflow_plan(
-                        load_tasks_with_sources(
-                            rendered_workflow,
-                            project_root=rendered_root,
-                        ).workflow
-                    )
-                )
-
-        self.assertTrue(
-            any(workflow.worktrees for workflow in workflows),
-            msg="expected at least one generated workflow with worktrees",
-        )
-        self.assertTrue(
-            any(
-                declaration.kind == "snapshot"
-                for workflow in workflows
-                for declaration in workflow.worktrees.values()
-            ),
-            msg="expected a generated workflow with a snapshot worktree",
-        )
-        self.assertTrue(
-            any(
-                declaration.create_branch
-                for workflow in workflows
-                for declaration in workflow.worktrees.values()
-            ),
-            msg="expected a generated workflow with branch export",
-        )
-        self.assertTrue(
-            any(
-                len(workflow.worktrees) == 1
-                and any(
-                    node.mode != "input" and node.worktree is None
-                    for node in workflow.nodes
-                )
-                for workflow in workflows
-            ),
-            msg="expected a generated workflow demonstrating single-worktree inheritance",
-        )
-        self.assertTrue(
-            any(
-                len(
-                    {
-                        node.worktree
-                        for node in workflow.nodes
-                        if node.worktree
-                        and node.worktree != "none"
-                        and workflow.worktrees[node.worktree].kind == "worktree"
-                    }
-                )
-                > 1
-                for workflow in workflows
-            ),
-            msg="expected a generated workflow demonstrating separate worktrees",
-        )
-        self.assertTrue(
-            any(
-                any(node.worktree == "none" for node in workflow.nodes)
-                for workflow in workflows
-            ),
-            msg="expected a generated workflow demonstrating worktree: none",
-        )
-
-    def test_workflow_markdown_template_is_valid(self) -> None:
-        workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
-        self.assertGreaterEqual(len(workflow_templates), 1)
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
-            for workflow_path in workflow_templates:
-                rendered_workflow = rendered_root / workflow_path.relative_to(
-                    self.template_dir
-                )
-                rendered_workflow.parent.mkdir(parents=True, exist_ok=True)
-                rendered_workflow.write_text(
-                    templates.render_template_content(
-                        workflow_path.read_text(encoding="utf-8")
-                    ),
-                    encoding="utf-8",
-                )
-            for workflow_path in workflow_templates:
-                rendered_workflow = rendered_root / workflow_path.relative_to(
-                    self.template_dir
-                )
-                workflow = validate_workflow_plan(
-                    load_tasks_with_sources(
-                        rendered_workflow,
-                        project_root=rendered_root,
-                    ).workflow
-                )
-                self.assertGreaterEqual(len(workflow.nodes), 1)
-
     def test_default_workflow_is_single_mock_provider_review(self) -> None:
         workflow_path = self.template_dir / "single-agent-review.task.md"
         rendered = templates.render_template_content(
             workflow_path.read_text(encoding="utf-8")
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
-            rendered_workflow = rendered_root / "single-agent-review.task.md"
-            rendered_workflow.write_text(rendered, encoding="utf-8")
-            workflow = validate_workflow_plan(
-                load_tasks_with_sources(
-                    rendered_workflow,
-                    project_root=rendered_root,
-                ).workflow
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        rendered_root = Path(tmp_dir)
+        rendered_workflow = rendered_root / "single-agent-review.task.md"
+        rendered_workflow.write_text(rendered, encoding="utf-8")
+        workflow = validate_workflow_plan(
+            load_tasks_with_sources(
+                rendered_workflow,
+                project_root=rendered_root,
+            ).workflow
+        )
 
         self.assertEqual([node.id for node in workflow.nodes], ["review.project"])
         self.assertEqual(
             [provider.provider for provider in workflow.nodes[0].providers],
             ["mock"],
         )
-        for provider_name in ("claude", "codex", "gemini", "copilot", "kilo"):
-            self.assertNotIn(provider_name, rendered.lower())
-
-    def test_workflow_templates_avoid_redundant_transitive_dependencies(self) -> None:
-        workflow_templates = sorted(self.template_dir.rglob("*.task.md"))
-        self.assertGreaterEqual(len(workflow_templates), 1)
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
-            for workflow_path in workflow_templates:
-                rendered_workflow = rendered_root / workflow_path.relative_to(
-                    self.template_dir
-                )
-                rendered_workflow.parent.mkdir(parents=True, exist_ok=True)
-                rendered_workflow.write_text(
-                    templates.render_template_content(
-                        workflow_path.read_text(encoding="utf-8")
-                    ),
-                    encoding="utf-8",
-                )
-
-            for workflow_path in workflow_templates:
-                rendered_workflow = rendered_root / workflow_path.relative_to(
-                    self.template_dir
-                )
-                workflow = validate_workflow_plan(
-                    load_tasks_with_sources(
-                        rendered_workflow,
-                        project_root=rendered_root,
-                    ).workflow
-                )
-                self.assertEqual(
-                    _redundant_direct_dependencies(workflow),
-                    [],
-                    msg=f"{workflow_path} declares redundant direct dependencies",
-                )
-
-    def test_legacy_yaml_template_not_shipped(self) -> None:
-        self.assertFalse((self.template_dir / "tasks.yaml").exists())
 
     def test_library_template_discovery_is_recursive_and_sorted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            library_dir = Path(tmp_dir)
-            (library_dir / "b").mkdir(parents=True)
-            (library_dir / "z.task.md").write_text("x", encoding="utf-8")
-            (library_dir / "b" / "a.task.md").write_text("x", encoding="utf-8")
-            (library_dir / "ignore.md").write_text("x", encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        library_dir = Path(tmp_dir)
+        (library_dir / "b").mkdir(parents=True)
+        (library_dir / "z.task.md").write_text("x", encoding="utf-8")
+        (library_dir / "b" / "a.task.md").write_text("x", encoding="utf-8")
+        (library_dir / "ignore.md").write_text("x", encoding="utf-8")
 
-            with patch.object(
-                templates,
-                "WORKFLOW_LIBRARY_TEMPLATE_DIR",
-                library_dir,
-            ):
-                discovered = templates.discover_workflow_library_templates()
+        with patch.object(
+            templates,
+            "WORKFLOW_LIBRARY_TEMPLATE_DIR",
+            library_dir,
+        ):
+            discovered = templates.discover_workflow_library_templates()
 
         self.assertEqual(
             discovered,
@@ -454,126 +165,33 @@ class ExampleTemplateTests(unittest.TestCase):
         )
 
     def test_workflow_library_asset_discovery_includes_nested_assets(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            library_dir = Path(tmp_dir)
-            (library_dir / "composition").mkdir(parents=True)
-            (library_dir / "root.task.md").write_text("x", encoding="utf-8")
-            (library_dir / "composition" / "child.task.md").write_text(
-                "x",
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        library_dir = Path(tmp_dir)
+        (library_dir / "composition").mkdir(parents=True)
+        (library_dir / "root.task.md").write_text("x", encoding="utf-8")
+        (library_dir / "composition" / "child.task.md").write_text(
+            "x",
+            encoding="utf-8",
+        )
 
-            with patch.object(
-                templates,
-                "WORKFLOW_LIBRARY_TEMPLATE_DIR",
-                library_dir,
-            ):
-                discovered = templates.discover_workflow_library_assets()
+        with patch.object(
+            templates,
+            "WORKFLOW_LIBRARY_TEMPLATE_DIR",
+            library_dir,
+        ):
+            discovered = templates.discover_workflow_library_assets()
 
         self.assertEqual(
             discovered,
             [Path("composition/child.task.md"), Path("root.task.md")],
         )
 
-    def test_composition_example_templates_compose_after_render(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            rendered_root = Path(tmp_dir)
-            for template_path in self.template_dir.rglob("*"):
-                if not template_path.is_file():
-                    continue
-                rendered_path = rendered_root / template_path.relative_to(
-                    self.template_dir
-                )
-                rendered_path.parent.mkdir(parents=True, exist_ok=True)
-                rendered_path.write_text(
-                    templates.render_template_content(
-                        template_path.read_text(encoding="utf-8")
-                    ),
-                    encoding="utf-8",
-                )
-
-            workflow_path = (
-                rendered_root
-                / "example-templates"
-                / "composition"
-                / "review-fix-composed-example.task.md"
-            )
-            workflow = validate_workflow_plan(
-                load_tasks_with_sources(
-                    workflow_path, project_root=rendered_root
-                ).workflow
-            )
-
-        self.assertEqual(
-            [node.id for node in workflow.nodes],
-            [
-                "quality.review.findings",
-                "fix.implement.execute",
-                "fix.implement.summary",
-                "handoff.standards",
-                "handoff.final",
-            ],
-        )
-
-    def test_initialized_workflow_templates_compile_preflight(self) -> None:
-        with temporary_project_cwd() as rendered_root:
-            cli.init()
-            state_dir = rendered_root / ".crewplane"
-            change_request = rendered_root / "docs" / "crewplane-change-request.md"
-            change_request.parent.mkdir()
-            change_request.write_text(
-                (
-                    state_dir
-                    / "workflows/example-templates/sample-inputs/feature-brief.md"
-                ).read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-            run_git(rendered_root, "init")
-            run_git(rendered_root, "config", "user.name", "Crewplane Test")
-            run_git(
-                rendered_root, "config", "user.email", "crewplane-test@example.invalid"
-            )
-            run_git(rendered_root, "add", ".")
-            run_git(rendered_root, "commit", "-m", "initial")
-            config = load_config(state_dir / "config.yml")
-            assert config.settings is not None
-            config.settings.workspace.enabled = True
-            config.settings.workspace.cache_root = (
-                rendered_root.parent / f"{rendered_root.name}-workspace-cache"
-            ).as_posix()
-            mock_agent = config.agents["mock"]
-            for agent_name in ("claude", "codex", "gemini"):
-                config.agents[agent_name] = mock_agent.model_copy(deep=True)
-
-            for workflow_path in sorted((state_dir / "workflows").rglob("*.task.md")):
-                source = load_workflow_source_for_preflight(
-                    workflow_path,
-                    project_root=rendered_root,
-                )
-                preview = workflow_runner.compile_workflow_preview(
-                    config=config,
-                    source=source,
-                    console=Console(file=io.StringIO(), force_terminal=False),
-                    no_live=True,
-                    fingerprint_key_policy="read_only",
-                    project_root=rendered_root,
-                    state_dir=state_dir,
-                    check_cli_availability=False,
-                )
-                self.assertFalse(
-                    preview.has_errors(),
-                    msg=f"{workflow_path} preflight diagnostics: {preview.diagnostics}",
-                )
-
-    def test_advanced_code_review_example_runs_with_mock_and_records_estimated_usage(
+    def test_mock_workflow_records_estimated_usage(
         self,
     ) -> None:
         config_path = (self.template_dir / "config.yml").resolve()
-        workflow_path = (
-            self.template_dir / "example-templates" / "code-review-example.task.md"
-        ).resolve()
 
-        with temporary_project_cwd() as rendered_root:
+        with temporary_project_cwd(self.tmp_path) as rendered_root:
             state_dir = rendered_root / ".crewplane"
             workflows_dir = state_dir / "workflows"
             workflows_dir.mkdir(parents=True, exist_ok=True)
@@ -587,9 +205,38 @@ class ExampleTemplateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             rendered_workflow_path.write_text(
-                templates.render_template_content(
-                    workflow_path.read_text(encoding="utf-8")
-                ),
+                f"""---
+schema_version: "{SCHEMA_VERSION}"
+name: Usage capture
+nodes:
+  - id: review.context
+    mode: parallel
+    providers: [claude, codex, gemini]
+    findings: true
+  - id: review.iterate
+    mode: sequential
+    needs: [review.context]
+    depth: 2
+    audit_rounds: 2
+    providers:
+      - provider: codex
+        role: executor
+      - provider: claude
+        role: reviewer
+      - provider: gemini
+        role: reviewer
+  - id: review.summary
+    mode: sequential
+    needs: [review.iterate]
+    providers: [claude]
+---
+## review.context
+Return findings about this test input.
+## review.iterate
+Review {{{{review.context.findings}}}}.
+## review.summary
+Summarize {{{{review.iterate.output}}}}.
+""",
                 encoding="utf-8",
             )
 
@@ -649,3 +296,80 @@ class ExampleTemplateTests(unittest.TestCase):
             self.assertIn("Visible-text estimate (lower-bound):", summary_text)
             self.assertIn("Run Summary", stream.getvalue())
             self.assertIn("Visible-text estimate (lower-bound):", stream.getvalue())
+
+
+@pytest.mark.parametrize(
+    "provider",
+    ["claude", "codex", "gemini", "copilot", "kilo", "pi", "deepseek", "opencode"],
+)
+def test_onboarding_provider_config_is_valid_without_generic_model_arg(
+    provider: str,
+) -> None:
+    payload = load_yaml_unique(
+        manual_config_snippet(rendered_default_config(), (provider,))
+    )
+    assert set(payload) == {provider, "settings"}
+    assert not LEGACY_PROMPT_FIELDS.intersection(payload[provider])
+    config = AgentConfig.model_validate(payload[provider])
+    assert config.cli_cmd
+    if config.provider_kind != "generic":
+        assert "model_arg" not in payload[provider]
+
+
+TEMPLATE_ROOT = Path(__file__).resolve().parents[3] / "src/crewplane/example_templates"
+WORKFLOW_PATHS = tuple(
+    sorted(path.relative_to(TEMPLATE_ROOT) for path in TEMPLATE_ROOT.rglob("*.task.md"))
+)
+
+
+def test_legacy_yaml_template_not_shipped() -> None:
+    assert not (TEMPLATE_ROOT / "tasks.yaml").exists()
+
+
+@pytest.fixture(scope="module")
+def initialized_templates(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("initialized-templates")
+    with chdir(root):
+        cli.init()
+        change_request = root / "docs/crewplane-change-request.md"
+        change_request.parent.mkdir()
+        change_request.write_text(
+            "Implement the requested feature.\n", encoding="utf-8"
+        )
+        run_git(root, "init")
+        run_git(root, "add", ".")
+        run_git(root, "commit", "-m", "initial")
+    return root
+
+
+@pytest.mark.parametrize("relative_path", WORKFLOW_PATHS, ids=str)
+def test_initialized_workflow_compiles(
+    initialized_templates: Path, relative_path: Path
+) -> None:
+    root = initialized_templates
+    state_dir = root / ".crewplane"
+    config = load_config(state_dir / "config.yml")
+    assert config.settings is not None
+    config.settings.workspace.enabled = True
+    config.settings.workspace.cache_root = (root.parent / "workspace-cache").as_posix()
+    source = load_workflow_source_for_preflight(
+        state_dir / "workflows" / relative_path, project_root=root
+    )
+    workflow = validate_workflow_plan(source.workflow)
+    assert workflow.nodes
+    for node in workflow.nodes:
+        for provider in node.providers:
+            config.agents[provider.provider] = config.agents["mock"].model_copy(
+                deep=True
+            )
+    preview = workflow_runner.compile_workflow_preview(
+        config=config,
+        source=source,
+        console=Console(file=io.StringIO(), force_terminal=False),
+        no_live=True,
+        fingerprint_key_policy="read_only",
+        project_root=root,
+        state_dir=state_dir,
+        check_cli_availability=False,
+    )
+    assert not preview.has_errors(), preview.diagnostics

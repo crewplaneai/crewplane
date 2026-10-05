@@ -1,6 +1,8 @@
 import json
-import tempfile
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import InvocationContext
@@ -12,67 +14,71 @@ from tests.integration.adapters.mock_invoker.mock_invoker_test_case import (
 
 
 class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_seeded_lorem_output_is_deterministic(self) -> None:
         adapter = MockInvokerAdapter()
         invoker = adapter.create_invoker(
             config=self._build_config(),
             options=self._options(seed=42, output_mode="lorem"),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            output_a = root / "a.md"
-            output_b = root / "b.md"
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="alpha_executor_0",
-                provider="alpha",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-            )
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="same prompt",
-                output_file=output_a,
-                cwd=(output_a).parent,
-                invocation_context=context,
-            )
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="same prompt",
-                output_file=output_b,
-                cwd=(output_b).parent,
-                invocation_context=context,
-            )
-            self.assertEqual(
-                output_a.read_text(encoding="utf-8"),
-                output_b.read_text(encoding="utf-8"),
-            )
-            self.assertEqual(
-                output_a.read_text(encoding="utf-8"),
-                "# Mock Invocation Output\n"
-                "\n"
-                "- Node: node.a\n"
-                "- Task: alpha_executor_0\n"
-                "- Provider: alpha\n"
-                "- Role: executor\n"
-                "- Audit Round: n/a\n"
-                "- Round: 1\n"
-                "- Seed Marker: a95392e8b671\n"
-                "\n"
-                "## Summary\n"
-                "Synthetic output generated for deterministic local "
-                "orchestration checks.\n"
-                "\n"
-                "## Notes\n"
-                "- Prompt length: 11 characters\n"
-                "- Behavior path: mock invoker lorem mode\n"
-                "\n"
-                "## Next Steps\n"
-                "1. Verify downstream template substitution.\n"
-                "2. Validate node and invocation state transitions.\n",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        root = Path(tmp_dir)
+        output_a = root / "a.md"
+        output_b = root / "b.md"
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="alpha_executor_0",
+            provider="alpha",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+        )
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="same prompt",
+            output_file=output_a,
+            cwd=(output_a).parent,
+            invocation_context=context,
+        )
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="same prompt",
+            output_file=output_b,
+            cwd=(output_b).parent,
+            invocation_context=context,
+        )
+        self.assertEqual(
+            output_a.read_text(encoding="utf-8"),
+            output_b.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            output_a.read_text(encoding="utf-8"),
+            "# Mock Invocation Output\n"
+            "\n"
+            "- Node: node.a\n"
+            "- Task: alpha_executor_0\n"
+            "- Provider: alpha\n"
+            "- Role: executor\n"
+            "- Audit Round: n/a\n"
+            "- Round: 1\n"
+            "- Seed Marker: a95392e8b671\n"
+            "\n"
+            "## Summary\n"
+            "Synthetic output generated for deterministic local "
+            "orchestration checks.\n"
+            "\n"
+            "## Notes\n"
+            "- Prompt length: 11 characters\n"
+            "- Behavior path: mock invoker lorem mode\n"
+            "\n"
+            "## Next Steps\n"
+            "1. Verify downstream template substitution.\n"
+            "2. Validate node and invocation state transitions.\n",
+        )
 
     def test_canonical_selector_serialization_preserves_field_order(self) -> None:
         canonical = MockInvokerAdapter().canonicalize_options(
@@ -182,71 +188,71 @@ class MockInvokerOptionsAndLoggingTests(MockInvokerAdapterTestCase):
 
     async def test_log_file_appends_structured_summary(self) -> None:
         adapter = MockInvokerAdapter()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            fixture = root / "fixtures" / "default.md"
-            fixture.parent.mkdir(parents=True, exist_ok=True)
-            fixture.write_text("fixture-default", encoding="utf-8")
-            invoker = adapter.create_invoker(
-                config=self._build_config(),
-                options=self._options(
-                    output_mode="file",
-                    output_dir=str(root / "fixtures"),
-                ),
-            )
-            output_file = root / "out.md"
-            log_file = root / "logs" / "mock.log"
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="x",
-                output_file=output_file,
-                cwd=(output_file).parent,
-                log_file=log_file,
-                invocation_context=InvocationContext(
-                    node_id="node.a",
-                    task_id="alpha_executor_0",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    round_num=1,
-                ),
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        root = Path(tmp_dir)
+        fixture = root / "fixtures" / "default.md"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text("fixture-default", encoding="utf-8")
+        invoker = adapter.create_invoker(
+            config=self._build_config(),
+            options=self._options(
+                output_mode="file",
+                output_dir=str(root / "fixtures"),
+            ),
+        )
+        output_file = root / "out.md"
+        log_file = root / "logs" / "mock.log"
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="x",
+            output_file=output_file,
+            cwd=(output_file).parent,
+            log_file=log_file,
+            invocation_context=InvocationContext(
+                node_id="node.a",
+                task_id="alpha_executor_0",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                round_num=1,
+            ),
+        )
 
-            lines = log_file.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(lines), 1)
-            record = json.loads(lines[0])
-            self.assertEqual(record["invoker"], "mock")
-            self.assertEqual(record["output_mode"], "file")
-            self.assertEqual(record["source"], "fixture")
-            self.assertEqual(record["node_id"], "node.a")
-            self.assertIsNone(record["audit_round_num"])
+        lines = log_file.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        record = json.loads(lines[0])
+        self.assertEqual(record["invoker"], "mock")
+        self.assertEqual(record["output_mode"], "file")
+        self.assertEqual(record["source"], "fixture")
+        self.assertEqual(record["node_id"], "node.a")
+        self.assertIsNone(record["audit_round_num"])
 
     async def test_log_file_records_audit_round_num_when_present(self) -> None:
         adapter = MockInvokerAdapter()
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            fixture = root / "fixtures" / "default.md"
-            fixture.parent.mkdir(parents=True, exist_ok=True)
-            fixture.write_text("fixture-default", encoding="utf-8")
-            invoker = adapter.create_invoker(
-                config=self._build_config(),
-                options=self._options(
-                    output_mode="file",
-                    output_dir=str(root / "fixtures"),
-                ),
-            )
-            output_file = root / "out.md"
-            log_file = root / "logs" / "mock.log"
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        root = Path(tmp_dir)
+        fixture = root / "fixtures" / "default.md"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text("fixture-default", encoding="utf-8")
+        invoker = adapter.create_invoker(
+            config=self._build_config(),
+            options=self._options(
+                output_mode="file",
+                output_dir=str(root / "fixtures"),
+            ),
+        )
+        output_file = root / "out.md"
+        log_file = root / "logs" / "mock.log"
 
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="x",
-                output_file=output_file,
-                cwd=(output_file).parent,
-                log_file=log_file,
-                invocation_context=self._context(audit_round_num=3, round_num=1),
-            )
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="x",
+            output_file=output_file,
+            cwd=(output_file).parent,
+            log_file=log_file,
+            invocation_context=self._context(audit_round_num=3, round_num=1),
+        )
 
-            record = json.loads(log_file.read_text(encoding="utf-8").splitlines()[0])
-            self.assertEqual(record["audit_round_num"], 3)
+        record = json.loads(log_file.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(record["audit_round_num"], 3)

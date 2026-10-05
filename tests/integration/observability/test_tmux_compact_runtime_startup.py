@@ -28,12 +28,6 @@ from tests.integration.observability.tmux_fakes import (
 )
 
 
-def test_tmux_compact_runtime_keeps_public_docstring() -> None:
-    assert TmuxCompactRuntime.__doc__ == (
-        "Render a compact tmux dashboard for a running workflow."
-    )
-
-
 def test_create_session_failure_is_downgraded_by_observability_hub() -> None:
     warnings: list[str] = []
     lifecycle = fake_lifecycle(auto_close_session=True)

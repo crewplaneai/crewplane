@@ -1,7 +1,9 @@
 import os
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.architecture.contracts import EventType
 from crewplane.core.workflow.keywords import ProviderRole
@@ -26,6 +28,10 @@ from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
 
 
 class CompactRuntimeNodeStateTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_compact_runtime_pending_node_shows_dependency_wait_message(self) -> None:
         workflow = single_node_workflow()
         runtime = SimulatedTmuxRuntime(auto_close_session=True)
@@ -140,62 +146,62 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-no-output"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            log_path = Path(tmp_dir) / "node.log"
-            log_path.write_text(
-                "\n".join(
-                    [
-                        "started_at: 2026-04-10T00:00:00+00:00",
-                        "cli_executable: alpha",
-                        "model: m",
-                        "output_file: out.md",
-                        "---",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            os.utime(log_path, (195.0, 195.0))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        log_path = Path(tmp_dir) / "node.log"
+        log_path.write_text(
+            "\n".join(
+                [
+                    "started_at: 2026-04-10T00:00:00+00:00",
+                    "cli_executable: alpha",
+                    "model: m",
+                    "output_file: out.md",
+                    "---",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        os.utime(log_path, (195.0, 195.0))
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.NODE_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-no-output",
-                    node_id="node.a",
-                    timestamp=9.0,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-no-output",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(log_path),
-                    timestamp=10.0,
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.NODE_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-no-output",
+                node_id="node.a",
+                timestamp=9.0,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-no-output",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(log_path),
+                timestamp=10.0,
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertIn("Running for 30.0s", right_text)
-            self.assertIn("Log file:", right_text)
-            self.assertIn("updated 5.0s ago", right_text)
-            self.assertIn("Awaiting first output from provider...", right_text)
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertIn("Running for 30.0s", right_text)
+        self.assertIn("Log file:", right_text)
+        self.assertIn("updated 5.0s ago", right_text)
+        self.assertIn("Awaiting first output from provider...", right_text)
 
         runtime.stop(RunResult(status="succeeded"))
 
@@ -218,63 +224,63 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-quiet"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            log_path = Path(tmp_dir) / "node.log"
-            log_path.write_text(
-                "\n".join(
-                    [
-                        "started_at: 2026-04-10T00:00:00+00:00",
-                        "cli_executable: alpha",
-                        "model: m",
-                        "output_file: out.md",
-                        "---",
-                        "tail-line",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            os.utime(log_path, (250.0, 250.0))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        log_path = Path(tmp_dir) / "node.log"
+        log_path.write_text(
+            "\n".join(
+                [
+                    "started_at: 2026-04-10T00:00:00+00:00",
+                    "cli_executable: alpha",
+                    "model: m",
+                    "output_file: out.md",
+                    "---",
+                    "tail-line",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        os.utime(log_path, (250.0, 250.0))
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.NODE_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-quiet",
-                    node_id="node.a",
-                    timestamp=9.0,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-quiet",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(log_path),
-                    timestamp=10.0,
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.NODE_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-quiet",
+                node_id="node.a",
+                timestamp=9.0,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-quiet",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(log_path),
+                timestamp=10.0,
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertIn("Running for 3m20s", right_text)
-            self.assertIn("No new output for 2m30s.", right_text)
-            self.assertIn("Provider still running; waiting for new output.", right_text)
-            self.assertIn("tail-line", right_text)
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertIn("Running for 3m20s", right_text)
+        self.assertIn("No new output for 2m30s.", right_text)
+        self.assertIn("Provider still running; waiting for new output.", right_text)
+        self.assertIn("tail-line", right_text)
 
         runtime.stop(RunResult(status="succeeded"))
 
@@ -298,64 +304,64 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-quiet-wrap"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            log_path = Path(tmp_dir) / "node.log"
-            log_path.write_text(
-                "\n".join(
-                    [
-                        "started_at: 2026-04-10T00:00:00+00:00",
-                        "cli_executable: alpha",
-                        "model: m",
-                        "output_file: out.md",
-                        "---",
-                        "tail-line",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            os.utime(log_path, (250.0, 250.0))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        log_path = Path(tmp_dir) / "node.log"
+        log_path.write_text(
+            "\n".join(
+                [
+                    "started_at: 2026-04-10T00:00:00+00:00",
+                    "cli_executable: alpha",
+                    "model: m",
+                    "output_file: out.md",
+                    "---",
+                    "tail-line",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        os.utime(log_path, (250.0, 250.0))
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.NODE_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-quiet-wrap",
-                    node_id="node.a",
-                    timestamp=9.0,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-quiet-wrap",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(log_path),
-                    timestamp=10.0,
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.NODE_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-quiet-wrap",
+                node_id="node.a",
+                timestamp=9.0,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-quiet-wrap",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(log_path),
+                timestamp=10.0,
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertIn("Provider still runnin", right_text)
-            self.assertIn("Provider still running", right_text)
-            self.assertIn("; waiting for new outp", right_text)
-            self.assertIn("ut.", right_text)
-            self.assertNotIn("running; waiting...", right_text)
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertIn("Provider still runnin", right_text)
+        self.assertIn("Provider still running", right_text)
+        self.assertIn("; waiting for new outp", right_text)
+        self.assertIn("ut.", right_text)
+        self.assertNotIn("running; waiting...", right_text)
 
         runtime.stop(RunResult(status="succeeded"))
 
@@ -380,60 +386,60 @@ class CompactRuntimeNodeStateTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-quiet-threshold"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            log_path = Path(tmp_dir) / "node.log"
-            log_path.write_text(
-                "\n".join(
-                    [
-                        "started_at: 2026-04-10T00:00:00+00:00",
-                        "cli_executable: alpha",
-                        "model: m",
-                        "output_file: out.md",
-                        "---",
-                        "tail-line",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            os.utime(log_path, (200.0, 200.0))
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        log_path = Path(tmp_dir) / "node.log"
+        log_path.write_text(
+            "\n".join(
+                [
+                    "started_at: 2026-04-10T00:00:00+00:00",
+                    "cli_executable: alpha",
+                    "model: m",
+                    "output_file: out.md",
+                    "---",
+                    "tail-line",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        os.utime(log_path, (200.0, 200.0))
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.NODE_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-quiet-threshold",
-                    node_id="node.a",
-                    timestamp=9.0,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-quiet-threshold",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(log_path),
-                    timestamp=10.0,
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.NODE_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-quiet-threshold",
+                node_id="node.a",
+                timestamp=9.0,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-quiet-threshold",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(log_path),
+                timestamp=10.0,
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertIn("No new output for 2m00s.", right_text)
-            self.assertIn("Provider still running; waiting for new output.", right_text)
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertIn("No new output for 2m00s.", right_text)
+        self.assertIn("Provider still running; waiting for new output.", right_text)
 
         runtime.stop(RunResult(status="succeeded"))

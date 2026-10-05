@@ -227,7 +227,7 @@ def test_workspace_source_policy_allows_disabled_sparse_checkout_config(
         real_execution=False,
     )
 
-    assert not any("sparse checkout" in error for error in result.errors)
+    assert result.errors == ()
 
 
 def test_workspace_source_policy_rejects_enabled_sparse_checkout_config(

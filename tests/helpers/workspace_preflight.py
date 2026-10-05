@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from rich.console import Console
@@ -24,7 +23,7 @@ from crewplane.core.workflow.models import (
 )
 from crewplane.core.workspace.policy import WorktreeContract
 from crewplane.version import SCHEMA_VERSION
-from tests.helpers.isolated_git import GIT_COMMAND_TIMEOUT_SECONDS
+from tests.helpers.isolated_git import run_git_text as git
 
 
 def workspace_config(workspace: dict[str, object] | None = None) -> Config:
@@ -70,16 +69,6 @@ def init_git_repo(root: Path) -> WorkspaceSourceSnapshot:
         active_git_dir=(root / ".git").as_posix(),
         common_git_dir=(root / ".git").as_posix(),
     ).model_copy(update={"source_tree": git(root, "rev-parse", "HEAD^{tree}")})
-
-
-def git(root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", root.as_posix(), *args],
-        check=True,
-        capture_output=True,
-        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
-    )
-    return result.stdout.decode("utf-8").strip()
 
 
 def workspace_workflow(prompt: str = "run") -> WorkflowPlan:

@@ -3,10 +3,9 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Lock
+from threading import BoundedSemaphore, Event, Lock
 from typing import NoReturn, cast
 
 import pytest
@@ -407,7 +406,18 @@ def test_materialization_limit_serializes_snapshot_creation(
     plan = workspace_plan(repo, tmp_path / "cache", cleanup_on_success=False)
     output = workspace_output_manager(tmp_path, repo)
     output.create_node_dir(node_artifact_request("implement"))
+    contention = Event()
+
+    class ObservedSemaphore(BoundedSemaphore):
+        def __enter__(self) -> bool:
+            if self.acquire(blocking=False):
+                return True
+            contention.set()
+            assert self.acquire(timeout=10), "materialization slot was not released"
+            return True
+
     limiter = workspace_service.MaterializationLimiter.from_plan(plan)
+    limiter.semaphore = ObservedSemaphore(limiter.limit)
     active = 0
     max_active = 0
     lock = Lock()
@@ -424,7 +434,9 @@ def test_materialization_limit_serializes_snapshot_creation(
             active += 1
             max_active = max(max_active, active)
         try:
-            time.sleep(0.2)
+            assert contention.wait(timeout=10), (
+                "competing materialization never arrived"
+            )
             (workspace_path / "checkout").mkdir(parents=True)
             return workspace_path
         finally:
@@ -464,7 +476,7 @@ def test_materialization_limit_serializes_snapshot_creation(
             )
             for audit_round in (1, 2)
         ]
-        prepared = [future.result() for future in futures]
+        prepared = [future.result(timeout=15) for future in futures]
 
     assert max_active == 1
     for workspace in prepared:

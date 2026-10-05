@@ -15,15 +15,15 @@ from crewplane.cli.app import app
 from crewplane.core.review_checkpoint import OpenReviewCheckpoint
 from tests.helpers import isolated_git as isolated_git_support
 from tests.helpers.isolated_git import IsolatedGit
+from tests.helpers.workspace_review import (
+    review_workflow,
+    write_review_fixtures,
+)
 from tests.helpers.workspace_workflow_fixtures import run_dirs, write_fixture
 from tests.helpers.workspace_workflow_runner import (
     run_workspace_workflow,
     workspace_config,
     workspace_project,
-)
-from tests.integration.cli.test_workspace_review_candidate_gap import (
-    review_workflow,
-    write_review_fixtures,
 )
 
 isolated_git = isolated_git_support.isolated_git

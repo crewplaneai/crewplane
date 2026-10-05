@@ -91,8 +91,12 @@ class _ConformingObserverStub:
 
 
 class CliLiveDashboardTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_init_creates_workflow_template_without_legacy_tasks_yaml(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             cli.init()
 
             state_dir = tmp_path / ".crewplane"
@@ -154,7 +158,7 @@ class CliLiveDashboardTests(unittest.TestCase):
                 self.assertNotIn(f'\n      - "{flag}"', config_text)
 
     def test_non_tty_run_uses_compact_fallback_without_live_dashboard(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -191,7 +195,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("run_id", captured_kwargs)
 
     def test_tty_run_enables_live_dashboard_by_default(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -262,7 +266,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIsNone(captured_live_config["log_tail_lines"])
 
     def test_run_exits_cleanly_when_live_dashboard_requests_cancel(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -300,7 +304,7 @@ class CliLiveDashboardTests(unittest.TestCase):
     def test_run_finalizes_manifest_and_summary_when_dashboard_requests_cancel(
         self,
     ) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -371,7 +375,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             )
 
     def test_tty_live_dashboard_uses_configured_tmux_auto_close(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             config_path.write_text(
@@ -478,7 +482,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertEqual(captured_live_config["log_tail_lines"], 25)
 
     def test_tty_run_no_live_flag_disables_dashboard(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -517,7 +521,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("run_id", captured_kwargs)
 
     def test_tty_run_falls_back_when_tmux_missing(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)
@@ -560,7 +564,7 @@ class CliLiveDashboardTests(unittest.TestCase):
             self.assertIn("tmux not found", stream.getvalue())
 
     def test_tty_run_falls_back_when_no_live_observers_start(self) -> None:
-        with temporary_project_cwd() as tmp_path:
+        with temporary_project_cwd(self.tmp_path) as tmp_path:
             config_path = tmp_path / "config.yml"
             workflow_path = tmp_path / "workflow.task.md"
             write_basic_config(config_path)

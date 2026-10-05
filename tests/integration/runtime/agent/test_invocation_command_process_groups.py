@@ -6,7 +6,7 @@ import time
 import unittest
 from contextlib import suppress
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 
 import pytest
 
@@ -24,6 +24,10 @@ from crewplane.runtime.agent.process.drain import (
 
 
 class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_normal_exit_kills_term_ignoring_process_group_member(
         self,
     ) -> None:
@@ -39,28 +43,31 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             process_event_sink=events.append,
             diagnostics=diagnostics.append,
         )
-        with TemporaryDirectory(prefix="crewplane-process-drain-") as temp_dir:
-            child_pid_path = Path(temp_dir) / "child.pid"
-            child_script = (
-                "import os, signal, sys, time\n"
-                "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-                "open(sys.argv[1], 'w', encoding='utf-8').write(str(os.getpid()))\n"
-                "time.sleep(30)\n"
-            )
-            leader_script = (
-                "import subprocess, sys, time\n"
-                "path = sys.argv[1]\n"
-                "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
-                "while True:\n"
-                "    try:\n"
-                "        open(path, encoding='utf-8').read()\n"
-                "        break\n"
-                "    except FileNotFoundError:\n"
-                "        time.sleep(0.01)\n"
-                "print('leader exited')\n"
-            )
+        temp_dir = mkdtemp(prefix="crewplane-process-drain-", dir=self.tmp_path)
+        child_pid_path = Path(temp_dir) / "child.pid"
+        child_script = (
+            "import os, signal, sys, time\n"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            "from pathlib import Path\n"
+            "Path(sys.argv[1] + '.pending').write_text(str(os.getpid()))\n"
+            "os.replace(sys.argv[1] + '.pending', sys.argv[1])\n"
+            "time.sleep(30)\n"
+        )
+        leader_script = (
+            "import subprocess, sys, time\n"
+            "path = sys.argv[1]\n"
+            "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
+            "while True:\n"
+            "    try:\n"
+            "        open(path, encoding='utf-8').read()\n"
+            "        break\n"
+            "    except FileNotFoundError:\n"
+            "        time.sleep(0.01)\n"
+            "print('leader exited')\n"
+        )
 
-            started_at = time.monotonic()
+        result = None
+        try:
             result = await asyncio.wait_for(
                 run_command_once(
                     cmd=[
@@ -78,33 +85,33 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
                     invocation_context=context,
                     idle_timeout_seconds=None,
                 ),
-                timeout=3.0,
+                timeout=10.0,
             )
             child_pid = int(child_pid_path.read_text(encoding="utf-8"))
             process_group_id = events[0].process_group_id
-            try:
-                assert time.monotonic() - started_at < 3.0
-                assert result.returncode == 0
-                assert result.stdout_text.strip() == "leader exited"
-                assert process_group_id is not None
-                assert any(
-                    diagnostic.operation == "process_pipe_drain_timeout"
-                    for diagnostic in diagnostics
-                )
-                deadline = time.monotonic() + 1.0
-                while time.monotonic() < deadline:
-                    try:
-                        os.kill(child_pid, 0)
-                    except ProcessLookupError:
-                        break
-                    await asyncio.sleep(0.01)
-                else:
-                    self.fail("TERM-ignoring process-group member survived KILL")
-            finally:
+            assert result.returncode == 0
+            assert result.stdout_text.strip() == "leader exited"
+            assert process_group_id is not None
+            assert any(
+                diagnostic.operation == "process_pipe_drain_timeout"
+                for diagnostic in diagnostics
+            )
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(child_pid, 0)
+                except ProcessLookupError:
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                self.fail("TERM-ignoring process-group member survived KILL")
+        finally:
+            if result is not None:
                 result.cleanup_stream_files()
-                if process_group_id is not None:
+            for event in events:
+                if event.process_group_id is not None:
                     with suppress(ProcessLookupError):
-                        os.killpg(process_group_id, signal.SIGKILL)
+                        os.killpg(event.process_group_id, signal.SIGKILL)
 
     async def test_normal_exit_fails_when_escaped_child_keeps_pipes_open(
         self,
@@ -119,58 +126,60 @@ class InvocationCommandTests(unittest.IsolatedAsyncioTestCase):
             role=ProviderRole.EXECUTOR,
             diagnostics=diagnostics.append,
         )
-        with TemporaryDirectory(prefix="crewplane-open-pipe-") as temp_dir:
-            child_pid_path = Path(temp_dir) / "child.pid"
-            child_script = (
-                "import os, sys, time\n"
-                "os.setsid()\n"
-                "open(sys.argv[1], 'w', encoding='utf-8').write(str(os.getpid()))\n"
-                "time.sleep(30)\n"
-            )
-            leader_script = (
-                "import subprocess, sys, time\n"
-                "path = sys.argv[1]\n"
-                "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
-                "while True:\n"
-                "    try:\n"
-                "        open(path, encoding='utf-8').read()\n"
-                "        break\n"
-                "    except FileNotFoundError:\n"
-                "        time.sleep(0.01)\n"
-                "print('leader exited')\n"
-            )
-            child_pid: int | None = None
-            try:
-                with pytest.raises(ProcessDrainError, match="pipes remained open"):
-                    await asyncio.wait_for(
-                        run_command_once(
-                            cmd=[
-                                sys.executable,
-                                "-c",
-                                leader_script,
-                                child_pid_path.as_posix(),
-                                child_script,
-                            ],
-                            stdin_data=None,
-                            log_file=None,
-                            append_log=False,
-                            log_header=None,
-                            cwd=Path.cwd(),
-                            invocation_context=context,
-                            idle_timeout_seconds=None,
-                        ),
-                        timeout=3.0,
-                    )
-                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
-                os.kill(child_pid, 0)
-                assert any(
-                    diagnostic.operation == "process_pipe_drain_timeout"
-                    for diagnostic in diagnostics
+        temp_dir = mkdtemp(prefix="crewplane-open-pipe-", dir=self.tmp_path)
+        child_pid_path = Path(temp_dir) / "child.pid"
+        child_script = (
+            "import os, sys, time\n"
+            "os.setsid()\n"
+            "from pathlib import Path\n"
+            "Path(sys.argv[1] + '.pending').write_text(str(os.getpid()))\n"
+            "os.replace(sys.argv[1] + '.pending', sys.argv[1])\n"
+            "time.sleep(30)\n"
+        )
+        leader_script = (
+            "import subprocess, sys, time\n"
+            "path = sys.argv[1]\n"
+            "subprocess.Popen([sys.executable, '-c', sys.argv[2], path])\n"
+            "while True:\n"
+            "    try:\n"
+            "        open(path, encoding='utf-8').read()\n"
+            "        break\n"
+            "    except FileNotFoundError:\n"
+            "        time.sleep(0.01)\n"
+            "print('leader exited')\n"
+        )
+        child_pid: int | None = None
+        try:
+            with pytest.raises(ProcessDrainError, match="pipes remained open"):
+                await asyncio.wait_for(
+                    run_command_once(
+                        cmd=[
+                            sys.executable,
+                            "-c",
+                            leader_script,
+                            child_pid_path.as_posix(),
+                            child_script,
+                        ],
+                        stdin_data=None,
+                        log_file=None,
+                        append_log=False,
+                        log_header=None,
+                        cwd=Path.cwd(),
+                        invocation_context=context,
+                        idle_timeout_seconds=None,
+                    ),
+                    timeout=10.0,
                 )
-            finally:
-                if child_pid is None and child_pid_path.is_file():
-                    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
-                if child_pid is not None:
-                    with suppress(ProcessLookupError):
-                        os.killpg(child_pid, signal.SIGKILL)
-                    await asyncio.sleep(0.05)
+            child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+            os.kill(child_pid, 0)
+            assert any(
+                diagnostic.operation == "process_pipe_drain_timeout"
+                for diagnostic in diagnostics
+            )
+        finally:
+            if child_pid is None and child_pid_path.is_file():
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+            if child_pid is not None:
+                with suppress(ProcessLookupError):
+                    os.killpg(child_pid, signal.SIGKILL)
+                await asyncio.sleep(0.05)

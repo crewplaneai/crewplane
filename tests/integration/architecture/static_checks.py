@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import ast
-from collections import deque
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,21 +23,6 @@ class PrivateApiRule:
     allowed_references: frozenset[str] = frozenset()
 
 
-@dataclass(frozen=True)
-class AllowedTextReference:
-    path: Path
-    term: str
-    reason: str
-
-
-@dataclass(frozen=True)
-class ForbiddenTextRule:
-    name: str
-    paths: tuple[Path, ...]
-    forbidden_terms: frozenset[str]
-    allowed_references: tuple[AllowedTextReference, ...] = ()
-
-
 def python_files(root: Path) -> tuple[Path, ...]:
     if root.is_file():
         return (root,) if root.suffix == ".py" else ()
@@ -48,22 +31,6 @@ def python_files(root: Path) -> tuple[Path, ...]:
 
 def parse_python(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-
-
-def walk_ast(node: ast.AST) -> Iterator[ast.AST]:
-    todo: deque[ast.AST] = deque([node])
-    while todo:
-        current = todo.popleft()
-        yield current
-        for field in current._fields:
-            value = getattr(current, field, None)
-            if isinstance(value, ast.AST):
-                todo.append(value)
-            elif isinstance(value, list):
-                # Nested generators can fail during repeated walks under coverage.
-                for child in value:
-                    if isinstance(child, ast.AST):
-                        todo.append(child)
 
 
 def call_name(node: ast.AST) -> str | None:
@@ -99,7 +66,7 @@ def find_forbidden_imports(rule: ForbiddenImportRule) -> list[str]:
     offenders: list[str] = []
     for root in rule.roots:
         for path in python_files(root):
-            for node in walk_ast(parse_python(path)):
+            for node in ast.walk(parse_python(path)):
                 for imported_module in imported_modules(path, node):
                     if any(
                         imported_module == prefix
@@ -114,7 +81,7 @@ def find_private_imports(rule: PrivateApiRule) -> list[str]:
     offenders: list[str] = []
     for root in rule.roots:
         for path in python_files(root):
-            for node in walk_ast(parse_python(path)):
+            for node in ast.walk(parse_python(path)):
                 references = private_import_references(path, node)
                 offenders.extend(
                     offender(path, node.lineno, reference)
@@ -130,7 +97,7 @@ def find_private_attribute_access(rule: PrivateApiRule) -> list[str]:
         for path in python_files(root):
             module = parse_python(path)
             imported_aliases = imported_repo_aliases(path, module)
-            for node in walk_ast(module):
+            for node in ast.walk(module):
                 if not isinstance(node, ast.Attribute):
                     continue
                 reference = ".".join(expression_chain(node))
@@ -149,34 +116,12 @@ def find_private_patch_targets(rule: PrivateApiRule) -> list[str]:
         for path in python_files(root):
             module = parse_python(path)
             imported_aliases = imported_repo_aliases(path, module)
-            for node in walk_ast(module):
+            for node in ast.walk(module):
                 if not isinstance(node, ast.Call):
                     continue
                 target = private_patch_target(node, imported_aliases)
                 if target is not None and target not in rule.allowed_references:
                     offenders.append(offender(path, node.lineno, target))
-    return offenders
-
-
-def find_forbidden_text(rule: ForbiddenTextRule) -> list[str]:
-    allowed = {
-        (reference.path.resolve(), reference.term): reference.reason
-        for reference in rule.allowed_references
-    }
-    if any(not reason.strip() for reason in allowed.values()):
-        raise ValueError(f"Text allowlist reasons must be non-empty for {rule.name}.")
-
-    offenders: list[str] = []
-    for path in text_rule_files(rule.paths):
-        for line_number, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(),
-            start=1,
-        ):
-            offenders.extend(
-                offender(path, line_number, term)
-                for term in rule.forbidden_terms
-                if term in line and (path.resolve(), term) not in allowed
-            )
     return offenders
 
 
@@ -189,22 +134,12 @@ def imported_modules(path: Path, node: ast.AST) -> tuple[str, ...]:
     if isinstance(node, ast.Import):
         return tuple(alias.name for alias in node.names)
     if isinstance(node, ast.ImportFrom):
-        return (import_from_module_name(path, node),)
+        module = import_from_module_name(path, node)
+        return (
+            module,
+            *(f"{module}.{alias.name}" for alias in node.names if alias.name != "*"),
+        )
     return ()
-
-
-def text_rule_files(paths: tuple[Path, ...]) -> tuple[Path, ...]:
-    files: list[Path] = []
-    for path in paths:
-        if not path.exists():
-            raise FileNotFoundError(f"Text rule path does not exist: {path}")
-        if path.is_file():
-            files.append(path)
-        elif path.is_dir():
-            files.extend(
-                candidate for candidate in path.rglob("*") if candidate.is_file()
-            )
-    return tuple(files)
 
 
 def module_name_for_path(path: Path) -> str:
@@ -231,7 +166,7 @@ def is_repo_module_name(module_name: str) -> bool:
 
 def imported_repo_aliases(path: Path, module: ast.Module) -> set[str]:
     aliases: set[str] = set()
-    for node in walk_ast(module):
+    for node in ast.walk(module):
         if isinstance(node, ast.Import):
             aliases.update(
                 alias.asname or alias.name.split(".")[0]

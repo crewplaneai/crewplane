@@ -1,7 +1,7 @@
-import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import mkdtemp
 
 import pytest
 from pydantic import ValidationError
@@ -30,169 +30,173 @@ from tests.integration.runtime.signature_support import build_agent_signature
 
 
 class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_invoke_agent_with_runner_receives_invocation_context(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            captured: dict[str, str] = {}
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        captured: dict[str, str] = {}
 
-            async def runner(
-                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                if invocation_context is not None:
-                    captured["task_id"] = invocation_context.task_id
-                    captured["node_id"] = invocation_context.node_id
-                return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+        async def runner(
+            cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            if invocation_context is not None:
+                captured["task_id"] = invocation_context.task_id
+                captured["node_id"] = invocation_context.node_id
+            return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="alpha_executor_0",
-                provider="alpha",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-            )
-            config = AgentConfig(
-                cli_cmd=["echo"],
-                default_model="test",
-            )
-            await invoke_agent_with_runner(
-                config=config,
-                model="test-model",
-                prompt="prompt",
-                output_file=output_file,
-                cwd=output_file.parent,
-                log_file=None,
-                invocation_context=context,
-                command_runner=runner,
-                plan_builder=build_cli_invocation_plan,
-            )
-            self.assertEqual(captured["node_id"], "node.a")
-            self.assertEqual(captured["task_id"], "alpha_executor_0")
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="alpha_executor_0",
+            provider="alpha",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+        )
+        config = AgentConfig(
+            cli_cmd=["echo"],
+            default_model="test",
+        )
+        await invoke_agent_with_runner(
+            config=config,
+            model="test-model",
+            prompt="prompt",
+            output_file=output_file,
+            cwd=output_file.parent,
+            log_file=None,
+            invocation_context=context,
+            command_runner=runner,
+            plan_builder=build_cli_invocation_plan,
+        )
+        self.assertEqual(captured["node_id"], "node.a")
+        self.assertEqual(captured["task_id"], "alpha_executor_0")
 
     async def test_gemini_auto_model_uses_headless_defaults(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            captured: dict[str, bytes | list[str] | None] = {}
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        captured: dict[str, bytes | list[str] | None] = {}
 
-            async def runner(
-                cmd: list[str],
-                stdin_data: bytes | None,
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                captured["cmd"] = cmd
-                captured["stdin_data"] = stdin_data
-                return CommandResult(
-                    returncode=0,
-                    stdout_text='{"response":"ok"}',
-                    stderr_text="",
-                )
-
-            config = AgentConfig(
-                cli_cmd=["./gemini"],
-                provider_kind="gemini",
-                default_model="auto",
-                model_arg=None,
-                prompt_transport="stdin",
-                extra_args=["--approval-mode=yolo"],
-            )
-            await invoke_agent_with_runner(
-                config=config,
-                model="auto",
-                prompt="review the repository",
-                output_file=output_file,
-                cwd=output_file.parent,
-                log_file=None,
-                invocation_context=None,
-                command_runner=runner,
-                plan_builder=build_cli_invocation_plan,
+        async def runner(
+            cmd: list[str],
+            stdin_data: bytes | None,
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            captured["cmd"] = cmd
+            captured["stdin_data"] = stdin_data
+            return CommandResult(
+                returncode=0,
+                stdout_text='{"response":"ok"}',
+                stderr_text="",
             )
 
-            self.assertEqual(
-                captured["cmd"],
-                [
-                    "./gemini",
-                    "--model",
-                    "auto",
-                    "--approval-mode=yolo",
-                    "--output-format",
-                    "json",
-                ],
-            )
-            self.assertEqual(captured["stdin_data"], b"review the repository")
-            self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
+        config = AgentConfig(
+            cli_cmd=["./gemini"],
+            provider_kind="gemini",
+            default_model="auto",
+            model_arg=None,
+            prompt_transport="stdin",
+            extra_args=["--approval-mode=yolo"],
+        )
+        await invoke_agent_with_runner(
+            config=config,
+            model="auto",
+            prompt="review the repository",
+            output_file=output_file,
+            cwd=output_file.parent,
+            log_file=None,
+            invocation_context=None,
+            command_runner=runner,
+            plan_builder=build_cli_invocation_plan,
+        )
+
+        self.assertEqual(
+            captured["cmd"],
+            [
+                "./gemini",
+                "--model",
+                "auto",
+                "--approval-mode=yolo",
+                "--output-format",
+                "json",
+            ],
+        )
+        self.assertEqual(captured["stdin_data"], b"review the repository")
+        self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
 
     async def test_gemini_omits_model_flag_without_resolved_model(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            captured: dict[str, bytes | list[str] | None] = {}
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        captured: dict[str, bytes | list[str] | None] = {}
 
-            async def runner(
-                cmd: list[str],
-                stdin_data: bytes | None,
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                captured["cmd"] = cmd
-                captured["stdin_data"] = stdin_data
-                return CommandResult(
-                    returncode=0,
-                    stdout_text='{"response":"ok"}',
-                    stderr_text="",
-                )
-
-            config = AgentConfig(
-                cli_cmd=["./gemini"],
-                provider_kind="gemini",
-                model_arg=None,
-                prompt_transport="stdin",
-                extra_args=["--approval-mode=yolo"],
-            )
-            await invoke_agent_with_runner(
-                config=config,
-                model=None,
-                prompt="review the repository",
-                output_file=output_file,
-                cwd=output_file.parent,
-                log_file=None,
-                invocation_context=None,
-                command_runner=runner,
-                plan_builder=build_cli_invocation_plan,
+        async def runner(
+            cmd: list[str],
+            stdin_data: bytes | None,
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            captured["cmd"] = cmd
+            captured["stdin_data"] = stdin_data
+            return CommandResult(
+                returncode=0,
+                stdout_text='{"response":"ok"}',
+                stderr_text="",
             )
 
-            self.assertEqual(
-                captured["cmd"],
-                [
-                    "./gemini",
-                    "--approval-mode=yolo",
-                    "--output-format",
-                    "json",
-                ],
-            )
-            self.assertEqual(captured["stdin_data"], b"review the repository")
-            self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
+        config = AgentConfig(
+            cli_cmd=["./gemini"],
+            provider_kind="gemini",
+            model_arg=None,
+            prompt_transport="stdin",
+            extra_args=["--approval-mode=yolo"],
+        )
+        await invoke_agent_with_runner(
+            config=config,
+            model=None,
+            prompt="review the repository",
+            output_file=output_file,
+            cwd=output_file.parent,
+            log_file=None,
+            invocation_context=None,
+            command_runner=runner,
+            plan_builder=build_cli_invocation_plan,
+        )
+
+        self.assertEqual(
+            captured["cmd"],
+            [
+                "./gemini",
+                "--approval-mode=yolo",
+                "--output-format",
+                "json",
+            ],
+        )
+        self.assertEqual(captured["stdin_data"], b"review the repository")
+        self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
 
     def test_resolve_provider_model_prefers_workflow_override_over_default_model(
         self,
@@ -267,61 +271,61 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved_model, "workflow-model")
 
     async def test_copilot_standalone_cli_uses_programmatic_flags(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            captured: dict[str, bytes | list[str] | None] = {}
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        captured: dict[str, bytes | list[str] | None] = {}
 
-            async def runner(
-                cmd: list[str],
-                stdin_data: bytes | None,
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                captured["cmd"] = cmd
-                captured["stdin_data"] = stdin_data
-                return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
+        async def runner(
+            cmd: list[str],
+            stdin_data: bytes | None,
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            captured["cmd"] = cmd
+            captured["stdin_data"] = stdin_data
+            return CommandResult(returncode=0, stdout_text="ok", stderr_text="")
 
-            config = AgentConfig(
-                cli_cmd=["./copilot"],
-                provider_kind="copilot",
-                default_model="claude-sonnet-5",
-                extra_args=[
-                    "--silent",
-                    "--no-ask-user",
-                    "--allow-tool=write,shell(git:*)",
-                ],
-            )
-            await invoke_agent_with_runner(
-                config=config,
-                model="claude-sonnet-5",
-                prompt="review the repository",
-                output_file=output_file,
-                cwd=output_file.parent,
-                log_file=None,
-                invocation_context=None,
-                command_runner=runner,
-                plan_builder=build_cli_invocation_plan,
-            )
+        config = AgentConfig(
+            cli_cmd=["./copilot"],
+            provider_kind="copilot",
+            default_model="claude-sonnet-5",
+            extra_args=[
+                "--silent",
+                "--no-ask-user",
+                "--allow-tool=write,shell(git:*)",
+            ],
+        )
+        await invoke_agent_with_runner(
+            config=config,
+            model="claude-sonnet-5",
+            prompt="review the repository",
+            output_file=output_file,
+            cwd=output_file.parent,
+            log_file=None,
+            invocation_context=None,
+            command_runner=runner,
+            plan_builder=build_cli_invocation_plan,
+        )
 
-            self.assertEqual(
-                captured["cmd"],
-                [
-                    "./copilot",
-                    "--model",
-                    "claude-sonnet-5",
-                    "--silent",
-                    "--no-ask-user",
-                    "--allow-tool=write,shell(git:*)",
-                ],
-            )
-            self.assertEqual(captured["stdin_data"], b"review the repository")
-            self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
+        self.assertEqual(
+            captured["cmd"],
+            [
+                "./copilot",
+                "--model",
+                "claude-sonnet-5",
+                "--silent",
+                "--no-ask-user",
+                "--allow-tool=write,shell(git:*)",
+            ],
+        )
+        self.assertEqual(captured["stdin_data"], b"review the repository")
+        self.assertEqual(output_file.read_text(encoding="utf-8"), "ok")
 
     def test_copilot_auto_quota_parser_supports_standalone_cli(self) -> None:
         config = AgentConfig(
@@ -345,35 +349,35 @@ class InvocationContextAndModelTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(quota.reset_after_seconds or 0.0, 3.0, delta=0.2)
 
     def test_copilot_quota_classifier_reads_marker_from_persisted_stream(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "copilot.log"
-            path.write_text(
-                "\n".join(["noise"] * 500 + ["rate limit reached, retry after 3s"]),
-                encoding="utf-8",
-            )
-            quota = get_cli_provider_capability("copilot").quota_classifier(
-                CommandResult(
-                    returncode=0,
-                    stdout_text="",
-                    stderr_text="",
-                    stdout_path=path,
-                ),
-                tuple(
-                    (
-                        AgentConfig(
-                            cli_cmd=["copilot"],
-                            provider_kind="copilot",
-                            default_model="claude-sonnet-4.6",
-                        )
-                    ).quota_reached_on_contains
-                ),
-                datetime(2026, 9, 13, tzinfo=UTC),
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "copilot.log"
+        path.write_text(
+            "\n".join(["noise"] * 500 + ["rate limit reached, retry after 3s"]),
+            encoding="utf-8",
+        )
+        quota = get_cli_provider_capability("copilot").quota_classifier(
+            CommandResult(
+                returncode=0,
+                stdout_text="",
+                stderr_text="",
+                stdout_path=path,
+            ),
+            tuple(
+                (
+                    AgentConfig(
+                        cli_cmd=["copilot"],
+                        provider_kind="copilot",
+                        default_model="claude-sonnet-4.6",
+                    )
+                ).quota_reached_on_contains
+            ),
+            datetime(2026, 9, 13, tzinfo=UTC),
+        )
 
-            self.assertTrue(quota.is_quota)
-            self.assertEqual(quota.evidence, "rate limit")
-            self.assertIsNotNone(quota.reset_after_seconds)
-            self.assertGreater(quota.reset_after_seconds, 0)
+        self.assertTrue(quota.is_quota)
+        self.assertEqual(quota.evidence, "rate limit")
+        self.assertIsNotNone(quota.reset_after_seconds)
+        self.assertGreater(quota.reset_after_seconds, 0)
 
     def test_copilot_quota_classifier_ignores_bare_quota_in_success_report(
         self,

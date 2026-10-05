@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextvars import ContextVar
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -25,7 +25,6 @@ from crewplane.runtime.execution.review_loop.types import (
     AuditRoundResult,
     ExecutorRoundArtifact,
     ExecutorRoundRunResult,
-    ReviewerRoundRunResult,
     ReviewLoopProgress,
     ReviewLoopRunContext,
 )
@@ -761,144 +760,57 @@ def test_finalized_restore_skips_prompt_resolution_and_execution(
     assert json.loads(status.read_text())["stop_reason"] is None
 
 
-@pytest.mark.parametrize(
-    "boundary",
-    [
-        "restore",
-        "executor_prompt",
-        "reviewer_prompt",
-        "initial_review_prompt",
-        "directory",
-        "close",
-        "findings_close",
-        "discard",
-        "committed_discard",
-        "log",
-    ],
-)
-@pytest.mark.parametrize("storage_failure", [False, True])
-def test_stage_io_drains_before_owner_cleanup(
-    context: ReviewLoopRunContext,
-    monkeypatch: pytest.MonkeyPatch,
-    boundary: str,
-    storage_failure: bool,
-) -> None:
-    events: list[str] = []
-    release = Event()
-    completed = Event()
-    cleanup: list[bool] = []
-    failure = OSError("storage failed")
-    policy_error = orchestration.ReviewPolicyError("settled policy")
-    findings_error = FindingsExtractionError("invalid findings")
-    owner_context = ContextVar("stage-io-owner", default="missing")
-    context.stage = context.stage.model_copy(
-        update={
-            "execution_policy": context.stage.execution_policy.model_copy(
-                update={
-                    "consensus_on_exhaustion": "fatal",
-                    "audit_rounds": 2 if boundary == "directory" else 1,
-                }
-            )
-        }
-    )
+type CancelAtIO = Callable[[Awaitable[None], object, str], Awaitable[BaseException]]
 
-    def prompt(*args, **kwargs) -> ResolvedPrompt:
+
+@pytest.fixture(params=[False, True], ids=["cancel", "storage-error"])
+def storage_failure(request: pytest.FixtureRequest) -> bool:
+    return request.param
+
+
+@pytest.fixture
+def stage_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
+    def prompt(*args: object, **kwargs: object) -> ResolvedPrompt:
         del args, kwargs
         return ResolvedPrompt("Resolved task.")
-
-    def restore(*args) -> ReviewLoopProgress:
-        del args
-        return ReviewLoopProgress()
-
-    def close(*args) -> None:
-        del args
-        events.append("close")
-
-    def discard(*args) -> None:
-        del args
-        events.append("discard")
-
-    async def commit(*args) -> None:
-        del args
-        events.append("commit")
-
-    async def audits(run_context, progress) -> None:
-        del progress
-        if boundary in {"close", "discard", "committed_discard"}:
-            run_context.rejected_invocations.append((None, 1, {"exec"}, "rejected"))
-        if boundary in {"close", "discard"}:
-            raise policy_error
-
-    def findings(*args) -> None:
-        del args
-        if boundary == "findings_close":
-            raise findings_error
-
-    async def executor(*args) -> ExecutorRoundRunResult:
-        del args
-        return ExecutorRoundRunResult([candidate(context)], 0)
-
-    async def audit(*args) -> AuditRoundResult:
-        del args
-        consensus = boundary != "log"
-        return AuditRoundResult(
-            consensus, consensus, [candidate(context)], [], 0, 0, 0, 1
-        )
-
-    async def reviewer(*args) -> ReviewerRoundRunResult:
-        del args
-        events.append("reviewer")
-        return ReviewerRoundRunResult([], 0)
 
     monkeypatch.setattr(
         orchestration, "resolve_prompt_with_output_budget_details", prompt
     )
     monkeypatch.setattr(orchestration, "resolve_reviewer_prompt_context", prompt)
-    monkeypatch.setattr(
-        initial_candidate, "resolve_prompt_with_output_budget_details", prompt
+
+
+async def run_stage(context: ReviewLoopRunContext) -> None:
+    await orchestration.execute_review_loop_stage(
+        context.stage,
+        context.output,
+        context.node_dir,
+        context.runtime_context,
+        context.invoker,
+        context.telemetry,
     )
-    monkeypatch.setattr(orchestration, "close_checkpoint", close)
-    monkeypatch.setattr(orchestration, "discard_executor_workspace_lineage", discard)
-    monkeypatch.setattr(orchestration, "commit_checkpoint", commit)
-    monkeypatch.setattr(orchestration, "validate_final_findings", findings)
-    monkeypatch.setattr(initial_candidate, "run_executor_round", executor)
-    monkeypatch.setattr(initial_candidate, "run_reviewer_round", reviewer)
-    monkeypatch.setattr(orchestration, "execute_single_audit_round", audit)
-    if boundary == "restore":
-        context.runtime_context.review_checkpoints[context.stage.id] = (
-            OpenReviewCheckpoint.model_validate(checkpoint_payload())
-        )
-        monkeypatch.setattr(orchestration.ProgressRestorer, "restore", restore)
-    if boundary not in {"directory", "log"}:
-        monkeypatch.setattr(orchestration, "execute_review_loop_audits", audits)
 
-    module, name = {
-        "restore": (orchestration.ProgressRestorer, "restore"),
-        "executor_prompt": (orchestration, "resolve_prompt_with_output_budget_details"),
-        "reviewer_prompt": (orchestration, "resolve_reviewer_prompt_context"),
-        "initial_review_prompt": (
-            initial_candidate,
-            "resolve_prompt_with_output_budget_details",
-        ),
-        "directory": (orchestration, "audit_round_dir"),
-        "close": (orchestration, "close_checkpoint"),
-        "findings_close": (orchestration, "close_checkpoint"),
-        "discard": (orchestration, "discard_executor_workspace_lineage"),
-        "committed_discard": (orchestration, "discard_executor_workspace_lineage"),
-        "log": (completion_policy, "emit_runtime_log"),
-    }[boundary]
-    original = getattr(module, name)
 
-    async def run() -> None:
-        loop = asyncio.get_running_loop()
+@pytest.fixture
+def cancel_at_io(monkeypatch: pytest.MonkeyPatch, storage_failure: bool) -> CancelAtIO:
+    async def cancel(
+        operation: Awaitable[None], module: object, name: str
+    ) -> BaseException:
         entered = asyncio.Event()
+        release = Event()
+        completed = Event()
+        cleanup: list[bool] = []
+        owner_context = ContextVar("stage-io-owner", default="missing")
         owner_thread = get_ident()
+        loop = asyncio.get_running_loop()
+        original = getattr(module, name)
+        failure = OSError("storage failed")
 
-        def blocking(*args, **kwargs):
+        def blocking(*args: object, **kwargs: object) -> object:
             loop.call_soon_threadsafe(entered.set)
             assert get_ident() != owner_thread, "Storage blocked the event loop"
             assert owner_context.get() == "owner context"
-            assert release.wait(timeout=2)
+            assert release.wait(timeout=10), "storage operation was never released"
             result = original(*args, **kwargs)
             completed.set()
             if storage_failure:
@@ -908,34 +820,14 @@ def test_stage_io_drains_before_owner_cleanup(
         async def owner() -> None:
             owner_context.set("owner context")
             try:
-                if boundary == "initial_review_prompt":
-                    context.stage = context.stage.model_copy(
-                        update={
-                            "execution_policy": context.stage.execution_policy.model_copy(
-                                update={"review_starts_with": "reviewer"}
-                            )
-                        }
-                    )
-                    context.reviewer_prompt_context = ""
-                    await initial_candidate.initial_pre_review_handoff(
-                        context, ReviewLoopProgress(), context.node_dir, None, 1, commit
-                    )
-                else:
-                    await orchestration.execute_review_loop_stage(
-                        context.stage,
-                        context.output,
-                        context.node_dir,
-                        context.runtime_context,
-                        context.invoker,
-                        context.telemetry,
-                    )
+                await operation
             finally:
                 cleanup.append(completed.is_set())
 
         monkeypatch.setattr(module, name, blocking)
         task = asyncio.create_task(owner())
         try:
-            await asyncio.wait_for(entered.wait(), timeout=1)
+            await asyncio.wait_for(entered.wait(), timeout=10)
             task.cancel("first cancellation")
             await asyncio.sleep(0)
             task.cancel("second cancellation")
@@ -946,26 +838,257 @@ def test_stage_io_drains_before_owner_cleanup(
             assert cleanup == []
         finally:
             release.set()
-            error: BaseException | None = None
-            try:
-                await task
-            except BaseException as exc:
-                error = exc
+            results = await asyncio.wait_for(
+                asyncio.gather(task, return_exceptions=True), timeout=10
+            )
+        assert cleanup == [True]
+        error = results[0]
+        assert isinstance(error, BaseException)
         if storage_failure:
             assert error is failure
-        elif boundary in {"close", "discard", "log"}:
-            assert isinstance(error, orchestration.ReviewPolicyError)
-            if boundary != "log":
-                assert error is policy_error
-            assert events == (["close", "discard"] if boundary != "log" else ["close"])
-        elif boundary == "findings_close":
-            assert isinstance(error, NodeExecutionError)
-            assert error.__cause__ is findings_error
-            assert events == ["close"]
-        else:
-            assert isinstance(error, asyncio.CancelledError)
-        assert ("commit" in events) is (boundary == "committed_discard")
-        assert "reviewer" not in events
+        return error
 
-    asyncio.run(run())
-    assert cleanup == [True]
+    return cancel
+
+
+@pytest.mark.usefixtures("stage_prompts")
+@pytest.mark.parametrize(
+    "name",
+    ["resolve_prompt_with_output_budget_details", "resolve_reviewer_prompt_context"],
+)
+def test_prompt_io_drains_before_stage_cleanup(
+    context: ReviewLoopRunContext,
+    cancel_at_io: CancelAtIO,
+    storage_failure: bool,
+    name: str,
+) -> None:
+    error = asyncio.run(cancel_at_io(run_stage(context), orchestration, name))
+    if not storage_failure:
+        assert isinstance(error, asyncio.CancelledError)
+
+
+def test_restore_io_drains_before_stage_cleanup(
+    context: ReviewLoopRunContext,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_at_io: CancelAtIO,
+    storage_failure: bool,
+) -> None:
+    context.runtime_context.review_checkpoints[context.stage.id] = (
+        OpenReviewCheckpoint.model_validate(checkpoint_payload())
+    )
+
+    def restore(self: orchestration.ProgressRestorer) -> ReviewLoopProgress:
+        del self
+        return ReviewLoopProgress()
+
+    monkeypatch.setattr(orchestration.ProgressRestorer, "restore", restore)
+    error = asyncio.run(
+        cancel_at_io(run_stage(context), orchestration.ProgressRestorer, "restore")
+    )
+    if not storage_failure:
+        assert isinstance(error, asyncio.CancelledError)
+
+
+def test_initial_reviewer_prompt_drains_before_handoff_cleanup(
+    context: ReviewLoopRunContext,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_at_io: CancelAtIO,
+    storage_failure: bool,
+) -> None:
+    context.stage = context.stage.model_copy(
+        update={
+            "execution_policy": context.stage.execution_policy.model_copy(
+                update={"review_starts_with": "reviewer"}
+            )
+        }
+    )
+    context.reviewer_prompt_context = ""
+
+    def prompt(*args: object, **kwargs: object) -> ResolvedPrompt:
+        del args, kwargs
+        return ResolvedPrompt("Resolved task.")
+
+    async def unexpected_call(*args: object) -> None:
+        del args
+        pytest.fail(
+            "cancellation must prevent the reviewer or checkpoint from starting"
+        )
+
+    monkeypatch.setattr(
+        initial_candidate, "resolve_prompt_with_output_budget_details", prompt
+    )
+    monkeypatch.setattr(initial_candidate, "run_reviewer_round", unexpected_call)
+    operation = initial_candidate.initial_pre_review_handoff(
+        context, ReviewLoopProgress(), context.node_dir, None, 1, unexpected_call
+    )
+    error = asyncio.run(
+        cancel_at_io(
+            operation, initial_candidate, "resolve_prompt_with_output_budget_details"
+        )
+    )
+    if not storage_failure:
+        assert isinstance(error, asyncio.CancelledError)
+
+
+@pytest.mark.usefixtures("stage_prompts")
+def test_audit_directory_io_drains_before_stage_cleanup(
+    context: ReviewLoopRunContext, cancel_at_io: CancelAtIO, storage_failure: bool
+) -> None:
+    context.stage = context.stage.model_copy(
+        update={
+            "execution_policy": context.stage.execution_policy.model_copy(
+                update={"audit_rounds": 2}
+            )
+        }
+    )
+    error = asyncio.run(
+        cancel_at_io(run_stage(context), orchestration, "audit_round_dir")
+    )
+    if not storage_failure:
+        assert isinstance(error, asyncio.CancelledError)
+
+
+@pytest.mark.usefixtures("stage_prompts")
+@pytest.mark.parametrize(
+    "name", ["close_checkpoint", "discard_executor_workspace_lineage"]
+)
+def test_rejected_review_cleanup_drains_before_policy_error(
+    context: ReviewLoopRunContext,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_at_io: CancelAtIO,
+    storage_failure: bool,
+    name: str,
+) -> None:
+    events: list[str] = []
+    policy_error = orchestration.ReviewPolicyError("settled policy")
+
+    async def audits(
+        run_context: ReviewLoopRunContext, progress: ReviewLoopProgress
+    ) -> None:
+        del progress
+        run_context.rejected_invocations.append((None, 1, {"exec"}, "rejected"))
+        raise policy_error
+
+    def close(*args: object) -> None:
+        del args
+        events.append("close")
+
+    def discard(*args: object) -> None:
+        del args
+        events.append("discard")
+
+    monkeypatch.setattr(orchestration, "execute_review_loop_audits", audits)
+    monkeypatch.setattr(orchestration, "close_checkpoint", close)
+    monkeypatch.setattr(orchestration, "discard_executor_workspace_lineage", discard)
+    error = asyncio.run(cancel_at_io(run_stage(context), orchestration, name))
+    if not storage_failure:
+        assert error is policy_error
+        assert events == ["close", "discard"]
+
+
+@pytest.mark.usefixtures("stage_prompts")
+def test_invalid_findings_close_drains_before_failure(
+    context: ReviewLoopRunContext,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_at_io: CancelAtIO,
+    storage_failure: bool,
+) -> None:
+    events: list[str] = []
+    findings_error = FindingsExtractionError("invalid findings")
+
+    async def audits(*args: object) -> None:
+        del args
+
+    def findings(*args: object) -> None:
+        del args
+        raise findings_error
+
+    def close(*args: object) -> None:
+        del args
+        events.append("close")
+
+    monkeypatch.setattr(orchestration, "execute_review_loop_audits", audits)
+    monkeypatch.setattr(orchestration, "validate_final_findings", findings)
+    monkeypatch.setattr(orchestration, "close_checkpoint", close)
+    error = asyncio.run(
+        cancel_at_io(run_stage(context), orchestration, "close_checkpoint")
+    )
+    if not storage_failure:
+        assert isinstance(error, NodeExecutionError)
+        assert error.__cause__ is findings_error
+        assert events == ["close"]
+
+
+@pytest.mark.usefixtures("stage_prompts")
+def test_committed_lineage_discard_drains_before_cleanup(
+    context: ReviewLoopRunContext,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_at_io: CancelAtIO,
+    storage_failure: bool,
+) -> None:
+    events: list[str] = []
+
+    async def audits(
+        run_context: ReviewLoopRunContext, progress: ReviewLoopProgress
+    ) -> None:
+        del progress
+        run_context.rejected_invocations.append((None, 1, {"exec"}, "rejected"))
+
+    async def commit(*args: object) -> None:
+        del args
+        events.append("commit")
+
+    def discard(*args: object) -> None:
+        del args
+        events.append("discard")
+
+    monkeypatch.setattr(orchestration, "execute_review_loop_audits", audits)
+    monkeypatch.setattr(orchestration, "commit_checkpoint", commit)
+    monkeypatch.setattr(orchestration, "discard_executor_workspace_lineage", discard)
+    error = asyncio.run(
+        cancel_at_io(
+            run_stage(context), orchestration, "discard_executor_workspace_lineage"
+        )
+    )
+    assert events == ["commit", "discard"]
+    if not storage_failure:
+        assert isinstance(error, asyncio.CancelledError)
+
+
+@pytest.mark.usefixtures("stage_prompts")
+def test_exhaustion_log_drains_before_policy_error(
+    context: ReviewLoopRunContext,
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_at_io: CancelAtIO,
+    storage_failure: bool,
+) -> None:
+    events: list[str] = []
+    context.stage = context.stage.model_copy(
+        update={
+            "execution_policy": context.stage.execution_policy.model_copy(
+                update={"consensus_on_exhaustion": "fatal"}
+            )
+        }
+    )
+
+    async def executor(*args: object) -> ExecutorRoundRunResult:
+        del args
+        return ExecutorRoundRunResult([candidate(context)], 0)
+
+    async def audit(*args: object) -> AuditRoundResult:
+        del args
+        return AuditRoundResult(False, False, [candidate(context)], [], 0, 0, 0, 1)
+
+    def close(*args: object) -> None:
+        del args
+        events.append("close")
+
+    monkeypatch.setattr(initial_candidate, "run_executor_round", executor)
+    monkeypatch.setattr(orchestration, "execute_single_audit_round", audit)
+    monkeypatch.setattr(orchestration, "close_checkpoint", close)
+    error = asyncio.run(
+        cancel_at_io(run_stage(context), completion_policy, "emit_runtime_log")
+    )
+    if not storage_failure:
+        assert isinstance(error, orchestration.ReviewPolicyError)
+        assert events == ["close"]

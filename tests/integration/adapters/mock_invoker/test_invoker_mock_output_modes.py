@@ -1,7 +1,9 @@
-import tempfile
 import time
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import patch
+
+import pytest
 
 from crewplane.adapters.invokers.mock import MockInvokerAdapter
 from crewplane.architecture.contracts import InvocationContext
@@ -26,23 +28,27 @@ from tests.integration.adapters.mock_invoker.mock_invoker_test_case import (
 
 
 class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_default_options_write_lorem_output(self) -> None:
         adapter = MockInvokerAdapter()
         invoker = adapter.create_invoker(
             config=self._build_config(),
             options=self._options(),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "out.md"
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="hello world",
-                output_file=output_file,
-                cwd=(output_file).parent,
-                invocation_context=self._context(),
-            )
-            text = output_file.read_text(encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "out.md"
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="hello world",
+            output_file=output_file,
+            cwd=(output_file).parent,
+            invocation_context=self._context(),
+        )
+        text = output_file.read_text(encoding="utf-8")
 
         self.assertIn("# Mock Invocation Output", text)
         self.assertIn("- Node: node.a", text)
@@ -54,17 +60,17 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
             config=self._build_config(),
             options=self._options(),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "out.md"
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"]),
-                model=None,
-                prompt="hello world",
-                output_file=output_file,
-                cwd=(output_file).parent,
-                invocation_context=self._context(),
-            )
-            text = output_file.read_text(encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "out.md"
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"]),
+            model=None,
+            prompt="hello world",
+            output_file=output_file,
+            cwd=(output_file).parent,
+            invocation_context=self._context(),
+        )
+        text = output_file.read_text(encoding="utf-8")
 
         self.assertIn("# Mock Invocation Output", text)
 
@@ -75,24 +81,24 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
             options=self._options(output_mode="echo"),
         )
         prompt = "exact prompt\nline two"
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "echo.md"
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt=prompt,
-                output_file=output_file,
-                cwd=(output_file).parent,
-                invocation_context=InvocationContext(
-                    node_id="node.echo",
-                    task_id="alpha_executor_0",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    round_num=1,
-                    findings_enabled=True,
-                ),
-            )
-            self.assertEqual(output_file.read_text(encoding="utf-8"), prompt)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "echo.md"
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt=prompt,
+            output_file=output_file,
+            cwd=(output_file).parent,
+            invocation_context=InvocationContext(
+                node_id="node.echo",
+                task_id="alpha_executor_0",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                round_num=1,
+                findings_enabled=True,
+            ),
+        )
+        self.assertEqual(output_file.read_text(encoding="utf-8"), prompt)
 
     async def test_echo_mode_writes_structured_review_contract_for_reviewer(
         self,
@@ -103,17 +109,17 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
             options=self._options(output_mode="echo"),
         )
         prompt = "review this output"
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "review.md"
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt=prompt,
-                output_file=output_file,
-                cwd=(output_file).parent,
-                invocation_context=self._context(role=ProviderRole.REVIEWER),
-            )
-            text = output_file.read_text(encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "review.md"
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt=prompt,
+            output_file=output_file,
+            cwd=(output_file).parent,
+            invocation_context=self._context(role=ProviderRole.REVIEWER),
+        )
+        text = output_file.read_text(encoding="utf-8")
 
         self.assertNotEqual(text, prompt)
         self.assertEqual(parse_review_result(text).verdict, VERDICT_NO_FINDINGS)
@@ -135,25 +141,25 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
             config=self._build_config(),
             options=self._options(output_mode="lorem", seed=42),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "out.md"
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="review the repository",
-                output_file=output_file,
-                cwd=(output_file).parent,
-                invocation_context=InvocationContext(
-                    node_id="review.context",
-                    task_id="alpha_executor_0",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    round_num=1,
-                    findings_enabled=True,
-                ),
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "out.md"
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="review the repository",
+            output_file=output_file,
+            cwd=(output_file).parent,
+            invocation_context=InvocationContext(
+                node_id="review.context",
+                task_id="alpha_executor_0",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                round_num=1,
+                findings_enabled=True,
+            ),
+        )
 
-            text = output_file.read_text(encoding="utf-8")
+        text = output_file.read_text(encoding="utf-8")
 
         self.assertEqual(text.count("<!-- findings -->"), 1)
         self.assertIn("<!-- /findings -->", text)
@@ -167,17 +173,17 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
             config=self._build_config(),
             options=self._options(output_mode="lorem", seed=42),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "review.md"
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="review the repository",
-                output_file=output_file,
-                cwd=(output_file).parent,
-                invocation_context=self._context(role=ProviderRole.REVIEWER),
-            )
-            text = output_file.read_text(encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "review.md"
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="review the repository",
+            output_file=output_file,
+            cwd=(output_file).parent,
+            invocation_context=self._context(role=ProviderRole.REVIEWER),
+        )
+        text = output_file.read_text(encoding="utf-8")
 
         self.assertEqual(parse_review_result(text).verdict, VERDICT_NO_FINDINGS)
         self.assertNotIn("# Mock Invocation Output", text)
@@ -199,17 +205,17 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
             config=self._build_config(),
             options=self._options(delay_seconds=0.05),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "delay.md"
-            started_at = time.perf_counter()
-            await invoker.invoke(
-                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                model="model-a",
-                prompt="delay",
-                output_file=output_file,
-                cwd=(output_file).parent,
-            )
-            elapsed = time.perf_counter() - started_at
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "delay.md"
+        started_at = time.perf_counter()
+        await invoker.invoke(
+            config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+            model="model-a",
+            prompt="delay",
+            output_file=output_file,
+            cwd=(output_file).parent,
+        )
+        elapsed = time.perf_counter() - started_at
         self.assertGreaterEqual(elapsed, 0.045)
 
     async def test_fail_when_matches_single_selector(self) -> None:
@@ -218,25 +224,23 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
             config=self._build_config(),
             options=self._options(fail_when=[{"node_id": "node.fail"}]),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "out.md"
-            with self.assertRaisesRegex(
-                InvocationFailureError, "forced failure"
-            ) as caught:
-                await invoker.invoke(
-                    config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                    model="model-a",
-                    prompt="x",
-                    output_file=output_file,
-                    cwd=(output_file).parent,
-                    invocation_context=InvocationContext(
-                        node_id="node.fail",
-                        task_id="alpha_executor_0",
-                        provider="alpha",
-                        role=ProviderRole.EXECUTOR,
-                        round_num=1,
-                    ),
-                )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "out.md"
+        with self.assertRaisesRegex(InvocationFailureError, "forced failure") as caught:
+            await invoker.invoke(
+                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+                model="model-a",
+                prompt="x",
+                output_file=output_file,
+                cwd=(output_file).parent,
+                invocation_context=InvocationContext(
+                    node_id="node.fail",
+                    task_id="alpha_executor_0",
+                    provider="alpha",
+                    role=ProviderRole.EXECUTOR,
+                    round_num=1,
+                ),
+            )
 
         failure = caught.exception
         self.assertIs(failures.InvocationFailureError, InvocationFailureError)
@@ -285,23 +289,23 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 ]
             ),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "out.md"
-            with self.assertRaisesRegex(RuntimeError, "forced failure"):
-                await invoker.invoke(
-                    config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                    model="model-a",
-                    prompt="x",
-                    output_file=output_file,
-                    cwd=(output_file).parent,
-                    invocation_context=InvocationContext(
-                        node_id="summary.final",
-                        task_id="alpha_reviewer_0",
-                        provider="alpha",
-                        role=ProviderRole.REVIEWER,
-                        round_num=2,
-                    ),
-                )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "out.md"
+        with self.assertRaisesRegex(RuntimeError, "forced failure"):
+            await invoker.invoke(
+                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+                model="model-a",
+                prompt="x",
+                output_file=output_file,
+                cwd=(output_file).parent,
+                invocation_context=InvocationContext(
+                    node_id="summary.final",
+                    task_id="alpha_reviewer_0",
+                    provider="alpha",
+                    role=ProviderRole.REVIEWER,
+                    round_num=2,
+                ),
+            )
 
     async def test_fail_when_matches_audit_round_selector(self) -> None:
         adapter = MockInvokerAdapter()
@@ -317,21 +321,21 @@ class MockInvokerOutputModeTests(MockInvokerAdapterTestCase):
                 ]
             ),
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "out.md"
-            with self.assertRaisesRegex(RuntimeError, "forced failure"):
-                await invoker.invoke(
-                    config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
-                    model="model-a",
-                    prompt="x",
-                    output_file=output_file,
-                    cwd=(output_file).parent,
-                    invocation_context=InvocationContext(
-                        node_id="review.node",
-                        task_id="alpha_reviewer_0",
-                        provider="alpha",
-                        role=ProviderRole.REVIEWER,
-                        audit_round_num=2,
-                        round_num=1,
-                    ),
-                )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "out.md"
+        with self.assertRaisesRegex(RuntimeError, "forced failure"):
+            await invoker.invoke(
+                config=AgentConfig(cli_cmd=["echo"], default_model="model-a"),
+                model="model-a",
+                prompt="x",
+                output_file=output_file,
+                cwd=(output_file).parent,
+                invocation_context=InvocationContext(
+                    node_id="review.node",
+                    task_id="alpha_reviewer_0",
+                    provider="alpha",
+                    role=ProviderRole.REVIEWER,
+                    audit_round_num=2,
+                    round_num=1,
+                ),
+            )

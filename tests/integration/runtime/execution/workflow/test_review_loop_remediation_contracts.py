@@ -1,7 +1,9 @@
 import json
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.architecture.contracts import EventType
 from crewplane.artifacts import OutputManager
@@ -29,393 +31,397 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 
 
 class ExecutorReviewLoopContractsTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_multi_provider_sequential_defaults_to_continue_on_no_consensus(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="no.consensus.default",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output",
-                    review_output(
-                        minor="- Add the missing test assertions",
-                        verdict="CHANGES_REQUESTED",
-                    ),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            events: list[ExecutionEvent] = []
-
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id="run-1",
-                    event_sink=events.append,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="no.consensus.default",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output",
+                review_output(
+                    minor="- Add the missing test assertions",
+                    verdict="CHANGES_REQUESTED",
                 ),
-            )
-            assert len(invoker.calls) == 4
-            node_dir = output.get_node_dir(node_artifact_request(node.id))
-            if node_dir is None:
-                self.fail("Expected node directory to be created")
-            status_payload = json.loads(
-                review_loop_status_path(node_dir).read_text(encoding="utf-8")
-            )
-            assert status_payload["continued_after_consensus_exhaustion"]
-            assert status_payload["invalid_candidate_round_count"] == 0
-            assert status_payload["no_progress_round_count"] == 0
-            exhaustion_events = [
-                event
-                for event in events
-                if event.event_type == EventType.RUNTIME_LOG
-                and event.payload.operation == "review_loop_consensus_exhausted"
+                "ok",
+                "ok",  # Remediation candidate and unstructured reviewer response.
             ]
-            assert len(exhaustion_events) == 1
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        events: list[ExecutionEvent] = []
+
+        await execute_sequential_stage(
+            config,
+            node,
+            output,
+            invoker=invoker,
+            telemetry=ExecutionTelemetry(
+                workflow_name="workflow",
+                run_id="run-1",
+                event_sink=events.append,
+            ),
+        )
+        assert len(invoker.calls) == 4
+        node_dir = output.get_node_dir(node_artifact_request(node.id))
+        if node_dir is None:
+            self.fail("Expected node directory to be created")
+        status_payload = json.loads(
+            review_loop_status_path(node_dir).read_text(encoding="utf-8")
+        )
+        assert status_payload["continued_after_consensus_exhaustion"]
+        assert status_payload["invalid_candidate_round_count"] == 0
+        assert status_payload["no_progress_round_count"] == 0
+        exhaustion_events = [
+            event
+            for event in events
+            if event.event_type == EventType.RUNTIME_LOG
+            and event.payload.operation == "review_loop_consensus_exhausted"
+        ]
+        assert len(exhaustion_events) == 1
 
     async def test_multi_provider_sequential_defaults_to_one_remediation_cycle(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.default.depth",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output",
-                    review_output(
-                        major="- Fix the remaining bug before approval",
-                        verdict="CHANGES_REQUESTED",
-                    ),
-                    "executor output round 2 should not run",
-                    "reviewer output round 2 should not run",
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.default.depth",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output",
+                review_output(
+                    major="- Fix the remaining bug before approval",
+                    verdict="CHANGES_REQUESTED",
+                ),
+                "executor output round 2 should not run",
+                "reviewer output round 2 should not run",
+            ]
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
 
-            await execute_sequential_stage(config, node, output, invoker=invoker)
+        await execute_sequential_stage(config, node, output, invoker=invoker)
 
-            assert len(invoker.calls) == 4
+        assert len(invoker.calls) == 4
 
     async def test_multi_provider_sequential_skips_reviewer_on_empty_remediation_candidate(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.invalid.remediation",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=2,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output round 1",
-                    review_output(
-                        major="- Fix the missing error-handling branch",
-                        verdict="CHANGES_REQUESTED",
-                    ),
-                    "   ",
-                    "executor output round 3",
-                    review_output(verdict="NO_FINDINGS"),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            events: list[ExecutionEvent] = []
-
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id="run-1",
-                    event_sink=events.append,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.invalid.remediation",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=2,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output round 1",
+                review_output(
+                    major="- Fix the missing error-handling branch",
+                    verdict="CHANGES_REQUESTED",
                 ),
-            )
+                "   ",
+                "executor output round 3",
+                review_output(verdict="NO_FINDINGS"),
+            ]
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        events: list[ExecutionEvent] = []
 
-            assert len(invoker.calls) == 5
-            assert (ProviderRole.REVIEWER, 2) not in [
-                (call["role"], call["round_num"]) for call in invoker.calls
-            ]
-            node_dir = output.get_node_dir(node_artifact_request(node.id))
-            if node_dir is None:
-                self.fail("Expected node directory to be created")
-            status_payload = json.loads(
-                review_loop_status_path(node_dir).read_text(encoding="utf-8")
-            )
-            assert status_payload["invalid_candidate_round_count"] == 1
-            assert status_payload["no_progress_round_count"] == 0
-            assert status_payload["final_local_round_num"] == 3
-            assert (
-                status_payload["canonical_executor_outputs"][0]["path"]
-                == "exec_executor_0_round3.md"
-            )
-            invalid_events = [
-                event
-                for event in events
-                if event.event_type == EventType.RUNTIME_LOG
-                and event.payload.operation == "review_loop_invalid_candidate"
-            ]
-            assert len(invalid_events) == 1
-            assert (
-                invalid_events[0].payload.attributes["reason"]
-                == "invalid_candidate.empty"
-            )
+        await execute_sequential_stage(
+            config,
+            node,
+            output,
+            invoker=invoker,
+            telemetry=ExecutionTelemetry(
+                workflow_name="workflow",
+                run_id="run-1",
+                event_sink=events.append,
+            ),
+        )
+
+        assert len(invoker.calls) == 5
+        assert (ProviderRole.REVIEWER, 2) not in [
+            (call["role"], call["round_num"]) for call in invoker.calls
+        ]
+        node_dir = output.get_node_dir(node_artifact_request(node.id))
+        if node_dir is None:
+            self.fail("Expected node directory to be created")
+        status_payload = json.loads(
+            review_loop_status_path(node_dir).read_text(encoding="utf-8")
+        )
+        assert status_payload["invalid_candidate_round_count"] == 1
+        assert status_payload["no_progress_round_count"] == 0
+        assert status_payload["final_local_round_num"] == 3
+        assert (
+            status_payload["canonical_executor_outputs"][0]["path"]
+            == "exec_executor_0_round3.md"
+        )
+        invalid_events = [
+            event
+            for event in events
+            if event.event_type == EventType.RUNTIME_LOG
+            and event.payload.operation == "review_loop_invalid_candidate"
+        ]
+        assert len(invalid_events) == 1
+        assert (
+            invalid_events[0].payload.attributes["reason"] == "invalid_candidate.empty"
+        )
 
     async def test_multi_provider_sequential_skips_reviewer_on_missing_remediation_candidate(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.missing.remediation",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=2,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = OptionalOutputInvoker(
-                outputs=[
-                    "executor output round 1",
-                    review_output(
-                        major="- Fix the missing error-handling branch",
-                        verdict="CHANGES_REQUESTED",
-                    ),
-                    None,
-                    "executor output round 3",
-                    review_output(verdict="NO_FINDINGS"),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            events: list[ExecutionEvent] = []
-
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id="run-1",
-                    event_sink=events.append,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.missing.remediation",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=2,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = OptionalOutputInvoker(
+            outputs=[
+                "executor output round 1",
+                review_output(
+                    major="- Fix the missing error-handling branch",
+                    verdict="CHANGES_REQUESTED",
                 ),
-            )
+                None,
+                "executor output round 3",
+                review_output(verdict="NO_FINDINGS"),
+            ]
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        events: list[ExecutionEvent] = []
 
-            assert (ProviderRole.REVIEWER, 2) not in [
-                (call["role"], call["round_num"]) for call in invoker.calls
-            ]
-            node_dir = output.get_node_dir(node_artifact_request(node.id))
-            if node_dir is None:
-                self.fail("Expected node directory to be created")
-            assert not (node_dir / "exec_executor_0_round2.md").exists()
-            status_payload = json.loads(
-                review_loop_status_path(node_dir).read_text(encoding="utf-8")
-            )
-            assert status_payload["invalid_candidate_round_count"] == 1
-            invalid_events = [
-                event
-                for event in events
-                if event.event_type == EventType.RUNTIME_LOG
-                and event.payload.operation == "review_loop_invalid_candidate"
-            ]
-            assert len(invalid_events) == 1
-            assert (
-                invalid_events[0].payload.attributes["reason"]
-                == "invalid_candidate.empty"
-            )
+        await execute_sequential_stage(
+            config,
+            node,
+            output,
+            invoker=invoker,
+            telemetry=ExecutionTelemetry(
+                workflow_name="workflow",
+                run_id="run-1",
+                event_sink=events.append,
+            ),
+        )
+
+        assert (ProviderRole.REVIEWER, 2) not in [
+            (call["role"], call["round_num"]) for call in invoker.calls
+        ]
+        node_dir = output.get_node_dir(node_artifact_request(node.id))
+        if node_dir is None:
+            self.fail("Expected node directory to be created")
+        assert not (node_dir / "exec_executor_0_round2.md").exists()
+        status_payload = json.loads(
+            review_loop_status_path(node_dir).read_text(encoding="utf-8")
+        )
+        assert status_payload["invalid_candidate_round_count"] == 1
+        invalid_events = [
+            event
+            for event in events
+            if event.event_type == EventType.RUNTIME_LOG
+            and event.payload.operation == "review_loop_invalid_candidate"
+        ]
+        assert len(invalid_events) == 1
+        assert (
+            invalid_events[0].payload.attributes["reason"] == "invalid_candidate.empty"
+        )
 
     async def test_multi_provider_sequential_skips_reviewer_on_unchanged_remediation_candidate(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.no.progress",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=2,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output round 1",
-                    review_output(
-                        major="- Fix the missing regression path",
-                        verdict="CHANGES_REQUESTED",
-                    ),
-                    "executor output round 1",
-                    "executor output round 3 with changes",
-                    review_output(verdict="NO_FINDINGS"),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            events: list[ExecutionEvent] = []
-
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id="run-1",
-                    event_sink=events.append,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.no.progress",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=2,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output round 1",
+                review_output(
+                    major="- Fix the missing regression path",
+                    verdict="CHANGES_REQUESTED",
                 ),
-            )
+                "executor output round 1",
+                "executor output round 3 with changes",
+                review_output(verdict="NO_FINDINGS"),
+            ]
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        events: list[ExecutionEvent] = []
 
-            assert len(invoker.calls) == 5
-            assert (ProviderRole.REVIEWER, 2) not in [
-                (call["role"], call["round_num"]) for call in invoker.calls
-            ]
-            node_dir = output.get_node_dir(node_artifact_request(node.id))
-            if node_dir is None:
-                self.fail("Expected node directory to be created")
-            status_payload = json.loads(
-                review_loop_status_path(node_dir).read_text(encoding="utf-8")
-            )
-            assert status_payload["invalid_candidate_round_count"] == 0
-            assert status_payload["no_progress_round_count"] == 1
-            no_progress_events = [
-                event
-                for event in events
-                if event.event_type == EventType.RUNTIME_LOG
-                and event.payload.operation == "review_loop_no_progress"
-            ]
-            assert len(no_progress_events) == 1
+        await execute_sequential_stage(
+            config,
+            node,
+            output,
+            invoker=invoker,
+            telemetry=ExecutionTelemetry(
+                workflow_name="workflow",
+                run_id="run-1",
+                event_sink=events.append,
+            ),
+        )
+
+        assert len(invoker.calls) == 5
+        assert (ProviderRole.REVIEWER, 2) not in [
+            (call["role"], call["round_num"]) for call in invoker.calls
+        ]
+        node_dir = output.get_node_dir(node_artifact_request(node.id))
+        if node_dir is None:
+            self.fail("Expected node directory to be created")
+        status_payload = json.loads(
+            review_loop_status_path(node_dir).read_text(encoding="utf-8")
+        )
+        assert status_payload["invalid_candidate_round_count"] == 0
+        assert status_payload["no_progress_round_count"] == 1
+        no_progress_events = [
+            event
+            for event in events
+            if event.event_type == EventType.RUNTIME_LOG
+            and event.payload.operation == "review_loop_no_progress"
+        ]
+        assert len(no_progress_events) == 1
 
     async def test_multi_provider_sequential_accepts_mixed_commentary_candidate(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.mixed.commentary",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "\n".join(
-                        [
-                            "Updated as requested.",
-                            "",
-                            "# Revised Design",
-                            "",
-                            "- Add the rollback path.",
-                        ]
-                    ),
-                    review_output(verdict="NO_FINDINGS"),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            events: list[ExecutionEvent] = []
-
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id="run-1",
-                    event_sink=events.append,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.mixed.commentary",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "\n".join(
+                    [
+                        "Updated as requested.",
+                        "",
+                        "# Revised Design",
+                        "",
+                        "- Add the rollback path.",
+                    ]
                 ),
-            )
-
-            invalid_events = [
-                event
-                for event in events
-                if event.event_type == EventType.RUNTIME_LOG
-                and event.payload.operation == "review_loop_invalid_candidate"
+                review_output(verdict="NO_FINDINGS"),
             ]
-            assert invalid_events == []
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        events: list[ExecutionEvent] = []
+
+        await execute_sequential_stage(
+            config,
+            node,
+            output,
+            invoker=invoker,
+            telemetry=ExecutionTelemetry(
+                workflow_name="workflow",
+                run_id="run-1",
+                event_sink=events.append,
+            ),
+        )
+
+        invalid_events = [
+            event
+            for event in events
+            if event.event_type == EventType.RUNTIME_LOG
+            and event.payload.operation == "review_loop_invalid_candidate"
+        ]
+        assert invalid_events == []

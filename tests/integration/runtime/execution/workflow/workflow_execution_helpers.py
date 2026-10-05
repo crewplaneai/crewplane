@@ -71,7 +71,7 @@ def provider_failure(message: str) -> InvocationFailureError:
 
 class MockAgentInvoker(NoPresentationInvoker):
     def __init__(self, outputs: list[str] | None = None) -> None:
-        self.outputs = outputs or []
+        self.outputs = outputs
         self.calls: list[dict[str, str | int | None]] = []
 
     async def invoke(
@@ -115,7 +115,11 @@ class MockAgentInvoker(NoPresentationInvoker):
             }
         )
         call_index = len(self.calls) - 1
-        content = self.outputs[call_index] if call_index < len(self.outputs) else "ok"
+        if self.outputs is not None:
+            assert call_index < len(self.outputs), (
+                f"Unexpected invocation {call_index + 1}; scripted {len(self.outputs)} outputs"
+            )
+        content = "ok" if self.outputs is None else self.outputs[call_index]
         output_file.write_text(content, encoding="utf-8")
 
 
@@ -288,7 +292,10 @@ class OptionalOutputInvoker(NoPresentationInvoker):
             }
         )
         call_index = len(self.calls) - 1
-        content = self.outputs[call_index] if call_index < len(self.outputs) else "ok"
+        assert call_index < len(self.outputs), (
+            f"Unexpected invocation {call_index + 1}; scripted {len(self.outputs)} outputs"
+        )
+        content = self.outputs[call_index]
         if content is None:
             return
         output_file.write_text(content, encoding="utf-8")
@@ -499,13 +506,8 @@ class TaskOutputInvoker(NoPresentationInvoker):
                 raise AssertionError(
                     f"Task {task_id!r} was not released by its causal gate."
                 ) from exc
-        content = self.outputs_by_task_id.get(task_id)
-        if content is None:
-            content = (
-                review_output(verdict="NO_FINDINGS")
-                if invocation_context.role == ProviderRole.REVIEWER
-                else f"output for {task_id}"
-            )
+        assert task_id in self.outputs_by_task_id, f"Unexpected task: {task_id}"
+        content = self.outputs_by_task_id[task_id]
         output_file.write_text(content, encoding="utf-8")
 
 

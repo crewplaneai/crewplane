@@ -4,22 +4,22 @@ from typing import cast
 
 import pytest
 
+from tests.integration.observability.cases import VisualizationCase
 from tests.integration.observability.render.case_fixtures import (
     STATUS_CASES,
     TOPOLOGY_CASES,
 )
-from tests.integration.observability.render.case_types import CaseData
 
 
-def _case_id(case_data: CaseData) -> str:
-    return str(case_data["case_id"])
+def _case_id(case_data: VisualizationCase) -> str:
+    return str(case_data.case_id)
 
 
 @pytest.fixture(params=TOPOLOGY_CASES, ids=_case_id)
-def dag_render_topology_case(request: pytest.FixtureRequest) -> CaseData:
-    return cast(CaseData, request.param)
+def dag_render_topology_case(request: pytest.FixtureRequest) -> VisualizationCase:
+    return cast(VisualizationCase, request.param)
 
 
 @pytest.fixture(params=STATUS_CASES, ids=_case_id)
-def dag_render_status_case(request: pytest.FixtureRequest) -> CaseData:
-    return cast(CaseData, request.param)
+def dag_render_status_case(request: pytest.FixtureRequest) -> VisualizationCase:
+    return cast(VisualizationCase, request.param)

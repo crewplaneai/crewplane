@@ -148,7 +148,7 @@ def test_workspace_source_policy_allows_disabled_sparse_checkout_config(
         builder,
     )
 
-    assert not any("sparse checkout" in error for error in builder.errors)
+    assert builder.errors == []
 
 
 def test_workspace_source_policy_inspects_local_config_without_includes(

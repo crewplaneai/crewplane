@@ -1,6 +1,6 @@
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,6 +19,10 @@ from crewplane.runtime.agent.usage import estimate_token_count
 
 
 class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_quota_wait_ceiling_counts_only_completed_quota_sleeps(
         self,
     ) -> None:
@@ -30,9 +34,9 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
         runner = AsyncMock(side_effect=[quota_result, quota_result, quota_result])
         sleep = AsyncMock()
 
+        tmp_dir = mkdtemp(dir=self.tmp_path)
         with (
-            tempfile.TemporaryDirectory() as tmp_dir,
-            patch("crewplane.runtime.agent.invocation.loop.asyncio.sleep", sleep),
+            patch("crewplane.runtime.agent.invocation.loop.sleep", sleep),
             patch(
                 "crewplane.runtime.agent.invocation.retry.quota_retry_elapsed_seconds",
                 return_value=20,
@@ -68,59 +72,59 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
             "You have exhausted your capacity on this model. "
             "Your quota will reset after 6h."
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            output_file = Path(tmp_dir) / "output.txt"
-            usages = []
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        output_file = Path(tmp_dir) / "output.txt"
+        usages = []
 
-            async def runner(
-                cmd: list[str],  # noqa: ARG001
-                stdin_data: bytes | None,  # noqa: ARG001
-                log_file: Path | None,  # noqa: ARG001
-                append_log: bool,  # noqa: ARG001
-                log_header: bytes | None,  # noqa: ARG001
-                cwd: Path,  # noqa: ARG001
-                invocation_context: InvocationContext | None,  # noqa: ARG001
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001
-            ) -> CommandResult:
-                return CommandResult(
-                    returncode=0,
-                    stdout_text=quota_message,
-                    stderr_text="",
-                )
-
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="generic_executor_0",
-                provider="gemini",
-                role=ProviderRole.EXECUTOR,
-                usage_recorder=usages.append,
+        async def runner(
+            cmd: list[str],  # noqa: ARG001
+            stdin_data: bytes | None,  # noqa: ARG001
+            log_file: Path | None,  # noqa: ARG001
+            append_log: bool,  # noqa: ARG001
+            log_header: bytes | None,  # noqa: ARG001
+            cwd: Path,  # noqa: ARG001
+            invocation_context: InvocationContext | None,  # noqa: ARG001
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001
+        ) -> CommandResult:
+            return CommandResult(
+                returncode=0,
+                stdout_text=quota_message,
+                stderr_text="",
             )
-            with pytest.raises(InvocationFailureError):
-                await invoke_agent_with_runner(
-                    config=AgentConfig(
-                        cli_cmd=["gemini"],
-                        provider_kind="gemini",
-                        default_model="test",
-                        model_arg=None,
-                        quota_reached_retry_delay_seconds=0,
-                        quota_reset_sleep_floor_seconds=5,
-                    ),
-                    model="test",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=Path(tmp_dir),
-                    log_file=None,
-                    invocation_context=context,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
 
-            assert len(usages) == 1
-            assert usages[0].visible_estimate_tokens == estimate_token_count(
-                len("prompt")
-            ) + estimate_token_count(len(quota_message))
-            assert not output_file.exists()
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="generic_executor_0",
+            provider="gemini",
+            role=ProviderRole.EXECUTOR,
+            usage_recorder=usages.append,
+        )
+        with pytest.raises(InvocationFailureError):
+            await invoke_agent_with_runner(
+                config=AgentConfig(
+                    cli_cmd=["gemini"],
+                    provider_kind="gemini",
+                    default_model="test",
+                    model_arg=None,
+                    quota_reached_retry_delay_seconds=0,
+                    quota_reset_sleep_floor_seconds=5,
+                ),
+                model="test",
+                prompt="prompt",
+                output_file=output_file,
+                cwd=Path(tmp_dir),
+                log_file=None,
+                invocation_context=context,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+
+        assert len(usages) == 1
+        assert usages[0].visible_estimate_tokens == estimate_token_count(
+            len("prompt")
+        ) + estimate_token_count(len(quota_message))
+        assert not output_file.exists()
 
     async def test_quota_failure_preserves_last_non_quota_failure(self) -> None:
         results = [
@@ -150,10 +154,8 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
         ) -> CommandResult:
             return results.pop(0)
 
-        with (
-            tempfile.TemporaryDirectory() as tmp_dir,
-            pytest.raises(InvocationFailureError) as caught,
-        ):
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        with pytest.raises(InvocationFailureError) as caught:
             await invoke_agent_with_runner(
                 config=AgentConfig(
                     cli_cmd=["provider"],
@@ -211,10 +213,8 @@ class InvocationLoopTests(unittest.IsolatedAsyncioTestCase):
         ) -> CommandResult:
             return results.pop(0)
 
-        with (
-            tempfile.TemporaryDirectory() as tmp_dir,
-            pytest.raises(InvocationFailureError) as caught,
-        ):
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        with pytest.raises(InvocationFailureError) as caught:
             await invoke_agent_with_runner(
                 config=AgentConfig(
                     cli_cmd=["provider"],

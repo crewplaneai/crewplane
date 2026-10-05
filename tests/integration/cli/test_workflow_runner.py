@@ -234,8 +234,12 @@ def _assert_descriptor_metadata_absent(
 
 
 class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_duplicate_signature_skips_without_run_allocation(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
             workflow = runner_workflow()
@@ -250,7 +254,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_filesystem_artifact_real_run_fails_before_run_allocation(
         self,
     ) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
             workflow = runner_workflow()
@@ -275,7 +279,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_reasoning_validation_stops_real_run_before_execution_setup(
         self,
     ) -> None:
-        with temporary_project_cwd():
+        with temporary_project_cwd(self.tmp_path):
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False, color_system=None)
             workflow = runner_workflow()
@@ -313,7 +317,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             execute_workflow_mock.assert_not_called()
 
     async def test_force_ignores_duplicate_signature(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = runner_workflow()
             config = mock_runner_config()
@@ -325,7 +329,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_successful_run_writes_preflight_bundle_and_redacted_manifest(
         self,
     ) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = runner_workflow("{{env:API_TOKEN}}")
             config = mock_runner_config()
@@ -425,7 +429,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         if not _local_git_supports_workspace_policy():
             self.skipTest("Git 2.34.1+ is required for workspace source policy")
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             cache_root = root.parent / f"{root.name}-workspace-cache"
             (root / "docs").mkdir()
             (root / "docs" / "input.md").write_text(
@@ -453,7 +457,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             assert not cache_root.exists()
 
     async def test_runtime_receives_preflight_plan_agent_configs_only(self) -> None:
-        with temporary_project_cwd():
+        with temporary_project_cwd(self.tmp_path):
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = runner_workflow()
             config = mock_runner_config()
@@ -490,7 +494,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_preflight_plan_is_materialized_before_invoker_construction(
         self,
     ) -> None:
-        with temporary_project_cwd():
+        with temporary_project_cwd(self.tmp_path):
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = runner_workflow()
             config = mock_runner_config(

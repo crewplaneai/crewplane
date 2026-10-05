@@ -1,10 +1,10 @@
 import os
-import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import patch
 
 from crewplane.adapters.invokers.cli_invoker import get_cli_provider_capability
@@ -468,36 +468,38 @@ def test_bare_local_reset_uses_configured_delay_in_utc_timezone() -> None:
     assert "configured fixed delay" in decision.notice.message
 
 
-def test_evaluate_failure_retry_reads_retried_output_from_persisted_stream() -> None:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        path = Path(tmp_dir) / "stream.txt"
-        path.write_text(
-            "\n".join(["noise"] * 500 + ["temporary output retry marker"]),
-            encoding="utf-8",
-        )
-        decision = evaluate_failure_retry(
-            config=AgentConfig(
-                cli_cmd=["tool"],
-                default_model="test",
-                max_retries=1,
-                retry_delay_seconds=0,
-                retry_on_output_contains=["retry marker"],
-            ),
-            cmd=["tool"],
-            result=CommandResult(
-                returncode=0,
-                stdout_text="",
-                stderr_text="",
-                stdout_path=path,
-            ),
-            retry_count=0,
-        )
+def test_evaluate_failure_retry_reads_retried_output_from_persisted_stream(
+    tmp_path: Path,
+) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    path = Path(tmp_dir) / "stream.txt"
+    path.write_text(
+        "\n".join(["noise"] * 500 + ["temporary output retry marker"]),
+        encoding="utf-8",
+    )
+    decision = evaluate_failure_retry(
+        config=AgentConfig(
+            cli_cmd=["tool"],
+            default_model="test",
+            max_retries=1,
+            retry_delay_seconds=0,
+            retry_on_output_contains=["retry marker"],
+        ),
+        cmd=["tool"],
+        result=CommandResult(
+            returncode=0,
+            stdout_text="",
+            stderr_text="",
+            stdout_path=path,
+        ),
+        retry_count=0,
+    )
 
-        assert isinstance(decision, ScheduleFailureRetry)
-        assert decision.retry_count == 1
-        attributes = decision.notice.attributes
-        assert attributes is not None
-        assert attributes["retry_count"] == 1
+    assert isinstance(decision, ScheduleFailureRetry)
+    assert decision.retry_count == 1
+    attributes = decision.notice.attributes
+    assert attributes is not None
+    assert attributes["retry_count"] == 1
 
 
 def test_codex_usage_limit_with_local_reset_schedules_quota_retry() -> None:
@@ -540,40 +542,40 @@ def test_codex_usage_limit_with_local_reset_schedules_quota_retry() -> None:
     assert decision.wait_seconds == 9292
 
 
-def test_evaluate_quota_retry_reads_retried_quota_marker_from_persisted_stream() -> (
-    None
-):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        path = Path(tmp_dir) / "quota.log"
-        path.write_text(
-            "\n".join(
-                ["noise"] * 500
-                + [
-                    "You have exhausted your capacity on this model. Your quota will reset after 2s."
-                ]
-            ),
-            encoding="utf-8",
-        )
-        decision = evaluate_quota_retry(
-            config=AgentConfig(
-                cli_cmd=["gemini"],
-                provider_kind="gemini",
-                default_model="test",
-                quota_reached_retry_delay_seconds=0,
-                quota_reset_sleep_floor_seconds=0,
-            ),
-            cmd=["gemini"],
-            quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
-            result=CommandResult(
-                returncode=0,
-                stdout_text="",
-                stderr_text="",
-                stdout_path=path,
-            ),
-            quota_retry_started_at=None,
-            quota_retry_count=0,
-        )
+def test_evaluate_quota_retry_reads_retried_quota_marker_from_persisted_stream(
+    tmp_path: Path,
+) -> None:
+    tmp_dir = mkdtemp(dir=tmp_path)
+    path = Path(tmp_dir) / "quota.log"
+    path.write_text(
+        "\n".join(
+            ["noise"] * 500
+            + [
+                "You have exhausted your capacity on this model. Your quota will reset after 2s."
+            ]
+        ),
+        encoding="utf-8",
+    )
+    decision = evaluate_quota_retry(
+        config=AgentConfig(
+            cli_cmd=["gemini"],
+            provider_kind="gemini",
+            default_model="test",
+            quota_reached_retry_delay_seconds=0,
+            quota_reset_sleep_floor_seconds=0,
+        ),
+        cmd=["gemini"],
+        quota_classifier=get_cli_provider_capability("gemini").quota_classifier,
+        result=CommandResult(
+            returncode=0,
+            stdout_text="",
+            stderr_text="",
+            stdout_path=path,
+        ),
+        quota_retry_started_at=None,
+        quota_retry_count=0,
+    )
 
-        assert isinstance(decision, ScheduleQuotaRetry)
-        assert decision.quota_retry_count == 1
-        assert decision.notice.operation == "quota_retry_scheduled"
+    assert isinstance(decision, ScheduleQuotaRetry)
+    assert decision.quota_retry_count == 1
+    assert decision.notice.operation == "quota_retry_scheduled"

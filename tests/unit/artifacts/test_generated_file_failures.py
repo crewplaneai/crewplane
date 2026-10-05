@@ -409,3 +409,46 @@ def test_snapshot_publication_rejects_an_unsafe_destination_root(
     assert list(external.iterdir()) == []
     if kind == "file":
         assert snapshot.read_text() == "peer"
+
+
+@pytest.mark.parametrize("raced_kind", ["directory", "symlink"])
+def test_snapshot_revalidates_directory_created_by_competing_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raced_kind: str
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    generated = workspace / "report.txt"
+    generated.write_bytes(b"generated output")
+    output = tmp_path / "provider.md"
+    output.write_text("Created `report.txt`.", encoding="utf-8")
+    shared = tmp_path / "shared"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    original_mkdir = Path.mkdir
+    raced = False
+
+    def competing_mkdir(
+        path: Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+    ) -> None:
+        nonlocal raced
+        if path == shared and not raced:
+            raced = True
+            if raced_kind == "directory":
+                original_mkdir(path)
+            else:
+                path.symlink_to(outside, target_is_directory=True)
+        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    monkeypatch.setattr(Path, "mkdir", competing_mkdir)
+    snapshot = shared / "candidate"
+    if raced_kind == "symlink":
+        with pytest.raises(RuntimeError, match="not a directory"):
+            snapshot_generated_file_workspace(output, workspace, snapshot_root=snapshot)
+        assert list(outside.iterdir()) == []
+    else:
+        assert (
+            snapshot_generated_file_workspace(output, workspace, snapshot_root=snapshot)
+            == snapshot
+        )
+        assert (snapshot / "report.txt").read_bytes() == generated.read_bytes()
+    assert raced

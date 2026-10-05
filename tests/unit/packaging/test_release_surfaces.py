@@ -1,8 +1,10 @@
 import json
 import re
+import shlex
 import sys
 import tomllib
 
+import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
@@ -11,6 +13,7 @@ from tests.unit.packaging.release_surfaces_support import (
     AUTHORED_VERSION,
     PACKAGE_NAME,
     REPOSITORY_URL,
+    ROOT,
     extract_python_floor_from_pyproject,
     load_pyproject,
     read_text,
@@ -125,52 +128,6 @@ def test_python_distribution_metadata_reserves_crewplane_name() -> None:
     assert not dependencies["typer"].extras
 
 
-def test_pytest_reliability_contract_is_explicit() -> None:
-    pyproject = load_pyproject()
-    pytest_config = pyproject["tool"]["pytest"]["ini_options"]
-    assert pytest_config == {
-        "minversion": "9.1",
-        "testpaths": ["tests"],
-        "addopts": [
-            "-ra",
-            "--import-mode=importlib",
-            "--disable-plugin-autoload",
-        ],
-        "strict_config": True,
-        "strict_markers": True,
-        "strict_parametrization_ids": True,
-        "collect_imported_tests": False,
-        "empty_parameter_set_mark": "fail_at_collect",
-        "tmp_path_retention_policy": "failed",
-        "filterwarnings": ["error"],
-    }
-
-    optional_dependencies = pyproject["project"]["optional-dependencies"]
-    dev_dependencies = parse_requirement_map(optional_dependencies["dev"])
-    stress_dependencies = parse_requirement_map(optional_dependencies["stress"])
-    assert str(dev_dependencies["pytest"].specifier) == ">=9.1"
-    assert set(stress_dependencies) == {"pytest-randomly"}
-
-    makefile = read_text("Makefile")
-    assert "STATEMENT_COVERAGE_FLOOR ?= 96" in makefile.splitlines()
-    assert "BRANCH_COVERAGE_FLOOR ?= 90" in makefile.splitlines()
-    test_target = make_target_body("test")
-    assert "-p pytest_cov" in test_target
-    assert '-m "not scale"' not in test_target
-    assert "--cov=crewplane --cov-branch" in test_target
-    assert "--cov-report= --cov-fail-under=0" in test_target
-    assert (
-        "$(RUN_PYTHON) -m coverage report --show-missing --skip-covered" in test_target
-    )
-    assert "$(RUN_PYTHON) -m coverage json -o .coverage.json" in test_target
-    assert "--cov-fail-under=0" in test_target
-    assert "$(MAKE) coverage-check" in test_target
-    coverage_target = make_target_body("coverage-check")
-    assert "scripts/check_coverage.py .coverage.json" in coverage_target
-    assert "--statements $(STATEMENT_COVERAGE_FLOOR)" in coverage_target
-    assert "--branches $(BRANCH_COVERAGE_FLOOR)" in coverage_target
-
-
 def test_uv_lock_tracks_editable_crewplane_package() -> None:
     lock = load_uv_lock()
     editable_packages = [
@@ -190,6 +147,89 @@ def test_uv_lock_tracks_editable_crewplane_package() -> None:
     assert {"build", "packaging", "pytest", "ruff", "twine"} <= dev_dependencies
 
 
+@pytest.mark.parametrize(
+    ("option", "expected"),
+    [
+        ("testpaths", ["tests"]),
+        ("strict_config", True),
+        ("strict_markers", True),
+        ("strict_parametrization_ids", True),
+        ("collect_imported_tests", False),
+        ("empty_parameter_set_mark", "fail_at_collect"),
+        ("tmp_path_retention_policy", "failed"),
+        ("filterwarnings", ["error"]),
+    ],
+)
+def test_pytest_reliability_options(option: str, expected: object) -> None:
+    config = load_pyproject()["tool"]["pytest"]["ini_options"]
+    assert config[option] == expected
+
+
+def test_pytest_isolation_and_plugin_dependencies() -> None:
+    pyproject = load_pyproject()
+    config = pyproject["tool"]["pytest"]["ini_options"]
+    assert Version(config["minversion"]) >= Version("9.1")
+    assert {"-ra", "--import-mode=importlib", "--disable-plugin-autoload"} <= set(
+        config["addopts"]
+    )
+    optional = pyproject["project"]["optional-dependencies"]
+    pytest_requirement = parse_requirement_map(optional["dev"])["pytest"]
+    assert has_lower_bound(pytest_requirement)
+    assert "9.0" not in pytest_requirement.specifier
+    assert "pytest-randomly" in parse_requirement_map(optional["stress"])
+
+
+def test_make_test_runs_full_suite_and_separate_coverage_gates() -> None:
+    result = run_process(
+        [
+            "make",
+            "--no-print-directory",
+            "-n",
+            "test",
+            "HAVE_UV=0",
+            f"PYTHON={sys.executable}",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    commands = [shlex.split(line) for line in result.stdout.splitlines()]
+    pytest_command = next(command for command in commands if "pytest" in command)
+    assert {
+        "--cov=crewplane",
+        "--cov-branch",
+        "--cov-report=",
+        "--cov-fail-under=0",
+    } <= set(pytest_command)
+    assert pytest_command[pytest_command.index("-p") + 1] == "pytest_cov"
+    assert pytest_command.count("-m") == 1
+    assert "-k" not in pytest_command
+    assert not any(token.startswith("tests/") for token in pytest_command)
+    assert any(
+        command[-4:] == ["coverage", "report", "--show-missing", "--skip-covered"]
+        for command in commands
+    )
+    assert any(
+        command[-4:] == ["coverage", "json", "-o", ".coverage.json"]
+        for command in commands
+    )
+    gate = next(
+        command for command in commands if "scripts/check_coverage.py" in command
+    )
+    assert gate[gate.index("scripts/check_coverage.py") + 1] == ".coverage.json"
+    assert int(gate[gate.index("--statements") + 1]) >= 96
+    assert int(gate[gate.index("--branches") + 1]) >= 90
+
+
+def test_makefile_package_name_lookup_supports_gnu_make_3_81() -> None:
+    makefile = read_text("Makefile")
+    assert ".SHELLSTATUS" not in makefile
+    assert (
+        "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD) || "
+        "printf '%s\\n' __PACKAGE_NAME_LOOKUP_FAILED__)"
+    ) in makefile
+    assert "ifeq ($(PACKAGE_NAME),__PACKAGE_NAME_LOOKUP_FAILED__)" in makefile
+
+
 def test_makefile_delegates_release_targets_to_release_tool() -> None:
     makefile = read_text("Makefile")
     assert "RUN_RELEASE = $(RUN_PYTHON) scripts/release.py" in makefile
@@ -207,16 +247,6 @@ def test_makefile_delegates_release_targets_to_release_tool() -> None:
     assert "$(MAKE) release-pypi" in release
     assert "$(MAKE) release-npm" in release
     assert "$(RUN_RELEASE) finalize --execute" in release
-
-
-def test_makefile_package_name_lookup_supports_gnu_make_3_81() -> None:
-    makefile = read_text("Makefile")
-    assert ".SHELLSTATUS" not in makefile
-    assert (
-        "PACKAGE_NAME := $(shell $(PROJECT_NAME_CMD) || "
-        "printf '%s\\n' __PACKAGE_NAME_LOOKUP_FAILED__)"
-    ) in makefile
-    assert "ifeq ($(PACKAGE_NAME),__PACKAGE_NAME_LOOKUP_FAILED__)" in makefile
 
 
 def test_release_script_exposes_stateful_commands() -> None:

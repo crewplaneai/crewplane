@@ -6,7 +6,7 @@ from crewplane.architecture.ports.artifacts import StageTaskSpec
 from crewplane.artifacts.results.writer import ResultWriter
 from crewplane.core.workflow.keywords import ProviderRole
 from tests.helpers.resume_validation import review_status_output_entry
-from tests.unit.artifacts.test_review_loop_status import (
+from tests.unit.artifacts.review_loop_status_support import (
     valid_status_payload,
     write_status,
 )

@@ -17,6 +17,7 @@ from crewplane.version import SCHEMA_VERSION
 from tests.integration.runtime.execution.workflow.workflow_execution_helpers import (
     TaskOutputInvoker,
     execute_workflow,
+    review_output,
 )
 
 
@@ -46,7 +47,15 @@ def test_repeated_provider_roles_have_distinct_ordered_result_headings(
     )
     workflow = WorkflowPlan(name="provider.labels", nodes=[node])
     output = OutputManager(workflow.name, base_dir=tmp_path)
-    invoker = TaskOutputInvoker({})
+    invoker = TaskOutputInvoker(
+        {
+            "worker_executor_0": "output for worker_executor_0",
+            "solo_executor_1": "output for solo_executor_1",
+            "worker_executor_2": "output for worker_executor_2",
+            "worker_reviewer_0": review_output(verdict="NO_FINDINGS"),
+            "worker_reviewer_1": review_output(verdict="NO_FINDINGS"),
+        }
+    )
 
     asyncio.run(execute_workflow(config, workflow, output, invoker))
 

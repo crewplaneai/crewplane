@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.architecture.contracts import EventType, build_result_filename
 from crewplane.artifacts import OutputManager
@@ -25,78 +27,82 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 
 
 class WorkflowResumeTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_resumed_nodes_are_marked_succeeded_before_scheduling(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={"alpha": AgentConfig(cli_cmd=["mock"], default_model="model")},
-            )
-            workflow = WorkflowPlan(
-                name="resume.workflow",
-                nodes=[
-                    WorkflowNode(
-                        id="a",
-                        mode="sequential",
-                        providers=[
-                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
-                        ],
-                        prompt_segments=[
-                            PromptSegment(role=PromptSegmentRole.SHARED, content="A")
-                        ],
-                    ),
-                    WorkflowNode(
-                        id="b",
-                        mode="sequential",
-                        needs=["a"],
-                        providers=[
-                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
-                        ],
-                        prompt_segments=[
-                            PromptSegment(role=PromptSegmentRole.SHARED, content="B")
-                        ],
-                    ),
-                ],
-            )
-            output = OutputManager(workflow.name, base_dir=tmp_path)
-            invoker = MockAgentInvoker(outputs=["b result"])
-            events: list[ExecutionEvent] = []
-
-            await execute_workflow(
-                config,
-                workflow,
-                output,
-                invoker,
-                event_sink=events.append,
-                suppress_progress_output=True,
-                workflow_identity=".crewplane/workflows/resume.task.md",
-                resumed_node_ids=("a",),
-            )
-
-            self.assertEqual([call["node_id"] for call in invoker.calls], ["b"])
-            self.assertIn(
-                "b result",
-                (output.results_dir / build_result_filename("b")).read_text(
-                    encoding="utf-8"
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={"alpha": AgentConfig(cli_cmd=["mock"], default_model="model")},
+        )
+        workflow = WorkflowPlan(
+            name="resume.workflow",
+            nodes=[
+                WorkflowNode(
+                    id="a",
+                    mode="sequential",
+                    providers=[
+                        ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                    ],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="A")
+                    ],
                 ),
-            )
-            node_events = [
-                (event.event_type, event.context.node_id)
-                for event in events
-                if event.event_type in {EventType.NODE_STARTED, EventType.NODE_FINISHED}
-            ]
-            self.assertEqual(
-                node_events[:3],
-                [
-                    (EventType.NODE_STARTED, "a"),
-                    (EventType.NODE_FINISHED, "a"),
-                    (EventType.NODE_STARTED, "b"),
-                ],
-            )
-            resumed_logs = [
-                event
-                for event in events
-                if isinstance(event.payload, RuntimeLogEventPayload)
-                and event.payload.operation == "node_resumed"
-            ]
-            self.assertEqual([event.context.node_id for event in resumed_logs], ["a"])
+                WorkflowNode(
+                    id="b",
+                    mode="sequential",
+                    needs=["a"],
+                    providers=[
+                        ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR)
+                    ],
+                    prompt_segments=[
+                        PromptSegment(role=PromptSegmentRole.SHARED, content="B")
+                    ],
+                ),
+            ],
+        )
+        output = OutputManager(workflow.name, base_dir=tmp_path)
+        invoker = MockAgentInvoker(outputs=["b result"])
+        events: list[ExecutionEvent] = []
+
+        await execute_workflow(
+            config,
+            workflow,
+            output,
+            invoker,
+            event_sink=events.append,
+            suppress_progress_output=True,
+            workflow_identity=".crewplane/workflows/resume.task.md",
+            resumed_node_ids=("a",),
+        )
+
+        self.assertEqual([call["node_id"] for call in invoker.calls], ["b"])
+        self.assertIn(
+            "b result",
+            (output.results_dir / build_result_filename("b")).read_text(
+                encoding="utf-8"
+            ),
+        )
+        node_events = [
+            (event.event_type, event.context.node_id)
+            for event in events
+            if event.event_type in {EventType.NODE_STARTED, EventType.NODE_FINISHED}
+        ]
+        self.assertEqual(
+            node_events[:3],
+            [
+                (EventType.NODE_STARTED, "a"),
+                (EventType.NODE_FINISHED, "a"),
+                (EventType.NODE_STARTED, "b"),
+            ],
+        )
+        resumed_logs = [
+            event
+            for event in events
+            if isinstance(event.payload, RuntimeLogEventPayload)
+            and event.payload.operation == "node_resumed"
+        ]
+        self.assertEqual([event.context.node_id for event in resumed_logs], ["a"])

@@ -1,6 +1,8 @@
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.adapters.invokers.cli_invoker import (
     build_cli_invocation_plan,
@@ -18,172 +20,176 @@ from crewplane.runtime.agent.invoker import invoke_agent_with_runner
 
 
 class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_invoke_agent_with_runner_summarizes_multiline_failure(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            log_file = tmp_path / "agent.log"
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        log_file = tmp_path / "agent.log"
 
-            async def runner(
-                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                assert log_file is not None
-                return CommandResult(
-                    returncode=1,
-                    stdout_text="",
-                    stderr_text=(
-                        "YOLO mode is enabled. All tool calls will be automatically approved.\n"
-                        "Loaded cached credentials.\n"
-                        "Fatal error: permission denied\n"
-                        "    at runner.js:12:5"
-                    ),
-                )
-
-            config = AgentConfig(
-                cli_cmd=["echo"],
-                default_model="test-model",
+        async def runner(
+            cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            assert log_file is not None
+            return CommandResult(
+                returncode=1,
+                stdout_text="",
+                stderr_text=(
+                    "YOLO mode is enabled. All tool calls will be automatically approved.\n"
+                    "Loaded cached credentials.\n"
+                    "Fatal error: permission denied\n"
+                    "    at runner.js:12:5"
+                ),
             )
-            with self.assertRaisesRegex(
-                RuntimeError,
-                rf"Exit code 1: Fatal error: permission denied \(see {log_file}\)",
-            ):
-                await invoke_agent_with_runner(
-                    config=config,
-                    model="test-model",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=output_file.parent,
-                    log_file=log_file,
-                    invocation_context=None,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
+
+        config = AgentConfig(
+            cli_cmd=["echo"],
+            default_model="test-model",
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            rf"Exit code 1: Fatal error: permission denied \(see {log_file}\)",
+        ):
+            await invoke_agent_with_runner(
+                config=config,
+                model="test-model",
+                prompt="prompt",
+                output_file=output_file,
+                cwd=output_file.parent,
+                log_file=log_file,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
 
     async def test_invoke_agent_with_runner_prefers_structured_failure_message(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            log_file = tmp_path / "agent.log"
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        log_file = tmp_path / "agent.log"
 
-            async def runner(
-                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                return CommandResult(
-                    returncode=1,
-                    stdout_text=(
-                        '{"type":"error","message":"Reconnecting..."}\n'
-                        '{"type":"turn.failed","error":{"message":"Codex ran out of room in the model context window."}}'
-                    ),
-                    stderr_text=(
-                        "ERROR codex_core::mcp_tool_call: failed to parse tool call "
-                        "arguments: EOF while parsing an object"
-                    ),
-                )
-
-            config = AgentConfig(
-                cli_cmd=["codex", "exec"],
-                provider_kind="codex",
-                default_model="test-model",
-                prompt_transport="stdin",
-                prompt_transport_arg="-",
+        async def runner(
+            cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            return CommandResult(
+                returncode=1,
+                stdout_text=(
+                    '{"type":"error","message":"Reconnecting..."}\n'
+                    '{"type":"turn.failed","error":{"message":"Codex ran out of room in the model context window."}}'
+                ),
+                stderr_text=(
+                    "ERROR codex_core::mcp_tool_call: failed to parse tool call "
+                    "arguments: EOF while parsing an object"
+                ),
             )
-            with self.assertRaisesRegex(
-                RuntimeError,
-                rf"Exit code 1: Codex ran out of room in the model context window\. \(see {log_file}\)",
-            ) as caught:
-                await invoke_agent_with_runner(
-                    config=config,
-                    model="test-model",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=output_file.parent,
-                    log_file=log_file,
-                    invocation_context=None,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
-            self.assertIsInstance(caught.exception, InvocationFailureError)
-            failure = caught.exception
-            assert isinstance(failure, InvocationFailureError)
-            self.assertEqual(failure.kind, "provider_session_context_exhausted")
-            self.assertEqual(failure.phase, "provider_session")
-            self.assertEqual(failure.source, "stdout_json")
+
+        config = AgentConfig(
+            cli_cmd=["codex", "exec"],
+            provider_kind="codex",
+            default_model="test-model",
+            prompt_transport="stdin",
+            prompt_transport_arg="-",
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            rf"Exit code 1: Codex ran out of room in the model context window\. \(see {log_file}\)",
+        ) as caught:
+            await invoke_agent_with_runner(
+                config=config,
+                model="test-model",
+                prompt="prompt",
+                output_file=output_file,
+                cwd=output_file.parent,
+                log_file=log_file,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+        self.assertIsInstance(caught.exception, InvocationFailureError)
+        failure = caught.exception
+        assert isinstance(failure, InvocationFailureError)
+        self.assertEqual(failure.kind, "provider_session_context_exhausted")
+        self.assertEqual(failure.phase, "provider_session")
+        self.assertEqual(failure.source, "stdout_json")
 
     async def test_invoke_agent_with_runner_summarizes_claude_result_error(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            log_file = tmp_path / "agent.log"
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        log_file = tmp_path / "agent.log"
 
-            async def runner(
-                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                return CommandResult(
-                    returncode=1,
-                    stdout_text=(
-                        '{"type":"result","subtype":"success","is_error":true,'
-                        '"result":"API Error: The socket connection was closed unexpectedly. '
-                        "For more information, pass `verbose: true` in the second "
-                        'argument to fetch()"}'
-                    ),
-                    stderr_text="",
-                )
-
-            config = AgentConfig(
-                cli_cmd=["claude"],
-                provider_kind="claude",
-                default_model="sonnet",
+        async def runner(
+            cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            return CommandResult(
+                returncode=1,
+                stdout_text=(
+                    '{"type":"result","subtype":"success","is_error":true,'
+                    '"result":"API Error: The socket connection was closed unexpectedly. '
+                    "For more information, pass `verbose: true` in the second "
+                    'argument to fetch()"}'
+                ),
+                stderr_text="",
             )
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "Exit code 1: API Error: The socket connection was closed unexpectedly\\.",
-            ) as caught:
-                await invoke_agent_with_runner(
-                    config=config,
-                    model="sonnet",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=output_file.parent,
-                    log_file=log_file,
-                    invocation_context=None,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
-            self.assertIsInstance(caught.exception, InvocationFailureError)
-            failure = caught.exception
-            assert isinstance(failure, InvocationFailureError)
-            self.assertNotIn('{"type":"result"', str(failure))
-            self.assertEqual(failure.kind, "provider_transport_error")
-            self.assertEqual(failure.phase, "provider_transport")
-            self.assertEqual(failure.source, "stdout_json")
+
+        config = AgentConfig(
+            cli_cmd=["claude"],
+            provider_kind="claude",
+            default_model="sonnet",
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Exit code 1: API Error: The socket connection was closed unexpectedly\\.",
+        ) as caught:
+            await invoke_agent_with_runner(
+                config=config,
+                model="sonnet",
+                prompt="prompt",
+                output_file=output_file,
+                cwd=output_file.parent,
+                log_file=log_file,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+        self.assertIsInstance(caught.exception, InvocationFailureError)
+        failure = caught.exception
+        assert isinstance(failure, InvocationFailureError)
+        self.assertNotIn('{"type":"result"', str(failure))
+        self.assertEqual(failure.kind, "provider_transport_error")
+        self.assertEqual(failure.phase, "provider_transport")
+        self.assertEqual(failure.source, "stdout_json")
 
     def test_classifies_provider_failure_categories(self) -> None:
         cases = [
@@ -341,47 +347,47 @@ class InvocationFailureReportingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(summary.source, expected_source)
 
     def test_classifies_provider_failure_from_persisted_stderr_stream(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "provider.log"
-            path.write_text(
-                "\n".join(
-                    ["noise"] * 500
-                    + ["Automatic compaction failed: conversation too long."]
-                ),
-                encoding="utf-8",
-            )
-            summary = get_cli_provider_capability("kilo").failure_classifier(
-                CommandResult(
-                    returncode=1,
-                    stdout_text="",
-                    stderr_text="",
-                    stderr_path=path,
-                ),
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "provider.log"
+        path.write_text(
+            "\n".join(
+                ["noise"] * 500
+                + ["Automatic compaction failed: conversation too long."]
+            ),
+            encoding="utf-8",
+        )
+        summary = get_cli_provider_capability("kilo").failure_classifier(
+            CommandResult(
+                returncode=1,
+                stdout_text="",
+                stderr_text="",
+                stderr_path=path,
+            ),
+        )
 
-            self.assertEqual(summary.kind, "provider_session_context_exhausted")
-            self.assertEqual(summary.phase, "provider_session")
-            self.assertEqual(summary.source, "stderr_text")
+        self.assertEqual(summary.kind, "provider_session_context_exhausted")
+        self.assertEqual(summary.phase, "provider_session")
+        self.assertEqual(summary.source, "stderr_text")
 
     def test_classifies_provider_failure_from_marker_beyond_retained_summary_window(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "provider.log"
-            marker = "Automatic compaction failed: conversation too long."
-            path.write_text(
-                "\n".join(["noise"] * (MAX_FAILURE_LINES + 5) + [marker]),
-                encoding="utf-8",
-            )
-            summary = get_cli_provider_capability("kilo").failure_classifier(
-                CommandResult(
-                    returncode=1,
-                    stdout_text="",
-                    stderr_text="",
-                    stderr_path=path,
-                ),
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        path = Path(tmp_dir) / "provider.log"
+        marker = "Automatic compaction failed: conversation too long."
+        path.write_text(
+            "\n".join(["noise"] * (MAX_FAILURE_LINES + 5) + [marker]),
+            encoding="utf-8",
+        )
+        summary = get_cli_provider_capability("kilo").failure_classifier(
+            CommandResult(
+                returncode=1,
+                stdout_text="",
+                stderr_text="",
+                stderr_path=path,
+            ),
+        )
 
-            self.assertEqual(summary.kind, "provider_session_context_exhausted")
-            self.assertEqual(summary.phase, "provider_session")
-            self.assertEqual(summary.source, "stderr_text")
+        self.assertEqual(summary.kind, "provider_session_context_exhausted")
+        self.assertEqual(summary.phase, "provider_session")
+        self.assertEqual(summary.source, "stderr_text")

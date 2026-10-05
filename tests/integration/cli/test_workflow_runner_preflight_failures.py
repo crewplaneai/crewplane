@@ -33,7 +33,7 @@ from tests.integration.cli.workflow_runner_support import (
 @pytest.mark.parametrize("location", ["cli_cmd", "extra_args", "env_wrapper"])
 @pytest.mark.parametrize("inline", [True, False])
 def test_deepseek_validation_failure_artifacts_do_not_disclose_credentials(
-    location, inline, monkeypatch
+    location, inline, monkeypatch, tmp_path: Path
 ) -> None:
     secret = "deepseek-credential-sentinel"
     arguments = [f"--api-key={secret}"] if inline else ["--api-key", secret]
@@ -57,7 +57,7 @@ def test_deepseek_validation_failure_artifacts_do_not_disclose_credentials(
     monkeypatch.setenv("DSH_PERMISSION_MODE", "danger-full-access")
     stream = io.StringIO()
 
-    with temporary_project_cwd() as root:
+    with temporary_project_cwd(tmp_path) as root:
         with pytest.raises(typer.Exit):
             asyncio.run(
                 run_workflow(
@@ -87,8 +87,12 @@ def test_deepseek_validation_failure_artifacts_do_not_disclose_credentials(
 
 
 class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_preflight_failure_writes_failure_bundle(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = runner_workflow("{{env:MISSING_REQUIRED_ENV}}")
             config = mock_runner_config()
@@ -114,7 +118,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             assert result_directories(root) == []
 
     async def test_cli_availability_failure_writes_preflight_bundle(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False)
             workflow = runner_workflow()
@@ -154,7 +158,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             assert failure_manifest["status"] == "preflight_failed"
 
     async def test_preflight_warning_is_not_repeated_as_failure(self) -> None:
-        with temporary_project_cwd():
+        with temporary_project_cwd(self.tmp_path):
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False)
             workflow = runner_workflow()
@@ -185,7 +189,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             assert "Preflight PROVIDER-CLI" in output
 
     async def test_runtime_config_snapshot_failure_writes_failure_bundle(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             console = Console(file=io.StringIO(), force_terminal=False)
             workflow = runner_workflow()
             config = mock_runner_config({"unknown_option": True})
@@ -211,7 +215,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_invoker_preflight_contract_failure_writes_failure_bundle(
         self,
     ) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             stream = io.StringIO()
             console = Console(file=stream, force_terminal=False)
             workflow = runner_workflow()
@@ -262,7 +266,7 @@ class WorkflowRunnerTests(unittest.IsolatedAsyncioTestCase):
             assert failure_manifest["status"] == "preflight_failed"
 
     def test_early_preflight_failure_uses_fallback_run_key(self) -> None:
-        with temporary_project_cwd() as root:
+        with temporary_project_cwd(self.tmp_path) as root:
             write_early_preflight_failure_run(
                 root / "bad workflow.task.md",
                 "frontmatter failed",

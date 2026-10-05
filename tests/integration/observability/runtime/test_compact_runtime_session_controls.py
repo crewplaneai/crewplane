@@ -2,9 +2,11 @@ import os
 import shlex
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.architecture.contracts import EventType
 from crewplane.core.workflow.keywords import ProviderRole
@@ -41,6 +43,10 @@ from tests.integration.observability.tmux_fakes import SimulatedTmuxRuntime
 
 
 class CompactRuntimeSessionControlTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     def test_compact_runtime_stop_respects_auto_close(self) -> None:
         workflow = single_node_workflow()
         runtime_close = SimulatedTmuxRuntime(auto_close_session=True)
@@ -296,65 +302,65 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-retry-log"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            log_path = Path(tmp_dir) / "node.log"
-            log_path.write_text(
-                "\n".join(
-                    [
-                        "started_at: 2026-04-10T00:00:00+00:00",
-                        "cli_executable: gemini",
-                        "model: gemini-3.1-pro-preview",
-                        "output_file: out.md",
-                        "---",
-                        "[stderr] Attempt 1 failed with status 503. Retrying with backoff... GaxiosError: [{",
-                        '[stderr]     "message": "The service is currently unavailable.",',
-                        '[stderr]     "status": "UNAVAILABLE"',
-                    ]
-                ),
-                encoding="utf-8",
-            )
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        log_path = Path(tmp_dir) / "node.log"
+        log_path.write_text(
+            "\n".join(
+                [
+                    "started_at: 2026-04-10T00:00:00+00:00",
+                    "cli_executable: gemini",
+                    "model: gemini-3.1-pro-preview",
+                    "output_file: out.md",
+                    "---",
+                    "[stderr] Attempt 1 failed with status 503. Retrying with backoff... GaxiosError: [{",
+                    '[stderr]     "message": "The service is currently unavailable.",',
+                    '[stderr]     "status": "UNAVAILABLE"',
+                ]
+            ),
+            encoding="utf-8",
+        )
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.NODE_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-retry-log",
-                    node_id="node.a",
-                    timestamp=9.0,
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-retry-log",
-                    node_id="node.a",
-                    provider="gemini",
-                    role=ProviderRole.EXECUTOR,
-                    model="gemini-3.1-pro-preview",
-                    task_id="gemini_executor_0",
-                    round_num=1,
-                    log_file=str(log_path),
-                    timestamp=10.0,
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.NODE_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-retry-log",
+                node_id="node.a",
+                timestamp=9.0,
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-retry-log",
+                node_id="node.a",
+                provider="gemini",
+                role=ProviderRole.EXECUTOR,
+                model="gemini-3.1-pro-preview",
+                task_id="gemini_executor_0",
+                round_num=1,
+                log_file=str(log_path),
+                timestamp=10.0,
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertIn(
-                "Attempt 1 failed with status 503. Retrying with backoff...",
-                right_text,
-            )
-            self.assertIn("UNAVAILABLE", right_text)
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertIn(
+            "Attempt 1 failed with status 503. Retrying with backoff...",
+            right_text,
+        )
+        self.assertIn("UNAVAILABLE", right_text)
 
         bindings = binding_map(runtime.calls)
         self.assertNotIn(("root", "Up"), bindings)
@@ -383,78 +389,76 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         state = build_initial_state(
             topology_from_workflow(workflow), run_id="compact-inspect-lock"
         )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            first_log = Path(tmp_dir) / "node-a.log"
-            second_log = Path(tmp_dir) / "node-b.log"
-            first_log.write_text("header\n---\nnode-a-line\n", encoding="utf-8")
-            second_log.write_text("header\n---\nnode-b-line\n", encoding="utf-8")
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        first_log = Path(tmp_dir) / "node-a.log"
+        second_log = Path(tmp_dir) / "node-b.log"
+        first_log.write_text("header\n---\nnode-a-line\n", encoding="utf-8")
+        second_log.write_text("header\n---\nnode-b-line\n", encoding="utf-8")
 
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-inspect-lock",
-                    node_id="node.a",
-                    provider="alpha",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="alpha_executor_0",
-                    round_num=1,
-                    log_file=str(first_log),
-                ),
-            )
-            apply_event(
-                state,
-                make_execution_event(
-                    event_type=EventType.INVOCATION_STARTED,
-                    workflow_name=workflow.name,
-                    run_id="compact-inspect-lock",
-                    node_id="node.b",
-                    provider="beta",
-                    role=ProviderRole.EXECUTOR,
-                    model="m",
-                    task_id="beta_executor_0",
-                    round_num=1,
-                    log_file=str(second_log),
-                ),
-            )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-inspect-lock",
+                node_id="node.a",
+                provider="alpha",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="alpha_executor_0",
+                round_num=1,
+                log_file=str(first_log),
+            ),
+        )
+        apply_event(
+            state,
+            make_execution_event(
+                event_type=EventType.INVOCATION_STARTED,
+                workflow_name=workflow.name,
+                run_id="compact-inspect-lock",
+                node_id="node.b",
+                provider="beta",
+                role=ProviderRole.EXECUTOR,
+                model="m",
+                task_id="beta_executor_0",
+                round_num=1,
+                log_file=str(second_log),
+            ),
+        )
 
-            snapshot = DashboardSnapshot(
-                state=state,
-                layout=compute_topology_layout(topology_from_workflow(workflow)),
-                now=0.0,
-            )
-            runtime.on_snapshot(None, snapshot)
-            runtime.refresh_once()
+        snapshot = DashboardSnapshot(
+            state=state,
+            layout=compute_topology_layout(topology_from_workflow(workflow)),
+            now=0.0,
+        )
+        runtime.on_snapshot(None, snapshot)
+        runtime.refresh_once()
 
-            runtime.write_runtime_file("mode", "inspect")  # type: ignore[arg-type]
-            selected = read_snapshot(runtime.runtime_files.selected_invocation)
-            self.assertIsNotNone(selected)
-            write_inspect_snapshot(runtime.runtime_files, selected or {}, "raw")
-            write_selection_control(
-                runtime.runtime_files,
-                SelectionControlState(
-                    selected_index=1,
-                    selection_generation=1,
-                    updated_at=0.0,
-                ),
-            )
-            runtime.write_runtime_file("right_content", "inspection-active")  # type: ignore[arg-type]
-            runtime.refresh_once()
+        runtime.write_runtime_file("mode", "inspect")  # type: ignore[arg-type]
+        selected = read_snapshot(runtime.runtime_files.selected_invocation)
+        self.assertIsNotNone(selected)
+        write_inspect_snapshot(runtime.runtime_files, selected or {}, "raw")
+        write_selection_control(
+            runtime.runtime_files,
+            SelectionControlState(
+                selected_index=1,
+                selection_generation=1,
+                updated_at=0.0,
+            ),
+        )
+        runtime.write_runtime_file("right_content", "inspection-active")  # type: ignore[arg-type]
+        runtime.refresh_once()
 
-            right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
-            self.assertEqual(right_text, "inspection-active")
-            selected_after_move = read_snapshot(
-                runtime.runtime_files.selected_invocation
-            )
-            self.assertIsNotNone(selected_after_move)
-            self.assertEqual(selected_after_move.get("log_file"), str(second_log))  # type: ignore[union-attr]
-            pane_title_writes = pane_option_writes(runtime.calls, "@crewplane_title")
-            self.assertIn(
-                ("%20", "Node Log: node.a (raw)"),
-                {(args[3], args[5]) for args in pane_title_writes},
-            )
+        right_text = runtime.runtime_files.right_content.read_text(encoding="utf-8")  # type: ignore[union-attr]
+        self.assertEqual(right_text, "inspection-active")
+        selected_after_move = read_snapshot(runtime.runtime_files.selected_invocation)
+        self.assertIsNotNone(selected_after_move)
+        self.assertEqual(selected_after_move.get("log_file"), str(second_log))  # type: ignore[union-attr]
+        pane_title_writes = pane_option_writes(runtime.calls, "@crewplane_title")
+        self.assertIn(
+            ("%20", "Node Log: node.a (raw)"),
+            {(args[3], args[5]) for args in pane_title_writes},
+        )
 
         runtime.stop(RunResult(status="succeeded"))
 
@@ -524,68 +528,64 @@ class CompactRuntimeSessionControlTests(unittest.TestCase):
         runtime.stop(RunResult(status="succeeded"))
 
     def test_compact_runtime_enter_binding_noops_without_selected_log(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = Path(tmp_dir)
-            fake_tmux_log = root / "fake-tmux.log"
-            fake_tmux = root / "fake-tmux.sh"
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        root = Path(tmp_dir)
+        fake_tmux_log = root / "fake-tmux.log"
+        fake_tmux = root / "fake-tmux.sh"
 
-            fake_tmux.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$@" >> "$FAKE_TMUX_LOG"\n',
-                encoding="utf-8",
+        fake_tmux.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$@" >> "$FAKE_TMUX_LOG"\n',
+            encoding="utf-8",
+        )
+        fake_tmux.chmod(0o755)
+
+        workflow = single_node_workflow()
+        runtime = SimulatedTmuxRuntime(
+            auto_close_session=True,
+            tmux_executable=str(fake_tmux),
+        )
+        runtime.start(
+            RunContext(
+                workflow_topology=topology_from_workflow(workflow),
+                run_id="compact-no-log-enter",
+                refresh_per_second=0,
             )
-            fake_tmux.chmod(0o755)
-
-            workflow = single_node_workflow()
-            runtime = SimulatedTmuxRuntime(
-                auto_close_session=True,
-                tmux_executable=str(fake_tmux),
+        )
+        try:
+            state = build_initial_state(
+                topology_from_workflow(workflow), run_id="compact-no-log-enter"
             )
-            runtime.start(
-                RunContext(
-                    workflow_topology=topology_from_workflow(workflow),
-                    run_id="compact-no-log-enter",
-                    refresh_per_second=0,
-                )
+            snapshot = DashboardSnapshot(
+                state=state,
+                layout=compute_topology_layout(topology_from_workflow(workflow)),
+                now=0.0,
             )
-            try:
-                state = build_initial_state(
-                    topology_from_workflow(workflow), run_id="compact-no-log-enter"
-                )
-                snapshot = DashboardSnapshot(
-                    state=state,
-                    layout=compute_topology_layout(topology_from_workflow(workflow)),
-                    now=0.0,
-                )
-                runtime.on_snapshot(None, snapshot)
-                runtime.refresh_once()
+            runtime.on_snapshot(None, snapshot)
+            runtime.refresh_once()
 
-                bindings = binding_map(runtime.calls)
-                enter_binding = bindings[("crewplane-dashboard", "Enter")]
-                binding_parts = shlex.split(enter_binding)
-                self.assertEqual(
-                    binding_parts[:4], ["if-shell", "-F", "1", "run-shell"]
-                )
-                command = binding_parts[4]
-                self.assertIn(
-                    "crewplane.observability.tmux.inspect_control",
-                    command,
-                )
-                self.assertIn("--view auto", command)
-                subprocess.run(
-                    shlex.split(command),
-                    check=True,
-                    env={**os.environ, "FAKE_TMUX_LOG": str(fake_tmux_log)},
-                    timeout=30,
-                )
+            bindings = binding_map(runtime.calls)
+            enter_binding = bindings[("crewplane-dashboard", "Enter")]
+            binding_parts = shlex.split(enter_binding)
+            self.assertEqual(binding_parts[:4], ["if-shell", "-F", "1", "run-shell"])
+            command = binding_parts[4]
+            self.assertIn(
+                "crewplane.observability.tmux.inspect_control",
+                command,
+            )
+            self.assertIn("--view auto", command)
+            subprocess.run(
+                shlex.split(command),
+                check=True,
+                env={**os.environ, "FAKE_TMUX_LOG": str(fake_tmux_log)},
+                timeout=30,
+            )
 
-                self.assertEqual(
-                    runtime.runtime_files.mode.read_text(encoding="utf-8"),  # type: ignore[union-attr]
-                    "dashboard",
-                )
-                inspect_snapshot = read_snapshot(
-                    runtime.runtime_files.inspect_invocation
-                )
-                self.assertIsNone(inspect_snapshot)
-                self.assertFalse(fake_tmux_log.exists())
-            finally:
-                runtime.stop(RunResult(status="succeeded"))
+            self.assertEqual(
+                runtime.runtime_files.mode.read_text(encoding="utf-8"),  # type: ignore[union-attr]
+                "dashboard",
+            )
+            inspect_snapshot = read_snapshot(runtime.runtime_files.inspect_invocation)
+            self.assertIsNone(inspect_snapshot)
+            self.assertFalse(fake_tmux_log.exists())
+        finally:
+            runtime.stop(RunResult(status="succeeded"))

@@ -1,7 +1,9 @@
 import json
-import tempfile
 import unittest
 from pathlib import Path
+from tempfile import mkdtemp
+
+import pytest
 
 from crewplane.architecture.contracts import (
     AgentInvoker,
@@ -37,130 +39,138 @@ from tests.integration.runtime.execution.workflow.workflow_execution_helpers imp
 
 
 class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_multi_executor_invalid_candidate_skips_partial_review_round(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec-1": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "exec-2": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m3"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.loop.multi.executor.invalid",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                audit_rounds=2,
-                providers=[
-                    ProviderSpec(provider="exec-1", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="exec-2", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor one round 1",
-                    "   ",
-                    "executor one round 1 audit 2",
-                    "executor two round 1 audit 2",
-                    review_output(verdict="NO_FINDINGS"),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec-1": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "exec-2": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m3"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.loop.multi.executor.invalid",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            audit_rounds=2,
+            providers=[
+                ProviderSpec(provider="exec-1", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="exec-2", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor one round 1",
+                "   ",
+                "executor one round 1 audit 2",
+                "executor two round 1 audit 2",
+                review_output(verdict="NO_FINDINGS"),
+            ]
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
 
-            await execute_sequential_stage(config, node, output, invoker=invoker)
+        await execute_sequential_stage(config, node, output, invoker=invoker)
 
-            self.assertEqual(len(invoker.calls), 5)
-            first_reviewer_index = next(
-                index
-                for index, call in enumerate(invoker.calls)
-                if call["role"] == ProviderRole.REVIEWER
-            )
-            self.assertEqual(first_reviewer_index, 4)
+        self.assertEqual(len(invoker.calls), 5)
+        first_reviewer_index = next(
+            index
+            for index, call in enumerate(invoker.calls)
+            if call["role"] == ProviderRole.REVIEWER
+        )
+        self.assertEqual(first_reviewer_index, 4)
 
     async def test_multi_provider_sequential_fatal_policy_raises_on_no_consensus(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                settings=Settings(sequential_consensus_on_exhaustion="fatal"),
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="no.consensus.fatal",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output",
-                    review_output(
-                        major="- Fix the failing edge case",
-                        verdict="CHANGES_REQUESTED",
-                    ),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            settings=Settings(sequential_consensus_on_exhaustion="fatal"),
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="no.consensus.fatal",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output",
+                review_output(
+                    major="- Fix the failing edge case",
+                    verdict="CHANGES_REQUESTED",
+                ),
+                "ok",
+                "ok",  # Remediation candidate and unstructured reviewer response.
+            ]
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
 
-            with self.assertRaisesRegex(RuntimeError, "failed to reach consensus"):
-                await execute_sequential_stage(config, node, output, invoker=invoker)
+        with self.assertRaisesRegex(RuntimeError, "failed to reach consensus"):
+            await execute_sequential_stage(config, node, output, invoker=invoker)
 
     async def test_node_continue_on_failure_overrides_global_fatal_policy(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                settings=Settings(sequential_consensus_on_exhaustion="fatal"),
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="no.consensus.override",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                continue_on_failure=True,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output",
-                    review_output(
-                        minor="- Add assertions for the new branch",
-                        verdict="CHANGES_REQUESTED",
-                    ),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            settings=Settings(sequential_consensus_on_exhaustion="fatal"),
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="no.consensus.override",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            continue_on_failure=True,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output",
+                review_output(
+                    minor="- Add assertions for the new branch",
+                    verdict="CHANGES_REQUESTED",
+                ),
+                "ok",
+                "ok",  # Remediation candidate and unstructured reviewer response.
+            ]
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
 
-            await execute_sequential_stage(config, node, output, invoker=invoker)
-            self.assertEqual(len(invoker.calls), 4)
+        await execute_sequential_stage(config, node, output, invoker=invoker)
+        self.assertEqual(len(invoker.calls), 4)
 
     async def test_reviewer_invocation_disables_findings_extraction(self) -> None:
         class CapturingInvoker(AgentInvoker):
@@ -204,191 +214,191 @@ class ExecutorReviewLoopFailurePolicyFindingsTests(unittest.IsolatedAsyncioTestC
                     encoding="utf-8",
                 )
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.node.findings",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                findings=True,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = CapturingInvoker()
-            output = OutputManager("workflow", base_dir=tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.node.findings",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            findings=True,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = CapturingInvoker()
+        output = OutputManager("workflow", base_dir=tmp_path)
 
-            await execute_sequential_stage(config, node, output, invoker=invoker)
+        await execute_sequential_stage(config, node, output, invoker=invoker)
 
-            self.assertEqual(len(invoker.contexts), 2)
-            assert invoker.contexts[0] is not None
-            assert invoker.contexts[1] is not None
-            self.assertTrue(invoker.contexts[0].findings_enabled)
-            self.assertFalse(invoker.contexts[1].findings_enabled)
+        self.assertEqual(len(invoker.contexts), 2)
+        assert invoker.contexts[0] is not None
+        assert invoker.contexts[1] is not None
+        self.assertTrue(invoker.contexts[0].findings_enabled)
+        self.assertFalse(invoker.contexts[1].findings_enabled)
 
     async def test_findings_enabled_multi_executor_sequential_collects_executor_findings(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "alpha": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "beta": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m3"),
-                },
-            )
-            workflow = WorkflowPlan(
-                name="multi.executor.findings",
-                nodes=[
-                    WorkflowNode(
-                        id="review.chain",
-                        mode="sequential",
-                        findings=True,
-                        prompt_segments=[
-                            PromptSegment(
-                                role=PromptSegmentRole.SHARED, content="Review this."
-                            )
-                        ],
-                        providers=[
-                            ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR),
-                            ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR),
-                            ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                        ],
-                    )
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "\n".join(
-                        [
-                            "alpha executor output",
-                            "",
-                            "<!-- findings -->",
-                            "- alpha finding",
-                            "<!-- /findings -->",
-                        ]
-                    ),
-                    "\n".join(
-                        [
-                            "beta executor output",
-                            "",
-                            "<!-- findings -->",
-                            "- beta finding",
-                            "<!-- /findings -->",
-                        ]
-                    ),
-                    review_output(verdict="NO_FINDINGS"),
-                ]
-            )
-            output = OutputManager(workflow.name, base_dir=tmp_path)
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "alpha": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "beta": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m3"),
+            },
+        )
+        workflow = WorkflowPlan(
+            name="multi.executor.findings",
+            nodes=[
+                WorkflowNode(
+                    id="review.chain",
+                    mode="sequential",
+                    findings=True,
+                    prompt_segments=[
+                        PromptSegment(
+                            role=PromptSegmentRole.SHARED, content="Review this."
+                        )
+                    ],
+                    providers=[
+                        ProviderSpec(provider="alpha", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="beta", role=ProviderRole.EXECUTOR),
+                        ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+                    ],
+                )
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "\n".join(
+                    [
+                        "alpha executor output",
+                        "",
+                        "<!-- findings -->",
+                        "- alpha finding",
+                        "<!-- /findings -->",
+                    ]
+                ),
+                "\n".join(
+                    [
+                        "beta executor output",
+                        "",
+                        "<!-- findings -->",
+                        "- beta finding",
+                        "<!-- /findings -->",
+                    ]
+                ),
+                review_output(verdict="NO_FINDINGS"),
+            ]
+        )
+        output = OutputManager(workflow.name, base_dir=tmp_path)
 
-            await execute_workflow(config, workflow, output, invoker=invoker)
+        await execute_workflow(config, workflow, output, invoker=invoker)
 
-            findings_text = (
-                output.results_dir / build_findings_filename("review.chain")
-            ).read_text(encoding="utf-8")
-            result_text = (
-                output.results_dir / build_result_filename("review.chain")
-            ).read_text(encoding="utf-8")
+        findings_text = (
+            output.results_dir / build_findings_filename("review.chain")
+        ).read_text(encoding="utf-8")
+        result_text = (
+            output.results_dir / build_result_filename("review.chain")
+        ).read_text(encoding="utf-8")
 
-            self.assertIn("## alpha (executor)", findings_text)
-            self.assertIn("## beta (executor)", findings_text)
-            self.assertNotIn("## alpha_executor_0", findings_text)
-            self.assertNotIn("## beta_executor_1", findings_text)
-            self.assertIn("- alpha finding", findings_text)
-            self.assertIn("- beta finding", findings_text)
-            self.assertNotIn("## Major Issues", findings_text)
-            self.assertNotIn("VERDICT:", findings_text)
+        self.assertIn("## alpha (executor)", findings_text)
+        self.assertIn("## beta (executor)", findings_text)
+        self.assertNotIn("## alpha_executor_0", findings_text)
+        self.assertNotIn("## beta_executor_1", findings_text)
+        self.assertIn("- alpha finding", findings_text)
+        self.assertIn("- beta finding", findings_text)
+        self.assertNotIn("## Major Issues", findings_text)
+        self.assertNotIn("VERDICT:", findings_text)
 
-            self.assertIn("## alpha (executor)", result_text)
-            self.assertIn("## beta (executor)", result_text)
-            self.assertIn("## review (reviewer)", result_text)
-            self.assertNotIn("## alpha_executor_0", result_text)
-            self.assertNotIn("## beta_executor_1", result_text)
-            self.assertNotIn("## review_reviewer_0", result_text)
+        self.assertIn("## alpha (executor)", result_text)
+        self.assertIn("## beta (executor)", result_text)
+        self.assertIn("## review (reviewer)", result_text)
+        self.assertNotIn("## alpha_executor_0", result_text)
+        self.assertNotIn("## beta_executor_1", result_text)
+        self.assertNotIn("## review_reviewer_0", result_text)
 
     async def test_contradictory_reviewer_contract_is_normalized(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            config = Config(
-                version=SCHEMA_VERSION,
-                agents={
-                    "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
-                    "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
-                },
-            )
-            node = WorkflowNode(
-                id="review.node.invalid",
-                mode="sequential",
-                prompt_segments=[
-                    PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
-                ],
-                depth=1,
-                providers=[
-                    ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
-                    ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
-                ],
-            )
-            invoker = MockAgentInvoker(
-                outputs=[
-                    "executor output",
-                    review_output(
-                        nitpicks="- Rename the summary subsection",
-                        verdict="NO_FINDINGS",
-                    ),
-                ]
-            )
-            output = OutputManager("workflow", base_dir=tmp_path)
-            events: list[ExecutionEvent] = []
-
-            await execute_sequential_stage(
-                config,
-                node,
-                output,
-                invoker=invoker,
-                telemetry=ExecutionTelemetry(
-                    workflow_name="workflow",
-                    run_id="run-1",
-                    event_sink=events.append,
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        config = Config(
+            version=SCHEMA_VERSION,
+            agents={
+                "exec": AgentConfig(cli_cmd=["mock"], default_model="m1"),
+                "review": AgentConfig(cli_cmd=["mock"], default_model="m2"),
+            },
+        )
+        node = WorkflowNode(
+            id="review.node.invalid",
+            mode="sequential",
+            prompt_segments=[
+                PromptSegment(role=PromptSegmentRole.SHARED, content="Review this.")
+            ],
+            depth=1,
+            providers=[
+                ProviderSpec(provider="exec", role=ProviderRole.EXECUTOR),
+                ProviderSpec(provider="review", role=ProviderRole.REVIEWER),
+            ],
+        )
+        invoker = MockAgentInvoker(
+            outputs=[
+                "executor output",
+                review_output(
+                    nitpicks="- Rename the summary subsection",
+                    verdict="NO_FINDINGS",
                 ),
-            )
-
-            node_dir = output.get_node_dir(node_artifact_request(node.id))
-            if node_dir is None:
-                self.fail("Expected node directory to be created")
-            reviewer_output = (node_dir / "review_reviewer_0_round1.md").read_text(
-                encoding="utf-8"
-            )
-            raw_output = (node_dir / "review_reviewer_0_round1.raw.txt").read_text(
-                encoding="utf-8"
-            )
-            metadata = json.loads(
-                (node_dir / "review_reviewer_0_round1.review.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-
-            self.assertEqual(extract_verdict(reviewer_output), "NITS_ONLY")
-            self.assertIn("VERDICT: NO_FINDINGS", raw_output)
-            self.assertEqual(metadata["normalized_verdict"], "NITS_ONLY")
-            self.assertEqual(metadata["original_verdict"], "NO_FINDINGS")
-            warning_events = [
-                event
-                for event in events
-                if event.event_type == EventType.RUNTIME_LOG
-                and event.payload.operation == "review_output_normalization"
             ]
-            self.assertEqual(len(warning_events), 1)
+        )
+        output = OutputManager("workflow", base_dir=tmp_path)
+        events: list[ExecutionEvent] = []
+
+        await execute_sequential_stage(
+            config,
+            node,
+            output,
+            invoker=invoker,
+            telemetry=ExecutionTelemetry(
+                workflow_name="workflow",
+                run_id="run-1",
+                event_sink=events.append,
+            ),
+        )
+
+        node_dir = output.get_node_dir(node_artifact_request(node.id))
+        if node_dir is None:
+            self.fail("Expected node directory to be created")
+        reviewer_output = (node_dir / "review_reviewer_0_round1.md").read_text(
+            encoding="utf-8"
+        )
+        raw_output = (node_dir / "review_reviewer_0_round1.raw.txt").read_text(
+            encoding="utf-8"
+        )
+        metadata = json.loads(
+            (node_dir / "review_reviewer_0_round1.review.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertEqual(extract_verdict(reviewer_output), "NITS_ONLY")
+        self.assertIn("VERDICT: NO_FINDINGS", raw_output)
+        self.assertEqual(metadata["normalized_verdict"], "NITS_ONLY")
+        self.assertEqual(metadata["original_verdict"], "NO_FINDINGS")
+        warning_events = [
+            event
+            for event in events
+            if event.event_type == EventType.RUNTIME_LOG
+            and event.payload.operation == "review_output_normalization"
+        ]
+        self.assertEqual(len(warning_events), 1)

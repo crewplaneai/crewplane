@@ -1,10 +1,12 @@
 import asyncio
 import os
-import tempfile
 import unittest
 from contextlib import suppress
 from pathlib import Path
+from tempfile import mkdtemp
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from crewplane.adapters.invokers.cli_invoker import build_cli_invocation_plan
 from crewplane.adapters.invokers.cli_invoker.providers.codex import decode_codex_usage
@@ -19,38 +21,112 @@ from crewplane.runtime.agent.invoker import invoke_agent, invoke_agent_with_runn
 
 
 class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
+    @pytest.fixture(autouse=True)
+    def temporary_directory_root(self, tmp_path: Path) -> None:
+        self.tmp_path = tmp_path
+
     async def test_invoke_agent_with_runner_records_estimated_usage(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            usages = []
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        usages = []
 
-            async def runner(
-                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                return CommandResult(returncode=0, stdout_text="done", stderr_text="")
+        async def runner(
+            cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            return CommandResult(returncode=0, stdout_text="done", stderr_text="")
 
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="alpha_executor_0",
-                provider="alpha",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-                usage_recorder=usages.append,
-            )
-            config = AgentConfig(
-                cli_cmd=["echo"],
-                default_model="test",
-                pricing={"input": 1.0, "output": 2.0},
-            )
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="alpha_executor_0",
+            provider="alpha",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+            usage_recorder=usages.append,
+        )
+        config = AgentConfig(
+            cli_cmd=["echo"],
+            default_model="test",
+            pricing={"input": 1.0, "output": 2.0},
+        )
+        await invoke_agent_with_runner(
+            config=config,
+            model="test-model",
+            prompt="prompt",
+            output_file=output_file,
+            cwd=output_file.parent,
+            log_file=None,
+            invocation_context=context,
+            command_runner=runner,
+            plan_builder=build_cli_invocation_plan,
+        )
+
+        self.assertEqual(len(usages), 1)
+        usage = usages[0]
+        self.assertEqual(usage.attempt_count, 1)
+        self.assertTrue(usage.cli_captured)
+        self.assertEqual(usage.output_extraction_status, "success")
+        self.assertEqual(usage.provider_usage_status, "none")
+        self.assertEqual(usage.provider_tokens["input"], None)
+        self.assertEqual(usage.visible_estimate_tokens, 3)
+        self.assertEqual(usage.invocation_cost_confidence, "partial")
+        self.assertAlmostEqual(usage.configured_cost_usd or 0.0, 0.000004)
+
+    async def test_invoke_agent_with_runner_records_retry_aware_usage(self) -> None:
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        usages = []
+        attempts = {"count": 0}
+
+        async def runner(
+            cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                return CommandResult(
+                    returncode=1,
+                    stdout_text="",
+                    stderr_text="retry me",
+                )
+            return CommandResult(returncode=0, stdout_text="done", stderr_text="")
+
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="alpha_executor_0",
+            provider="alpha",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+            usage_recorder=usages.append,
+        )
+        config = AgentConfig(
+            cli_cmd=["echo"],
+            default_model="test",
+            max_retries=1,
+            retry_delay_seconds=0,
+            retry_on_exit_codes=[1],
+        )
+        sleep_mock = AsyncMock()
+        with patch(
+            "crewplane.runtime.agent.invocation.loop.sleep",
+            sleep_mock,
+        ):
             await invoke_agent_with_runner(
                 config=config,
                 model="test-model",
@@ -63,128 +139,220 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 plan_builder=build_cli_invocation_plan,
             )
 
-            self.assertEqual(len(usages), 1)
-            usage = usages[0]
-            self.assertEqual(usage.attempt_count, 1)
-            self.assertTrue(usage.cli_captured)
-            self.assertEqual(usage.output_extraction_status, "success")
-            self.assertEqual(usage.provider_usage_status, "none")
-            self.assertEqual(usage.provider_tokens["input"], None)
-            self.assertEqual(usage.visible_estimate_tokens, 3)
-            self.assertEqual(usage.invocation_cost_confidence, "partial")
-            self.assertAlmostEqual(usage.configured_cost_usd or 0.0, 0.000004)
-
-    async def test_invoke_agent_with_runner_records_retry_aware_usage(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            usages = []
-            attempts = {"count": 0}
-
-            async def runner(
-                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                attempts["count"] += 1
-                if attempts["count"] == 1:
-                    return CommandResult(
-                        returncode=1,
-                        stdout_text="",
-                        stderr_text="retry me",
-                    )
-                return CommandResult(returncode=0, stdout_text="done", stderr_text="")
-
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="alpha_executor_0",
-                provider="alpha",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-                usage_recorder=usages.append,
-            )
-            config = AgentConfig(
-                cli_cmd=["echo"],
-                default_model="test",
-                max_retries=1,
-                retry_delay_seconds=0,
-                retry_on_exit_codes=[1],
-            )
-            sleep_mock = AsyncMock()
-            with patch(
-                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
-                sleep_mock,
-            ):
-                await invoke_agent_with_runner(
-                    config=config,
-                    model="test-model",
-                    prompt="prompt",
-                    output_file=output_file,
-                    cwd=output_file.parent,
-                    log_file=None,
-                    invocation_context=context,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
-
-            self.assertEqual(len(usages), 1)
-            usage = usages[0]
-            self.assertEqual(usage.attempt_count, 2)
-            self.assertEqual(usage.visible_estimate_tokens, 6)
-            self.assertEqual(usage.provider_usage_status, "none")
+        self.assertEqual(len(usages), 1)
+        usage = usages[0]
+        self.assertEqual(usage.attempt_count, 2)
+        self.assertEqual(usage.visible_estimate_tokens, 6)
+        self.assertEqual(usage.provider_usage_status, "none")
 
     async def test_invoke_agent_with_runner_parses_codex_jsonl_usage(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            usages = []
-            payload = "\n".join(
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        usages = []
+        payload = "\n".join(
+            [
+                '{"type":"response.output_text.delta","delta":"done"}',
+                (
+                    '{"type":"turn.completed",'
+                    '"usage":{"input_tokens":120,"output_tokens":30}}'
+                ),
+            ]
+        )
+
+        async def runner(
+            cmd: list[str],
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+            output_path.write_text("done", encoding="utf-8")
+            return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
+
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="codex_executor_0",
+            provider="codex",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+            usage_recorder=usages.append,
+        )
+        config = AgentConfig(
+            cli_cmd=["./codex", "exec"],
+            provider_kind="codex",
+            default_model="gpt-5.5",
+            prompt_transport="stdin",
+            prompt_transport_arg="-",
+            pricing={"input": 1.5, "output": 6.0},
+        )
+        await invoke_agent_with_runner(
+            config=config,
+            model="gpt-5.5",
+            prompt="review the repository",
+            output_file=output_file,
+            cwd=output_file.parent,
+            log_file=None,
+            invocation_context=context,
+            command_runner=runner,
+            plan_builder=build_cli_invocation_plan,
+        )
+
+        self.assertEqual(len(usages), 1)
+        usage = usages[0]
+        self.assertEqual(usage.provider_tokens["input"], 120)
+        self.assertEqual(usage.provider_tokens["output"], 30)
+        self.assertEqual(usage.provider_usage_status, "full")
+        self.assertEqual(usage.output_extraction_status, "success")
+        self.assertAlmostEqual(usage.configured_cost_usd or 0.0, 0.00036)
+
+    async def test_invoke_agent_finalizes_codex_output_when_child_keeps_stdio_open(
+        self,
+    ) -> None:
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        log_file = tmp_path / "provider.log"
+        child_pid_file = tmp_path / "child.pid"
+        fake_codex = tmp_path / "codex"
+        fake_codex.write_text(
+            "\n".join(
                 [
-                    '{"type":"response.output_text.delta","delta":"done"}',
+                    "#!/usr/bin/env python3",
+                    "import os",
+                    "import subprocess",
+                    "import sys",
+                    "from pathlib import Path",
+                    "",
+                    "output_path = Path(sys.argv[sys.argv.index('--output-last-message') + 1])",
+                    "output_path.write_text('final answer', encoding='utf-8')",
+                    'print(\'{"type":"response.completed","response":{}}\', flush=True)',
+                    "stdout_fd = os.dup(1)",
+                    "stderr_fd = os.dup(2)",
+                    "os.set_inheritable(stdout_fd, True)",
+                    "os.set_inheritable(stderr_fd, True)",
                     (
-                        '{"type":"turn.completed",'
-                        '"usage":{"input_tokens":120,"output_tokens":30}}'
+                        "child = subprocess.Popen("
+                        "[sys.executable, '-c', 'import time; time.sleep(30)'], "
+                        "stdout=stdout_fd, stderr=stderr_fd"
+                        ")"
+                    ),
+                    (
+                        f"Path({str(child_pid_file)!r}).write_text("
+                        "str(child.pid), encoding='utf-8')"
                     ),
                 ]
-            )
+            ),
+            encoding="utf-8",
+        )
+        fake_codex.chmod(0o755)
+        diagnostics = []
+        config = AgentConfig(
+            cli_cmd=[str(fake_codex), "exec"],
+            provider_kind="codex",
+            default_model="gpt-5.5",
+            prompt_transport="stdin",
+            prompt_transport_arg="-",
+        )
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="codex_executor_0",
+            provider="codex",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+            diagnostics=diagnostics.append,
+        )
 
-            async def runner(
-                cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                output_path = Path(cmd[cmd.index("--output-last-message") + 1])
-                output_path.write_text("done", encoding="utf-8")
-                return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
+        try:
+            await asyncio.wait_for(
+                invoke_agent(
+                    config=config,
+                    model="gpt-5.5",
+                    prompt="review the repository",
+                    output_file=output_file,
+                    cwd=output_file.parent,
+                    log_file=log_file,
+                    invocation_context=context,
+                    plan_builder=build_cli_invocation_plan,
+                ),
+                timeout=3.0,
+            )
+        finally:
+            if child_pid_file.exists():
+                child_pid = int(child_pid_file.read_text(encoding="utf-8"))
+                with suppress(ProcessLookupError):
+                    os.kill(child_pid, 9)
 
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="codex_executor_0",
-                provider="codex",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-                usage_recorder=usages.append,
-            )
-            config = AgentConfig(
-                cli_cmd=["./codex", "exec"],
-                provider_kind="codex",
-                default_model="gpt-5.5",
-                prompt_transport="stdin",
-                prompt_transport_arg="-",
-                pricing={"input": 1.5, "output": 6.0},
-            )
+        self.assertEqual(output_file.read_text(encoding="utf-8"), "final answer")
+        self.assertEqual(
+            [diagnostic.operation for diagnostic in diagnostics],
+            ["process_pipe_drain_timeout"],
+        )
+        self.assertIn("response.completed", log_file.read_text(encoding="utf-8"))
+
+    async def test_invoke_agent_with_runner_ignores_codex_transcript_quota_text_when_output_extracted(
+        self,
+    ) -> None:
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        diagnostics = []
+        usages = []
+        payload = "\n".join(
+            [
+                (
+                    '{"type":"item.completed","item":{"aggregated_output":'
+                    '"README says usage limit reset after 5h."}}'
+                ),
+                (
+                    '{"type":"turn.completed",'
+                    '"usage":{"input_tokens":12,"output_tokens":3}}'
+                ),
+            ]
+        )
+
+        async def runner(
+            cmd: list[str],
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+            output_path.write_text("final answer", encoding="utf-8")
+            return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
+
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="codex_executor_0",
+            provider="codex",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+            diagnostics=diagnostics.append,
+            usage_recorder=usages.append,
+        )
+        config = AgentConfig(
+            cli_cmd=["./codex", "exec"],
+            provider_kind="codex",
+            default_model="gpt-5.5",
+            prompt_transport="stdin",
+            prompt_transport_arg="-",
+            quota_reached_retry_delay_seconds=0,
+        )
+        sleep_mock = AsyncMock()
+        with patch(
+            "crewplane.runtime.agent.invocation.loop.sleep",
+            sleep_mock,
+        ):
             await invoke_agent_with_runner(
                 config=config,
                 model="gpt-5.5",
@@ -197,232 +365,70 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 plan_builder=build_cli_invocation_plan,
             )
 
-            self.assertEqual(len(usages), 1)
-            usage = usages[0]
-            self.assertEqual(usage.provider_tokens["input"], 120)
-            self.assertEqual(usage.provider_tokens["output"], 30)
-            self.assertEqual(usage.provider_usage_status, "full")
-            self.assertEqual(usage.output_extraction_status, "success")
-            self.assertAlmostEqual(usage.configured_cost_usd or 0.0, 0.00036)
-
-    async def test_invoke_agent_finalizes_codex_output_when_child_keeps_stdio_open(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            log_file = tmp_path / "provider.log"
-            child_pid_file = tmp_path / "child.pid"
-            fake_codex = tmp_path / "codex"
-            fake_codex.write_text(
-                "\n".join(
-                    [
-                        "#!/usr/bin/env python3",
-                        "import os",
-                        "import subprocess",
-                        "import sys",
-                        "from pathlib import Path",
-                        "",
-                        "output_path = Path(sys.argv[sys.argv.index('--output-last-message') + 1])",
-                        "output_path.write_text('final answer', encoding='utf-8')",
-                        'print(\'{"type":"response.completed","response":{}}\', flush=True)',
-                        "stdout_fd = os.dup(1)",
-                        "stderr_fd = os.dup(2)",
-                        "os.set_inheritable(stdout_fd, True)",
-                        "os.set_inheritable(stderr_fd, True)",
-                        (
-                            "child = subprocess.Popen("
-                            "[sys.executable, '-c', 'import time; time.sleep(30)'], "
-                            "stdout=stdout_fd, stderr=stderr_fd"
-                            ")"
-                        ),
-                        (
-                            f"Path({str(child_pid_file)!r}).write_text("
-                            "str(child.pid), encoding='utf-8')"
-                        ),
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            fake_codex.chmod(0o755)
-            diagnostics = []
-            config = AgentConfig(
-                cli_cmd=[str(fake_codex), "exec"],
-                provider_kind="codex",
-                default_model="gpt-5.5",
-                prompt_transport="stdin",
-                prompt_transport_arg="-",
-            )
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="codex_executor_0",
-                provider="codex",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-                diagnostics=diagnostics.append,
-            )
-
-            try:
-                await asyncio.wait_for(
-                    invoke_agent(
-                        config=config,
-                        model="gpt-5.5",
-                        prompt="review the repository",
-                        output_file=output_file,
-                        cwd=output_file.parent,
-                        log_file=log_file,
-                        invocation_context=context,
-                        plan_builder=build_cli_invocation_plan,
-                    ),
-                    timeout=3.0,
-                )
-            finally:
-                if child_pid_file.exists():
-                    child_pid = int(child_pid_file.read_text(encoding="utf-8"))
-                    with suppress(ProcessLookupError):
-                        os.kill(child_pid, 9)
-
-            self.assertEqual(output_file.read_text(encoding="utf-8"), "final answer")
-            self.assertEqual(
-                [diagnostic.operation for diagnostic in diagnostics],
-                ["process_pipe_drain_timeout"],
-            )
-            self.assertIn("response.completed", log_file.read_text(encoding="utf-8"))
-
-    async def test_invoke_agent_with_runner_ignores_codex_transcript_quota_text_when_output_extracted(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            diagnostics = []
-            usages = []
-            payload = "\n".join(
-                [
-                    (
-                        '{"type":"item.completed","item":{"aggregated_output":'
-                        '"README says usage limit reset after 5h."}}'
-                    ),
-                    (
-                        '{"type":"turn.completed",'
-                        '"usage":{"input_tokens":12,"output_tokens":3}}'
-                    ),
-                ]
-            )
-
-            async def runner(
-                cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                output_path = Path(cmd[cmd.index("--output-last-message") + 1])
-                output_path.write_text("final answer", encoding="utf-8")
-                return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
-
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="codex_executor_0",
-                provider="codex",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-                diagnostics=diagnostics.append,
-                usage_recorder=usages.append,
-            )
-            config = AgentConfig(
-                cli_cmd=["./codex", "exec"],
-                provider_kind="codex",
-                default_model="gpt-5.5",
-                prompt_transport="stdin",
-                prompt_transport_arg="-",
-                quota_reached_retry_delay_seconds=0,
-            )
-            sleep_mock = AsyncMock()
-            with patch(
-                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
-                sleep_mock,
-            ):
-                await invoke_agent_with_runner(
-                    config=config,
-                    model="gpt-5.5",
-                    prompt="review the repository",
-                    output_file=output_file,
-                    cwd=output_file.parent,
-                    log_file=None,
-                    invocation_context=context,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
-
-            self.assertEqual(output_file.read_text(encoding="utf-8"), "final answer")
-            self.assertEqual(sleep_mock.await_count, 0)
-            self.assertEqual(diagnostics, [])
-            self.assertEqual(usages[0].output_extraction_status, "success")
+        self.assertEqual(output_file.read_text(encoding="utf-8"), "final answer")
+        self.assertEqual(sleep_mock.await_count, 0)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(usages[0].output_extraction_status, "success")
 
     async def test_invoke_agent_with_runner_retries_structured_provider_extracted_output(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            attempts = {"count": 0}
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        attempts = {"count": 0}
 
-            async def runner(
-                cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                attempts["count"] += 1
-                output_path = Path(cmd[cmd.index("--output-last-message") + 1])
-                output_text = "retry marker" if attempts["count"] == 1 else "final"
-                output_path.write_text(output_text, encoding="utf-8")
-                return CommandResult(
-                    returncode=0,
-                    stdout_text='{"type":"response.completed","response":{}}',
-                    stderr_text="",
-                )
-
-            config = AgentConfig(
-                cli_cmd=["./codex", "exec"],
-                provider_kind="codex",
-                default_model="gpt-5.5",
-                prompt_transport="stdin",
-                prompt_transport_arg="-",
-                max_retries=1,
-                retry_delay_seconds=0,
-                retry_on_output_contains=["retry marker"],
+        async def runner(
+            cmd: list[str],
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            attempts["count"] += 1
+            output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+            output_text = "retry marker" if attempts["count"] == 1 else "final"
+            output_path.write_text(output_text, encoding="utf-8")
+            return CommandResult(
+                returncode=0,
+                stdout_text='{"type":"response.completed","response":{}}',
+                stderr_text="",
             )
-            sleep_mock = AsyncMock()
-            with patch(
-                "crewplane.runtime.agent.invocation.loop.asyncio.sleep",
-                sleep_mock,
-            ):
-                await invoke_agent_with_runner(
-                    config=config,
-                    model="gpt-5.5",
-                    prompt="review the repository",
-                    output_file=output_file,
-                    cwd=output_file.parent,
-                    log_file=None,
-                    invocation_context=None,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
 
-            self.assertEqual(attempts["count"], 2)
-            self.assertEqual(sleep_mock.await_count, 1)
-            self.assertEqual(output_file.read_text(encoding="utf-8"), "final")
+        config = AgentConfig(
+            cli_cmd=["./codex", "exec"],
+            provider_kind="codex",
+            default_model="gpt-5.5",
+            prompt_transport="stdin",
+            prompt_transport_arg="-",
+            max_retries=1,
+            retry_delay_seconds=0,
+            retry_on_output_contains=["retry marker"],
+        )
+        sleep_mock = AsyncMock()
+        with patch(
+            "crewplane.runtime.agent.invocation.loop.sleep",
+            sleep_mock,
+        ):
+            await invoke_agent_with_runner(
+                config=config,
+                model="gpt-5.5",
+                prompt="review the repository",
+                output_file=output_file,
+                cwd=output_file.parent,
+                log_file=None,
+                invocation_context=None,
+                command_runner=runner,
+                plan_builder=build_cli_invocation_plan,
+            )
+
+        self.assertEqual(attempts["count"], 2)
+        self.assertEqual(sleep_mock.await_count, 1)
+        self.assertEqual(output_file.read_text(encoding="utf-8"), "final")
 
     def test_decode_codex_usage_prefers_valid_terminal_usage_over_malformed_candidate(
         self,
@@ -451,43 +457,108 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
     async def test_invoke_agent_with_runner_uses_reported_tokens_for_mixed_costs(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            usages = []
-            payload = '{"type":"turn.completed","usage":{"input_tokens":120}}'
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        usages = []
+        payload = '{"type":"turn.completed","usage":{"input_tokens":120}}'
 
-            async def runner(
-                cmd: list[str],
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                output_path = Path(cmd[cmd.index("--output-last-message") + 1])
-                output_path.write_text("done", encoding="utf-8")
-                return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
+        async def runner(
+            cmd: list[str],
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+            output_path.write_text("done", encoding="utf-8")
+            return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
 
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="codex_executor_0",
-                provider="codex",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-                usage_recorder=usages.append,
-            )
-            config = AgentConfig(
-                cli_cmd=["./codex", "exec"],
-                provider_kind="codex",
-                default_model="gpt-5.5",
-                prompt_transport="stdin",
-                prompt_transport_arg="-",
-                pricing={"input": 1.5, "output": 6.0},
-            )
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="codex_executor_0",
+            provider="codex",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+            usage_recorder=usages.append,
+        )
+        config = AgentConfig(
+            cli_cmd=["./codex", "exec"],
+            provider_kind="codex",
+            default_model="gpt-5.5",
+            prompt_transport="stdin",
+            prompt_transport_arg="-",
+            pricing={"input": 1.5, "output": 6.0},
+        )
+        await invoke_agent_with_runner(
+            config=config,
+            model="gpt-5.5",
+            prompt="review the repository",
+            output_file=output_file,
+            cwd=output_file.parent,
+            log_file=None,
+            invocation_context=context,
+            command_runner=runner,
+            plan_builder=build_cli_invocation_plan,
+        )
+
+        self.assertEqual(len(usages), 1)
+        usage = usages[0]
+        expected_cost = ((120 * 1.5) + (1 * 6.0)) / 1_000_000
+        self.assertEqual(usage.provider_tokens["input"], 120)
+        self.assertIsNone(usage.provider_tokens["output"])
+        self.assertEqual(usage.provider_usage_status, "partial")
+        self.assertEqual(usage.visible_estimate_tokens, 7)
+        self.assertEqual(usage.invocation_cost_confidence, "partial")
+        self.assertAlmostEqual(usage.configured_cost_usd or 0.0, expected_cost)
+
+    async def test_invoke_agent_with_runner_fails_when_codex_last_message_is_missing(
+        self,
+    ) -> None:
+        tmp_dir = mkdtemp(dir=self.tmp_path)
+        tmp_path = Path(tmp_dir)
+        output_file = tmp_path / "output.txt"
+        usages = []
+        payload = (
+            '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":30}}'
+        )
+
+        async def runner(
+            cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
+            stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
+            log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
+            invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
+            child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
+        ) -> CommandResult:
+            return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
+
+        context = InvocationContext(
+            node_id="node.a",
+            task_id="codex_executor_0",
+            provider="codex",
+            role=ProviderRole.EXECUTOR,
+            round_num=1,
+            usage_recorder=usages.append,
+        )
+        config = AgentConfig(
+            cli_cmd=["./codex", "exec"],
+            provider_kind="codex",
+            default_model="gpt-5.5",
+            prompt_transport="stdin",
+            prompt_transport_arg="-",
+            pricing={"input": 1.5, "output": 6.0},
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, "codex output extraction failed: missing"
+        ):
             await invoke_agent_with_runner(
                 config=config,
                 model="gpt-5.5",
@@ -500,67 +571,4 @@ class InvocationUsageTelemetryCodexTests(unittest.IsolatedAsyncioTestCase):
                 plan_builder=build_cli_invocation_plan,
             )
 
-            self.assertEqual(len(usages), 1)
-            usage = usages[0]
-            expected_cost = ((120 * 1.5) + (1 * 6.0)) / 1_000_000
-            self.assertEqual(usage.provider_tokens["input"], 120)
-            self.assertIsNone(usage.provider_tokens["output"])
-            self.assertEqual(usage.provider_usage_status, "partial")
-            self.assertEqual(usage.visible_estimate_tokens, 7)
-            self.assertEqual(usage.invocation_cost_confidence, "partial")
-            self.assertAlmostEqual(usage.configured_cost_usd or 0.0, expected_cost)
-
-    async def test_invoke_agent_with_runner_fails_when_codex_last_message_is_missing(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            output_file = tmp_path / "output.txt"
-            usages = []
-            payload = '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":30}}'
-
-            async def runner(
-                cmd: list[str],  # noqa: ARG001 - Required by callback or protocol signature.
-                stdin_data: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_file: Path | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                append_log: bool,  # noqa: ARG001 - Required by callback or protocol signature.
-                log_header: bytes | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                cwd: Path,  # noqa: ARG001 - Required by callback or protocol signature.
-                invocation_context: InvocationContext | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                idle_timeout_seconds: float | None,  # noqa: ARG001 - Required by callback or protocol signature.
-                child_environment: ChildProcessEnvironment | None = None,  # noqa: ARG001 - Required by callback or protocol signature.
-            ) -> CommandResult:
-                return CommandResult(returncode=0, stdout_text=payload, stderr_text="")
-
-            context = InvocationContext(
-                node_id="node.a",
-                task_id="codex_executor_0",
-                provider="codex",
-                role=ProviderRole.EXECUTOR,
-                round_num=1,
-                usage_recorder=usages.append,
-            )
-            config = AgentConfig(
-                cli_cmd=["./codex", "exec"],
-                provider_kind="codex",
-                default_model="gpt-5.5",
-                prompt_transport="stdin",
-                prompt_transport_arg="-",
-                pricing={"input": 1.5, "output": 6.0},
-            )
-            with self.assertRaisesRegex(
-                RuntimeError, "codex output extraction failed: missing"
-            ):
-                await invoke_agent_with_runner(
-                    config=config,
-                    model="gpt-5.5",
-                    prompt="review the repository",
-                    output_file=output_file,
-                    cwd=output_file.parent,
-                    log_file=None,
-                    invocation_context=context,
-                    command_runner=runner,
-                    plan_builder=build_cli_invocation_plan,
-                )
-
-            self.assertEqual(usages[0].output_extraction_status, "missing")
+        self.assertEqual(usages[0].output_extraction_status, "missing")
