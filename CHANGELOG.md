@@ -6,6 +6,7 @@ All notable user-facing changes are recorded here.
 
 ### Added
 
+- Resume interrupted review loops from completed phases, including finalization retries without provider calls.
 - Added workflows to investigate and fix reported bugs and to review existing local changes.
 
 ### Changed

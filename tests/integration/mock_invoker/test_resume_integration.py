@@ -14,7 +14,7 @@ from crewplane.version import SCHEMA_VERSION
 from tests.integration.cli.cli_workflow_helpers import ConsoleFactory
 
 
-def _write_config(path: Path, fixture_dir: Path) -> None:
+def write_mock_config(path: Path, fixture_dir: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         yaml.safe_dump(
@@ -121,13 +121,13 @@ def _write_review_loop_workflow(path: Path) -> None:
     )
 
 
-def _write_fixture(fixture_dir: Path, node_id: str, content: str) -> None:
+def write_executor_fixture(fixture_dir: Path, node_id: str, content: str) -> None:
     fixture_path = fixture_dir / node_id / "alpha_executor_0_round1.md"
     fixture_path.parent.mkdir(parents=True, exist_ok=True)
     fixture_path.write_text(content, encoding="utf-8")
 
 
-def _write_review_loop_fixtures(fixture_dir: Path) -> None:
+def write_review_loop_fixtures(fixture_dir: Path) -> None:
     review_dir = fixture_dir / "review.iterate" / "review-audit-round-1"
     review_dir.mkdir(parents=True, exist_ok=True)
     (review_dir / "alpha_executor_0_round1.md").write_text(
@@ -194,9 +194,9 @@ def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
             width=120,
         ),
     )
-    _write_config(config_path, fixture_dir)
+    write_mock_config(config_path, fixture_dir)
     _write_workflow(workflow_path)
-    _write_fixture(fixture_dir, "a", "A result\n")
+    write_executor_fixture(fixture_dir, "a", "A result\n")
 
     with pytest.raises(typer.Exit) as raised:
         cli.run(
@@ -211,7 +211,7 @@ def test_cli_rerun_resumes_node_boundary_with_builtin_mock_invoker(
     first_run = _run_dirs(tmp_path)[0]
     assert _manifest(first_run)["status"] == "failed"
 
-    _write_fixture(fixture_dir, "b", "B result\n")
+    write_executor_fixture(fixture_dir, "b", "B result\n")
     cli.run(
         tasks_file=workflow_path,
         config_file=config_path,
@@ -273,9 +273,9 @@ def test_cli_force_rerun_bypasses_failed_run_resume_frontier(
             width=120,
         ),
     )
-    _write_config(config_path, fixture_dir)
+    write_mock_config(config_path, fixture_dir)
     _write_workflow(workflow_path)
-    _write_fixture(fixture_dir, "a", "A original result\n")
+    write_executor_fixture(fixture_dir, "a", "A original result\n")
 
     with pytest.raises(typer.Exit) as raised:
         cli.run(
@@ -291,8 +291,8 @@ def test_cli_force_rerun_bypasses_failed_run_resume_frontier(
     first_results_dir = tmp_path / ".crewplane" / "execution-results" / first_run.name
     first_a_result = (first_results_dir / "a-result.md").read_text("utf-8")
 
-    _write_fixture(fixture_dir, "a", "A forced result\n")
-    _write_fixture(fixture_dir, "b", "B forced result\n")
+    write_executor_fixture(fixture_dir, "a", "A forced result\n")
+    write_executor_fixture(fixture_dir, "b", "B forced result\n")
     cli.run(
         tasks_file=workflow_path,
         config_file=config_path,
@@ -339,9 +339,9 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
             width=120,
         ),
     )
-    _write_config(config_path, fixture_dir)
+    write_mock_config(config_path, fixture_dir)
     _write_review_loop_workflow(workflow_path)
-    _write_review_loop_fixtures(fixture_dir)
+    write_review_loop_fixtures(fixture_dir)
 
     with pytest.raises(typer.Exit) as raised:
         cli.run(
@@ -364,7 +364,7 @@ def test_cli_rerun_resumes_completed_review_loop_node_boundary_only(
         first_results_dir / "review.iterate-result.md"
     ).read_text("utf-8")
 
-    _write_fixture(fixture_dir, "after", "After result\n")
+    write_executor_fixture(fixture_dir, "after", "After result\n")
     cli.run(
         tasks_file=workflow_path,
         config_file=config_path,

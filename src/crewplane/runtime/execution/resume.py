@@ -15,6 +15,7 @@ from crewplane.core.execution_state import (
     ArtifactDescriptor,
     ArtifactKind,
     NodeState,
+    ResumeOrigin,
 )
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
@@ -35,6 +36,7 @@ def write_successful_node_state(
     output: ArtifactStorePort,
     workflow_identity: str,
     finalize_result: StageFinalizeResult,
+    resume_origin: ResumeOrigin | None = None,
 ) -> Path:
     return output.write_node_success_state(
         NodeState(
@@ -50,6 +52,7 @@ def write_successful_node_state(
             artifacts=_descriptors_for_result(output, finalize_result),
             generated_files=_generated_file_descriptors(output, finalize_result),
             workspace=build_node_workspace_descriptor(node, plan, output),
+            resume_origin=resume_origin,
         )
     )
 

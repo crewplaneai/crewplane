@@ -232,7 +232,7 @@ def test_manifest_rejects_partial_or_contradictory_resume_provenance(
         ),
         (
             {"resumed_nodes": ["build", "build"]},
-            "Resume source provenance is required exactly when nodes were hydrated.",
+            "Resume source provenance is required exactly when nodes or checkpoints were hydrated.",
         ),
     ],
 )

@@ -16,6 +16,7 @@ from crewplane.core.preflight.runtime_config import (
 )
 from crewplane.core.preflight.secrets import SecretContext
 from crewplane.core.preflight.signatures import signature_for_payload
+from crewplane.core.review_checkpoint import OpenReviewCheckpoint
 from crewplane.core.value_checks import positive_strict_int
 from crewplane.runtime.workspace.materialization import MaterializationLimiter
 from crewplane.runtime.workspace.worktree.cache import WorktreeReuseCache
@@ -29,6 +30,8 @@ from .workspace_files.generated import GeneratedFileWorkspaceRegistry
 class CompiledRuntimeContext:
     plan: PreflightExecutionPlan
     secret_context: SecretContext
+    workflow_identity: str | None = None
+    review_checkpoints: dict[str, OpenReviewCheckpoint] = field(default_factory=dict)
     generated_file_workspaces: GeneratedFileWorkspaceRegistry = field(
         default_factory=GeneratedFileWorkspaceRegistry
     )

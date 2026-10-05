@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Mapping
-from pathlib import Path
 
-from crewplane.architecture.safe_files import contained_regular_file
-from crewplane.core.file_hashing import file_size_and_sha256
 from crewplane.core.preflight.models import (
     PreflightExecutionNode,
     PreflightExecutionPlan,
@@ -15,20 +11,19 @@ from crewplane.core.preflight.runtime_config.workspace import (
     requires_controlled_child_environment,
 )
 from crewplane.core.preflight.workspace.models import is_lineage_worktree
-from crewplane.core.value_checks import is_strict_int
 from crewplane.core.workflow.keywords import ProviderRole
-from crewplane.core.workspace.git_policy import git_ref_syntax_issue, is_git_object_id
 from crewplane.core.workspace.policy import WorkspaceMaterialization
 from crewplane.version import SCHEMA_VERSION
 
 from ...run_history import RunHistoryRecord
-from ..chain_validation import verify_persisted_workspace_result_chain
 from ..rendered_file_validation import (
     provider_rendered_workspace_files_match,
 )
 from ..source_validation import workspace_invocation_source_matches
+from . import materialization_results
 from .contracts import workspace_state_contract_is_valid
 from .expected_set import workspace_state_payloads_match_expected_set
+from .fields import WorkspaceArtifactRoot
 from .fields import (
     bool_field_matches as _bool_field_matches,
 )
@@ -37,6 +32,7 @@ from .fields import (
 )
 from .invocations import (
     ExpectedWorkspaceInvocation,
+    WorkspaceStateStatus,
     expected_failed_workspace_invocations,
     expected_workspace_invocations,
     failed_workspace_state_payloads,
@@ -166,14 +162,90 @@ def _provider_workspace_state_is_valid(
     ):
         return False
     workspace = _mapping(payload.get("workspace"))
-    if not (
-        workspace.get("materialization") == policy.materialization
-        and workspace.get("path") is None
-        and workspace.get("effective_cwd") is None
+    if not _workspace_placement_matches(workspace, policy.materialization):
+        return False
+    return materialization_results.workspace_materialization_result_matches(
+        policy.materialization, source, plan, payload
+    )
+
+
+def checkpoint_invocation_is_valid(
+    source: WorkspaceArtifactRoot,
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    payload: dict[str, object],
+    source_matches: bool,
+    run_id: str,
+    run_key_name: str,
+) -> bool:
+    """Validate semantic invocation evidence without consulting live placement."""
+    policy = node.workspace_policy
+    failed = payload.get("status") == WorkspaceStateStatus.FAILED
+    if policy is None or not workspace_state_contract_is_valid(
+        payload, "checkpoint_failed" if failed else "checkpoint"
     ):
         return False
-    return _workspace_materialization_result_matches(
+    workspace = _mapping(payload.get("workspace"))
+    if not (
+        _workspace_state_identity_matches(plan, node, payload, run_id, run_key_name)
+        and _workspace_state_policy_matches(policy.model_dump(mode="json"), payload)
+        and _checkpoint_invocation_context_matches(
+            source,
+            plan,
+            node,
+            payload,
+            source_matches,
+            WorkspaceStateStatus.FAILED if failed else WorkspaceStateStatus.SUCCEEDED,
+        )
+        and _checkpoint_placement_matches(workspace, policy.materialization, payload)
+    ):
+        return False
+    return failed or materialization_results.workspace_materialization_result_matches(
         policy.materialization, source, plan, payload
+    )
+
+
+def _checkpoint_invocation_context_matches(
+    source: WorkspaceArtifactRoot,
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    payload: dict[str, object],
+    source_matches: bool,
+    status: WorkspaceStateStatus,
+) -> bool:
+    return (
+        _workspace_state_invoker_matches(plan, payload, status)
+        and _workspace_state_git_matches(plan, payload)
+        and source_matches
+        and provider_rendered_workspace_files_match(plan, node, payload, source)
+    )
+
+
+def _workspace_placement_matches(
+    workspace: Mapping[str, object],
+    materialization: WorkspaceMaterialization,
+) -> bool:
+    return (
+        workspace.get("materialization") == materialization
+        and workspace.get("path") is None
+        and workspace.get("effective_cwd") is None
+    )
+
+
+def _checkpoint_placement_matches(
+    workspace: Mapping[str, object],
+    materialization: WorkspaceMaterialization,
+    payload: dict[str, object],
+) -> bool:
+    return _workspace_placement_matches(workspace, materialization) and all(
+        _mapping(payload.get("execution")).get(key) is None
+        for key in (
+            "workspace_path",
+            "effective_cwd",
+            "cache_root",
+            "checkout_root",
+            "worktree_git_dir",
+        )
     )
 
 
@@ -182,37 +254,14 @@ def _workspace_invocation_context_matches(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
+    status: WorkspaceStateStatus = WorkspaceStateStatus.SUCCEEDED,
 ) -> bool:
     return (
-        _workspace_state_invoker_matches(plan, payload)
+        _workspace_state_invoker_matches(plan, payload, status)
         and _workspace_state_git_matches(plan, payload)
         and workspace_invocation_source_matches(source, plan, node, payload)
         and provider_rendered_workspace_files_match(plan, node, payload, source)
     )
-
-
-def _workspace_materialization_result_matches(
-    materialization: WorkspaceMaterialization,
-    source: RunHistoryRecord,
-    plan: PreflightExecutionPlan,
-    payload: dict[str, object],
-) -> bool:
-    workspace = _mapping(payload.get("workspace"))
-    if workspace.get("writable") is not True:
-        return False
-    match materialization:
-        case "snapshot_checkout":
-            return _snapshot_result_matches(payload)
-        case "worktree_checkout":
-            if workspace.get("lineage_producer") is not True:
-                return _disposable_worktree_result_matches(payload)
-            return (
-                payload.get("role") == ProviderRole.EXECUTOR
-                and _workspace_result_matches(payload)
-                and _workspace_bundle_matches(source, plan, payload)
-            )
-        case _:
-            return False
 
 
 def _failed_provider_workspace_state_is_valid(
@@ -228,15 +277,14 @@ def _failed_provider_workspace_state_is_valid(
         return False
     workspace = _mapping(payload.get("workspace"))
     return (
-        _workspace_state_context_matches(source, plan, node, payload, "failed")
+        _workspace_state_context_matches(
+            source, plan, node, payload, WorkspaceStateStatus.FAILED
+        )
         and _workspace_state_policy_matches(policy.model_dump(mode="json"), payload)
-        and _failed_workspace_state_invoker_matches(plan, payload)
-        and _workspace_state_git_matches(plan, payload)
-        and workspace_invocation_source_matches(source, plan, node, payload)
-        and provider_rendered_workspace_files_match(plan, node, payload, source)
-        and workspace.get("materialization") == policy.materialization
-        and workspace.get("path") is None
-        and workspace.get("effective_cwd") is None
+        and _workspace_invocation_context_matches(
+            source, plan, node, payload, WorkspaceStateStatus.FAILED
+        )
+        and _workspace_placement_matches(workspace, policy.materialization)
         and _bool_field_matches(workspace, "writable", policy.writable)
         and _bool_field_matches(
             workspace,
@@ -264,147 +312,15 @@ def _workspace_state_git_matches(
     )
 
 
-def _workspace_result_matches(payload: dict[str, object]) -> bool:
-    result = _mapping(payload.get("result"))
-    return (
-        is_git_object_id(result.get("candidate_commit"))
-        and is_git_object_id(result.get("result_commit"))
-        and is_git_object_id(result.get("candidate_tree"))
-        and is_git_object_id(result.get("result_tree"))
-        and is_strict_int(result.get("changed_path_count"))
-        and result.get("unreachable_provider_objects_scanned") is False
-    )
-
-
-def _snapshot_result_matches(payload: dict[str, object]) -> bool:
-    result = _mapping(payload.get("result"))
-    if result.get("drift_scan_complete") is False:
-        return (
-            result.get("lineage_produced") is False
-            and isinstance(result.get("drift_scan_limit_reason"), str)
-            and "bundle" not in payload
-        )
-    if result.get("drift_scan_complete") is not True:
-        return False
-    changed_path_count = result.get("changed_path_count")
-    changed_paths = result.get("changed_paths")
-    if not is_strict_int(changed_path_count):
-        return False
-    snapshot_drift_discarded = changed_path_count > 0
-    return (
-        result.get("lineage_produced") is False
-        and result.get("snapshot_drift_discarded") is snapshot_drift_discarded
-        and isinstance(changed_paths, list)
-        and all(isinstance(path, str) for path in changed_paths)
-        and isinstance(result.get("changed_paths_truncated"), bool)
-        and "candidate_commit" not in result
-        and "result_commit" not in result
-        and "candidate_tree" not in result
-        and "result_tree" not in result
-        and "bundle" not in payload
-    )
-
-
-def _disposable_worktree_result_matches(payload: dict[str, object]) -> bool:
-    result = _mapping(payload.get("result"))
-    changed_path_count = result.get("changed_path_count")
-    return (
-        is_strict_int(changed_path_count)
-        and result.get("lineage_produced") is False
-        and is_git_object_id(result.get("final_head"))
-        and "candidate_commit" not in result
-        and "result_commit" not in result
-        and "candidate_tree" not in result
-        and "result_tree" not in result
-        and "bundle" not in payload
-    )
-
-
-def _workspace_bundle_matches(
-    source: RunHistoryRecord,
-    plan: PreflightExecutionPlan,
-    payload: dict[str, object],
-) -> bool:
-    result_ref = _workspace_result_ref(payload)
-    result_commit = _workspace_result_commit(payload)
-    result_tree = _workspace_result_tree(payload)
-    workspace_source = plan.workspace_source
-    if (
-        result_ref is None
-        or result_commit is None
-        or result_tree is None
-        or workspace_source is None
-    ):
-        return False
-    if not _bundle_file_matches(source.run_dir, _mapping(payload.get("bundle"))):
-        return False
-    try:
-        verify_persisted_workspace_result_chain(
-            workspace_source,
-            source.run_dir,
-            payload,
-        )
-    except (OSError, RuntimeError, subprocess.SubprocessError):
-        return False
-    return True
-
-
-def _bundle_file_matches(run_dir: Path, bundle: Mapping[str, object]) -> bool:
-    path = bundle.get("path")
-    sha256 = bundle.get("sha256")
-    size_bytes = bundle.get("size_bytes")
-    if (
-        not isinstance(path, str)
-        or not isinstance(sha256, str)
-        or not is_strict_int(size_bytes)
-        or bundle.get("verified") is not True
-    ):
-        return False
-    bundle_path = contained_regular_file(run_dir, path)
-    if bundle_path is None:
-        return False
-    try:
-        actual_size, actual_sha256 = file_size_and_sha256(bundle_path)
-    except OSError:
-        return False
-    return actual_size == size_bytes and actual_sha256 == sha256
-
-
-def _workspace_result_ref(payload: dict[str, object]) -> str | None:
-    refs = _mapping(payload.get("refs"))
-    result_ref = refs.get("result")
-    if not isinstance(result_ref, str) or not _safe_workspace_result_ref(result_ref):
-        return None
-    return result_ref
-
-
-def _workspace_result_commit(payload: dict[str, object]) -> str | None:
-    result = _mapping(payload.get("result"))
-    result_commit = result.get("result_commit")
-    return result_commit if is_git_object_id(result_commit) else None
-
-
-def _workspace_result_tree(payload: dict[str, object]) -> str | None:
-    result = _mapping(payload.get("result"))
-    result_tree = result.get("result_tree")
-    return result_tree if is_git_object_id(result_tree) else None
-
-
-def _safe_workspace_result_ref(ref: str) -> bool:
-    return (
-        ref.startswith("refs/crewplane/")
-        and ref.endswith("/result")
-        and git_ref_syntax_issue(ref) is None
-    )
-
-
 def _workspace_state_header_matches(
     source: RunHistoryRecord,
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
 ) -> bool:
-    return _workspace_state_context_matches(source, plan, node, payload, "succeeded")
+    return _workspace_state_context_matches(
+        source, plan, node, payload, WorkspaceStateStatus.SUCCEEDED
+    )
 
 
 def _workspace_state_context_matches(
@@ -412,16 +328,30 @@ def _workspace_state_context_matches(
     plan: PreflightExecutionPlan,
     node: PreflightExecutionNode,
     payload: dict[str, object],
-    status: str,
+    status: WorkspaceStateStatus,
+) -> bool:
+    return (
+        _workspace_state_identity_matches(
+            plan, node, payload, source.manifest.run_id, source.manifest.run_key_name
+        )
+        and payload.get("status") == status
+    )
+
+
+def _workspace_state_identity_matches(
+    plan: PreflightExecutionPlan,
+    node: PreflightExecutionNode,
+    payload: dict[str, object],
+    run_id: str,
+    run_key_name: str,
 ) -> bool:
     return (
         payload.get("version") == SCHEMA_VERSION
-        and payload.get("run_id") == source.manifest.run_id
-        and payload.get("run_key_name") == source.manifest.run_key_name
+        and payload.get("run_id") == run_id
+        and payload.get("run_key_name") == run_key_name
         and payload.get("workflow_name") == plan.workflow_name
         and payload.get("workflow_signature") == plan.workflow_signature
         and payload.get("node_id") == node.id
-        and payload.get("status") == status
     )
 
 
@@ -440,47 +370,26 @@ def _workspace_state_policy_matches(
 def _workspace_state_invoker_matches(
     plan: PreflightExecutionPlan,
     payload: dict[str, object],
+    status: WorkspaceStateStatus = WorkspaceStateStatus.SUCCEEDED,
 ) -> bool:
     expected = invoker_workspace_descriptor(plan.runtime_config_snapshot)
     return (
         expected is not None
         and _mapping(payload.get("invoker")) == expected
-        and _child_process_environment_matches(expected, payload)
-    )
-
-
-def _failed_workspace_state_invoker_matches(
-    plan: PreflightExecutionPlan,
-    payload: dict[str, object],
-) -> bool:
-    expected = invoker_workspace_descriptor(plan.runtime_config_snapshot)
-    return (
-        expected is not None
-        and _mapping(payload.get("invoker")) == expected
-        and _failed_child_process_environment_matches(expected, payload)
+        and _child_process_environment_matches(expected, payload, status)
     )
 
 
 def _child_process_environment_matches(
     invoker: Mapping[str, object],
     payload: dict[str, object],
+    status: WorkspaceStateStatus,
 ) -> bool:
     if not requires_controlled_child_environment(invoker):
         return True
     child_environment = _mapping(payload.get("child_process_environment"))
-    return (
-        child_environment.get("required") is True
-        and child_environment.get("applied") is True
-    )
-
-
-def _failed_child_process_environment_matches(
-    invoker: Mapping[str, object],
-    payload: dict[str, object],
-) -> bool:
-    if not requires_controlled_child_environment(invoker):
-        return True
-    child_environment = _mapping(payload.get("child_process_environment"))
-    return child_environment.get("required") is True and isinstance(
-        child_environment.get("applied"), bool
+    return child_environment.get("required") is True and (
+        isinstance(child_environment.get("applied"), bool)
+        if status == WorkspaceStateStatus.FAILED
+        else child_environment.get("applied") is True
     )

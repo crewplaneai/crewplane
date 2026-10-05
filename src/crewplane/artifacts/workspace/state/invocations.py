@@ -14,8 +14,7 @@ from ...results.review_loop_status import (
     resolve_review_loop_status,
     task_specs_for_producers,
 )
-from ...run_history import RunHistoryRecord
-from .fields import int_field, nullable_int_field
+from .fields import WorkspaceArtifactRoot, int_field, nullable_int_field
 from .fields import mapping_value as _mapping
 from .lineage import (
     INVALID_LINEAGE_ORDER,
@@ -42,7 +41,7 @@ class ExpectedWorkspaceInvocation:
 
 
 def workspace_state_file(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
 ) -> Path | None:
     stage_path = node.artifact_contract.stage_path
@@ -54,7 +53,7 @@ def workspace_state_file(
 
 
 def workspace_state_payloads(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
 ) -> tuple[dict[str, object], ...]:
     return workspace_state_payloads_for_status(
@@ -65,7 +64,7 @@ def workspace_state_payloads(
 
 
 def failed_workspace_state_payloads(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
 ) -> tuple[dict[str, object], ...]:
     return workspace_state_payloads_for_status(
@@ -76,7 +75,7 @@ def failed_workspace_state_payloads(
 
 
 def workspace_state_payloads_for_status(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
     status: WorkspaceStateStatus,
 ) -> tuple[dict[str, object], ...]:
@@ -104,7 +103,7 @@ def workspace_state_payloads_for_status(
 
 
 def expected_workspace_invocations(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
 ) -> tuple[ExpectedWorkspaceInvocation, ...]:
     stage_path = node.artifact_contract.stage_path
@@ -157,7 +156,7 @@ def expected_workspace_invocations(
 
 
 def expected_failed_workspace_invocations(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
 ) -> tuple[ExpectedWorkspaceInvocation, ...]:
     if node.mode == "sequential":
@@ -173,7 +172,7 @@ def expected_failed_workspace_invocations(
 
 
 def _failed_sequential_workspace_invocations(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
 ) -> tuple[ExpectedWorkspaceInvocation, ...]:
     providers = {provider.task_id: provider for provider in node.provider_records}
@@ -210,7 +209,7 @@ def _failed_sequential_workspace_invocations(
 
 
 def _parallel_workspace_invocations_with_status(
-    source: RunHistoryRecord,
+    source: WorkspaceArtifactRoot,
     node: PreflightExecutionNode,
     status: WorkspaceStateStatus,
     lineage_source_required: bool,

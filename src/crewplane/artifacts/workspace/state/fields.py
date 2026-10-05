@@ -3,9 +3,20 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TypeGuard
+from pathlib import Path
+from typing import Protocol, TypeGuard
 
 from crewplane.core.value_checks import is_strict_int
+
+
+class WorkspaceArtifactRoot(Protocol):
+    @property
+    def run_dir(self) -> Path: ...
+
+
+@dataclass(frozen=True)
+class WorkspaceEvidenceRoot:
+    run_dir: Path
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from crewplane.architecture.contracts import (
@@ -31,6 +32,7 @@ from ..input import execute_input_stage
 from ..parallel import execute_parallel_stage
 from ..publication_registry import RuntimePublicationRegistry
 from ..resume import write_successful_node_state
+from ..review_loop.checkpoint import emit_checkpoint_reuse, require_entry_project
 from ..sequential import execute_sequential_stage
 
 
@@ -61,6 +63,14 @@ async def execute_node(
     workflow_identity: str,
 ) -> None:
     emit_workflow_event(telemetry, EventType.NODE_STARTED, node_id=node.id)
+    if node.id in runtime_context.review_checkpoints:
+        try:
+            await asyncio.to_thread(
+                require_entry_project, runtime_context, output, node, telemetry
+            )
+        except ValueError as exc:
+            raise NodeExecutionError(str(exc)) from exc
+    emit_checkpoint_reuse(runtime_context, node.id, telemetry)
     if should_print_console(telemetry):
         execution_console(telemetry).rule(f"Node: {node.id} ({node.mode})")
     if node.mode == "input":
@@ -115,6 +125,11 @@ async def execute_node(
             output,
             workflow_identity,
             stage_finalize_result,
+            (
+                runtime_context.review_checkpoints[node.id].resume_origin
+                if node.id in runtime_context.review_checkpoints
+                else None
+            ),
         )
         _register_recoverable_publication(publications, node_state_path)
     if should_print_console(telemetry):

@@ -13,6 +13,7 @@ from crewplane.architecture.ports import ArtifactStorePort
 from crewplane.architecture.ports.runtime import RuntimeComponents
 from crewplane.artifacts.locks import acquire_same_context_lock
 from crewplane.artifacts.manager import OutputManager
+from crewplane.artifacts.resume.checkpoint_hydration import hydrate_review_checkpoints
 from crewplane.artifacts.resume.hydration import hydrate_resume_frontier
 from crewplane.bootstrap import (
     build_runtime_config_snapshot,
@@ -277,6 +278,7 @@ async def execute_workflow_run(
         try:
             if resume_plan.frontier is not None:
                 hydrate_resume_frontier(resume_plan.frontier, plan, output)
+                hydrate_review_checkpoints(resume_plan.frontier, plan, output)
                 if resume_source is not None:
                     print_resume_context_message(
                         context,

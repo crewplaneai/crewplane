@@ -60,7 +60,10 @@ def walk_ast(node: ast.AST) -> Iterator[ast.AST]:
             if isinstance(value, ast.AST):
                 todo.append(value)
             elif isinstance(value, list):
-                todo.extend(child for child in value if isinstance(child, ast.AST))
+                # Nested generators can fail during repeated walks under coverage.
+                for child in value:
+                    if isinstance(child, ast.AST):
+                        todo.append(child)
 
 
 def call_name(node: ast.AST) -> str | None:

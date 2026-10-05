@@ -15,6 +15,7 @@ from tests.unit.packaging.release_surfaces_support import (
 
 GRANDFATHERED_LARGE_FILE_LIMITS = {
     ".github/crewplane-splash.png": 1_093_755,
+    "docs/images/architecture/crewplane-architecture.png": 1_652_013,
     "docs/images/concepts/control-plane.png": 1_664_884,
     "docs/images/concepts/different-design.png": 1_466_376,
     "docs/images/concepts/why-crewplane.png": 1_511_410,

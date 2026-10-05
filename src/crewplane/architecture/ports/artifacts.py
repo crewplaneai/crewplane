@@ -10,8 +10,14 @@ from crewplane.architecture.contracts import (
     NodeArtifactRequest,
     VerifiedNodeArtifact,
 )
-from crewplane.core.execution_state import NodeState, RunManifest, RunStatus
+from crewplane.core.execution_state import (
+    NodeState,
+    ReviewCheckpointResumeSummary,
+    RunManifest,
+    RunStatus,
+)
 from crewplane.core.preflight.models import PreflightExecutionPlan
+from crewplane.core.review_checkpoint import ReviewLoopCheckpoint
 from crewplane.core.workflow.keywords import ProviderRole
 
 from .options import IntegrationOptionsCanonicalizerPort
@@ -206,6 +212,20 @@ class ArtifactStorePort(Protocol):
         source_run_key_name: str,
     ) -> Path:
         """Record one actually hydrated node in the running manifest."""
+
+    def read_review_checkpoint(self, node_id: str) -> ReviewLoopCheckpoint | None:
+        """Read the current typed review checkpoint marker, if present."""
+
+    def write_review_checkpoint(self, checkpoint: ReviewLoopCheckpoint) -> Path:
+        """Verify dependencies, then atomically publish a checkpoint marker."""
+
+    def read_hydrated_review_checkpoints(self) -> list[ReviewCheckpointResumeSummary]:
+        """Read the checkpoint hydration summaries from the run manifest."""
+
+    def record_hydrated_review_checkpoint(
+        self, summary: ReviewCheckpointResumeSummary
+    ) -> Path:
+        """Record one actually hydrated checkpoint in the running manifest."""
 
     def get_run_log_dir(self) -> Path:
         """Return the run-level log directory, creating it when needed."""
