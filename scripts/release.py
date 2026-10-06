@@ -12,15 +12,17 @@ from release.state import (
     CommandRunner,
     ReleaseError,
     ReleaseStatus,
+    command_exists,
     derive_release_state,
     exit_with_error,
     fail_if_generated_metadata_stale,
     inspect_git_state,
     is_tag_only_missing_error,
     print_state,
+    publishing_git_issues,
     query_registry_state,
     read_formula_state,
-    read_manifest_if_present,
+    read_manifest,
     read_release_context,
     verify_formula_state_for_release,
     verify_git_tag_state,
@@ -161,7 +163,7 @@ def dispatch(args: argparse.Namespace, root: Path, runner: CommandRunner) -> int
 
 def release_check(root: Path, runner: CommandRunner) -> int:
     context = read_release_context(root)
-    manifest = read_manifest_if_present(root)
+    manifest = read_manifest(root)
     pypi, npm = query_registry_state(context)
     formula = read_formula_state(context)
     git = inspect_git_state(context, runner)
@@ -189,16 +191,22 @@ def release_check(root: Path, runner: CommandRunner) -> int:
             return 0
     if state.status in {ReleaseStatus.PARTIAL, ReleaseStatus.BLOCKED}:
         return 1
+    git_issues = publishing_git_issues(git, allow_existing_tag=False)
+    if git_issues:
+        raise ReleaseError(
+            "release validation is blocked by Git state:\n  " + "\n  ".join(git_issues)
+        )
     fail_if_generated_metadata_stale(context, manifest)
     changelog_check(root)
     run_pre_publish_checks(root, runner)
+    build.bind_release_manifest(context, manifest, git.head_commit, runner)
     return 0
 
 
 def run_pre_publish_checks(root: Path, runner: CommandRunner) -> None:
-    runner.run(["make", "lint"], cwd=root)
-    runner.run(["make", "format-check"], cwd=root)
-    runner.run(["make", "test"], cwd=root)
+    if not command_exists("npm"):
+        raise ReleaseError("npm is required to validate prepared release artifacts")
+    runner.run(["make", "check"], cwd=root)
     smoke.install_check(root, runner)
 
 

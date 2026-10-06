@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.release import publish, state
+from scripts.release import publish, retry, state
 from tests.unit.packaging.release_tool_support import (
     FakeRunner,
     constant,
@@ -37,7 +37,7 @@ def test_publish_pypi_retries_registry_visibility_after_upload(
     monkeypatch.setattr(publish, "require_publish_git_state", constant(git))
     monkeypatch.setattr(publish, "fail_if_local_artifacts_stale", no_op)
     monkeypatch.setattr(publish.smoke, "post_publish_pypi_check", no_op)
-    monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(retry.time, "sleep", sleeps.append)
     monkeypatch.setattr(
         publish,
         "query_npm_release",
@@ -184,7 +184,7 @@ def test_publish_npm_enforces_latest_and_retries_registry_visibility(
     monkeypatch.setattr(
         publish, "resolve_npm_otp", constant(publish.NpmOtp("222222", ""))
     )
-    monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(retry.time, "sleep", sleeps.append)
     monkeypatch.setattr(
         publish,
         "query_pypi_release",
@@ -215,7 +215,7 @@ def test_publish_npm_reconciles_stale_latest_without_republishing(
     write_manifest(tmp_path, manifest)
     npm_responses = iter(
         [
-            matching_npm(context, manifest, latest="previous"),
+            matching_npm(context, manifest, latest="0.9.0"),
             matching_npm(context, manifest, latest=context.version.npm),
         ]
     )
@@ -261,10 +261,10 @@ def test_registry_verification_success_message_uses_plural_retries(
 ) -> None:
     responses = iter([["missing version"], ["missing version"], []])
     sleeps: list[int] = []
-    monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(retry.time, "sleep", sleeps.append)
 
-    issues = publish.wait_for_registry_verification(
-        "npm",
+    issues = retry.wait_for_verification(
+        "npm registry",
         lambda: next(responses),
         attempts=3,
         initial_delay_seconds=2,
@@ -290,11 +290,11 @@ def test_registry_verification_retries_transient_query_error(
             raise state.RetryableRegistryError("registry query failed: HTTP 503")
         return []
 
-    monkeypatch.setattr(publish.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(retry.time, "sleep", sleeps.append)
 
     assert (
-        publish.wait_for_registry_verification(
-            "npm",
+        retry.wait_for_verification(
+            "npm registry",
             collect_issues,
             attempts=2,
             initial_delay_seconds=2,
@@ -316,14 +316,14 @@ def test_registry_verification_does_not_retry_non_transient_error(
         pytest.fail("non-transient failures must not be retried")
 
     monkeypatch.setattr(
-        publish.time,
+        retry.time,
         "sleep",
         fail_sleep,
     )
 
     with pytest.raises(state.ReleaseError, match="malformed registry response"):
-        publish.wait_for_registry_verification(
-            "npm",
+        retry.wait_for_verification(
+            "npm registry",
             lambda: (_ for _ in ()).throw(
                 state.ReleaseError("malformed registry response")
             ),

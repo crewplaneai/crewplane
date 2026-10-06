@@ -20,7 +20,6 @@ from packaging.version import InvalidVersion, Version
 
 REQUEST_TIMEOUT_SECONDS = 15
 COMMAND_TIMEOUT_SECONDS = 900
-NPM_RETRY_INITIAL_DELAY_SECONDS = 2
 USER_AGENT = "crewplane-release/1"
 MANIFEST_PATH = Path(".release/release-manifest.json")
 COMMAND_FAILURE_OUTPUT_LIMIT = 12000
@@ -230,6 +229,7 @@ class ReleaseManifest:
     npm_version: str
     git_tag: str
     artifacts: dict[str, ArtifactIdentity]
+    source_commit: str = ""
 
     def artifact(self, key: str) -> ArtifactIdentity:
         try:
@@ -386,6 +386,9 @@ def read_manifest(root: Path) -> ReleaseManifest:
     artifacts = payload.get("artifacts")
     if not isinstance(package, dict) or not isinstance(artifacts, dict):
         raise ReleaseError(f"release manifest has an invalid shape: {path}")
+    source_commit = payload.get("source_commit", "")
+    if not isinstance(source_commit, str):
+        raise ReleaseError(f"release manifest source commit must be a string: {path}")
     identities: dict[str, ArtifactIdentity] = {}
     for key, value in artifacts.items():
         if not isinstance(value, dict):
@@ -406,13 +409,8 @@ def read_manifest(root: Path) -> ReleaseManifest:
         npm_version=str(package["npm_version"]),
         git_tag=str(package["git_tag"]),
         artifacts=identities,
+        source_commit=source_commit,
     )
-
-
-def read_manifest_if_present(root: Path) -> ReleaseManifest | None:
-    if not (root / MANIFEST_PATH).exists():
-        return None
-    return read_manifest(root)
 
 
 def artifact_identity(path: Path, root: Path, key: str) -> ArtifactIdentity:

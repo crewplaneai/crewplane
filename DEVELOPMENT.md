@@ -189,18 +189,25 @@ the newest stable release. Publishing the tested bottles remains a manual
 
 ### 1. Prepare and validate
 
-Update the version in `pyproject.toml` and add the matching section to
-`CHANGELOG.md`. Review the changelog content manually, then run:
+Update the version in `pyproject.toml` and add its section to `CHANGELOG.md`
+with any notable user-facing changes. Review the changelog, then prepare the
+release with npm installed:
 
 ```bash
 make release-prepare
+```
+
+Review, commit, and push the version change and generated metadata to `master`.
+Then validate from the clean, synchronized checkout:
+
+```bash
 make release-check
 ```
 
 Both commands must pass before publication. Preparation stops if the target
 version already exists on PyPI or npm. Some install checks may be skipped when
-optional local tools such as `pipx`, npm, or Homebrew are unavailable; review
-the skip messages before continuing.
+optional local tools such as `pipx` or Homebrew are unavailable; review the skip
+messages before continuing.
 
 ### 2. Publish packages and the Git tag
 
@@ -244,18 +251,18 @@ bottle metadata, and pushes the completed release to `main`.
 
 ### Recover an interrupted release
 
-If only part of PyPI or one registry was published, fix the reported problem
-and rerun the corresponding target:
+Recover from the commit validated by `make release-check`, using the same
+prepared artifacts. Fix the reported problem, then rerun the affected target:
 
 ```bash
 make release-pypi
 make release-npm
 ```
 
-These targets verify anything already published and complete only the missing
-work. Use `make release-npm` when the npm package exists but its `latest`
-dist-tag is stale. Once both registries are complete, rerun `make release` to
-finish the Git tag.
+These targets verify existing uploads and complete missing publication steps.
+Use `make release-npm` to repair a stale `latest` tag; it refuses to replace a
+newer release. Once both registries are complete, rerun `make release` to finish
+the Git tag. Do not run `make clean` or `make release-prepare` during recovery.
 
 ### TestPyPI
 

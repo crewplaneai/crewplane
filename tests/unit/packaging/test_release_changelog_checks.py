@@ -37,7 +37,7 @@ def test_release_check_allows_tag_missing_partial_without_pre_publish_smokes(
         remote_tag_commit="",
     )
     monkeypatch.setattr(release_script, "read_release_context", constant(context))
-    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(release_script, "read_manifest", constant(manifest))
     monkeypatch.setattr(release_script, "query_registry_state", constant((pypi, npm)))
     monkeypatch.setattr(release_script, "read_formula_state", constant(formula))
     monkeypatch.setattr(release_script, "inspect_git_state", constant(tag_missing_git))
@@ -71,7 +71,7 @@ def test_release_check_does_not_treat_partial_pypi_as_tag_only(
     npm = matching_npm(context, manifest, latest=context.version.npm)
     tag_missing_git = replace(git, tag_commit="", remote_tag_commit="")
     monkeypatch.setattr(release_script, "read_release_context", constant(context))
-    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(release_script, "read_manifest", constant(manifest))
     monkeypatch.setattr(
         release_script, "query_registry_state", constant((partial_pypi, npm))
     )
@@ -95,7 +95,7 @@ def test_release_check_requires_current_changelog_section_before_suite(
         encoding="utf-8",
     )
     monkeypatch.setattr(release_script, "read_release_context", constant(context))
-    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(release_script, "read_manifest", constant(manifest))
     monkeypatch.setattr(
         release_script, "query_registry_state", constant((missing_pypi, missing_npm))
     )
@@ -127,13 +127,14 @@ def test_release_check_accepts_dated_current_changelog_heading(
         encoding="utf-8",
     )
     monkeypatch.setattr(release_script, "read_release_context", constant(context))
-    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(release_script, "read_manifest", constant(manifest))
     monkeypatch.setattr(
         release_script, "query_registry_state", constant((missing_pypi, missing_npm))
     )
     monkeypatch.setattr(release_script, "read_formula_state", constant(formula))
     monkeypatch.setattr(release_script, "inspect_git_state", constant(tag_missing_git))
     monkeypatch.setattr(release_script, "fail_if_generated_metadata_stale", no_op)
+    monkeypatch.setattr(release_script.build, "bind_release_manifest", no_op)
     suites: list[Path] = []
 
     def record_suite(root: Path, runner: FakeRunner) -> None:
@@ -210,7 +211,7 @@ def test_completed_release_check_skips_pre_publish_suite(
     pypi = matching_pypi(context, manifest)
     npm = matching_npm(context, manifest, latest=context.version.npm)
     monkeypatch.setattr(release_script, "read_release_context", constant(context))
-    monkeypatch.setattr(release_script, "read_manifest_if_present", constant(manifest))
+    monkeypatch.setattr(release_script, "read_manifest", constant(manifest))
     monkeypatch.setattr(release_script, "query_registry_state", constant((pypi, npm)))
     monkeypatch.setattr(release_script, "read_formula_state", constant(formula))
     monkeypatch.setattr(release_script, "inspect_git_state", constant(git))

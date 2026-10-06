@@ -100,6 +100,15 @@ def parse_formula_resource_specs(text: str) -> dict[str, tuple[str, str]]:
     return specs
 
 
+def read_clean_source_commit(root: Path, runner: CommandRunner) -> str:
+    commit = git_output(runner, root, ["git", "rev-parse", "HEAD"])
+    if git_output(runner, root, ["git", "status", "--porcelain=v1"]):
+        raise ReleaseError(
+            "release source worktree is dirty; commit prepared metadata first"
+        )
+    return commit
+
+
 def inspect_git_state(context: ReleaseContext, runner: CommandRunner) -> GitState:
     root = context.root
     branch = git_output(runner, root, ["git", "branch", "--show-current"])

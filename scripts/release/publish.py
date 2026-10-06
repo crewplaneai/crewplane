@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import sys
-import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
-from . import smoke
+from . import retry, smoke
 from .state import (
-    NPM_RETRY_INITIAL_DELAY_SECONDS,
     ORIGIN_MASTER_ANCESTRY_ERROR,
     CommandRunner,
     DerivedReleaseState,
@@ -22,7 +20,6 @@ from .state import (
     ReleaseError,
     ReleaseManifest,
     ReleaseStatus,
-    RetryableRegistryError,
     command_exists,
     derive_release_state,
     fail_if_generated_metadata_stale,
@@ -32,11 +29,13 @@ from .state import (
     manifest_context_issues,
     missing_pypi_artifact_keys,
     print_state,
+    publishing_git_issues,
     query_npm_release,
     query_pypi_release,
     read_formula_state,
     read_manifest,
     read_release_context,
+    release_source_issues,
     require_publish_git_state,
     verified_release_notes_start_tag,
     verify_formula_state_for_release,
@@ -46,8 +45,6 @@ from .state import (
     verify_present_pypi_artifacts,
     verify_pypi_artifacts,
 )
-
-REGISTRY_VERIFICATION_ATTEMPTS = 6
 
 
 @dataclass(frozen=True)
@@ -87,13 +84,14 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
     fail_if_generated_metadata_stale(context, manifest)
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
-    require_publish_git_state(
+    git = require_publish_git_state(
         context,
         runner,
         pypi.exists,
         is_registry_recovery(pypi, npm),
     )
-    issues = verify_present_pypi_artifacts(context, pypi, manifest)
+    issues = release_source_issues(manifest, git.head_commit)
+    issues.extend(verify_present_pypi_artifacts(context, pypi, manifest))
     issues.extend(verify_existing_npm(context, npm, manifest))
     if issues:
         raise ReleaseError("PyPI publication is blocked:\n  " + "\n  ".join(issues))
@@ -104,6 +102,9 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         )
         smoke.post_publish_pypi_check(context, runner)
         return 0
+    issues = npm_latest_publication_issues(context, npm)
+    if issues:
+        raise ReleaseError("PyPI publication is blocked:\n  " + "\n  ".join(issues))
     require_pypi_auth()
     fail_if_local_artifacts_stale(context, manifest, missing_keys, "PyPI")
     command = [
@@ -119,13 +120,15 @@ def publish_pypi(root: Path, runner: CommandRunner, execute: bool) -> int:
         str(context.root / manifest.artifact(key).path) for key in missing_keys
     )
     runner.run(command, cwd=context.root, env=pypi_upload_env(), capture_output=False)
-    issues = wait_for_registry_verification(
-        "PyPI",
+    issues = retry.wait_for_verification(
+        "PyPI registry",
         lambda: pypi_publication_issues(context, manifest),
     )
     if issues:
         raise ReleaseError(
-            "PyPI upload completed but verification failed:\n  " + "\n  ".join(issues)
+            "PyPI upload completed but verification failed:\n  "
+            + "\n  ".join(issues)
+            + "\nWait for registry processing, then rerun make release-pypi with the same prepared artifacts."
         )
     smoke.post_publish_pypi_check(context, runner)
     return 0
@@ -142,14 +145,16 @@ def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
     fail_if_generated_metadata_stale(context, manifest)
     pypi = query_pypi_release(context)
     npm = query_npm_release(context)
-    require_publish_git_state(
+    git = require_publish_git_state(
         context,
         runner,
         npm.exists,
         is_registry_recovery(pypi, npm),
     )
-    issues = verify_existing_npm(context, npm, manifest)
-    issues.extend(verify_existing_pypi(context, pypi, manifest))
+    issues = release_source_issues(manifest, git.head_commit)
+    issues.extend(verify_existing_npm(context, npm, manifest))
+    issues.extend(verify_pypi_artifacts(context, pypi, manifest))
+    issues.extend(npm_latest_publication_issues(context, npm))
     if issues:
         raise ReleaseError("npm publication is blocked:\n  " + "\n  ".join(issues))
     needs_dist_tag = npm.exists and npm.latest != context.version.npm
@@ -167,13 +172,15 @@ def publish_npm(root: Path, runner: CommandRunner, execute: bool) -> int:
         runner.run(command, cwd=context.root, capture_output=False)
     if needs_dist_tag:
         reconcile_npm_latest(context, runner, otp.dist_tag)
-    issues = wait_for_registry_verification(
-        "npm",
+    issues = retry.wait_for_verification(
+        "npm registry",
         lambda: npm_publication_issues(context, manifest),
     )
     if issues:
         raise ReleaseError(
-            "npm publish completed but verification failed:\n  " + "\n  ".join(issues)
+            "npm publish completed but verification failed:\n  "
+            + "\n  ".join(issues)
+            + "\nWait for registry processing, then rerun make release-npm with the same prepared artifacts."
         )
     smoke.post_publish_npm_check(context, runner)
     return 0
@@ -198,9 +205,12 @@ def finalize_release(root: Path, runner: CommandRunner, execute: bool) -> int:
         return 0
     formula_issues = verify_formula_state_for_release(context, formula, manifest)
     tag_issues = verify_git_tag_state(git)
-    if not is_tag_only_missing_error(tag_issues):
+    if not is_tag_only_missing_error(tag_issues) or not is_tag_only_missing_error(
+        list(state.reasons)
+    ):
         raise ReleaseError(
-            "registries are not fully verified; refusing to create the Git tag"
+            "registries are not fully verified; refusing to create the Git tag:\n  "
+            + "\n  ".join(state.reasons)
         )
     if (
         pypi.exists
@@ -208,7 +218,7 @@ def finalize_release(root: Path, runner: CommandRunner, execute: bool) -> int:
         and npm.latest == context.version.npm
         and not formula_issues
     ):
-        create_and_push_tag(context, runner)
+        create_and_push_tag(context, runner, manifest.source_commit)
         return 0
     raise ReleaseError(
         "registries are not fully verified; refusing to create the Git tag"
@@ -265,7 +275,7 @@ def verified_github_release_plan(
     npm = query_npm_release(context)
     formula = read_formula_state(context)
     git = inspect_release_tag_state(context, runner, expected_tag=expected_tag)
-    issues: list[str] = []
+    issues = release_source_issues(manifest, git.head_commit)
     issues.extend(verify_pypi_artifacts(context, pypi, manifest))
     issues.extend(verify_npm_artifact(context, npm, manifest))
     issues.extend(verify_formula_state_for_release(context, formula, manifest))
@@ -328,15 +338,21 @@ def npm_latest_progression_issues(
     context: ReleaseContext, npm: NpmRelease
 ) -> list[str]:
     try:
-        latest = Version(npm.latest)
+        latest = npm_comparison_version(npm.latest)
     except InvalidVersion:
         return ["npm latest dist-tag is missing or invalid"]
-    target = Version(context.version.npm)
+    target = npm_comparison_version(context.version.npm)
     if latest == target and npm.latest != context.version.npm:
         return ["npm latest dist-tag does not exactly match the target release"]
     if latest < target:
         return ["npm latest dist-tag points to an older release"]
     return []
+
+
+def npm_comparison_version(value: str) -> Version:
+    """Restore PEP 440 suffix order without changing published npm names."""
+    normalized = re.sub(r"([.-])dev\.(\d+)\.post\.(\d+)$", r"\1post.\3.dev.\2", value)
+    return Version(normalized)
 
 
 def github_latest_eligibility(
@@ -384,12 +400,18 @@ def is_registry_recovery(pypi: PypiRelease, npm: NpmRelease) -> bool:
     return pypi.exists or npm.exists
 
 
-def verify_existing_pypi(
-    context: ReleaseContext, release: PypiRelease, manifest
+def npm_latest_publication_issues(
+    context: ReleaseContext, release: NpmRelease
 ) -> list[str]:
-    if not release.exists:
+    if not release.latest:
         return []
-    return verify_pypi_artifacts(context, release, manifest)
+    try:
+        latest = npm_comparison_version(release.latest)
+    except InvalidVersion:
+        return ["npm latest dist-tag is invalid"]
+    if latest > npm_comparison_version(context.version.npm):
+        return ["npm latest already points to a newer release; refusing to downgrade"]
+    return []
 
 
 def verify_existing_npm(
@@ -421,35 +443,6 @@ def npm_publication_issues(
     issues.extend(verify_pypi_artifacts(context, pypi, manifest))
     if npm.latest != context.version.npm:
         issues.append("npm latest dist-tag does not point at the release version")
-    return issues
-
-
-def wait_for_registry_verification(
-    label: str,
-    collect_issues: Callable[[], list[str]],
-    attempts: int = REGISTRY_VERIFICATION_ATTEMPTS,
-    initial_delay_seconds: int = NPM_RETRY_INITIAL_DELAY_SECONDS,
-) -> list[str]:
-    issues: list[str] = []
-    for attempt in range(1, attempts + 1):
-        try:
-            issues = collect_issues()
-        except RetryableRegistryError as error:
-            issues = [str(error)]
-        if not issues:
-            if attempt > 1:
-                retries = attempt - 1
-                suffix = "retry" if retries == 1 else "retries"
-                print(f"{label} registry verification passed after {retries} {suffix}.")
-            return []
-        if attempt == attempts:
-            return issues
-        delay = initial_delay_seconds * 2 ** (attempt - 1)
-        print(
-            f"{label} registry verification pending ({attempt}/{attempts}): "
-            f"{'; '.join(issues)}; retrying in {delay}s."
-        )
-        time.sleep(delay)
     return issues
 
 
@@ -561,10 +554,17 @@ def otp_arg(value: str) -> list[str]:
     return [f"--otp={value}"] if value else []
 
 
-def create_and_push_tag(context: ReleaseContext, runner: CommandRunner) -> None:
+def create_and_push_tag(
+    context: ReleaseContext, runner: CommandRunner, source_commit: str
+) -> None:
     git = inspect_git_state(context, runner)
     if not git.head_reachable_from_origin_master:
         raise ReleaseError(ORIGIN_MASTER_ANCESTRY_ERROR)
+    if git.head_commit != source_commit:
+        raise ReleaseError("release source commit changed before tagging")
+    issues = publishing_git_issues(git, allow_local_changes=True)
+    if issues:
+        raise ReleaseError("release tagging is blocked:\n  " + "\n  ".join(issues))
     if not git.tag_commit:
         runner.run(
             [
@@ -574,6 +574,7 @@ def create_and_push_tag(context: ReleaseContext, runner: CommandRunner) -> None:
                 context.version.tag,
                 "-m",
                 f"Release {context.version.project}",
+                source_commit,
             ],
             cwd=context.root,
         )

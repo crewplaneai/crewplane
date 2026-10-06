@@ -9,6 +9,7 @@ from scripts.release import publish, state
 from tests.unit.packaging.release_tool_support import (
     FakeRunner,
     constant,
+    matching_pypi,
     no_op,
     release_state_fixture,
     write_manifest,
@@ -206,7 +207,7 @@ def test_publish_npm_rehashes_local_tarball_before_upload(
     monkeypatch.setattr(
         publish,
         "query_pypi_release",
-        constant(state.PypiRelease(False, "", {})),
+        constant(matching_pypi(context, manifest)),
     )
     monkeypatch.setattr(
         publish,

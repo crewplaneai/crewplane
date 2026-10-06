@@ -478,13 +478,18 @@ def test_release_artifacts_rebuilds_from_committed_metadata(
     def write_manifest(
         context_arg: state.ReleaseContext,
         artifacts: dict[str, state.ArtifactIdentity],
+        source_commit: str,
     ) -> state.ReleaseManifest:
         assert context_arg == context
         assert artifacts == manifest.artifacts
+        assert source_commit == manifest.source_commit
         calls.append(("manifest", None))
         return manifest
 
     monkeypatch.setattr(build, "read_release_context", constant(context))
+    monkeypatch.setattr(
+        build, "read_clean_source_commit", constant(manifest.source_commit)
+    )
     monkeypatch.setattr(build, "fail_if_generated_metadata_stale", stale_check)
     monkeypatch.setattr(build, "query_registry_state", fail_registry_query)
     monkeypatch.setattr(build, "sync_generated_metadata", fail_metadata_sync)
