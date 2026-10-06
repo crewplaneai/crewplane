@@ -4,16 +4,15 @@ import os
 import re
 import sys
 import tempfile
-import time
+from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
 import yaml
 
-from . import build
+from . import build, retry
 from .state import (
     COMMAND_TIMEOUT_SECONDS,
-    NPM_RETRY_INITIAL_DELAY_SECONDS,
     CommandRunner,
     ReleaseContext,
     ReleaseError,
@@ -320,7 +319,9 @@ def _check_brew_installation(
 
 
 def post_publish_pypi_check(
-    context: ReleaseContext, runner: CommandRunner, attempts: int = 6
+    context: ReleaseContext,
+    runner: CommandRunner,
+    attempts: int = retry.VERIFICATION_ATTEMPTS,
 ) -> None:
     run_bounded_post_publish_check(
         attempts,
@@ -330,7 +331,9 @@ def post_publish_pypi_check(
 
 
 def post_publish_npm_check(
-    context: ReleaseContext, runner: CommandRunner, attempts: int = 6
+    context: ReleaseContext,
+    runner: CommandRunner,
+    attempts: int = retry.VERIFICATION_ATTEMPTS,
 ) -> None:
     run_bounded_post_publish_check(
         attempts,
@@ -342,26 +345,23 @@ def post_publish_npm_check(
 def run_bounded_post_publish_check(
     attempts: int,
     label: str,
-    check,
-    initial_delay_seconds: int = NPM_RETRY_INITIAL_DELAY_SECONDS,
+    check: Callable[[], None],
 ) -> None:
-    last_error = ""
-    for attempt in range(1, attempts + 1):
+    def collect_issues() -> list[str]:
         try:
             check()
-            return
         except ReleaseError as error:
-            last_error = str(error)
-            if attempt == attempts:
-                break
-            print(
-                f"{label} post-publish check failed; retrying ({attempt}/{attempts})."
-            )
-            time.sleep(initial_delay_seconds * 2 ** (attempt - 1))
-    raise ReleaseError(
-        f"{label} post-publish install check did not pass after {attempts} attempts. "
-        f"Manual recovery may be needed: {last_error}"
+            return [str(error)]
+        return []
+
+    issues = retry.wait_for_verification(
+        f"{label} post-publish install", collect_issues, attempts
     )
+    if issues:
+        raise ReleaseError(
+            f"{label} post-publish install check did not pass after {attempts} attempts. "
+            f"Manual recovery may be needed: {'; '.join(issues)}"
+        )
 
 
 def remote_pip_install_check(context: ReleaseContext, runner: CommandRunner) -> None:

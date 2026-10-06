@@ -272,6 +272,7 @@ def release_state_fixture(
         npm_version=context.version.npm,
         git_tag=context.version.tag,
         artifacts=artifacts,
+        source_commit="abc",
     )
     formula = state.FormulaState(
         path=root / "packaging/homebrew/Formula/crewplane.rb",
@@ -370,6 +371,7 @@ def write_manifest(root: Path, manifest: state.ReleaseManifest) -> None:
     path = root / state.MANIFEST_PATH
     path.parent.mkdir(parents=True)
     payload = {
+        "source_commit": manifest.source_commit,
         "package": {
             "name": manifest.package_name,
             "project_version": manifest.project_version,

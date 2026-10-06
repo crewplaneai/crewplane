@@ -261,18 +261,18 @@ def test_finalize_allows_local_git_state_when_registries_are_present(
     monkeypatch.setattr(publish, "require_publish_git_state", capture_repo_checks)
     monkeypatch.setattr(publish, "inspect_git_state", constant(partial_git))
 
-    tagged: list[str] = []
+    tagged: list[tuple[str, str]] = []
 
     def capture_create_tag(
-        context_arg: state.ReleaseContext, runner_arg: FakeRunner
+        context_arg: state.ReleaseContext, runner_arg: FakeRunner, source_commit: str
     ) -> None:
         del runner_arg
-        tagged.append(context_arg.version.tag)
+        tagged.append((context_arg.version.tag, source_commit))
 
     monkeypatch.setattr(publish, "create_and_push_tag", capture_create_tag)
     assert publish.finalize_release(tmp_path, FakeRunner(), execute=True) == 0
     assert called == {"allow_existing_tag": True, "allow_local_changes": True}
-    assert tagged == [context.version.tag]
+    assert tagged == [(context.version.tag, manifest.source_commit)]
 
 
 def test_create_and_push_tag_rejects_freshly_unreachable_head(
@@ -297,7 +297,7 @@ def test_create_and_push_tag_rejects_freshly_unreachable_head(
         state.ReleaseError,
         match="release commit is not reachable from origin/master",
     ):
-        publish.create_and_push_tag(context, runner)
+        publish.create_and_push_tag(context, runner, git.head_commit)
 
     assert runner.commands == []
 

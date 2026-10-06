@@ -17,9 +17,11 @@ from .state import (
     command_exists,
     fail_if_generated_metadata_stale,
     query_registry_state,
+    read_clean_source_commit,
     read_release_context,
     sync_generated_metadata,
     sync_homebrew_formula_metadata,
+    verify_local_manifest_artifacts,
     write_json,
 )
 
@@ -51,10 +53,13 @@ def prepare_release(root: Path, runner: CommandRunner) -> None:
 
 def release_artifacts(root: Path, runner: CommandRunner) -> None:
     context = read_release_context(root)
+    source_commit = read_clean_source_commit(root, runner)
     fail_if_generated_metadata_stale(context, None)
     clean_release_outputs(context)
     artifacts = build_release_artifacts(context, runner)
-    manifest = write_release_manifest(context, artifacts)
+    if read_clean_source_commit(root, runner) != source_commit:
+        raise ReleaseError("release source commit changed while building artifacts")
+    manifest = write_release_manifest(context, artifacts, source_commit)
     fail_if_generated_metadata_stale(context, manifest)
     print("Release artifacts rebuilt.")
 
@@ -180,10 +185,13 @@ def pip_download_command() -> list[str]:
 
 
 def write_release_manifest(
-    context: ReleaseContext, artifacts: dict[str, ArtifactIdentity]
+    context: ReleaseContext,
+    artifacts: dict[str, ArtifactIdentity],
+    source_commit: str = "",
 ) -> ReleaseManifest:
     payload = {
         "schema_version": 1,
+        "source_commit": source_commit,
         "package": {
             "name": context.package_name,
             "project_version": context.version.project,
@@ -223,7 +231,26 @@ def write_release_manifest(
         npm_version=context.version.npm,
         git_tag=context.version.tag,
         artifacts=artifacts,
+        source_commit=source_commit,
     )
+
+
+def bind_release_manifest(
+    context: ReleaseContext,
+    manifest: ReleaseManifest,
+    source_commit: str,
+    runner: CommandRunner,
+) -> None:
+    if read_clean_source_commit(context.root, runner) != source_commit:
+        raise ReleaseError("release source commit changed during validation")
+    issues = verify_local_manifest_artifacts(
+        context, manifest, ("pypi_sdist", "pypi_wheel", "npm_tarball")
+    )
+    if issues:
+        raise ReleaseError(
+            "validated release artifacts changed:\n  " + "\n  ".join(issues)
+        )
+    write_release_manifest(context, manifest.artifacts, source_commit)
 
 
 def package_build(root: Path, runner: CommandRunner) -> None:

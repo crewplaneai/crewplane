@@ -121,16 +121,28 @@ manifest dedupe behavior against the intended `workflow_signature` rules.
 ## Documentation Expectations
 
 For documentation accompanying code changes, update only material made inaccurate
-or materially incomplete by the change. Bug fixes that restore documented behavior
-normally need regression coverage and a concise changelog entry, without additions
-to guides or architecture documents.
+or materially incomplete by the change. Choose the document by its audience and
+purpose:
+
+- [CHANGELOG.md](CHANGELOG.md): Record only notable user-facing changes. Keep
+  entries concise and outcome-focused, without implementation details or commit
+  inventories. Omit internal tooling, CI, tests, refactors, and developer workflow
+  changes unless they affect user-facing behavior.
+- [DEVELOPMENT.md](DEVELOPMENT.md): Keep developer and maintainer procedures current
+  when setup, validation, release, or maintenance workflows change. Describe
+  prerequisites, actions, and expected results. Omit implementation details and
+  change inventories.
+- [ADRs](docs/architecture/adr/): Record only important, durable architectural
+  decisions, including their context, rationale, alternatives, and consequences.
+  Omit implementation details and test inventories. Routine bug fixes and
+  refactors do not warrant an ADR or additions to an existing one.
 
 Update architecture documentation when the described boundaries, responsibilities,
 durable contracts, or lifecycle guarantees change. Fixing an implementation to
 uphold an existing guarantee does not itself require an architecture update.
 
-Keep each explanation in its canonical location. Avoid repeating implementation
-details and regression cases across documentation.
+Keep each explanation in its canonical location. Avoid duplicating explanations
+across documentation.
 
 Check for affected documentation when changing:
 
@@ -140,10 +152,6 @@ Check for affected documentation when changing:
 - artifact directory layout
 - built-in integration names or options
 - generated example templates
-
-Keep changelog entries concise and outcome-focused. Describe user- or
-maintainer-visible effects instead of implementation mechanics, test details,
-or commit inventories.
 
 ## Guidance Maintenance
 

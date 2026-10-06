@@ -48,6 +48,18 @@ def derive_release_state(
             (ORIGIN_MASTER_ANCESTRY_ERROR,),
             ("Create releases only from commits reachable from origin/master.",),
         )
+    if (
+        manifest is not None
+        and git is not None
+        and (manifest.source_commit or pypi.exists or npm.exists)
+    ):
+        source_issues = release_source_issues(manifest, git.head_commit)
+        if source_issues:
+            return DerivedReleaseState(
+                ReleaseStatus.BLOCKED,
+                tuple(source_issues),
+                ("Use the validated release checkout and its original manifest.",),
+            )
 
     artifact_issues: list[str] = []
     missing_pypi_keys: tuple[str, ...] = ()
@@ -125,6 +137,21 @@ def derive_release_state(
     if not tag_is_expectedly_absent:
         reasons.extend(tag_issues)
     return DerivedReleaseState(ReleaseStatus.READY, tuple(reasons), tuple(guidance))
+
+
+def release_source_issues(manifest: ReleaseManifest, head_commit: str) -> list[str]:
+    if not manifest.source_commit:
+        return [
+            "release manifest has no validated source commit; "
+            "unpublished releases need make release-check; "
+            "published releases need their original source and a verified manifest"
+        ]
+    if manifest.source_commit != head_commit:
+        return [
+            "release manifest source commit does not match HEAD; "
+            f"expected {manifest.source_commit}, found {head_commit}"
+        ]
+    return []
 
 
 def manifest_context_issues(

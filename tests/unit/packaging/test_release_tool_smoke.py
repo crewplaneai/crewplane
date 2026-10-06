@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from crewplane.cli.templates import CONFIG_TEMPLATE, render_template_content
-from scripts.release import smoke, state
+from scripts.release import retry, smoke, state
 from tests.unit.packaging.release_tool_support import write_minimal_repo
 
 
@@ -225,7 +225,7 @@ def test_post_publish_npm_check_retries_after_two_seconds(
             raise state.ReleaseError("package is not visible yet")
 
     monkeypatch.setattr(smoke, "remote_npm_install_check", check)
-    monkeypatch.setattr(smoke.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(retry.time, "sleep", sleeps.append)
 
     smoke.post_publish_npm_check(context, state.CommandRunner(), attempts=3)
 

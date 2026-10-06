@@ -116,6 +116,18 @@ def test_verify_complete_release_fails_on_expected_tag_mismatch(
             "1.2.3.post6",
             "prerelease=false\nlatest=true\nnotes_start_tag=v1.0.0\n",
         ),
+        (
+            "1.2.3.post1.dev1",
+            "1.2.3-dev.1.post.1",
+            "1.2.2",
+            "prerelease=true\nlatest=false\nnotes_start_tag=v1.0.0\n",
+        ),
+        (
+            "1.2.3a1.post1.dev1",
+            "1.2.3-alpha.1.dev.1.post.1",
+            "1.2.2",
+            "prerelease=true\nlatest=false\nnotes_start_tag=v1.0.0\n",
+        ),
     ],
 )
 def test_github_release_plan_uses_fresh_registry_state(
@@ -235,6 +247,8 @@ def test_github_release_plan_fails_closed_on_verification_issue(
         ("not-a-version", "missing or invalid"),
         ("1.2.3.0", "does not exactly match"),
         ("1.2.2", "older release"),
+        ("1.2.2-dev.1.post.1", "older release"),
+        ("1.2.3-alpha.1.dev.1.post.1", "older release"),
     ],
 )
 def test_github_release_plan_rejects_invalid_or_older_npm_latest(
